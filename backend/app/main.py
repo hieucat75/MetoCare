@@ -19,7 +19,7 @@ from app.core.config import get_settings
 from app.core.database import create_all
 from app.core.logging import setup_logging
 from app.core.metrics import registry
-from app.core.middleware import ObservabilityMiddleware
+from app.core.middleware import MfaEnrollmentMiddleware, ObservabilityMiddleware
 from app.services.consent import ConsentError
 
 logger = logging.getLogger("mcp")
@@ -45,6 +45,9 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    # Added first = inner; Observability is added last so it wraps (and logs) the
+    # enrollment block too.
+    app.add_middleware(MfaEnrollmentMiddleware)
     app.add_middleware(ObservabilityMiddleware)
 
     for warning in settings.warn_if_insecure():

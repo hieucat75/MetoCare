@@ -22,6 +22,18 @@ class UserRole(enum.StrEnum):
     SUPER_ADMIN = "super_admin"
 
 
+# Roles for which MFA is mandatory before accessing protected resources.
+MFA_REQUIRED_ROLES = frozenset(
+    {
+        UserRole.DOCTOR,
+        UserRole.CLINIC_ADMIN,
+        UserRole.INTERNAL_ADMIN,
+        UserRole.MEDICAL_REVIEWER,
+        UserRole.SUPER_ADMIN,
+    }
+)
+
+
 class User(UUIDPrimaryKey, TimestampMixin, Base):
     __tablename__ = "users"
 

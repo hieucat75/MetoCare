@@ -8,13 +8,50 @@ from time import perf_counter
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import Response
+from starlette.responses import JSONResponse, Response
 
 from .context import request_id_var, user_id_var
 from .metrics import registry
+from .security import decode_token
 
 _access_logger = logging.getLogger("mcp.access")
 REQUEST_ID_HEADER = "X-Request-ID"
+
+# Paths reachable while a doctor/admin still owes MFA enrollment.
+_ENROLL_ALLOW_SUFFIXES = (
+    "/auth/mfa/enroll",
+    "/auth/mfa/verify",
+    "/auth/me",
+    "/auth/logout",
+    "/auth/login",
+    "/auth/register",
+    "/auth/refresh",
+)
+_ENROLL_ALLOW_EXACT = frozenset({"/health", "/metrics", "/docs", "/openapi.json", "/redoc"})
+
+
+class MfaEnrollmentMiddleware(BaseHTTPMiddleware):
+    """Force doctors/admins to enroll MFA before using any protected resource.
+
+    If the bearer token carries `mfa_enrollment_required`, all paths are blocked
+    (403) except the allowlist needed to complete enrollment.
+    """
+
+    async def dispatch(self, request: Request, call_next) -> Response:
+        authz = request.headers.get("Authorization", "")
+        if authz.startswith("Bearer "):
+            payload = decode_token(authz[7:])
+            if payload and payload.get("mfa_enrollment_required"):
+                path = request.url.path
+                if path not in _ENROLL_ALLOW_EXACT and not path.endswith(_ENROLL_ALLOW_SUFFIXES):
+                    return JSONResponse(
+                        status_code=403,
+                        content={
+                            "code": "mfa_enrollment_required",
+                            "message": "MFA enrollment is required before accessing this resource.",
+                        },
+                    )
+        return await call_next(request)
 
 
 class ObservabilityMiddleware(BaseHTTPMiddleware):

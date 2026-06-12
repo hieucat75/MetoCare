@@ -23,7 +23,7 @@ from app.core.security import (
 )
 from app.models.auth_tokens import RefreshToken
 from app.models.patient import PatientProfile
-from app.models.user import User, UserRole
+from app.models.user import MFA_REQUIRED_ROLES, User, UserRole
 from app.services import audit
 
 
@@ -88,7 +88,13 @@ def authenticate(db: Session, *, email: str, password: str) -> User:
 
 def issue_tokens(db: Session, user: User, *, mfa: bool = False) -> tuple[str, str]:
     """Issue an access token + a persisted, revocable refresh token."""
-    access = create_access_token(subject=user.id, role=user.role.value, mfa=mfa)
+    enrollment_required = user.role in MFA_REQUIRED_ROLES and not user.mfa_enabled
+    access = create_access_token(
+        subject=user.id,
+        role=user.role.value,
+        mfa=mfa,
+        mfa_enrollment_required=enrollment_required,
+    )
     jti = uuid.uuid4().hex
     ttl = get_settings().refresh_token_ttl_minutes
     db.add(

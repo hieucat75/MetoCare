@@ -25,15 +25,6 @@ from app.services import audit, auth, mfa
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-# Roles for which MFA is mandatory to reach sensitive resources.
-MFA_REQUIRED_ROLES = {
-    UserRole.DOCTOR,
-    UserRole.CLINIC_ADMIN,
-    UserRole.INTERNAL_ADMIN,
-    UserRole.SUPER_ADMIN,
-    UserRole.MEDICAL_REVIEWER,
-}
-
 
 @router.post("/register", response_model=TokenResponse, status_code=201)
 def register(

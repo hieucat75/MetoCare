@@ -44,6 +44,7 @@ def create_access_token(
     subject: str,
     role: str,
     mfa: bool = False,
+    mfa_enrollment_required: bool = False,
     expires_minutes: int | None = None,
     extra: dict | None = None,
 ) -> str:
@@ -54,6 +55,7 @@ def create_access_token(
         "sub": subject,
         "role": role,
         "mfa": mfa,  # True iff the session was MFA-verified at login
+        "mfa_enrollment_required": mfa_enrollment_required,
         "iat": int(now.timestamp()),
         "exp": int((now + dt.timedelta(minutes=ttl)).timestamp()),
         "type": "access",

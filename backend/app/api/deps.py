@@ -58,6 +58,7 @@ class CurrentUser:
     id: str
     role: str
     mfa: bool = False
+    mfa_enrollment_required: bool = False
 
 
 def current_user(
@@ -80,7 +81,10 @@ def current_user(
     # Record the opaque user id for access-log correlation (not PHI).
     request.state.user_id = payload["sub"]
     return CurrentUser(
-        id=payload["sub"], role=payload.get("role", ""), mfa=bool(payload.get("mfa", False))
+        id=payload["sub"],
+        role=payload.get("role", ""),
+        mfa=bool(payload.get("mfa", False)),
+        mfa_enrollment_required=bool(payload.get("mfa_enrollment_required", False)),
     )
 
 
