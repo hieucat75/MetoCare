@@ -1,27 +1,66 @@
-"""API dependencies.
+"""API dependencies: JWT authentication + RBAC (Technical_Architecture.md §4.7).
 
-Foundation auth is a stand-in: the requester identity comes from the
-``X-User-Id`` header. P1 replaces this with JWT verification + RBAC per
-Technical_Architecture.md §4.7. The DB session dependency is the real one.
+A valid ``Authorization: Bearer <jwt>`` is required for protected endpoints. The
+token carries the user id (sub) and role. ``require_roles`` enforces role-based
+access, denying by default.
 """
 
 from __future__ import annotations
 
-from fastapi import Header, HTTPException, status
+from collections.abc import Callable
+from dataclasses import dataclass
+
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.core.database import get_session  # re-exported for routes
+from app.core.security import decode_token
+from app.models.user import UserRole
 
-__all__ = ["get_session", "current_user_id"]
+__all__ = ["get_session", "current_user", "current_user_id", "require_roles", "CurrentUser"]
+
+_bearer = HTTPBearer(auto_error=False)
 
 
-def current_user_id(x_user_id: str | None = Header(default=None)) -> str:
-    """Return the requesting user's id from the X-User-Id header.
+@dataclass(frozen=True)
+class CurrentUser:
+    id: str
+    role: str
 
-    NOTE: placeholder authentication for the Sprint-0 foundation only.
-    """
-    if not x_user_id:
+
+def current_user(
+    creds: HTTPAuthorizationCredentials | None = Depends(_bearer),
+) -> CurrentUser:
+    if creds is None or not creds.credentials:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing X-User-Id (foundation auth placeholder).",
+            detail="Missing bearer token.",
+            headers={"WWW-Authenticate": "Bearer"},
         )
-    return x_user_id
+    payload = decode_token(creds.credentials)
+    if payload is None or payload.get("type") != "access" or not payload.get("sub"):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return CurrentUser(id=payload["sub"], role=payload.get("role", ""))
+
+
+def current_user_id(user: CurrentUser = Depends(current_user)) -> str:
+    return user.id
+
+
+def require_roles(*roles: UserRole) -> Callable[[CurrentUser], CurrentUser]:
+    """Dependency factory: allow only the given roles (deny by default)."""
+    allowed = {r.value for r in roles}
+
+    def _checker(user: CurrentUser = Depends(current_user)) -> CurrentUser:
+        if user.role not in allowed:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Role '{user.role}' is not permitted for this resource.",
+            )
+        return user
+
+    return _checker

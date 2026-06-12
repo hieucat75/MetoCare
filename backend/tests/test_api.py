@@ -4,7 +4,7 @@ from __future__ import annotations
 
 
 def _auth(patient):
-    return {"X-User-Id": patient["patient_id"]}
+    return patient["headers"]  # Bearer JWT for the patient's owner user
 
 
 def test_health_endpoint(client):
@@ -41,13 +41,13 @@ def test_create_and_list_metric(client, patient):
 
 def test_metric_access_denied_without_auth(client, patient):
     r = client.get(f"/api/v1/patients/{patient['patient_id']}/metrics")
-    assert r.status_code == 401  # missing X-User-Id
+    assert r.status_code == 401  # missing bearer token
 
 
-def test_metric_access_denied_for_stranger(client, patient):
+def test_metric_access_denied_for_stranger(client, patient, token_for):
     r = client.get(
         f"/api/v1/patients/{patient['patient_id']}/metrics",
-        headers={"X-User-Id": "stranger-123"},
+        headers=token_for("stranger-123"),
     )
     assert r.status_code == 403  # consent gate
 
@@ -124,7 +124,7 @@ def test_metabolic_score_endpoint(client):
     assert body["factors"]
 
 
-def test_consent_grant_and_revoke_via_api(client, patient):
+def test_consent_grant_and_revoke_via_api(client, patient, token_for):
     r = client.post(
         f"/api/v1/patients/{patient['patient_id']}/consents",
         headers=_auth(patient),
@@ -136,7 +136,7 @@ def test_consent_grant_and_revoke_via_api(client, patient):
     # doctor-z can now read
     r2 = client.get(
         f"/api/v1/patients/{patient['patient_id']}/metrics",
-        headers={"X-User-Id": "doctor-z"},
+        headers=token_for("doctor-z", "doctor"),
     )
     assert r2.status_code == 200
 
@@ -149,6 +149,6 @@ def test_consent_grant_and_revoke_via_api(client, patient):
 
     r4 = client.get(
         f"/api/v1/patients/{patient['patient_id']}/metrics",
-        headers={"X-User-Id": "doctor-z"},
+        headers=token_for("doctor-z", "doctor"),
     )
     assert r4.status_code == 403

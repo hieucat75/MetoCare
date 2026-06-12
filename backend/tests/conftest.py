@@ -18,6 +18,7 @@ os.environ["MCP_OCR_MODE"] = "mock"
 
 import pytest  # noqa: E402
 from app.core.database import SessionLocal, create_all  # noqa: E402
+from app.core.security import create_access_token  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models.patient import PatientProfile  # noqa: E402
 from app.models.user import User, UserRole  # noqa: E402
@@ -41,10 +42,10 @@ def db():
 
 @pytest.fixture
 def patient(db):
-    """Seed a synthetic (NOT real) patient + owner user. Returns ids."""
+    """Seed a synthetic (NOT real) patient + owner user. Returns ids + token."""
     user = User(
         email=f"test-{os.urandom(4).hex()}@example.com",
-        password_hash="x",
+        password_hash="x",  # fixture mints tokens directly; no password login here
         role=UserRole.PATIENT,
         full_name="Nguyễn Văn Test",
     )
@@ -53,7 +54,23 @@ def patient(db):
     profile = PatientProfile(user_id=user.id, full_name="Nguyễn Văn Test", waist_cm=95)
     db.add(profile)
     db.commit()
-    return {"user_id": user.id, "patient_id": profile.id}
+    token = create_access_token(subject=user.id, role="patient")
+    return {
+        "user_id": user.id,
+        "patient_id": profile.id,
+        "token": token,
+        "headers": {"Authorization": f"Bearer {token}"},
+    }
+
+
+@pytest.fixture
+def token_for():
+    """Factory: mint a bearer-header dict for an arbitrary user id + role."""
+
+    def _make(user_id: str, role: str = "patient") -> dict[str, str]:
+        return {"Authorization": f"Bearer {create_access_token(subject=user_id, role=role)}"}
+
+    return _make
 
 
 @pytest.fixture
