@@ -6,9 +6,11 @@ layer. Triage runs the rule engine first. No external LLM/OCR is called.
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, Request, status
 
+from app.core.security import decode_token
 from app.domain import metabolic_score, triage
+from app.llm import LLMRateLimitError
 from app.schemas.ai import (
     ChatRequest,
     ChatResponse,
@@ -22,9 +24,32 @@ from app.services import ai_assistant
 router = APIRouter(prefix="/ai", tags=["ai"])
 
 
+def _cost_subject(request: Request) -> str:
+    """Identify the cost-guard subject without requiring auth on /ai/chat.
+
+    Prefer the authenticated user id (token sub); fall back to client IP so the
+    per-user rate/cost cap still applies to anonymous callers.
+    """
+    auth = request.headers.get("authorization", "")
+    if auth.lower().startswith("bearer "):
+        payload = decode_token(auth[7:])
+        if payload and payload.get("type") == "access" and payload.get("sub"):
+            return str(payload["sub"])
+    return request.client.host if request.client else "anonymous"
+
+
 @router.post("/chat", response_model=ChatResponse)
-def chat(payload: ChatRequest) -> ChatResponse:
-    resp = ai_assistant.respond(payload.message, intent=payload.intent)
+def chat(payload: ChatRequest, request: Request) -> ChatResponse:
+    try:
+        resp = ai_assistant.respond(
+            payload.message, intent=payload.intent, user_id=_cost_subject(request)
+        )
+    except LLMRateLimitError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=str(exc),
+            headers={"Retry-After": str(exc.retry_after)},
+        ) from exc
     return ChatResponse(
         text=resp.text,
         intent=resp.intent,
@@ -32,6 +57,8 @@ def chat(payload: ChatRequest) -> ChatResponse:
         escalated_to_doctor=resp.escalated_to_doctor,
         safety_flags=resp.safety_flags,
         blocked=resp.blocked,
+        model_used=resp.model_used,
+        cached=resp.cached,
     )
 
 

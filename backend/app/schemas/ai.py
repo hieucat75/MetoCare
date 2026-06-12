@@ -17,6 +17,8 @@ class ChatResponse(BaseModel):
     escalated_to_doctor: bool
     safety_flags: list[str]
     blocked: bool
+    model_used: str = "mock"
+    cached: bool = False
 
 
 class VitalIn(BaseModel):

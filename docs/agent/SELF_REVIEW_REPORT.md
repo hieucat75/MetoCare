@@ -6,7 +6,8 @@
 > - P1 #1–#3 (Database, Auth, Encryption) → [`FINAL_HANDOFF_P1.md`](FINAL_HANDOFF_P1.md).
 > - P1 #4–#5 + CI (Observability/Retention, Refresh+MFA, GitHub Actions) → [`FINAL_HANDOFF_P1_FINAL.md`](FINAL_HANDOFF_P1_FINAL.md).
 > - P1 #6–#8 (Rate limit+lockout, Force-MFA-enroll, Refresh reuse-detection) → [`FINAL_HANDOFF_P1_COMPLETE.md`](FINAL_HANDOFF_P1_COMPLETE.md).
-> Trạng thái hiện tại: **P1 hoàn tất — 96 test pass, 1 skipped; ruff sạch; 5 migration; CI matrix 3.13/3.14.** P2 để dành fresh session.
+> Trạng thái hiện tại: **P1 hoàn tất — 96 test pass, 1 skipped; ruff sạch; 5 migration; CI matrix 3.13/3.14.**
+> - **P2 Foundation đang chạy** trên branch `foundation/p2-llm-gateway-rag-ocr` — xem [§P2 cuối file](#p2-foundation-llm-gateway--rag--ocr).
 
 ---
 
@@ -125,3 +126,29 @@ score (4 profile), consent/audit (gate + scope + revoke + audit write), API (14 
 | Có phá build? | ❌ Không (build/test xanh) |
 | Có migration rủi ro? | ❌ Chưa có migration (create_all dev only) |
 | Có update docs? | ✅ discovery + plan + self-review + README |
+
+---
+
+## P2 Foundation — LLM Gateway / RAG / OCR
+
+> Branch `foundation/p2-llm-gateway-rag-ocr` (từ `main`). Mỗi phase 1 commit, test xanh sau từng commit.
+
+### P2 #1 — LLM Gateway (DONE)
+
+**Files mới:** `app/llm/{__init__,base,errors,factory,cache,cost,gateway}.py`, `app/llm/providers/{__init__,mock,openai,anthropic}.py`, `tests/test_llm_gateway.py`.
+**Files sửa:** `app/services/ai_assistant.py` (dùng gateway thay mock cứng), `app/api/v1/routes/ai.py` (+user_id cost-subject, 429 mapping), `app/schemas/ai.py` (+model_used/cached), `app/core/config.py` (+LLM/RAG/OCR settings), `app/domain/policies.py` (+SYSTEM_SAFETY_PROMPT_VI), `tests/conftest.py` (reset gateway), `.env.example`.
+
+**Đã làm:**
+- `LLMProvider` abstract + `LLMResponse`/`LLMMessage`; adapters `MockLLMProvider` (default, deterministic, tiếng Việt), `OpenAIProvider`/`AnthropicProvider` skeleton (raise `LLMConfigError`, **không** gọi mạng).
+- Factory theo `MCP_LLM_PROVIDER`. Gateway = choke point duy nhất: cost-guard → cache → provider → **output guardrail** → disclaimer → token accounting + metrics.
+- Mọi response LLM đi qua `guardrails.check_output`; BLOCK → safe message + disclaimer (`blocked=True`).
+- Cost/rate guard per-user (sliding 60s, RPM + TPM) → `LLMRateLimitError` → HTTP 429 (Retry-After).
+- LRU cache (TTL + max-entries) khóa theo provider+model+system+messages+user → cache hit miễn phí token.
+- `ai_assistant.respond` giữ input-guardrail (red flag escalate) + medication redirect (không gọi model), phần generation qua gateway.
+
+**Test (thật):** `tests/test_llm_gateway.py` 13 test — factory switch/unknown, mock determinism, guardrail BLOCK trong gateway, RPM/TPM cap + window slide, 429 E2E, cache hit/miss/TTL/LRU. Tổng suite **109 passed, 1 skipped**; ruff sạch; compileall OK.
+
+**Quyết định / ghi chú an toàn:**
+- `/ai/chat` giữ **không bắt buộc auth** (backward-compat 96 test cũ); cost-subject lấy từ token sub nếu có, else client IP.
+- Skeleton provider raise lỗi rõ ràng thay vì degrade thầm → dev/test không bao giờ chạm provider thật.
+- Guardrail đặt trong gateway (không ở adapter) → không code path nào emit response chưa validate.

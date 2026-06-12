@@ -51,6 +51,32 @@ class Settings(BaseSettings):
     storage_mode: str = "local"  # local | s3 | minio
     storage_local_dir: str = "./storage"
 
+    # ---- LLM Gateway (P2 #1) — provider abstraction, never calls real LLM in mock ----
+    llm_provider: str = "mock"   # mock | openai | anthropic (openai/anthropic = skeleton)
+    llm_model: str = "mock-vi-1"
+    llm_max_tokens: int = 512
+    llm_temperature: float = 0.2
+    # Cost / rate guard per user (sliding 60s window). 429 when exceeded.
+    llm_max_requests_per_minute: int = 20
+    llm_max_tokens_per_minute: int = 20000
+    # In-memory LRU response cache (identical prompt + user) to cut cost.
+    llm_cache_enabled: bool = True
+    llm_cache_max_entries: int = 512
+    llm_cache_ttl_seconds: int = 300
+
+    # ---- RAG retrieval (P2 #2) ----
+    rag_enabled: bool = True
+    embedding_provider: str = "mock"   # mock | openai (openai = skeleton)
+    embedding_dim: int = 256
+    vector_store: str = "memory"       # memory | pgvector | qdrant (latter two = skeleton)
+    rag_top_k: int = 3
+    rag_seed_dir: str = "./data/rag_seed"
+
+    # ---- OCR worker (P2 #3) — async queue, mock provider by default ----
+    ocr_provider: str = "mock"         # mock | tesseract | cloud (latter two = skeleton)
+    ocr_worker_enabled: bool = True
+    ocr_queue_max_size: int = 256
+
     # ---- Observability ----
     log_level: str = "INFO"
     metrics_enabled: bool = True  # exposes /metrics; disable on untrusted edges
