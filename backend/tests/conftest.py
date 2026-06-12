@@ -31,6 +31,15 @@ def _setup_db():
     yield
 
 
+@pytest.fixture(autouse=True)
+def _reset_ratelimit():
+    """Clear rate-limit + lockout state before each test so it never leaks."""
+    from app.core.ratelimit import reset_all
+
+    reset_all()
+    yield
+
+
 @pytest.fixture
 def db():
     session = SessionLocal()

@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import CurrentUser, current_user, get_session
+from app.api.deps import CurrentUser, current_user, enforce_rate_limit, get_session
+from app.core.config import get_settings
+from app.core.ratelimit import get_lockout
 from app.core.security import decode_token
 from app.models.user import User, UserRole
 from app.schemas.auth import (
@@ -34,7 +36,10 @@ MFA_REQUIRED_ROLES = {
 
 
 @router.post("/register", response_model=TokenResponse, status_code=201)
-def register(payload: RegisterRequest, db: Session = Depends(get_session)) -> TokenResponse:
+def register(
+    request: Request, payload: RegisterRequest, db: Session = Depends(get_session)
+) -> TokenResponse:
+    enforce_rate_limit(request, "register")
     role = UserRole.PATIENT if payload.role != UserRole.PATIENT else payload.role
     try:
         user = auth.register(
@@ -54,10 +59,27 @@ def register(payload: RegisterRequest, db: Session = Depends(get_session)) -> To
 
 
 @router.post("/login", response_model=TokenResponse)
-def login(payload: LoginRequest, db: Session = Depends(get_session)) -> TokenResponse:
+def login(
+    request: Request, payload: LoginRequest, db: Session = Depends(get_session)
+) -> TokenResponse:
+    enforce_rate_limit(request, "login")
+    settings = get_settings()
+    lockout = get_lockout()
+    lkey = str(payload.email).lower()
+    if lockout.is_locked(
+        lkey,
+        max_failures=settings.lockout_max_failures,
+        cooldown_seconds=settings.lockout_cooldown_minutes * 60,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_423_LOCKED,
+            detail="Account temporarily locked due to repeated failed logins.",
+        )
+
     try:
         user = auth.authenticate(db, email=str(payload.email), password=payload.password)
     except auth.AuthError as exc:
+        lockout.record_failure(lkey)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
 
     mfa_ok = False
@@ -66,11 +88,14 @@ def login(payload: LoginRequest, db: Session = Depends(get_session)) -> TokenRes
             db, user, totp_code=payload.totp_code, backup_code=payload.backup_code
         )
         if not mfa_ok:
+            lockout.record_failure(lkey)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="MFA code required or invalid.",
             )
 
+    # Successful login (incl. MFA when enabled) clears the lockout counter.
+    lockout.reset(lkey)
     access, refresh = auth.issue_tokens(db, user, mfa=mfa_ok)
     return TokenResponse(
         access_token=access, refresh_token=refresh, role=user.role.value,
@@ -79,7 +104,10 @@ def login(payload: LoginRequest, db: Session = Depends(get_session)) -> TokenRes
 
 
 @router.post("/refresh", response_model=TokenResponse)
-def refresh(payload: RefreshRequest, db: Session = Depends(get_session)) -> TokenResponse:
+def refresh(
+    request: Request, payload: RefreshRequest, db: Session = Depends(get_session)
+) -> TokenResponse:
+    enforce_rate_limit(request, "refresh")
     try:
         access, new_refresh, user = auth.refresh_session(db, payload.refresh_token)
     except auth.AuthError as exc:
@@ -132,10 +160,12 @@ def mfa_enroll(
 
 @router.post("/mfa/verify", response_model=Message)
 def mfa_verify(
+    request: Request,
     payload: MfaVerifyRequest,
     actor: CurrentUser = Depends(current_user),
     db: Session = Depends(get_session),
 ) -> Message:
+    enforce_rate_limit(request, "mfa_verify")
     db_user = db.get(User, actor.id)
     if db_user is None:
         raise HTTPException(status_code=404, detail="user not found")

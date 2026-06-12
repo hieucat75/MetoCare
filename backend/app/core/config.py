@@ -61,6 +61,14 @@ class Settings(BaseSettings):
     audit_retention_admin_days: int = 1095
     audit_retention_default_days: int = 365
 
+    # ---- Rate limiting & account lockout ----
+    ratelimit_enabled: bool = True
+    ratelimit_backend: str = "memory"  # memory | redis (redis = pluggable, not yet implemented)
+    ratelimit_auth_capacity: int = 20  # max burst per window per client+action
+    ratelimit_auth_window_seconds: int = 60
+    lockout_max_failures: int = 5
+    lockout_cooldown_minutes: int = 15
+
     @property
     def is_prod(self) -> bool:
         return self.env.lower() in ("prod", "production")

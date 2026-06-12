@@ -13,7 +13,9 @@ from dataclasses import dataclass
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from app.core.config import get_settings
 from app.core.database import get_session  # re-exported for routes
+from app.core.ratelimit import get_rate_limiter
 from app.core.security import decode_token
 from app.models.user import UserRole
 
@@ -23,8 +25,30 @@ __all__ = [
     "current_user_id",
     "require_roles",
     "require_mfa",
+    "enforce_rate_limit",
     "CurrentUser",
 ]
+
+
+def _client_key(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
+
+
+def enforce_rate_limit(request: Request, action: str) -> None:
+    """Token-bucket rate limit per (action, client). Raises 429 when exceeded."""
+    settings = get_settings()
+    if not settings.ratelimit_enabled:
+        return
+    capacity = settings.ratelimit_auth_capacity
+    window = settings.ratelimit_auth_window_seconds
+    refill = capacity / window if window else capacity
+    key = f"{action}:{_client_key(request)}"
+    if not get_rate_limiter().allow(key, capacity=capacity, refill_per_sec=refill):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many requests; please slow down.",
+            headers={"Retry-After": str(window)},
+        )
 
 _bearer = HTTPBearer(auto_error=False)
 
