@@ -1,5 +1,7 @@
 # Metabolic Care Platform (MCP)
 
+[![CI](../../actions/workflows/ci.yml/badge.svg)](../../actions/workflows/ci.yml)
+
 Nền tảng chăm sóc sức khỏe chuyển hóa (tiền tiểu đường, rối loạn chuyển hóa, béo bụng, mỡ máu).
 **AI hỗ trợ + giải thích + phân tầng rủi ro, KHÔNG thay thế bác sĩ.**
 
