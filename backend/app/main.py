@@ -49,11 +49,29 @@ def create_app() -> FastAPI:
             if worker is not None:
                 await worker.stop()
 
+    # Interactive docs are convenient for dev/manual testing but must never be
+    # exposed in production (force off there regardless of the flag).
+    docs_on = settings.enable_docs and not settings.is_prod
     app = FastAPI(
         title=settings.app_name,
-        version="0.1.0",
-        description="Metabolic Care Platform — Sprint 0 foundation (modular monolith).",
+        version="0.3.0",
+        description=(
+            "Metabolic Care Platform — modular monolith API (P2 foundation). "
+            "AI is guardrailed and runs in mock mode; no real LLM/OCR is called."
+        ),
         lifespan=lifespan,
+        docs_url="/docs" if docs_on else None,
+        redoc_url="/redoc" if docs_on else None,
+        openapi_url="/openapi.json" if docs_on else None,
+        openapi_tags=[
+            {"name": "auth", "description": "Đăng ký / đăng nhập / refresh / MFA enroll+verify."},
+            {"name": "health-tracking", "description": "Ghi nhận + xem xu hướng chỉ số sức khỏe."},
+            {"name": "lab", "description": "Upload tài liệu xét nghiệm + pipeline OCR/interpret."},
+            {"name": "ai", "description": "AI chat (guardrailed) / triage / metabolic score."},
+            {"name": "consent", "description": "Cấp / thu hồi đồng ý chia sẻ dữ liệu."},
+            {"name": "admin", "description": "Audit log + unlock account (role+MFA gated)."},
+            {"name": "system", "description": "Health check / system."},
+        ],
     )
 
     # Added first = inner; Observability is added last so it wraps (and logs) the
