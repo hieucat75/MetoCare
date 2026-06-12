@@ -1,6 +1,9 @@
 # SELF REVIEW REPORT — Sprint 0 Foundation
 
 > Tác giả: Claude Code · Ngày: 2026-06-12 · Branch: `foundation/sprint0-healthcare-platform`
+>
+> **Cập nhật:** Sprint 0 đã merge vào `main` (tag `v0.1.0-sprint0-foundation`). Tiếp theo đã làm
+> 3 phase P1 (Database, Auth, Encryption) — review chi tiết tại [`FINAL_HANDOFF_P1.md`](FINAL_HANDOFF_P1.md).
 
 ---
 
