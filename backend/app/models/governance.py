@@ -9,12 +9,12 @@ from __future__ import annotations
 
 import datetime as dt
 
-from sqlalchemy import DateTime, String, func
+from sqlalchemy import DateTime, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
 
-from ._mixins import TimestampMixin, UUIDPrimaryKey
+from ._mixins import _NOW, TimestampMixin, UUIDPrimaryKey
 
 
 class Consent(UUIDPrimaryKey, TimestampMixin, Base):
@@ -26,7 +26,7 @@ class Consent(UUIDPrimaryKey, TimestampMixin, Base):
     # doctor / clinic id the consent is granted to
     granted_to: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
     valid_from: Mapped[dt.datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
+        DateTime(timezone=True), server_default=_NOW, nullable=False
     )
     valid_until: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
     revoked_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
@@ -65,5 +65,5 @@ class AuditLog(UUIDPrimaryKey, Base):
     ip_address: Mapped[str | None] = mapped_column(String(64))
     device: Mapped[str | None] = mapped_column(String(128))
     timestamp: Mapped[dt.datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), index=True, nullable=False
+        DateTime(timezone=True), server_default=_NOW, index=True, nullable=False
     )

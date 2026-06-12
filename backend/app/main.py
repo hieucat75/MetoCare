@@ -26,8 +26,10 @@ def create_app() -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-        # Dev/test convenience; production uses Alembic migrations.
-        if not settings.is_prod:
+        # SQLite dev/test convenience: create tables directly so the app runs
+        # with zero setup. PostgreSQL/TimescaleDB MUST use Alembic migrations
+        # (create_all would make plain tables without the hypertable/CAGG).
+        if not settings.is_prod and settings.database_url.startswith("sqlite"):
             create_all()
         yield
 

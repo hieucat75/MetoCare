@@ -13,6 +13,8 @@ addopts = "-q"
 line-length = 100
 target-version = "py311"
 src = ["app", "tests"]
+# Auto-generated Alembic migrations are not hand-linted.
+extend-exclude = ["alembic/versions"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
