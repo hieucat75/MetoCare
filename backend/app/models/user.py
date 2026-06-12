@@ -7,6 +7,7 @@ import enum
 from sqlalchemy import Boolean, Enum, String
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.core.crypto import EncryptedString
 from app.core.database import Base
 
 from ._mixins import TimestampMixin, UUIDPrimaryKey
@@ -29,6 +30,6 @@ class User(UUIDPrimaryKey, TimestampMixin, Base):
     role: Mapped[UserRole] = mapped_column(
         Enum(UserRole, native_enum=False, length=32), default=UserRole.PATIENT, nullable=False
     )
-    full_name: Mapped[str | None] = mapped_column(String(255))
+    full_name: Mapped[str | None] = mapped_column(EncryptedString)  # PHI: identity
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     mfa_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

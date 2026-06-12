@@ -13,6 +13,7 @@ import datetime as dt
 from sqlalchemy import Boolean, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.core.crypto import EncryptedString
 from app.core.database import Base
 
 from ._mixins import TimestampMixin, UUIDPrimaryKey
@@ -45,6 +46,8 @@ class LabDocument(UUIDPrimaryKey, TimestampMixin, Base):
     storage_key: Mapped[str] = mapped_column(String(512), nullable=False)
     file_type: Mapped[str | None] = mapped_column(String(32))
     lab_name: Mapped[str | None] = mapped_column(String(255))
+    # PHI: raw OCR-extracted text encrypted at rest.
+    raw_text: Mapped[str | None] = mapped_column(EncryptedString)
     ocr_status: Mapped[str] = mapped_column(String(24), default="pending")  # pending/done/failed
     data_classification: Mapped[str] = mapped_column(String(32), default="sensitive_health")
 

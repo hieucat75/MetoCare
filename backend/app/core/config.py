@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     secret_key: str = "dev-insecure-secret-change-me-in-production-0123456789"
     access_token_ttl_minutes: int = 15
     refresh_token_ttl_minutes: int = 60 * 24 * 7
+    # Comma-separated Fernet keys for PHI field-level encryption (first = encrypt,
+    # all = decrypt for rotation). Dev default is an obvious placeholder; prod MUST
+    # inject real keys via a secret manager.
+    encryption_keys: str = "CSuRdJSn8APsbQJ3u91m71ZoHvdpn0IzMj6i7H9kMFg="
 
     # ---- Database ----
     # Default SQLite so the stack runs with zero infra in dev/test.
@@ -59,6 +63,8 @@ class Settings(BaseSettings):
                 warnings.append("SECRET_KEY is the insecure dev default in PROD.")
             elif len(self.secret_key) < 32:
                 warnings.append("SECRET_KEY is shorter than 32 chars (weak for HS256).")
+            if self.encryption_keys.startswith("CSuRdJSn8APsbQJ3u91m71ZoHvdpn0IzMj6i7H9kMFg"):
+                warnings.append("ENCRYPTION_KEYS is the insecure dev default in PROD.")
             if self.database_url.startswith("sqlite"):
                 warnings.append("SQLite database in PROD; use PostgreSQL + TimescaleDB.")
             if self.ai_mode == "mock":
