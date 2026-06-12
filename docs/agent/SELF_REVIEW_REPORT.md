@@ -2,8 +2,10 @@
 
 > Tác giả: Claude Code · Ngày: 2026-06-12 · Branch: `foundation/sprint0-healthcare-platform`
 >
-> **Cập nhật:** Sprint 0 đã merge vào `main` (tag `v0.1.0-sprint0-foundation`). Tiếp theo đã làm
-> 3 phase P1 (Database, Auth, Encryption) — review chi tiết tại [`FINAL_HANDOFF_P1.md`](FINAL_HANDOFF_P1.md).
+> **Cập nhật:** Sprint 0 đã merge vào `main` (tag `v0.1.0-sprint0-foundation`).
+> - P1 #1–#3 (Database, Auth, Encryption) → [`FINAL_HANDOFF_P1.md`](FINAL_HANDOFF_P1.md).
+> - P1 #4–#5 + CI (Observability/Retention, Refresh+MFA, GitHub Actions) → [`FINAL_HANDOFF_P1_FINAL.md`](FINAL_HANDOFF_P1_FINAL.md).
+> Trạng thái hiện tại: **84 test pass, 1 skipped; ruff sạch; 4 migration; CI matrix 3.13/3.14.**
 
 ---
 
