@@ -51,6 +51,16 @@ class Settings(BaseSettings):
     storage_mode: str = "local"  # local | s3 | minio
     storage_local_dir: str = "./storage"
 
+    # ---- Observability ----
+    log_level: str = "INFO"
+    metrics_enabled: bool = True  # exposes /metrics; disable on untrusted edges
+
+    # ---- Audit retention (days) by action category ----
+    audit_retention_auth_days: int = 365
+    audit_retention_data_access_days: int = 730
+    audit_retention_admin_days: int = 1095
+    audit_retention_default_days: int = 365
+
     @property
     def is_prod(self) -> bool:
         return self.env.lower() in ("prod", "production")

@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import CurrentUser, get_session, require_roles
 from app.models.governance import AuditLog
 from app.models.user import UserRole
+from app.services import audit
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -22,11 +23,19 @@ _admin_only = require_roles(UserRole.INTERNAL_ADMIN, UserRole.SUPER_ADMIN)
 @router.get("/audit-logs")
 def list_audit_logs(
     limit: int = Query(default=50, ge=1, le=500),
-    _: CurrentUser = Depends(_admin_only),
+    actor: CurrentUser = Depends(_admin_only),
     db: Session = Depends(get_session),
 ) -> list[dict]:
     stmt = select(AuditLog).order_by(AuditLog.timestamp.desc()).limit(limit)
-    rows = db.execute(stmt).scalars()
+    rows = list(db.execute(stmt).scalars())
+    audit.record(
+        db,
+        actor_type="admin",
+        actor_id=actor.id,
+        action="admin_read",
+        resource_type="audit_log",
+    )
+    db.commit()
     return [
         {
             "id": r.id,

@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.core.database import get_session  # re-exported for routes
@@ -29,6 +29,7 @@ class CurrentUser:
 
 
 def current_user(
+    request: Request,
     creds: HTTPAuthorizationCredentials | None = Depends(_bearer),
 ) -> CurrentUser:
     if creds is None or not creds.credentials:
@@ -44,6 +45,8 @@ def current_user(
             detail="Invalid or expired token.",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    # Record the opaque user id for access-log correlation (not PHI).
+    request.state.user_id = payload["sub"]
     return CurrentUser(id=payload["sub"], role=payload.get("role", ""))
 
 
