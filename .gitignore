@@ -1,0 +1,45 @@
+# ---- Secrets / environment (NEVER commit) ----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+*.secret
+
+# ---- Python ----
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+dist/
+build/
+
+# ---- Local data / databases (no real PHI in repo) ----
+*.sqlite3
+*.db
+data/
+uploads/
+storage/
+
+# ---- Node / web (future) ----
+node_modules/
+.next/
+.turbo/
+
+# ---- OS / editor ----
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*~$*
+~$*
+
+# ---- Office lock files ----
+~$*.docx

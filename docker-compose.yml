@@ -1,0 +1,53 @@
+# Metabolic Care Platform — local dev infrastructure (skeleton).
+# Brings up the data stores the architecture targets. The backend itself runs
+# from .venv in dev; containerizing it is a P1 task. No real secrets here — set
+# strong values via a local .env (never committed).
+
+services:
+  postgres:
+    # TimescaleDB image = PostgreSQL + TimescaleDB + (pgvector available via extension)
+    image: timescale/timescaledb-ha:pg16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-mcp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mcp_dev_only}
+      POSTGRES_DB: ${POSTGRES_DB:-mcp}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/home/postgres/pgdata/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mcp}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minio_dev_only}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:
+  miniodata:

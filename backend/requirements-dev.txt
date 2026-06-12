@@ -1,0 +1,5 @@
+# Metabolic Care Platform — backend dev/test dependencies
+-r requirements.txt
+pytest>=8
+httpx>=0.27
+ruff>=0.6

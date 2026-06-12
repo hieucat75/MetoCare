@@ -1,0 +1,22 @@
+[project]
+name = "mcp-backend"
+version = "0.1.0"
+description = "Metabolic Care Platform — FastAPI modular monolith (Sprint 0 foundation)"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["app", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["B008"]  # FastAPI Depends() in defaults is idiomatic
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B011"]

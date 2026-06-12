@@ -1,0 +1,61 @@
+"""Test fixtures.
+
+IMPORTANT: configure a throwaway SQLite database and mock modes via env vars
+*before* importing the app, so no real infra / provider / PHI is ever touched.
+"""
+
+from __future__ import annotations
+
+import os
+import tempfile
+
+# Must run before any `app.*` import (engine is built at import time).
+_DB_DIR = tempfile.mkdtemp(prefix="mcp_test_")
+os.environ["MCP_DATABASE_URL"] = f"sqlite:///{_DB_DIR}/test.sqlite3"
+os.environ["MCP_ENV"] = "test"
+os.environ["MCP_AI_MODE"] = "mock"
+os.environ["MCP_OCR_MODE"] = "mock"
+
+import pytest  # noqa: E402
+from app.core.database import SessionLocal, create_all  # noqa: E402
+from app.main import app  # noqa: E402
+from app.models.patient import PatientProfile  # noqa: E402
+from app.models.user import User, UserRole  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _setup_db():
+    create_all()
+    yield
+
+
+@pytest.fixture
+def db():
+    session = SessionLocal()
+    try:
+        yield session
+    finally:
+        session.close()
+
+
+@pytest.fixture
+def patient(db):
+    """Seed a synthetic (NOT real) patient + owner user. Returns ids."""
+    user = User(
+        email=f"test-{os.urandom(4).hex()}@example.com",
+        password_hash="x",
+        role=UserRole.PATIENT,
+        full_name="Nguyễn Văn Test",
+    )
+    db.add(user)
+    db.flush()
+    profile = PatientProfile(user_id=user.id, full_name="Nguyễn Văn Test", waist_cm=95)
+    db.add(profile)
+    db.commit()
+    return {"user_id": user.id, "patient_id": profile.id}
+
+
+@pytest.fixture
+def client():
+    return TestClient(app)
