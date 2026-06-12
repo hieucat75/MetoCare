@@ -5,7 +5,8 @@
 > **Cập nhật:** Sprint 0 đã merge vào `main` (tag `v0.1.0-sprint0-foundation`).
 > - P1 #1–#3 (Database, Auth, Encryption) → [`FINAL_HANDOFF_P1.md`](FINAL_HANDOFF_P1.md).
 > - P1 #4–#5 + CI (Observability/Retention, Refresh+MFA, GitHub Actions) → [`FINAL_HANDOFF_P1_FINAL.md`](FINAL_HANDOFF_P1_FINAL.md).
-> Trạng thái hiện tại: **84 test pass, 1 skipped; ruff sạch; 4 migration; CI matrix 3.13/3.14.**
+> - P1 #6–#8 (Rate limit+lockout, Force-MFA-enroll, Refresh reuse-detection) → [`FINAL_HANDOFF_P1_COMPLETE.md`](FINAL_HANDOFF_P1_COMPLETE.md).
+> Trạng thái hiện tại: **P1 hoàn tất — 96 test pass, 1 skipped; ruff sạch; 5 migration; CI matrix 3.13/3.14.** P2 để dành fresh session.
 
 ---
 
