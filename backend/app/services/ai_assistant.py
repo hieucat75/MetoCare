@@ -67,6 +67,7 @@ def respond(
         user_id=user_id,
         messages=[LLMMessage(role="user", content=user_text)],
         system=policies.SYSTEM_SAFETY_PROMPT_VI,
+        with_rag=True,
     )
 
     return AIResponse(

@@ -45,9 +45,11 @@ def _reset_llm():
     """Drop the LLM gateway + provider singletons so cost-guard/cache state and
     any per-test config override never leak between tests."""
     from app.llm import reset_gateway, reset_provider
+    from app.rag import reset_retriever
 
     reset_gateway()
     reset_provider()
+    reset_retriever()
     yield
 
 

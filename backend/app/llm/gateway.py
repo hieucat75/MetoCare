@@ -29,6 +29,25 @@ class LLMGateway:
         self._cost = cost_guard
         self._cache = cache
 
+    @staticmethod
+    def _augment_with_rag(
+        system: str, rag_query: str | None, messages: list[LLMMessage]
+    ) -> str:
+        # Lazy import keeps the LLM package independent of the RAG package.
+        from app.rag import get_retriever
+
+        query = rag_query
+        if not query:
+            for msg in reversed(messages):
+                if msg.role == "user":
+                    query = msg.content
+                    break
+        context = get_retriever().build_context(query or "")
+        if not context:
+            return system
+        registry.inc_counter("llm_rag_augmented_total")
+        return f"{system}\n\n{context}"
+
     def complete(
         self,
         *,
@@ -37,6 +56,8 @@ class LLMGateway:
         system: str | None = None,
         max_tokens: int | None = None,
         temperature: float | None = None,
+        with_rag: bool = False,
+        rag_query: str | None = None,
         now: float | None = None,
     ) -> LLMResponse:
         settings = get_settings()
@@ -44,6 +65,11 @@ class LLMGateway:
         system = system or policies.SYSTEM_SAFETY_PROMPT_VI
         max_tokens = max_tokens if max_tokens is not None else settings.llm_max_tokens
         temperature = temperature if temperature is not None else settings.llm_temperature
+
+        # 0. Optional RAG augmentation — retrieve approved context and prepend it
+        # to the system prompt. Retrieved text is injection-vetted by the retriever.
+        if with_rag and settings.rag_enabled:
+            system = self._augment_with_rag(system, rag_query, messages)
 
         # 1. Cost / rate guard (raises LLMRateLimitError -> 429).
         self._cost.check(user_id, now=now)

@@ -152,3 +152,20 @@ score (4 profile), consent/audit (gate + scope + revoke + audit write), API (14 
 - `/ai/chat` giữ **không bắt buộc auth** (backward-compat 96 test cũ); cost-subject lấy từ token sub nếu có, else client IP.
 - Skeleton provider raise lỗi rõ ràng thay vì degrade thầm → dev/test không bao giờ chạm provider thật.
 - Guardrail đặt trong gateway (không ở adapter) → không code path nào emit response chưa validate.
+
+### P2 #2 — RAG Retrieval (DONE)
+
+**Files mới:** `app/rag/{__init__,errors,embedding,vector_store,knowledge_base,retrieval}.py`, `data/rag_seed/{metabolic_disorders,biomarkers,lifestyle}.md`, `tests/test_rag.py`.
+**Files sửa:** `app/llm/gateway.py` (+`with_rag`/`rag_query`, `_augment_with_rag`), `app/services/ai_assistant.py` (bật `with_rag=True`), `app/domain/policies.py` (+`INSTRUCTION_INJECTION_PATTERNS`), `app/domain/guardrails.py` (+`is_injection`), `tests/conftest.py` (reset_retriever).
+
+**Đã làm:**
+- `EmbeddingProvider` ABC: `MockEmbedding` (hash bag-of-words, deterministic, normalize cosine) + `OpenAIEmbedding` skeleton (raise `RAGConfigError`).
+- `VectorStore` ABC: `InMemoryVectorStore` (cosine, không faiss) + `PgVectorStore`/`QdrantStore` skeleton.
+- `KnowledgeBase`: load `data/rag_seed/*.md`, chunk theo heading `##`, **vet injection khi ingest** (drop chunk có injection, đếm `skipped_injection`).
+- Pipeline `Retriever`: query → embed → top-k (over-fetch) → rerank (0.7 cosine + 0.3 lexical overlap) → lọc injection lần nữa → context window có nhãn "ĐÃ DUYỆT".
+- Gateway `with_rag=True`: retrieve + prepend context vào system prompt (lazy import, không circular); `ai_assistant` bật mặc định.
+- Seed content tiếng Việt đã duyệt: rối loạn chuyển hóa, biomarker, lối sống — disclaimer "không phải chẩn đoán", không PHI.
+
+**Test (thật):** `tests/test_rag.py` 9 test — embedding determinism + similarity ranking, chunking, load seed, injection reject (ingest), retrieval relevance + determinism, empty query, context marker, RAG-augmented gateway vẫn qua guardrail. Tổng suite **118 passed, 1 skipped**; ruff sạch; compileall OK.
+
+**An toàn:** retrieved context qua `is_injection` 2 lớp (ingest + retrieve) → corpus poisoning không override safety prompt; mock embedding/in-memory store → không dependency nặng, không gọi mạng.
