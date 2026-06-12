@@ -20,6 +20,7 @@ def record(
     resource_type: str,
     resource_id: str | None = None,
     outcome: str = "success",
+    severity: str = "info",
     ip_address: str | None = None,
     device: str | None = None,
 ) -> AuditLog:
@@ -30,6 +31,7 @@ def record(
         resource_type=resource_type,
         resource_id=resource_id,
         outcome=outcome,
+        severity=severity,
         ip_address=ip_address,
         device=device,
     )

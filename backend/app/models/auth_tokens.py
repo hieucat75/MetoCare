@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -25,6 +25,11 @@ class RefreshToken(UUIDPrimaryKey, TimestampMixin, Base):
     revoked_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
     # Whether the session this token belongs to was MFA-verified.
     mfa: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Rotation chain: all tokens of one login session share family_id; each
+    # rotation increments generation. Reuse of a rotated (revoked) token revokes
+    # the whole family (compromise signal).
+    family_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    generation: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
 
 class MfaBackupCode(UUIDPrimaryKey, TimestampMixin, Base):

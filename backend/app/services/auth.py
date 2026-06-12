@@ -86,8 +86,19 @@ def authenticate(db: Session, *, email: str, password: str) -> User:
     return user
 
 
-def issue_tokens(db: Session, user: User, *, mfa: bool = False) -> tuple[str, str]:
-    """Issue an access token + a persisted, revocable refresh token."""
+def issue_tokens(
+    db: Session,
+    user: User,
+    *,
+    mfa: bool = False,
+    family_id: str | None = None,
+    generation: int = 0,
+) -> tuple[str, str]:
+    """Issue an access token + a persisted, revocable refresh token.
+
+    family_id groups a rotation chain (one login session); generation increments
+    on each rotation. A new login starts a fresh family.
+    """
     enrollment_required = user.role in MFA_REQUIRED_ROLES and not user.mfa_enabled
     access = create_access_token(
         subject=user.id,
@@ -103,6 +114,8 @@ def issue_tokens(db: Session, user: User, *, mfa: bool = False) -> tuple[str, st
             jti=jti,
             expires_at=utcnow() + dt.timedelta(minutes=ttl),
             mfa=mfa,
+            family_id=family_id or uuid.uuid4().hex,
+            generation=generation,
         )
     )
     db.commit()
@@ -110,16 +123,53 @@ def issue_tokens(db: Session, user: User, *, mfa: bool = False) -> tuple[str, st
     return access, refresh
 
 
+def _revoke_family(db: Session, family_id: str) -> int:
+    """Revoke every still-active token in a refresh-token family."""
+    rows = db.execute(
+        select(RefreshToken).where(
+            RefreshToken.family_id == family_id, RefreshToken.revoked_at.is_(None)
+        )
+    ).scalars()
+    now = utcnow()
+    count = 0
+    for token in rows:
+        token.revoked_at = now
+        count += 1
+    db.flush()
+    return count
+
+
 def refresh_session(db: Session, refresh_token: str) -> tuple[str, str, User]:
-    """Validate + rotate a refresh token. Old token is revoked (single use)."""
+    """Validate + rotate a refresh token. Old token is revoked (single use).
+
+    Reuse of an already-revoked token signals theft: the entire family is
+    revoked and a high-severity audit entry is written.
+    """
     payload = decode_token(refresh_token)
     if not payload or payload.get("type") != "refresh" or not payload.get("jti"):
         raise AuthError("invalid refresh token")
     rt = db.execute(
         select(RefreshToken).where(RefreshToken.jti == payload["jti"])
     ).scalar_one_or_none()
-    if rt is None or rt.revoked_at is not None:
-        raise AuthError("refresh token revoked")
+    if rt is None:
+        raise AuthError("invalid refresh token")
+
+    if rt.revoked_at is not None:
+        # Reuse detected -> nuke the whole family (compromise signal).
+        _revoke_family(db, rt.family_id)
+        audit.record(
+            db,
+            actor_type="user",
+            actor_id=rt.user_id,
+            action="refresh_token_reuse_detected",
+            resource_type="refresh_token_family",
+            resource_id=rt.family_id,
+            outcome="deny",
+            severity="high",
+        )
+        db.commit()
+        raise AuthError("refresh token reuse detected; session revoked")
+
     if as_naive_utc(rt.expires_at) < utcnow():
         raise AuthError("refresh token expired")
     user = db.get(User, payload.get("sub"))
@@ -137,7 +187,9 @@ def refresh_session(db: Session, refresh_token: str) -> tuple[str, str, User]:
         resource_id=rt.id,
     )
     db.commit()
-    access, new_refresh = issue_tokens(db, user, mfa=rt.mfa)
+    access, new_refresh = issue_tokens(
+        db, user, mfa=rt.mfa, family_id=rt.family_id, generation=rt.generation + 1
+    )
     return access, new_refresh, user
 
 

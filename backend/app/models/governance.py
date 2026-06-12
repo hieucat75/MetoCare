@@ -62,6 +62,7 @@ class AuditLog(UUIDPrimaryKey, Base):
     resource_type: Mapped[str] = mapped_column(String(48), nullable=False)
     resource_id: Mapped[str | None] = mapped_column(String(36), index=True)
     outcome: Mapped[str] = mapped_column(String(16), default="success")  # success/deny
+    severity: Mapped[str] = mapped_column(String(16), default="info")  # info/warning/high
     ip_address: Mapped[str | None] = mapped_column(String(64))
     device: Mapped[str | None] = mapped_column(String(128))
     timestamp: Mapped[dt.datetime] = mapped_column(

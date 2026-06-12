@@ -21,23 +21,20 @@ def _register(client, email=None, password="password123", role="patient"):
 # Refresh tokens
 # --------------------------------------------------------------------------- #
 
-def test_refresh_rotates_and_old_token_is_revoked(client):
+def test_refresh_rotation_chain(client):
     _, _, tok = _register(client)
-    old_refresh = tok["refresh_token"]
+    t0 = tok["refresh_token"]
 
-    r = client.post("/api/v1/auth/refresh", json={"refresh_token": old_refresh})
-    assert r.status_code == 200, r.text
-    new = r.json()
-    assert new["access_token"] and new["refresh_token"]
-    assert new["refresh_token"] != old_refresh
+    r1 = client.post("/api/v1/auth/refresh", json={"refresh_token": t0})
+    assert r1.status_code == 200, r1.text
+    t1 = r1.json()["refresh_token"]
+    assert t1 != t0
 
-    # Reusing the rotated (old) refresh token must fail.
-    reuse = client.post("/api/v1/auth/refresh", json={"refresh_token": old_refresh})
-    assert reuse.status_code == 401
-
-    # The new refresh token works.
-    again = client.post("/api/v1/auth/refresh", json={"refresh_token": new["refresh_token"]})
-    assert again.status_code == 200
+    # The newest token continues to rotate cleanly.
+    r2 = client.post("/api/v1/auth/refresh", json={"refresh_token": t1})
+    assert r2.status_code == 200
+    assert r2.json()["refresh_token"] not in (t0, t1)
+    # (Reuse of a rotated token is covered in test_reuse_detection.)
 
 
 def test_logout_revokes_refresh_token(client):
