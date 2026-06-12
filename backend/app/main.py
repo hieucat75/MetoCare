@@ -36,7 +36,18 @@ def create_app() -> FastAPI:
         # (create_all would make plain tables without the hypertable/CAGG).
         if not settings.is_prod and settings.database_url.startswith("sqlite"):
             create_all()
-        yield
+        # Start the async OCR worker (built-in asyncio queue; no Celery/Redis).
+        worker = None
+        if settings.ocr_worker_enabled:
+            from app.services.lab_pipeline import get_worker
+
+            worker = get_worker()
+            worker.start()
+        try:
+            yield
+        finally:
+            if worker is not None:
+                await worker.stop()
 
     app = FastAPI(
         title=settings.app_name,

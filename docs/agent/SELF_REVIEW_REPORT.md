@@ -169,3 +169,43 @@ score (4 profile), consent/audit (gate + scope + revoke + audit write), API (14 
 **Test (thật):** `tests/test_rag.py` 9 test — embedding determinism + similarity ranking, chunking, load seed, injection reject (ingest), retrieval relevance + determinism, empty query, context marker, RAG-augmented gateway vẫn qua guardrail. Tổng suite **118 passed, 1 skipped**; ruff sạch; compileall OK.
 
 **An toàn:** retrieved context qua `is_injection` 2 lớp (ingest + retrieve) → corpus poisoning không override safety prompt; mock embedding/in-memory store → không dependency nặng, không gọi mạng.
+
+### P2 #3 — OCR worker foundation (DONE)
+
+**Files mới:** `app/services/{ocr,notifications,lab_pipeline}.py`, `alembic/versions/a1b2c3d4e5f6_lab_document_pipeline_status.py`, `tests/test_lab_pipeline.py`.
+**Files sửa:** `app/models/clinical.py` (+`LabDocument.status`), `app/main.py` (start/stop worker trong lifespan), `app/api/v1/routes/lab.py` (+`/process` 202, +`GET /lab-documents/{id}`), `app/schemas/lab.py` (+`status`, `LabDocumentStatusOut`), `tests/conftest.py` (disable worker + reset).
+
+**Đã làm:**
+- `OCRProvider` ABC: `MockOCRProvider` (fixture map theo storage_key: default/normal/critical panel; key chứa "fail"/"corrupt" → `OCRExtractionError`) + `TesseractProvider`/`CloudOCRProvider` skeleton. Factory theo `MCP_OCR_PROVIDER`.
+- State machine `LabDocStatus`: `uploaded → ocr_pending → ocr_done → interpreted`, nhánh lỗi `ocr_failed`/`interpretation_failed` (retryable → ocr_pending). `_transition` validate, raise `InvalidTransition`.
+- Pipeline `process_document` (sync, self-contained, unit-testable): OCR → store raw_text (encrypted) → interpret_panel → store `LabResult` → audit → notify. Lỗi OCR/interpret → terminal failed state + audit `severity=warning outcome=failure` + notify (không raise lên worker).
+- Queue: built-in asyncio (`OCRWorkerManager`) — buffer + in-flight set + `asyncio.Event`; worker task trong FastAPI lifespan, `run_in_executor` cho sync DB. **Không** Celery/RQ/Redis.
+- Idempotency: re-enqueue khi in-flight hoặc đã `interpreted` → no-op (False); chỉ enqueue từ {uploaded, ocr_failed, interpretation_failed}.
+- Notification placeholder (`notifications.notify`, in-memory sink, no-PHI).
+- Migration `a1b2c3d4e5f6` thêm cột `status` (server_default 'uploaded') — up/down reversible, single head.
+
+**Test (thật):** `tests/test_lab_pipeline.py` 10 test — transition valid/invalid, register=uploaded, enqueue idempotent + missing, happy E2E (interpreted + LabResult + notify), re-enqueue-after-done no-op, OCR failure (ocr_failed + audit warning + retryable), process no-op khi chưa pending, **async worker drains queue** (asyncio.run), endpoint `/process` 202 + status. Tổng suite **128 passed, 1 skipped**; ruff sạch; compileall OK; alembic roundtrip up/down clean (single head `a1b2c3d4e5f6`).
+
+**An toàn / quyết định:**
+- Sync `lab.interpret_document` giữ nguyên cho backward-compat (96 test cũ); async pipeline là path mới song song.
+- Worker tắt trong test (`MCP_OCR_WORKER_ENABLED=false`) để pipeline chạy tất định; async worker có test riêng qua `asyncio.run`.
+- Failure không bao giờ crash worker loop; mọi lỗi → audit + notify + terminal state.
+
+---
+
+## Tổng kết P2 Foundation (3 phase)
+
+```
+pytest:                 128 passed, 1 skipped (TimescaleDB integration)
+ruff check:             All checks passed! (app, tests, alembic)
+compileall:             OK
+alembic up/down:        6 migrations, reversible, single head a1b2c3d4e5f6
+```
+
+| Phase | Test thêm | Trạng thái |
+|-------|-----------|-----------|
+| P2 #1 LLM Gateway | 13 | ✅ |
+| P2 #2 RAG | 9 | ✅ |
+| P2 #3 OCR worker | 10 | ✅ |
+
+**Bất biến an toàn giữ nguyên:** mọi LLM response qua guardrail; mock mode default mọi provider; skeleton không gọi mạng; không secret hardcode; không PHI thật trong test; backward-compat 96 test cũ xanh.

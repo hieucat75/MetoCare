@@ -15,8 +15,16 @@ class LabDocumentOut(BaseModel):
     id: str
     patient_id: str
     ocr_status: str
+    status: str = "uploaded"
 
     model_config = {"from_attributes": True}
+
+
+class LabDocumentStatusOut(BaseModel):
+    id: str
+    status: str
+    ocr_status: str
+    enqueued: bool = False
 
 
 class InterpretedBiomarkerOut(BaseModel):

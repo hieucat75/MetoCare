@@ -15,6 +15,9 @@ os.environ["MCP_DATABASE_URL"] = f"sqlite:///{_DB_DIR}/test.sqlite3"
 os.environ["MCP_ENV"] = "test"
 os.environ["MCP_AI_MODE"] = "mock"
 os.environ["MCP_OCR_MODE"] = "mock"
+# Drive the OCR pipeline deterministically in tests; the background worker is
+# exercised by a dedicated async test, not the shared TestClient app.
+os.environ["MCP_OCR_WORKER_ENABLED"] = "false"
 
 import pytest  # noqa: E402
 from app.core.database import SessionLocal, create_all  # noqa: E402
@@ -46,10 +49,14 @@ def _reset_llm():
     any per-test config override never leak between tests."""
     from app.llm import reset_gateway, reset_provider
     from app.rag import reset_retriever
+    from app.services import notifications
+    from app.services.lab_pipeline import get_worker
 
     reset_gateway()
     reset_provider()
     reset_retriever()
+    get_worker().reset()
+    notifications.reset()
     yield
 
 
