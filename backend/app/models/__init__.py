@@ -5,6 +5,7 @@ with ``Base.metadata`` before ``create_all`` / Alembic autogenerate runs.
 """
 
 from .ai import AIConversation
+from .auth_tokens import MfaBackupCode, RefreshToken
 from .care import Appointment, Clinic, Doctor
 from .clinical import (
     HealthMetric,
@@ -29,7 +30,9 @@ __all__ = [
     "LabDocument",
     "LabResult",
     "Medication",
+    "MfaBackupCode",
     "PatientProfile",
+    "RefreshToken",
     "RiskScore",
     "SymptomLog",
     "User",

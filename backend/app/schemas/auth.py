@@ -19,13 +19,36 @@ class RegisterRequest(BaseModel):
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
+    # Required only when the account has MFA enabled.
+    totp_code: str | None = None
+    backup_code: str | None = None
 
 
 class TokenResponse(BaseModel):
     access_token: str
+    refresh_token: str
     token_type: str = "bearer"
     role: str
     user_id: str
+    mfa: bool = False
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str
+
+
+class LogoutRequest(BaseModel):
+    refresh_token: str
+
+
+class MfaEnrollResponse(BaseModel):
+    secret: str
+    provisioning_uri: str
+    backup_codes: list[str]
+
+
+class MfaVerifyRequest(BaseModel):
+    totp_code: str
 
 
 class UserOut(BaseModel):
@@ -33,5 +56,6 @@ class UserOut(BaseModel):
     email: str
     role: str
     full_name: str | None = None
+    mfa_enabled: bool = False
 
     model_config = {"from_attributes": True}

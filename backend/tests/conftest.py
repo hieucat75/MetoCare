@@ -65,10 +65,15 @@ def patient(db):
 
 @pytest.fixture
 def token_for():
-    """Factory: mint a bearer-header dict for an arbitrary user id + role."""
+    """Factory: mint a bearer-header dict for an arbitrary user id + role.
 
-    def _make(user_id: str, role: str = "patient") -> dict[str, str]:
-        return {"Authorization": f"Bearer {create_access_token(subject=user_id, role=role)}"}
+    Defaults to an MFA-verified token so role-gated tests aren't blocked by the
+    MFA gate; pass mfa=False to exercise the MFA requirement explicitly.
+    """
+
+    def _make(user_id: str, role: str = "patient", mfa: bool = True) -> dict[str, str]:
+        token = create_access_token(subject=user_id, role=role, mfa=mfa)
+        return {"Authorization": f"Bearer {token}"}
 
     return _make
 

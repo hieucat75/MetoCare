@@ -17,7 +17,14 @@ from app.core.database import get_session  # re-exported for routes
 from app.core.security import decode_token
 from app.models.user import UserRole
 
-__all__ = ["get_session", "current_user", "current_user_id", "require_roles", "CurrentUser"]
+__all__ = [
+    "get_session",
+    "current_user",
+    "current_user_id",
+    "require_roles",
+    "require_mfa",
+    "CurrentUser",
+]
 
 _bearer = HTTPBearer(auto_error=False)
 
@@ -26,6 +33,7 @@ _bearer = HTTPBearer(auto_error=False)
 class CurrentUser:
     id: str
     role: str
+    mfa: bool = False
 
 
 def current_user(
@@ -47,7 +55,9 @@ def current_user(
         )
     # Record the opaque user id for access-log correlation (not PHI).
     request.state.user_id = payload["sub"]
-    return CurrentUser(id=payload["sub"], role=payload.get("role", ""))
+    return CurrentUser(
+        id=payload["sub"], role=payload.get("role", ""), mfa=bool(payload.get("mfa", False))
+    )
 
 
 def current_user_id(user: CurrentUser = Depends(current_user)) -> str:
@@ -67,3 +77,13 @@ def require_roles(*roles: UserRole) -> Callable[[CurrentUser], CurrentUser]:
         return user
 
     return _checker
+
+
+def require_mfa(user: CurrentUser = Depends(current_user)) -> CurrentUser:
+    """Require the session to have been MFA-verified (token claim mfa=true)."""
+    if not user.mfa:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="MFA verification required for this resource.",
+        )
+    return user

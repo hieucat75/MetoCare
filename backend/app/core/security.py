@@ -43,6 +43,7 @@ def create_access_token(
     *,
     subject: str,
     role: str,
+    mfa: bool = False,
     expires_minutes: int | None = None,
     extra: dict | None = None,
 ) -> str:
@@ -52,12 +53,27 @@ def create_access_token(
     payload = {
         "sub": subject,
         "role": role,
+        "mfa": mfa,  # True iff the session was MFA-verified at login
         "iat": int(now.timestamp()),
         "exp": int((now + dt.timedelta(minutes=ttl)).timestamp()),
         "type": "access",
     }
     if extra:
         payload.update(extra)
+    return jwt.encode(payload, settings.secret_key, algorithm=_ALGO)
+
+
+def create_refresh_token(*, subject: str, jti: str, expires_minutes: int | None = None) -> str:
+    settings = get_settings()
+    ttl = expires_minutes or settings.refresh_token_ttl_minutes
+    now = dt.datetime.now(dt.UTC)
+    payload = {
+        "sub": subject,
+        "jti": jti,
+        "iat": int(now.timestamp()),
+        "exp": int((now + dt.timedelta(minutes=ttl)).timestamp()),
+        "type": "refresh",
+    }
     return jwt.encode(payload, settings.secret_key, algorithm=_ALGO)
 
 

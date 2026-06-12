@@ -33,3 +33,5 @@ class User(UUIDPrimaryKey, TimestampMixin, Base):
     full_name: Mapped[str | None] = mapped_column(EncryptedString)  # PHI: identity
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     mfa_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # TOTP shared secret, encrypted at rest (set during MFA enrollment).
+    mfa_secret: Mapped[str | None] = mapped_column(EncryptedString)
