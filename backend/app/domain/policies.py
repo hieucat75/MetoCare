@@ -134,11 +134,38 @@ UNAPPROVED_SOURCE_PATTERNS: tuple[str, ...] = (
     r"tôi (đọc được|thấy) trên (google|internet|mạng)",
 )
 
+# Prompt-injection patterns that retrieved RAG context must NOT carry into the
+# system prompt (defense-in-depth; the corpus is curated but never trusted blindly).
+INSTRUCTION_INJECTION_PATTERNS: tuple[str, ...] = (
+    r"bỏ qua (mọi |các |những )?(hướng dẫn|chỉ dẫn|quy tắc|lệnh)",
+    r"quên (mọi |các |những )?(hướng dẫn|chỉ dẫn|quy tắc)( trước)?",
+    r"không cần (tuân theo|làm theo) (hướng dẫn|quy tắc|guardrail)",
+    r"bạn (giờ |bây giờ )?(là|đóng vai) .{0,40}(không bị giới hạn|không giới hạn|tự do)",
+    r"ignore (all |any |the )?(previous |above |prior )?(instructions?|rules?|prompt)",
+    r"disregard (all |any |the )?(previous |above |prior )?(instructions?|rules?)",
+    r"you are now .{0,40}(unrestricted|no longer bound|free of)",
+    r"system prompt[:：]",
+    r"\bjailbreak\b",
+)
+
 # --------------------------------------------------------------------------- #
 # Mandatory disclaimer (AI_Safety_Guardrail.md §4.9, §4.10)
 # --------------------------------------------------------------------------- #
 
 DISCLAIMER_VI = "Thông tin này không thay thế tư vấn bác sĩ."
+
+# Mandatory safety system prompt injected into EVERY LLM call (§4.9). The LLM
+# Gateway prepends this; no generation path may omit it.
+SYSTEM_SAFETY_PROMPT_VI = (
+    "Bạn là trợ lý sức khỏe của Metabolic Care Platform. Bạn KHÔNG phải bác sĩ. "
+    "Bạn KHÔNG được: chẩn đoán khẳng định, kê đơn, gợi ý thuốc cụ thể, thay đổi liều thuốc, "
+    "xử lý cấp cứu như tư vấn thường, bịa thông tin/guideline. "
+    "Bạn ĐƯỢC: giải thích dễ hiểu, khuyến nghị lối sống, nhắc việc, phân tầng rủi ro, "
+    "và đề nghị gặp bác sĩ khi cần. Dùng ngôn ngữ khả năng/gợi ý, không khẳng định. "
+    "Chỉ dùng tri thức từ context đã duyệt; nếu thiếu, nói rõ giới hạn. "
+    "Nếu phát hiện dấu hiệu nguy hiểm, ngừng tư vấn và hướng người dùng tới cơ sở y tế ngay. "
+    "Luôn kết thúc bằng nhắc: thông tin này không thay thế tư vấn bác sĩ."
+)
 
 EMERGENCY_MESSAGE_VI = (
     "Mình ghi nhận dấu hiệu có thể nguy hiểm. Bạn nên liên hệ cơ sở y tế hoặc "

@@ -150,6 +150,15 @@ def check_output(ai_text: str) -> GuardrailResult:
     return GuardrailResult(decision=GuardrailDecision.ALLOW, reasons=["Output hợp lệ."])
 
 
+def is_injection(text: str) -> bool:
+    """True if `text` carries a prompt-injection attempt.
+
+    Used to vet RAG-retrieved context BEFORE it is prepended to the system prompt
+    so a poisoned corpus entry can't override the safety instructions.
+    """
+    return bool(_matches_any(_normalize(text), policies.INSTRUCTION_INJECTION_PATTERNS))
+
+
 def ensure_disclaimer(text: str) -> str:
     """Guarantee the mandatory disclaimer is present (idempotent)."""
     if policies.DISCLAIMER_VI in (text or ""):

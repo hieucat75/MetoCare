@@ -6,7 +6,8 @@
 > - P1 #1–#3 (Database, Auth, Encryption) → [`FINAL_HANDOFF_P1.md`](FINAL_HANDOFF_P1.md).
 > - P1 #4–#5 + CI (Observability/Retention, Refresh+MFA, GitHub Actions) → [`FINAL_HANDOFF_P1_FINAL.md`](FINAL_HANDOFF_P1_FINAL.md).
 > - P1 #6–#8 (Rate limit+lockout, Force-MFA-enroll, Refresh reuse-detection) → [`FINAL_HANDOFF_P1_COMPLETE.md`](FINAL_HANDOFF_P1_COMPLETE.md).
-> Trạng thái hiện tại: **P1 hoàn tất — 96 test pass, 1 skipped; ruff sạch; 5 migration; CI matrix 3.13/3.14.** P2 để dành fresh session.
+> Trạng thái hiện tại: **P1 hoàn tất — 96 test pass, 1 skipped; ruff sạch; 5 migration; CI matrix 3.13/3.14.**
+> - **P2 Foundation đang chạy** trên branch `foundation/p2-llm-gateway-rag-ocr` — xem [§P2 cuối file](#p2-foundation-llm-gateway--rag--ocr).
 
 ---
 
@@ -125,3 +126,86 @@ score (4 profile), consent/audit (gate + scope + revoke + audit write), API (14 
 | Có phá build? | ❌ Không (build/test xanh) |
 | Có migration rủi ro? | ❌ Chưa có migration (create_all dev only) |
 | Có update docs? | ✅ discovery + plan + self-review + README |
+
+---
+
+## P2 Foundation — LLM Gateway / RAG / OCR
+
+> Branch `foundation/p2-llm-gateway-rag-ocr` (từ `main`). Mỗi phase 1 commit, test xanh sau từng commit.
+
+### P2 #1 — LLM Gateway (DONE)
+
+**Files mới:** `app/llm/{__init__,base,errors,factory,cache,cost,gateway}.py`, `app/llm/providers/{__init__,mock,openai,anthropic}.py`, `tests/test_llm_gateway.py`.
+**Files sửa:** `app/services/ai_assistant.py` (dùng gateway thay mock cứng), `app/api/v1/routes/ai.py` (+user_id cost-subject, 429 mapping), `app/schemas/ai.py` (+model_used/cached), `app/core/config.py` (+LLM/RAG/OCR settings), `app/domain/policies.py` (+SYSTEM_SAFETY_PROMPT_VI), `tests/conftest.py` (reset gateway), `.env.example`.
+
+**Đã làm:**
+- `LLMProvider` abstract + `LLMResponse`/`LLMMessage`; adapters `MockLLMProvider` (default, deterministic, tiếng Việt), `OpenAIProvider`/`AnthropicProvider` skeleton (raise `LLMConfigError`, **không** gọi mạng).
+- Factory theo `MCP_LLM_PROVIDER`. Gateway = choke point duy nhất: cost-guard → cache → provider → **output guardrail** → disclaimer → token accounting + metrics.
+- Mọi response LLM đi qua `guardrails.check_output`; BLOCK → safe message + disclaimer (`blocked=True`).
+- Cost/rate guard per-user (sliding 60s, RPM + TPM) → `LLMRateLimitError` → HTTP 429 (Retry-After).
+- LRU cache (TTL + max-entries) khóa theo provider+model+system+messages+user → cache hit miễn phí token.
+- `ai_assistant.respond` giữ input-guardrail (red flag escalate) + medication redirect (không gọi model), phần generation qua gateway.
+
+**Test (thật):** `tests/test_llm_gateway.py` 13 test — factory switch/unknown, mock determinism, guardrail BLOCK trong gateway, RPM/TPM cap + window slide, 429 E2E, cache hit/miss/TTL/LRU. Tổng suite **109 passed, 1 skipped**; ruff sạch; compileall OK.
+
+**Quyết định / ghi chú an toàn:**
+- `/ai/chat` giữ **không bắt buộc auth** (backward-compat 96 test cũ); cost-subject lấy từ token sub nếu có, else client IP.
+- Skeleton provider raise lỗi rõ ràng thay vì degrade thầm → dev/test không bao giờ chạm provider thật.
+- Guardrail đặt trong gateway (không ở adapter) → không code path nào emit response chưa validate.
+
+### P2 #2 — RAG Retrieval (DONE)
+
+**Files mới:** `app/rag/{__init__,errors,embedding,vector_store,knowledge_base,retrieval}.py`, `data/rag_seed/{metabolic_disorders,biomarkers,lifestyle}.md`, `tests/test_rag.py`.
+**Files sửa:** `app/llm/gateway.py` (+`with_rag`/`rag_query`, `_augment_with_rag`), `app/services/ai_assistant.py` (bật `with_rag=True`), `app/domain/policies.py` (+`INSTRUCTION_INJECTION_PATTERNS`), `app/domain/guardrails.py` (+`is_injection`), `tests/conftest.py` (reset_retriever).
+
+**Đã làm:**
+- `EmbeddingProvider` ABC: `MockEmbedding` (hash bag-of-words, deterministic, normalize cosine) + `OpenAIEmbedding` skeleton (raise `RAGConfigError`).
+- `VectorStore` ABC: `InMemoryVectorStore` (cosine, không faiss) + `PgVectorStore`/`QdrantStore` skeleton.
+- `KnowledgeBase`: load `data/rag_seed/*.md`, chunk theo heading `##`, **vet injection khi ingest** (drop chunk có injection, đếm `skipped_injection`).
+- Pipeline `Retriever`: query → embed → top-k (over-fetch) → rerank (0.7 cosine + 0.3 lexical overlap) → lọc injection lần nữa → context window có nhãn "ĐÃ DUYỆT".
+- Gateway `with_rag=True`: retrieve + prepend context vào system prompt (lazy import, không circular); `ai_assistant` bật mặc định.
+- Seed content tiếng Việt đã duyệt: rối loạn chuyển hóa, biomarker, lối sống — disclaimer "không phải chẩn đoán", không PHI.
+
+**Test (thật):** `tests/test_rag.py` 9 test — embedding determinism + similarity ranking, chunking, load seed, injection reject (ingest), retrieval relevance + determinism, empty query, context marker, RAG-augmented gateway vẫn qua guardrail. Tổng suite **118 passed, 1 skipped**; ruff sạch; compileall OK.
+
+**An toàn:** retrieved context qua `is_injection` 2 lớp (ingest + retrieve) → corpus poisoning không override safety prompt; mock embedding/in-memory store → không dependency nặng, không gọi mạng.
+
+### P2 #3 — OCR worker foundation (DONE)
+
+**Files mới:** `app/services/{ocr,notifications,lab_pipeline}.py`, `alembic/versions/a1b2c3d4e5f6_lab_document_pipeline_status.py`, `tests/test_lab_pipeline.py`.
+**Files sửa:** `app/models/clinical.py` (+`LabDocument.status`), `app/main.py` (start/stop worker trong lifespan), `app/api/v1/routes/lab.py` (+`/process` 202, +`GET /lab-documents/{id}`), `app/schemas/lab.py` (+`status`, `LabDocumentStatusOut`), `tests/conftest.py` (disable worker + reset).
+
+**Đã làm:**
+- `OCRProvider` ABC: `MockOCRProvider` (fixture map theo storage_key: default/normal/critical panel; key chứa "fail"/"corrupt" → `OCRExtractionError`) + `TesseractProvider`/`CloudOCRProvider` skeleton. Factory theo `MCP_OCR_PROVIDER`.
+- State machine `LabDocStatus`: `uploaded → ocr_pending → ocr_done → interpreted`, nhánh lỗi `ocr_failed`/`interpretation_failed` (retryable → ocr_pending). `_transition` validate, raise `InvalidTransition`.
+- Pipeline `process_document` (sync, self-contained, unit-testable): OCR → store raw_text (encrypted) → interpret_panel → store `LabResult` → audit → notify. Lỗi OCR/interpret → terminal failed state + audit `severity=warning outcome=failure` + notify (không raise lên worker).
+- Queue: built-in asyncio (`OCRWorkerManager`) — buffer + in-flight set + `asyncio.Event`; worker task trong FastAPI lifespan, `run_in_executor` cho sync DB. **Không** Celery/RQ/Redis.
+- Idempotency: re-enqueue khi in-flight hoặc đã `interpreted` → no-op (False); chỉ enqueue từ {uploaded, ocr_failed, interpretation_failed}.
+- Notification placeholder (`notifications.notify`, in-memory sink, no-PHI).
+- Migration `a1b2c3d4e5f6` thêm cột `status` (server_default 'uploaded') — up/down reversible, single head.
+
+**Test (thật):** `tests/test_lab_pipeline.py` 10 test — transition valid/invalid, register=uploaded, enqueue idempotent + missing, happy E2E (interpreted + LabResult + notify), re-enqueue-after-done no-op, OCR failure (ocr_failed + audit warning + retryable), process no-op khi chưa pending, **async worker drains queue** (asyncio.run), endpoint `/process` 202 + status. Tổng suite **128 passed, 1 skipped**; ruff sạch; compileall OK; alembic roundtrip up/down clean (single head `a1b2c3d4e5f6`).
+
+**An toàn / quyết định:**
+- Sync `lab.interpret_document` giữ nguyên cho backward-compat (96 test cũ); async pipeline là path mới song song.
+- Worker tắt trong test (`MCP_OCR_WORKER_ENABLED=false`) để pipeline chạy tất định; async worker có test riêng qua `asyncio.run`.
+- Failure không bao giờ crash worker loop; mọi lỗi → audit + notify + terminal state.
+
+---
+
+## Tổng kết P2 Foundation (3 phase)
+
+```
+pytest:                 128 passed, 1 skipped (TimescaleDB integration)
+ruff check:             All checks passed! (app, tests, alembic)
+compileall:             OK
+alembic up/down:        6 migrations, reversible, single head a1b2c3d4e5f6
+```
+
+| Phase | Test thêm | Trạng thái |
+|-------|-----------|-----------|
+| P2 #1 LLM Gateway | 13 | ✅ |
+| P2 #2 RAG | 9 | ✅ |
+| P2 #3 OCR worker | 10 | ✅ |
+
+**Bất biến an toàn giữ nguyên:** mọi LLM response qua guardrail; mock mode default mọi provider; skeleton không gọi mạng; không secret hardcode; không PHI thật trong test; backward-compat 96 test cũ xanh.

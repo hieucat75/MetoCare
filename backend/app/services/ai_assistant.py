@@ -1,21 +1,23 @@
-"""AI Assistant service — guardrailed responder.
+"""AI Assistant service — guardrailed responder over the LLM Gateway.
 
-Implements the pipeline shape of ``Technical_Architecture.md`` §4.3 at foundation
-level: input guardrail -> (mock) response generation -> output guardrail ->
-disclaimer -> safety log. NO LLM is called in mock mode (config MCP_AI_MODE),
-so dev/test never hit an external provider and no API key is required.
+Pipeline (Technical_Architecture.md §4.3 / AI_Safety_Guardrail.md):
+  input guardrail -> (red flag? escalate) -> (medication intent? safe redirect)
+  -> LLM Gateway.complete (provider + cost guard + cache + OUTPUT guardrail +
+     disclaimer) -> map to AIResponse.
 
-The point of this service is to PROVE the guardrail wraps every response and
-that no code path can emit an unsafe message.
+Generation now goes through ``app.llm`` via the provider factory (mock by default
+= no external call). The output guardrail lives in the gateway so NO path can emit
+an unvalidated response; the input guardrail and medication redirect stay here
+because they decide whether to call the model at all.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from app.core.config import get_settings
 from app.domain import guardrails, policies
 from app.domain.guardrails import GuardrailDecision
+from app.llm import LLMMessage, get_gateway
 
 
 @dataclass
@@ -27,24 +29,15 @@ class AIResponse:
     safety_flags: list[str] = field(default_factory=list)
     model_used: str = "mock"
     blocked: bool = False
+    cached: bool = False
 
 
-def _mock_generate(user_text: str, intent: str) -> str:
-    """Deterministic, safe canned generation for dev/test. Uses probabilistic
-    language and never diagnoses/prescribes. Real generation goes through the
-    LLM Gateway in P1 (and still passes the SAME output guardrail)."""
-    base = (
-        "Cảm ơn bạn đã chia sẻ. Dựa trên thông tin bạn cung cấp, đây là một vài "
-        "gợi ý lối sống chung: duy trì vận động nhẹ sau bữa ăn, hạn chế đồ ngọt và "
-        "tinh bột nhanh, ngủ đủ giấc. Nếu bạn còn băn khoăn, nên trao đổi với bác sĩ "
-        "để được đánh giá phù hợp với tình trạng của bạn."
-    )
-    return base
-
-
-def respond(user_text: str, *, intent: str = "health_assistant") -> AIResponse:
-    settings = get_settings()
-
+def respond(
+    user_text: str,
+    *,
+    intent: str = "health_assistant",
+    user_id: str = "anonymous",
+) -> AIResponse:
     # ---- 1. Input guardrail (red flags short-circuit to escalation) ----
     in_result = guardrails.check_input(user_text)
     if in_result.decision == GuardrailDecision.ESCALATE:
@@ -54,39 +47,36 @@ def respond(user_text: str, *, intent: str = "health_assistant") -> AIResponse:
             risk_level="emergency",
             escalated_to_doctor=True,
             safety_flags=in_result.safety_flags,
-            model_used=settings.ai_mode,
+            model_used="guardrail",
         )
 
-    # ---- 2. Generation (mock by default; gateway is P1) ----
-    if settings.ai_mode == "mock":
-        raw = _mock_generate(user_text, intent)
-    else:  # pragma: no cover - real gateway not wired in foundation
-        raise NotImplementedError("LLM gateway not configured; set MCP_AI_MODE=mock.")
-
-    # If the user asked about medication/dose, force the safe redirect.
+    # ---- 2. Medication/dose questions never reach the model ----
     if any(f.startswith("intent:medication") for f in in_result.safety_flags):
-        raw = policies.SAFE_REFUSAL_MEDICATION_VI
-
-    # ---- 3. Output guardrail (Medical Safety Validator) ----
-    out_result = guardrails.check_output(raw)
-    if out_result.decision == GuardrailDecision.BLOCK:
         return AIResponse(
-            text=out_result.safe_message or policies.SAFE_REFUSAL_MEDICATION_VI,
+            text=policies.SAFE_REFUSAL_MEDICATION_VI,
             intent=intent,
             risk_level="low",
             escalated_to_doctor=False,
-            safety_flags=in_result.safety_flags + out_result.safety_flags,
-            model_used=settings.ai_mode,
-            blocked=True,
+            safety_flags=in_result.safety_flags,
+            model_used="guardrail",
         )
 
-    # ---- 4. Disclaimer + 5. return (caller logs to AIConversation) ----
-    text = guardrails.ensure_disclaimer(raw)
+    # ---- 3. Generation via the LLM Gateway (output guardrail enforced there) ----
+    gateway = get_gateway()
+    result = gateway.complete(
+        user_id=user_id,
+        messages=[LLMMessage(role="user", content=user_text)],
+        system=policies.SYSTEM_SAFETY_PROMPT_VI,
+        with_rag=True,
+    )
+
     return AIResponse(
-        text=text,
+        text=result.text,
         intent=intent,
         risk_level="low",
         escalated_to_doctor=False,
-        safety_flags=in_result.safety_flags,
-        model_used=settings.ai_mode,
+        safety_flags=in_result.safety_flags + result.safety_flags,
+        model_used=result.model,
+        blocked=result.blocked,
+        cached=result.cached,
     )

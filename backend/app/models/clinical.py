@@ -49,6 +49,9 @@ class LabDocument(UUIDPrimaryKey, TimestampMixin, Base):
     # PHI: raw OCR-extracted text encrypted at rest.
     raw_text: Mapped[str | None] = mapped_column(EncryptedString)
     ocr_status: Mapped[str] = mapped_column(String(24), default="pending")  # pending/done/failed
+    # Async pipeline state machine (P2 #3): uploaded -> ocr_pending ->
+    # ocr_done|ocr_failed -> interpreted|interpretation_failed.
+    status: Mapped[str] = mapped_column(String(32), default="uploaded", server_default="uploaded")
     data_classification: Mapped[str] = mapped_column(String(32), default="sensitive_health")
 
 
