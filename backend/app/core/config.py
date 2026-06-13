@@ -80,6 +80,9 @@ class Settings(BaseSettings):
     # ---- Observability ----
     log_level: str = "INFO"
     metrics_enabled: bool = True  # exposes /metrics; disable on untrusted edges
+    # Interactive API docs (Swagger UI /docs + ReDoc /redoc). On in dev for easy
+    # manual testing; FORCED off in prod regardless of this flag (see create_app).
+    enable_docs: bool = True
 
     # ---- Audit retention (days) by action category ----
     audit_retention_auth_days: int = 365
