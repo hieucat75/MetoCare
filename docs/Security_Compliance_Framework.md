@@ -1,4 +1,4 @@
-# Security & Compliance Framework — Metabolic Care Platform
+# Security & Compliance Framework — MetoCare
 
 > Khung bảo mật và tuân thủ cho hệ thống xử lý dữ liệu sức khỏe nhạy cảm. Mọi yêu cầu ở đây nêu rõ **cơ chế**, không dừng ở "cần bảo mật". Tham chiếu: Luật Bảo vệ dữ liệu cá nhân Việt Nam (hiệu lực 01/01/2026), dữ liệu sức khỏe thuộc nhóm dữ liệu cá nhân nhạy cảm.
 

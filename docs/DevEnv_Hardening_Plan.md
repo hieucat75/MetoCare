@@ -1,4 +1,4 @@
-# DevEnv Hardening Plan — Metabolic Care Platform
+# DevEnv Hardening Plan — MetoCare
 
 > Thiết kế môi trường phát triển an toàn, ổn định, bàn giao được cho team dev. Mục tiêu kép: dev chạy được hệ thống đầy đủ trên máy local trong < 1 giờ, và **không một byte dữ liệu y tế thật nào** lọt vào môi trường dev.
 

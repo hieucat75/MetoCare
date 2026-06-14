@@ -43,3 +43,6 @@ Thumbs.db
 
 # ---- Office lock files ----
 ~$*.docx
+
+# ---- Claude Code local settings (never commit) ----
+.claude/

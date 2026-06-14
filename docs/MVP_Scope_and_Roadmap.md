@@ -1,4 +1,4 @@
-# MVP Scope & Roadmap — Metabolic Care Platform
+# MVP Scope & Roadmap — MetoCare
 
 > Chốt MVP (làm gì, không làm gì) và lộ trình phát triển: 16 tuần MVP + 12 tháng, các pha phát hành, tiêu chí pilot, go/no-go và rủi ro. Nguyên tắc: **MVP không tham** — làm sâu một vòng giá trị cho một nhóm bệnh.
 

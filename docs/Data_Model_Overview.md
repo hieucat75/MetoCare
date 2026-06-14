@@ -1,4 +1,4 @@
-# Data Model Overview — Metabolic Care Platform
+# Data Model Overview — MetoCare
 
 > Thiết kế dữ liệu mức conceptual/logical: các entity lõi, quan hệ, phân loại dữ liệu, retention, xóa theo yêu cầu, truy cập gắn consent, auditability và định hướng tương thích FHIR. Chi tiết bảng vật lý sẽ do migration (Alembic) cụ thể hóa.
 

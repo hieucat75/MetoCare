@@ -1,4 +1,4 @@
-# AI Safety Guardrail — Metabolic Care Platform
+# AI Safety Guardrail — MetoCare
 
 > Định nghĩa ranh giới an toàn cho AI y tế trong MCP. Đây là tài liệu ràng buộc cứng: mọi engine AI (Lab Interpreter, Nutrition Coach, Health Assistant, Triage, Doctor Summary) phải tuân thủ. Nguyên tắc nền: **AI không thay thế bác sĩ. AI hỗ trợ + giải thích + phân tầng, rồi chuyển bác sĩ khi cần.**
 

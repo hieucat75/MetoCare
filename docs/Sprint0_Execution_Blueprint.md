@@ -1,4 +1,4 @@
-# Sprint 0 Execution Blueprint — Metabolic Care Platform
+# Sprint 0 Execution Blueprint — MetoCare
 
 > Kế hoạch Sprint 0 (2–3 tuần) để team đặt nền kỹ thuật và sản phẩm trước khi vào sprint phát triển tính năng. Kết thúc Sprint 0, team phải "sẵn sàng để chạy nước rút" với nền tảng an toàn, có contract, có khung guardrail và backlog rõ.
 

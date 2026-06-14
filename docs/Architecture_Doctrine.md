@@ -1,4 +1,4 @@
-# Architecture Doctrine — Metabolic Care Platform (MCP)
+# Architecture Doctrine — MetoCare (MCP)
 
 > Tài liệu học thuyết kiến trúc tổng thể. Đây là tài liệu "luật gốc" của dự án. Mọi quyết định kỹ thuật, sản phẩm và AI về sau phải nhất quán với các nguyên tắc trong file này. Khi có xung đột, doctrine thắng.
 
@@ -6,7 +6,7 @@
 
 ## 1. Purpose
 
-Thiết lập bộ nguyên tắc kiến trúc bất biến (architecture principles) và các quyết định nền tảng (foundational decisions) cho Metabolic Care Platform — nền tảng quản lý sức khỏe chuyển hóa cá nhân hóa kết hợp tracking, AI care và kết nối bác sĩ/phòng khám.
+Thiết lập bộ nguyên tắc kiến trúc bất biến (architecture principles) và các quyết định nền tảng (foundational decisions) cho MetoCare — nền tảng quản lý sức khỏe chuyển hóa cá nhân hóa kết hợp tracking, AI care và kết nối bác sĩ/phòng khám.
 
 Tài liệu này dùng để:
 
