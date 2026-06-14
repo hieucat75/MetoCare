@@ -90,3 +90,43 @@ Postgres/TimescaleDB verification on a Docker host and confirm GitHub CI is gree
 - **REASON:** All local validation green (136/1 skipped, ruff/compileall/compose); CI red root-caused and
   fixed (seed committed); changes additive, no medical/guardrail/foundation changes; Postgres/Timescale
   honestly unverified (Docker DOWN). Needs PTH review + CI-green confirmation before merge.
+
+---
+
+## 10. Codex changes-requested fixes (PR #2 re-review)
+
+Codex (`codex review --base main`) returned 1×P1 + 2×P2 (see `CODEX_REVIEW_PR2.md`). All 3 addressed:
+
+### FIX 1 [P1] — Refresh cleanup preserves revoked-unexpired tokens
+`auth.cleanup_expired_refresh_tokens` — `app/services/auth.py`
+
+- **Before:** deleted on `expires_at < now` **OR** `revoked_at < now - grace(7d)`. With refresh TTL
+  (default 7d, configurable higher) a revoked token could be deleted while its JWT was still valid →
+  replay looked like an *unknown* token → reuse-detection bypassed.
+- **After:** deletes **ONLY** `expires_at < now`. Revoked-but-unexpired rows are kept so
+  `refresh_session` can still detect replay and revoke the family. `revoked_grace_days` param removed.
+- **Tests:** `test_cleanup_deletes_expired_keeps_revoked_unexpired` (4 cases) +
+  `test_reuse_detection_survives_cleanup` (rotate → cleanup → replay still detected, family revoked).
+
+### FIX 2 [P2] — Atomic Redis INCR+EXPIRE
+`RedisRateLimiter` — `app/core/ratelimit.py`
+
+- **Before:** `INCR` then a separate `EXPIRE` (only if count==1) — a crash between them leaves a key
+  with no TTL → client permanently rate-limited.
+- **After:** cached Lua script (`_INCR_EXPIRE_LUA`, registered via `register_script`) does INCR +
+  conditional EXPIRE atomically; fallback to `SET key 0 NX EX window` then `INCR` (TTL set on creation)
+  when scripting is unavailable. Lazy/optional redis preserved; in-memory backend unchanged.
+- **Test:** `test_redis_ttl_always_set_atomically` (TTL > 0 after every request).
+
+### FIX 3 [P2] — Namespaced keys + SCAN/UNLINK (no flushdb)
+`RedisRateLimiter` + config — `app/core/ratelimit.py`, `config.py`, `.env.example`
+
+- **Before:** `reset()` called `flushdb()` → wiped the entire Redis DB (shared caches/queues), and via
+  `reset_all()` test fixture could destroy unrelated data.
+- **After:** all keys namespaced with `ratelimit_redis_prefix` (default `metocare:ratelimit:`,
+  configurable); `reset()` does `scan_iter(match=prefix*)` + `unlink`/`delete` only. **flushdb removed.**
+- **Test:** `test_redis_keys_are_namespaced` + `test_redis_reset_only_deletes_namespace_not_flushdb`
+  (unrelated `cache:*`/`session:*` keys survive).
+
+**Re-validation:** 139 passed, 1 skipped; ruff clean; compileall OK; docker-compose valid; Docker still
+DOWN → Postgres/Timescale still NOT verified. Medical logic / guardrails untouched. No secrets/PHI.

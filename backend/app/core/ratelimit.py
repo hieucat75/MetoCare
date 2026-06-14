@@ -94,16 +94,33 @@ class LockoutManager:
                 self._fails.pop(key, None)
 
 
+# Atomic fixed-window increment: INCR then EXPIRE only on first hit, in one
+# round-trip so a counter can never be left without a TTL (avoids permanently
+# rate-limiting a client after a mid-operation crash).
+_INCR_EXPIRE_LUA = """
+local v = redis.call('INCR', KEYS[1])
+if v == 1 then
+  redis.call('EXPIRE', KEYS[1], ARGV[1])
+end
+return v
+"""
+
+
 class RedisRateLimiter(RateLimiter):
     """Distributed limiter backed by Redis (shared across instances).
 
-    Uses a fixed-window counter (INCR + EXPIRE) — an approximation of the token
-    bucket that is atomic and cheap in Redis. `redis` is imported lazily so it
-    stays an OPTIONAL dependency (not in hard requirements); a client can also be
-    injected (used by tests with a fake client, no real Redis needed).
+    Fixed-window counter. The INCR+EXPIRE is made **atomic** via a cached Lua
+    script (falls back to ``SET key 0 NX EX window`` then ``INCR`` if scripting is
+    unavailable — that also guarantees a TTL exists). All keys are **namespaced**
+    by ``prefix`` so ``reset()`` only ever touches limiter keys (never flushdb).
+
+    `redis` is imported lazily so it stays an OPTIONAL dependency; a client can be
+    injected (tests use a fake client — no real Redis needed).
     """
 
-    def __init__(self, client=None, url: str | None = None) -> None:
+    def __init__(
+        self, client=None, url: str | None = None, prefix: str = "metocare:ratelimit:"
+    ) -> None:
         if client is not None:
             self._r = client
         else:  # pragma: no cover - requires the optional redis package + server
@@ -117,20 +134,51 @@ class RedisRateLimiter(RateLimiter):
                 raise RuntimeError("MCP_RATELIMIT_REDIS_URL is required for the redis backend.")
             self._r = redis.Redis.from_url(url)
 
+        self._prefix = prefix
+        self._script = None
+        register = getattr(self._r, "register_script", None)
+        if callable(register):
+            try:
+                self._script = register(_INCR_EXPIRE_LUA)
+            except Exception:  # noqa: BLE001 - scripting optional; fall back below
+                self._script = None
+
+    def _full_key(self, key: str) -> str:
+        return f"{self._prefix}{key}"
+
+    def _incr_with_ttl(self, rkey: str, window: int) -> int:
+        # Preferred: atomic Lua.
+        if self._script is not None:
+            try:
+                return int(self._script(keys=[rkey], args=[window]))
+            except Exception:  # noqa: BLE001 - degrade to the SET NX path
+                pass
+        # Fallback: SET NX EX establishes the TTL atomically on creation, then INCR.
+        try:
+            self._r.set(rkey, 0, nx=True, ex=window)
+        except TypeError:  # client without nx/ex kwargs
+            if not self._r.get(rkey):
+                self._r.set(rkey, 0)
+                self._r.expire(rkey, window)
+        return int(self._r.incr(rkey))
+
     def allow(
         self, key: str, *, capacity: int, refill_per_sec: float, now: float | None = None
     ) -> bool:
         window = max(1, int(capacity / refill_per_sec)) if refill_per_sec else 60
-        count = int(self._r.incr(key))
-        if count == 1:
-            self._r.expire(key, window)
+        count = self._incr_with_ttl(self._full_key(key), window)
         return count <= capacity
 
     def reset(self) -> None:
-        # Best-effort; in production keys expire on their own.
-        flush = getattr(self._r, "flushdb", None)
-        if callable(flush):
-            flush()
+        # Only delete OUR namespaced keys; never flushdb (would wipe shared data).
+        scan = getattr(self._r, "scan_iter", None)
+        if not callable(scan):
+            return
+        deleter = getattr(self._r, "unlink", None) or getattr(self._r, "delete", None)
+        if deleter is None:
+            return
+        for rkey in scan(match=f"{self._prefix}*", count=500):
+            deleter(rkey)
 
 
 # --------------------------------------------------------------------------- #
@@ -149,7 +197,9 @@ def get_rate_limiter() -> RateLimiter:
         if backend == "memory":
             _rate_limiter = InMemoryRateLimiter()
         elif backend == "redis":
-            _rate_limiter = RedisRateLimiter(url=settings.ratelimit_redis_url)
+            _rate_limiter = RedisRateLimiter(
+                url=settings.ratelimit_redis_url, prefix=settings.ratelimit_redis_prefix
+            )
         else:
             raise ValueError(f"Unknown MCP_RATELIMIT_BACKEND: {backend!r}")
     return _rate_limiter

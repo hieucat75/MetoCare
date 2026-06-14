@@ -94,6 +94,7 @@ class Settings(BaseSettings):
     ratelimit_enabled: bool = True
     ratelimit_backend: str = "memory"  # memory | redis (redis = optional, lazy-imported)
     ratelimit_redis_url: str = ""      # required when ratelimit_backend=redis
+    ratelimit_redis_prefix: str = "metocare:ratelimit:"  # namespace; reset() only touches this
     ratelimit_auth_capacity: int = 20  # max burst per window per client+action
     ratelimit_auth_window_seconds: int = 60
     lockout_max_failures: int = 5
