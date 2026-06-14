@@ -128,5 +128,11 @@ Codex (`codex review --base main`) returned 1×P1 + 2×P2 (see `CODEX_REVIEW_PR2
 - **Test:** `test_redis_keys_are_namespaced` + `test_redis_reset_only_deletes_namespace_not_flushdb`
   (unrelated `cache:*`/`session:*` keys survive).
 
-**Re-validation:** 139 passed, 1 skipped; ruff clean; compileall OK; docker-compose valid; Docker still
+### Round-2 follow-up [P2] — Reject unsafe Redis prefix
+A second `codex review --base main` confirmed FIX 1–3 resolved and surfaced one derivative edge of
+FIX 3: an empty or glob-bearing `MCP_RATELIMIT_REDIS_PREFIX` would make `reset()` scan `*` and delete
+unrelated keys. Fixed: `RedisRateLimiter.__init__` now rejects an empty prefix or any prefix containing
+glob metacharacters (`*?[]^`) with `ValueError`. Test: `test_redis_rejects_unsafe_prefix`.
+
+**Re-validation:** 140 passed, 1 skipped; ruff clean; compileall OK; docker-compose valid; Docker still
 DOWN → Postgres/Timescale still NOT verified. Medical logic / guardrails untouched. No secrets/PHI.

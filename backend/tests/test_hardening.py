@@ -181,6 +181,13 @@ def test_redis_keys_are_namespaced():
     assert any(k.startswith("metocare:ratelimit:") for k in fake.store)
 
 
+def test_redis_rejects_unsafe_prefix():
+    # Empty or glob-bearing prefix would make reset() scan "*" / over-match.
+    for bad in ("", "*", "metocare:*", "metocare:[a]"):
+        with pytest.raises(ValueError):
+            RedisRateLimiter(client=_FakeRedis(), prefix=bad)
+
+
 def test_redis_reset_only_deletes_namespace_not_flushdb():
     fake = _FakeRedis()
     fake.set("cache:foo", 1)        # unrelated app data

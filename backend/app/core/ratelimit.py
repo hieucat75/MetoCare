@@ -118,9 +118,20 @@ class RedisRateLimiter(RateLimiter):
     injected (tests use a fake client — no real Redis needed).
     """
 
+    # Glob metacharacters that would broaden a SCAN match beyond our namespace.
+    _UNSAFE_PREFIX_CHARS = set("*?[]^")
+
     def __init__(
         self, client=None, url: str | None = None, prefix: str = "metocare:ratelimit:"
     ) -> None:
+        # A non-empty, glob-safe prefix is REQUIRED: reset() deletes by SCAN match,
+        # so an empty prefix (-> "*") or one containing glob metacharacters could
+        # wipe unrelated keys in a shared Redis DB.
+        if not prefix or self._UNSAFE_PREFIX_CHARS.intersection(prefix):
+            raise ValueError(
+                "ratelimit_redis_prefix must be non-empty and free of glob metacharacters "
+                f"(*?[]^); got {prefix!r}"
+            )
         if client is not None:
             self._r = client
         else:  # pragma: no cover - requires the optional redis package + server
