@@ -17,6 +17,8 @@ or use a separate blind index (future work).
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 from functools import lru_cache
 
 from cryptography.fernet import Fernet, InvalidToken, MultiFernet
@@ -64,6 +66,21 @@ def try_decrypt(token: str) -> str | None:
 def rotate(token: str) -> str:
     """Re-encrypt a token with the primary key (for key-rotation jobs)."""
     return _cipher().rotate(token.encode()).decode()
+
+
+def blind_index(value: str) -> str:
+    """Deterministic, keyed hash for equality lookups on encrypted PHI.
+
+    HMAC-SHA256 keyed by SECRET_KEY. Lets a column (e.g. email) be encrypted at
+    rest yet still be searchable by exact match via a side index column, without
+    exposing plaintext. Normalizes case/whitespace so lookups are stable.
+
+    NOTE: building block only — wiring a `*_bidx` column into the User model
+    (and migration) is deferred; see P2_HARDENING_SELF_REVIEW.md.
+    """
+    normalized = (value or "").strip().lower().encode()
+    key = get_settings().secret_key.encode()
+    return hmac.new(key, normalized, hashlib.sha256).hexdigest()
 
 
 class EncryptedString(TypeDecorator):

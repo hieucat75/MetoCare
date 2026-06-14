@@ -94,6 +94,45 @@ class LockoutManager:
                 self._fails.pop(key, None)
 
 
+class RedisRateLimiter(RateLimiter):
+    """Distributed limiter backed by Redis (shared across instances).
+
+    Uses a fixed-window counter (INCR + EXPIRE) — an approximation of the token
+    bucket that is atomic and cheap in Redis. `redis` is imported lazily so it
+    stays an OPTIONAL dependency (not in hard requirements); a client can also be
+    injected (used by tests with a fake client, no real Redis needed).
+    """
+
+    def __init__(self, client=None, url: str | None = None) -> None:
+        if client is not None:
+            self._r = client
+        else:  # pragma: no cover - requires the optional redis package + server
+            try:
+                import redis  # noqa: PLC0415  (lazy/optional import by design)
+            except ImportError as exc:
+                raise RuntimeError(
+                    "MCP_RATELIMIT_BACKEND=redis requires the optional 'redis' package."
+                ) from exc
+            if not url:
+                raise RuntimeError("MCP_RATELIMIT_REDIS_URL is required for the redis backend.")
+            self._r = redis.Redis.from_url(url)
+
+    def allow(
+        self, key: str, *, capacity: int, refill_per_sec: float, now: float | None = None
+    ) -> bool:
+        window = max(1, int(capacity / refill_per_sec)) if refill_per_sec else 60
+        count = int(self._r.incr(key))
+        if count == 1:
+            self._r.expire(key, window)
+        return count <= capacity
+
+    def reset(self) -> None:
+        # Best-effort; in production keys expire on their own.
+        flush = getattr(self._r, "flushdb", None)
+        if callable(flush):
+            flush()
+
+
 # --------------------------------------------------------------------------- #
 # Factory (pluggable backend by config). Singletons for the process.
 # --------------------------------------------------------------------------- #
@@ -105,16 +144,21 @@ _lockout = LockoutManager()
 def get_rate_limiter() -> RateLimiter:
     global _rate_limiter
     if _rate_limiter is None:
-        backend = get_settings().ratelimit_backend
+        settings = get_settings()
+        backend = settings.ratelimit_backend
         if backend == "memory":
             _rate_limiter = InMemoryRateLimiter()
         elif backend == "redis":
-            raise NotImplementedError(
-                "Redis rate-limit backend not implemented; set MCP_RATELIMIT_BACKEND=memory."
-            )
+            _rate_limiter = RedisRateLimiter(url=settings.ratelimit_redis_url)
         else:
             raise ValueError(f"Unknown MCP_RATELIMIT_BACKEND: {backend!r}")
     return _rate_limiter
+
+
+def set_rate_limiter(limiter: RateLimiter | None) -> None:
+    """Override the process limiter (used by tests)."""
+    global _rate_limiter
+    _rate_limiter = limiter
 
 
 def get_lockout() -> LockoutManager:

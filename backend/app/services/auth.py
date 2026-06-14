@@ -9,7 +9,7 @@ from __future__ import annotations
 import datetime as dt
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.clock import as_naive_utc, utcnow
@@ -214,3 +214,25 @@ def revoke_refresh(db: Session, refresh_token: str, *, actor_id: str | None = No
     )
     db.commit()
     return True
+
+
+def cleanup_expired_refresh_tokens(
+    db: Session, *, now: dt.datetime | None = None, revoked_grace_days: int = 7
+) -> int:
+    """Delete refresh tokens that are no longer useful (cron-friendly, idempotent).
+
+    Removes tokens that are either expired, or revoked longer than the grace
+    window ago (the grace keeps freshly-revoked rows briefly for incident
+    inspection). Returns the number of rows deleted.
+    """
+    now = now or utcnow()
+    revoked_cutoff = now - dt.timedelta(days=revoked_grace_days)
+    stmt = delete(RefreshToken).where(
+        or_(
+            RefreshToken.expires_at < now,
+            RefreshToken.revoked_at < revoked_cutoff,
+        )
+    )
+    result = db.execute(stmt)
+    db.commit()
+    return result.rowcount or 0
