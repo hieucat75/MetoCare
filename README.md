@@ -1,6 +1,8 @@
-# Metabolic Care Platform (MCP)
+# MetoCare
 
 [![CI](../../actions/workflows/ci.yml/badge.svg)](../../actions/workflows/ci.yml)
+
+> MetoCare is an AI-assisted metabolic health care platform connecting personal health data, lab interpretation, medical safety guardrails, and doctor/clinic workflows.
 
 Nền tảng chăm sóc sức khỏe chuyển hóa (tiền tiểu đường, rối loạn chuyển hóa, béo bụng, mỡ máu).
 **AI hỗ trợ + giải thích + phân tầng rủi ro, KHÔNG thay thế bác sĩ.**

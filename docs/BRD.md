@@ -1,4 +1,4 @@
-# Business Requirement Document (BRD) — Metabolic Care Platform
+# Business Requirement Document (BRD) — MetoCare
 
 > Tài liệu yêu cầu nghiệp vụ cho nền tảng quản lý sức khỏe chuyển hóa. Dùng để thống nhất giữa Founder, Product, BA, kỹ thuật và đối tác y tế về vấn đề kinh doanh, người dùng, phạm vi, yêu cầu chức năng/phi chức năng, quy tắc, an toàn y tế và tiêu chí thành công.
 

@@ -1,4 +1,4 @@
-# Technical Architecture — Metabolic Care Platform
+# Technical Architecture — MetoCare
 
 > Kiến trúc kỹ thuật chi tiết để team bắt đầu thiết kế và xây dựng hệ thống. Tài liệu này cụ thể hóa `Architecture_Doctrine.md` thành module, data layer, AI layer, integration, RBAC, observability và deployment.
 
@@ -24,7 +24,7 @@ Mô tả kiến trúc kỹ thuật MVP của MCP ở mức đủ chi tiết đ�
 
 ```mermaid
 graph TD
-    P[Patient - Flutter app] --> SYS[Metabolic Care Platform]
+    P[Patient - Flutter app] --> SYS[MetoCare]
     D[Doctor - Next.js Doctor Portal] --> SYS
     CA[Clinic Admin - Next.js Portal] --> SYS
     IA[Internal Admin - Next.js Portal] --> SYS

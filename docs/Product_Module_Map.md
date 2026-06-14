@@ -1,4 +1,4 @@
-# Product Module Map — Metabolic Care Platform
+# Product Module Map — MetoCare
 
 > Bản đồ toàn bộ module/submodule sản phẩm: giá trị người dùng, giá trị kinh doanh, dữ liệu cần, phụ thuộc, ưu tiên MVP (P0/P1/P2), độ phức tạp, mức rủi ro, owner và pha phát hành. Đây là nguồn để cắt scope và lập backlog.
 
