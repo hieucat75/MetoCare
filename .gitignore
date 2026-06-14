@@ -27,6 +27,11 @@ build/
 data/
 uploads/
 storage/
+# Exception: the curated RAG seed corpus (approved guideline content, NOT PHI)
+# must be version-controlled so fresh checkouts / CI can load it.
+!backend/data/
+!backend/data/rag_seed/
+!backend/data/rag_seed/*.md
 
 # ---- Node / web (future) ----
 node_modules/
