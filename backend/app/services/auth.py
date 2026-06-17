@@ -9,7 +9,7 @@ from __future__ import annotations
 import datetime as dt
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.core.clock import as_naive_utc, utcnow
@@ -214,3 +214,19 @@ def revoke_refresh(db: Session, refresh_token: str, *, actor_id: str | None = No
     )
     db.commit()
     return True
+
+
+def cleanup_expired_refresh_tokens(db: Session, *, now: dt.datetime | None = None) -> int:
+    """Delete refresh tokens whose JWT has expired (cron-friendly, idempotent).
+
+    Policy: delete ONLY on ``expires_at < now``. Revoked-but-unexpired rows are
+    kept on purpose — reuse-detection (`refresh_session`) relies on finding the
+    revoked row while its refresh JWT is still valid; deleting it early would make
+    a replayed token look "unknown" and silently defeat family revocation.
+    Returns the number of rows deleted.
+    """
+    now = now or utcnow()
+    stmt = delete(RefreshToken).where(RefreshToken.expires_at < now)
+    result = db.execute(stmt)
+    db.commit()
+    return result.rowcount or 0

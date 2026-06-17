@@ -94,6 +94,104 @@ class LockoutManager:
                 self._fails.pop(key, None)
 
 
+# Atomic fixed-window increment: INCR then EXPIRE only on first hit, in one
+# round-trip so a counter can never be left without a TTL (avoids permanently
+# rate-limiting a client after a mid-operation crash).
+_INCR_EXPIRE_LUA = """
+local v = redis.call('INCR', KEYS[1])
+if v == 1 then
+  redis.call('EXPIRE', KEYS[1], ARGV[1])
+end
+return v
+"""
+
+
+class RedisRateLimiter(RateLimiter):
+    """Distributed limiter backed by Redis (shared across instances).
+
+    Fixed-window counter. The INCR+EXPIRE is made **atomic** via a cached Lua
+    script (falls back to ``SET key 0 NX EX window`` then ``INCR`` if scripting is
+    unavailable — that also guarantees a TTL exists). All keys are **namespaced**
+    by ``prefix`` so ``reset()`` only ever touches limiter keys (never flushdb).
+
+    `redis` is imported lazily so it stays an OPTIONAL dependency; a client can be
+    injected (tests use a fake client — no real Redis needed).
+    """
+
+    # Glob metacharacters that would broaden a SCAN match beyond our namespace.
+    _UNSAFE_PREFIX_CHARS = set("*?[]^")
+
+    def __init__(
+        self, client=None, url: str | None = None, prefix: str = "metocare:ratelimit:"
+    ) -> None:
+        # A non-empty, glob-safe prefix is REQUIRED: reset() deletes by SCAN match,
+        # so an empty prefix (-> "*") or one containing glob metacharacters could
+        # wipe unrelated keys in a shared Redis DB.
+        if not prefix or self._UNSAFE_PREFIX_CHARS.intersection(prefix):
+            raise ValueError(
+                "ratelimit_redis_prefix must be non-empty and free of glob metacharacters "
+                f"(*?[]^); got {prefix!r}"
+            )
+        if client is not None:
+            self._r = client
+        else:  # pragma: no cover - requires the optional redis package + server
+            try:
+                import redis  # noqa: PLC0415  (lazy/optional import by design)
+            except ImportError as exc:
+                raise RuntimeError(
+                    "MCP_RATELIMIT_BACKEND=redis requires the optional 'redis' package."
+                ) from exc
+            if not url:
+                raise RuntimeError("MCP_RATELIMIT_REDIS_URL is required for the redis backend.")
+            self._r = redis.Redis.from_url(url)
+
+        self._prefix = prefix
+        self._script = None
+        register = getattr(self._r, "register_script", None)
+        if callable(register):
+            try:
+                self._script = register(_INCR_EXPIRE_LUA)
+            except Exception:  # noqa: BLE001 - scripting optional; fall back below
+                self._script = None
+
+    def _full_key(self, key: str) -> str:
+        return f"{self._prefix}{key}"
+
+    def _incr_with_ttl(self, rkey: str, window: int) -> int:
+        # Preferred: atomic Lua.
+        if self._script is not None:
+            try:
+                return int(self._script(keys=[rkey], args=[window]))
+            except Exception:  # noqa: BLE001 - degrade to the SET NX path
+                pass
+        # Fallback: SET NX EX establishes the TTL atomically on creation, then INCR.
+        try:
+            self._r.set(rkey, 0, nx=True, ex=window)
+        except TypeError:  # client without nx/ex kwargs
+            if not self._r.get(rkey):
+                self._r.set(rkey, 0)
+                self._r.expire(rkey, window)
+        return int(self._r.incr(rkey))
+
+    def allow(
+        self, key: str, *, capacity: int, refill_per_sec: float, now: float | None = None
+    ) -> bool:
+        window = max(1, int(capacity / refill_per_sec)) if refill_per_sec else 60
+        count = self._incr_with_ttl(self._full_key(key), window)
+        return count <= capacity
+
+    def reset(self) -> None:
+        # Only delete OUR namespaced keys; never flushdb (would wipe shared data).
+        scan = getattr(self._r, "scan_iter", None)
+        if not callable(scan):
+            return
+        deleter = getattr(self._r, "unlink", None) or getattr(self._r, "delete", None)
+        if deleter is None:
+            return
+        for rkey in scan(match=f"{self._prefix}*", count=500):
+            deleter(rkey)
+
+
 # --------------------------------------------------------------------------- #
 # Factory (pluggable backend by config). Singletons for the process.
 # --------------------------------------------------------------------------- #
@@ -105,16 +203,23 @@ _lockout = LockoutManager()
 def get_rate_limiter() -> RateLimiter:
     global _rate_limiter
     if _rate_limiter is None:
-        backend = get_settings().ratelimit_backend
+        settings = get_settings()
+        backend = settings.ratelimit_backend
         if backend == "memory":
             _rate_limiter = InMemoryRateLimiter()
         elif backend == "redis":
-            raise NotImplementedError(
-                "Redis rate-limit backend not implemented; set MCP_RATELIMIT_BACKEND=memory."
+            _rate_limiter = RedisRateLimiter(
+                url=settings.ratelimit_redis_url, prefix=settings.ratelimit_redis_prefix
             )
         else:
             raise ValueError(f"Unknown MCP_RATELIMIT_BACKEND: {backend!r}")
     return _rate_limiter
+
+
+def set_rate_limiter(limiter: RateLimiter | None) -> None:
+    """Override the process limiter (used by tests)."""
+    global _rate_limiter
+    _rate_limiter = limiter
 
 
 def get_lockout() -> LockoutManager:
