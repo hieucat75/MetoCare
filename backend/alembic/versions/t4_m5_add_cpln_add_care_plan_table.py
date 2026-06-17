@@ -29,7 +29,7 @@ def upgrade() -> None:
         sa.Column('status', sa.String(length=32), nullable=False, server_default='DRAFT'),
         sa.Column('approved_by_doctor_id', sa.String(length=36), nullable=True),
         sa.Column('approved_at', sa.DateTime(timezone=True), nullable=True),
-        sa.Column('ai_generated', sa.Boolean(), nullable=False, server_default=sa.text('0')),
+        sa.Column('ai_generated', sa.Boolean(), nullable=False, server_default=sa.text('false')),
         sa.Column('version', sa.Integer(), nullable=False, server_default='1'),
         sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True),
         sa.Column('deleted_by', sa.String(length=36), nullable=True),

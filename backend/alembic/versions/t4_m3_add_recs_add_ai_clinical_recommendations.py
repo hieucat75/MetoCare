@@ -32,7 +32,7 @@ def upgrade() -> None:
         sa.Column('reviewed_by_doctor_id', sa.String(length=36), nullable=True),
         sa.Column('reviewed_at', sa.DateTime(timezone=True), nullable=True),
         sa.Column('ai_confidence', sa.Float(), nullable=True),
-        sa.Column('safety_cleared', sa.Boolean(), nullable=False, server_default=sa.text('0')),
+        sa.Column('safety_cleared', sa.Boolean(), nullable=False, server_default=sa.text('false')),
         sa.Column('medical_disclaimer', sa.Text(), nullable=True),
         sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True),
         sa.Column('deleted_by', sa.String(length=36), nullable=True),

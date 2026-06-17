@@ -24,8 +24,8 @@ def upgrade() -> None:
     with op.batch_alter_table('ai_sessions', schema=None) as batch_op:
         batch_op.add_column(sa.Column('encounter_id', sa.String(length=36), nullable=True))
         batch_op.add_column(sa.Column('escalation_reason', sa.String(length=255), nullable=True))
-        batch_op.add_column(sa.Column('input_blocked', sa.Boolean(), nullable=False, server_default=sa.text('0')))
-        batch_op.add_column(sa.Column('output_blocked', sa.Boolean(), nullable=False, server_default=sa.text('0')))
+        batch_op.add_column(sa.Column('input_blocked', sa.Boolean(), nullable=False, server_default=sa.text('false')))
+        batch_op.add_column(sa.Column('output_blocked', sa.Boolean(), nullable=False, server_default=sa.text('false')))
         batch_op.add_column(sa.Column('total_tokens', sa.Integer(), nullable=True, server_default='0'))
         batch_op.add_column(sa.Column('key_version', sa.Integer(), nullable=True, server_default='1'))
         batch_op.add_column(sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True))

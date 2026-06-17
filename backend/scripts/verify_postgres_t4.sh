@@ -53,12 +53,14 @@ log_info "Backend dir: ${BACKEND_DIR}"
 log_info "Venv python: ${VENV_PYTHON}"
 log_info "PG URL (masked): ${PG_URL//:*@/:*****@}"
 
-# Check colima
-if ! colima status &>/dev/null; then
-    record_fail "Colima is NOT running — run 'colima start' first"
-    exit 1
+# Check colima (optional — skip if SKIP_COLIMA_CHECK=1 or if native Postgres is reachable)
+if [[ "${SKIP_COLIMA_CHECK:-0}" == "1" ]]; then
+    log_warn "Colima check skipped (SKIP_COLIMA_CHECK=1) — using native Homebrew Postgres"
+elif ! colima status &>/dev/null; then
+    log_warn "Colima not running — proceeding with native Homebrew Postgres"
+else
+    record_pass "Colima is running"
 fi
-record_pass "Colima is running"
 
 # Check psql available
 if ! command -v psql &>/dev/null; then

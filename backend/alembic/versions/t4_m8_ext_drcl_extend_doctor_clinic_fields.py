@@ -23,15 +23,15 @@ def upgrade() -> None:
         batch_op.add_column(sa.Column('bio', sa.Text(), nullable=True))
         batch_op.add_column(sa.Column('avatar_url', sa.String(length=512), nullable=True))
         batch_op.add_column(sa.Column('consultation_fee', sa.Float(), nullable=True))
-        batch_op.add_column(sa.Column('is_verified', sa.Boolean(), nullable=False, server_default=sa.text('0')))
-        batch_op.add_column(sa.Column('is_active', sa.Boolean(), nullable=False, server_default=sa.text('1')))
+        batch_op.add_column(sa.Column('is_verified', sa.Boolean(), nullable=False, server_default=sa.text('false')))
+        batch_op.add_column(sa.Column('is_active', sa.Boolean(), nullable=False, server_default=sa.text('true')))
         
     with op.batch_alter_table('clinics', schema=None) as batch_op:
         batch_op.add_column(sa.Column('email', sa.String(length=255), nullable=True))
         batch_op.add_column(sa.Column('specialty_tags', sa.Text(), nullable=True))
         batch_op.add_column(sa.Column('operating_hours', sa.String(length=255), nullable=True))
-        batch_op.add_column(sa.Column('is_active', sa.Boolean(), nullable=False, server_default=sa.text('1')))
-        batch_op.add_column(sa.Column('is_verified', sa.Boolean(), nullable=False, server_default=sa.text('0')))
+        batch_op.add_column(sa.Column('is_active', sa.Boolean(), nullable=False, server_default=sa.text('true')))
+        batch_op.add_column(sa.Column('is_verified', sa.Boolean(), nullable=False, server_default=sa.text('false')))
 
 
 def downgrade() -> None:
