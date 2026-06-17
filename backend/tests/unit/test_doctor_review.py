@@ -184,6 +184,47 @@ def test_doctor_review_supersedes(db, setup_data):
     assert rec1.status == RecommendationStatus.SUPERSEDED
     assert rec2.status == RecommendationStatus.ACCEPTED
 
+def test_doctor_review_request_info(db, setup_data):
+    """P1-01: request_info action sets status=request_info, does NOT set safety_cleared=False."""
+    service = DoctorReviewService(db)
+
+    session = AISession(patient_id=setup_data["patient"].id, session_type="triage")
+    db.add(session)
+    db.flush()
+    rec = AIClinicalRecommendation(
+        session_id=session.id,
+        patient_id=setup_data["patient"].id,
+        recommendation_type="triage_assessment",
+        content="Needs more info",
+        status=RecommendationStatus.PENDING_REVIEW,
+    )
+    db.add(rec)
+    db.commit()
+
+    with patch("app.services.doctor_review.is_enabled", return_value=True):
+        service.review(rec.id, "request_info", setup_data["d_user"])
+    db.refresh(rec)
+
+    assert rec.status == RecommendationStatus.REQUEST_INFO, (
+        f"Expected request_info, got {rec.status} — P1-01 regression"
+    )
+    assert rec.status != RecommendationStatus.REJECTED, (
+        "request_info must not silently map to rejected"
+    )
+    # safety_cleared was False before (PENDING_REVIEW), must remain False (unchanged, not forced)
+    assert rec.safety_cleared is False  # unchanged from initial state
+    assert rec.reviewed_by_doctor_id == setup_data["doctor"].id
+    assert rec.reviewed_at is not None
+
+    # Check audit log
+    from app.models.governance import AuditLog
+    audit_entry = db.query(AuditLog).filter_by(
+        resource_id=rec.id,
+        action="ai.recommendation_request_info",
+    ).first()
+    assert audit_entry is not None, "Audit log for request_info not found"
+
+
 def test_get_pending_queue(db, setup_data):
     service = DoctorReviewService(db)
     
