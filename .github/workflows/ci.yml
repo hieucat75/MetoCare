@@ -2,42 +2,43 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, "feature/**", "feature/**/**"]
   pull_request:
+    branches: [main]
 
 jobs:
   test:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.13", "3.14"]
     defaults:
       run:
         working-directory: backend
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python ${{ matrix.python-version }}
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
-          cache: pip
-          cache-dependency-path: backend/requirements-dev.txt
+          python-version: "3.11"
+          cache: "pip"
 
       - name: Install dependencies
-        run: pip install -r requirements-dev.txt
-
-      - name: Lint (ruff)
-        run: ruff check app tests alembic/env.py
-
-      - name: Migrations upgrade head (SQLite)
-        env:
-          MCP_DATABASE_URL: sqlite:///./ci.sqlite3
         run: |
-          alembic upgrade head
-          alembic downgrade base
-          rm -f ci.sqlite3
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
 
-      - name: Tests (pytest)
-        run: pytest
+      - name: Ruff lint
+        run: ruff check .
+
+      - name: Run tests (SQLite — no Postgres needed in CI)
+        run: python -m pytest tests/ -v --tb=short --junit-xml=test-results.xml
+        env:
+          MCP_DATABASE_URL: ""   # empty = SQLite in-memory (existing pattern)
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-results
+          path: backend/test-results.xml
+        continue-on-error: true

@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import datetime as dt
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -62,3 +65,28 @@ class ScoreResponse(BaseModel):
     band: str
     factors: list[ScoreFactorOut]
     explanation: str
+
+
+# ---------------------------------------------------------------------------
+# Doctor Review Workflow
+# ---------------------------------------------------------------------------
+
+
+class DoctorReviewDecision(BaseModel):
+    verdict: Literal["accepted", "rejected", "request_info"]
+    notes: str | None = None
+
+
+class AIClinicalRecommendationOut(BaseModel):
+    id: str
+    session_id: str
+    patient_id: str
+    recommendation_type: str
+    status: str
+    ai_confidence: float | None
+    safety_cleared: bool
+    reviewed_by_doctor_id: str | None
+    reviewed_at: dt.datetime | None
+
+    model_config = {"from_attributes": True}
+

@@ -18,12 +18,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import CurrentUser, current_user, get_session
+from app.api.deps import CurrentUser, current_user, get_session, require_roles
 from app.core.rbac import _is_admin, assert_doctor_assigned
 from app.models.care import CarePlan, CarePlanStatus, Doctor, Encounter
 from app.models.patient import PatientProfile
 from app.models.user import UserRole
-from app.schemas.care import CarePlanCreate, CarePlanOut, CarePlanUpdate
+from app.schemas.care import CarePlanApprove, CarePlanCreate, CarePlanOut, CarePlanUpdate
 from app.services import audit
 
 router = APIRouter(prefix="/care_plans", tags=["care_plans"])
@@ -277,3 +277,83 @@ def update_care_plan(
     db.commit()
     db.refresh(plan)
     return CarePlanOut.model_validate(plan)
+
+
+@router.post("/{care_plan_id}/approve", response_model=CarePlanOut)
+def approve_care_plan(
+    care_plan_id: str,
+    payload: CarePlanApprove,
+    user: CurrentUser = Depends(require_roles(UserRole.DOCTOR)),
+    db: Session = Depends(get_session),
+) -> CarePlanOut:
+    """Approve a care plan. Allowed: DOCTOR only (not ADMIN, not AI_SERVICE)."""
+    # 1. Load CarePlan; 404 if not found or soft-deleted
+    plan = db.get(CarePlan, care_plan_id)
+    if plan is None or plan.deleted_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Care plan not found."
+        )
+
+    # 2. 409 if plan already APPROVED or ARCHIVED
+    if plan.status in (CarePlanStatus.APPROVED, CarePlanStatus.ARCHIVED):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Cannot approve care plan in {plan.status} status.",
+        )
+
+    # 3. RBAC: assert doctor is assigned (use assert_doctor_assigned)
+    assigned_user_id: str | None = None
+    patient_clinic_id: str | None = None
+    if plan.approved_by_doctor_id:
+        doc = db.get(Doctor, plan.approved_by_doctor_id)
+        if doc is not None:
+            assigned_user_id = doc.user_id
+            patient_clinic_id = doc.clinic_id
+    if plan.encounter_id and assigned_user_id is None:
+        enc = db.get(Encounter, plan.encounter_id)
+        if enc is not None and enc.doctor_id:
+            doc2 = db.get(Doctor, enc.doctor_id)
+            if doc2 is not None:
+                assigned_user_id = doc2.user_id
+                patient_clinic_id = doc2.clinic_id
+
+    assert_doctor_assigned(
+        db,
+        user.id,
+        patient_clinic_id,
+        role=user.role,
+        assigned_doctor_user_id=assigned_user_id,
+    )
+
+    # 4. Load doctor and check it exists
+    doctor_rec = db.get(Doctor, payload.approved_by_doctor_id)
+    if not doctor_rec:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Doctor record not found.",
+        )
+    if doctor_rec.user_id != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot approve on behalf of another doctor.",
+        )
+
+    # 5. Transition using DoctorCarePlanService
+    from app.services.care_plan import DoctorCarePlanService
+
+    service = DoctorCarePlanService(db)
+    try:
+        updated_plan = service.approve(
+            care_plan_id=care_plan_id,
+            doctor=doctor_rec,
+            approved_at=payload.approved_at,
+        )
+        db.commit()
+        db.refresh(updated_plan)
+        return CarePlanOut.model_validate(updated_plan)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        ) from e
+
