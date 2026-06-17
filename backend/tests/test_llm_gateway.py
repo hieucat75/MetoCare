@@ -147,17 +147,26 @@ def test_cost_guard_window_slides():
     guard.check("u1", now=61.0)
 
 
-def test_gateway_cost_cap_maps_to_429(client, monkeypatch):
+def test_gateway_cost_cap_maps_to_429(client, patient, monkeypatch):
     from app.core.config import get_settings
 
     monkeypatch.setenv("MCP_LLM_MAX_REQUESTS_PER_MINUTE", "1")
     get_settings.cache_clear()
     reset_gateway()
     reset_provider()
+    headers = patient["headers"]
     try:
-        r1 = client.post("/api/v1/ai/chat", json={"message": "Tôi nên ăn gì?"})
+        r1 = client.post(
+            "/api/v1/ai/chat",
+            headers=headers,
+            json={"message": "Tôi nên ăn gì?"},
+        )
         assert r1.status_code == 200
-        r2 = client.post("/api/v1/ai/chat", json={"message": "Còn buổi sáng thì sao?"})
+        r2 = client.post(
+            "/api/v1/ai/chat",
+            headers=headers,
+            json={"message": "Còn buổi sáng thì sao?"},
+        )
         assert r2.status_code == 429
         assert "Retry-After" in r2.headers
     finally:
