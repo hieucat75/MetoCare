@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from sqlalchemy import or_, select
+from sqlalchemy import or_, select, update
 from sqlalchemy.orm import Session
 
 from app.core.clock import utcnow
@@ -118,38 +118,58 @@ class DoctorReviewService:
         if rec.status != RecommendationStatus.PENDING_REVIEW:
             raise ValueError(f"Recommendation {recommendation_id} is not in pending_review status.")
 
-        # 2. Update status and safety clearance
+        # 2. Update status and safety clearance via direct SQL UPDATE.
+        # We MUST NOT use ORM attribute assignment for status/safety_cleared here because
+        # AIClinicalRecommendation @validates hooks block 'accepted'/'superseded' from direct
+        # assignment (C1 guard). The doctor review service is the ONLY authorised path to
+        # set these values; it does so via SQL UPDATE, bypassing the ORM-level validator.
         now = utcnow()
-        rec.reviewed_by_doctor_id = doctor_rec.id
-        rec.reviewed_at = now
 
         if action == "accept":
-            rec.status = RecommendationStatus.ACCEPTED
-            rec.safety_cleared = True
-
-            # 3. Supersede older recommendations of the same type for this patient
-            stmt = select(AIClinicalRecommendation).where(
-                AIClinicalRecommendation.patient_id == rec.patient_id,
-                AIClinicalRecommendation.recommendation_type == rec.recommendation_type,
-                AIClinicalRecommendation.status == RecommendationStatus.ACCEPTED,
-                AIClinicalRecommendation.id != rec.id,
-            )
-            prior_recs = self.db.execute(stmt).scalars().all()
-            for prior in prior_recs:
-                prior.status = RecommendationStatus.SUPERSEDED
-                audit.record(
-                    self.db,
-                    actor_type="system",
-                    actor_id=None,
-                    action="ai.recommendation_superseded",
-                    resource_type="ai_clinical_recommendation",
-                    resource_id=prior.id,
-                    outcome="success",
-                    severity="info",
-                )
+            new_status = RecommendationStatus.ACCEPTED
+            new_safety_cleared = True
         else:  # reject
-            rec.status = RecommendationStatus.REJECTED
-            rec.safety_cleared = False
+            new_status = RecommendationStatus.REJECTED
+            new_safety_cleared = False
+
+        self.db.execute(
+            update(AIClinicalRecommendation)
+            .where(AIClinicalRecommendation.id == recommendation_id)
+            .values(
+                status=new_status,
+                safety_cleared=new_safety_cleared,
+                reviewed_by_doctor_id=doctor_rec.id,
+                reviewed_at=now,
+            )
+        )
+
+        if action == "accept":
+            # 3. Supersede older recommendations of the same type for this patient (bulk)
+            prior_ids_result = self.db.execute(
+                select(AIClinicalRecommendation.id).where(
+                    AIClinicalRecommendation.patient_id == rec.patient_id,
+                    AIClinicalRecommendation.recommendation_type == rec.recommendation_type,
+                    AIClinicalRecommendation.status == RecommendationStatus.ACCEPTED,
+                    AIClinicalRecommendation.id != recommendation_id,
+                )
+            ).scalars().all()
+            if prior_ids_result:
+                self.db.execute(
+                    update(AIClinicalRecommendation)
+                    .where(AIClinicalRecommendation.id.in_(prior_ids_result))
+                    .values(status=RecommendationStatus.SUPERSEDED)
+                )
+                for prior_id in prior_ids_result:
+                    audit.record(
+                        self.db,
+                        actor_type="system",
+                        actor_id=None,
+                        action="ai.recommendation_superseded",
+                        resource_type="ai_clinical_recommendation",
+                        resource_id=prior_id,
+                        outcome="success",
+                        severity="info",
+                    )
 
         self.db.flush()
 

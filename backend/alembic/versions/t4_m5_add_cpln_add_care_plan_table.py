@@ -1,7 +1,7 @@
 """add care plan table
 
 Revision ID: t4_m5_add_cpln
-Revises: t4_m4_add_encs
+Revises: t4_m4b_enc_fk
 Create Date: 2026-06-17 13:20:00.000000
 """
 from __future__ import annotations
@@ -13,7 +13,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = 't4_m5_add_cpln'
-down_revision: str | None = 't4_m4_add_encs'
+down_revision: str | None = 't4_m4b_enc_fk'
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

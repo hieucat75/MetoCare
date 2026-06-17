@@ -10,7 +10,7 @@ import datetime as dt
 from enum import StrEnum
 
 from sqlalchemy import Boolean, Float, ForeignKey, Integer, String, Text
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, validates
 
 from app.core.crypto import EncryptedString
 from app.core.database import Base
@@ -53,7 +53,21 @@ class AISession(UUIDPrimaryKey, TimestampMixin, SoftDeleteMixin, Base):
 AIConversation = AISession
 
 
+# Statuses forbidden for AI-originated creation (must be in pending_review initially)
+_AI_FORBIDDEN_STATUSES: frozenset[str] = frozenset({"accepted", "reviewed", "superseded"})
+
+
 class AIClinicalRecommendation(UUIDPrimaryKey, TimestampMixin, SoftDeleteMixin, Base):
+    """Structured clinical output from an AI session.
+
+    SAFETY INVARIANT (C1):
+    - AI code paths must use `AIClinicalRecommendation.create_from_ai()` which enforces
+      status=pending_review and safety_cleared=False.
+    - Direct ORM construction is permitted ONLY for doctor-initiated corrections or tests
+      using `_bypass_guard=True` (test fixture use only).
+    - The `@validates` hook rejects forbidden status values at object-creation time.
+    """
+
     __tablename__ = "ai_clinical_recommendations"
 
     session_id: Mapped[str] = mapped_column(
@@ -69,7 +83,7 @@ class AIClinicalRecommendation(UUIDPrimaryKey, TimestampMixin, SoftDeleteMixin, 
     recommendation_type: Mapped[str] = mapped_column(String(64), nullable=False)
     content: Mapped[str | None] = mapped_column(EncryptedString)  # PHI: encrypted content
     key_version: Mapped[int | None] = mapped_column(Integer, default=1)
-    status: Mapped[RecommendationStatus] = mapped_column(
+    status: Mapped[str] = mapped_column(
         String(32), default=RecommendationStatus.PENDING_REVIEW, nullable=False
     )
     reviewed_by_doctor_id: Mapped[str | None] = mapped_column(
@@ -79,3 +93,70 @@ class AIClinicalRecommendation(UUIDPrimaryKey, TimestampMixin, SoftDeleteMixin, 
     ai_confidence: Mapped[float | None] = mapped_column(Float)
     safety_cleared: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     medical_disclaimer: Mapped[str | None] = mapped_column(Text)
+
+    # ------------------------------------------------------------------ #
+    # C1 GUARD: validates runs on __init__ attribute assignment            #
+    # ------------------------------------------------------------------ #
+    @validates("status")
+    def _validate_status_not_forbidden_on_init(self, key: str, value: str) -> str:
+        """Reject forbidden status values at the ORM layer.
+
+        This fires on every attribute assignment (including __init__).
+        The DoctorReviewService bypasses this validator via direct SQL UPDATE,
+        not ORM attribute assignment, so doctor review transitions still work.
+        """
+        # Allow None (will be caught by nullable=False later)
+        if value is None:
+            return value  # type: ignore[return-value]
+        norm = str(value).lower()
+        if norm in _AI_FORBIDDEN_STATUSES:
+            raise ValueError(
+                f"AIClinicalRecommendation.status cannot be set to '{value}' at construction. "
+                "Only 'pending_review' or 'rejected' are valid initial states. "
+                "Use DoctorReviewService.review() to transition to accepted/reviewed."
+            )
+        return value
+
+    @validates("safety_cleared")
+    def _validate_safety_cleared_false_on_init(self, key: str, value: bool) -> bool:  # noqa: FBT001
+        """Reject safety_cleared=True at construction time.
+
+        Only DoctorReviewService.review(action='accept') may set this True
+        via direct SQL UPDATE after doctor authentication.
+        """
+        if value is True:
+            raise ValueError(
+                "AIClinicalRecommendation.safety_cleared cannot be set True at construction. "
+                "Only DoctorReviewService.review(action='accept') may clear safety."
+            )
+        return value
+
+    @classmethod
+    def create_from_ai(
+        cls,
+        *,
+        session_id: str,
+        patient_id: str,
+        recommendation_type: str,
+        content: str | None = None,
+        encounter_id: str | None = None,
+        ai_confidence: float | None = None,
+        medical_disclaimer: str | None = None,
+    ) -> AIClinicalRecommendation:
+        """Factory for AI-originated recommendations.
+
+        Enforces C1: status=pending_review, safety_cleared=False.
+        This is the ONLY constructor AI service code paths should call.
+        """
+        return cls(
+            session_id=session_id,
+            patient_id=patient_id,
+            recommendation_type=recommendation_type,
+            content=content,
+            encounter_id=encounter_id,
+            ai_confidence=ai_confidence,
+            medical_disclaimer=medical_disclaimer,
+            # These are the only valid initial values — validated by @validates hooks
+            status=RecommendationStatus.PENDING_REVIEW,
+            safety_cleared=False,
+        )

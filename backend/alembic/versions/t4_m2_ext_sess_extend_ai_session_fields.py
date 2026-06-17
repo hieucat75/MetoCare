@@ -31,14 +31,10 @@ def upgrade() -> None:
         batch_op.add_column(sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True))
         batch_op.add_column(sa.Column('deleted_by', sa.String(length=36), nullable=True))
         
-        # Only add FKs on non-SQLite (SQLite doesn't enforce FKs and batch_alter
-        # reflection fails if the referenced table is absent during downgrade)
-        import sqlalchemy as _sa
+        # encounter_id FK is added in M4b (after encounters table is created in M4)
+        # Only add deleted_by FK on non-SQLite
         bind = op.get_context().bind
         if bind is not None and bind.dialect.name != 'sqlite':
-            batch_op.create_foreign_key(
-                'fk_ai_sessions_encounter_id', 'encounters', ['encounter_id'], ['id']
-            )
             batch_op.create_foreign_key(
                 'fk_ai_sessions_deleted_by', 'users', ['deleted_by'], ['id']
             )
@@ -51,8 +47,8 @@ def downgrade() -> None:
     with op.batch_alter_table('ai_sessions', schema=None) as batch_op:
         batch_op.drop_index('ix_ai_sessions_encounter_id')
         if not is_sqlite:
+            # encounter_id FK was added in M4b — already dropped there before this downgrade
             batch_op.drop_constraint('fk_ai_sessions_deleted_by', type_='foreignkey')
-            batch_op.drop_constraint('fk_ai_sessions_encounter_id', type_='foreignkey')
         batch_op.drop_column('deleted_by')
         batch_op.drop_column('deleted_at')
         batch_op.drop_column('key_version')

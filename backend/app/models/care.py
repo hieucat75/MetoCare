@@ -3,14 +3,47 @@
 from __future__ import annotations
 
 import datetime as dt
+from enum import StrEnum
 
 from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, validates
 
 from app.core.crypto import EncryptedString
 from app.core.database import Base
 
 from ._mixins import SoftDeleteMixin, TimestampMixin, UUIDPrimaryKey
+
+
+class CarePlanStatus(StrEnum):
+    """CarePlan lifecycle state machine.
+
+    Valid transitions (C2):
+      DRAFT          → PENDING_REVIEW  (any author; required for ai_generated)
+      PENDING_REVIEW → APPROVED         (DOCTOR only)
+      PENDING_REVIEW → REJECTED         (DOCTOR only)
+      APPROVED       → ACTIVE           (DOCTOR only)
+      ACTIVE         → SUPERSEDED       (system, when newer version activated)
+      ACTIVE         → ARCHIVED         (DOCTOR or admin)
+      Any            → ARCHIVED         (DOCTOR or admin)
+
+    AI paths may ONLY create with status=DRAFT and ai_generated=True.
+    AI may NOT set PENDING_REVIEW, APPROVED, ACTIVE, SUPERSEDED, or ARCHIVED.
+    """
+
+    DRAFT = "DRAFT"
+    PENDING_REVIEW = "PENDING_REVIEW"
+    APPROVED = "APPROVED"
+    ACTIVE = "ACTIVE"
+    SUPERSEDED = "SUPERSEDED"
+    ARCHIVED = "ARCHIVED"
+    REJECTED = "REJECTED"
+
+
+# Statuses that AI code paths (ai_generated=True) may NEVER set at construction
+_AI_CAREPLAN_FORBIDDEN_STATUSES: frozenset[str] = frozenset({
+    "PENDING_REVIEW", "APPROVED", "ACTIVE", "SUPERSEDED", "ARCHIVED",
+    "pending_review", "approved", "active", "superseded", "archived",
+})
 
 
 class Clinic(UUIDPrimaryKey, TimestampMixin, Base):
@@ -94,7 +127,15 @@ class Encounter(UUIDPrimaryKey, TimestampMixin, SoftDeleteMixin, Base):
 
 
 class CarePlan(UUIDPrimaryKey, TimestampMixin, SoftDeleteMixin, Base):
-    """Step 4: CarePlan model."""
+    """CarePlan with C2 status-machine enforcement.
+
+    C2 SAFETY INVARIANT:
+    - AI code paths MUST use `CarePlan.create_from_ai()` which sets
+      status=DRAFT and ai_generated=True.
+    - Only DoctorCarePlanService (T5) may transition status to APPROVED/ACTIVE.
+    - The @validates hook on status rejects forbidden states when ai_generated=True.
+    """
+
     __tablename__ = "care_plans"
 
     patient_id: Mapped[str] = mapped_column(
@@ -105,14 +146,63 @@ class CarePlan(UUIDPrimaryKey, TimestampMixin, SoftDeleteMixin, Base):
     )
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     content: Mapped[str | None] = mapped_column(EncryptedString)  # PHI: encrypted content
-    # DRAFT / PENDING_REVIEW / APPROVED / ACTIVE / SUPERSEDED / ARCHIVED / REJECTED
-    status: Mapped[str] = mapped_column(String(32), default="DRAFT", nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default=CarePlanStatus.DRAFT, nullable=False)
     approved_by_doctor_id: Mapped[str | None] = mapped_column(
         ForeignKey("doctors.id"), index=True, nullable=True
     )
     approved_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     ai_generated: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+
+    # ------------------------------------------------------------------ #
+    # C2 GUARD: @validates fires on __init__ attribute assignment          #
+    # ------------------------------------------------------------------ #
+    @validates("status")
+    def _validate_status(self, key: str, value: str) -> str:
+        """Reject non-DRAFT status on AI-generated care plans at construction.
+
+        For ai_generated care plans, only DRAFT is valid at creation.
+        Transitions to APPROVED/ACTIVE must go through DoctorCarePlanService
+        using direct SQL UPDATE (same pattern as DoctorReviewService).
+        """
+        if value is None:
+            return value  # type: ignore[return-value]
+        # Only enforce when ai_generated is already True (set before status).
+        # If ai_generated is not yet set (default=False), allow normal construction.
+        if getattr(self, "ai_generated", False) and str(value).upper() in {
+            "PENDING_REVIEW", "APPROVED", "ACTIVE", "SUPERSEDED", "ARCHIVED"
+        }:
+            raise ValueError(
+                f"AI-generated CarePlan cannot be created with status='{value}'. "
+                "Only DRAFT is allowed. Use DoctorCarePlanService to transition."
+            )
+        return value
+
+    @classmethod
+    def create_from_ai(
+        cls,
+        *,
+        patient_id: str,
+        title: str,
+        content: str | None = None,
+        encounter_id: str | None = None,
+        version: int = 1,
+    ) -> CarePlan:
+        """Factory for AI-generated care plans.
+
+        Enforces C2: status=DRAFT, ai_generated=True.
+        This is the ONLY constructor AI service code paths should call.
+        DoctorCarePlanService.approve() transitions to APPROVED/ACTIVE via SQL UPDATE.
+        """
+        return cls(
+            patient_id=patient_id,
+            title=title,
+            content=content,
+            encounter_id=encounter_id,
+            version=version,
+            ai_generated=True,   # set BEFORE status so @validates can check it
+            status=CarePlanStatus.DRAFT,
+        )
 
 
 class BookingHealthSnapshot(UUIDPrimaryKey, Base):

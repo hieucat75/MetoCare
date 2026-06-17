@@ -1,5 +1,6 @@
 import datetime as dt
 import os
+from unittest.mock import patch
 
 import pytest
 from app.core.clock import utcnow
@@ -116,12 +117,15 @@ def test_doctor_review_accept_and_reject(db, setup_data):
     db.add(rec)
     db.commit()
 
-    # Non-doctor reviews -> Denied
-    with pytest.raises(PermissionDenied):
-        service.review(rec.id, "accept", setup_data["p_user"])
+    # Non-doctor reviews -> Denied (gate on, wrong role)
+    with patch("app.services.doctor_review.is_enabled", return_value=True):
+        with pytest.raises(PermissionDenied):
+            service.review(rec.id, "accept", setup_data["p_user"])
 
     # Doctor accepts recommendation
-    service.review(rec.id, "accept", setup_data["d_user"])
+    with patch("app.services.doctor_review.is_enabled", return_value=True):
+        service.review(rec.id, "accept", setup_data["d_user"])
+    db.refresh(rec)  # SQL UPDATE in service; must refresh ORM object
     assert rec.status == RecommendationStatus.ACCEPTED
     assert rec.safety_cleared is True
     assert rec.reviewed_by_doctor_id == setup_data["doctor"].id
@@ -136,8 +140,8 @@ def test_doctor_review_accept_and_reject(db, setup_data):
 
 def test_doctor_review_supersedes(db, setup_data):
     service = DoctorReviewService(db)
-    
-    # Create first accepted rec
+
+    # Create first rec as PENDING_REVIEW, then accept via service (C1: no direct ACCEPTED creation)
     sess1 = AISession(patient_id=setup_data["patient"].id, session_type="triage")
     db.add(sess1)
     db.flush()
@@ -146,11 +150,15 @@ def test_doctor_review_supersedes(db, setup_data):
         patient_id=setup_data["patient"].id,
         recommendation_type="triage_assessment",
         content="Old Rec",
-        status=RecommendationStatus.ACCEPTED,
-        safety_cleared=True
+        status=RecommendationStatus.PENDING_REVIEW,
     )
     db.add(rec1)
     db.commit()
+    # Accept rec1 via service (SQL UPDATE path, not ORM attribute)
+    with patch("app.services.doctor_review.is_enabled", return_value=True):
+        service.review(rec1.id, "accept", setup_data["d_user"])
+    db.refresh(rec1)
+    assert rec1.status == RecommendationStatus.ACCEPTED  # verify setup
 
     # Create second pending rec
     sess2 = AISession(patient_id=setup_data["patient"].id, session_type="triage")
@@ -166,9 +174,10 @@ def test_doctor_review_supersedes(db, setup_data):
     db.add(rec2)
     db.commit()
 
-    # Doctor accepts new rec
-    service.review(rec2.id, "accept", setup_data["d_user"])
-    
+    # Doctor accepts new rec (patch gate)
+    with patch("app.services.doctor_review.is_enabled", return_value=True):
+        service.review(rec2.id, "accept", setup_data["d_user"])
+
     # Assert rec1 is superseded, rec2 is accepted
     db.refresh(rec1)
     db.refresh(rec2)
