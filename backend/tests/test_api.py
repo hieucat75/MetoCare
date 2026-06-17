@@ -81,25 +81,34 @@ def test_lab_upload_and_interpret(client, patient):
     assert any(b["canonical"] == "fasting_glucose" for b in body["biomarkers"])
 
 
-def test_ai_chat_is_guardrailed_and_has_disclaimer(client):
-    r = client.post("/api/v1/ai/chat", json={"message": "Tôi nên ăn gì buổi tối?"})
+def test_ai_chat_is_guardrailed_and_has_disclaimer(client, patient):
+    r = client.post(
+        "/api/v1/ai/chat",
+        headers=_auth(patient),
+        json={"message": "Tôi nên ăn gì buổi tối?"},
+    )
     assert r.status_code == 200
     body = r.json()
     assert "không thay thế tư vấn bác sĩ" in body["text"]
     assert body["blocked"] is False
 
 
-def test_ai_chat_red_flag_escalates(client):
-    r = client.post("/api/v1/ai/chat", json={"message": "Tôi bị đau ngực và khó thở."})
+def test_ai_chat_red_flag_escalates(client, patient):
+    r = client.post(
+        "/api/v1/ai/chat",
+        headers=_auth(patient),
+        json={"message": "Tôi bị đau ngực và khó thở."},
+    )
     assert r.status_code == 200
     body = r.json()
     assert body["escalated_to_doctor"] is True
     assert body["risk_level"] == "emergency"
 
 
-def test_ai_chat_medication_query_redirects(client):
+def test_ai_chat_medication_query_redirects(client, patient):
     r = client.post(
         "/api/v1/ai/chat",
+        headers=_auth(patient),
         json={"message": "Tôi có nên tăng liều thuốc tiểu đường không?"},
     )
     assert r.status_code == 200
@@ -107,15 +116,20 @@ def test_ai_chat_medication_query_redirects(client):
     assert "bác sĩ" in body["text"]
 
 
-def test_triage_endpoint_red_flag(client):
-    r = client.post("/api/v1/ai/triage", json={"symptom_text": "đau ngực dữ dội"})
+def test_triage_endpoint_red_flag(client, patient):
+    r = client.post(
+        "/api/v1/ai/triage",
+        headers=_auth(patient),
+        json={"symptom_text": "đau ngực dữ dội"},
+    )
     assert r.status_code == 200
     assert r.json()["risk_level"] == "emergency"
 
 
-def test_metabolic_score_endpoint(client):
+def test_metabolic_score_endpoint(client, patient):
     r = client.post(
         "/api/v1/ai/metabolic-score",
+        headers=_auth(patient),
         json={"waist_cm": 110, "hba1c": 7.5, "triglyceride": 260, "hdl": 30, "systolic_bp": 150},
     )
     assert r.status_code == 200
