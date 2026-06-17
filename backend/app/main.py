@@ -21,6 +21,8 @@ from app.core.logging import setup_logging
 from app.core.metrics import registry
 from app.core.middleware import MfaEnrollmentMiddleware, ObservabilityMiddleware
 from app.services.consent import ConsentError
+from app.services.consent_guard import ConsentDenied
+from app.services.doctor_review import PermissionDenied
 
 logger = logging.getLogger("mcp")
 
@@ -81,6 +83,20 @@ def create_app() -> FastAPI:
 
     for warning in settings.warn_if_insecure():
         logger.warning("INSECURE CONFIG: %s", warning)
+
+    @app.exception_handler(ConsentDenied)
+    async def _consent_denied_handler(_: Request, exc: ConsentDenied) -> JSONResponse:
+        return JSONResponse(
+            status_code=403,
+            content={"code": "CONSENT_DENIED", "message": str(exc)},
+        )
+
+    @app.exception_handler(PermissionDenied)
+    async def _permission_denied_handler(_: Request, exc: PermissionDenied) -> JSONResponse:
+        return JSONResponse(
+            status_code=403,
+            content={"code": "PERMISSION_DENIED", "message": str(exc)},
+        )
 
     @app.exception_handler(ConsentError)
     async def _consent_error_handler(_: Request, exc: ConsentError) -> JSONResponse:

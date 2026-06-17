@@ -4,9 +4,17 @@ Importing this package imports every model module so that all tables register
 with ``Base.metadata`` before ``create_all`` / Alembic autogenerate runs.
 """
 
-from .ai import AIConversation
+from .ai import AIClinicalRecommendation, AIConversation, AISession, RecommendationStatus
 from .auth_tokens import MfaBackupCode, RefreshToken
-from .care import Appointment, Clinic, Doctor
+from .care import (
+    Appointment,
+    BookingHealthSnapshot,
+    CarePlan,
+    Clinic,
+    Doctor,
+    DoctorClinic,
+    Encounter,
+)
 from .clinical import (
     HealthMetric,
     LabDocument,
@@ -20,12 +28,19 @@ from .patient import PatientProfile
 from .user import User, UserRole
 
 __all__ = [
+    "AIClinicalRecommendation",
     "AIConversation",
+    "AISession",
+    "RecommendationStatus",
     "Appointment",
     "AuditLog",
+    "BookingHealthSnapshot",
+    "CarePlan",
     "Clinic",
     "Consent",
     "Doctor",
+    "DoctorClinic",
+    "Encounter",
     "HealthMetric",
     "LabDocument",
     "LabResult",

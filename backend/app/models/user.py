@@ -20,6 +20,7 @@ class UserRole(enum.StrEnum):
     INTERNAL_ADMIN = "internal_admin"
     MEDICAL_REVIEWER = "medical_reviewer"
     SUPER_ADMIN = "super_admin"
+    AI_SERVICE = "ai_service"  # Internal service account for AI system operations
 
 
 # Roles for which MFA is mandatory before accessing protected resources.

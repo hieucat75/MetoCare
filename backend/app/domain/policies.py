@@ -13,6 +13,8 @@ Design rules:
 
 from __future__ import annotations
 
+from app.core.clinical_thresholds import get_symptom_keywords, get_vital_thresholds_dict
+
 # --------------------------------------------------------------------------- #
 # Allowed vs prohibited actions (AI_Safety_Guardrail.md §3.1, §3.2)
 # --------------------------------------------------------------------------- #
@@ -49,34 +51,11 @@ PROHIBITED_ACTIONS: tuple[str, ...] = (
 # false-negative target = 0 → keyword set is intentionally broad.
 # --------------------------------------------------------------------------- #
 
-RED_FLAG_SYMPTOMS: dict[str, tuple[str, ...]] = {
-    "chest_pain": ("đau ngực", "tức ngực", "đau thắt ngực", "nặng ngực"),
-    "dyspnea": ("khó thở", "hụt hơi", "thở gấp", "không thở được"),
-    "cold_sweat": ("vã mồ hôi", "toát mồ hôi lạnh", "đổ mồ hôi lạnh"),
-    "stroke_signs": (
-        "yếu liệt", "liệt nửa người", "méo miệng", "nói khó", "nói đớ",
-        "tê nửa người", "đột quỵ", "lú lẫn",
-    ),
-    "syncope": ("ngất", "bất tỉnh", "mất ý thức", "xỉu"),
-    "severe_hypertension_combo": ("đau đầu dữ dội", "mờ mắt", "hoa mắt dữ dội"),
-    "hyperglycemia_combo": ("nôn", "mệt lả", "lơ mơ", "khát nước dữ dội"),
-    "severe_hypoglycemia": ("run tay", "vã mồ hôi lú lẫn", "hạ đường huyết nặng", "co giật"),
-    "severe_abdominal_pain": ("đau bụng dữ dội", "đau bụng quặn dữ dội"),
-    "cyanosis": ("tím tái", "môi tím", "tím môi"),
-}
+RED_FLAG_VITAL_THRESHOLDS = get_vital_thresholds_dict()
 
-# Vital-sign hard thresholds that constitute a red flag on their own
-# (independent of free-text). Keyed by HealthMetric.metric_type.
-# These are conservative screening thresholds, NOT diagnostic criteria.
-RED_FLAG_VITAL_THRESHOLDS: dict[str, dict[str, float]] = {
-    # systolic BP (mmHg)
-    "blood_pressure_systolic": {"critical_high": 180.0, "critical_low": 80.0},
-    # diastolic BP (mmHg)
-    "blood_pressure_diastolic": {"critical_high": 120.0, "critical_low": 50.0},
-    # glucose (mg/dL)
-    "fasting_glucose": {"critical_high": 300.0, "critical_low": 54.0},
-    "postprandial_glucose": {"critical_high": 350.0, "critical_low": 54.0},
-}
+# Re-export RED_FLAG_SYMPTOMS from clinical_thresholds for backward-compat
+# (triage.py and tests import it from here)
+RED_FLAG_SYMPTOMS = get_symptom_keywords()
 
 # --------------------------------------------------------------------------- #
 # Output-validator patterns (AI_Safety_Guardrail.md §3.2, §4.2, §4.3, §4.12)

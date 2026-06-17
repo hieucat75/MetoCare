@@ -64,3 +64,53 @@ class SymptomLogOut(BaseModel):
     reported_at: dt.datetime
 
     model_config = {"from_attributes": True}
+
+
+# ---------------------------------------------------------------------------
+# AISession & AIClinicalRecommendation
+# ---------------------------------------------------------------------------
+
+class AISessionOut(BaseModel):
+    id: str
+    patient_id: str
+    encounter_id: str | None
+    session_type: str
+    messages: str | None
+    key_version: int | None
+    risk_level: str | None
+    escalated_to_doctor: bool
+    escalation_reason: str | None
+    model_used: str | None
+    safety_flags: str | None
+    input_blocked: bool
+    output_blocked: bool
+    total_tokens: int | None
+    created_at: dt.datetime
+    updated_at: dt.datetime
+
+    model_config = {"from_attributes": True}
+
+
+class AIClinicalRecommendationOut(BaseModel):
+    id: str
+    session_id: str
+    patient_id: str
+    encounter_id: str | None
+    recommendation_type: str
+    content: str | None
+    key_version: int | None
+    status: str
+    reviewed_by_doctor_id: str | None
+    reviewed_at: dt.datetime | None
+    ai_confidence: float | None
+    safety_cleared: bool
+    medical_disclaimer: str | None
+    created_at: dt.datetime
+    updated_at: dt.datetime
+
+    model_config = {"from_attributes": True}
+
+
+class AIClinicalRecommendationReview(BaseModel):
+    action: str = Field(..., pattern="^(accept|reject)$")
+    notes: str | None = None
