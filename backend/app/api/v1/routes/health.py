@@ -1,28 +1,82 @@
-"""Health tracking routes (consent-gated + audited at the service layer)."""
+"""Health tracking routes (consent-gated + audited at the service layer).
+
+RBAC hardening (T9):
+  POST   /metrics        — PATIENT(own), DOCTOR, INTERNAL_ADMIN, SUPER_ADMIN
+  GET    /metrics        — PATIENT(own), DOCTOR, CLINIC_ADMIN, INTERNAL_ADMIN, SUPER_ADMIN
+  GET    /metrics/trend  — PATIENT(own), DOCTOR, CLINIC_ADMIN, INTERNAL_ADMIN, SUPER_ADMIN
+
+AI_SERVICE is blocked from all three routes.
+PATIENT ownership is enforced at the route level: a PATIENT token for user X
+may only access patient profiles whose user_id == X. DOCTOR/ADMIN bypass
+ownership (the service-layer consent gate handles their access separately).
+"""
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import current_user_id, get_session
+from app.api.deps import CurrentUser, get_session, require_roles
+from app.models.patient import PatientProfile
+from app.models.user import UserRole
 from app.schemas.health import MetricCreate, MetricOut, TrendOut
 from app.services import health_metrics
 
 router = APIRouter(prefix="/patients/{patient_id}/metrics", tags=["health-tracking"])
 
+# ---------------------------------------------------------------------------
+# Role sets
+# ---------------------------------------------------------------------------
+_WRITE_ROLES = (
+    UserRole.PATIENT,
+    UserRole.DOCTOR,
+    UserRole.INTERNAL_ADMIN,
+    UserRole.SUPER_ADMIN,
+)
+
+_READ_ROLES = (
+    UserRole.PATIENT,
+    UserRole.DOCTOR,
+    UserRole.CLINIC_ADMIN,
+    UserRole.INTERNAL_ADMIN,
+    UserRole.SUPER_ADMIN,
+)
+
+
+def _enforce_patient_ownership(
+    patient_id: str,
+    user: CurrentUser,
+    db: Session,
+) -> None:
+    """Raise 403 when a PATIENT token tries to access another patient's data."""
+    if user.role != UserRole.PATIENT:
+        return  # DOCTOR / ADMIN bypass ownership check (consent gate in service)
+    profile = db.get(PatientProfile, patient_id)
+    if profile is None:
+        raise HTTPException(status_code=404, detail="Patient not found.")
+    if profile.user_id != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="PATIENT may only access their own health metrics.",
+        )
+
+
+# ---------------------------------------------------------------------------
+# Routes
+# ---------------------------------------------------------------------------
 
 @router.post("", response_model=MetricOut, status_code=201)
 def create_metric(
     patient_id: str,
     payload: MetricCreate,
-    requester_id: str = Depends(current_user_id),
+    user: CurrentUser = Depends(require_roles(*_WRITE_ROLES)),
     db: Session = Depends(get_session),
 ) -> MetricOut:
+    _enforce_patient_ownership(patient_id, user, db)
     metric = health_metrics.create_metric(
         db,
         patient_id=patient_id,
-        requester_id=requester_id,
+        requester_id=user.id,
         metric_type=payload.metric_type,
         value=payload.value,
         unit=payload.unit,
@@ -38,11 +92,12 @@ def create_metric(
 def list_metrics(
     patient_id: str,
     metric_type: str | None = Query(default=None),
-    requester_id: str = Depends(current_user_id),
+    user: CurrentUser = Depends(require_roles(*_READ_ROLES)),
     db: Session = Depends(get_session),
 ) -> list[MetricOut]:
+    _enforce_patient_ownership(patient_id, user, db)
     rows = health_metrics.list_metrics(
-        db, patient_id=patient_id, requester_id=requester_id, metric_type=metric_type
+        db, patient_id=patient_id, requester_id=user.id, metric_type=metric_type
     )
     return [MetricOut.model_validate(r) for r in rows]
 
@@ -52,10 +107,15 @@ def metric_trend(
     patient_id: str,
     metric_type: str = Query(...),
     days: int = Query(default=30, ge=1, le=365),
-    requester_id: str = Depends(current_user_id),
+    user: CurrentUser = Depends(require_roles(*_READ_ROLES)),
     db: Session = Depends(get_session),
 ) -> TrendOut:
+    _enforce_patient_ownership(patient_id, user, db)
     data = health_metrics.trend(
-        db, patient_id=patient_id, requester_id=requester_id, metric_type=metric_type, days=days
+        db,
+        patient_id=patient_id,
+        requester_id=user.id,
+        metric_type=metric_type,
+        days=days,
     )
     return TrendOut(**data)
