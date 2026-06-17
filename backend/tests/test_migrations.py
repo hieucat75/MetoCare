@@ -120,6 +120,14 @@ def test_migration_chain_order():
         f"C6 VIOLATED: t4_m1 down_revision should be 't4_m0_role', got '{m1_down}'"
     )
 
+    # C5-bis: M3 must NOT contain 'encounters' FK in create_table (FK must be in M4b)
+    m3_file = "t4_m3_add_recs_add_ai_clinical_recommendations.py"
+    m3_content = (versions_dir / m3_file).read_text()
+    assert "ForeignKeyConstraint" not in m3_content or "encounters.id" not in m3_content, (
+        "C5-bis VIOLATED: M3 still contains FK -> encounters.id; "
+        "this must be moved to M4b (after encounters table created)"
+    )
+
 
 _PG_URL = os.environ.get("MCP_TEST_POSTGRES_URL")
 

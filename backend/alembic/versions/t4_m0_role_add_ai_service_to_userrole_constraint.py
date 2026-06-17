@@ -48,7 +48,12 @@ _ALT_CHECK_NAME = 'users_role_check'
 
 
 def _get_constraint_name(conn: sa.Connection) -> str | None:
-    """Return the CHECK constraint name for users.role, or None if not found."""
+    """Return the CHECK constraint name for users.role, or None if not found.
+
+    Uses the active migration connection (op.get_bind()) to stay within the same
+    transaction as the Alembic op context — avoids duplicate-constraint errors that
+    occur when a separate connection can't see uncommitted DDL.
+    """
     result = conn.execute(
         sa.text(
             "SELECT conname FROM pg_constraint "
@@ -63,13 +68,12 @@ def _get_constraint_name(conn: sa.Connection) -> str | None:
 
 
 def upgrade() -> None:
-    bind = op.get_context().bind
+    bind = op.get_bind()  # active migration connection (same transaction)
     if bind is None or bind.dialect.name == 'sqlite':
         # SQLite: no CHECK constraint to alter
         return
 
-    with bind.connect() as conn:
-        old_name = _get_constraint_name(conn)
+    old_name = _get_constraint_name(bind)
 
     with op.batch_alter_table('users', schema=None) as batch_op:
         if old_name:
@@ -81,12 +85,11 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    bind = op.get_context().bind
+    bind = op.get_bind()  # active migration connection (same transaction)
     if bind is None or bind.dialect.name == 'sqlite':
         return
 
-    with bind.connect() as conn:
-        current_name = _get_constraint_name(conn)
+    current_name = _get_constraint_name(bind)
 
     with op.batch_alter_table('users', schema=None) as batch_op:
         if current_name:

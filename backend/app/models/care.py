@@ -155,27 +155,54 @@ class CarePlan(UUIDPrimaryKey, TimestampMixin, SoftDeleteMixin, Base):
     version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
 
     # ------------------------------------------------------------------ #
-    # C2 GUARD: @validates fires on __init__ attribute assignment          #
+    # C2 GUARD: order-independent via dual @validates                      #
     # ------------------------------------------------------------------ #
+
+    _AI_FORBIDDEN_CP_STATUSES: frozenset[str] = frozenset({
+        "PENDING_REVIEW", "APPROVED", "ACTIVE", "SUPERSEDED", "ARCHIVED",
+    })
+
+    def _check_ai_status(self) -> None:
+        """Raise if ai_generated=True and current status is forbidden."""
+        status_val = getattr(self, "status", None)
+        ai_gen = getattr(self, "ai_generated", False)
+        forbidden = self._AI_FORBIDDEN_CP_STATUSES
+        if ai_gen and status_val is not None and str(status_val).upper() in forbidden:
+            raise ValueError(
+                f"AI-generated CarePlan cannot be created with status='{status_val}'. "
+                "Only DRAFT is allowed. Use DoctorCarePlanService to transition."
+            )
+
     @validates("status")
     def _validate_status(self, key: str, value: str) -> str:
-        """Reject non-DRAFT status on AI-generated care plans at construction.
-
-        For ai_generated care plans, only DRAFT is valid at creation.
-        Transitions to APPROVED/ACTIVE must go through DoctorCarePlanService
-        using direct SQL UPDATE (same pattern as DoctorReviewService).
-        """
+        """Reject forbidden status if ai_generated is already True (set before status)."""
         if value is None:
             return value  # type: ignore[return-value]
-        # Only enforce when ai_generated is already True (set before status).
-        # If ai_generated is not yet set (default=False), allow normal construction.
-        if getattr(self, "ai_generated", False) and str(value).upper() in {
-            "PENDING_REVIEW", "APPROVED", "ACTIVE", "SUPERSEDED", "ARCHIVED"
-        }:
+        # Store temporarily so ai_generated validator can also check
+        forbidden = self._AI_FORBIDDEN_CP_STATUSES
+        if getattr(self, "ai_generated", False) and str(value).upper() in forbidden:
             raise ValueError(
                 f"AI-generated CarePlan cannot be created with status='{value}'. "
                 "Only DRAFT is allowed. Use DoctorCarePlanService to transition."
             )
+        return value
+
+    @validates("ai_generated")
+    def _validate_ai_generated(self, key: str, value: bool) -> bool:  # noqa: FBT001
+        """When ai_generated flips to True, recheck the current status.
+
+        Catches CarePlan(status='ACTIVE', ai_generated=True) where status is
+        assigned first (before ai_generated is set). When ai_generated=True arrives,
+        we check whatever status is already stored in the instance __dict__.
+        """
+        if value:
+            # Read status directly from instance __dict__ (bypasses descriptor)
+            status_val = self.__dict__.get("status")
+            if status_val is not None and str(status_val).upper() in self._AI_FORBIDDEN_CP_STATUSES:
+                raise ValueError(
+                    f"AI-generated CarePlan cannot be created with status='{status_val}'. "
+                    "Only DRAFT is allowed. Use DoctorCarePlanService to transition."
+                )
         return value
 
     @classmethod

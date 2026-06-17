@@ -181,8 +181,18 @@ class TestC2CarePlanCreationGuard:
     def test_ai_careplan_cannot_be_created_active(self):
         """AI-generated CarePlan cannot be created with status=ACTIVE."""
         with pytest.raises(ValueError, match="cannot be created with status"):
-            # The @validates hook fires when ai_generated is set True before status
+            # ai_generated=True set BEFORE status (triggers @validates(status))
             CarePlan(ai_generated=True, status="ACTIVE", patient_id="p", title="t")
+
+    def test_ai_careplan_cannot_be_created_active_reverse_order(self):
+        """C2 order-independent: status=ACTIVE set BEFORE ai_generated=True must also be blocked.
+
+        This tests the @validates('ai_generated') hook which rechecks status
+        after ai_generated flips to True, regardless of kwarg order.
+        """
+        with pytest.raises(ValueError, match="cannot be created with status"):
+            # status assigned FIRST (before ai_generated), then ai_generated=True triggers recheck
+            CarePlan(status="ACTIVE", ai_generated=True, patient_id="p", title="t")
 
     def test_ai_careplan_cannot_be_created_approved(self):
         """AI-generated CarePlan cannot be created with status=APPROVED."""

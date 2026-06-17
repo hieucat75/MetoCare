@@ -41,7 +41,7 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint('id'),
         sa.ForeignKeyConstraint(['session_id'], ['ai_sessions.id'], name='fk_clinical_recs_session_id'),
         sa.ForeignKeyConstraint(['patient_id'], ['patient_profiles.id'], name='fk_clinical_recs_patient_id'),
-        sa.ForeignKeyConstraint(['encounter_id'], ['encounters.id'], name='fk_clinical_recs_encounter_id'),
+        # encounter FK deferred to M4b (after encounters table created in M4)
         sa.ForeignKeyConstraint(['reviewed_by_doctor_id'], ['doctors.id'], name='fk_clinical_recs_reviewed_by_doctor_id'),
         sa.ForeignKeyConstraint(['deleted_by'], ['users.id'], name='fk_clinical_recs_deleted_by'),
     )
@@ -53,6 +53,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # Encounter FK is in M4b, which runs downgrade before M3 (M4b.downgrade -> M3.downgrade)
+    # So encounter FK is already dropped by the time we reach here.
+    # SQLite: batch_alter_table reflection for index drops may fail; just drop the table.
     bind = op.get_context().bind
     if bind is not None and bind.dialect.name != 'sqlite':
         with op.batch_alter_table('ai_clinical_recommendations', schema=None) as batch_op:
