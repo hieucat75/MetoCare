@@ -5,7 +5,7 @@ from __future__ import annotations
 import datetime as dt
 import uuid
 
-from sqlalchemy import DateTime, String, func, text
+from sqlalchemy import DateTime, ForeignKey, String, func, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 # Portable SQL: CURRENT_TIMESTAMP works on both SQLite and PostgreSQL, so the
@@ -29,3 +29,8 @@ class TimestampMixin:
     updated_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), server_default=_NOW, onupdate=func.now(), nullable=False
     )
+
+
+class SoftDeleteMixin:
+    deleted_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deleted_by: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)

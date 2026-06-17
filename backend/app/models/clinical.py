@@ -16,7 +16,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.core.crypto import EncryptedString
 from app.core.database import Base
 
-from ._mixins import TimestampMixin, UUIDPrimaryKey
+from ._mixins import SoftDeleteMixin, TimestampMixin, UUIDPrimaryKey
 
 
 class HealthMetric(UUIDPrimaryKey, TimestampMixin, Base):
@@ -55,7 +55,7 @@ class LabDocument(UUIDPrimaryKey, TimestampMixin, Base):
     data_classification: Mapped[str] = mapped_column(String(32), default="sensitive_health")
 
 
-class LabResult(UUIDPrimaryKey, TimestampMixin, Base):
+class LabResult(UUIDPrimaryKey, TimestampMixin, SoftDeleteMixin, Base):
     __tablename__ = "lab_results"
 
     patient_id: Mapped[str] = mapped_column(
@@ -85,7 +85,7 @@ class SymptomLog(UUIDPrimaryKey, TimestampMixin, Base):
     reported_at: Mapped[dt.datetime] = mapped_column(nullable=False)
 
 
-class Medication(UUIDPrimaryKey, TimestampMixin, Base):
+class Medication(UUIDPrimaryKey, TimestampMixin, SoftDeleteMixin, Base):
     __tablename__ = "medications"
 
     patient_id: Mapped[str] = mapped_column(

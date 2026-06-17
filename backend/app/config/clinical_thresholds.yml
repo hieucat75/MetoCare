@@ -1,0 +1,90 @@
+vitals:
+  blood_pressure_systolic:
+    critical_high: 180.0
+    critical_low: 80.0
+    unit: mmHg
+    source: AHA 2023
+    board_approved: false
+    proposed: true
+  blood_pressure_diastolic:
+    critical_high: 120.0
+    critical_low: 50.0
+    unit: mmHg
+    source: AHA 2023
+    board_approved: false
+    proposed: true
+  fasting_glucose:
+    critical_high: 300.0
+    critical_low: 54.0
+    unit: mg/dL
+    source: ADA 2024
+    board_approved: false
+    proposed: true
+  postprandial_glucose:
+    critical_high: 350.0
+    critical_low: 54.0
+    unit: mg/dL
+    source: ADA 2024
+    board_approved: false
+    proposed: true
+
+symptoms:
+  chest_pain:
+    - đau ngực
+    - tức ngực
+    - đau thắt ngực
+    - nặng ngực
+  dyspnea:
+    - khó thở
+    - hụt hơi
+    - thở gấp
+    - không thở được
+  cold_sweat:
+    - vã mồ hôi
+    - toát mồ hôi lạnh
+    - đổ mồ hôi lạnh
+  stroke_signs:
+    - yếu liệt
+    - liệt nửa người
+    - méo miệng
+    - nói khó
+    - nói đớ
+    - tê nửa người
+    - đột quỵ
+    - lú lẫn
+  syncope:
+    - ngất
+    - bất tỉnh
+    - mất ý thức
+    - xỉu
+  severe_hypertension_combo:
+    - đau đầu dữ dội
+    - mờ mắt
+    - hoa mắt dữ dội
+  hyperglycemia_combo:
+    - nôn
+    - mệt lả
+    - lơ mơ
+    - khát nước dữ dội
+  severe_hypoglycemia:
+    - run tay
+    - vã mồ hôi lú lẫn
+    - hạ đường huyết nặng
+    - co giật
+  severe_abdominal_pain:
+    - đau bụng dữ dội
+    - đau bụng quặn dữ dội
+  cyanosis:
+    - tím tái
+    - môi tím
+    - tím môi
+  suicidal_ideation:
+    - tự tử
+    - tự hại
+    - muốn chết
+    - kết liễu
+  anaphylaxis:
+    - sốc phản vệ
+    - phù nề đường thở
+    - co thắt phế quản
+    - phát ban toàn thân

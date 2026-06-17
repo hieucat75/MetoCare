@@ -37,9 +37,36 @@ def _is_postgres() -> bool:
     return op.get_bind().dialect.name == "postgresql"
 
 
+def _timescaledb_available() -> bool:
+    """Return True only when the TimescaleDB shared library is installed on this PG server."""
+    try:
+        import sqlalchemy as sa
+
+        result = op.get_bind().execute(
+            sa.text("SELECT COUNT(*) FROM pg_available_extensions WHERE name = 'timescaledb'")
+        )
+        return bool(result.scalar())
+    except Exception:
+        return False
+
+
 def upgrade() -> None:
     if not _is_postgres():
         return  # hypertable / CAGG are TimescaleDB features; skip on SQLite et al.
+
+    if not _timescaledb_available():
+        # TimescaleDB not installed on this PG server (e.g. local Homebrew dev).
+        # Skip hypertable setup -- tables remain plain Postgres tables.
+        # On production (TimescaleDB Cloud / self-managed TSDB) this block runs.
+        import warnings
+
+        warnings.warn(
+            "TimescaleDB extension not available -- skipping hypertable/CAGG setup. "
+            "health_metrics will be a plain table on this instance.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return
 
     op.execute("CREATE EXTENSION IF NOT EXISTS timescaledb")
 
