@@ -11,6 +11,7 @@ from .routes import (
     auth,
     care_plans,
     consent,
+    doctor_review,
     encounters,
     health,
     lab,
@@ -29,3 +30,4 @@ api_router.include_router(admin.router)
 api_router.include_router(encounters.router)
 api_router.include_router(care_plans.router)
 api_router.include_router(ai_sessions.router)
+api_router.include_router(doctor_review.router, prefix="/doctor", tags=["doctor_review"])

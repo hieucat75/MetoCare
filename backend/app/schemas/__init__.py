@@ -24,6 +24,7 @@ from .admin import (
 from .ai import (
     ChatRequest,
     ChatResponse,
+    DoctorReviewDecision,
     ScoreRequest,
     ScoreResponse,
     TriageRequest,
@@ -93,7 +94,7 @@ __all__ = [
     "AuditLogFilter", "AuditLogOut", "SystemStatsOut",
     "UserAdminOut", "UserRoleUpdate", "UserStatusUpdate",
     # ai
-    "ChatRequest", "ChatResponse",
+    "ChatRequest", "ChatResponse", "DoctorReviewDecision",
     "ScoreRequest", "ScoreResponse",
     "TriageRequest", "TriageResponse",
     "VitalIn",
