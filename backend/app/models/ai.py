@@ -24,6 +24,7 @@ class RecommendationStatus(StrEnum):
     ACCEPTED       = "accepted"
     REJECTED       = "rejected"
     SUPERSEDED     = "superseded"
+    REQUEST_INFO   = "request_info"
 
 
 class AISession(UUIDPrimaryKey, TimestampMixin, SoftDeleteMixin, Base):

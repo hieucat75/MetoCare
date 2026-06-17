@@ -254,3 +254,148 @@ def test_unauthenticated_cannot_access_queue(client):
     """no token -> 401."""
     r = client.get("/api/v1/doctor/review/queue")
     assert r.status_code == 401, r.text
+
+
+def test_doctor_request_info_verdict(client, db, setup_api_data):
+    """P1-01: verdict=request_info -> status=request_info, NOT rejected."""
+    session = AISession(patient_id=setup_api_data["patient"].id, session_type="triage")
+    db.add(session)
+    db.flush()
+    rec = AIClinicalRecommendation(
+        session_id=session.id,
+        patient_id=setup_api_data["patient"].id,
+        recommendation_type="triage_assessment",
+        status=RecommendationStatus.PENDING_REVIEW,
+    )
+    db.add(rec)
+    db.commit()
+
+    with patch("app.services.doctor_review.is_enabled", return_value=True):
+        r = client.post(
+            f"/api/v1/doctor/review/{rec.id}/review",
+            headers=setup_api_data["doctor_headers"],
+            json={"verdict": "request_info", "notes": "Need more tests"},
+        )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    # P1-01: must be request_info, NOT rejected
+    assert body["status"] == "request_info", (
+        f"Expected 'request_info', got '{body['status']}' — P1-01 regression"
+    )
+    assert body["status"] != "rejected", "request_info must not silently map to rejected"
+
+
+def test_doctor_request_info_safety_cleared_unchanged(client, db, setup_api_data):
+    """P1-01: request_info must NOT set safety_cleared=False (must not behave as rejection)."""
+    session = AISession(patient_id=setup_api_data["patient"].id, session_type="triage")
+    db.add(session)
+    db.flush()
+    rec = AIClinicalRecommendation(
+        session_id=session.id,
+        patient_id=setup_api_data["patient"].id,
+        recommendation_type="triage_assessment",
+        status=RecommendationStatus.PENDING_REVIEW,
+    )
+    db.add(rec)
+    db.commit()
+    original_safety_cleared = rec.safety_cleared  # False at pending_review
+
+    with patch("app.services.doctor_review.is_enabled", return_value=True):
+        r = client.post(
+            f"/api/v1/doctor/review/{rec.id}/review",
+            headers=setup_api_data["doctor_headers"],
+            json={"verdict": "request_info", "notes": "Missing lab data"},
+        )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    # safety_cleared must remain unchanged (not forcibly set to False like rejection)
+    assert body["safety_cleared"] == original_safety_cleared, (
+        "request_info must not change safety_cleared — it is not a rejection"
+    )
+
+
+def test_doctor_accepts_still_works_after_p1_fix(client, db, setup_api_data):
+    """Regression: accepted verdict still works correctly after P1-01 fix."""
+    session = AISession(patient_id=setup_api_data["patient"].id, session_type="triage")
+    db.add(session)
+    db.flush()
+    rec = AIClinicalRecommendation(
+        session_id=session.id,
+        patient_id=setup_api_data["patient"].id,
+        recommendation_type="triage_assessment",
+        status=RecommendationStatus.PENDING_REVIEW,
+    )
+    db.add(rec)
+    db.commit()
+
+    with patch("app.services.doctor_review.is_enabled", return_value=True):
+        r = client.post(
+            f"/api/v1/doctor/review/{rec.id}/review",
+            headers=setup_api_data["doctor_headers"],
+            json={"verdict": "accepted"},
+        )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["status"] == "accepted"
+    assert body["safety_cleared"] is True
+
+
+def test_doctor_rejects_still_works_after_p1_fix(client, db, setup_api_data):
+    """Regression: rejected verdict still works correctly after P1-01 fix."""
+    session = AISession(patient_id=setup_api_data["patient"].id, session_type="triage")
+    db.add(session)
+    db.flush()
+    rec = AIClinicalRecommendation(
+        session_id=session.id,
+        patient_id=setup_api_data["patient"].id,
+        recommendation_type="triage_assessment",
+        status=RecommendationStatus.PENDING_REVIEW,
+    )
+    db.add(rec)
+    db.commit()
+
+    with patch("app.services.doctor_review.is_enabled", return_value=True):
+        r = client.post(
+            f"/api/v1/doctor/review/{rec.id}/review",
+            headers=setup_api_data["doctor_headers"],
+            json={"verdict": "rejected", "notes": "Not appropriate"},
+        )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["status"] == "rejected"
+    assert body["safety_cleared"] is False
+
+
+def test_request_info_audit_action(db, setup_api_data):
+    """P1-01: audit action for request_info must be 'ai.recommendation_request_info'."""
+    from unittest.mock import patch
+
+    from app.models.governance import AuditLog
+    from app.services.doctor_review import DoctorReviewService
+
+    session = AISession(patient_id=setup_api_data["patient"].id, session_type="triage")
+    db.add(session)
+    db.flush()
+    rec = AIClinicalRecommendation(
+        session_id=session.id,
+        patient_id=setup_api_data["patient"].id,
+        recommendation_type="triage_assessment",
+        status=RecommendationStatus.PENDING_REVIEW,
+    )
+    db.add(rec)
+    db.commit()
+
+    with patch("app.services.doctor_review.is_enabled", return_value=True):
+        DoctorReviewService(db).review(
+            recommendation_id=rec.id,
+            action="request_info",
+            doctor=setup_api_data["d_user"],
+            notes="Need imaging",
+        )
+    db.commit()
+
+    audit_entry = db.query(AuditLog).filter_by(
+        resource_id=rec.id,
+        action="ai.recommendation_request_info",
+    ).first()
+    assert audit_entry is not None, "Audit log for request_info action not found"

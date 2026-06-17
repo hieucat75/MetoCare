@@ -147,9 +147,12 @@ def review_recommendation(
     if not db_user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
     try:
-        action_val: Literal["accept", "reject"] = (
-            "accept" if payload.verdict == "accepted" else "reject"
-        )
+        if payload.verdict == "accepted":
+            action_val: Literal["accept", "reject", "request_info"] = "accept"
+        elif payload.verdict == "rejected":
+            action_val = "reject"
+        else:  # "request_info"
+            action_val = "request_info"
         rec = DoctorReviewService(db).review(
             recommendation_id=rec_id,
             action=action_val,

@@ -81,7 +81,7 @@ class DoctorReviewService:
     def review(
         self,
         recommendation_id: str,
-        action: Literal["accept", "reject"],
+        action: Literal["accept", "reject", "request_info"],
         doctor: User,
         notes: str | None = None,
     ) -> AIClinicalRecommendation:
@@ -128,6 +128,10 @@ class DoctorReviewService:
         if action == "accept":
             new_status = RecommendationStatus.ACCEPTED
             new_safety_cleared = True
+        elif action == "request_info":
+            new_status = RecommendationStatus.REQUEST_INFO
+            # Leave safety_cleared as-is (do NOT treat as rejection)
+            new_safety_cleared = rec.safety_cleared
         else:  # reject
             new_status = RecommendationStatus.REJECTED
             new_safety_cleared = False
@@ -173,11 +177,18 @@ class DoctorReviewService:
 
         self.db.flush()
 
+        if action == "accept":
+            audit_action = "ai.recommendation_accepted"
+        elif action == "request_info":
+            audit_action = "ai.recommendation_request_info"
+        else:
+            audit_action = "ai.recommendation_rejected"
+
         audit.record(
             self.db,
             actor_type="doctor",
             actor_id=doctor.id,
-            action=f"ai.recommendation_{action}ed",
+            action=audit_action,
             resource_type="ai_clinical_recommendation",
             resource_id=recommendation_id,
             outcome="success",
