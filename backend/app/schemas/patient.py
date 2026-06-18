@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+import datetime as dt
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class PatientProfileCreate(BaseModel):
@@ -63,7 +66,7 @@ class PatientProfileOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class PatientSummaryOut(BaseModel):
+class PatientCompactOut(BaseModel):
     """Compact view for doctor portal / admin list."""
 
     id: str
@@ -73,3 +76,49 @@ class PatientSummaryOut(BaseModel):
     risk_segment: str | None
 
     model_config = {"from_attributes": True}
+
+
+# ---------------------------------------------------------------------------
+# T22 — Pre-Visit Patient Summary
+# ---------------------------------------------------------------------------
+
+class VitalsSummary(BaseModel):
+    """Recent vitals snapshot for the summary endpoint."""
+
+    latest: list[Any] = Field(default_factory=list)
+    trend: str = "insufficient_data"  # improving | stable | worsening | insufficient_data
+
+
+class MetabolicScoreSummary(BaseModel):
+    """Latest metabolic/risk score for the summary endpoint."""
+
+    latest_score: float | None = None
+    trend: str = "insufficient_data"
+    recorded_at: dt.datetime | None = None
+
+
+class PatientSummaryOut(BaseModel):
+    """Full pre-visit patient summary for the doctor portal (T22).
+
+    Aggregates recent vitals, labs, metabolic score, medications, symptoms,
+    nutrition, upcoming appointments, and active care-plan metadata.
+
+    RBAC:
+    - DOCTOR — consent-gated (scope='profile')
+    - INTERNAL_ADMIN / SUPER_ADMIN — unrestricted
+    - PATIENT, AI_SERVICE — always 403
+    """
+
+    patient_id: str
+    generated_at: dt.datetime
+
+    vitals: VitalsSummary = Field(default_factory=VitalsSummary)
+    lab_documents: list[Any] = Field(default_factory=list)
+    metabolic_score: MetabolicScoreSummary = Field(default_factory=MetabolicScoreSummary)
+    medications: list[Any] = Field(default_factory=list)
+    symptoms: list[Any] = Field(default_factory=list)
+    nutrition: list[Any] = Field(default_factory=list)
+    upcoming_appointments: list[Any] = Field(default_factory=list)
+    active_care_plans: list[Any] = Field(default_factory=list)
+
+    model_config = ConfigDict(from_attributes=False)

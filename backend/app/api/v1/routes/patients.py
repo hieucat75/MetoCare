@@ -26,7 +26,7 @@ from app.api.deps import CurrentUser, current_user, get_session
 from app.models.user import UserRole
 from app.schemas.medication import MedicationCreate, MedicationOut
 from app.schemas.nutrition import NutritionLogCreate, NutritionLogOut
-from app.schemas.patient import PatientProfileOut, PatientProfileUpdate
+from app.schemas.patient import PatientProfileOut, PatientProfileUpdate, PatientSummaryOut
 from app.schemas.risk_score import RiskScoreHistoryResponse, RiskScoreOut
 from app.schemas.symptom import SymptomLogCreate, SymptomLogOut
 from app.schemas.triage_log import TriageLogHistoryResponse, TriageLogOut
@@ -34,6 +34,7 @@ from app.services import audit
 from app.services import medication as medication_svc
 from app.services import nutrition_log as nutrition_log_svc
 from app.services import patient_profile as svc
+from app.services import patient_summary as summary_svc
 from app.services import risk_score as risk_score_svc
 from app.services import symptom_log as symptom_log_svc
 from app.services import triage_log as triage_log_svc
@@ -521,3 +522,61 @@ def get_triage_history(
         total=total,
         items=[TriageLogOut.model_validate(item) for item in items],
     )
+
+
+# ---------------------------------------------------------------------------
+# T22 — Pre-Visit Patient Summary
+# ---------------------------------------------------------------------------
+
+@router.get(
+    "/{patient_id}/summary",
+    response_model=PatientSummaryOut,
+    status_code=status.HTTP_200_OK,
+    summary="Get pre-visit patient summary (doctor portal)",
+)
+def get_patient_summary(
+    patient_id: str,
+    user: CurrentUser = Depends(current_user),
+    db: Session = Depends(get_session),
+) -> PatientSummaryOut:
+    """Return a consolidated pre-visit summary for *patient_id*.
+
+    Aggregates the most recent vitals, lab documents, metabolic score,
+    active medications, symptoms, nutrition logs, upcoming appointments,
+    and active care plans into a single response.
+
+    Access rules:
+    - **DOCTOR** \u2014 consent-gated (scope='profile').
+    - **INTERNAL_ADMIN / SUPER_ADMIN** \u2014 unrestricted.
+    - **PATIENT** \u2014 always 403 (use their own profile endpoints).
+    - **AI_SERVICE** \u2014 always 403.
+    """
+    from fastapi import HTTPException
+    from fastapi import status as http_status
+
+    # Block PATIENT and AI_SERVICE explicitly (and CLINIC_ADMIN via _BLOCKED_WRITE_ROLES)
+    _SUMMARY_BLOCKED: frozenset[str] = frozenset({
+        UserRole.PATIENT,
+        UserRole.AI_SERVICE,
+        UserRole.CLINIC_ADMIN,
+    })
+    if user.role in _SUMMARY_BLOCKED:
+        raise HTTPException(
+            status_code=http_status.HTTP_403_FORBIDDEN,
+            detail=f"Role '{user.role}' is not permitted to access patient summaries.",
+        )
+
+    # Admins bypass consent check
+    doctor_id: str | None = None
+    if user.role not in _ADMIN_ROLES:
+        # Must be DOCTOR — enforce consent
+        try:
+            require_access(db, patient_id=patient_id, requester_id=user.id, scope="profile")
+        except ConsentError as exc:
+            raise HTTPException(
+                status_code=http_status.HTTP_403_FORBIDDEN,
+                detail=str(exc),
+            ) from exc
+        doctor_id = user.id
+
+    return summary_svc.build_summary(db, patient_id=patient_id, doctor_id=doctor_id)
