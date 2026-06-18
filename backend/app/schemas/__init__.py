@@ -17,6 +17,7 @@ from .admin import (
     AuditLogFilter,
     AuditLogOut,
     SystemStatsOut,
+    UnlockRequest,
     UserAdminOut,
     UserRoleUpdate,
     UserStatusUpdate,
@@ -31,6 +32,7 @@ from .ai import (
     TriageResponse,
     VitalIn,
 )
+from .ai_session import AISessionCreate
 from .auth import (
     LoginRequest,
     LogoutRequest,
@@ -92,7 +94,10 @@ from .patient import (
 __all__ = [
     # admin
     "AuditLogFilter", "AuditLogOut", "SystemStatsOut",
+    "UnlockRequest",
     "UserAdminOut", "UserRoleUpdate", "UserStatusUpdate",
+    # ai_session
+    "AISessionCreate",
     # ai
     "ChatRequest", "ChatResponse", "DoctorReviewDecision",
     "ScoreRequest", "ScoreResponse",

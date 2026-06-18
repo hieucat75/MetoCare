@@ -7,7 +7,6 @@ The audit-log view lets operations review access trails (metadata only).
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -15,17 +14,13 @@ from app.api.deps import CurrentUser, get_session, require_mfa, require_roles
 from app.core.ratelimit import get_lockout
 from app.models.governance import AuditLog
 from app.models.user import UserRole
+from app.schemas.admin import UnlockRequest
 from app.schemas.common import Message
 from app.services import audit
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 _admin_only = require_roles(UserRole.INTERNAL_ADMIN, UserRole.SUPER_ADMIN)
-
-
-class UnlockRequest(BaseModel):
-    email: str
-
 
 @router.get("/audit-logs")
 def list_audit_logs(
@@ -57,7 +52,6 @@ def list_audit_logs(
         }
         for r in rows
     ]
-
 
 @router.post("/unlock-account", response_model=Message)
 def unlock_account(

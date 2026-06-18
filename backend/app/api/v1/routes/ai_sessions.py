@@ -19,7 +19,6 @@ Recommendations (GET only):
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -29,45 +28,12 @@ from app.core.rbac import _is_admin
 from app.models.ai import AIClinicalRecommendation, AISession
 from app.models.patient import PatientProfile
 from app.models.user import UserRole
+from app.schemas.ai_session import AISessionCreate
+from app.schemas.clinical import AIClinicalRecommendationOut, AISessionOut
 from app.services import audit
 from app.services.consent_guard import ConsentDenied, ConsentGuard
 
 router = APIRouter(prefix="/ai_sessions", tags=["ai_sessions"])
-
-
-# ---------------------------------------------------------------------------
-# Schemas (local — no existing ai_session schema found)
-# ---------------------------------------------------------------------------
-
-class AISessionCreate(BaseModel):
-    patient_id: str
-    encounter_id: str | None = None
-    session_type: str = Field(..., max_length=64)
-
-
-class AISessionOut(BaseModel):
-    id: str
-    patient_id: str
-    encounter_id: str | None
-    session_type: str
-    risk_level: str | None
-    escalated_to_doctor: bool
-    model_used: str | None
-
-    model_config = {"from_attributes": True}
-
-
-class AIClinicalRecommendationOut(BaseModel):
-    id: str
-    session_id: str
-    patient_id: str
-    recommendation_type: str
-    status: str
-    ai_confidence: float | None
-    safety_cleared: bool
-
-    model_config = {"from_attributes": True}
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -99,7 +65,6 @@ def _check_session_read_access(
         status_code=status.HTTP_403_FORBIDDEN,
         detail="Insufficient permissions to access this AI session.",
     )
-
 
 # ---------------------------------------------------------------------------
 # Endpoints
@@ -167,7 +132,6 @@ def create_ai_session(
     db.refresh(session)
     return AISessionOut.model_validate(session)
 
-
 @router.get("/{session_id}", response_model=AISessionOut)
 def get_ai_session(
     session_id: str,
@@ -180,7 +144,6 @@ def get_ai_session(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="AI session not found.")
     _check_session_read_access(db, session, user)
     return AISessionOut.model_validate(session)
-
 
 @router.get("", response_model=list[AISessionOut])
 def list_ai_sessions(
@@ -213,7 +176,6 @@ def list_ai_sessions(
 
     sessions = db.execute(stmt).scalars().all()
     return [AISessionOut.model_validate(s) for s in sessions]
-
 
 @router.get("/{session_id}/recommendations", response_model=list[AIClinicalRecommendationOut])
 def list_recommendations(
