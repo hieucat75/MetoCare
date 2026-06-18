@@ -91,6 +91,7 @@ from .patient import (
 from .risk_score import RiskScoreHistoryResponse
 from .risk_score import RiskScoreOut as RiskScoreHistoryItemOut
 from .symptom import SymptomLogCreate, SymptomLogOut
+from .triage_log import TriageLogHistoryResponse, TriageLogOut
 
 __all__ = [
     # admin
@@ -133,4 +134,6 @@ __all__ = [
     "NutritionLogCreate", "NutritionLogOut",
     # risk_score (T13)
     "RiskScoreHistoryResponse", "RiskScoreHistoryItemOut",
+    # triage log (T19)
+    "TriageLogOut", "TriageLogHistoryResponse",
 ]

@@ -26,6 +26,7 @@ from .clinical import (
 from .governance import AuditLog, Consent
 from .nutrition import NutritionLog
 from .patient import PatientProfile
+from .triage_log import TriageLog
 from .user import User, UserRole
 
 __all__ = [
@@ -52,6 +53,7 @@ __all__ = [
     "RiskScore",
     "NutritionLog",
     "SymptomLog",
+    "TriageLog",
     "User",
     "UserRole",
 ]

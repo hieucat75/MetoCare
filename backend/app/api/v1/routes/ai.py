@@ -29,6 +29,7 @@ from app.schemas.ai import (
 )
 from app.services import ai_assistant
 from app.services import risk_score as risk_score_svc
+from app.services import triage_log as triage_log_svc
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 
@@ -76,6 +77,7 @@ def chat(
 def assess(
     payload: TriageRequest,
     user: CurrentUser = Depends(_require_ai_consumer),
+    db: Session = Depends(get_session),
 ) -> TriageResponse:
     data = triage.TriageInput(
         symptom_text=payload.symptom_text,
@@ -83,6 +85,21 @@ def assess(
         reported_severity=payload.reported_severity,
     )
     result = triage.assess(data)
+
+    # Persist the triage result when the caller is a PATIENT with a PatientProfile.
+    # Other roles (DOCTOR, CLINIC_ADMIN, …) are silently skipped.
+    if user.role == UserRole.PATIENT.value:
+        patient_profile = db.execute(
+            select(PatientProfile).where(PatientProfile.user_id == user.id)
+        ).scalar_one_or_none()
+        if patient_profile is not None:
+            triage_log_svc.save_triage(
+                db,
+                patient_id=patient_profile.id,
+                symptom_text=payload.symptom_text,
+                result=result,
+            )
+
     return TriageResponse(
         risk_level=result.risk_level.value,
         action=result.action.value,
