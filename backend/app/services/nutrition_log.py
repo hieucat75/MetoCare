@@ -12,7 +12,7 @@ import datetime as dt
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.core.clock import utcnow
+from app.core.clock import as_naive_utc, utcnow
 from app.models.nutrition import NutritionLog
 
 
@@ -30,7 +30,7 @@ def create_log(
 
     Returns the committed NutritionLog instance.
     """
-    logged_at: dt.datetime = data.get("logged_at") or utcnow()
+    logged_at: dt.datetime = as_naive_utc(data.get("logged_at")) or utcnow()
 
     record = NutritionLog(
         patient_id=patient_id,

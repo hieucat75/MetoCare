@@ -19,7 +19,6 @@ Covers:
 
 from __future__ import annotations
 
-import datetime as dt
 import os
 
 import pytest
@@ -300,3 +299,15 @@ def test_pagination_limit(client: TestClient, patient_a):
     body = r.json()
     assert len(body["items"]) == 3
     assert body["total"] >= 5
+
+# 11
+def test_ai_service_cannot_list_nutrition(client: TestClient, patient_a):
+    """AI_SERVICE must be blocked from GET /nutrition — 403 (P2 coverage fix)."""
+    ai_token = create_access_token(
+        subject=f"ai-{os.urandom(4).hex()}", role="ai_service"
+    )
+    r = client.get(
+        _nutrition_url(patient_a["patient_id"]),
+        headers={"Authorization": f"Bearer {ai_token}"},
+    )
+    assert r.status_code == 403, r.text
