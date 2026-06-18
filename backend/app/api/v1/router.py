@@ -15,6 +15,7 @@ from .routes import (
     encounters,
     health,
     lab,
+    patients,
     system,
 )
 
@@ -31,3 +32,5 @@ api_router.include_router(encounters.router)
 api_router.include_router(care_plans.router)
 api_router.include_router(ai_sessions.router)
 api_router.include_router(doctor_review.router, prefix="/doctor", tags=["doctor_review"])
+# T12: Patient Profile API
+api_router.include_router(patients.router)
