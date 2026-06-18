@@ -17,7 +17,8 @@ from app.models.ai import AIClinicalRecommendation
 from app.models.care import Doctor, DoctorClinic, Encounter
 from app.models.governance import Consent
 from app.models.user import User, UserRole
-from app.schemas.ai import AIClinicalRecommendationOut, DoctorReviewDecision
+from app.schemas.ai import DoctorReviewDecision
+from app.schemas.clinical import AIClinicalRecommendationOut
 from app.services.doctor_review import DoctorReviewService, PermissionDenied
 
 router = APIRouter(prefix="/review", tags=["doctor_review"])

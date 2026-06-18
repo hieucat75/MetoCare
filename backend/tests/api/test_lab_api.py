@@ -341,6 +341,39 @@ def test_admin_reads_any_document(client, db, patient_setup, patient_document, a
     body = r.json()
     assert body["id"] == patient_document.id
 
+def test_clinic_admin_can_read_document_status(client, db, patient_setup, patient_document):
+    """T10-L01: CLINIC_ADMIN with active lab consent can read document status → 200."""
+    import os as _os
+
+    from app.core.security import create_access_token as _create_token
+    from app.models.user import User as _User
+    from app.models.user import UserRole as _UserRole
+
+    ca_user = _User(
+        email=f"lab-ca-{_os.urandom(4).hex()}@example.com",
+        password_hash="x",
+        role=_UserRole.CLINIC_ADMIN,
+        full_name="Clinic Admin Lab",
+    )
+    db.add(ca_user)
+    db.flush()
+    # Grant lab consent to the clinic admin
+    _make_consent(db, patient_id=patient_setup["patient_id"], granted_to=ca_user.id)
+    db.commit()
+
+    token = _create_token(subject=ca_user.id, role="clinic_admin", mfa=True)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    r = client.get(
+        f"/api/v1/lab-documents/{patient_document.id}",
+        headers=headers,
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["id"] == patient_document.id
+    assert "status" in body
+    assert "ocr_status" in body
+
 
 # ---------------------------------------------------------------------------
 # Interpret tests (POST /lab-documents/{id}/interpret)

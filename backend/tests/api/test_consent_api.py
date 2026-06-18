@@ -293,6 +293,43 @@ def test_unauthenticated_cannot_revoke_consent(client, db, patient_setup, patien
     )
     assert r.status_code == 401, r.text
 
+def test_ai_service_cannot_revoke_consent(
+    client, db, patient_setup, patient_consent, ai_service_setup
+):
+    """T10-C01: AI_SERVICE attempting to revoke consent → 403 (P0 legal violation)."""
+    r = client.delete(
+        f"/api/v1/patients/{patient_setup['patient_id']}/consents/{patient_consent.id}",
+        headers=ai_service_setup["headers"],
+    )
+    assert r.status_code == 403, r.text
+
+def test_patient_cannot_revoke_another_patients_consent(
+    client, db, patient_setup, another_patient_setup, doctor_setup
+):
+    """T10-C02: PATIENT using their own path but a consent_id that belongs to another patient → 403.
+
+    This tests the cross-patient consent ownership check: patient A correctly
+    uses their own patient_id in the URL path but attempts to revoke a consent
+    UUID that belongs to patient B. The route-level cross-patient check must
+    block this with 403.
+    """
+    # Create a consent owned by another_patient
+    other_consent = Consent(
+        patient_id=another_patient_setup["patient_id"],
+        consent_type="lab_access",
+        data_scope="lab",
+        granted_to=doctor_setup["user_id"],
+    )
+    db.add(other_consent)
+    db.commit()
+
+    # patient_setup uses their OWN patient_id in the path, but targets another patient's consent_id
+    r = client.delete(
+        f"/api/v1/patients/{patient_setup['patient_id']}/consents/{other_consent.id}",
+        headers=patient_setup["headers"],  # patient 1's token on patient 1's path
+    )
+    assert r.status_code == 403, r.text
+
 
 def test_patient_revoke_another_patients_consent_is_forbidden(
     client, db, patient_setup, another_patient_setup, doctor_setup

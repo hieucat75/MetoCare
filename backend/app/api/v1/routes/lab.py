@@ -35,6 +35,8 @@ def _require_patient_ownership(
     INTERNAL_ADMIN and SUPER_ADMIN bypass ownership checks.
     Raises HTTP 403 if the patient attempts to access another patient's data.
     """
+    # DOCTOR and CLINIC_ADMIN: consent gate in service layer handles access
+    # — no ownership check here
     if user.role in (UserRole.INTERNAL_ADMIN.value, UserRole.SUPER_ADMIN.value):
         return
     if user.role == UserRole.PATIENT.value:
