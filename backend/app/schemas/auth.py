@@ -57,5 +57,7 @@ class UserOut(BaseModel):
     role: str
     full_name: str | None = None
     mfa_enabled: bool = False
+    # Populated for PATIENT role callers; None for all other roles.
+    patient_profile_id: str | None = None
 
     model_config = {"from_attributes": True}

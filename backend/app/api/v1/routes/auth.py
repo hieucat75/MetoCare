@@ -9,6 +9,7 @@ from app.api.deps import CurrentUser, current_user, enforce_rate_limit, get_sess
 from app.core.config import get_settings
 from app.core.ratelimit import get_lockout
 from app.core.security import decode_token
+from app.models.patient import PatientProfile
 from app.models.user import User, UserRole
 from app.schemas.auth import (
     LoginRequest,
@@ -129,7 +130,15 @@ def me(
     db_user = db.get(User, user.id)
     if db_user is None:
         raise HTTPException(status_code=404, detail="user not found")
-    return UserOut.model_validate(db_user)
+    out = UserOut.model_validate(db_user)
+    # Resolve patient_profile_id for PATIENT callers
+    if db_user.role == UserRole.PATIENT:
+        from sqlalchemy import select
+        profile = db.execute(
+            select(PatientProfile).where(PatientProfile.user_id == db_user.id)
+        ).scalar_one_or_none()
+        out.patient_profile_id = profile.id if profile is not None else None
+    return out
 
 
 @router.post("/mfa/enroll", response_model=MfaEnrollResponse)
