@@ -104,6 +104,28 @@ class Settings(BaseSettings):
     def is_prod(self) -> bool:
         return self.env.lower() in ("prod", "production")
 
+    def validate_required_env_vars(self) -> None:
+        """Raise RuntimeError at startup if required env vars are missing or empty.
+
+        Called during application startup (lifespan) to fail fast rather than
+        silently starting a broken server. Required vars: SECRET_KEY, DATABASE_URL.
+        """
+        # Pairs of (setting_attribute, env_var_name, description)
+        required = [
+            (self.secret_key, "MCP_SECRET_KEY", "JWT signing secret"),
+            (self.database_url, "MCP_DATABASE_URL", "database connection string"),
+        ]
+        missing: list[str] = []
+        for value, env_name, description in required:
+            if not value or not value.strip():
+                missing.append(f"{env_name} ({description})")
+        if missing:
+            raise RuntimeError(
+                "Required environment variables are not set or empty. "
+                "The server cannot start safely. Missing: "
+                + ", ".join(missing)
+            )
+
     def warn_if_insecure(self) -> list[str]:
         """Return a list of insecure-config warnings (used at startup)."""
         warnings: list[str] = []

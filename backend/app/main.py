@@ -33,6 +33,10 @@ def create_app() -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        # P1-FIX-03: Validate required env vars at startup — fail fast, never
+        # silently start a broken server.
+        settings.validate_required_env_vars()
+
         # SQLite dev/test convenience: create tables directly so the app runs
         # with zero setup. PostgreSQL/TimescaleDB MUST use Alembic migrations
         # (create_all would make plain tables without the hypertable/CAGG).

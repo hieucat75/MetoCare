@@ -8,7 +8,7 @@ def _auth(patient):
 
 
 def test_health_endpoint(client):
-    r = client.get("/health")
+    r = client.get("/api/v1/health")
     assert r.status_code == 200
     assert r.json()["status"] == "ok"
 

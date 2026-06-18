@@ -10,18 +10,18 @@ from app.core.logging import ContextFilter, JsonFormatter
 
 
 def test_request_id_echoed_from_header(client):
-    r = client.get("/health", headers={"X-Request-ID": "corr-abc-123"})
+    r = client.get("/api/v1/health", headers={"X-Request-ID": "corr-abc-123"})
     assert r.status_code == 200
     assert r.headers.get("X-Request-ID") == "corr-abc-123"
 
 
 def test_request_id_generated_when_absent(client):
-    r = client.get("/health")
+    r = client.get("/api/v1/health")
     assert r.headers.get("X-Request-ID")  # non-empty generated id
 
 
 def test_metrics_endpoint_exposes_counters(client):
-    client.get("/health")
+    client.get("/api/v1/health")
     r = client.get("/metrics")
     assert r.status_code == 200
     assert "http_requests_total" in r.text
