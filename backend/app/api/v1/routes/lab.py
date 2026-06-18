@@ -1,8 +1,13 @@
-"""Lab document + interpretation routes (mock OCR in dev/test)."""
+"""Lab document + interpretation routes (mock OCR in dev/test).
+
+T18A additions:
+  GET /patients/{patient_id}/lab-documents — list all lab documents for a patient.
+"""
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import CurrentUser, get_session, require_roles
@@ -47,10 +52,49 @@ def _require_patient_ownership(
                 detail="Patients may only access their own lab documents.",
             )
 
-
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
+
+@router.get(
+    "/patients/{patient_id}/lab-documents",
+    response_model=list[LabDocumentOut],
+    summary="List lab documents for a patient (newest first)",
+)
+def list_patient_lab_documents(
+    patient_id: str,
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    user: CurrentUser = Depends(
+        require_roles(
+            UserRole.PATIENT,
+            UserRole.DOCTOR,
+            UserRole.INTERNAL_ADMIN,
+            UserRole.SUPER_ADMIN,
+        )
+    ),
+    db: Session = Depends(get_session),
+) -> list[LabDocumentOut]:
+    """Return paginated lab documents for *patient_id* (newest first).
+
+    Access rules:
+    - **PATIENT** — own documents only.
+    - **DOCTOR** — consent-gated (scope='lab').
+    - **INTERNAL_ADMIN / SUPER_ADMIN** — unrestricted.
+    """
+    _require_patient_ownership(db, patient_id=patient_id, user=user)
+    consent.require_access(db, patient_id=patient_id, requester_id=user.id, scope="lab")
+
+    stmt = (
+        select(LabDocument)
+        .where(LabDocument.patient_id == patient_id)
+        .order_by(LabDocument.created_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    docs = db.execute(stmt).scalars().all()
+    return [LabDocumentOut.model_validate(d) for d in docs]
+
 
 @router.post(
     "/patients/{patient_id}/lab-documents",

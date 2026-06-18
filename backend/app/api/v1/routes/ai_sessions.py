@@ -14,6 +14,9 @@ RBAC:
 
 Recommendations (GET only):
   - FeatureFlag.AI_CLINICAL_RECS_ENABLED gates viewing recommendations.
+
+T18A additions:
+  - POST /{session_id}/close — terminate/close an AI session (soft-delete).
 """
 
 from __future__ import annotations
@@ -23,6 +26,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import CurrentUser, current_user, get_session
+from app.core.clock import utcnow
 from app.core.feature_flags import FeatureFlag, is_enabled
 from app.core.rbac import _is_admin
 from app.models.ai import AIClinicalRecommendation, AISession
@@ -132,6 +136,57 @@ def create_ai_session(
     db.refresh(session)
     return AISessionOut.model_validate(session)
 
+
+@router.post(
+    "/{session_id}/close",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Close (terminate) an AI session",
+)
+def close_ai_session(
+    session_id: str,
+    user: CurrentUser = Depends(current_user),
+    db: Session = Depends(get_session),
+) -> None:
+    """Terminate an AI session by soft-deleting it.
+
+    Once closed, the session is no longer returned by GET endpoints.
+    Closing is idempotent — closing an already-closed session returns 204.
+
+    Access rules:
+    - **PATIENT** — own sessions only.
+    - **DOCTOR / CLINIC_ADMIN / INTERNAL_ADMIN / SUPER_ADMIN / AI_SERVICE** — any session.
+    """
+    session = db.get(AISession, session_id)
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="AI session not found.")
+
+    # PATIENT ownership check
+    if user.role == UserRole.PATIENT:
+        profile = db.get(PatientProfile, session.patient_id)
+        if profile is None or profile.user_id != user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You may only close your own AI sessions.",
+            )
+
+    # Idempotent: already closed
+    if session.deleted_at is not None:
+        return
+
+    session.deleted_at = utcnow()
+    audit.record(
+        db,
+        actor_type=user.role,
+        actor_id=user.id,
+        action="ai_session.close",
+        resource_type="ai_session",
+        resource_id=session.id,
+        outcome="success",
+        severity="info",
+    )
+    db.commit()
+
+
 @router.get("/{session_id}", response_model=AISessionOut)
 def get_ai_session(
     session_id: str,
@@ -144,6 +199,7 @@ def get_ai_session(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="AI session not found.")
     _check_session_read_access(db, session, user)
     return AISessionOut.model_validate(session)
+
 
 @router.get("", response_model=list[AISessionOut])
 def list_ai_sessions(
@@ -176,6 +232,7 @@ def list_ai_sessions(
 
     sessions = db.execute(stmt).scalars().all()
     return [AISessionOut.model_validate(s) for s in sessions]
+
 
 @router.get("/{session_id}/recommendations", response_model=list[AIClinicalRecommendationOut])
 def list_recommendations(
