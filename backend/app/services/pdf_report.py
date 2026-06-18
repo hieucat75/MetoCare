@@ -14,6 +14,14 @@ import io
 from datetime import UTC, datetime
 from typing import Any
 
+try:
+    import reportlab  # noqa: F401 — presence check only
+except ImportError as _rl_missing:
+    raise RuntimeError(
+        "reportlab is required for PDF export. "
+        "Install it with: pip install reportlab>=4.0"
+    ) from _rl_missing
+
 
 def generate_patient_summary_pdf(
     patient_id: str,
