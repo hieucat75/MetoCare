@@ -262,7 +262,7 @@ Requires: `Authorization: Bearer <access_token>`
 
 **GET** `/api/v1/auth/me`
 
-Return the authenticated user's account details. The `id` field returned here is `user_id` — **not** the `patient_profile_id`. See §14 for how to resolve the patient profile ID.
+Return the authenticated user's account details. For `PATIENT` role callers, the response also includes `patient_profile_id` — the UUID needed for all `/patients/{patient_id}/...` endpoints.
 
 Requires: `Authorization: Bearer <access_token>`
 
@@ -274,17 +274,19 @@ Requires: `Authorization: Bearer <access_token>`
   "email": "patient@example.com",
   "role": "patient",
   "full_name": "Nguyễn Văn An",
-  "mfa_enabled": false
+  "mfa_enabled": false,
+  "patient_profile_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
 }
 ```
 
 | Field | Type | Notes |
 |---|---|---|
-| `id` | string (UUID) | User.id — this is the `user_id`, NOT the `patient_profile_id` |
+| `id` | string (UUID) | User.id — this is the `user_id` |
 | `email` | string | |
 | `role` | string | e.g. `"patient"` |
 | `full_name` | string or null | |
 | `mfa_enabled` | boolean | Whether TOTP MFA is enrolled |
+| `patient_profile_id` | string (UUID) or null | **PATIENT role only.** The `PatientProfile.id` — use this in all `/patients/{patient_id}/...` calls. `null` if no profile exists yet. Non-patient roles always return `null`. |
 
 #### Error Codes
 
@@ -1388,7 +1390,7 @@ There is no single dedicated "get my patient profile ID" endpoint. The recommend
 
 > The profile endpoint returns `{ "id": "<patient_profile_id>", "user_id": "<user_id>" }`. The link is established at registration when a `PatientProfile` record is created with `user_id` set to the registering user's ID.
 
-**Recommended approach:** After a successful login, the frontend should cache the `patient_profile_id` in the app session. This can be obtained by calling `GET /api/v1/auth/me` and then querying for the profile using the pattern below.
+**Recommended approach:** After login, call `GET /api/v1/auth/me`. For `PATIENT` role, the response directly includes `patient_profile_id`. Cache this value in the app session — no secondary lookup needed.
 
 ---
 
@@ -1400,36 +1402,21 @@ Step 1: Register
   → Response: { "user_id": "USR-001", "access_token": "...", ... }
   → Store: user_id = "USR-001", tokens
 
-Step 2: Get current user to confirm identity
+Step 2: Get current user — resolves patient_profile_id in one call
   GET /api/v1/auth/me
   Authorization: Bearer <access_token>
-  → Response: { "id": "USR-001", "email": "...", "role": "patient" }
+  → Response: {
+      "id": "USR-001",
+      "email": "...",
+      "role": "patient",
+      "patient_profile_id": "PROF-001"   ← directly available here
+    }
 
-Step 3: The backend auto-creates a PatientProfile on registration.
-  To get the patient_profile_id, the app must query the profile.
-  
-  At registration time, the backend creates PatientProfile with user_id = "USR-001".
-  
-  The app needs to discover PATIENT-PROFILE-001. Options:
-  
-  Option A (if you store patient_profile_id in your app state from a previous session):
-    Use the cached patient_profile_id directly.
-  
-  Option B (first login, no cache):
-    The backend should provide a "me profile" convenience endpoint.
-    Workaround: After registration, the server returns user_id in the TokenResponse.
-    The frontend should call GET /api/v1/patients/{user_id}/profile and expect a 404
-    or 403 — then prompt the user to complete their profile setup.
-    
-    ** Current implementation note: **
-    The PatientProfile is NOT automatically created at registration.
-    A SUPER_ADMIN or INTERNAL_ADMIN must create the PatientProfile record linked
-    to the user. Once created, the patient_profile_id is stored in the Profile
-    record's `id` field (returned by GET /patients/{patient_id}/profile).
-    
-    ** Recommended integration pattern: **
-    Store patient_profile_id in app local storage after the first successful
-    GET /patients/{patient_id}/profile call. Refresh it on next login.
+Step 3: Cache patient_profile_id from /auth/me response.
+  If patient_profile_id is null → profile not yet created.
+  Call PATCH /api/v1/patients/{user_id}/profile with initial data (upsert).
+  After upsert, call GET /auth/me again to get the newly assigned patient_profile_id.
+  Store patient_profile_id in app session state.
 
 Step 4: Access patient data using patient_profile_id
   GET /api/v1/patients/PATIENT-PROFILE-001/profile
