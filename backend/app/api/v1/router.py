@@ -9,6 +9,7 @@ from .routes import (
     ai,
     ai_sessions,
     auth,
+    booking,
     care_plans,
     consent,
     doctor_review,
@@ -34,3 +35,5 @@ api_router.include_router(ai_sessions.router)
 api_router.include_router(doctor_review.router, prefix="/doctor", tags=["doctor_review"])
 # T12: Patient Profile API
 api_router.include_router(patients.router)
+# T21: Booking scaffold
+api_router.include_router(booking.router)
