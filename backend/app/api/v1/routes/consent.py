@@ -6,6 +6,9 @@ RBAC hardening (T9):
   DELETE /consents/{id}  — PATIENT only (P0 legal requirement: only the patient
                            may revoke their own consent)
 
+T18A additions:
+  GET    /consents       — PATIENT or ADMIN only (list patient's own consents)
+
 DOCTOR / CLINIC_ADMIN / INTERNAL_ADMIN / SUPER_ADMIN / AI_SERVICE are all
 blocked from grant and revoke endpoints. This is a hard legal requirement under
 Luật BVDLCN Vietnam 2026 — do not relax.
@@ -17,11 +20,13 @@ has_access(scope="__owner__") check.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import CurrentUser, get_session, require_roles
+from app.api.deps import CurrentUser, current_user, get_session, require_roles
+from app.core.clock import utcnow
+from app.models.governance import Consent as ConsentModel
 from app.models.patient import PatientProfile
 from app.models.user import UserRole
 from app.schemas.common import Message
@@ -45,6 +50,58 @@ def _enforce_consent_ownership(patient_id: str, user: CurrentUser, db: Session) 
             detail="You may only manage consent for your own patient profile.",
         )
 
+
+# ---------------------------------------------------------------------------
+# T18A — GET /patients/{patient_id}/consents
+# ---------------------------------------------------------------------------
+
+@router.get("", response_model=list[ConsentOut], summary="List consents for a patient")
+def list_consents(
+    patient_id: str,
+    active_only: bool = Query(
+        default=True, description="Filter to active (non-revoked) consents only"
+    ),
+    user: CurrentUser = Depends(current_user),
+    db: Session = Depends(get_session),
+) -> list[ConsentOut]:
+    """Return consents for *patient_id*.
+
+    Access rules:
+    - **PATIENT** — own consents only (ownership check via user_id).
+    - **INTERNAL_ADMIN / SUPER_ADMIN** — unrestricted.
+    - **DOCTOR / CLINIC_ADMIN / AI_SERVICE** — always 403 (legal requirement:
+      third parties must not enumerate which other parties have consent access).
+    """
+    allowed_roles = {UserRole.PATIENT, UserRole.INTERNAL_ADMIN, UserRole.SUPER_ADMIN}
+    if user.role not in allowed_roles:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the patient or an administrator may list consent records.",
+        )
+
+    profile = db.get(PatientProfile, patient_id)
+    if profile is None:
+        raise HTTPException(status_code=404, detail="Patient not found.")
+
+    if user.role == UserRole.PATIENT and profile.user_id != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You may only view your own consent records.",
+        )
+
+    stmt = select(ConsentModel).where(ConsentModel.patient_id == patient_id)
+    if active_only:
+        now = utcnow()
+        stmt = stmt.where(
+            (ConsentModel.revoked_at.is_(None)) | (ConsentModel.revoked_at > now),
+        )
+    records = db.execute(stmt).scalars().all()
+    return [ConsentOut.model_validate(r) for r in records]
+
+
+# ---------------------------------------------------------------------------
+# POST /patients/{patient_id}/consents (grant)
+# ---------------------------------------------------------------------------
 
 @router.post("", response_model=ConsentOut, status_code=201)
 def grant_consent(
@@ -74,6 +131,10 @@ def grant_consent(
     return ConsentOut.model_validate(c)
 
 
+# ---------------------------------------------------------------------------
+# DELETE /patients/{patient_id}/consents/{consent_id} (revoke)
+# ---------------------------------------------------------------------------
+
 @router.delete("/{consent_id}", response_model=Message)
 def revoke_consent(
     patient_id: str,
@@ -83,7 +144,6 @@ def revoke_consent(
 ) -> Message:
     _enforce_consent_ownership(patient_id, user, db)
     # Cross-patient ownership check: verify this consent belongs to the requesting patient.
-    from app.models.governance import Consent as ConsentModel  # local import to avoid circular
     consent_rec = db.get(ConsentModel, consent_id)
     if consent_rec is None:
         raise HTTPException(status_code=404, detail="Consent not found.")
