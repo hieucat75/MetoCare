@@ -120,6 +120,33 @@ def list_appointments(
     return list(db.execute(stmt).scalars().all())
 
 
+def list_doctor_appointments(
+    db: Session,
+    *,
+    doctor_id: str,
+) -> list[BookingAppointment]:
+    """Return the doctor's upcoming appointments (pending + confirmed).
+
+    Results are ordered by slot_start ASC (soonest first) using a JOIN on
+    DoctorAvailability.
+    """
+    from app.models.availability import DoctorAvailability
+
+    stmt = (
+        select(BookingAppointment)
+        .join(
+            DoctorAvailability,
+            BookingAppointment.availability_id == DoctorAvailability.id,
+        )
+        .where(
+            BookingAppointment.doctor_id == doctor_id,
+            BookingAppointment.status.in_(["pending", "confirmed"]),
+        )
+        .order_by(DoctorAvailability.slot_start.asc())
+    )
+    return list(db.execute(stmt).scalars().all())
+
+
 def update_appointment(
     db: Session,
     *,
