@@ -16,6 +16,7 @@ from .routes import (
     encounters,
     health,
     lab,
+    notifications,
     patients,
     system,
 )
@@ -37,3 +38,5 @@ api_router.include_router(doctor_review.router, prefix="/doctor", tags=["doctor_
 api_router.include_router(patients.router)
 # T21: Booking scaffold
 api_router.include_router(booking.router)
+# T23: Notification scaffold
+api_router.include_router(notifications.router)
