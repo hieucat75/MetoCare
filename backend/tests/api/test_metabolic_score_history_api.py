@@ -368,3 +368,17 @@ def test_trend_improving(client: TestClient, db, patient_setup, admin_headers):
     body = r.json()
     # Items ordered newest-first; last=42, previous=60 → delta=-18 → improving
     assert body["trend"] == "improving", f"Expected improving, got: {body['trend']}"
+
+# ---------------------------------------------------------------------------
+# 11. Trend: stable (delta within ±5)
+# ---------------------------------------------------------------------------
+
+def test_trend_stable(client: TestClient, db, patient_setup, admin_headers):
+    """When last score differs from previous by ≤5 → trend = 'stable'."""
+    # Seed oldest first: 42, then 45 (newest) → delta = +3
+    _seed_scores(db, patient_setup["patient_id"], [42, 45])
+
+    r = client.get(_history_url(patient_setup["patient_id"]), headers=admin_headers)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["trend"] == "stable", f"Expected stable, got: {body['trend']}"
