@@ -18,6 +18,7 @@ has_access(scope="__owner__") check.
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import CurrentUser, get_session, require_roles
@@ -81,6 +82,19 @@ def revoke_consent(
     db: Session = Depends(get_session),
 ) -> Message:
     _enforce_consent_ownership(patient_id, user, db)
+    # Cross-patient ownership check: verify this consent belongs to the requesting patient.
+    from app.models.governance import Consent as ConsentModel  # local import to avoid circular
+    consent_rec = db.get(ConsentModel, consent_id)
+    if consent_rec is None:
+        raise HTTPException(status_code=404, detail="Consent not found.")
+    patient_profile = db.execute(
+        select(PatientProfile).where(PatientProfile.user_id == user.id)
+    ).scalar_one_or_none()
+    if patient_profile is None or consent_rec.patient_id != patient_profile.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You may only revoke your own consents.",
+        )
     ok = consent.revoke(db, consent_id)
     if not ok:
         raise HTTPException(status_code=404, detail="Consent not found.")
