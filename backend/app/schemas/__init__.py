@@ -43,6 +43,19 @@ from .auth import (
     TokenResponse,
     UserOut,
 )
+from .booking import (
+    AppointmentCreate as BookingAppointmentCreate,
+)
+from .booking import (
+    AppointmentOut as BookingAppointmentOut,
+)
+from .booking import (
+    AppointmentPatch as BookingAppointmentPatch,
+)
+from .booking import (
+    AvailabilityCreate,
+    AvailabilityOut,
+)
 from .care import (
     AppointmentCreate,
     AppointmentOut,
@@ -136,4 +149,7 @@ __all__ = [
     "RiskScoreHistoryResponse", "RiskScoreHistoryItemOut",
     # triage log (T19)
     "TriageLogOut", "TriageLogHistoryResponse",
+    # booking (T21)
+    "AvailabilityCreate", "AvailabilityOut",
+    "BookingAppointmentCreate", "BookingAppointmentOut", "BookingAppointmentPatch",
 ]
