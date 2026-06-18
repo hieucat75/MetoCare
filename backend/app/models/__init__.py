@@ -26,6 +26,7 @@ from .clinical import (
     SymptomLog,
 )
 from .governance import AuditLog, Consent
+from .notification import Notification
 from .nutrition import NutritionLog
 from .patient import PatientProfile
 from .triage_log import TriageLog
@@ -55,6 +56,7 @@ __all__ = [
     "PatientProfile",
     "RefreshToken",
     "RiskScore",
+    "Notification",
     "NutritionLog",
     "SymptomLog",
     "TriageLog",

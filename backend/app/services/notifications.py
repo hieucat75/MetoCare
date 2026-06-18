@@ -1,48 +1,54 @@
-"""Notification placeholder (P2 #3).
+"""Notification sink — legacy stub used by lab_pipeline.py and triage tests.
 
-A real notification system (push/email/SMS) is out of scope for the foundation.
-This module records notifications to an in-memory sink and logs them (no PHI in
-the payload) so the pipeline can "notify user" at the right step and tests can
-assert it happened. Swap the sink for a real transport later without touching
-call sites.
+Records notifications to an in-memory sink (no PHI in payload).
+Swap for a real transport (push/email/SMS) in a future sprint.
+
+NOTE: The real in-app notification CRUD is in app.services.notification (T23).
+This module remains for lab_pipeline/test compatibility until those callers are
+updated to use the DB-backed service.
 """
 
 from __future__ import annotations
 
 import logging
-import threading
 from dataclasses import dataclass, field
+from typing import Any
 
-logger = logging.getLogger("mcp.notifications")
+logger = logging.getLogger(__name__)
 
 
-@dataclass(frozen=True)
-class Notification:
+@dataclass
+class _Notification:
     user_id: str
     event: str
-    payload: dict[str, str] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
-_lock = threading.Lock()
-_sink: list[Notification] = []
+_sink: list[_Notification] = []
 
 
-def notify(user_id: str, event: str, **payload: str) -> Notification:
-    """Record a notification. Payload must be non-PHI metadata only."""
-    note = Notification(user_id=user_id, event=event, payload=dict(payload))
-    with _lock:
-        _sink.append(note)
-    logger.info("notification", extra={"action": event, "resource_type": "notification"})
-    return note
+def notify(user_id: str, event: str, **metadata: Any) -> None:
+    """Record a notification event."""
+    note = _Notification(user_id=str(user_id), event=event, metadata=metadata)
+    _sink.append(note)
+    logger.info("notification", extra={"event": event, "user_id": str(user_id)})
 
 
-def recent(user_id: str | None = None) -> list[Notification]:
-    with _lock:
-        if user_id is None:
-            return list(_sink)
-        return [n for n in _sink if n.user_id == user_id]
+def sent() -> list[_Notification]:
+    """Return all recorded notifications (for tests)."""
+    return list(_sink)
+
+
+def recent(user_id: str) -> list[_Notification]:
+    """Return notifications for a specific user (legacy test helper)."""
+    uid = str(user_id)
+    return [n for n in _sink if n.user_id == uid]
 
 
 def reset() -> None:
-    with _lock:
-        _sink.clear()
+    """Clear the sink (call in test teardown)."""
+    _sink.clear()
+
+
+# Alias for callers that use clear()
+clear = reset
