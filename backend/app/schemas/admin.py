@@ -6,6 +6,8 @@ import datetime as dt
 
 from pydantic import BaseModel
 
+from app.models.user import UserRole
+
 # ---------------------------------------------------------------------------
 # User admin views
 # ---------------------------------------------------------------------------
@@ -17,6 +19,7 @@ class UserAdminOut(BaseModel):
     full_name: str | None
     is_active: bool
     mfa_enabled: bool
+    created_at: dt.datetime | None = None
 
     model_config = {"from_attributes": True}
 
@@ -26,7 +29,22 @@ class UserStatusUpdate(BaseModel):
 
 
 class UserRoleUpdate(BaseModel):
-    role: str
+    role: UserRole
+
+
+# ---------------------------------------------------------------------------
+# Per-user audit log view (T25)
+# ---------------------------------------------------------------------------
+
+
+class UserAuditLogOut(BaseModel):
+    id: str
+    action: str
+    resource_type: str
+    resource_id: str | None
+    timestamp: dt.datetime | None = None
+
+    model_config = {"from_attributes": True}
 
 
 # ---------------------------------------------------------------------------

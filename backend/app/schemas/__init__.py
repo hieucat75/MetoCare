@@ -19,6 +19,7 @@ from .admin import (
     SystemStatsOut,
     UnlockRequest,
     UserAdminOut,
+    UserAuditLogOut,
     UserRoleUpdate,
     UserStatusUpdate,
 )
@@ -110,7 +111,7 @@ __all__ = [
     # admin
     "AuditLogFilter", "AuditLogOut", "SystemStatsOut",
     "UnlockRequest",
-    "UserAdminOut", "UserRoleUpdate", "UserStatusUpdate",
+    "UserAdminOut", "UserAuditLogOut", "UserRoleUpdate", "UserStatusUpdate",
     # ai_session
     "AISessionCreate",
     # ai
