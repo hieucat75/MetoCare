@@ -25,11 +25,13 @@ from sqlalchemy.orm import Session
 from app.api.deps import CurrentUser, current_user, get_session
 from app.models.user import UserRole
 from app.schemas.medication import MedicationCreate, MedicationOut
+from app.schemas.nutrition import NutritionLogCreate, NutritionLogOut
 from app.schemas.patient import PatientProfileOut, PatientProfileUpdate
 from app.schemas.risk_score import RiskScoreHistoryResponse, RiskScoreOut
 from app.schemas.symptom import SymptomLogCreate, SymptomLogOut
 from app.services import audit
 from app.services import medication as medication_svc
+from app.services import nutrition_log as nutrition_log_svc
 from app.services import patient_profile as svc
 from app.services import risk_score as risk_score_svc
 from app.services import symptom_log as symptom_log_svc
@@ -405,3 +407,77 @@ def delete_medication(
         severity="info",
     )
     db.commit()
+
+# ---------------------------------------------------------------------------
+# T18 — Nutrition Log endpoints
+# ---------------------------------------------------------------------------
+
+@router.post(
+    "/{patient_id}/nutrition",
+    response_model=NutritionLogOut,
+    status_code=status.HTTP_201_CREATED,
+    summary="Log a meal/snack for a patient",
+)
+def create_nutrition_log(
+    patient_id: str,
+    payload: NutritionLogCreate,
+    user: CurrentUser = Depends(current_user),
+    db: Session = Depends(get_session),
+) -> NutritionLogOut:
+    """Record a meal or snack for *patient_id*.
+
+    Access rules:
+    - **PATIENT** — own record only.
+    - **DOCTOR** — consent-gated (scope='profile').
+    - **INTERNAL_ADMIN / SUPER_ADMIN** — unrestricted.
+    - **AI_SERVICE / CLINIC_ADMIN** — always 403.
+
+    Produces an ``AuditLog`` entry with ``action='log_nutrition'``.
+    """
+    _check_write_access(db, patient_id=patient_id, requester=user)
+
+    data = payload.model_dump(exclude_unset=False)
+    record = nutrition_log_svc.create_log(db, patient_id=patient_id, data=data)
+
+    audit.record(
+        db,
+        actor_type=user.role,
+        actor_id=user.id,
+        action="log_nutrition",
+        resource_type="nutrition_log",
+        resource_id=record.id,
+        outcome="success",
+        severity="info",
+    )
+    db.commit()
+
+    return NutritionLogOut.model_validate(record)
+
+
+@router.get(
+    "/{patient_id}/nutrition",
+    status_code=status.HTTP_200_OK,
+    summary="List nutrition logs for a patient (paginated, newest first)",
+)
+def list_nutrition_logs(
+    patient_id: str,
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    user: CurrentUser = Depends(current_user),
+    db: Session = Depends(get_session),
+) -> dict:
+    """Return paginated nutrition logs for *patient_id* (newest first).
+
+    Access rules: same as POST /nutrition.
+    """
+    _check_read_access(db, patient_id=patient_id, requester=user)
+
+    total, items = nutrition_log_svc.list_logs(
+        db, patient_id=patient_id, limit=limit, offset=offset
+    )
+
+    return {
+        "patient_id": patient_id,
+        "total": total,
+        "items": [NutritionLogOut.model_validate(item) for item in items],
+    }
