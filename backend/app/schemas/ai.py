@@ -65,3 +65,51 @@ class ScoreResponse(BaseModel):
 class DoctorReviewDecision(BaseModel):
     verdict: Literal["accepted", "rejected", "request_info"]
     notes: str | None = None
+
+# ---------------------------------------------------------------------------
+# Patient-Safe AI Explanation (PA-05)
+# ---------------------------------------------------------------------------
+
+import enum as _enum  # noqa: E402
+from datetime import datetime  # noqa: E402
+
+
+class ExplanationType(_enum.StrEnum):
+    metabolic_score = "metabolic_score"
+    health_metric = "health_metric"
+    lab_result = "lab_result"
+    general_summary = "general_summary"
+
+
+class SafetyLevel(_enum.StrEnum):
+    informational = "informational"
+
+
+class ExplainContext(BaseModel):
+    """Optional context fields — all optional, no one is required."""
+
+    metric_type: str | None = None
+    value: float | None = None
+    unit: str | None = None
+    score: int | None = None
+    trend: str | None = None
+
+
+class AiExplainRequest(BaseModel):
+    patient_id: str
+    explanation_type: ExplanationType
+    context: ExplainContext = Field(default_factory=ExplainContext)
+
+
+_DISCLAIMER = (
+    "This explanation is for informational purposes only and is not a medical "
+    "diagnosis. Always consult your doctor for medical advice."
+)
+
+
+class AiExplainResponse(BaseModel):
+    explanation_type: ExplanationType
+    plain_language_summary: str
+    safety_level: SafetyLevel = SafetyLevel.informational
+    disclaimer: str = _DISCLAIMER
+    generated_at: datetime
