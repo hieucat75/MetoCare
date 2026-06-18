@@ -67,12 +67,8 @@ from .clinical import (
     AIClinicalRecommendationOut,
     AIClinicalRecommendationReview,
     AISessionOut,
-    MedicationCreate,
-    MedicationOut,
     MedicationUpdate,
     RiskScoreOut,
-    SymptomLogCreate,
-    SymptomLogOut,
 )
 from .common import ErrorResponse, Message
 from .consent import ConsentGrant, ConsentOut
@@ -84,6 +80,7 @@ from .lab import (
     LabDocumentOut,
     LabDocumentStatusOut,
 )
+from .medication import MedicationCreate, MedicationOut
 from .patient import (
     PatientProfileCreate,
     PatientProfileOut,
@@ -92,6 +89,7 @@ from .patient import (
 )
 from .risk_score import RiskScoreHistoryResponse
 from .risk_score import RiskScoreOut as RiskScoreHistoryItemOut
+from .symptom import SymptomLogCreate, SymptomLogOut
 
 __all__ = [
     # admin
