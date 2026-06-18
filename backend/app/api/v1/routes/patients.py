@@ -29,12 +29,14 @@ from app.schemas.nutrition import NutritionLogCreate, NutritionLogOut
 from app.schemas.patient import PatientProfileOut, PatientProfileUpdate
 from app.schemas.risk_score import RiskScoreHistoryResponse, RiskScoreOut
 from app.schemas.symptom import SymptomLogCreate, SymptomLogOut
+from app.schemas.triage_log import TriageLogHistoryResponse, TriageLogOut
 from app.services import audit
 from app.services import medication as medication_svc
 from app.services import nutrition_log as nutrition_log_svc
 from app.services import patient_profile as svc
 from app.services import risk_score as risk_score_svc
 from app.services import symptom_log as symptom_log_svc
+from app.services import triage_log as triage_log_svc
 from app.services.consent import ConsentError, require_access
 
 router = APIRouter(prefix="/patients", tags=["patients"])
@@ -481,3 +483,41 @@ def list_nutrition_logs(
         "total": total,
         "items": [NutritionLogOut.model_validate(item) for item in items],
     }
+
+
+# ---------------------------------------------------------------------------
+# T19 — Triage Log history endpoint
+# ---------------------------------------------------------------------------
+
+@router.get(
+    "/{patient_id}/triage-history",
+    response_model=TriageLogHistoryResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Get triage history for a patient (paginated, newest first)",
+)
+def get_triage_history(
+    patient_id: str,
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    user: CurrentUser = Depends(current_user),
+    db: Session = Depends(get_session),
+) -> TriageLogHistoryResponse:
+    """Return paginated triage history for *patient_id* (newest first).
+
+    Access rules:
+    - **PATIENT** — own history only.
+    - **DOCTOR** — consent-gated (scope='profile').
+    - **INTERNAL_ADMIN / SUPER_ADMIN** — unrestricted.
+    - **AI_SERVICE / CLINIC_ADMIN** — always 403.
+    """
+    _check_read_access(db, patient_id=patient_id, requester=user)
+
+    total, items = triage_log_svc.get_history(
+        db, patient_id=patient_id, limit=limit, offset=offset
+    )
+
+    return TriageLogHistoryResponse(
+        patient_id=patient_id,
+        total=total,
+        items=[TriageLogOut.model_validate(item) for item in items],
+    )
