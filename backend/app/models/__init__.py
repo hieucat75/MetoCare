@@ -24,6 +24,7 @@ from .clinical import (
     SymptomLog,
 )
 from .governance import AuditLog, Consent
+from .nutrition import NutritionLog
 from .patient import PatientProfile
 from .user import User, UserRole
 
@@ -49,6 +50,7 @@ __all__ = [
     "PatientProfile",
     "RefreshToken",
     "RiskScore",
+    "NutritionLog",
     "SymptomLog",
     "User",
     "UserRole",

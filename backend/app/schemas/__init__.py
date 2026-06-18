@@ -81,6 +81,7 @@ from .lab import (
     LabDocumentStatusOut,
 )
 from .medication import MedicationCreate, MedicationOut
+from .nutrition import NutritionLogCreate, NutritionLogOut
 from .patient import (
     PatientProfileCreate,
     PatientProfileOut,
@@ -128,6 +129,8 @@ __all__ = [
     "LabDocumentCreate", "LabDocumentOut", "LabDocumentStatusOut",
     # patient
     "PatientProfileCreate", "PatientProfileOut", "PatientProfileUpdate", "PatientSummaryOut",
+    # nutrition (T18)
+    "NutritionLogCreate", "NutritionLogOut",
     # risk_score (T13)
     "RiskScoreHistoryResponse", "RiskScoreHistoryItemOut",
 ]
