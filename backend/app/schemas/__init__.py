@@ -90,6 +90,8 @@ from .patient import (
     PatientProfileUpdate,
     PatientSummaryOut,
 )
+from .risk_score import RiskScoreHistoryResponse
+from .risk_score import RiskScoreOut as RiskScoreHistoryItemOut
 
 __all__ = [
     # admin
@@ -128,4 +130,6 @@ __all__ = [
     "LabDocumentCreate", "LabDocumentOut", "LabDocumentStatusOut",
     # patient
     "PatientProfileCreate", "PatientProfileOut", "PatientProfileUpdate", "PatientSummaryOut",
+    # risk_score (T13)
+    "RiskScoreHistoryResponse", "RiskScoreHistoryItemOut",
 ]
