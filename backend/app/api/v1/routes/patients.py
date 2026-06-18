@@ -23,6 +23,8 @@ from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import CurrentUser, current_user, get_session
+from app.models.patient import PatientProfile as _PatientProfile
+from app.models.user import User as _UserModel
 from app.models.user import UserRole
 from app.schemas.medication import MedicationCreate, MedicationOut
 from app.schemas.nutrition import NutritionLogCreate, NutritionLogOut
@@ -147,7 +149,7 @@ def get_patient_profile(
     "/{patient_id}/profile",
     response_model=PatientProfileOut,
     status_code=status.HTTP_200_OK,
-    summary="Update patient profile (partial)",
+    summary="Update patient profile (partial, upsert for PATIENT)",
 )
 def patch_patient_profile(
     patient_id: str,
@@ -161,12 +163,54 @@ def patch_patient_profile(
     Every successful update produces an ``AuditLog`` entry with
     ``action='update_profile'``.
 
+    **Upsert behaviour (PATIENT role only):** if no PatientProfile exists for
+    *patient_id* and *patient_id* resolves to the calling patient's ``User.id``,
+    a new PatientProfile is created automatically, then the supplied fields are
+    applied.  This enables the first-launch onboarding flow.
+
     Access rules:
-    - **PATIENT** — own profile only.
+    - **PATIENT** — own profile only (upsert allowed on first PATCH).
     - **DOCTOR / INTERNAL_ADMIN / SUPER_ADMIN** — any patient.
     - **AI_SERVICE / CLINIC_ADMIN** — always 403.
     """
+    from fastapi import HTTPException
+    from fastapi import status as http_status
+
     data = payload.model_dump(exclude_unset=True)
+
+    # --- PATIENT upsert: if no profile yet and patient_id == user's User.id ---
+    if user.role == UserRole.PATIENT:
+        profile = db.get(_PatientProfile, patient_id)
+        if profile is None:
+            # Accept patient_id as User.id alias: the caller must own that User row.
+            owner = db.get(_UserModel, patient_id)
+            if owner is None or owner.id != user.id:
+                raise HTTPException(
+                    status_code=http_status.HTTP_403_FORBIDDEN,
+                    detail="You may only create your own patient profile.",
+                )
+            # Auto-create the PatientProfile keyed on the User.id FK
+            profile = _PatientProfile(user_id=user.id)
+            db.add(profile)
+            db.flush()  # assign UUID primary key before applying fields
+
+            for field, value in data.items():
+                setattr(profile, field, value)
+
+            audit.record(
+                db,
+                actor_type=user.role,
+                actor_id=user.id,
+                action="update_profile",
+                resource_type="patient_profile",
+                resource_id=profile.id,
+                outcome="success",
+                severity="info",
+            )
+            db.commit()
+            db.refresh(profile)
+            return PatientProfileOut.model_validate(profile)
+
     profile = svc.update_profile(db, patient_id=patient_id, requester=user, data=data)
     return PatientProfileOut.model_validate(profile)
 
