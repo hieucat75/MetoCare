@@ -143,6 +143,39 @@ def list_availability(
 
 
 # ---------------------------------------------------------------------------
+# GET /doctors/me/appointments — DOCTOR only
+# ---------------------------------------------------------------------------
+
+@router.get(
+    "/doctors/me/appointments",
+    response_model=list[AppointmentOut],
+    status_code=status.HTTP_200_OK,
+    summary="List upcoming appointments for the authenticated doctor",
+)
+def list_my_appointments(
+    user: CurrentUser = Depends(current_user),
+    db: Session = Depends(get_session),
+) -> list[AppointmentOut]:
+    """Return the doctor's upcoming appointments (pending + confirmed, ordered
+    by slot_start ASC).
+
+    - Only the **DOCTOR** role may call this endpoint (own appointments).
+    - AI_SERVICE and CLINIC_ADMIN are always 403.
+    - PATIENT → 403.
+    """
+    _require_not_blocked(user)
+
+    if user.role != UserRole.DOCTOR:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only doctors may list their own appointments.",
+        )
+
+    appts = booking_svc.list_doctor_appointments(db, doctor_id=user.id)
+    return [AppointmentOut.model_validate(a) for a in appts]
+
+
+# ---------------------------------------------------------------------------
 # POST /appointments — PATIENT only
 # ---------------------------------------------------------------------------
 
