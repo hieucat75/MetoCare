@@ -15,6 +15,8 @@ email-validator>=2.1
 pyotp>=2.9
 # ---- PHI field-level encryption ----
 cryptography>=42.0
+# ---- PDF generation ----
+reportlab>=4.0
 
 # ---- Dev / test (install separately or via pip install -r requirements-dev.txt) ----
 # pytest>=8
