@@ -105,3 +105,34 @@ def test_health_response_has_required_shape(client):
     assert "db" in body, "Health response must contain 'db'"
     assert body["status"] in ("ok", "degraded"), f"Unexpected status: {body['status']}"
     assert body["db"] in ("ok", "error"), f"Unexpected db value: {body['db']}"
+
+# ---------------------------------------------------------------------------
+# T20-S08 — GET /health returns 503 when DB unreachable
+# ---------------------------------------------------------------------------
+
+def test_health_returns_503_when_db_down(client):
+    """T20-S08: GET /health with DB failure → 503 status=degraded db=error."""
+    from unittest.mock import MagicMock
+
+    from app.core.database import get_session as _get_session
+    from app.main import app as _app
+    from sqlalchemy.exc import OperationalError
+
+    mock_db = MagicMock()
+    mock_db.execute.side_effect = OperationalError("conn failed", None, None)
+
+    def override():
+        yield mock_db
+
+    _app.dependency_overrides[_get_session] = override
+    try:
+        r = client.get("/api/v1/health")
+    finally:
+        _app.dependency_overrides.pop(_get_session, None)
+
+    assert r.status_code == 503, (
+        f"Expected 503 on DB failure, got {r.status_code}: {r.text}"
+    )
+    body = r.json()
+    assert body["status"] == "degraded"
+    assert body["db"] == "error"

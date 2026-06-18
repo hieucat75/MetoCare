@@ -108,4 +108,4 @@ def test_admin_can_unlock_account(client, token_for):
 
 def test_non_auth_endpoint_not_rate_limited(client):
     for _ in range(30):
-        assert client.get("/health").status_code == 200
+        assert client.get("/api/v1/health").status_code == 200
