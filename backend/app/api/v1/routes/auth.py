@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import CurrentUser, current_user, enforce_rate_limit, get_session
@@ -133,7 +134,6 @@ def me(
     out = UserOut.model_validate(db_user)
     # Resolve patient_profile_id for PATIENT callers
     if db_user.role == UserRole.PATIENT:
-        from sqlalchemy import select
         profile = db.execute(
             select(PatientProfile).where(PatientProfile.user_id == db_user.id)
         ).scalar_one_or_none()
