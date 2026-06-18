@@ -19,7 +19,7 @@ RBAC matrix (symptom + medication writes):
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import CurrentUser, current_user, get_session
@@ -35,6 +35,7 @@ from app.services import medication as medication_svc
 from app.services import nutrition_log as nutrition_log_svc
 from app.services import patient_profile as svc
 from app.services import patient_summary as summary_svc
+from app.services import pdf_report as pdf_report_svc
 from app.services import risk_score as risk_score_svc
 from app.services import symptom_log as symptom_log_svc
 from app.services import triage_log as triage_log_svc
@@ -580,3 +581,72 @@ def get_patient_summary(
         doctor_id = user.id
 
     return summary_svc.build_summary(db, patient_id=patient_id, doctor_id=doctor_id)
+
+
+# ---------------------------------------------------------------------------
+# T24 — PDF Export
+# ---------------------------------------------------------------------------
+
+@router.get(
+    "/{patient_id}/summary.pdf",
+    status_code=status.HTTP_200_OK,
+    summary="Export patient summary as PDF (doctor portal)",
+    response_class=Response,
+)
+def get_patient_summary_pdf(
+    patient_id: str,
+    user: CurrentUser = Depends(current_user),
+    db: Session = Depends(get_session),
+) -> Response:
+    """Export a consolidated clinical summary for *patient_id* as a PDF file.
+
+    Reuses the same data aggregation as ``GET /patients/{patient_id}/summary``
+    and renders it via ``reportlab`` as a formatted PDF document.
+
+    Access rules:
+    - **DOCTOR** — consent-gated (scope='profile').
+    - **INTERNAL_ADMIN / SUPER_ADMIN** — unrestricted.
+    - **PATIENT** — always 403.
+    - **AI_SERVICE** — always 403.
+    - Unauthenticated — 401.
+    """
+    from fastapi import HTTPException
+    from fastapi import status as http_status
+
+    _PDF_BLOCKED: frozenset[str] = frozenset({
+        UserRole.PATIENT,
+        UserRole.AI_SERVICE,
+        UserRole.CLINIC_ADMIN,
+    })
+    if user.role in _PDF_BLOCKED:
+        raise HTTPException(
+            status_code=http_status.HTTP_403_FORBIDDEN,
+            detail=f"Role '{user.role}' is not permitted to export patient PDFs.",
+        )
+
+    doctor_id: str | None = None
+    if user.role not in _ADMIN_ROLES:
+        try:
+            require_access(db, patient_id=patient_id, requester_id=user.id, scope="profile")
+        except ConsentError as exc:
+            raise HTTPException(
+                status_code=http_status.HTTP_403_FORBIDDEN,
+                detail=str(exc),
+            ) from exc
+        doctor_id = user.id
+
+    summary = summary_svc.build_summary(db, patient_id=patient_id, doctor_id=doctor_id)
+    summary_dict = summary.model_dump()
+
+    pdf_bytes = pdf_report_svc.generate_patient_summary_pdf(
+        patient_id=patient_id,
+        summary_data=summary_dict,
+    )
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f"attachment; filename=patient_{patient_id}_summary.pdf",
+        },
+    )
