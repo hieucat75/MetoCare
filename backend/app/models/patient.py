@@ -18,7 +18,9 @@ from ._mixins import TimestampMixin, UUIDPrimaryKey
 class PatientProfile(UUIDPrimaryKey, TimestampMixin, Base):
     __tablename__ = "patient_profiles"
 
-    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id"), index=True, unique=True, nullable=False
+    )
     # ---- PHI: field-level encrypted at rest ----
     full_name: Mapped[str | None] = mapped_column(EncryptedString)
     dob: Mapped[str | None] = mapped_column(EncryptedString)  # ISO date string, encrypted

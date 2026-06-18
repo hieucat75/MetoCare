@@ -295,3 +295,54 @@ def test_notifications_unauthenticated(client: TestClient):
     """GET /notifications without bearer token → 401."""
     r = client.get(_NOTIF_URL)
     assert r.status_code == 401, r.text
+
+# ---------------------------------------------------------------------------
+# 9. PATCH twice same user → only 1 PatientProfile row (no duplicate) [PA-04]
+# ---------------------------------------------------------------------------
+
+def test_patient_profile_upsert_no_duplicate(client: TestClient, db, patient_no_profile):
+    """Calling PATCH profile twice with same user must update — NOT create a second row.
+
+    Simulates the full onboarding flow:
+      1. First PATCH uses user_id (upsert create path).
+      2. Second PATCH uses the returned profile UUID (standard update path).
+    After both calls exactly one PatientProfile row must exist for the user.
+    """
+    from sqlalchemy import func, select
+
+    user_id = patient_no_profile["user_id"]
+    headers = patient_no_profile["headers"]
+
+    # First PATCH — uses user_id as path param (upsert create path)
+    r1 = client.patch(
+        _profile_url(user_id),
+        headers=headers,
+        json={"full_name": "First Write", "gender": "female", "weight_kg": 60.0},
+    )
+    assert r1.status_code == 200, r1.text
+    body1 = r1.json()
+    assert body1["full_name"] == "First Write"
+    profile_id = body1["id"]  # UUID assigned by the server
+
+    # Second PATCH — uses profile UUID (standard update path, no new row)
+    r2 = client.patch(
+        _profile_url(profile_id),
+        headers=headers,
+        json={"full_name": "Second Write", "weight_kg": 65.0},
+    )
+    assert r2.status_code == 200, r2.text
+    body2 = r2.json()
+    assert body2["full_name"] == "Second Write"
+    assert body2["weight_kg"] == 65.0
+
+    # Critical: only ONE row for this user_id
+    db.expire_all()
+    row_count = db.execute(
+        select(func.count()).select_from(PatientProfile).where(
+            PatientProfile.user_id == user_id
+        )
+    ).scalar()
+    assert row_count == 1, (
+        f"Expected exactly 1 PatientProfile for user {user_id}, got {row_count}. "
+        "Possible duplicate-row regression."
+    )
