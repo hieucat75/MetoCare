@@ -1,5 +1,5 @@
-# MetoCare — Azure App Service Deployment
-# Backend only (FastAPI/Python).
+# MetoCare — Azure App Service Deployment (Docker/GHCR path)
+# Build Docker image → push GHCR → configure App Service to pull container.
 
 name: Build and deploy Python app to Azure Web App - MetoCare
 
@@ -12,74 +12,63 @@ on:
 env:
   AZURE_WEBAPP_NAME: MetoCare
   AZURE_RESOURCE_GROUP: rg-metocare-dev
-  PYTHON_VERSION: '3.11'
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/metocare-backend
   APP_URL: https://metocare-a8hdh0grbcerbmfm.malaysiawest-01.azurewebsites.net
 
 jobs:
-  build:
+  build-and-push:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      packages: write
 
-    defaults:
-      run:
-        working-directory: backend
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+      image-digest: ${{ steps.build.outputs.digest }}
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python version
-        uses: actions/setup-python@v5
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Install dependencies
-        run: |
-          python -m venv antenv
-          source antenv/bin/activate
-          pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: Create deployment zip
-        working-directory: .
-        run: |
-          cd backend
-          chmod +x startup.sh
-          # Include antenv/ in the zip so Azure finds the virtualenv at runtime.
-          # Oryx create-script checks /home/site/wwwroot/antenv and activates it.
-          # Without antenv in the zip, Oryx falls back to system Python 3.9 (no uvicorn).
-          zip -r ../deploy.zip . \
-            --exclude "tests/*" \
-            --exclude "requirements-dev.txt" \
-            --exclude "data/*" \
-            --exclude "__pycache__/*" \
-            --exclude "*.pyc" \
-            --exclude "antenv/lib/python*/site-packages/pip*" \
-            --exclude "antenv/lib/python*/site-packages/setuptools*"
-          echo "=== Zip size ==="
-          du -sh ../deploy.zip
-          echo "=== Key paths in zip ==="
-          unzip -l ../deploy.zip | grep -E "antenv/bin/|app/main|requirements\.txt|startup" | head -20
-
-      - name: Upload deployment zip
-        uses: actions/upload-artifact@v4
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
         with:
-          name: python-app
-          path: deploy.zip
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,prefix=,format=short
+            type=raw,value=latest
+
+      - name: Build and push Docker image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Print image info
+        run: |
+          echo "Image tags: ${{ steps.meta.outputs.tags }}"
+          echo "Digest: ${{ steps.build.outputs.digest }}"
 
   deploy:
     runs-on: ubuntu-latest
-    needs: build
+    needs: build-and-push
     permissions:
       id-token: write
       contents: read
 
     steps:
-      - name: Download artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: python-app
-
       - name: Login to Azure
         uses: azure/login@v2
         with:
@@ -87,9 +76,24 @@ jobs:
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_82802F503FBB4981BB11E7836D0FDE28 }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_42799659C6C44C1D8151F9153AD06872 }}
 
-      - name: Configure app settings and startup
+      - name: Configure App Service for container
         run: |
-          # Set app settings (this may restart the app)
+          # Derive the short SHA image tag (same logic as docker/metadata-action sha prefix)
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${SHORT_SHA}"
+          echo "Deploying image: $IMAGE"
+
+          # Switch App Service to container mode
+          az webapp config container set \
+            --name ${{ env.AZURE_WEBAPP_NAME }} \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --container-image-name "$IMAGE" \
+            --container-registry-url "https://${{ env.REGISTRY }}" \
+            --container-registry-user "${{ github.actor }}" \
+            --container-registry-password "${{ secrets.GITHUB_TOKEN }}" \
+            --output none
+
+          # App settings — keep SQLite for dev, no Oryx needed
           az webapp config appsettings set \
             --name ${{ env.AZURE_WEBAPP_NAME }} \
             --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
@@ -99,61 +103,33 @@ jobs:
               MCP_AI_MODE=mock \
               MCP_OCR_MODE=mock \
               MCP_STORAGE_MODE=local \
-              MCP_DATABASE_URL="sqlite:////home/site/wwwroot/data/mcp_dev.sqlite3" \
+              MCP_DATABASE_URL="sqlite:////app/data/mcp_dev.sqlite3" \
+              WEBSITES_PORT=8000 \
               WEBSITES_ENABLE_APP_SERVICE_STORAGE=true \
               WEBSITES_CONTAINER_START_TIME_LIMIT=300 \
             --output none
-          
-          # Startup command: Oryx finds antenv/ in wwwroot (shipped in zip),
-          # activates it, then runs this command. $PORT is exported by Azure runtime.
+
+          # Clear any old startup-file — container CMD handles startup
           az webapp config set \
             --name ${{ env.AZURE_WEBAPP_NAME }} \
             --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-            --startup-file 'gunicorn -w 2 -k uvicorn.workers.UvicornWorker app.main:app --bind 0.0.0.0:8000 --timeout 120' \
+            --startup-file '' \
             --output none
-          
-          echo "✅ Config applied."
 
-      - name: Ensure app is running before deploy
+          echo "✅ Container config applied."
+
+      - name: Restart and wait for startup
         run: |
-          az webapp start \
+          az webapp restart \
             --name ${{ env.AZURE_WEBAPP_NAME }} \
             --resource-group ${{ env.AZURE_RESOURCE_GROUP }}
-          
-          SCM_URL="https://${{ env.AZURE_WEBAPP_NAME }}.scm.malaysiawest-01.azurewebsites.net"
-          echo "Polling SCM for Kudu readiness..."
-          for i in $(seq 1 30); do
-            HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
-              --connect-timeout 5 --max-time 10 "$SCM_URL/api/settings" 2>/dev/null || echo "000")
-            echo "  Attempt $i: SCM HTTP $HTTP"
-            if [ "$HTTP" = "401" ] || [ "$HTTP" = "200" ]; then
-              echo "  ✅ Kudu ready — proceeding"
-              break
-            fi
-            if [ "$i" -eq 30 ]; then
-              echo "  ⚠️ Kudu not responding after 30 attempts — continuing anyway"
-            fi
-            sleep 10
-          done
 
-      - name: Deploy zip
-        run: |
-          az webapp deploy \
-            --name ${{ env.AZURE_WEBAPP_NAME }} \
-            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-            --src-path deploy.zip \
-            --type zip
-          
-          echo "✅ Deployment submitted. Waiting for app startup..."
-
-      - name: Wait for app startup and verify
-        run: |
+          echo "Polling /health for up to 5 minutes..."
           APP_URL="${{ env.APP_URL }}"
-          echo "Polling app health for up to 5 minutes..."
           for i in $(seq 1 30); do
             HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
               --connect-timeout 5 --max-time 15 "$APP_URL/health" 2>/dev/null || echo "000")
-            echo "  Attempt $i: /health HTTP $HTTP"
+            echo "  Attempt $i/30: /health → HTTP $HTTP"
             if [ "$HTTP" = "200" ]; then
               echo "  ✅ App is UP!"
               break
@@ -164,39 +140,37 @@ jobs:
             fi
             sleep 10
           done
-          
-          echo ""
-          echo "=== Final endpoint check ==="
-          echo "--- GET / ---"
-          curl -sv --max-time 15 "$APP_URL/" 2>&1 | grep -E "< HTTP|{|status|detail" | head -5
-          
-          echo "--- GET /health ---"
-          curl -s --max-time 15 "$APP_URL/health" | python3 -m json.tool 2>/dev/null || echo "no JSON response"
-          
-          echo "--- GET /api/v1/info ---"
-          curl -s --max-time 15 "$APP_URL/api/v1/info" | python3 -m json.tool 2>/dev/null || echo "no JSON response"
 
-      - name: Dump recent app logs on failure
+      - name: Verify endpoints
+        run: |
+          APP_URL="${{ env.APP_URL }}"
+          echo "--- GET / ---"
+          curl -s --max-time 15 "$APP_URL/" | python3 -m json.tool 2>/dev/null || echo "(non-JSON)"
+
+          echo "--- GET /health ---"
+          curl -s --max-time 15 "$APP_URL/health" | python3 -m json.tool 2>/dev/null || echo "(non-JSON)"
+
+          echo "--- GET /api/v1/info ---"
+          curl -s --max-time 15 "$APP_URL/api/v1/info" | python3 -m json.tool 2>/dev/null || echo "(non-JSON)"
+
+      - name: Dump logs on failure
         if: failure()
         run: |
-          echo "=== Recent App Service logs ==="
+          echo "=== Downloading App Service logs ==="
           az webapp log download \
             --name ${{ env.AZURE_WEBAPP_NAME }} \
             --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
             --log-file /tmp/app_logs.zip 2>&1 || echo "Could not download logs"
-          
+
           if [ -f /tmp/app_logs.zip ]; then
             mkdir -p /tmp/app_logs_dir
             unzip -q /tmp/app_logs.zip -d /tmp/app_logs_dir 2>/dev/null || true
-            find /tmp/app_logs_dir -name '*.log' -newer /tmp/app_logs.zip -o -name '*.log' | sort | tail -5 | while read f; do
-              echo "=== $f ==="
-              tail -100 "$f"
+            chmod -R a+r /tmp/app_logs_dir 2>/dev/null || true
+            echo "=== StartupLogs ==="
+            find /tmp/app_logs_dir/LogFiles/StartupLogs -name '*.log' 2>/dev/null | sort | while read f; do
+              echo "--- FILE: $f ---"
+              cat "$f"
             done
-            echo "--- All log files ---"
-            find /tmp/app_logs_dir -name '*.log' | sort
+            echo "=== docker.log (most recent) ==="
+            find /tmp/app_logs_dir/LogFiles -name '*docker.log' 2>/dev/null | sort | tail -1 | xargs tail -200 2>/dev/null || true
           fi
-          
-          echo "=== Live log stream (15s) ==="
-          timeout 15 az webapp log tail \
-            --name ${{ env.AZURE_WEBAPP_NAME }} \
-            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} 2>&1 || true
