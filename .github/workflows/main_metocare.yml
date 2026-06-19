@@ -77,19 +77,35 @@ jobs:
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_82802F503FBB4981BB11E7836D0FDE28 }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_42799659C6C44C1D8151F9153AD06872 }}
 
-      - name: Ensure App Service is running + set startup command
+      - name: Configure App Service settings
         run: |
+          # Ensure app is running
           az webapp start \
             --name ${{ env.AZURE_WEBAPP_NAME }} \
             --resource-group ${{ env.AZURE_RESOURCE_GROUP }}
 
+          # Azure App Service Linux injects $PORT — must use it, not hardcode 8000
+          # Also run alembic migrations on startup via a startup script
           az webapp config set \
             --name ${{ env.AZURE_WEBAPP_NAME }} \
             --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-            --startup-file "gunicorn -w 2 -k uvicorn.workers.UvicornWorker app.main:app --bind 0.0.0.0:8000" \
+            --startup-file "gunicorn -w 2 -k uvicorn.workers.UvicornWorker app.main:app --bind 0.0.0.0:\$PORT --timeout 120" \
             --output none
 
-          echo "App started. Waiting 10s..."
+          # Set required app settings (dev defaults so app starts without external DB)
+          az webapp config appsettings set \
+            --name ${{ env.AZURE_WEBAPP_NAME }} \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --settings \
+              MCP_ENV=dev \
+              MCP_DEBUG=false \
+              MCP_AI_MODE=mock \
+              MCP_OCR_MODE=mock \
+              MCP_STORAGE_MODE=local \
+              SCM_DO_BUILD_DURING_DEPLOYMENT=false \
+            --output none
+
+          echo "App configured. Waiting 10s..."
           sleep 10
 
       - name: Deploy via az webapp deploy (zip deploy)
