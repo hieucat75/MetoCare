@@ -80,7 +80,7 @@ jobs:
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_82802F503FBB4981BB11E7836D0FDE28 }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_42799659C6C44C1D8151F9153AD06872 }}
 
-      - name: Configure app settings
+      - name: Configure app settings and startup
         run: |
           az webapp config appsettings set \
             --name ${{ env.AZURE_WEBAPP_NAME }} \
@@ -93,7 +93,14 @@ jobs:
               MCP_STORAGE_MODE=local \
               SCM_DO_BUILD_DURING_DEPLOYMENT=true \
             --output none
-          echo "App settings configured."
+
+          az webapp config set \
+            --name ${{ env.AZURE_WEBAPP_NAME }} \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --startup-file 'gunicorn -w 2 -k uvicorn.workers.UvicornWorker app.main:app --bind 0.0.0.0:$PORT --timeout 120' \
+            --output none
+
+          echo "Configuration applied."
 
       - name: Deploy via az webapp up
         working-directory: app_src
@@ -102,8 +109,7 @@ jobs:
             --name ${{ env.AZURE_WEBAPP_NAME }} \
             --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
             --runtime "PYTHON:3.11" \
-            --sku B1 \
-            --startup-file 'gunicorn -w 2 -k uvicorn.workers.UvicornWorker app.main:app --bind 0.0.0.0:$PORT --timeout 120'
+            --sku B1
 
       - name: Verify deployment
         run: |
