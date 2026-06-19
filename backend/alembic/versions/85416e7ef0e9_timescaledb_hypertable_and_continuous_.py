@@ -7,6 +7,11 @@ Create Date: 2026-06-12 20:43:10.381099
 PostgreSQL/TimescaleDB ONLY. On any other backend (e.g. SQLite used for dev/test)
 this migration is a deliberate no-op so the same migration chain runs everywhere.
 
+On Azure Database for PostgreSQL Flexible Server, TimescaleDB is not in the
+allow-list for azure_pg_admin, so CREATE EXTENSION raises FeatureNotSupported.
+This migration detects that at runtime and skips gracefully — health_metrics
+remains a plain PostgreSQL table.
+
 TimescaleDB requires the time partitioning column to be part of every unique
 index, so the primary key of `health_metrics` is widened to (id, measured_at)
 before `create_hypertable`. The ORM still maps `id` as the logical key (UUID,
@@ -19,8 +24,10 @@ rather than four separate materialized views.
 """
 from __future__ import annotations
 
+import warnings
 from collections.abc import Sequence
 
+import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
@@ -29,7 +36,6 @@ down_revision: str | None = "2c30ffd33627"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-
 CAGG_NAME = "health_metric_daily"
 
 
@@ -37,16 +43,30 @@ def _is_postgres() -> bool:
     return op.get_bind().dialect.name == "postgresql"
 
 
-def _timescaledb_available() -> bool:
-    """Return True only when the TimescaleDB shared library is installed on this PG server."""
-    try:
-        import sqlalchemy as sa
+def _try_create_timescaledb_extension() -> bool:
+    """Attempt to CREATE EXTENSION timescaledb.
 
-        result = op.get_bind().execute(
-            sa.text("SELECT COUNT(*) FROM pg_available_extensions WHERE name = 'timescaledb'")
+    Returns True if the extension is now installed, False if the server
+    does not support it (e.g. Azure Flexible Server deny-list, Homebrew PG
+    without TimescaleDB package).
+
+    Uses a SAVEPOINT so a failure does not abort the surrounding transaction.
+    """
+    conn = op.get_bind()
+    try:
+        conn.execute(sa.text("SAVEPOINT _tsdb_check"))
+        conn.execute(sa.text("CREATE EXTENSION IF NOT EXISTS timescaledb"))
+        conn.execute(sa.text("RELEASE SAVEPOINT _tsdb_check"))
+        return True
+    except Exception as exc:  # noqa: BLE001
+        conn.execute(sa.text("ROLLBACK TO SAVEPOINT _tsdb_check"))
+        warnings.warn(
+            f"TimescaleDB extension could not be installed ({exc}). "
+            "health_metrics will remain a plain PostgreSQL table on this instance. "
+            "This is expected on Azure Database for PostgreSQL Flexible Server.",
+            RuntimeWarning,
+            stacklevel=2,
         )
-        return bool(result.scalar())
-    except Exception:
         return False
 
 
@@ -54,21 +74,11 @@ def upgrade() -> None:
     if not _is_postgres():
         return  # hypertable / CAGG are TimescaleDB features; skip on SQLite et al.
 
-    if not _timescaledb_available():
-        # TimescaleDB not installed on this PG server (e.g. local Homebrew dev).
-        # Skip hypertable setup -- tables remain plain Postgres tables.
-        # On production (TimescaleDB Cloud / self-managed TSDB) this block runs.
-        import warnings
-
-        warnings.warn(
-            "TimescaleDB extension not available -- skipping hypertable/CAGG setup. "
-            "health_metrics will be a plain table on this instance.",
-            RuntimeWarning,
-            stacklevel=2,
-        )
+    if not _try_create_timescaledb_extension():
+        # TimescaleDB not available on this server — skip all hypertable setup.
+        # health_metrics stays as a plain table; queries still work, just without
+        # time-series partitioning / compression / continuous aggregates.
         return
-
-    op.execute("CREATE EXTENSION IF NOT EXISTS timescaledb")
 
     # Widen PK to include the partitioning column (TimescaleDB requirement).
     op.execute("ALTER TABLE health_metrics DROP CONSTRAINT IF EXISTS health_metrics_pkey")
