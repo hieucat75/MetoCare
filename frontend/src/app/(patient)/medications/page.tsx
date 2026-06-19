@@ -2,88 +2,59 @@
 
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
-import { Pill } from 'lucide-react'
-import {
-  Alert,
-  EmptyState,
-  ErrorState,
-  MedicationCard,
-  PageHeader,
-  Skeleton,
-  SkeletonText,
-  Card,
-  CardContent,
-  Tabs,
-  TabsContent,
-} from '@/design-system'
+import { Pill, ChevronRight } from 'lucide-react'
+import { GlassCard } from '@/components/patient/glass'
+import { PatientScreenHeader } from '@/components/patient/header'
+import { PatientEmptyState, PatientErrorState, PatientSkeleton } from '@/components/patient/states'
+import { SegmentedTabs } from '@/components/patient/tabs'
 import { useAuth } from '@/lib/auth/context'
 import { getMedications, type Medication } from '@/lib/api/patient'
 
-// ── Helpers ────────────────────────────────────────────────────────────────────
-
-// next_dose_at/frequency/status not in backend schema
-
-// ── Medication loading skeleton ────────────────────────────────────────────────
-
-function MedicationsSkeleton() {
-  return (
-    <div className="space-y-3">
-      {[1, 2, 3].map((n) => (
-        <Card key={n} variant="elevated" padding="none">
-          <CardContent className="p-5 space-y-3">
-            <div className="flex items-center justify-between">
-              <Skeleton width="55%" height="1rem" />
-              <Skeleton width="5rem" height="1.25rem" className="rounded-full" />
-            </div>
-            <Skeleton width="40%" height="0.75rem" />
-            <SkeletonText lines={2} />
-            <div className="flex gap-2 mt-2">
-              <Skeleton width="5rem" height="2rem" className="rounded-lg" />
-              <Skeleton width="8rem" height="2rem" className="rounded-lg" />
-            </div>
-          </CardContent>
-        </Card>
-      ))}
-    </div>
-  )
-}
-
-// ── Medication list with overdue detection ─────────────────────────────────────
-
-function MedicationList({
-  medications,
-  onViewMore,
+function MedicationItem({
+  med,
+  onView,
   onRefill,
 }: {
-  medications: Medication[]
-  onViewMore: (id: string) => void
+  med: Medication
+  onView: () => void
   onRefill: () => void
 }) {
   return (
-    <div className="space-y-3">
-      {medications.map((med) => (
-          <MedicationCard
-            key={med.id}
-            medication={{
-              id: med.id,
-              name: med.name,
-              dosage: med.dose ?? '',
-              frequency: '',               // not in backend schema
-              timing: 'Xem hướng dẫn',  // not in backend schema
-              prescribedBy: 'Bác sĩ điều trị', // not in backend schema
-              startDate: med.created_at,   // use created_at as proxy
-              notes: med.note ?? undefined,
-              status: 'active',            // backend has no status field; show all as active
-            }}
-            onRefill={onRefill}
-            onViewMore={() => onViewMore(med.id)}
-          />
-      ))}
-    </div>
+    <GlassCard className="p-4">
+      <div className="flex items-start gap-3">
+        <span className="grid size-11 shrink-0 place-items-center rounded-[12px] bg-[#e8eff5]">
+          <Pill className="size-[22px] text-[#2563eb]" aria-hidden="true" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-[15px] font-bold text-[#0e2a33]">{med.name}</p>
+          {(med.dose || med.dosage) && (
+            <p className="mt-0.5 text-[13px] text-[#365651]">{med.dose ?? med.dosage}</p>
+          )}
+          {(med.note || med.notes) && (
+            <p className="mt-1 text-[13px] leading-relaxed text-[#244744]">{med.note ?? med.notes}</p>
+          )}
+          <span className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-[rgba(227,244,234,0.9)] px-2 py-1 text-[11px] font-semibold text-[#15915a]">
+            <span className="size-1.5 rounded-full bg-[#15915a]" />
+            Đang dùng
+          </span>
+        </div>
+      </div>
+      <div className="mt-3 flex gap-2.5">
+        <button type="button" onClick={onRefill} className="mc-btn-glass h-11 flex-1 text-[14px]">
+          Tái cấp thuốc
+        </button>
+        <button
+          type="button"
+          onClick={onView}
+          className="flex h-11 flex-1 items-center justify-center gap-1 rounded-[14px] bg-[rgba(227,245,236,0.8)] text-[14px] font-semibold text-[#0b7f5b]"
+        >
+          Chi tiết
+          <ChevronRight className="size-4" aria-hidden="true" />
+        </button>
+      </div>
+    </GlassCard>
   )
 }
-
-// ── Page ───────────────────────────────────────────────────────────────────────
 
 export default function MedicationsPage() {
   const router = useRouter()
@@ -91,30 +62,24 @@ export default function MedicationsPage() {
   const patientId = user?.patient_profile_id
 
   const [refillNotice, setRefillNotice] = React.useState(false)
-  const [activeTab, setActiveTab] = React.useState<'active' | 'completed'>('active')
+  const [tab, setTab] = React.useState<'active' | 'completed'>('active')
+  const [meds, setMeds] = React.useState<Medication[]>([])
+  const [loading, setLoading] = React.useState(true)
+  const [error, setError] = React.useState<string | null>(null)
 
-  const [activeMeds, setActiveMeds] = React.useState<Medication[]>([])
-  const [activeLoading, setActiveLoading] = React.useState(true)
-  const [activeError, setActiveError] = React.useState<string | null>(null)
-
-  // Load all medications on mount (backend has no status filter)
-  React.useEffect(() => {
+  const load = React.useCallback(() => {
     if (!patientId) return
-    setActiveLoading(true)
-    setActiveError(null)
+    setLoading(true)
+    setError(null)
     getMedications(patientId, { limit: 50 })
-      .then((res) => {
-        setActiveMeds(res.items)
-      })
-      .catch((err: Error) => setActiveError(err.message))
-      .finally(() => setActiveLoading(false))
+      .then((res) => setMeds(res.items))
+      .catch((err: Error) => setError(err.message))
+      .finally(() => setLoading(false))
   }, [patientId])
 
-
-
-  function handleViewMore(id: string) {
-    router.push(`/medications/${id}`)
-  }
+  React.useEffect(() => {
+    load()
+  }, [load])
 
   function handleRefill() {
     setRefillNotice(true)
@@ -123,77 +88,77 @@ export default function MedicationsPage() {
 
   if (!patientId) {
     return (
-      <div className="p-4 lg:p-6 max-w-2xl mx-auto">
-        <Alert variant="warning" title="Chưa có hồ sơ bệnh nhân">
-          Tài khoản của bạn chưa được liên kết với hồ sơ bệnh nhân. Vui lòng liên hệ hỗ trợ.
-        </Alert>
+      <div className="pt-2">
+        <PatientScreenHeader title="Thuốc & Điều trị" />
+        <PatientEmptyState
+          icon={Pill}
+          title="Chưa có hồ sơ bệnh nhân"
+          description="Vui lòng liên hệ hỗ trợ để được trợ giúp."
+          className="mt-3"
+        />
       </div>
     )
   }
 
   return (
-    <div className="p-4 lg:p-6 space-y-4 max-w-2xl mx-auto">
-      <PageHeader title="Thuốc & Điều trị" />
+    <div className="pt-2">
+      <PatientScreenHeader title="Thuốc & Điều trị" subtitle="Quản lý thuốc đang dùng" />
 
       {refillNotice && (
-        <Alert variant="info">Chức năng tái cấp thuốc đang được phát triển.</Alert>
+        <div className="mt-3 rounded-xl border border-[rgba(37,99,235,0.2)] bg-[rgba(229,237,251,0.7)] px-4 py-3 text-[14px] font-medium text-[#2563eb]">
+          Chức năng tái cấp thuốc đang được phát triển.
+        </div>
       )}
 
-      <Tabs
-        variant="line"
-        value={activeTab}
-        onValueChange={(v) => setActiveTab(v as 'active' | 'completed')}
-        tabs={[
-          { value: 'active', label: 'Đang dùng' },
-          { value: 'completed', label: 'Đã hoàn thành' },
-        ]}
-      >
-        {/* Active medications tab */}
-        <TabsContent value="active">
-          {activeLoading && <MedicationsSkeleton />}
+      <div className="mt-3">
+        <SegmentedTabs
+          tabs={[
+            { value: 'active', label: 'Đang dùng' },
+            { value: 'completed', label: 'Đã hoàn thành' },
+          ]}
+          value={tab}
+          onChange={(v) => setTab(v as 'active' | 'completed')}
+        />
+      </div>
 
-          {!activeLoading && activeError && (
-            <ErrorState
-              variant="inline"
-              title="Không tải được danh sách thuốc"
-              message={activeError}
-              onRetry={() => {
-                setActiveLoading(true)
-                setActiveError(null)
-                getMedications(patientId, { limit: 50 })
-                  .then((res) => setActiveMeds(res.items))
-                  .catch((err: Error) => setActiveError(err.message))
-                  .finally(() => setActiveLoading(false))
-              }}
-            />
-          )}
-
-          {!activeLoading && !activeError && activeMeds.length === 0 && (
-            <EmptyState
-              icon={<Pill />}
-              title="Không có thuốc đang dùng"
-              description="Bác sĩ của bạn sẽ kê đơn thuốc khi cần thiết."
-            />
-          )}
-
-          {!activeLoading && !activeError && activeMeds.length > 0 && (
-            <MedicationList
-              medications={activeMeds}
-              onViewMore={handleViewMore}
-              onRefill={handleRefill}
-            />
-          )}
-        </TabsContent>
-
-        {/* Completed tab — backend has no status field; show informational empty state */}
-        <TabsContent value="completed">
-          <EmptyState
-            icon={<Pill />}
+      <div className="mt-4 space-y-3">
+        {tab === 'active' ? (
+          <>
+            {loading && (
+              <>
+                <PatientSkeleton />
+                <PatientSkeleton />
+              </>
+            )}
+            {!loading && error && (
+              <PatientErrorState title="Không tải được danh sách thuốc" message={error} onRetry={load} />
+            )}
+            {!loading && !error && meds.length === 0 && (
+              <PatientEmptyState
+                icon={Pill}
+                title="Không có thuốc đang dùng"
+                description="Bác sĩ của bạn sẽ kê đơn thuốc khi cần thiết."
+              />
+            )}
+            {!loading &&
+              !error &&
+              meds.map((med) => (
+                <MedicationItem
+                  key={med.id}
+                  med={med}
+                  onView={() => router.push(`/medications/${med.id}`)}
+                  onRefill={handleRefill}
+                />
+              ))}
+          </>
+        ) : (
+          <PatientEmptyState
+            icon={Pill}
             title="Không có thuốc đã hoàn thành"
             description="Lịch sử thuốc đã hoàn thành sẽ hiển thị ở đây."
           />
-        </TabsContent>
-      </Tabs>
+        )}
+      </div>
     </div>
   )
 }

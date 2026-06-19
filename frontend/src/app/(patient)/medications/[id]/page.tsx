@@ -2,33 +2,35 @@
 
 import * as React from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { ArrowLeft, Pill, Calendar, FileText } from 'lucide-react'
+import { Pill, Calendar, FileText, type LucideIcon } from 'lucide-react'
+import { GlassCard } from '@/components/patient/glass'
+import { PatientScreenHeader } from '@/components/patient/header'
+import { PatientEmptyState, PatientErrorState, PatientSkeleton } from '@/components/patient/states'
 import { useAuth } from '@/lib/auth/context'
-import { getMedications } from '@/lib/api/patient'
-import type { Medication } from '@/lib/api/patient'
-import { Card, CardContent } from '@/design-system/components/core/Card'
-import Button from '@/design-system/components/core/Button'
-import { PageLoading } from '@/design-system/components/core/LoadingState'
-import { ErrorState } from '@/design-system/components/core/ErrorState'
-import { Alert } from '@/design-system/components/core/Alert'
+import { getMedications, type Medication } from '@/lib/api/patient'
 
 function InfoRow({
   icon: Icon,
   label,
   value,
+  last,
 }: {
-  icon: React.ElementType
+  icon: LucideIcon
   label: string
   value: string
+  last?: boolean
 }) {
   return (
-    <div className="flex items-start gap-3 py-3 border-b border-border last:border-0">
-      <span className="flex items-center justify-center w-8 h-8 rounded-lg bg-secondary-50 shrink-0">
-        <Icon className="size-4 text-text-muted" aria-hidden="true" />
+    <div
+      className="flex items-start gap-3 py-3.5"
+      style={{ borderBottom: last ? undefined : '1px solid rgba(16,48,44,0.07)' }}
+    >
+      <span className="grid size-9 shrink-0 place-items-center rounded-[10px] bg-[rgba(227,245,236,0.9)]">
+        <Icon className="size-[18px] text-[#0f9c6e]" aria-hidden="true" />
       </span>
-      <div className="flex-1 min-w-0">
-        <p className="text-label-sm text-text-muted">{label}</p>
-        <p className="text-body-md text-text mt-0.5">{value}</p>
+      <div className="min-w-0 flex-1">
+        <p className="text-[12px] text-[#566e66]">{label}</p>
+        <p className="mt-0.5 text-[15px] font-medium text-[#0e2a33]">{value}</p>
       </div>
     </div>
   )
@@ -36,11 +38,7 @@ function InfoRow({
 
 function formatDate(dateStr: string): string {
   try {
-    return new Date(dateStr).toLocaleDateString('vi-VN', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-    })
+    return new Date(dateStr).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })
   } catch {
     return dateStr
   }
@@ -63,11 +61,8 @@ export default function MedicationDetailPage() {
     try {
       const res = await getMedications(patientId, { limit: 100 })
       const found = res.items.find((m) => m.id === id)
-      if (!found) {
-        setError('Không tìm thấy thông tin thuốc.')
-      } else {
-        setMedication(found)
-      }
+      if (!found) setError('Không tìm thấy thông tin thuốc.')
+      else setMedication(found)
     } catch {
       setError('Không thể tải thông tin thuốc. Vui lòng thử lại.')
     } finally {
@@ -81,58 +76,43 @@ export default function MedicationDetailPage() {
 
   if (!patientId) {
     return (
-      <div className="p-4">
-        <Alert variant="warning">Chưa có hồ sơ bệnh nhân. Vui lòng liên hệ hỗ trợ.</Alert>
+      <div className="pt-2">
+        <PatientScreenHeader title="Chi tiết thuốc" />
+        <PatientEmptyState icon={Pill} title="Chưa có hồ sơ bệnh nhân" description="Vui lòng liên hệ hỗ trợ." className="mt-3" />
       </div>
     )
   }
 
-  if (loading) return <PageLoading label="Đang tải..." />
-  if (error) return <ErrorState message={error} onRetry={load} />
-  if (!medication) return null
-
   return (
-    <div className="max-w-lg mx-auto px-4 pb-8">
-      {/* Back header */}
-      <div className="flex items-center gap-3 py-4">
-        <button
-          type="button"
-          onClick={() => router.back()}
-          className="flex items-center gap-1.5 text-body-sm text-primary"
-          aria-label="Quay lại"
-        >
-          <ArrowLeft className="size-4" />
-          Quay lại
-        </button>
-      </div>
+    <div className="pt-2">
+      <PatientScreenHeader
+        title={medication?.name ?? 'Chi tiết thuốc'}
+        subtitle={medication?.dose ?? medication?.dosage ?? undefined}
+        onBack={() => router.push('/medications')}
+      />
 
-      {/* Title */}
-      <div className="mb-4">
-        <h1 className="text-heading-lg font-bold text-text">{medication.name}</h1>
-        {medication.dose && (
-          <p className="text-body-md text-text-muted mt-0.5">{medication.dose}</p>
+      <div className="mt-3 space-y-4">
+        {loading && <PatientSkeleton />}
+        {!loading && error && <PatientErrorState title="Không tải được thuốc" message={error} onRetry={load} />}
+
+        {!loading && !error && medication && (
+          <>
+            <GlassCard className="px-4 py-1">
+              {(medication.dose || medication.dosage) && (
+                <InfoRow icon={Pill} label="Liều dùng" value={(medication.dose ?? medication.dosage) as string} />
+              )}
+              <InfoRow icon={Calendar} label="Ngày tạo" value={formatDate(medication.created_at)} />
+              {(medication.note || medication.notes) && (
+                <InfoRow icon={FileText} label="Ghi chú" value={(medication.note ?? medication.notes) as string} last />
+              )}
+            </GlassCard>
+
+            <button type="button" className="mc-btn-glass w-full" onClick={() => router.push('/medications')}>
+              Xem tất cả thuốc
+            </button>
+          </>
         )}
       </div>
-
-      <Card variant="default" padding="none" className="mb-4">
-        <CardContent className="p-1">
-          {medication.dose && (
-            <InfoRow icon={Pill} label="Liều dùng" value={medication.dose} />
-          )}
-          <InfoRow icon={Calendar} label="Ngày tạo" value={formatDate(medication.created_at)} />
-          {medication.note && (
-            <InfoRow icon={FileText} label="Ghi chú" value={medication.note} />
-          )}
-        </CardContent>
-      </Card>
-
-      <Button
-        variant="outline"
-        onClick={() => router.push('/medications')}
-        className="w-full"
-      >
-        Xem tất cả thuốc
-      </Button>
     </div>
   )
 }

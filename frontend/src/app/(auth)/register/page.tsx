@@ -3,93 +3,22 @@
 import * as React from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Eye, EyeOff, CheckCircle2 } from 'lucide-react'
+import { Eye, EyeOff, Phone, Lock, User, CheckCircle2 } from 'lucide-react'
 import { useAuth } from '@/lib/auth/context'
 import { ApiError } from '@/lib/api/client'
-import { getRoleHomePath } from '@/lib/api/auth'
-import Button from '@/design-system/components/core/Button'
-import { Alert } from '@/design-system/components/core/Alert'
-import { cn } from '@/lib/utils'
-
-function FieldLabel({ htmlFor, children }: { htmlFor: string; children: React.ReactNode }) {
-  return (
-    <label htmlFor={htmlFor} className="block text-label-lg font-medium text-text mb-1.5">
-      {children}
-    </label>
-  )
-}
-
-function FieldInput({
-  id,
-  type,
-  value,
-  onChange,
-  placeholder,
-  autoComplete,
-  disabled,
-  error,
-  rightElement,
-}: {
-  id: string
-  type: string
-  value: string
-  onChange: (v: string) => void
-  placeholder?: string
-  autoComplete?: string
-  disabled?: boolean
-  error?: boolean
-  rightElement?: React.ReactNode
-}) {
-  return (
-    <div className="relative">
-      <input
-        id={id}
-        type={type}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        autoComplete={autoComplete}
-        disabled={disabled}
-        aria-invalid={error}
-        className={cn(
-          'h-10 w-full rounded-md border bg-surface px-3 py-2 text-body-sm text-text',
-          'placeholder:text-text-subtle',
-          'focus:outline-none focus:ring-2',
-          'disabled:bg-secondary-50 disabled:text-text-muted disabled:cursor-not-allowed',
-          'transition-colors',
-          error
-            ? 'border-danger focus:border-danger focus:ring-danger/20'
-            : 'border-border focus:border-primary focus:ring-primary/20',
-          rightElement && 'pr-10',
-        )}
-      />
-      {rightElement && (
-        <div className="absolute inset-y-0 right-0 flex items-center pr-3">{rightElement}</div>
-      )}
-    </div>
-  )
-}
-
-function FieldError({ message }: { message: string }) {
-  return (
-    <p className="mt-1 text-body-xs text-danger flex items-center gap-1">
-      <span aria-hidden="true">⚠</span>
-      {message}
-    </p>
-  )
-}
+import { getRoleHomePath, normalizeVietnamPhone } from '@/lib/api/auth'
+import { GlassField, InlineAlert } from '@/components/patient/forms'
 
 export default function RegisterPage() {
-  const { register, user } = useAuth()
+  const { registerWithPhone, user } = useAuth()
   const router = useRouter()
 
-  // Redirect already-authenticated users to their role home
   React.useEffect(() => {
     if (user) router.replace(getRoleHomePath(user.role))
   }, [user, router])
 
   const [fullName, setFullName] = React.useState('')
-  const [email, setEmail] = React.useState('')
+  const [phone, setPhone] = React.useState('')
   const [password, setPassword] = React.useState('')
   const [showPassword, setShowPassword] = React.useState(false)
   const [isLoading, setIsLoading] = React.useState(false)
@@ -97,10 +26,12 @@ export default function RegisterPage() {
   const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({})
   const [success, setSuccess] = React.useState(false)
 
-  const validateForm = () => {
+  function validate() {
     const errs: Record<string, string> = {}
-    if (!email.trim()) errs.email = 'Email là bắt buộc'
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errs.email = 'Email không hợp lệ'
+    const normalized = normalizeVietnamPhone(phone)
+    if (!phone.trim()) errs.phone = 'Số điện thoại là bắt buộc'
+    else if (normalized.length < 9 || normalized.length > 11)
+      errs.phone = 'Số điện thoại không hợp lệ'
     if (!password) errs.password = 'Mật khẩu là bắt buộc'
     else if (password.length < 8) errs.password = 'Mật khẩu tối thiểu 8 ký tự'
     return errs
@@ -108,8 +39,8 @@ export default function RegisterPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    const errs = validateForm()
-    if (Object.keys(errs).length > 0) {
+    const errs = validate()
+    if (Object.keys(errs).length) {
       setFieldErrors(errs)
       return
     }
@@ -117,19 +48,19 @@ export default function RegisterPage() {
     setError(null)
     setIsLoading(true)
     try {
-      await register(email.trim(), password, fullName.trim() || undefined)
+      await registerWithPhone(phone.trim(), password, fullName.trim() || undefined)
       setSuccess(true)
-      setTimeout(() => router.replace('/dashboard'), 1500)
+      setTimeout(() => router.replace('/onboarding'), 1200)
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.status === 409) {
-          setFieldErrors({ email: 'Email này đã được đăng ký. Hãy thử đăng nhập.' })
+          setFieldErrors({ phone: 'Số điện thoại này đã được đăng ký. Hãy thử đăng nhập.' })
         } else if (err.status === 422) {
           setError('Thông tin không hợp lệ. Vui lòng kiểm tra lại.')
         } else if (err.status === 429) {
           setError('Quá nhiều yêu cầu. Vui lòng thử lại sau ít phút.')
         } else {
-          setError(err.detail || 'Có lỗi xảy ra. Vui lòng thử lại.')
+          setError('Có lỗi xảy ra. Vui lòng thử lại.')
         }
       } else {
         setError('Không thể kết nối máy chủ. Kiểm tra kết nối mạng.')
@@ -141,31 +72,27 @@ export default function RegisterPage() {
 
   if (success) {
     return (
-      <div className="text-center py-4">
-        <CheckCircle2 className="w-12 h-12 text-success mx-auto mb-4" aria-hidden="true" />
-        <h2 className="text-heading-xl font-bold text-text mb-2">Đăng ký thành công!</h2>
-        <p className="text-body-sm text-text-muted">Đang chuyển đến trang chủ...</p>
+      <div className="py-4 text-center">
+        <CheckCircle2 className="mx-auto mb-4 size-12 text-[#15915a]" aria-hidden="true" />
+        <h2 className="mb-2 text-[22px] font-extrabold text-[#0e2a33]">Tạo tài khoản thành công!</h2>
+        <p className="text-[14px] text-[#365651]">Đang thiết lập hồ sơ của bạn…</p>
       </div>
     )
   }
 
   return (
     <div>
-      <h1 className="text-heading-xl font-bold text-text mb-1">Tạo tài khoản</h1>
-      <p className="text-body-sm text-text-muted mb-6">
-        Đăng ký để bắt đầu quản lý sức khỏe của bạn.
-      </p>
+      <h1 className="mb-1 text-[24px] font-extrabold text-[#0e2a33]">Tạo tài khoản</h1>
+      <p className="mb-6 text-[14px] text-[#365651]">Đăng ký bằng số điện thoại để bắt đầu.</p>
 
-      {error && (
-        <Alert variant="danger" className="mb-4">
-          {error}
-        </Alert>
-      )}
+      {error && <InlineAlert className="mb-4">{error}</InlineAlert>}
 
-      <form onSubmit={handleSubmit} noValidate>
-        <div className="mb-4">
-          <FieldLabel htmlFor="fullName">Họ và tên</FieldLabel>
-          <FieldInput
+      <form onSubmit={handleSubmit} noValidate className="space-y-4">
+        <div>
+          <label htmlFor="fullName" className="mb-1.5 block text-[14px] font-semibold text-[#244744]">
+            Họ và tên
+          </label>
+          <GlassField
             id="fullName"
             type="text"
             value={fullName}
@@ -173,30 +100,37 @@ export default function RegisterPage() {
             placeholder="Nguyễn Văn An"
             autoComplete="name"
             disabled={isLoading}
+            leftIcon={<User className="size-[18px]" aria-hidden="true" />}
           />
         </div>
 
-        <div className="mb-4">
-          <FieldLabel htmlFor="email">Email</FieldLabel>
-          <FieldInput
-            id="email"
-            type="email"
-            value={email}
+        <div>
+          <label htmlFor="phone" className="mb-1.5 block text-[14px] font-semibold text-[#244744]">
+            Số điện thoại
+          </label>
+          <GlassField
+            id="phone"
+            type="tel"
+            value={phone}
             onChange={(v) => {
-              setEmail(v)
-              if (fieldErrors.email) setFieldErrors((p) => ({ ...p, email: '' }))
+              setPhone(v)
+              if (fieldErrors.phone) setFieldErrors((p) => ({ ...p, phone: '' }))
             }}
-            placeholder="ban@example.com"
-            autoComplete="email"
+            placeholder="09xx xxx xxx"
+            autoComplete="tel"
+            inputMode="tel"
             disabled={isLoading}
-            error={!!fieldErrors.email}
+            error={!!fieldErrors.phone}
+            leftIcon={<Phone className="size-[18px]" aria-hidden="true" />}
           />
-          {fieldErrors.email && <FieldError message={fieldErrors.email} />}
+          {fieldErrors.phone && <FieldError>{fieldErrors.phone}</FieldError>}
         </div>
 
-        <div className="mb-5">
-          <FieldLabel htmlFor="password">Mật khẩu</FieldLabel>
-          <FieldInput
+        <div>
+          <label htmlFor="password" className="mb-1.5 block text-[14px] font-semibold text-[#244744]">
+            Mật khẩu
+          </label>
+          <GlassField
             id="password"
             type={showPassword ? 'text' : 'password'}
             value={password}
@@ -208,46 +142,51 @@ export default function RegisterPage() {
             autoComplete="new-password"
             disabled={isLoading}
             error={!!fieldErrors.password}
+            leftIcon={<Lock className="size-[18px]" aria-hidden="true" />}
             rightElement={
               <button
                 type="button"
                 aria-label={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
                 onClick={() => setShowPassword((p) => !p)}
-                className="text-text-subtle hover:text-text transition-colors"
+                className="grid size-11 place-items-center text-[#5a736d]"
               >
-                {showPassword ? (
-                  <EyeOff className="w-4 h-4" aria-hidden="true" />
-                ) : (
-                  <Eye className="w-4 h-4" aria-hidden="true" />
-                )}
+                {showPassword ? <EyeOff className="size-[18px]" /> : <Eye className="size-[18px]" />}
               </button>
             }
           />
-          {fieldErrors.password && <FieldError message={fieldErrors.password} />}
+          {fieldErrors.password && <FieldError>{fieldErrors.password}</FieldError>}
         </div>
 
-        <Button
+        <button
           type="submit"
-          fullWidth
-          loading={isLoading}
-          disabled={!email.trim() || !password}
+          className="mc-btn w-full"
+          disabled={isLoading || !phone.trim() || !password}
         >
-          Đăng ký
-        </Button>
+          {isLoading ? 'Đang tạo…' : 'Đăng ký'}
+        </button>
       </form>
 
-      <p className="text-center text-body-sm text-text-muted mt-6">
+      <p className="mt-6 text-center text-[14px] text-[#365651]">
         Đã có tài khoản?{' '}
-        <Link href="/login" className="text-primary font-medium hover:underline underline-offset-2">
+        <Link href="/login" className="font-bold text-[#0f9c6e] underline underline-offset-2">
           Đăng nhập
         </Link>
       </p>
 
-      <p className="text-center text-body-xs text-text-subtle mt-4 leading-relaxed">
+      <p className="mt-4 text-center text-[12px] leading-relaxed text-[#566e66]">
         Bằng cách đăng ký, bạn đồng ý với{' '}
-        <span className="text-primary">Điều khoản sử dụng</span> và{' '}
-        <span className="text-primary">Chính sách bảo mật</span> của MetoCare.
+        <span className="font-medium text-[#0f9c6e]">Điều khoản sử dụng</span> và{' '}
+        <span className="font-medium text-[#0f9c6e]">Chính sách bảo mật</span> của MetoCare.
       </p>
     </div>
+  )
+}
+
+function FieldError({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="mt-1 flex items-center gap-1 text-[12px] text-[#d92d20]">
+      <span aria-hidden="true">⚠</span>
+      {children}
+    </p>
   )
 }

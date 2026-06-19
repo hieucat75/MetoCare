@@ -3,12 +3,9 @@
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
 import { CheckCircle } from 'lucide-react'
-import Button from '@/design-system/components/core/Button'
-import { Card, CardContent } from '@/design-system/components/core/Card'
-import { FormField } from '@/design-system/components/core/FormField'
-import { Input } from '@/design-system/components/core/Input'
-
-import { Alert } from '@/design-system/components/core/Alert'
+import { PatientScreenHeader } from '@/components/patient/header'
+import { GlassCard } from '@/components/patient/glass'
+import { Field } from '@/components/patient/forms'
 import { useAuth } from '@/lib/auth/context'
 import { logMetric, METRIC_LABELS, METRIC_UNITS, METRIC_NORMAL_RANGES } from '@/lib/api/metrics'
 
@@ -126,25 +123,31 @@ export default function LogMetricPage() {
   // ── Success state ──
   if (success) {
     return (
-      <div className="p-4 lg:p-6 flex flex-col items-center justify-center min-h-[60vh] text-center">
-        <CheckCircle className="size-16 text-green-500 mb-4" aria-hidden="true" />
-        <h1 className="text-heading-md font-bold text-text mb-2">Đã lưu!</h1>
-        <p className="text-body-sm text-text-muted mb-6">
+      <div className="flex min-h-[70vh] flex-col items-center justify-center text-center">
+        <div
+          className="grid size-16 place-items-center rounded-2xl"
+          style={{ background: 'linear-gradient(150deg,#1BB082,#0B7F5B)' }}
+        >
+          <CheckCircle className="size-9 text-white" aria-hidden="true" />
+        </div>
+        <h1 className="mt-4 text-[22px] font-extrabold text-[#0e2a33]">Đã lưu!</h1>
+        <p className="mt-2 text-[14px] text-[#365651]">
           Chỉ số {METRIC_LABELS[form.metric_type] ?? form.metric_type} đã được ghi thành công.
         </p>
-        <div className="flex gap-3">
-          <Button
-            variant="outline"
+        <div className="mt-6 flex w-full max-w-[320px] gap-3">
+          <button
+            type="button"
+            className="mc-btn-glass flex-1"
             onClick={() => {
               setSuccess(false)
               setForm((f) => ({ ...f, value: '', measured_at: toISOLocalDefault() }))
             }}
           >
             Ghi tiếp
-          </Button>
-          <Button variant="primary" onClick={() => router.push('/metrics')}>
+          </button>
+          <button type="button" className="mc-btn flex-1" onClick={() => router.push('/metrics')}>
             Xem chỉ số
-          </Button>
+          </button>
         </div>
       </div>
     )
@@ -152,107 +155,88 @@ export default function LogMetricPage() {
 
   // ── Form ──
   return (
-    <div className="p-4 lg:p-6 max-w-lg mx-auto">
-      <div className="mb-6">
-        <h1 className="text-heading-lg font-bold text-text">Ghi chỉ số</h1>
-        <p className="text-body-sm text-text-muted mt-1">
-          Nhập chỉ số sức khỏe để theo dõi xu hướng
-        </p>
-      </div>
+    <div>
+      <PatientScreenHeader title="Ghi chỉ số" subtitle="Nhập chỉ số để theo dõi xu hướng" />
 
-      <Card variant="default" padding="lg">
-        <form onSubmit={handleSubmit} noValidate>
-          <CardContent className="space-y-5">
+      <GlassCard className="mt-3 p-5">
+        <form onSubmit={handleSubmit} noValidate className="space-y-4">
+          {/* Metric type */}
+          <Field label="Loại chỉ số">
+            <select className="mc-input" value={form.metric_type} onChange={handleTypeChange}>
+              {METRIC_TYPE_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </Field>
 
-            {/* Metric type */}
-            <FormField label="Loại chỉ số" required>
-              <select
-                className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-body-md text-text focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
-                value={form.metric_type}
-                onChange={handleTypeChange}
-              >
-                {METRIC_TYPE_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </select>
-            </FormField>
-
-            {/* Value */}
-            <FormField
-              label={`Giá trị${form.unit ? ` (${form.unit})` : ''}`}
+          {/* Value */}
+          <Field label={`Giá trị${form.unit ? ` (${form.unit})` : ''}`}>
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              inputMode="decimal"
+              className="mc-input"
+              placeholder={`Nhập giá trị ${form.unit ? `(${form.unit})` : ''}`}
+              value={form.value}
+              onChange={(e) => {
+                setForm((f) => ({ ...f, value: e.target.value }))
+                if (validationError) setValidationError(null)
+              }}
+              style={{ borderColor: validationError ? '#d92d20' : undefined }}
               required
-              error={validationError ?? undefined}
+            />
+            {validationError && <p className="mt-1 text-[12px] text-[#d92d20]">{validationError}</p>}
+          </Field>
+
+          {/* Measured at */}
+          <Field label="Thời điểm đo">
+            <input
+              type="datetime-local"
+              className="mc-input"
+              value={form.measured_at}
+              onChange={(e) => setForm((f) => ({ ...f, measured_at: e.target.value }))}
+              max={toISOLocalDefault()}
+              required
+            />
+          </Field>
+
+          {/* Source */}
+          <Field label="Nguồn đo">
+            <select
+              className="mc-input"
+              value={form.source}
+              onChange={(e) => setForm((f) => ({ ...f, source: e.target.value }))}
             >
-              <Input
-                type="number"
-                step="0.01"
-                min="0"
-                placeholder={`Nhập giá trị ${form.unit ? `(${form.unit})` : ''}`}
-                value={form.value}
-                onChange={(e) => {
-                  setForm((f) => ({ ...f, value: e.target.value }))
-                  if (validationError) setValidationError(null)
-                }}
-                error={validationError ?? undefined}
-                required
-              />
-            </FormField>
+              <option value="manual">Thủ công</option>
+              <option value="device">Thiết bị</option>
+              <option value="lab">Xét nghiệm</option>
+            </select>
+          </Field>
 
-            {/* Measured at */}
-            <FormField label="Thời điểm đo" required>
-              <Input
-                type="datetime-local"
-                value={form.measured_at}
-                onChange={(e) => setForm((f) => ({ ...f, measured_at: e.target.value }))}
-                max={toISOLocalDefault()}
-                required
-              />
-            </FormField>
+          {error && (
+            <p className="rounded-xl bg-[rgba(251,231,229,0.8)] px-4 py-3 text-[14px] font-medium text-[#b3261e]">
+              {error}
+            </p>
+          )}
 
-            {/* Source */}
-            <FormField label="Nguồn đo">
-              <select
-                className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-body-md text-text focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
-                value={form.source}
-                onChange={(e) => setForm((f) => ({ ...f, source: e.target.value }))}
-              >
-                <option value="manual">Thủ công</option>
-                <option value="device">Thiết bị</option>
-                <option value="lab">Xét nghiệm</option>
-              </select>
-            </FormField>
-
-            {/* Error alert */}
-            {error && (
-              <Alert variant="danger" title="Lỗi ghi chỉ số">
-                {error}
-              </Alert>
-            )}
-
-            {/* Actions */}
-            <div className="flex gap-3 pt-1">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => router.back()}
-                disabled={submitting}
-                className="flex-1"
-              >
-                Hủy
-              </Button>
-              <Button
-                type="submit"
-                variant="primary"
-                loading={submitting}
-                className="flex-1"
-              >
-                Lưu chỉ số
-              </Button>
-            </div>
-
-          </CardContent>
+          <div className="flex gap-3 pt-1">
+            <button
+              type="button"
+              className="mc-btn-glass flex-1"
+              onClick={() => router.back()}
+              disabled={submitting}
+            >
+              Huỷ
+            </button>
+            <button type="submit" className="mc-btn flex-1" disabled={submitting}>
+              {submitting ? 'Đang lưu…' : 'Lưu chỉ số'}
+            </button>
+          </div>
         </form>
-      </Card>
+      </GlassCard>
     </div>
   )
 }

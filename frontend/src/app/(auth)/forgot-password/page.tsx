@@ -3,20 +3,17 @@
 import * as React from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { MailCheck } from 'lucide-react'
-import { Alert } from '@/design-system/components/core/Alert'
-import Button from '@/design-system/components/core/Button'
-import { cn } from '@/lib/utils'
+import { MailCheck, Phone } from 'lucide-react'
 import { useAuth } from '@/lib/auth/context'
 import { getRoleHomePath } from '@/lib/api/auth'
+import { GlassField, InlineAlert } from '@/components/patient/forms'
 
 /**
  * Forgot password — frontend stub.
  * Backend endpoint POST /auth/password-reset is not yet implemented.
  * This page shows the UX shell and surfaces a "coming soon" notice.
- * When the backend endpoint ships, replace the submit handler.
+ * Phone-first to match the pilot auth flow.
  */
-
 export default function ForgotPasswordPage() {
   const { user } = useAuth()
   const router = useRouter()
@@ -25,30 +22,29 @@ export default function ForgotPasswordPage() {
     if (user) router.replace(getRoleHomePath(user.role))
   }, [user, router])
 
-  const [email, setEmail] = React.useState('')
+  const [phone, setPhone] = React.useState('')
   const [submitted, setSubmitted] = React.useState(false)
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    // [MOCK] Password reset API not yet available — show mock success UX
     setSubmitted(true)
   }
 
   if (submitted) {
     return (
-      <div className="text-center py-4">
-        <div className="w-12 h-12 rounded-full bg-primary-50 flex items-center justify-center mx-auto mb-4">
-          <MailCheck className="w-6 h-6 text-primary" aria-hidden="true" />
-        </div>
-        <h2 className="text-heading-xl font-bold text-text mb-2">Kiểm tra hộp thư</h2>
-        <p className="text-body-sm text-text-muted mb-6">
-          Nếu email <strong>{email}</strong> tồn tại trong hệ thống, bạn sẽ nhận được hướng dẫn
-          đặt lại mật khẩu trong vài phút.
-        </p>
-        <Link
-          href="/login"
-          className="text-body-sm text-primary font-medium hover:underline underline-offset-2"
+      <div className="py-4 text-center">
+        <div
+          className="mx-auto mb-4 grid size-14 place-items-center rounded-2xl"
+          style={{ background: 'linear-gradient(150deg,#1BB082,#0B7F5B)' }}
         >
+          <MailCheck className="size-7 text-white" aria-hidden="true" />
+        </div>
+        <h2 className="mb-2 text-[22px] font-extrabold text-[#0e2a33]">Đã ghi nhận yêu cầu</h2>
+        <p className="mb-6 text-[14px] leading-relaxed text-[#365651]">
+          Nếu số <strong>{phone}</strong> tồn tại trong hệ thống, đội ngũ MetoCare sẽ liên hệ để giúp bạn
+          đặt lại mật khẩu.
+        </p>
+        <Link href="/login" className="text-[14px] font-bold text-[#0f9c6e] underline underline-offset-2">
           ← Quay lại đăng nhập
         </Link>
       </div>
@@ -57,45 +53,38 @@ export default function ForgotPasswordPage() {
 
   return (
     <div>
-      <h1 className="text-heading-xl font-bold text-text mb-1">Quên mật khẩu</h1>
-      <p className="text-body-sm text-text-muted mb-4">
-        Nhập email đăng ký của bạn. Chúng tôi sẽ gửi hướng dẫn đặt lại mật khẩu.
+      <h1 className="mb-1 text-[24px] font-extrabold text-[#0e2a33]">Quên mật khẩu</h1>
+      <p className="mb-4 text-[14px] text-[#365651]">
+        Nhập số điện thoại đăng ký. Chúng tôi sẽ hỗ trợ bạn đặt lại mật khẩu.
       </p>
 
-      {/* [MOCK] notice — remove when backend ships /auth/password-reset */}
-      <Alert variant="info" className="mb-6">
-        Tính năng đặt lại mật khẩu đang được phát triển. Vui lòng liên hệ admin nếu cần hỗ trợ.
-      </Alert>
+      <InlineAlert variant="info" className="mb-6">
+        Tính năng đặt lại mật khẩu đang được phát triển. Vui lòng liên hệ hỗ trợ nếu cần trợ giúp.
+      </InlineAlert>
 
-      <form onSubmit={handleSubmit} noValidate>
-        <div className="mb-5">
-          <label htmlFor="email" className="block text-label-lg font-medium text-text mb-1.5">
-            Email
+      <form onSubmit={handleSubmit} noValidate className="space-y-4">
+        <div>
+          <label htmlFor="phone" className="mb-1.5 block text-[14px] font-semibold text-[#244744]">
+            Số điện thoại
           </label>
-          <input
-            id="email"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="ban@example.com"
-            autoComplete="email"
-            className={cn(
-              'h-10 w-full rounded-md border bg-surface px-3 py-2 text-body-sm text-text',
-              'placeholder:text-text-subtle',
-              'focus:outline-none focus:ring-2',
-              'border-border focus:border-primary focus:ring-primary/20',
-              'transition-colors',
-            )}
+          <GlassField
+            id="phone"
+            type="tel"
+            value={phone}
+            onChange={setPhone}
+            placeholder="09xx xxx xxx"
+            autoComplete="tel"
+            inputMode="tel"
+            leftIcon={<Phone className="size-[18px]" aria-hidden="true" />}
           />
         </div>
-
-        <Button type="submit" fullWidth disabled={!email.trim()}>
-          Gửi hướng dẫn đặt lại
-        </Button>
+        <button type="submit" className="mc-btn w-full" disabled={!phone.trim()}>
+          Gửi yêu cầu hỗ trợ
+        </button>
       </form>
 
-      <p className="text-center text-body-sm text-text-muted mt-6">
-        <Link href="/login" className="text-primary hover:underline underline-offset-2">
+      <p className="mt-6 text-center text-[14px] text-[#365651]">
+        <Link href="/login" className="font-semibold text-[#0f9c6e] underline underline-offset-2">
           ← Quay lại đăng nhập
         </Link>
       </p>

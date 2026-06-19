@@ -1,22 +1,12 @@
 'use client'
 
 import * as React from 'react'
-import { Bot, AlertTriangle, Send } from 'lucide-react'
-import {
-  Alert,
-  Button,
-  Card,
-  CardContent,
-  ErrorState,
-  PageHeader,
-  Skeleton,
-  SkeletonText,
-  Textarea,
-} from '@/design-system'
+import { useRouter } from 'next/navigation'
+import { Sparkles, AlertTriangle, ArrowUp, ArrowLeft, Info } from 'lucide-react'
+import { GlassCard } from '@/components/patient/glass'
+import { AiPendingBadge } from '@/components/patient/states'
 import { useAuth } from '@/lib/auth/context'
 import { getAiExplanation, type AiExplainResponse } from '@/lib/api/patient'
-
-// ── Types ──────────────────────────────────────────────────────────────────────
 
 interface QAPair {
   id: string
@@ -24,269 +14,225 @@ interface QAPair {
   response: AiExplainResponse
 }
 
-// ── Predefined question chips ──────────────────────────────────────────────────
-
-const PREDEFINED_QUESTIONS = [
+const SUGGESTIONS = [
   'Chỉ số đường huyết của tôi có ổn không?',
-  'Tôi nên ăn gì với tiểu đường?',
-  'Thuốc Metformin hoạt động như thế nào?',
+  'Tôi nên ăn sáng thế nào?',
+  'Metformin hoạt động ra sao?',
   'Khi nào cần gặp bác sĩ gấp?',
 ]
 
-// ── AI response panel ──────────────────────────────────────────────────────────
-
-function AIResponsePanel({ response }: { response: AiExplainResponse }) {
-  return (
-    <div className="space-y-2">
-      <div className="rounded-md bg-amber-50 border border-amber-200 p-3 space-y-2">
-        <div className="flex items-center gap-2">
-          <Bot className="size-4 shrink-0 text-amber-600" aria-hidden="true" />
-          <span className="text-body-sm font-semibold text-amber-800">
-            Trợ lý AI MetoCare
-          </span>
-        </div>
-        <p className="text-body-sm text-amber-900 leading-relaxed">
-          {response.plain_language_summary}
-        </p>
-        <p className="text-body-xs text-amber-700 italic border-t border-amber-200 pt-2">
-          {response.disclaimer}
-        </p>
-      </div>
-
-      {response.safety_level === 'urgent' && (
-        <Alert
-          variant="danger"
-          icon={<AlertTriangle className="size-5 shrink-0 mt-0.5 text-red-600" aria-hidden="true" />}
-          title="Cần chú ý ngay"
-        >
-          Vui lòng liên hệ bác sĩ ngay lập tức!
-        </Alert>
-      )}
-    </div>
-  )
-}
-
-// ── Loading skeleton ───────────────────────────────────────────────────────────
-
-function AIAnswerSkeleton() {
-  return (
-    <div className="rounded-md bg-amber-50 border border-amber-200 p-3 space-y-2">
-      <div className="flex items-center gap-2">
-        <Skeleton width="1rem" height="1rem" className="rounded" />
-        <Skeleton width="8rem" height="0.875rem" />
-      </div>
-      <SkeletonText lines={3} />
-    </div>
-  )
-}
-
-// ── Q&A history item ───────────────────────────────────────────────────────────
-
-function QAHistoryItem({ qa }: { qa: QAPair }) {
-  return (
-    <div className="space-y-2">
-      {/* Question bubble */}
-      <div className="flex justify-end">
-        <div className="bg-primary text-white rounded-2xl rounded-tr-sm px-4 py-2 max-w-[85%]">
-          <p className="text-body-sm">{qa.question}</p>
-        </div>
-      </div>
-
-      {/* AI answer */}
-      <AIResponsePanel response={qa.response} />
-    </div>
-  )
-}
-
-// ── Page ───────────────────────────────────────────────────────────────────────
-
 export default function AIAssistantPage() {
   const { user } = useAuth()
+  const router = useRouter()
   const patientId = user?.patient_profile_id
 
   const [question, setQuestion] = React.useState('')
   const [history, setHistory] = React.useState<QAPair[]>([])
   const [loading, setLoading] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
-
   const bottomRef = React.useRef<HTMLDivElement>(null)
 
-  function scrollToBottom() {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }
-
-  async function submitQuestion(questionText: string) {
-    if (!patientId || !questionText.trim() || loading) return
-
+  async function submit(text: string) {
+    if (!patientId || !text.trim() || loading) return
+    const trimmed = text.trim()
+    // Keep `question` populated through the request: the loading bubble shows it,
+    // and on failure it stays so "Thử lại" can resend. Cleared only on success.
     setLoading(true)
     setError(null)
-    const trimmed = questionText.trim()
-
     try {
       const response = await getAiExplanation({
         patient_id: patientId,
         explanation_type: 'risk_summary',
         context: { question: trimmed },
       })
-
-      const newPair: QAPair = {
-        id: `${Date.now()}`,
-        question: trimmed,
-        response,
-      }
-
-      setHistory((prev) => {
-        // Keep only last 3 Q&A pairs displayed
-        const updated = [...prev, newPair]
-        return updated.slice(-3)
-      })
+      setHistory((prev) => [...prev, { id: `${Date.now()}`, question: trimmed, response }].slice(-6))
       setQuestion('')
-      setTimeout(scrollToBottom, 100)
+      setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 80)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Không thể kết nối với trợ lý AI. Vui lòng thử lại.')
+      setError(err instanceof Error ? err.message : 'Không thể kết nối với trợ lý AI.')
     } finally {
       setLoading(false)
     }
   }
 
-  function handleChipClick(chip: string) {
-    setQuestion(chip)
-    submitQuestion(chip)
-  }
-
-  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault()
-    submitQuestion(question)
-  }
-
   if (!patientId) {
     return (
-      <div className="p-4 lg:p-6 max-w-2xl mx-auto">
-        <Alert variant="warning" title="Chưa có hồ sơ bệnh nhân">
-          Tài khoản của bạn chưa được liên kết với hồ sơ bệnh nhân. Vui lòng liên hệ hỗ trợ.
-        </Alert>
+      <div className="pt-10">
+        <GlassCard className="p-5">
+          <p className="text-[16px] font-bold text-[#0e2a33]">Chưa có hồ sơ bệnh nhân</p>
+          <p className="mt-1.5 text-[14px] text-[#365651]">Vui lòng liên hệ hỗ trợ để được trợ giúp.</p>
+        </GlassCard>
       </div>
     )
   }
 
   return (
-    <div className="p-4 lg:p-6 space-y-4 max-w-2xl mx-auto pb-4">
-      <PageHeader
-        title="Trợ lý AI"
-        subtitle="Hỏi đáp thông tin sức khỏe"
-        actions={
-          <Bot className="size-6 text-amber-500" aria-hidden="true" />
-        }
-      />
+    <div className="flex min-h-[calc(100vh-7rem)] flex-col">
+      {/* Header */}
+      <div className="flex items-center gap-3 pb-2 pt-1">
+        <button
+          type="button"
+          aria-label="Quay lại"
+          onClick={() => router.push('/dashboard')}
+          className="grid size-10 place-items-center rounded-full border border-white/85 bg-white/60 backdrop-blur-md"
+        >
+          <ArrowLeft className="size-5 text-[#0e2a33]" aria-hidden="true" />
+        </button>
+        <span
+          className="grid size-[38px] place-items-center rounded-[10px]"
+          style={{ background: 'linear-gradient(150deg,#1BB082,#0B7F5B)' }}
+        >
+          <Sparkles className="size-[19px] text-white" aria-hidden="true" />
+        </span>
+        <div className="flex-1">
+          <p className="text-[15px] font-bold text-[#0e2a33]">Trợ lý AI MetoCare</p>
+          <p className="flex items-center gap-1.5 text-[11.5px] text-[#15915a]">
+            <span className="size-1.5 rounded-full bg-[#15915a]" />
+            Trực tuyến
+          </p>
+        </div>
+      </div>
 
-      {/* Safety notice */}
-      <Alert
-        variant="warning"
-        icon={<AlertTriangle className="size-5 shrink-0 mt-0.5 text-amber-600" aria-hidden="true" />}
-        title="Lưu ý quan trọng"
-      >
-        Trợ lý AI MetoCare cung cấp thông tin sức khỏe chung. Nội dung AI{' '}
-        <strong>KHÔNG thay thế</strong> chẩn đoán hoặc điều trị từ bác sĩ.
-      </Alert>
+      {/* Messages */}
+      <div className="flex flex-1 flex-col gap-3 py-2">
+        <div className="mx-auto inline-flex items-center gap-1.5 rounded-full bg-[rgba(252,239,201,0.9)] px-3 py-1.5 text-[11px] font-semibold text-[#c77a06]">
+          <AlertTriangle className="size-3" aria-hidden="true" />
+          Không dùng cho tình huống cấp cứu
+        </div>
 
-      {/* Predefined question chips */}
-      <div className="overflow-x-auto -mx-4 px-4">
-        <div className="flex gap-2 w-max">
-          {PREDEFINED_QUESTIONS.map((chip) => (
-            <button
-              key={chip}
-              type="button"
-              onClick={() => handleChipClick(chip)}
-              disabled={loading}
-              className="whitespace-nowrap rounded-full border border-amber-300 bg-amber-50 px-3 py-1.5 text-body-xs font-medium text-amber-800 hover:bg-amber-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        {history.length === 0 && !loading && (
+          <div className="mt-4 text-center">
+            <span
+              className="mx-auto grid size-16 place-items-center rounded-[18px]"
+              style={{ background: 'linear-gradient(150deg,#1BB082,#0B7F5B)' }}
             >
-              {chip}
-            </button>
-          ))}
-        </div>
-      </div>
+              <Sparkles className="size-8 text-white" aria-hidden="true" />
+            </span>
+            <p className="mx-auto mt-4 max-w-[28ch] text-[14px] text-[#365651]">
+              Hỏi điều bạn quan tâm về sức khoẻ, hoặc chọn một gợi ý bên dưới.
+            </p>
+          </div>
+        )}
 
-      {/* Q&A history */}
-      {history.length > 0 && (
-        <div className="space-y-6">
-          {history.map((qa) => (
-            <QAHistoryItem key={qa.id} qa={qa} />
-          ))}
-        </div>
-      )}
-
-      {/* Loading skeleton */}
-      {loading && (
-        <div className="space-y-2">
-          {question && (
-            <div className="flex justify-end">
-              <div className="bg-primary text-white rounded-2xl rounded-tr-sm px-4 py-2 max-w-[85%]">
-                <p className="text-body-sm">{question}</p>
+        {history.map((qa) => (
+          <div key={qa.id} className="flex flex-col gap-3">
+            {/* user bubble */}
+            <div
+              className="max-w-[80%] self-end rounded-[13px] rounded-br-[4px] px-3.5 py-2.5 text-[14px] leading-snug text-white"
+              style={{
+                background: 'linear-gradient(150deg,#1BB082,#0B7F5B)',
+                boxShadow: '0 10px 20px -12px rgba(16,140,99,0.9)',
+              }}
+            >
+              {qa.question}
+            </div>
+            {/* AI bubble */}
+            <div className="max-w-[88%] self-start">
+              <div
+                className="rounded-[13px] rounded-bl-[4px] border border-white/85 bg-white/70 px-3.5 py-3 text-[14px] leading-relaxed text-[#244744]"
+                style={{ borderLeft: '3px solid rgba(109,63,190,0.5)', backdropFilter: 'blur(20px)' }}
+              >
+                {qa.response.plain_language_summary}
+                <div className="mt-2.5 flex items-start gap-2 rounded-[10px] bg-[rgba(243,238,251,0.85)] px-2.5 py-2">
+                  <Info className="mt-0.5 size-3.5 shrink-0 text-[#6d3fbe]" aria-hidden="true" />
+                  <p className="text-[11.5px] leading-snug text-[#6d3fbe]">{qa.response.disclaimer}</p>
+                </div>
+                {qa.response.safety_level === 'urgent' && (
+                  <div className="mt-2.5 flex items-center gap-2 rounded-[10px] bg-[rgba(251,231,229,0.9)] px-2.5 py-2 text-[12px] font-semibold text-[#d92d20]">
+                    <AlertTriangle className="size-4" aria-hidden="true" />
+                    Hãy liên hệ bác sĩ ngay.
+                  </div>
+                )}
               </div>
+              <AiPendingBadge className="mt-1.5" />
             </div>
-          )}
-          <AIAnswerSkeleton />
+          </div>
+        ))}
+
+        {loading && (
+          <div className="max-w-[88%] self-start">
+            {question && (
+              <div
+                className="mb-3 ml-auto max-w-[80%] rounded-[13px] rounded-br-[4px] px-3.5 py-2.5 text-[14px] text-white"
+                style={{ background: 'linear-gradient(150deg,#1BB082,#0B7F5B)' }}
+              >
+                {question}
+              </div>
+            )}
+            <div
+              className="flex items-center gap-1.5 rounded-[13px] rounded-bl-[4px] border border-white/85 bg-white/70 px-4 py-3.5"
+              style={{ borderLeft: '3px solid rgba(109,63,190,0.5)' }}
+            >
+              {[0, 1, 2].map((i) => (
+                <span
+                  key={i}
+                  className="mc-pulse size-2 rounded-full bg-[#6d3fbe]"
+                  style={{ animationDelay: `${i * 0.15}s` }}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {error && !loading && (
+          <div className="rounded-[12px] bg-[rgba(251,231,229,0.85)] px-4 py-3 text-[13px] text-[#b3261e]">
+            {error}{' '}
+            <button type="button" className="font-bold underline" onClick={() => submit(question)}>
+              Thử lại
+            </button>
+          </div>
+        )}
+
+        <div ref={bottomRef} />
+      </div>
+
+      {/* Suggestions */}
+      {history.length === 0 && (
+        <div className="-mx-4 overflow-x-auto px-4 pb-1 scrollbar-hide">
+          <div className="flex w-max gap-2">
+            {SUGGESTIONS.map((s) => (
+              <button
+                key={s}
+                type="button"
+                disabled={loading}
+                onClick={() => submit(s)}
+                className="whitespace-nowrap rounded-full border border-white/85 bg-white/60 px-3.5 py-2 text-[12.5px] font-medium text-[#0b7f5b] backdrop-blur-md disabled:opacity-50"
+              >
+                {s}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
-      {/* Error */}
-      {error && !loading && (
-        <ErrorState
-          variant="inline"
-          title="Không thể kết nối AI"
-          message={error}
-          onRetry={() => {
-            setError(null)
-            if (question.trim()) submitQuestion(question)
-          }}
+      {/* Input */}
+      <form
+        onSubmit={(e) => {
+          e.preventDefault()
+          submit(question)
+        }}
+        className="sticky bottom-[88px] flex items-center gap-2 py-2"
+      >
+        <input
+          value={question}
+          onChange={(e) => setQuestion(e.target.value)}
+          placeholder="Nhập câu hỏi…"
+          disabled={loading}
+          className="h-[46px] flex-1 rounded-[23px] border border-white/85 bg-white/70 px-4 text-[16px] text-[#0e2a33] backdrop-blur-md placeholder:text-[#566e66] focus:outline-none focus:ring-4 focus:ring-[rgba(16,140,99,0.12)]"
         />
-      )}
-
-      {/* Empty state when no history */}
-      {history.length === 0 && !loading && !error && (
-        <Card variant="flat" padding="lg">
-          <CardContent>
-            <div className="flex flex-col items-center gap-3 text-center py-4">
-              <Bot className="size-10 text-amber-400" aria-hidden="true" />
-              <p className="text-body-sm text-text-muted">
-                Chọn câu hỏi gợi ý ở trên hoặc nhập câu hỏi của bạn bên dưới.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      <div ref={bottomRef} />
-
-      {/* Input area */}
-      <div className="sticky bottom-0 bg-background pt-2 pb-2 -mx-4 px-4 border-t border-border">
-        <form onSubmit={handleSubmit} className="flex gap-2 items-end">
-          <Textarea
-            value={question}
-            onChange={(e) => setQuestion(e.target.value)}
-            placeholder="Nhập câu hỏi của bạn về sức khỏe..."
-            rows={2}
-            className="flex-1 resize-none"
-            disabled={loading}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault()
-                submitQuestion(question)
-              }
-            }}
-          />
-          <Button
-            type="submit"
-            variant="primary"
-            size="md"
-            disabled={!question.trim() || loading}
-            aria-label="Gửi câu hỏi"
-          >
-            <Send className="size-4" aria-hidden="true" />
-            <span className="ml-1">Gửi</span>
-          </Button>
-        </form>
-      </div>
+        <button
+          type="submit"
+          aria-label="Gửi câu hỏi"
+          disabled={!question.trim() || loading}
+          className="grid size-[46px] shrink-0 place-items-center rounded-full disabled:opacity-50"
+          style={{
+            background: 'linear-gradient(150deg,#1BB082,#0B7F5B)',
+            boxShadow: '0 10px 20px -10px rgba(16,140,99,0.9)',
+          }}
+        >
+          <ArrowUp className="size-5 text-white" aria-hidden="true" />
+        </button>
+      </form>
     </div>
   )
 }

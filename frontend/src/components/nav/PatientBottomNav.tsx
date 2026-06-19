@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { useRouter, usePathname } from 'next/navigation'
-import { LayoutDashboard, Activity, FlaskConical, Pill, User } from 'lucide-react'
+import { Home, Activity, Sparkles, ClipboardList, User } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface BottomNavItem {
@@ -10,14 +10,17 @@ interface BottomNavItem {
   label: string
   icon: React.ReactNode
   href: string
+  center?: boolean
 }
 
+// Matches the approved design's floating glass tab bar:
+// Home · Chỉ số · [AI — center, elevated] · Kế hoạch · Cá nhân
 const BOTTOM_NAV_ITEMS: BottomNavItem[] = [
-  { id: 'dashboard', label: 'Tổng quan', icon: <LayoutDashboard className="w-5 h-5" />, href: '/dashboard' },
-  { id: 'metrics', label: 'Chỉ số', icon: <Activity className="w-5 h-5" />, href: '/metrics' },
-  { id: 'labs', label: 'Xét nghiệm', icon: <FlaskConical className="w-5 h-5" />, href: '/labs' },
-  { id: 'medications', label: 'Thuốc', icon: <Pill className="w-5 h-5" />, href: '/medications' },
-  { id: 'profile', label: 'Hồ sơ', icon: <User className="w-5 h-5" />, href: '/profile' },
+  { id: 'dashboard', label: 'Trang chủ', icon: <Home className="size-[22px]" />, href: '/dashboard' },
+  { id: 'metrics', label: 'Chỉ số', icon: <Activity className="size-[22px]" />, href: '/metrics' },
+  { id: 'ai', label: 'Trợ lý AI', icon: <Sparkles className="size-6" />, href: '/ai-assistant', center: true },
+  { id: 'care-plan', label: 'Kế hoạch', icon: <ClipboardList className="size-[22px]" />, href: '/care-plan' },
+  { id: 'profile', label: 'Cá nhân', icon: <User className="size-[22px]" />, href: '/profile' },
 ]
 
 export function PatientBottomNav() {
@@ -28,19 +31,47 @@ export function PatientBottomNav() {
     for (const item of BOTTOM_NAV_ITEMS) {
       if (pathname === item.href || pathname.startsWith(item.href + '/')) return item.id
     }
-    return 'dashboard'
+    // Routes that live outside the 5 tabs (e.g. /medications, /labs, /settings)
+    // highlight no tab rather than falsely marking Home as active.
+    return ''
   }
-
   const activeId = getActiveId()
 
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 z-40 bg-surface border-t border-border safe-area-pb"
+      className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center px-4 pb-[max(14px,env(safe-area-inset-bottom))]"
       aria-label="Điều hướng chính"
     >
-      <div className="flex items-stretch h-16">
+      <div className="mc-glass pointer-events-auto flex h-[72px] w-full max-w-[430px] items-center justify-around rounded-[18px] px-2.5">
         {BOTTOM_NAV_ITEMS.map((item) => {
           const isActive = item.id === activeId
+
+          if (item.center) {
+            return (
+              <button
+                key={item.id}
+                type="button"
+                aria-label={item.label}
+                aria-current={isActive ? 'page' : undefined}
+                onClick={() => router.push(item.href)}
+                className="flex min-w-[56px] flex-col items-center gap-1"
+              >
+                <span
+                  className="grid size-[54px] place-items-center rounded-[16px] text-white"
+                  style={{
+                    background: 'linear-gradient(150deg,#1BB082,#0B7F5B)',
+                    boxShadow:
+                      '0 14px 28px -10px rgba(16,140,99,0.95), inset 0 1px 0 rgba(255,255,255,0.35)',
+                  }}
+                  aria-hidden="true"
+                >
+                  {item.icon}
+                </span>
+                <span className="text-[10px] font-semibold text-[#0f9c6e]">{item.label}</span>
+              </button>
+            )
+          }
+
           return (
             <button
               key={item.id}
@@ -49,23 +80,12 @@ export function PatientBottomNav() {
               aria-current={isActive ? 'page' : undefined}
               onClick={() => router.push(item.href)}
               className={cn(
-                'flex-1 flex flex-col items-center justify-center gap-1 min-w-0 transition-colors',
-                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30',
-                isActive ? 'text-primary' : 'text-text-subtle hover:text-text-muted',
+                'flex min-h-[44px] min-w-[44px] flex-col items-center justify-center gap-1 rounded-xl transition-colors',
+                isActive ? 'text-[#0f9c6e]' : 'text-[#566e66]',
               )}
             >
-              <span
-                className={cn(
-                  'inline-flex items-center justify-center w-10 h-6 rounded-full transition-colors',
-                  isActive && 'bg-primary-50',
-                )}
-                aria-hidden="true"
-              >
-                {item.icon}
-              </span>
-              <span className="text-label-sm truncate w-full text-center px-1">
-                {item.label}
-              </span>
+              <span aria-hidden="true">{item.icon}</span>
+              <span className="text-[10px] font-semibold">{item.label}</span>
             </button>
           )
         })}

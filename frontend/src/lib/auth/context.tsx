@@ -4,6 +4,8 @@ import * as React from 'react'
 import {
   login as apiLogin,
   register as apiRegister,
+  loginWithIdentifier as apiLoginWithIdentifier,
+  registerWithPhone as apiRegisterWithPhone,
   logout as apiLogout,
   me,
   type UserResponse,
@@ -17,6 +19,10 @@ interface AuthContextValue {
   isAuthenticated: boolean
   login: (email: string, password: string, totpCode?: string) => Promise<TokenResponse>
   register: (email: string, password: string, fullName?: string) => Promise<TokenResponse>
+  /** Phone-first patient login (identifier may be a phone or, for staff, an email). */
+  loginWithPhone: (identifier: string, password: string, totpCode?: string) => Promise<TokenResponse>
+  /** Phone-first patient registration (placeholder email derived internally). */
+  registerWithPhone: (phone: string, password: string, fullName?: string) => Promise<TokenResponse>
   logout: () => Promise<void>
   refresh: () => Promise<void>
 }
@@ -64,6 +70,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [refresh],
   )
 
+  const loginWithPhone = React.useCallback(
+    async (identifier: string, password: string, totpCode?: string) => {
+      const res = await apiLoginWithIdentifier(identifier, password, totpCode)
+      await refresh()
+      return res
+    },
+    [refresh],
+  )
+
+  const registerWithPhone = React.useCallback(
+    async (phone: string, password: string, fullName?: string) => {
+      const res = await apiRegisterWithPhone(phone, password, fullName)
+      await refresh()
+      return res
+    },
+    [refresh],
+  )
+
   const logout = React.useCallback(async () => {
     const refreshToken = getRefreshToken()
     if (refreshToken) {
@@ -86,6 +110,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isAuthenticated: !!user,
         login,
         register,
+        loginWithPhone,
+        registerWithPhone,
         logout,
         refresh,
       }}

@@ -1,130 +1,79 @@
 'use client'
 
 import * as React from 'react'
-import { Plus, Flame, Sunrise, Sun, Moon, Coffee, Bot } from 'lucide-react'
+import { Plus, Flame, Sunrise, Sun, Moon, Coffee, Sparkles, type LucideIcon } from 'lucide-react'
+import { GlassCard } from '@/components/patient/glass'
+import { PatientScreenHeader } from '@/components/patient/header'
+import { PatientEmptyState, PatientErrorState, PatientSkeleton } from '@/components/patient/states'
+import { GlassModal } from '@/components/patient/modal'
+import { Field, MintFab } from '@/components/patient/forms'
 import { useAuth } from '@/lib/auth/context'
-import {
-  Button,
-  Card,
-  CardHeader,
-  CardTitle,
-  CardContent,
-  Alert,
-  Modal,
-  EmptyState,
-  PageHeader,
-  Spinner,
-  ErrorState,
-} from '@/design-system'
-import { Select } from '@/design-system'
-import { Textarea } from '@/design-system'
-import { Input } from '@/design-system'
-import { getNutritionLog, logNutrition } from '@/lib/api/patient'
-import type { NutritionEntry } from '@/lib/api/patient'
-
-// ── Constants ─────────────────────────────────────────────────────────────────
+import { getNutritionLog, logNutrition, type NutritionEntry } from '@/lib/api/patient'
 
 type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snack'
 
-const MEAL_TYPE_OPTIONS = [
+const MEAL_TYPE_OPTIONS: { value: MealType; label: string }[] = [
   { value: 'breakfast', label: 'Sáng' },
   { value: 'lunch', label: 'Trưa' },
   { value: 'dinner', label: 'Tối' },
   { value: 'snack', label: 'Bữa phụ' },
 ]
-
-const MEAL_LABELS: Record<MealType, string> = {
-  breakfast: 'Sáng',
-  lunch: 'Trưa',
-  dinner: 'Tối',
-  snack: 'Bữa phụ',
-}
-
-const MEAL_ICONS: Record<MealType, React.ElementType> = {
-  breakfast: Sunrise,
-  lunch: Sun,
-  dinner: Moon,
-  snack: Coffee,
-}
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
+const MEAL_LABELS: Record<MealType, string> = { breakfast: 'Sáng', lunch: 'Trưa', dinner: 'Tối', snack: 'Bữa phụ' }
+const MEAL_ICONS: Record<MealType, LucideIcon> = { breakfast: Sunrise, lunch: Sun, dinner: Moon, snack: Coffee }
 
 function isSameDay(a: Date, b: Date): boolean {
-  return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
-  )
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
 }
 
 function groupByDate(entries: NutritionEntry[]): Array<{ label: string; items: NutritionEntry[] }> {
   const today = new Date()
   const yesterday = new Date(today)
   yesterday.setDate(today.getDate() - 1)
-
   const map = new Map<string, NutritionEntry[]>()
-
   for (const entry of entries) {
     const d = new Date(entry.logged_at)
-    let key: string
-    if (isSameDay(d, today)) {
-      key = 'Hôm nay'
-    } else if (isSameDay(d, yesterday)) {
-      key = 'Hôm qua'
-    } else {
-      key = d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })
-    }
+    const key = isSameDay(d, today)
+      ? 'Hôm nay'
+      : isSameDay(d, yesterday)
+        ? 'Hôm qua'
+        : d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })
     const arr = map.get(key) ?? []
     arr.push(entry)
     map.set(key, arr)
   }
-
   return Array.from(map.entries()).map(([label, items]) => ({ label, items }))
 }
 
-function todayCalories(entries: NutritionEntry[]): number {
-  const today = new Date()
-  return entries
-    .filter((e) => isSameDay(new Date(e.logged_at), today))
-    .reduce((sum, e) => sum + (e.calories_kcal ?? 0), 0)
-}
+const todayCalories = (entries: NutritionEntry[]) =>
+  entries.filter((e) => isSameDay(new Date(e.logged_at), new Date())).reduce((s, e) => s + (e.calories_kcal ?? 0), 0)
 
-function formatTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
-}
+const formatTime = (iso: string) => new Date(iso).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
 
-// ── Entry card ────────────────────────────────────────────────────────────────
-
-function EntryItem({ entry }: { entry: NutritionEntry }) {
+function EntryItem({ entry, last }: { entry: NutritionEntry; last?: boolean }) {
   const mealType = entry.meal_type as MealType
   const Icon = MEAL_ICONS[mealType] ?? Coffee
   const label = MEAL_LABELS[mealType] ?? entry.meal_type
-
   return (
-    <div className="py-3 border-b border-border last:border-0">
+    <div className="py-3" style={{ borderBottom: last ? undefined : '1px solid rgba(16,48,44,0.07)' }}>
       <div className="flex items-start gap-3">
-        <div className="shrink-0 mt-0.5 w-8 h-8 rounded-full bg-secondary-100 flex items-center justify-center">
-          <Icon className="size-4 text-secondary-600" aria-hidden="true" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center justify-between gap-2">
+        <span className="mt-0.5 grid size-9 shrink-0 place-items-center rounded-full bg-[rgba(227,245,236,0.9)]">
+          <Icon className="size-[18px] text-[#0f9c6e]" aria-hidden="true" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
-              <span className="text-caption font-medium text-primary">{label}</span>
-              <p className="text-body-sm text-text truncate">{entry.description}</p>
+              <span className="text-[12px] font-semibold text-[#0f9c6e]">{label}</span>
+              <p className="text-[14px] text-[#0e2a33]">{entry.description}</p>
             </div>
-            <div className="text-right shrink-0">
+            <div className="shrink-0 text-right">
               {entry.calories_kcal != null && (
-                <p className="text-body-sm font-semibold text-text">
-                  {entry.calories_kcal} kcal
-                </p>
+                <p className="text-[14px] font-bold text-[#0e2a33]">{entry.calories_kcal} kcal</p>
               )}
-              <p className="text-caption text-text-muted">{formatTime(entry.logged_at)}</p>
+              <p className="text-[12px] text-[#566e66]">{formatTime(entry.logged_at)}</p>
             </div>
           </div>
-
-          {/* Macros */}
           {(entry.carbs_g != null || entry.protein_g != null || entry.fat_g != null) && (
-            <p className="text-caption text-text-muted mt-0.5">
+            <p className="mt-0.5 text-[12px] text-[#566e66]">
               {[
                 entry.carbs_g != null && `Carb ${entry.carbs_g}g`,
                 entry.protein_g != null && `Đạm ${entry.protein_g}g`,
@@ -136,17 +85,16 @@ function EntryItem({ entry }: { entry: NutritionEntry }) {
           )}
         </div>
       </div>
-
-      {/* AI coaching tip */}
       {entry.ai_coaching && (
-        <div className="mt-2 ml-11">
-          <div className="flex items-start gap-2 rounded-md bg-amber-50 border border-amber-200 p-2.5">
-            <Bot className="size-4 text-amber-600 shrink-0 mt-0.5" aria-hidden="true" />
-            <p className="text-caption text-amber-800">
-              <span className="font-medium">Gợi ý AI:</span> {entry.ai_coaching}
-              <span className="block text-amber-600 mt-0.5">
-                (AI - không thay thế tư vấn dinh dưỡng)
-              </span>
+        <div
+          className="ml-12 mt-2 rounded-[10px] border border-[rgba(216,201,246,0.7)] bg-[rgba(243,238,251,0.6)] p-2.5"
+          style={{ borderLeft: '3px solid rgba(109,63,190,0.5)' }}
+        >
+          <div className="flex items-start gap-2">
+            <Sparkles className="mt-0.5 size-3.5 shrink-0 text-[#6d3fbe]" aria-hidden="true" />
+            <p className="text-[12px] leading-snug text-[#6d3fbe]">
+              <span className="font-semibold">Gợi ý AI:</span> {entry.ai_coaching}
+              <span className="mt-0.5 block text-[11px] opacity-80">(AI · không thay thế tư vấn dinh dưỡng)</span>
             </p>
           </div>
         </div>
@@ -155,17 +103,18 @@ function EntryItem({ entry }: { entry: NutritionEntry }) {
   )
 }
 
-// ── Add meal modal ────────────────────────────────────────────────────────────
-
-interface AddMealModalProps {
+function AddMealModal({
+  open,
+  onOpenChange,
+  onAdd,
+  patientId,
+}: {
   open: boolean
   onOpenChange: (open: boolean) => void
   onAdd: (entry: NutritionEntry) => void
   patientId: string
-}
-
-function AddMealModal({ open, onOpenChange, onAdd, patientId }: AddMealModalProps) {
-  const [mealType, setMealType] = React.useState<string>('breakfast')
+}) {
+  const [mealType, setMealType] = React.useState<MealType>('breakfast')
   const [description, setDescription] = React.useState('')
   const [calories, setCalories] = React.useState('')
   const [carbs, setCarbs] = React.useState('')
@@ -186,25 +135,18 @@ function AddMealModal({ open, onOpenChange, onAdd, patientId }: AddMealModalProp
     setDescError(null)
   }
 
-  function handleClose(open: boolean) {
-    if (!open) reset()
-    onOpenChange(open)
-  }
-
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setDescError(null)
     setSubmitError(null)
-
     if (!description.trim()) {
       setDescError('Vui lòng nhập mô tả bữa ăn')
       return
     }
-
     setSubmitting(true)
     try {
       const entry = await logNutrition(patientId, {
-        meal_type: mealType as MealType,
+        meal_type: mealType,
         description: description.trim(),
         calories_kcal: calories ? Number(calories) : undefined,
         carbs_g: carbs ? Number(carbs) : undefined,
@@ -212,7 +154,8 @@ function AddMealModal({ open, onOpenChange, onAdd, patientId }: AddMealModalProp
         fat_g: fat ? Number(fat) : undefined,
       })
       onAdd(entry)
-      handleClose(false)
+      reset()
+      onOpenChange(false)
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Không thể ghi nhật ký dinh dưỡng')
     } finally {
@@ -221,94 +164,86 @@ function AddMealModal({ open, onOpenChange, onAdd, patientId }: AddMealModalProp
   }
 
   return (
-    <Modal
+    <GlassModal
       open={open}
-      onOpenChange={handleClose}
+      onOpenChange={(o) => {
+        if (!o) reset()
+        onOpenChange(o)
+      }}
       title="Thêm bữa ăn"
       footer={
         <>
-          <Button
-            variant="outline"
-            size="sm"
+          <button
+            type="button"
+            className="mc-btn-glass flex-1"
             disabled={submitting}
-            onClick={() => handleClose(false)}
+            onClick={() => {
+              reset()
+              onOpenChange(false)
+            }}
           >
             Huỷ
-          </Button>
-          <Button
-            variant="primary"
-            size="sm"
-            loading={submitting}
-            onClick={handleSubmit}
-          >
-            Lưu
-          </Button>
+          </button>
+          <button type="submit" form="add-meal-form" className="mc-btn flex-1" disabled={submitting}>
+            {submitting ? 'Đang lưu…' : 'Lưu'}
+          </button>
         </>
       }
     >
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <Select
-          label="Bữa ăn"
-          value={mealType}
-          onValueChange={setMealType}
-          options={MEAL_TYPE_OPTIONS}
-          fullWidth
-        />
-
-        <Textarea
-          label="Mô tả bữa ăn *"
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          placeholder="Mô tả bữa ăn: ví dụ cơm trắng 1 bát, rau luộc..."
-          rows={3}
-          error={descError ?? undefined}
-          fullWidth
-        />
-
+      <form id="add-meal-form" onSubmit={handleSubmit} className="space-y-4">
+        <Field label="Bữa ăn">
+          <div className="grid grid-cols-4 gap-2">
+            {MEAL_TYPE_OPTIONS.map((o) => {
+              const active = mealType === o.value
+              return (
+                <button
+                  key={o.value}
+                  type="button"
+                  onClick={() => setMealType(o.value)}
+                  className="min-h-[44px] rounded-xl border text-[13px] font-semibold"
+                  style={{
+                    borderColor: active ? '#0f9c6e' : 'rgba(16,48,44,0.12)',
+                    background: active ? 'rgba(227,245,236,0.8)' : 'rgba(255,255,255,0.6)',
+                    color: active ? '#0b7f5b' : '#365651',
+                  }}
+                >
+                  {o.label}
+                </button>
+              )
+            })}
+          </div>
+        </Field>
+        <Field label="Mô tả bữa ăn">
+          <textarea
+            className="mc-input py-3"
+            style={{ minHeight: 76, lineHeight: 1.5 }}
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="VD: cơm trắng 1 bát, rau luộc, ức gà…"
+          />
+          {descError && <p className="mt-1 text-[12px] text-[#d92d20]">{descError}</p>}
+        </Field>
         <div className="grid grid-cols-2 gap-3">
-          <Input
-            label="Calories (kcal)"
-            type="number"
-            min={0}
-            value={calories}
-            onChange={(e) => setCalories(e.target.value)}
-            placeholder="0"
-          />
-          <Input
-            label="Carbs (g)"
-            type="number"
-            min={0}
-            value={carbs}
-            onChange={(e) => setCarbs(e.target.value)}
-            placeholder="0"
-          />
-          <Input
-            label="Đạm / Protein (g)"
-            type="number"
-            min={0}
-            value={protein}
-            onChange={(e) => setProtein(e.target.value)}
-            placeholder="0"
-          />
-          <Input
-            label="Chất béo / Fat (g)"
-            type="number"
-            min={0}
-            value={fat}
-            onChange={(e) => setFat(e.target.value)}
-            placeholder="0"
-          />
+          <Field label="Calories (kcal)">
+            <input type="number" inputMode="decimal" min={0} className="mc-input" value={calories} onChange={(e) => setCalories(e.target.value)} placeholder="0" />
+          </Field>
+          <Field label="Carbs (g)">
+            <input type="number" inputMode="decimal" min={0} className="mc-input" value={carbs} onChange={(e) => setCarbs(e.target.value)} placeholder="0" />
+          </Field>
+          <Field label="Đạm (g)">
+            <input type="number" inputMode="decimal" min={0} className="mc-input" value={protein} onChange={(e) => setProtein(e.target.value)} placeholder="0" />
+          </Field>
+          <Field label="Béo (g)">
+            <input type="number" inputMode="decimal" min={0} className="mc-input" value={fat} onChange={(e) => setFat(e.target.value)} placeholder="0" />
+          </Field>
         </div>
-
         {submitError && (
-          <Alert variant="danger">{submitError}</Alert>
+          <p className="rounded-xl bg-[rgba(251,231,229,0.8)] px-4 py-3 text-[14px] font-medium text-[#b3261e]">{submitError}</p>
         )}
       </form>
-    </Modal>
+    </GlassModal>
   )
 }
-
-// ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function NutritionPage() {
   const { user } = useAuth()
@@ -319,7 +254,6 @@ export default function NutritionPage() {
   const [error, setError] = React.useState<string | null>(null)
   const [addModalOpen, setAddModalOpen] = React.useState(false)
 
-  // ── Load log ───────────────────────────────────────────────────────────────
   const loadLog = React.useCallback(async () => {
     if (!patientId) return
     setLoading(true)
@@ -338,13 +272,11 @@ export default function NutritionPage() {
     loadLog()
   }, [loadLog])
 
-  // ── Guard ──────────────────────────────────────────────────────────────────
   if (!patientId) {
     return (
-      <div className="p-4 lg:p-6 max-w-2xl mx-auto">
-        <Alert variant="warning">
-          Không tìm thấy hồ sơ bệnh nhân. Vui lòng liên hệ hỗ trợ.
-        </Alert>
+      <div className="pt-2">
+        <PatientScreenHeader title="Nhật ký dinh dưỡng" />
+        <PatientEmptyState icon={Flame} title="Chưa có hồ sơ bệnh nhân" description="Vui lòng liên hệ hỗ trợ." className="mt-3" />
       </div>
     )
   }
@@ -354,89 +286,60 @@ export default function NutritionPage() {
   const todayEntries = entries.filter((e) => isSameDay(new Date(e.logged_at), new Date()))
 
   return (
-    <div className="p-4 lg:p-6 space-y-6 max-w-2xl mx-auto">
-      <PageHeader
+    <div className="pt-2">
+      <PatientScreenHeader
         title="Nhật ký dinh dưỡng"
-        actions={
-          <Button
-            variant="primary"
-            size="sm"
-            leftIcon={<Plus className="size-4" />}
-            onClick={() => setAddModalOpen(true)}
-          >
-            Thêm bữa ăn
-          </Button>
+        subtitle="Ghi lại bữa ăn hằng ngày"
+        action={
+          <MintFab label="Thêm bữa ăn" onClick={() => setAddModalOpen(true)}>
+            <Plus className="size-5 text-white" aria-hidden="true" />
+          </MintFab>
         }
       />
 
-      {/* Today's calorie summary */}
-      <Card variant="default" padding="md">
-        <CardContent>
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-orange-100 flex items-center justify-center shrink-0">
-              <Flame className="size-5 text-orange-500" aria-hidden="true" />
-            </div>
-            <div>
-              <p className="text-caption text-text-muted">Tổng calo hôm nay</p>
-              <p className="text-heading-lg font-bold text-text">
-                {todayKcal.toLocaleString('vi-VN')}{' '}
-                <span className="text-body-sm font-normal text-text-muted">kcal</span>
-              </p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Loading */}
-      {loading && (
-        <div className="flex justify-center py-10">
-          <Spinner size="md" />
+      {/* Today's calorie summary — mint hero */}
+      <div className="mc-hero mt-3 flex items-center gap-3 rounded-[18px] p-4">
+        <span className="grid size-12 place-items-center rounded-full bg-white/20">
+          <Flame className="size-6 text-white" aria-hidden="true" />
+        </span>
+        <div>
+          <p className="text-[12.5px] text-white/80">Tổng calo hôm nay</p>
+          <p className="text-[26px] font-extrabold leading-tight">
+            {todayKcal.toLocaleString('vi-VN')} <span className="text-[14px] font-medium text-white/80">kcal</span>
+          </p>
         </div>
-      )}
+      </div>
 
-      {/* Error */}
-      {!loading && error && (
-        <ErrorState
-          variant="inline"
-          title="Không tải được nhật ký"
-          message={error}
-          onRetry={loadLog}
-        />
-      )}
+      <div className="mt-4 space-y-4">
+        {loading && <PatientSkeleton />}
 
-      {/* Empty today */}
-      {!loading && !error && todayEntries.length === 0 && (
-        <EmptyState
-          title="Chưa có nhật ký hôm nay"
-          description="Chưa có nhật ký dinh dưỡng hôm nay. Hãy ghi lại bữa ăn của bạn!"
-          action={{
-            label: 'Thêm bữa ăn',
-            onClick: () => setAddModalOpen(true),
-          }}
-        />
-      )}
+        {!loading && error && <PatientErrorState title="Không tải được nhật ký" message={error} onRetry={loadLog} />}
 
-      {/* Grouped log */}
-      {!loading && !error && entries.length > 0 && (
-        <div className="space-y-4">
-          {groups.map(({ label, items }) => (
-            <Card key={label} variant="default" padding="none">
-              <CardHeader className="px-5 pt-4 pb-0">
-                <CardTitle className="text-body-sm font-semibold text-text-muted">
-                  {label}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="px-5 pb-4">
-                {items.map((entry) => (
-                  <EntryItem key={entry.id} entry={entry} />
+        {!loading && !error && todayEntries.length === 0 && entries.length === 0 && (
+          <PatientEmptyState
+            icon={Coffee}
+            title="Chưa có nhật ký hôm nay"
+            description="Hãy ghi lại bữa ăn đầu tiên của bạn!"
+            actionLabel="Thêm bữa ăn"
+            onAction={() => setAddModalOpen(true)}
+          />
+        )}
+
+        {!loading &&
+          !error &&
+          entries.length > 0 &&
+          groups.map(({ label, items }) => (
+            <div key={label}>
+              <p className="mb-2 px-1 text-[13px] font-semibold text-[#566e66]">{label}</p>
+              <GlassCard className="px-4 py-1">
+                {items.map((entry, i) => (
+                  <EntryItem key={entry.id} entry={entry} last={i === items.length - 1} />
                 ))}
-              </CardContent>
-            </Card>
+              </GlassCard>
+            </div>
           ))}
-        </div>
-      )}
+      </div>
 
-      {/* Add meal modal */}
       <AddMealModal
         open={addModalOpen}
         onOpenChange={setAddModalOpen}

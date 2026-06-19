@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { ErrorState } from '@/design-system/components/core/ErrorState'
+import { PatientErrorState } from '@/components/patient/states'
 
 export default function PatientError({
   error,
@@ -16,9 +16,10 @@ export default function PatientError({
   }, [error])
 
   return (
-    <div className="flex items-center justify-center min-h-[60vh] px-4">
-      <ErrorState
-        message="Đã xảy ra lỗi. Vui lòng thử lại."
+    <div className="flex min-h-[60vh] items-center justify-center">
+      <PatientErrorState
+        title="Đã có sự cố nhỏ"
+        message="Đừng lo, dữ liệu của bạn vẫn an toàn. Hãy thử lại nhé."
         onRetry={reset}
       />
     </div>

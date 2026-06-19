@@ -1,72 +1,59 @@
 'use client'
 
 import * as React from 'react'
+import { ShieldOff, ShieldCheck } from 'lucide-react'
+import { GlassCard } from '@/components/patient/glass'
+import { PatientScreenHeader } from '@/components/patient/header'
+import { PatientEmptyState, PatientErrorState, PatientSkeleton } from '@/components/patient/states'
+import { GlassModal } from '@/components/patient/modal'
 import { useAuth } from '@/lib/auth/context'
-import {
-  Button,
-  Badge,
-  Card,
-  CardHeader,
-  CardTitle,
-  CardContent,
-  Alert,
-  Modal,
-  EmptyState,
-  PageHeader,
-  Spinner,
-  ErrorState,
-} from '@/design-system'
-import { getConsents, revokeConsent } from '@/lib/api/patient'
-import type { Consent } from '@/lib/api/patient'
-import { ShieldOff } from 'lucide-react'
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
+import { getConsents, revokeConsent, type Consent } from '@/lib/api/patient'
 
 function translateScope(scope: string): string {
-  if (scope.includes('read')) return 'Xem hồ sơ sức khỏe đầy đủ'
-  if (scope.includes('write')) return 'Chỉnh sửa hồ sơ sức khỏe'
+  if (scope.includes('read')) return 'Xem hồ sơ sức khoẻ đầy đủ'
+  if (scope.includes('write')) return 'Chỉnh sửa hồ sơ sức khoẻ'
   if (scope.includes('lab')) return 'Xem kết quả xét nghiệm'
-  if (scope.includes('metric')) return 'Xem chỉ số sức khỏe'
+  if (scope.includes('metric')) return 'Xem chỉ số sức khoẻ'
   return scope
 }
 
-// ── Consent row ───────────────────────────────────────────────────────────────
-
-interface ConsentRowProps {
+function ConsentRow({
+  consent,
+  onRevoke,
+  last,
+}: {
   consent: Consent
   onRevoke: (consent: Consent) => void
-}
-
-function ConsentRow({ consent, onRevoke }: ConsentRowProps) {
-  const doctorLabel = `Bác sĩ #${consent.granted_to.slice(0, 8)}`
-  const scopeLabel = translateScope(consent.data_scope)
-
+  last?: boolean
+}) {
   return (
-    <div className="flex flex-col gap-3 py-4 border-b border-border last:border-0 sm:flex-row sm:items-start sm:justify-between">
+    <div
+      className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-start sm:justify-between"
+      style={{ borderBottom: last ? undefined : '1px solid rgba(16,48,44,0.07)' }}
+    >
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2 flex-wrap">
-          <p className="text-body-sm font-semibold text-text">{doctorLabel}</p>
-          <Badge variant="active" size="sm" dot>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="grid size-9 place-items-center rounded-[10px] bg-[rgba(227,245,236,0.9)]">
+            <ShieldCheck className="size-5 text-[#0f9c6e]" aria-hidden="true" />
+          </span>
+          <p className="text-[15px] font-bold text-[#0e2a33]">Bác sĩ #{consent.granted_to.slice(0, 8)}</p>
+          <span className="inline-flex items-center gap-1.5 rounded-md bg-[rgba(227,244,234,0.9)] px-2 py-1 text-[11px] font-semibold text-[#15915a]">
+            <span className="size-1.5 rounded-full bg-[#15915a]" />
             Đang hoạt động
-          </Badge>
+          </span>
         </div>
-        <p className="text-caption text-text-muted mt-0.5">{scopeLabel}</p>
+        <p className="mt-1.5 text-[13px] text-[#365651]">{translateScope(consent.data_scope)}</p>
       </div>
-
-      <div className="shrink-0">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => onRevoke(consent)}
-        >
-          Thu hồi quyền truy cập
-        </Button>
-      </div>
+      <button
+        type="button"
+        onClick={() => onRevoke(consent)}
+        className="h-11 shrink-0 rounded-[14px] border border-[rgba(217,45,32,0.2)] bg-[rgba(251,231,229,0.5)] px-4 text-[14px] font-semibold text-[#d92d20]"
+      >
+        Thu hồi
+      </button>
     </div>
   )
 }
-
-// ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function ConsentsPage() {
   const { user } = useAuth()
@@ -76,19 +63,16 @@ export default function ConsentsPage() {
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
 
-  // Revoke modal state
   const [revokeTarget, setRevokeTarget] = React.useState<Consent | null>(null)
   const [revoking, setRevoking] = React.useState(false)
   const [revokeError, setRevokeError] = React.useState<string | null>(null)
 
-  // ── Load consents ──────────────────────────────────────────────────────────
   const loadConsents = React.useCallback(async () => {
     if (!patientId) return
     setLoading(true)
     setError(null)
     try {
-      const data = await getConsents(patientId)
-      setConsents(data)
+      setConsents(await getConsents(patientId))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Không tải được danh sách quyền truy cập')
     } finally {
@@ -100,14 +84,12 @@ export default function ConsentsPage() {
     loadConsents()
   }, [loadConsents])
 
-  // ── Confirm revoke ─────────────────────────────────────────────────────────
   async function handleConfirmRevoke() {
     if (!patientId || !revokeTarget) return
     setRevoking(true)
     setRevokeError(null)
     try {
       await revokeConsent(patientId, revokeTarget.id)
-      // Remove the revoked consent from list (DELETE returns { message: 'revoked' })
       setConsents((prev) => prev.filter((c) => c.id !== revokeTarget.id))
       setRevokeTarget(null)
     } catch (err) {
@@ -117,77 +99,45 @@ export default function ConsentsPage() {
     }
   }
 
-  // ── Guard ──────────────────────────────────────────────────────────────────
   if (!patientId) {
     return (
-      <div className="p-4 lg:p-6 max-w-2xl mx-auto">
-        <Alert variant="warning">
-          Không tìm thấy hồ sơ bệnh nhân. Vui lòng liên hệ hỗ trợ.
-        </Alert>
+      <div className="pt-2">
+        <PatientScreenHeader title="Đồng ý chia sẻ dữ liệu" />
+        <PatientEmptyState icon={ShieldOff} title="Chưa có hồ sơ bệnh nhân" description="Vui lòng liên hệ hỗ trợ." className="mt-3" />
       </div>
     )
   }
 
   return (
-    <div className="p-4 lg:p-6 space-y-6 max-w-2xl mx-auto">
-      <PageHeader title="Quản lý quyền truy cập" />
+    <div className="pt-2">
+      <PatientScreenHeader title="Đồng ý chia sẻ dữ liệu" subtitle="Bạn kiểm soát ai được xem hồ sơ" />
 
-      {/* Intro card */}
-      <Card variant="flat" padding="md">
-        <CardContent>
-          <p className="text-body-sm text-text">
-            Các bác sĩ dưới đây có quyền xem hồ sơ sức khỏe của bạn. Bạn có thể thu hồi quyền
-            truy cập bất kỳ lúc nào.
+      <div className="mt-3 space-y-4">
+        <GlassCard className="p-4">
+          <p className="text-[14px] leading-relaxed text-[#244744]">
+            Các bác sĩ dưới đây có quyền xem hồ sơ sức khoẻ của bạn. Bạn có thể thu hồi quyền truy cập bất kỳ lúc nào.
           </p>
-        </CardContent>
-      </Card>
+        </GlassCard>
 
-      {/* Loading */}
-      {loading && (
-        <div className="flex justify-center py-10">
-          <Spinner size="md" />
-        </div>
-      )}
-
-      {/* Error */}
-      {!loading && error && (
-        <ErrorState
-          variant="inline"
-          title="Không tải được danh sách"
-          message={error}
-          onRetry={loadConsents}
-        />
-      )}
-
-      {/* Empty */}
-      {!loading && !error && consents.length === 0 && (
-        <EmptyState
-          title="Chưa có quyền truy cập nào"
-          description="Chưa có bác sĩ nào được cấp quyền truy cập hồ sơ của bạn."
-          icon={<ShieldOff />}
-        />
-      )}
-
-      {/* List */}
-      {!loading && !error && consents.length > 0 && (
-        <Card variant="default" padding="none">
-          <CardHeader className="px-5 pt-5 pb-0">
-            <CardTitle>Danh sách quyền truy cập</CardTitle>
-          </CardHeader>
-          <CardContent className="px-5 pb-5">
-            {consents.map((consent) => (
-              <ConsentRow
-                key={consent.id}
-                consent={consent}
-                onRevoke={setRevokeTarget}
-              />
+        {loading && <PatientSkeleton />}
+        {!loading && error && <PatientErrorState title="Không tải được danh sách" message={error} onRetry={loadConsents} />}
+        {!loading && !error && consents.length === 0 && (
+          <PatientEmptyState
+            icon={ShieldOff}
+            title="Chưa có quyền truy cập nào"
+            description="Chưa có bác sĩ nào được cấp quyền xem hồ sơ của bạn."
+          />
+        )}
+        {!loading && !error && consents.length > 0 && (
+          <GlassCard className="overflow-hidden p-0">
+            {consents.map((consent, i) => (
+              <ConsentRow key={consent.id} consent={consent} onRevoke={setRevokeTarget} last={i === consents.length - 1} />
             ))}
-          </CardContent>
-        </Card>
-      )}
+          </GlassCard>
+        )}
+      </div>
 
-      {/* Revoke confirmation modal */}
-      <Modal
+      <GlassModal
         open={revokeTarget !== null}
         onOpenChange={(open) => {
           if (!open) {
@@ -195,12 +145,13 @@ export default function ConsentsPage() {
             setRevokeError(null)
           }
         }}
-        title="Xác nhận thu hồi quyền truy cập"
+        title="Thu hồi quyền truy cập?"
+        description="Bác sĩ này sẽ không còn xem được hồ sơ của bạn."
         footer={
           <>
-            <Button
-              variant="outline"
-              size="sm"
+            <button
+              type="button"
+              className="mc-btn-glass flex-1"
               disabled={revoking}
               onClick={() => {
                 setRevokeTarget(null)
@@ -208,28 +159,24 @@ export default function ConsentsPage() {
               }}
             >
               Huỷ
-            </Button>
-            <Button
-              variant="danger"
-              size="sm"
-              loading={revoking}
+            </button>
+            <button
+              type="button"
+              disabled={revoking}
               onClick={handleConfirmRevoke}
+              className="flex h-12 flex-1 items-center justify-center rounded-[14px] bg-[#d92d20] text-[16px] font-bold text-white disabled:opacity-60"
             >
-              Thu hồi
-            </Button>
+              {revoking ? 'Đang thu hồi…' : 'Thu hồi'}
+            </button>
           </>
         }
       >
-        <p className="text-body-sm text-text">
-          Bạn có chắc muốn thu hồi quyền truy cập của bác sĩ này không? Họ sẽ không thể xem hồ
-          sơ của bạn nữa.
-        </p>
         {revokeError && (
-          <div className="mt-3">
-            <Alert variant="danger">{revokeError}</Alert>
-          </div>
+          <p className="rounded-xl bg-[rgba(251,231,229,0.8)] px-4 py-3 text-[14px] font-medium text-[#b3261e]">
+            {revokeError}
+          </p>
         )}
-      </Modal>
+      </GlassModal>
     </div>
   )
 }
