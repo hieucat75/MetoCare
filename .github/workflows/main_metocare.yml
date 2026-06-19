@@ -99,14 +99,25 @@ jobs:
               WEBSITES_CONTAINER_START_TIME_LIMIT=300 \
             --output none
           
-          # Set startup command to the shell script (proper $PORT expansion)
+          # Set startup command — let Oryx wrap this with antenv activation.
+          # Oryx exports $PORT before running the user command so gunicorn gets the right port.
+          # Do NOT use 'bash /home/site/wwwroot/startup.sh' — startup.sh is not preserved
+          # in wwwroot after Oryx build; pass gunicorn directly.
           az webapp config set \
             --name ${{ env.AZURE_WEBAPP_NAME }} \
             --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-            --startup-file 'bash /home/site/wwwroot/startup.sh' \
+            --startup-file 'gunicorn -w 2 -k uvicorn.workers.UvicornWorker app.main:app --bind 0.0.0.0:$PORT --timeout 120 --access-logfile - --error-logfile -' \
             --output none
           
           echo "✅ Config applied."
+          
+          # Verify startup command was saved correctly
+          echo "=== Verifying startup command ==="
+          az webapp config show \
+            --name ${{ env.AZURE_WEBAPP_NAME }} \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --query 'appCommandLine' \
+            --output tsv
 
       - name: Ensure app is running before deploy
         run: |
