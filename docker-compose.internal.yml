@@ -1,0 +1,114 @@
+# MetoCare — Internal DEV Deployment
+# Target: 172.20.0.100 | Dir: /opt/metocare
+# Isolated network, volumes, ports. Does NOT touch any existing services.
+#
+# Ports used (verify no conflict before starting):
+#   18000 → backend API (FastAPI/uvicorn)
+#   13000 → frontend  (Next.js)
+#   15432 → postgres  (TimescaleDB) — internal only, not exposed beyond host
+#
+# Usage:
+#   docker compose -f docker-compose.internal.yml --env-file .env.internal up -d
+
+services:
+  db:
+    image: timescale/timescaledb:latest-pg16
+    container_name: metocare_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-mcp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-metocare_dev}
+    ports:
+      - "127.0.0.1:15432:5432"   # localhost-only — not exposed on LAN
+    volumes:
+      - metocare_pgdata:/var/lib/postgresql/data
+    networks:
+      - metocare_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mcp} -d ${POSTGRES_DB:-metocare_dev}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: metocare_backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      MCP_ENV: dev
+      MCP_DEBUG: "false"
+      MCP_SECRET_KEY: ${MCP_SECRET_KEY}
+      MCP_ENCRYPTION_KEYS: ${MCP_ENCRYPTION_KEYS}
+      MCP_DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-mcp}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-metocare_dev}
+      MCP_AI_MODE: mock
+      MCP_OCR_MODE: mock
+      MCP_STORAGE_MODE: local
+      MCP_STORAGE_LOCAL_DIR: /app/storage
+      MCP_LOG_LEVEL: INFO
+      MCP_RATELIMIT_ENABLED: "true"
+      MCP_RATELIMIT_BACKEND: memory
+      MCP_SKIP_MFA_IN_DEV: "true"
+      MCP_ENABLE_DOCS: "true"
+      # Feature flags — all AI off, review/consent gates on
+      FEATURE_AI_TRIAGE: "false"
+      FEATURE_AI_LAB_INTERPRET: "false"
+      FEATURE_AI_CARE_PLAN_DRAFT: "false"
+      FEATURE_AI_SAFETY_LAYER: "false"
+      FEATURE_DOCTOR_REVIEW_GATE: "true"
+      FEATURE_CONSENT_GATE: "true"
+      FEATURE_AI_SESSION_ENABLED: "false"
+      FEATURE_AI_CLINICAL_RECS_ENABLED: "false"
+      FEATURE_AI_ESCALATION_ENABLED: "false"
+    ports:
+      - "18000:8000"
+    volumes:
+      - metocare_storage:/app/storage
+    networks:
+      - metocare_net
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # Baked into the Next.js bundle at build time
+        NEXT_PUBLIC_API_URL: http://172.20.0.100:18000/api/v1
+    container_name: metocare_frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "13000:3000"
+    networks:
+      - metocare_net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/ | grep -q 'MetoCare\\|html' || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+networks:
+  metocare_net:
+    driver: bridge
+    name: metocare_internal
+
+volumes:
+  metocare_pgdata:
+    name: metocare_pgdata
+  metocare_storage:
+    name: metocare_storage

@@ -6,6 +6,8 @@ const nextConfig = {
   },
   // Strict mode for better React error detection in development
   reactStrictMode: true,
+  // Standalone output enables minimal Docker image (copies only what's needed)
+  output: 'standalone',
 }
 
 export default nextConfig
