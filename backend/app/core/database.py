@@ -42,7 +42,7 @@ def create_all() -> None:
     # Import models so they register with Base.metadata before create_all.
     from app import models  # noqa: F401
 
-    Base.metadata.create_all(bind=engine)
+    Base.metadata.create_all(bind=engine, checkfirst=True)
 
 
 def get_session() -> Iterator[Session]:
