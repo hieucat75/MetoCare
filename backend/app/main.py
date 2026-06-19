@@ -1,8 +1,10 @@
 """FastAPI application factory for the Metabolic Care Platform (modular monolith).
 
 Wires structured logging, the observability middleware (request id + access log
-+ metrics), the v1 API, a consent-error handler, /metrics, and dev-time table
-creation (SQLite only; Postgres uses Alembic migrations).
++ metrics), the v1 API, a consent-error handler, and /metrics.
+
+Schema management: Alembic only. create_all() is never called at runtime.
+Run `alembic upgrade head` in CI/CD before every container restart.
 """
 
 from __future__ import annotations
@@ -17,7 +19,6 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 
 from app.api.v1.router import api_router
 from app.core.config import get_settings
-from app.core.database import create_all
 from app.core.logging import setup_logging
 from app.core.metrics import registry
 from app.core.middleware import MfaEnrollmentMiddleware, ObservabilityMiddleware
@@ -38,25 +39,11 @@ def create_app() -> FastAPI:
         # silently start a broken server.
         settings.validate_required_env_vars()
 
-        # SQLite dev/test convenience: create tables directly so the app runs
-        # with zero setup. PostgreSQL MUST use Alembic migrations — create_all
-        # is intentionally skipped in prod (schema managed by `alembic upgrade head`
-        # which runs in CI/CD before container restart).
-        # NOTE: create_all() is never called in production (is_prod=True) or when
-        # MCP_DATABASE_URL points to PostgreSQL. This block is SQLite-only.
-        if not settings.is_prod and settings.database_url.startswith("sqlite"):
-            # P1-FIX-04: Gunicorn multi-worker race condition — multiple workers
-            # may call create_all simultaneously on the same SQLite file.
-            # Wrap with try/except to handle "table already exists" gracefully.
-            try:
-                create_all()
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("create_all skipped (tables may already exist): %s", exc)
-        elif settings.is_prod:
-            # Production path: schema is managed by Alembic migrations.
-            # create_all() is NOT called here. CI/CD runs `alembic upgrade head`
-            # before container restart to ensure schema is up-to-date.
-            logger.info("Production mode: skipping create_all() — Alembic manages schema.")
+        # Schema management: Alembic only.
+        # create_all() is NEVER called at runtime — not in dev, not in prod.
+        # CI/CD runs `alembic upgrade head` before every container restart.
+        # This ensures schema is always migration-tracked and reproducible.
+        logger.info("Startup: schema managed by Alembic — no runtime create_all()")
         # Start the async OCR worker (built-in asyncio queue; no Celery/Redis).
         worker = None
         if settings.ocr_worker_enabled:
