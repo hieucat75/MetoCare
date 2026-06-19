@@ -44,6 +44,7 @@ jobs:
         working-directory: .
         run: |
           cd backend
+          chmod +x startup.sh
           zip -r ../deploy.zip . \
             --exclude "antenv/*" \
             --exclude "tests/*" \
@@ -51,6 +52,8 @@ jobs:
             --exclude "data/*" \
             --exclude "__pycache__/*" \
             --exclude "*.pyc"
+          echo "=== Zip contents (top level) ==="
+          unzip -l ../deploy.zip | grep -v "/$" | awk '{print $NF}' | head -20
 
       - name: Upload deployment zip
         uses: actions/upload-artifact@v4
@@ -78,8 +81,9 @@ jobs:
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_82802F503FBB4981BB11E7836D0FDE28 }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_42799659C6C44C1D8151F9153AD06872 }}
 
-      - name: Configure app settings
+      - name: Configure app settings and startup
         run: |
+          # Set app settings (this may restart the app)
           az webapp config appsettings set \
             --name ${{ env.AZURE_WEBAPP_NAME }} \
             --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
@@ -90,64 +94,88 @@ jobs:
               MCP_OCR_MODE=mock \
               MCP_STORAGE_MODE=local \
               SCM_DO_BUILD_DURING_DEPLOYMENT=true \
+              WEBSITES_CONTAINER_START_TIME_LIMIT=300 \
             --output none
           
+          # Set startup command to the shell script (proper $PORT expansion)
           az webapp config set \
             --name ${{ env.AZURE_WEBAPP_NAME }} \
             --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-            --startup-file 'gunicorn -w 2 -k uvicorn.workers.UvicornWorker app.main:app --bind 0.0.0.0:$PORT --timeout 120' \
+            --startup-file 'bash /home/site/wwwroot/startup.sh' \
             --output none
           
-          echo "Config applied."
+          echo "✅ Config applied."
 
       - name: Ensure app is running before deploy
         run: |
-          # Start the app (idempotent)
           az webapp start \
             --name ${{ env.AZURE_WEBAPP_NAME }} \
             --resource-group ${{ env.AZURE_RESOURCE_GROUP }}
           
-          # Poll Kudu SCM endpoint (not app endpoint) until it responds
           SCM_URL="https://${{ env.AZURE_WEBAPP_NAME }}.scm.malaysiawest-01.azurewebsites.net"
-          echo "Polling SCM endpoint for readiness..."
-          for i in $(seq 1 20); do
-            HTTP=$(curl -s -o /dev/null -w "%{http_code}" -u "" "$SCM_URL/api/settings" 2>/dev/null || echo "000")
+          echo "Polling SCM for Kudu readiness..."
+          for i in $(seq 1 30); do
+            HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
+              --connect-timeout 5 --max-time 10 "$SCM_URL/api/settings" 2>/dev/null || echo "000")
             echo "  Attempt $i: SCM HTTP $HTTP"
-            # 401 = Kudu up but auth required (expected with OIDC — that's fine)
-            # 200 = authenticated (publish profile)
-            # 403 = still stopped
             if [ "$HTTP" = "401" ] || [ "$HTTP" = "200" ]; then
-              echo "  ✅ Kudu is responding — proceeding with deploy"
+              echo "  ✅ Kudu ready — proceeding"
               break
+            fi
+            if [ "$i" -eq 30 ]; then
+              echo "  ⚠️ Kudu not responding after 30 attempts — continuing anyway"
             fi
             sleep 10
           done
 
-      - name: Deploy zip via Kudu REST API
+      - name: Deploy zip
         run: |
-          # Get bearer token for Kudu via OIDC login
-          TOKEN=$(az account get-access-token --resource https://management.azure.com --query accessToken -o tsv)
-          
-          # Use management plane zip deploy API (not Kudu direct — avoids SCM auth issue)
           az webapp deploy \
             --name ${{ env.AZURE_WEBAPP_NAME }} \
             --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
             --src-path deploy.zip \
-            --type zip \
-            --async true
+            --type zip
           
-          echo "Deployment initiated (async). Waiting 90s for Oryx build + restart..."
-          sleep 90
+          echo "✅ Deployment submitted. Waiting for app startup..."
 
-      - name: Verify deployment
+      - name: Wait for app startup and verify
         run: |
           APP_URL="${{ env.APP_URL }}"
-          echo "=== GET / ==="
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$APP_URL/")
-          echo "  HTTP $STATUS"
+          echo "Polling app health for up to 5 minutes..."
+          for i in $(seq 1 30); do
+            HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
+              --connect-timeout 5 --max-time 15 "$APP_URL/health" 2>/dev/null || echo "000")
+            echo "  Attempt $i: /health HTTP $HTTP"
+            if [ "$HTTP" = "200" ]; then
+              echo "  ✅ App is UP!"
+              break
+            fi
+            if [ "$i" -eq 30 ]; then
+              echo "  ❌ App not healthy after 5 minutes"
+            fi
+            sleep 10
+          done
+          
+          echo ""
+          echo "=== Final endpoint check ==="
+          echo "--- GET / ---"
+          curl -sv --max-time 15 "$APP_URL/" 2>&1 | grep -E "< HTTP|{|status|detail" | head -5
+          
+          echo "--- GET /health ---"
+          curl -s --max-time 15 "$APP_URL/health" | python3 -m json.tool 2>/dev/null || echo "no JSON response"
+          
+          echo "--- GET /api/v1/info ---"
+          curl -s --max-time 15 "$APP_URL/api/v1/info" | python3 -m json.tool 2>/dev/null || echo "no JSON response"
 
-          echo "=== GET /health ==="
-          HEALTH=$(curl -sf "$APP_URL/health" 2>/dev/null) && echo "  ✅ $HEALTH" || echo "  ❌ FAILED"
-
-          echo "=== GET /api/v1/info ==="
-          INFO=$(curl -sf "$APP_URL/api/v1/info" 2>/dev/null) && echo "  ✅ $INFO" || echo "  ❌ FAILED"
+      - name: Dump recent app logs on failure
+        if: failure()
+        run: |
+          echo "=== Recent App Service logs ==="
+          az webapp log download \
+            --name ${{ env.AZURE_WEBAPP_NAME }} \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --log-file /tmp/app_logs.zip 2>/dev/null || echo "Could not download logs"
+          
+          if [ -f /tmp/app_logs.zip ]; then
+            unzip -p /tmp/app_logs.zip | tail -100
+          fi
