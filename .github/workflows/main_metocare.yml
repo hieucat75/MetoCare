@@ -83,14 +83,16 @@ jobs:
           IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${SHORT_SHA}"
           echo "Deploying image: $IMAGE"
 
-          # Switch App Service to container mode
+          # Switch App Service to container mode.
+          # Use GHCR_PAT (long-lived OAuth token) — GITHUB_TOKEN is job-scoped
+          # and expires after the workflow; Azure cannot pull with it later.
           az webapp config container set \
             --name ${{ env.AZURE_WEBAPP_NAME }} \
             --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
             --container-image-name "$IMAGE" \
             --container-registry-url "https://${{ env.REGISTRY }}" \
             --container-registry-user "${{ github.actor }}" \
-            --container-registry-password "${{ secrets.GITHUB_TOKEN }}" \
+            --container-registry-password "${{ secrets.GHCR_PAT }}" \
             --output none
 
           # App settings — keep SQLite for dev, no Oryx needed
