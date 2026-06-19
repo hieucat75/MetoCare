@@ -56,6 +56,8 @@ services:
       MCP_RATELIMIT_BACKEND: memory
       MCP_SKIP_MFA_IN_DEV: "true"
       MCP_ENABLE_DOCS: "true"
+      # CORS — allow browser access from both the LAN IP and localhost
+      MCP_CORS_ALLOWED_ORIGINS: "http://172.20.0.100:13000,http://localhost:13000,http://localhost:3000"
       # Feature flags — all AI off, review/consent gates on
       FEATURE_AI_TRIAGE: "false"
       FEATURE_AI_LAB_INTERPRET: "false"

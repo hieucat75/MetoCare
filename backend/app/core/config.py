@@ -77,6 +77,16 @@ class Settings(BaseSettings):
     ocr_worker_enabled: bool = True
     ocr_queue_max_size: int = 256
 
+    # ---- CORS ----
+    # Comma-separated list of allowed origins for CORS preflight.
+    # Default includes localhost variants for local dev.
+    # In internal DEV, add http://172.20.0.100:13000 via MCP_CORS_ALLOWED_ORIGINS.
+    cors_allowed_origins: str = "http://localhost:3000,http://localhost:13000"
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        return [o.strip() for o in self.cors_allowed_origins.split(",") if o.strip()]
+
     # ---- Dev / Test flags ----
     # Set MCP_SKIP_MFA_IN_DEV=true to bypass MFA enforcement in local dev/smoke.
     # MUST be false (default) in production.

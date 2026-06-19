@@ -12,6 +12,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
 
 from app.api.v1.router import api_router
@@ -80,8 +81,16 @@ def create_app() -> FastAPI:
         ],
     )
 
-    # Added first = inner; Observability is added last so it wraps (and logs) the
-    # enrollment block too.
+    # CORSMiddleware must be outermost so OPTIONS preflight is answered before
+    # any auth/business middleware runs. Without it every preflight returns 405.
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origins_list,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    # Inner middleware (MFA then Observability wraps both).
     app.add_middleware(MfaEnrollmentMiddleware)
     app.add_middleware(ObservabilityMiddleware)
 
