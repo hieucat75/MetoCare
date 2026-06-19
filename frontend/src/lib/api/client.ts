@@ -30,7 +30,13 @@ export function clearTokens(): void {
   localStorage.removeItem('meto_refresh')
 }
 
-async function tryRefreshTokens(): Promise<boolean> {
+// Singleton in-flight refresh promise.
+// Prevents multiple concurrent 401s from each triggering a refresh and
+// triggering the backend's single-use reuse-detection, which would revoke
+// the entire token family and log the user out.
+let _refreshingPromise: Promise<boolean> | null = null
+
+async function _doRefreshTokens(): Promise<boolean> {
   const refresh = getRefreshToken()
   if (!refresh) return false
   try {
@@ -50,6 +56,14 @@ async function tryRefreshTokens(): Promise<boolean> {
     clearTokens()
     return false
   }
+}
+
+async function tryRefreshTokens(): Promise<boolean> {
+  if (_refreshingPromise) return _refreshingPromise
+  _refreshingPromise = _doRefreshTokens().finally(() => {
+    _refreshingPromise = null
+  })
+  return _refreshingPromise
 }
 
 type FetchOptions = Omit<RequestInit, 'headers'> & {
