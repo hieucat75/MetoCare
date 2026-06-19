@@ -13,6 +13,7 @@ env:
   AZURE_WEBAPP_NAME: MetoCare
   AZURE_RESOURCE_GROUP: rg-metocare-dev
   PYTHON_VERSION: '3.11'
+  APP_URL: https://metocare-a8hdh0grbcerbmfm.malaysiawest-01.azurewebsites.net
 
 jobs:
   build:
@@ -70,9 +71,6 @@ jobs:
         with:
           name: python-app
 
-      - name: Unzip artifact
-        run: unzip deploy.zip -d app_src
-
       - name: Login to Azure
         uses: azure/login@v2
         with:
@@ -80,7 +78,7 @@ jobs:
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_82802F503FBB4981BB11E7836D0FDE28 }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_42799659C6C44C1D8151F9153AD06872 }}
 
-      - name: Configure app settings and startup
+      - name: Configure app settings
         run: |
           az webapp config appsettings set \
             --name ${{ env.AZURE_WEBAPP_NAME }} \
@@ -93,30 +91,57 @@ jobs:
               MCP_STORAGE_MODE=local \
               SCM_DO_BUILD_DURING_DEPLOYMENT=true \
             --output none
-
+          
           az webapp config set \
             --name ${{ env.AZURE_WEBAPP_NAME }} \
             --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
             --startup-file 'gunicorn -w 2 -k uvicorn.workers.UvicornWorker app.main:app --bind 0.0.0.0:$PORT --timeout 120' \
             --output none
+          
+          echo "Config applied."
 
-          echo "Configuration applied."
-
-      - name: Deploy via az webapp up
-        working-directory: app_src
+      - name: Ensure app is running before deploy
         run: |
-          az webapp up \
+          # Start the app (idempotent)
+          az webapp start \
+            --name ${{ env.AZURE_WEBAPP_NAME }} \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }}
+          
+          # Poll Kudu SCM endpoint (not app endpoint) until it responds
+          SCM_URL="https://${{ env.AZURE_WEBAPP_NAME }}.scm.malaysiawest-01.azurewebsites.net"
+          echo "Polling SCM endpoint for readiness..."
+          for i in $(seq 1 20); do
+            HTTP=$(curl -s -o /dev/null -w "%{http_code}" -u "" "$SCM_URL/api/settings" 2>/dev/null || echo "000")
+            echo "  Attempt $i: SCM HTTP $HTTP"
+            # 401 = Kudu up but auth required (expected with OIDC — that's fine)
+            # 200 = authenticated (publish profile)
+            # 403 = still stopped
+            if [ "$HTTP" = "401" ] || [ "$HTTP" = "200" ]; then
+              echo "  ✅ Kudu is responding — proceeding with deploy"
+              break
+            fi
+            sleep 10
+          done
+
+      - name: Deploy zip via Kudu REST API
+        run: |
+          # Get bearer token for Kudu via OIDC login
+          TOKEN=$(az account get-access-token --resource https://management.azure.com --query accessToken -o tsv)
+          
+          # Use management plane zip deploy API (not Kudu direct — avoids SCM auth issue)
+          az webapp deploy \
             --name ${{ env.AZURE_WEBAPP_NAME }} \
             --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-            --runtime "PYTHON:3.11" \
-            --sku B1
+            --src-path deploy.zip \
+            --type zip \
+            --async true
+          
+          echo "Deployment initiated (async). Waiting 90s for Oryx build + restart..."
+          sleep 90
 
       - name: Verify deployment
         run: |
-          APP_URL="https://metocare-a8hdh0grbcerbmfm.malaysiawest-01.azurewebsites.net"
-          echo "Waiting 60s for app to boot..."
-          sleep 60
-
+          APP_URL="${{ env.APP_URL }}"
           echo "=== GET / ==="
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$APP_URL/")
           echo "  HTTP $STATUS"
