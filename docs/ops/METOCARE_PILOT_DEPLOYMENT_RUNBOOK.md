@@ -137,7 +137,10 @@ The full chain from initial schema to HEAD:
 | 16 | `t4_m8_ext_drcl` | Extend doctor_clinic fields | `t4_m8_ext_drcl_extend_doctor_clinic_fields.py` |
 | 17 | `t4_m9_add_sdel` | Add soft-delete columns | `t4_m9_add_sdel_add_soft_delete_columns.py` |
 | 18 | `t18_add_ntrl` | Add nutrition_logs table (T18) | `t18_add_nutrition_log.py` |
-| 19 | `t19_add_triage_log` | Add triage_logs table (T19) — **HEAD** | `t19_add_triage_log.py` |
+| 19 | `t19_add_triage_log` | Add triage_logs table (T19) | `t19_add_triage_log.py` |
+| 20 | `t21_add_booking` | Add doctor_availability + booking_appointments (T21) | `t21_add_booking.py` |
+| 21 | `t23_add_notifications` | Add notifications table (T23) | `t23_add_notifications.py` |
+| 22 | `t27_uq_patient_profile_user_id` | Unique constraint patient_profiles.user_id — **HEAD** | `t27_unique_patient_profile_user_id.py` |
 
 ### 2.2 Run Migrations
 
@@ -153,7 +156,7 @@ alembic upgrade head
 
 # Verify
 alembic current
-# Expected output: t19_add_triage_log (head)
+# Expected output: t27_uq_patient_profile_user_id (head)
 ```
 
 ### 2.3 Rollback Procedures
@@ -502,7 +505,7 @@ any point without slot gaps.
 
 - [ ] `GET /health` returns `{"status": "ok"}`
 - [ ] `GET /info` shows correct `env`, `ai_mode`, `ocr_mode`, `storage_mode`
-- [ ] `alembic current` shows `t19_add_triage_log (head)`
+- [ ] `alembic current` shows `t27_uq_patient_profile_user_id (head)`
 - [ ] Startup logs show NO insecure-config warnings
 - [ ] Test user registration succeeds (Step 3)
 - [ ] Test user login succeeds and returns valid JWT (Step 4)
