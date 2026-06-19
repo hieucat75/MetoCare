@@ -45,7 +45,7 @@ interface NotificationRowProps {
 
 function NotificationRow({ notification, onRead }: NotificationRowProps) {
   const handleClick = () => {
-    if (!notification.read) {
+    if (!notification.is_read) {
       onRead(notification.id)
     }
   }
@@ -55,7 +55,7 @@ function NotificationRow({ notification, onRead }: NotificationRowProps) {
       type="button"
       onClick={handleClick}
       className={`w-full text-left flex items-start gap-3 px-4 py-3 border-b border-border last:border-0 transition-colors hover:bg-secondary-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 ${
-        !notification.read ? 'bg-primary/5' : 'bg-surface'
+        !notification.is_read ? 'bg-primary/5' : 'bg-surface'
       }`}
       aria-label={notification.title}
     >
@@ -68,7 +68,7 @@ function NotificationRow({ notification, onRead }: NotificationRowProps) {
       <div className="flex-1 min-w-0">
         <p
           className={`text-body-sm truncate ${
-            notification.read ? 'text-text-muted' : 'font-semibold text-text'
+            notification.is_read ? 'text-text-muted' : 'font-semibold text-text'
           }`}
         >
           {notification.title}
@@ -80,7 +80,7 @@ function NotificationRow({ notification, onRead }: NotificationRowProps) {
       </div>
 
       {/* Unread dot */}
-      {!notification.read && (
+      {!notification.is_read && (
         <span
           className="mt-1.5 w-2 h-2 rounded-full bg-primary shrink-0"
           aria-label="Chưa đọc"
@@ -109,9 +109,9 @@ export default function NotificationsPage() {
     setLoading(true)
     setError(null)
     getNotifications(patientId, { limit: 50 })
-      .then((resp) => {
-        setNotifications(resp.items)
-        setUnreadCount(resp.unread_count)
+      .then((notifications) => {
+        setNotifications(notifications)
+        setUnreadCount(notifications.filter((n) => !n.is_read).length)
       })
       .catch((err: Error) => setError(err.message))
       .finally(() => setLoading(false))
@@ -126,7 +126,7 @@ export default function NotificationsPage() {
     try {
       await markNotificationRead(patientId, id)
       setNotifications((prev) =>
-        prev.map((n) => (n.id === id ? { ...n, read: true } : n)),
+        prev.map((n) => (n.id === id ? { ...n, is_read: true } : n)),
       )
       setUnreadCount((prev) => Math.max(0, prev - 1))
     } catch {
@@ -158,7 +158,7 @@ export default function NotificationsPage() {
     )
   }
 
-  const unread = notifications.filter((n) => !n.read)
+  const unread = notifications.filter((n) => !n.is_read)
   const all = notifications
 
   return (

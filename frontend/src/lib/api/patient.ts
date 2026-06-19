@@ -188,10 +188,11 @@ export interface AiExplainRequest {
 }
 
 export interface AiExplainResponse {
-  explanation: string
-  safety_level: 'safe' | 'caution' | 'urgent'
+  plain_language_summary: string
+  safety_level: 'informational' | 'caution' | 'urgent'
   disclaimer: string
   explanation_type: ExplanationType
+  generated_at: string
 }
 
 export async function getAiExplanation(
@@ -205,12 +206,10 @@ export async function getAiExplanation(
 export interface SymptomLog {
   id: string
   patient_id: string
-  symptoms: string[]
-  severity: 'mild' | 'moderate' | 'severe'
-  duration_hours: number | null
-  notes: string | null
-  triage_result: 'routine' | 'soon' | 'urgent' | 'emergency' | null
-  logged_at: string
+  description: string
+  severity: number | null   // 0–10 integer
+  reported_at: string
+  created_at: string
 }
 
 export interface SymptomLogListResponse {
@@ -224,19 +223,18 @@ export async function getSymptomLogs(
   params?: { limit?: number },
 ): Promise<SymptomLogListResponse> {
   const qs = params?.limit ? `?limit=${params.limit}` : ''
-  return api.get<SymptomLogListResponse>(`/patients/${patientId}/symptom-logs${qs}`)
+  return api.get<SymptomLogListResponse>(`/patients/${patientId}/symptoms${qs}`)
 }
 
 export async function logSymptom(
   patientId: string,
   data: {
-    symptoms: string[]
-    severity: 'mild' | 'moderate' | 'severe'
-    duration_hours?: number
-    notes?: string
+    description: string
+    severity?: number   // 0–10
+    reported_at?: string
   },
 ): Promise<SymptomLog> {
-  return api.post<SymptomLog>(`/patients/${patientId}/symptom-logs`, data)
+  return api.post<SymptomLog>(`/patients/${patientId}/symptoms`, data)
 }
 
 // ── Medications ───────────────────────────────────────────────────────────────
@@ -245,14 +243,20 @@ export interface Medication {
   id: string
   patient_id: string
   name: string
-  dosage: string
-  frequency: string
-  start_date: string
-  end_date: string | null
-  notes: string | null
-  prescribed_by: string | null
-  status: 'active' | 'completed' | 'discontinued'
-  next_dose_at: string | null
+  /** Backend field (PA-07). Pages may also use legacy alias `dosage`. */
+  dose: string | null
+  /** Backend field (PA-07). Pages may also use legacy alias `notes`. */
+  note: string | null
+  created_at: string
+  // Optional fields not yet in backend schema — will be undefined at runtime
+  dosage?: string | null
+  frequency?: string | null
+  start_date?: string | null
+  end_date?: string | null
+  notes?: string | null
+  prescribed_by?: string | null
+  status?: 'active' | 'completed' | 'discontinued'
+  next_dose_at?: string | null
 }
 
 export interface MedicationListResponse {
@@ -263,11 +267,12 @@ export interface MedicationListResponse {
 
 export async function getMedications(
   patientId: string,
-  params?: { status?: 'active' | 'completed'; limit?: number },
+  params?: { status?: 'active' | 'completed'; limit?: number; offset?: number },
 ): Promise<MedicationListResponse> {
   const qs = new URLSearchParams()
   if (params?.status) qs.set('status', params.status)
   if (params?.limit) qs.set('limit', String(params.limit))
+  if (params?.offset) qs.set('offset', String(params.offset))
   const query = qs.toString()
   return api.get<MedicationListResponse>(
     `/patients/${patientId}/medications${query ? `?${query}` : ''}`,
@@ -336,42 +341,48 @@ export interface CarePlanItem {
 export interface CarePlan {
   id: string
   patient_id: string
+  encounter_id?: string | null
   title: string
-  description: string | null
-  status: 'active' | 'completed' | 'paused'
-  items: CarePlanItem[]
+  content: string | null
+  /** Backend uses uppercase enum (PA-07). */
+  status: 'DRAFT' | 'PENDING_REVIEW' | 'APPROVED' | 'ACTIVE' | 'SUPERSEDED' | 'ARCHIVED' | 'REJECTED'
+  approved_by_doctor_id?: string | null
+  approved_at?: string | null
+  ai_generated?: boolean
+  version?: number
   created_at: string
-  doctor_name: string | null
-  approved_by: string | null
-  approval_status: 'pending_review' | 'approved' | 'rejected' | null
+  updated_at?: string
+  // Optional legacy fields not in backend schema — will be undefined at runtime
+  approval_status?: 'pending_review' | 'approved' | 'rejected' | null
+  approved_by?: string | null
+  doctor_name?: string | null
+  description?: string | null
+  items?: CarePlanItem[]
 }
 
 export async function getCarePlans(patientId: string): Promise<CarePlan[]> {
-  return api.get<CarePlan[]>(`/patients/${patientId}/care-plans`)
+  return api.get<CarePlan[]>(`/care_plans?patient_id=${patientId}`)
 }
 
 // ── Notifications ─────────────────────────────────────────────────────────────
 
 export interface Notification {
   id: string
-  patient_id: string
+  user_id: string
+  type: string
   title: string
   body: string
-  type: 'medication_reminder' | 'lab_result' | 'care_plan' | 'doctor_message' | 'system'
-  read: boolean
+  is_read: boolean
+  read_at: string | null
   created_at: string
-  action_url: string | null
+  metadata_: Record<string, unknown> | null
 }
 
-export interface NotificationListResponse {
-  patient_id: string
-  total: number
-  unread_count: number
-  items: Notification[]
-}
+/** Backend returns a plain array (no pagination wrapper). */
+export type NotificationListResponse = Notification[]
 
 export async function getNotifications(
-  patientId: string,
+  _patientId: string,
   params?: { limit?: number; unread_only?: boolean },
 ): Promise<NotificationListResponse> {
   const qs = new URLSearchParams()
@@ -379,15 +390,15 @@ export async function getNotifications(
   if (params?.unread_only) qs.set('unread_only', 'true')
   const query = qs.toString()
   return api.get<NotificationListResponse>(
-    `/patients/${patientId}/notifications${query ? `?${query}` : ''}`,
+    `/notifications${query ? `?${query}` : ''}`,
   )
 }
 
 export async function markNotificationRead(
-  patientId: string,
+  _patientId: string,
   notificationId: string,
 ): Promise<void> {
-  return api.patch(`/patients/${patientId}/notifications/${notificationId}`, { read: true })
+  return api.patch(`/notifications/${notificationId}/read`, {})
 }
 
 // ── Consent ───────────────────────────────────────────────────────────────────
@@ -395,12 +406,8 @@ export async function markNotificationRead(
 export interface Consent {
   id: string
   patient_id: string
-  doctor_id: string
-  doctor_name: string | null
-  scope: string
-  status: 'active' | 'revoked'
-  granted_at: string
-  revoked_at: string | null
+  data_scope: string
+  granted_to: string  // doctor user_id
 }
 
 export async function getConsents(patientId: string): Promise<Consent[]> {
@@ -408,5 +415,5 @@ export async function getConsents(patientId: string): Promise<Consent[]> {
 }
 
 export async function revokeConsent(patientId: string, consentId: string): Promise<void> {
-  return api.patch(`/patients/${patientId}/consents/${consentId}`, { status: 'revoked' })
+  return api.del(`/patients/${patientId}/consents/${consentId}`)
 }

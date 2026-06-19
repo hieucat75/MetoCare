@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { CheckCircle2, Circle, ClipboardList } from 'lucide-react'
+import { CheckCircle2, ClipboardList } from 'lucide-react'
 import {
   Alert,
   Badge,
@@ -16,8 +16,7 @@ import {
   SkeletonText,
 } from '@/design-system'
 import { useAuth } from '@/lib/auth/context'
-import { getCarePlans, type CarePlan, type CarePlanItem } from '@/lib/api/patient'
-import { cn } from '@/lib/utils'
+import { getCarePlans, type CarePlan } from '@/lib/api/patient'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -29,176 +28,58 @@ function formatDate(iso: string): string {
   }).format(new Date(iso))
 }
 
-// ── Status badge configs ───────────────────────────────────────────────────────
+// ── Status badge map (backend uses UPPERCASE status) ──────────────────────────
 
-type PlanStatusBadgeVariant = 'active' | 'approved' | 'default'
+type BadgeVariant = 'active' | 'approved' | 'pending_review' | 'default'
 
-const PLAN_STATUS_CONFIG: Record<
-  CarePlan['status'],
-  { variant: PlanStatusBadgeVariant; label: string }
-> = {
-  active: { variant: 'active', label: 'Đang thực hiện' },
-  completed: { variant: 'approved', label: 'Hoàn thành' },
-  paused: { variant: 'default', label: 'Tạm dừng' },
-}
-
-// ── Progress bar ───────────────────────────────────────────────────────────────
-
-function ProgressBar({
-  completed,
-  total,
-}: {
-  completed: number
-  total: number
-}) {
-  const pct = total === 0 ? 0 : Math.round((completed / total) * 100)
-
-  const barColor =
-    pct === 100
-      ? 'bg-green-500'
-      : pct >= 50
-        ? 'bg-primary'
-        : 'bg-amber-400'
-
-  return (
-    <div className="space-y-1">
-      <div className="flex items-center justify-between text-body-xs text-text-muted">
-        <span>
-          {completed}/{total} mục hoàn thành
-        </span>
-        <span>{pct}%</span>
-      </div>
-      <div className="h-2 rounded-full bg-secondary-100 overflow-hidden">
-        <div
-          className={cn('h-full rounded-full transition-all duration-500', barColor)}
-          style={{ width: `${pct}%` }}
-          role="progressbar"
-          aria-valuenow={pct}
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-label={`Tiến độ: ${pct}%`}
-        />
-      </div>
-    </div>
-  )
-}
-
-// ── Plan item checklist ────────────────────────────────────────────────────────
-
-function PlanItemRow({ item }: { item: CarePlanItem }) {
-  return (
-    <div
-      className={cn(
-        'flex items-start gap-3 py-2.5 border-b border-border last:border-0',
-        item.completed && 'opacity-60',
-      )}
-    >
-      {item.completed ? (
-        <CheckCircle2
-          className="size-5 shrink-0 text-green-500 mt-0.5"
-          aria-hidden="true"
-        />
-      ) : (
-        <Circle
-          className="size-5 shrink-0 text-text-subtle mt-0.5"
-          aria-hidden="true"
-        />
-      )}
-      <div className="min-w-0 flex-1">
-        <p
-          className={cn(
-            'text-body-sm font-medium text-text',
-            item.completed && 'line-through text-text-muted',
-          )}
-        >
-          {item.title}
-        </p>
-        {item.description && (
-          <p className="text-body-xs text-text-muted mt-0.5">{item.description}</p>
-        )}
-        {item.frequency && (
-          <p className="text-body-xs text-text-muted mt-0.5">
-            Tần suất: {item.frequency}
-          </p>
-        )}
-        {item.due_date && (
-          <p className="text-body-xs text-text-muted mt-0.5">
-            Hạn: {formatDate(item.due_date)}
-          </p>
-        )}
-      </div>
-    </div>
-  )
+const STATUS_CONFIG: Record<string, { variant: BadgeVariant; label: string }> = {
+  ACTIVE:         { variant: 'active',         label: 'Đang thực hiện' },
+  APPROVED:       { variant: 'approved',       label: 'Đã phê duyệt' },
+  PENDING_REVIEW: { variant: 'pending_review', label: 'Chờ phê duyệt' },
+  DRAFT:          { variant: 'default',        label: 'Bản nháp' },
+  ARCHIVED:       { variant: 'default',        label: 'Lưu trữ' },
+  SUPERSEDED:     { variant: 'default',        label: 'Đã thay thế' },
+  REJECTED:       { variant: 'default',        label: 'Bị từ chối' },
 }
 
 // ── Care plan card ─────────────────────────────────────────────────────────────
 
 function CarePlanCard({ plan }: { plan: CarePlan }) {
-  const statusCfg = PLAN_STATUS_CONFIG[plan.status]
-  const completedCount = plan.items.filter((i) => i.completed).length
-  const totalItems = plan.items.length
+  const cfg = STATUS_CONFIG[plan.status] ?? { variant: 'default' as BadgeVariant, label: plan.status }
 
   return (
     <Card variant="elevated" padding="none">
-      <CardHeader className="p-4 pb-0">
+      <CardHeader className="p-4 pb-2">
         <div className="flex items-start justify-between gap-3">
           <CardTitle className="text-body-md font-semibold leading-snug">
             {plan.title}
           </CardTitle>
-          <Badge variant={statusCfg.variant} dot size="sm">
-            {statusCfg.label}
+          <Badge variant={cfg.variant} dot size="sm">
+            {cfg.label}
           </Badge>
         </div>
 
-        {/* Approval status */}
-        <div className="mt-2">
-          {plan.approval_status === 'pending_review' && (
-            <Badge variant="pending_review" size="sm" dot>
-              Chờ bác sĩ duyệt
-            </Badge>
-          )}
-          {plan.approval_status === 'approved' && plan.approved_by && (
-            <div className="flex items-center gap-1.5 text-body-xs text-green-700">
-              <CheckCircle2 className="size-3.5 shrink-0" aria-hidden="true" />
-              <span>
-                Đã được bác sĩ{' '}
-                <span className="font-semibold">{plan.approved_by}</span> duyệt
-              </span>
-            </div>
-          )}
-        </div>
-
-        {/* Description */}
-        {plan.description && (
-          <p className="mt-1.5 text-body-xs text-text-muted">{plan.description}</p>
+        {/* Approval indicator */}
+        {plan.approved_at && (
+          <div className="flex items-center gap-1.5 mt-2 text-body-xs text-green-700">
+            <CheckCircle2 className="size-3.5 shrink-0" aria-hidden="true" />
+            <span>Đã phê duyệt {formatDate(plan.approved_at)}</span>
+          </div>
         )}
 
         {/* Meta */}
         <p className="mt-1 text-body-xs text-text-muted">
           Tạo: {formatDate(plan.created_at)}
-          {plan.doctor_name && (
-            <> &middot; Bác sĩ: {plan.doctor_name}</>
-          )}
+          {plan.ai_generated && <> &middot; <span className="text-amber-600">AI hỗ trợ</span></>}
+          {(plan.version ?? 0) > 1 && <> &middot; v{plan.version}</>}
         </p>
       </CardHeader>
 
-      <CardContent className="p-4 pt-3 space-y-4">
-        {/* Progress */}
-        {totalItems > 0 && (
-          <ProgressBar completed={completedCount} total={totalItems} />
-        )}
-
-        {/* Item checklist */}
-        {plan.items.length > 0 ? (
-          <div>
-            {plan.items.map((item) => (
-              <PlanItemRow key={item.id} item={item} />
-            ))}
-          </div>
+      <CardContent className="p-4 pt-0">
+        {plan.content ? (
+          <p className="text-body-sm text-text-muted whitespace-pre-line">{plan.content}</p>
         ) : (
-          <p className="text-body-xs text-text-muted italic">
-            Kế hoạch chưa có mục cụ thể.
-          </p>
+          <p className="text-body-xs text-text-subtle italic">Chưa có nội dung.</p>
         )}
       </CardContent>
     </Card>
@@ -218,7 +99,6 @@ function CarePlanSkeleton() {
               <Skeleton width="5rem" height="1.25rem" className="rounded-full" />
             </div>
             <Skeleton width="30%" height="0.75rem" />
-            <div className="h-2 rounded-full bg-secondary-200" />
             <SkeletonText lines={3} />
           </CardContent>
         </Card>

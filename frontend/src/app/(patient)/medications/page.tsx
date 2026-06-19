@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation'
 import { Pill } from 'lucide-react'
 import {
   Alert,
-  Badge,
   EmptyState,
   ErrorState,
   MedicationCard,
@@ -22,19 +21,7 @@ import { getMedications, type Medication } from '@/lib/api/patient'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
-function formatTime(iso: string): string {
-  return new Intl.DateTimeFormat('vi-VN', {
-    hour: '2-digit',
-    minute: '2-digit',
-    day: '2-digit',
-    month: '2-digit',
-  }).format(new Date(iso))
-}
-
-function isOverdue(next_dose_at: string | null): boolean {
-  if (!next_dose_at) return false
-  return new Date(next_dose_at) < new Date()
-}
+// next_dose_at/frequency/status not in backend schema
 
 // ── Medication loading skeleton ────────────────────────────────────────────────
 
@@ -74,46 +61,24 @@ function MedicationList({
 }) {
   return (
     <div className="space-y-3">
-      {medications.map((med) => {
-        const overdue = isOverdue(med.next_dose_at)
-        return (
-          <div
+      {medications.map((med) => (
+          <MedicationCard
             key={med.id}
-            className={overdue ? 'relative rounded-lg border-l-4 border-amber-400' : undefined}
-          >
-            {overdue && (
-              <div className="absolute top-3 right-3 z-10">
-                <Badge variant="warning" size="sm" dot>
-                  Quá hạn
-                </Badge>
-              </div>
-            )}
-            <MedicationCard
-              medication={{
-                id: med.id,
-                name: med.name,
-                dosage: med.dosage,
-                frequency: med.frequency,
-                timing: med.next_dose_at
-                  ? formatTime(med.next_dose_at)
-                  : 'Xem hướng dẫn',
-                prescribedBy: med.prescribed_by ?? 'Bác sĩ điều trị',
-                startDate: med.start_date,
-                endDate: med.end_date ?? undefined,
-                notes: med.notes ?? undefined,
-                status:
-                  med.status === 'active'
-                    ? 'active'
-                    : med.status === 'completed'
-                      ? 'completed'
-                      : 'discontinued',
-              }}
-              onRefill={onRefill}
-              onViewMore={() => onViewMore(med.id)}
-            />
-          </div>
-        )
-      })}
+            medication={{
+              id: med.id,
+              name: med.name,
+              dosage: med.dose ?? '',
+              frequency: '',               // not in backend schema
+              timing: 'Xem hướng dẫn',  // not in backend schema
+              prescribedBy: 'Bác sĩ điều trị', // not in backend schema
+              startDate: med.created_at,   // use created_at as proxy
+              notes: med.note ?? undefined,
+              status: 'active',            // backend has no status field; show all as active
+            }}
+            onRefill={onRefill}
+            onViewMore={() => onViewMore(med.id)}
+          />
+      ))}
     </div>
   )
 }
@@ -129,39 +94,23 @@ export default function MedicationsPage() {
   const [activeTab, setActiveTab] = React.useState<'active' | 'completed'>('active')
 
   const [activeMeds, setActiveMeds] = React.useState<Medication[]>([])
-  const [completedMeds, setCompletedMeds] = React.useState<Medication[]>([])
-
   const [activeLoading, setActiveLoading] = React.useState(true)
-  const [completedLoading, setCompletedLoading] = React.useState(false)
-  const [completedLoaded, setCompletedLoaded] = React.useState(false)
-
   const [activeError, setActiveError] = React.useState<string | null>(null)
-  const [completedError, setCompletedError] = React.useState<string | null>(null)
 
-  // Load active medications on mount
+  // Load all medications on mount (backend has no status filter)
   React.useEffect(() => {
     if (!patientId) return
     setActiveLoading(true)
     setActiveError(null)
-    getMedications(patientId, { status: 'active' })
-      .then((res) => setActiveMeds(res.items))
+    getMedications(patientId, { limit: 50 })
+      .then((res) => {
+        setActiveMeds(res.items)
+      })
       .catch((err: Error) => setActiveError(err.message))
       .finally(() => setActiveLoading(false))
   }, [patientId])
 
-  // Load completed medications when tab is switched
-  React.useEffect(() => {
-    if (activeTab !== 'completed' || completedLoaded || !patientId) return
-    setCompletedLoading(true)
-    setCompletedError(null)
-    getMedications(patientId, { status: 'completed' })
-      .then((res) => {
-        setCompletedMeds(res.items)
-        setCompletedLoaded(true)
-      })
-      .catch((err: Error) => setCompletedError(err.message))
-      .finally(() => setCompletedLoading(false))
-  }, [activeTab, completedLoaded, patientId])
+
 
   function handleViewMore(id: string) {
     router.push(`/medications/${id}`)
@@ -211,7 +160,7 @@ export default function MedicationsPage() {
               onRetry={() => {
                 setActiveLoading(true)
                 setActiveError(null)
-                getMedications(patientId, { status: 'active' })
+                getMedications(patientId, { limit: 50 })
                   .then((res) => setActiveMeds(res.items))
                   .catch((err: Error) => setActiveError(err.message))
                   .finally(() => setActiveLoading(false))
@@ -236,45 +185,13 @@ export default function MedicationsPage() {
           )}
         </TabsContent>
 
-        {/* Completed medications tab */}
+        {/* Completed tab — backend has no status field; show informational empty state */}
         <TabsContent value="completed">
-          {completedLoading && <MedicationsSkeleton />}
-
-          {!completedLoading && completedError && (
-            <ErrorState
-              variant="inline"
-              title="Không tải được danh sách thuốc"
-              message={completedError}
-              onRetry={() => {
-                setCompletedLoaded(false)
-                setCompletedLoading(true)
-                setCompletedError(null)
-                getMedications(patientId, { status: 'completed' })
-                  .then((res) => {
-                    setCompletedMeds(res.items)
-                    setCompletedLoaded(true)
-                  })
-                  .catch((err: Error) => setCompletedError(err.message))
-                  .finally(() => setCompletedLoading(false))
-              }}
-            />
-          )}
-
-          {!completedLoading && !completedError && completedLoaded && completedMeds.length === 0 && (
-            <EmptyState
-              icon={<Pill />}
-              title="Không có thuốc đã hoàn thành"
-              description="Lịch sử thuốc đã hoàn thành sẽ hiển thị ở đây."
-            />
-          )}
-
-          {!completedLoading && !completedError && completedMeds.length > 0 && (
-            <MedicationList
-              medications={completedMeds}
-              onViewMore={handleViewMore}
-              onRefill={handleRefill}
-            />
-          )}
+          <EmptyState
+            icon={<Pill />}
+            title="Không có thuốc đã hoàn thành"
+            description="Lịch sử thuốc đã hoàn thành sẽ hiển thị ở đây."
+          />
         </TabsContent>
       </Tabs>
     </div>

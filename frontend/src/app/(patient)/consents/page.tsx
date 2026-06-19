@@ -22,14 +22,6 @@ import { ShieldOff } from 'lucide-react'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('vi-VN', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  })
-}
-
 function translateScope(scope: string): string {
   if (scope.includes('read')) return 'Xem hồ sơ sức khỏe đầy đủ'
   if (scope.includes('write')) return 'Chỉnh sửa hồ sơ sức khỏe'
@@ -46,39 +38,30 @@ interface ConsentRowProps {
 }
 
 function ConsentRow({ consent, onRevoke }: ConsentRowProps) {
-  const doctorLabel = consent.doctor_name ?? `Bác sĩ #${consent.doctor_id.slice(0, 8)}`
-  const scopeLabel = translateScope(consent.scope)
-  const isActive = consent.status === 'active'
+  const doctorLabel = `Bác sĩ #${consent.granted_to.slice(0, 8)}`
+  const scopeLabel = translateScope(consent.data_scope)
 
   return (
     <div className="flex flex-col gap-3 py-4 border-b border-border last:border-0 sm:flex-row sm:items-start sm:justify-between">
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2 flex-wrap">
           <p className="text-body-sm font-semibold text-text">{doctorLabel}</p>
-          <Badge variant={isActive ? 'active' : 'revoked'} size="sm" dot>
-            {isActive ? 'Đang hoạt động' : 'Đã thu hồi'}
+          <Badge variant="active" size="sm" dot>
+            Đang hoạt động
           </Badge>
         </div>
         <p className="text-caption text-text-muted mt-0.5">{scopeLabel}</p>
-        <p className="text-caption text-text-muted mt-0.5">
-          Được cấp: {formatDate(consent.granted_at)}
-          {consent.revoked_at && (
-            <> · Thu hồi: {formatDate(consent.revoked_at)}</>
-          )}
-        </p>
       </div>
 
-      {isActive && (
-        <div className="shrink-0">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => onRevoke(consent)}
-          >
-            Thu hồi quyền truy cập
-          </Button>
-        </div>
-      )}
+      <div className="shrink-0">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => onRevoke(consent)}
+        >
+          Thu hồi quyền truy cập
+        </Button>
+      </div>
     </div>
   )
 }
@@ -124,13 +107,8 @@ export default function ConsentsPage() {
     setRevokeError(null)
     try {
       await revokeConsent(patientId, revokeTarget.id)
-      setConsents((prev) =>
-        prev.map((c) =>
-          c.id === revokeTarget.id
-            ? { ...c, status: 'revoked', revoked_at: new Date().toISOString() }
-            : c,
-        ),
-      )
+      // Remove the revoked consent from list (DELETE returns { message: 'revoked' })
+      setConsents((prev) => prev.filter((c) => c.id !== revokeTarget.id))
       setRevokeTarget(null)
     } catch (err) {
       setRevokeError(err instanceof Error ? err.message : 'Không thể thu hồi quyền truy cập')

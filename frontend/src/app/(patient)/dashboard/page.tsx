@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
-import { Bot, Pill, ClipboardList, ChevronRight, Clock } from 'lucide-react'
+import { Bot, Pill, ClipboardList, ChevronRight } from 'lucide-react'
 import {
   PageLoading,
   ErrorState,
@@ -128,7 +128,7 @@ export default function PatientDashboardPage() {
 
     Promise.all([
       getLatestMetabolicScore(patientId),
-      getMedications(patientId, { status: 'active', limit: 3 }),
+      getMedications(patientId, { limit: 3 }),
       ...metricTypes.map((t) =>
         getMetrics(patientId, { metric_type: t, limit: 1 }).catch(() => ({
           items: [] as HealthMetric[],
@@ -137,12 +137,7 @@ export default function PatientDashboardPage() {
         })),
       ),
       getCarePlans(patientId).catch(() => [] as CarePlan[]),
-      getNotifications(patientId, { limit: 1 }).catch(() => ({
-        unread_count: 0,
-        items: [],
-        patient_id: patientId,
-        total: 0,
-      })),
+      getNotifications(patientId, { limit: 1 }).catch(() => [] as import('@/lib/api/patient').Notification[]),
       getLabs(patientId, { limit: 20 }).catch(() => ({
         items: [],
         patient_id: patientId,
@@ -156,7 +151,7 @@ export default function PatientDashboardPage() {
         const m1 = results[3] as { items: HealthMetric[] }
         const m2 = results[4] as { items: HealthMetric[] }
         const carePlansRaw = results[5] as CarePlan[]
-        const notificationsRaw = results[6] as { unread_count: number }
+        const notificationsRaw = results[6] as import('@/lib/api/patient').Notification[]
         const labsRaw = results[7] as { items: Array<{ status: string }> }
 
         const latestMetrics: HealthMetric[] = [
@@ -169,8 +164,8 @@ export default function PatientDashboardPage() {
           metabolicScore: score,
           medications: medsResp.items,
           metrics: latestMetrics,
-          carePlans: carePlansRaw.filter((p) => p.status === 'active'),
-          unreadCount: notificationsRaw.unread_count,
+          carePlans: carePlansRaw.filter((p) => p.status === 'ACTIVE'),
+          unreadCount: notificationsRaw.filter((n) => !n.is_read).length,
           hasPendingLabs: labsRaw.items.some((l) => l.status === 'pending_review'),
         })
       })
@@ -211,10 +206,7 @@ export default function PatientDashboardPage() {
   const { metabolicScore, medications, metrics, carePlans, hasPendingLabs } = data
   const todayStr = formatDate(new Date())
   const activePlan = carePlans[0] ?? null
-  const planCompleted = activePlan ? activePlan.items.filter((i) => i.completed).length : 0
-  const planTotal = activePlan ? activePlan.items.length : 0
-  const planProgress = planTotal > 0 ? Math.round((planCompleted / planTotal) * 100) : 0
-  const now = new Date()
+  // CarePlan.items[] removed — backend uses content:string, no task checklist
 
   return (
     <div className="p-4 lg:p-6 space-y-5 max-w-md mx-auto lg:max-w-2xl">
@@ -315,43 +307,21 @@ export default function PatientDashboardPage() {
               />
             ) : (
               <div className="space-y-3">
-                {medications.map((med) => {
-                  const isOverdue =
-                    med.next_dose_at != null && new Date(med.next_dose_at) < now
-                  return (
+                {medications.map((med) => (
                     <div
                       key={med.id}
-                      className={`flex items-start justify-between gap-3 rounded-lg p-3 ${
-                        isOverdue
-                          ? 'bg-amber-50 border border-amber-200'
-                          : 'bg-secondary-50'
-                      }`}
+                      className="flex items-start justify-between gap-3 rounded-lg p-3 bg-secondary-50"
                     >
                       <div className="min-w-0 flex-1">
                         <p className="text-body-sm font-medium text-text truncate">
                           {med.name}
                         </p>
-                        <p className="text-caption text-text-muted mt-0.5">{med.dosage}</p>
-                        {med.next_dose_at && (
-                          <div className="flex items-center gap-1 mt-1">
-                            <Clock className="size-3 text-text-muted shrink-0" aria-hidden="true" />
-                            <span className="text-caption text-text-muted">
-                              {new Date(med.next_dose_at).toLocaleTimeString('vi-VN', {
-                                hour: '2-digit',
-                                minute: '2-digit',
-                              })}
-                            </span>
-                          </div>
+                        {med.dose && (
+                          <p className="text-caption text-text-muted mt-0.5">{med.dose}</p>
                         )}
                       </div>
-                      {isOverdue && (
-                        <Badge variant="warning" size="sm">
-                          Quá hạn
-                        </Badge>
-                      )}
                     </div>
-                  )
-                })}
+                  ))}
                 <button
                   type="button"
                   onClick={() => router.push('/medications')}
@@ -385,26 +355,9 @@ export default function PatientDashboardPage() {
             ) : (
               <div className="space-y-3">
                 <p className="text-body-sm font-medium text-text">{activePlan.title}</p>
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-caption text-text-muted">
-                      {planCompleted}/{planTotal} mục đã hoàn thành
-                    </span>
-                    <span className="text-caption font-medium text-primary">
-                      {planProgress}%
-                    </span>
-                  </div>
-                  <div className="w-full bg-secondary-100 rounded-full h-2">
-                    <div
-                      className="bg-primary h-2 rounded-full transition-all"
-                      style={{ width: `${planProgress}%` }}
-                      role="progressbar"
-                      aria-valuenow={planProgress}
-                      aria-valuemin={0}
-                      aria-valuemax={100}
-                    />
-                  </div>
-                </div>
+                {activePlan.content && (
+                  <p className="text-body-xs text-text-muted line-clamp-2">{activePlan.content}</p>
+                )}
                 <button
                   type="button"
                   onClick={() => router.push('/care-plan')}

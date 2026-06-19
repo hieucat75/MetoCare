@@ -46,7 +46,7 @@ function AIResponsePanel({ response }: { response: AiExplainResponse }) {
           </span>
         </div>
         <p className="text-body-sm text-amber-900 leading-relaxed">
-          {response.explanation}
+          {response.plain_language_summary}
         </p>
         <p className="text-body-xs text-amber-700 italic border-t border-amber-200 pt-2">
           {response.disclaimer}

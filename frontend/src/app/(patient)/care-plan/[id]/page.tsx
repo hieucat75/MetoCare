@@ -2,12 +2,7 @@
 
 import * as React from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import {
-  ArrowLeft,
-  CheckCircle2,
-  Circle,
-  ClipboardList,
-} from 'lucide-react'
+import { ArrowLeft, CheckCircle2, ClipboardList } from 'lucide-react'
 import { useAuth } from '@/lib/auth/context'
 import { getCarePlans } from '@/lib/api/patient'
 import type { CarePlan } from '@/lib/api/patient'
@@ -17,15 +12,27 @@ import Button from '@/design-system/components/core/Button'
 import { PageLoading } from '@/design-system/components/core/LoadingState'
 import { ErrorState } from '@/design-system/components/core/ErrorState'
 import { Alert } from '@/design-system/components/core/Alert'
-import { cn } from '@/lib/utils'
 
+// Backend uses UPPERCASE statuses
 const STATUS_CONFIG: Record<
-  CarePlan['status'],
-  { label: string; variant: 'active' | 'approved' | 'default' }
+  string,
+  { label: string; variant: 'active' | 'approved' | 'pending_review' | 'default' }
 > = {
-  active: { label: 'Đang thực hiện', variant: 'active' },
-  completed: { label: 'Hoàn thành', variant: 'approved' },
-  paused: { label: 'Tạm dừng', variant: 'default' },
+  ACTIVE:         { label: 'Đang thực hiện',   variant: 'active' },
+  APPROVED:       { label: 'Đã phê duyệt',     variant: 'approved' },
+  PENDING_REVIEW: { label: 'Chờ phê duyệt',    variant: 'pending_review' },
+  DRAFT:          { label: 'Bản nháp',         variant: 'default' },
+  ARCHIVED:       { label: 'Lưu trữ',          variant: 'default' },
+  SUPERSEDED:     { label: 'Đã thay thế',      variant: 'default' },
+  REJECTED:       { label: 'Bị từ chối',       variant: 'default' },
+}
+
+function formatDate(iso: string): string {
+  return new Intl.DateTimeFormat('vi-VN', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(new Date(iso))
 }
 
 export default function CarePlanDetailPage() {
@@ -73,10 +80,7 @@ export default function CarePlanDetailPage() {
   if (error) return <ErrorState message={error} onRetry={load} />
   if (!plan) return null
 
-  const totalItems = plan.items.length
-  const completedItems = plan.items.filter((i) => i.completed).length
-  const progressPct = totalItems > 0 ? Math.round((completedItems / totalItems) * 100) : 0
-  const statusCfg = STATUS_CONFIG[plan.status]
+  const statusCfg = STATUS_CONFIG[plan.status] ?? { label: plan.status, variant: 'default' as const }
 
   return (
     <div className="max-w-lg mx-auto px-4 pb-8">
@@ -96,102 +100,45 @@ export default function CarePlanDetailPage() {
       {/* Title + status */}
       <div className="flex items-start justify-between mb-2">
         <h1 className="text-heading-lg font-bold text-text flex-1 mr-3">{plan.title}</h1>
-        <div className="flex flex-col items-end gap-1.5 shrink-0">
-          <Badge variant={statusCfg.variant}>{statusCfg.label}</Badge>
-          {plan.approval_status === 'pending_review' && (
-            <Badge variant="warning">Chờ bác sĩ duyệt</Badge>
-          )}
-        </div>
+        <Badge variant={statusCfg.variant}>{statusCfg.label}</Badge>
       </div>
 
       {/* Approval notice */}
-      {plan.approval_status === 'approved' && plan.approved_by && (
+      {plan.approved_at && (
         <div className="flex items-center gap-1.5 mb-4">
           <CheckCircle2 className="size-4 text-success shrink-0" aria-hidden="true" />
           <p className="text-body-sm text-success">
-            Đã được bác sĩ {plan.approved_by} phê duyệt
+            Đã phê duyệt {formatDate(plan.approved_at)}
           </p>
         </div>
       )}
 
-      {plan.approval_status === 'pending_review' && (
+      {plan.status === 'PENDING_REVIEW' && (
         <Alert variant="warning" className="mb-4">
           Kế hoạch này đang chờ bác sĩ phê duyệt trước khi thực hiện.
         </Alert>
       )}
 
-      {plan.description && (
-        <p className="text-body-md text-text-muted mb-4">{plan.description}</p>
-      )}
+      {/* Meta */}
+      <p className="text-body-sm text-text-muted mb-4">
+        Tạo: {formatDate(plan.created_at)}
+        {plan.ai_generated && <> &middot; <span className="text-amber-600">AI hỗ trợ</span></>}
+        {(plan.version ?? 1) > 1 && <> &middot; v{plan.version}</>}
+      </p>
 
-      {/* Doctor info */}
-      {plan.doctor_name && (
-        <p className="text-body-sm text-text-muted mb-4">
-          Bác sĩ lập kế hoạch: <span className="font-semibold text-text">{plan.doctor_name}</span>
-        </p>
-      )}
-
-      {/* Progress */}
-      {totalItems > 0 && (
-        <Card variant="flat" padding="sm" className="mb-4">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-label-md text-text-muted">Tiến độ</span>
-            <span className="text-label-md font-semibold text-text">
-              {completedItems}/{totalItems} mục • {progressPct}%
-            </span>
-          </div>
-          <div className="h-2 bg-secondary-100 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-primary rounded-full transition-all"
-              style={{ width: `${progressPct}%` }}
-              role="progressbar"
-              aria-valuenow={progressPct}
-              aria-valuemin={0}
-              aria-valuemax={100}
-            />
-          </div>
-        </Card>
-      )}
-
-      {/* Items */}
+      {/* Content */}
       <Card variant="default" padding="none">
         <CardHeader className="px-4 pt-4 pb-2">
           <div className="flex items-center gap-2">
             <ClipboardList className="size-4 text-text-muted" aria-hidden="true" />
-            <CardTitle className="text-body-md font-semibold">Danh sách mục tiêu</CardTitle>
+            <CardTitle className="text-body-md font-semibold">Nội dung kế hoạch</CardTitle>
           </div>
         </CardHeader>
         <CardContent className="px-4 pb-4">
-          {plan.items.length === 0 ? (
-            <p className="text-body-sm text-text-muted py-2">Chưa có mục tiêu nào.</p>
+          {plan.content ? (
+            <p className="text-body-sm text-text-muted whitespace-pre-line">{plan.content}</p>
           ) : (
-            <ul className="space-y-3">
-              {plan.items.map((item) => (
-                <li key={item.id} className="flex items-start gap-3">
-                  {item.completed ? (
-                    <CheckCircle2 className="size-5 text-success shrink-0 mt-0.5" aria-hidden="true" />
-                  ) : (
-                    <Circle className="size-5 text-secondary-300 shrink-0 mt-0.5" aria-hidden="true" />
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <p
-                      className={cn(
-                        'text-body-md',
-                        item.completed ? 'line-through text-text-muted' : 'text-text',
-                      )}
-                    >
-                      {item.title}
-                    </p>
-                    {item.description && (
-                      <p className="text-body-sm text-text-muted mt-0.5">{item.description}</p>
-                    )}
-                    {item.frequency && (
-                      <p className="text-caption text-text-subtle mt-0.5">{item.frequency}</p>
-                    )}
-                  </div>
-                </li>
-              ))}
-            </ul>
+            <p className="text-body-sm text-text-subtle italic">Chưa có nội dung kế hoạch.</p>
           )}
         </CardContent>
       </Card>

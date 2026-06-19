@@ -15,7 +15,6 @@ import {
   Tabs,
   TabsContent,
   Badge,
-  Alert,
 } from '@/design-system'
 import {
   PatientSummaryHeader,
