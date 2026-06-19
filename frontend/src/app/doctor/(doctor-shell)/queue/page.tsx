@@ -85,6 +85,7 @@ export default function DoctorQueuePage() {
 
   const [submitting, setSubmitting] = React.useState(false)
   const [successAlert, setSuccessAlert] = React.useState<string | null>(null)
+  const [decisionError, setDecisionError] = React.useState<string | null>(null)
 
   const loadQueue = React.useCallback(async () => {
     setLoading(true)
@@ -136,8 +137,7 @@ export default function DoctorQueuePage() {
           `Đã gửi quyết định cho bệnh nhân ${updated.patient_name ?? 'Bệnh nhân'}.`,
         )
       } catch {
-        // Let ReviewDecisionPanel handle its own UI; surface via alert
-        setSuccessAlert(null)
+        setDecisionError('Gửi quyết định thất bại. Vui lòng kiểm tra kết nối và thử lại.')
       } finally {
         setSubmitting(false)
       }
@@ -262,6 +262,18 @@ export default function DoctorQueuePage() {
                   onDismiss={() => setSuccessAlert(null)}
                 >
                   {successAlert}
+                </Alert>
+              )}
+
+              {/* Decision error alert */}
+              {decisionError && (
+                <Alert
+                  variant="danger"
+                  title="Gửi thất bại"
+                  dismissible
+                  onDismiss={() => setDecisionError(null)}
+                >
+                  {decisionError}
                 </Alert>
               )}
 
