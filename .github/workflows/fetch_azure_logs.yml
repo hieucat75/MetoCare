@@ -36,6 +36,7 @@ jobs:
           echo "=== Unzipping ==="
           mkdir -p /tmp/app_logs_dir
           unzip -o /tmp/app_logs.zip -d /tmp/app_logs_dir
+          chmod -R a+r /tmp/app_logs_dir 2>/dev/null || true
 
           echo ""
           echo "=== All log files found ==="
