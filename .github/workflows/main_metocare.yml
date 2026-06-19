@@ -1,5 +1,5 @@
 # MetoCare — Azure App Service Deployment (Docker/GHCR path)
-# Build Docker image → push GHCR → configure App Service to pull container.
+# Build Docker image → push GHCR → run Alembic migrations → configure App Service.
 
 name: Build and deploy Python app to Azure Web App - MetoCare
 
@@ -61,9 +61,59 @@ jobs:
           echo "Image tags: ${{ steps.meta.outputs.tags }}"
           echo "Digest: ${{ steps.build.outputs.digest }}"
 
-  deploy:
+  run-migrations:
     runs-on: ubuntu-latest
     needs: build-and-push
+    # Only run migrations when MCP_DATABASE_URL secret is set (postgres prod mode)
+    # Skip if running against SQLite (legacy dev path).
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install backend dependencies
+        run: |
+          cd backend
+          pip install --quiet -r requirements.txt
+
+      - name: Check database URL type
+        id: dbcheck
+        run: |
+          DB_URL="${{ secrets.MCP_DATABASE_URL }}"
+          if [ -z "$DB_URL" ]; then
+            echo "MCP_DATABASE_URL secret not set — skipping migrations (SQLite dev mode)"
+            echo "skip=true" >> $GITHUB_OUTPUT
+          elif echo "$DB_URL" | grep -q "sqlite"; then
+            echo "SQLite detected — skipping Alembic migrations (SQLite uses create_all)"
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "PostgreSQL detected — running Alembic migrations"
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run Alembic migrations
+        if: steps.dbcheck.outputs.skip == 'false'
+        env:
+          MCP_DATABASE_URL: ${{ secrets.MCP_DATABASE_URL }}
+          MCP_SECRET_KEY: ${{ secrets.MCP_SECRET_KEY }}
+          MCP_ENCRYPTION_KEYS: ${{ secrets.MCP_ENCRYPTION_KEYS }}
+          MCP_ENV: prod
+        run: |
+          cd backend
+          echo "Running: alembic upgrade head"
+          alembic upgrade head
+          echo "✅ Alembic migrations complete"
+          echo ""
+          echo "Migration history:"
+          alembic history --verbose 2>/dev/null | tail -30 || true
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: [build-and-push, run-migrations]
     permissions:
       id-token: write
       contents: read
@@ -95,21 +145,51 @@ jobs:
             --container-registry-password "${{ secrets.GHCR_PAT }}" \
             --output none
 
-          # App settings — keep SQLite for dev, no Oryx needed
-          az webapp config appsettings set \
-            --name ${{ env.AZURE_WEBAPP_NAME }} \
-            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-            --settings \
-              MCP_ENV=dev \
-              MCP_DEBUG=false \
-              MCP_AI_MODE=mock \
-              MCP_OCR_MODE=mock \
-              MCP_STORAGE_MODE=local \
-              MCP_DATABASE_URL="sqlite:////app/data/mcp_dev.sqlite3" \
-              WEBSITES_PORT=8000 \
-              WEBSITES_ENABLE_APP_SERVICE_STORAGE=true \
-              WEBSITES_CONTAINER_START_TIME_LIMIT=300 \
-            --output none
+          # Determine if using PostgreSQL (prod) or SQLite (dev fallback)
+          DB_URL="${{ secrets.MCP_DATABASE_URL }}"
+          if [ -z "$DB_URL" ] || echo "$DB_URL" | grep -q "sqlite"; then
+            # Dev/legacy mode: SQLite with persistent storage
+            echo "Configuring App Service for SQLite (dev mode)"
+            az webapp config appsettings set \
+              --name ${{ env.AZURE_WEBAPP_NAME }} \
+              --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+              --settings \
+                MCP_ENV=dev \
+                MCP_DEBUG=false \
+                MCP_AI_MODE=mock \
+                MCP_OCR_MODE=mock \
+                MCP_STORAGE_MODE=local \
+                MCP_DATABASE_URL="sqlite:////app/data/mcp_dev.sqlite3" \
+                WEBSITES_PORT=8000 \
+                WEBSITES_ENABLE_APP_SERVICE_STORAGE=true \
+                WEBSITES_CONTAINER_START_TIME_LIMIT=300 \
+              --output none
+          else
+            # Production mode: PostgreSQL + Alembic managed schema
+            echo "Configuring App Service for PostgreSQL (prod mode)"
+            az webapp config appsettings set \
+              --name ${{ env.AZURE_WEBAPP_NAME }} \
+              --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+              --settings \
+                MCP_ENV=prod \
+                MCP_DEBUG=false \
+                MCP_AI_MODE=mock \
+                MCP_OCR_MODE=mock \
+                MCP_STORAGE_MODE=local \
+                MCP_DATABASE_URL="${{ secrets.MCP_DATABASE_URL }}" \
+                MCP_SECRET_KEY="${{ secrets.MCP_SECRET_KEY }}" \
+                MCP_ENCRYPTION_KEYS="${{ secrets.MCP_ENCRYPTION_KEYS }}" \
+                WEBSITES_PORT=8000 \
+                WEBSITES_CONTAINER_START_TIME_LIMIT=300 \
+              --output none
+            # Remove persistent storage setting (not needed with PostgreSQL)
+            az webapp config appsettings delete \
+              --name ${{ env.AZURE_WEBAPP_NAME }} \
+              --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+              --setting-names WEBSITES_ENABLE_APP_SERVICE_STORAGE \
+              --output none 2>/dev/null || true
+            echo "✅ PostgreSQL production config applied"
+          fi
 
           # Clear any old startup-file — container CMD handles startup
           az webapp config set \

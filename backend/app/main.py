@@ -39,8 +39,11 @@ def create_app() -> FastAPI:
         settings.validate_required_env_vars()
 
         # SQLite dev/test convenience: create tables directly so the app runs
-        # with zero setup. PostgreSQL/TimescaleDB MUST use Alembic migrations
-        # (create_all would make plain tables without the hypertable/CAGG).
+        # with zero setup. PostgreSQL MUST use Alembic migrations — create_all
+        # is intentionally skipped in prod (schema managed by `alembic upgrade head`
+        # which runs in CI/CD before container restart).
+        # NOTE: create_all() is never called in production (is_prod=True) or when
+        # MCP_DATABASE_URL points to PostgreSQL. This block is SQLite-only.
         if not settings.is_prod and settings.database_url.startswith("sqlite"):
             # P1-FIX-04: Gunicorn multi-worker race condition — multiple workers
             # may call create_all simultaneously on the same SQLite file.
@@ -49,6 +52,11 @@ def create_app() -> FastAPI:
                 create_all()
             except Exception as exc:  # noqa: BLE001
                 logger.warning("create_all skipped (tables may already exist): %s", exc)
+        elif settings.is_prod:
+            # Production path: schema is managed by Alembic migrations.
+            # create_all() is NOT called here. CI/CD runs `alembic upgrade head`
+            # before container restart to ensure schema is up-to-date.
+            logger.info("Production mode: skipping create_all() — Alembic manages schema.")
         # Start the async OCR worker (built-in asyncio queue; no Celery/Redis).
         worker = None
         if settings.ocr_worker_enabled:

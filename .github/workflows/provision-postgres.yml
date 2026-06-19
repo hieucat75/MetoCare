@@ -1,0 +1,105 @@
+# provision-postgres.yml — One-shot workflow to create Azure PostgreSQL Flexible Server
+# Run ONCE manually via: gh workflow run provision-postgres.yml
+# After success, set MCP_DATABASE_URL secret and delete this workflow (or leave for docs).
+
+name: Provision Azure PostgreSQL (one-shot)
+
+on:
+  workflow_dispatch:
+    inputs:
+      admin_password:
+        description: 'PostgreSQL admin password (min 8 chars, mixed case + number + symbol)'
+        required: true
+        type: string
+
+jobs:
+  provision:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_85913B813978481E9F2F8C1BBB437F62 }}
+          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_82802F503FBB4981BB11E7836D0FDE28 }}
+          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_42799659C6C44C1D8151F9153AD06872 }}
+
+      - name: Create PostgreSQL Flexible Server
+        run: |
+          echo "Creating PostgreSQL Flexible Server: metocare-pg-dev"
+          az postgres flexible-server create \
+            --name metocare-pg-dev \
+            --resource-group rg-metocare-dev \
+            --location malaysiawest \
+            --admin-user mcpadmin \
+            --admin-password "${{ github.event.inputs.admin_password }}" \
+            --sku-name Standard_B1ms \
+            --tier Burstable \
+            --version 16 \
+            --storage-size 32 \
+            --database-name metocare \
+            --public-access 0.0.0.0 \
+            --yes \
+            --output table || {
+              echo "Server may already exist, checking..."
+              az postgres flexible-server show \
+                --name metocare-pg-dev \
+                --resource-group rg-metocare-dev \
+                --output table
+            }
+
+      - name: Get server FQDN and print connection string
+        run: |
+          FQDN=$(az postgres flexible-server show \
+            --name metocare-pg-dev \
+            --resource-group rg-metocare-dev \
+            --query "fullyQualifiedDomainName" \
+            --output tsv)
+          echo "PostgreSQL FQDN: $FQDN"
+          echo ""
+          echo "=== CONNECTION STRING (set as MCP_DATABASE_URL secret) ==="
+          echo "postgresql+psycopg2://mcpadmin:<PASSWORD>@${FQDN}:5432/metocare?sslmode=require"
+          echo "========================================================="
+          echo "Run: gh secret set MCP_DATABASE_URL --repo hieucat75/MetoCare --body \"postgresql+psycopg2://mcpadmin:<PASSWORD>@${FQDN}:5432/metocare?sslmode=require\""
+
+      - name: Add firewall rule for App Service (allow all Azure services)
+        run: |
+          # Allow all Azure internal IPs (0.0.0.0 range allows Azure-internal traffic)
+          az postgres flexible-server firewall-rule create \
+            --name metocare-pg-dev \
+            --resource-group rg-metocare-dev \
+            --rule-name AllowAzureServices \
+            --start-ip-address 0.0.0.0 \
+            --end-ip-address 0.0.0.0 \
+            --output none || echo "Firewall rule may already exist"
+          echo "✅ Firewall rule set: allow Azure services"
+
+      - name: Get App Service outbound IPs and add firewall rules
+        run: |
+          # Get outbound IPs from App Service and add them to PostgreSQL firewall
+          OUTBOUND_IPS=$(az webapp show \
+            --name MetoCare \
+            --resource-group rg-metocare-dev \
+            --query "outboundIpAddresses" \
+            --output tsv 2>/dev/null || echo "")
+          if [ -n "$OUTBOUND_IPS" ]; then
+            echo "App Service outbound IPs: $OUTBOUND_IPS"
+            IFS=',' read -ra IPS <<< "$OUTBOUND_IPS"
+            for IP in "${IPS[@]}"; do
+              IP=$(echo $IP | tr -d ' ')
+              echo "Adding firewall rule for $IP"
+              az postgres flexible-server firewall-rule create \
+                --name metocare-pg-dev \
+                --resource-group rg-metocare-dev \
+                --rule-name "AppService-$IP" \
+                --start-ip-address "$IP" \
+                --end-ip-address "$IP" \
+                --output none 2>/dev/null || echo "Rule for $IP may already exist"
+            done
+            echo "✅ App Service outbound IPs added to firewall"
+          else
+            echo "Warning: Could not fetch App Service outbound IPs"
+          fi

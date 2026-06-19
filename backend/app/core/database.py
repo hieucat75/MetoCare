@@ -38,7 +38,28 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, futu
 
 
 def create_all() -> None:
-    """Create tables for dev/test. Production uses Alembic migrations (P1)."""
+    """Create tables for dev/test. Production uses Alembic migrations.
+
+    WARNING: This function must NOT be called in production environments.
+    Production schema is managed exclusively by Alembic (`alembic upgrade head`
+    runs in CI/CD before container restart). Calling create_all() in production
+    would bypass migrations, miss TimescaleDB hypertable setup, and risk
+    schema drift. This function is safe for SQLite dev/test only.
+    """
+    import warnings
+
+    from .config import get_settings as _get_settings
+
+    if _get_settings().is_prod:
+        warnings.warn(
+            "create_all() called in production mode! This bypasses Alembic migrations. "
+            "In production, schema is managed by 'alembic upgrade head' in CI/CD. "
+            "Skipping create_all() to avoid schema drift.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return
+
     # Import models so they register with Base.metadata before create_all.
     from app import models  # noqa: F401
 
