@@ -191,11 +191,12 @@ jobs:
             echo "✅ PostgreSQL production config applied"
           fi
 
-          # Clear startup-file override — startup.sh in repo root is used
+          # Clear startup-file — Dockerfile CMD handles startup directly.
+          # Setting startup-file to empty string ensures Azure does not override CMD.
           az webapp config set \
             --name ${{ env.AZURE_WEBAPP_NAME }} \
             --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-            --startup-file 'startup.sh' \
+            --startup-file '' \
             --output none
 
           echo "✅ Container config applied."
