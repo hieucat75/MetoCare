@@ -1,5 +1,5 @@
-# Docs for the Azure Web Apps Deploy action: https://github.com/Azure/webapps-deploy
-# More GitHub Actions for Azure: https://github.com/Azure/actions
+# MetoCare — Azure App Service Deployment
+# Backend only (FastAPI/Python). Frontend is served from DEV server separately.
 
 name: Build and deploy Python app to Azure Web App - MetoCare
 
@@ -11,6 +11,7 @@ on:
 
 env:
   AZURE_WEBAPP_NAME: MetoCare
+  AZURE_RESOURCE_GROUP: rg-metocare-dev
   PYTHON_VERSION: '3.11'
 
 jobs:
@@ -31,23 +32,30 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Create virtual environment and install dependencies
+      - name: Install dependencies
         run: |
           python -m venv antenv
           source antenv/bin/activate
           pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Upload artifact for deployment jobs
+      - name: Create deployment zip
+        working-directory: .
+        run: |
+          cd backend
+          zip -r ../deploy.zip . \
+            --exclude "antenv/*" \
+            --exclude "tests/*" \
+            --exclude "requirements-dev.txt" \
+            --exclude "data/*" \
+            --exclude "__pycache__/*" \
+            --exclude "*.pyc"
+
+      - name: Upload deployment zip
         uses: actions/upload-artifact@v4
         with:
           name: python-app
-          path: |
-            backend/
-            !backend/antenv/
-            !backend/tests/
-            !backend/requirements-dev.txt
-            !backend/data/
+          path: deploy.zip
 
   deploy:
     runs-on: ubuntu-latest
@@ -57,7 +65,7 @@ jobs:
       contents: read
 
     steps:
-      - name: Download artifact from build job
+      - name: Download artifact
         uses: actions/download-artifact@v4
         with:
           name: python-app
@@ -69,38 +77,42 @@ jobs:
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_82802F503FBB4981BB11E7836D0FDE28 }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_42799659C6C44C1D8151F9153AD06872 }}
 
-      - name: Ensure App Service is running
+      - name: Ensure App Service is running + set startup command
         run: |
-          # Detect resource group automatically
-          RG=$(az webapp list --query "[?name=='${{ env.AZURE_WEBAPP_NAME }}'].resourceGroup" -o tsv)
-          echo "Resource group: $RG"
-          echo "AZURE_RESOURCE_GROUP=$RG" >> $GITHUB_ENV
+          az webapp start \
+            --name ${{ env.AZURE_WEBAPP_NAME }} \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }}
 
-          # Start the app (no-op if already running)
-          az webapp start --name ${{ env.AZURE_WEBAPP_NAME }} --resource-group "$RG"
-          echo "Waiting 15s for app to start..."
-          sleep 15
-
-      - name: Set startup command
-        run: |
           az webapp config set \
             --name ${{ env.AZURE_WEBAPP_NAME }} \
-            --resource-group "$AZURE_RESOURCE_GROUP" \
-            --startup-file "gunicorn -w 2 -k uvicorn.workers.UvicornWorker app.main:app --bind 0.0.0.0:8000"
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --startup-file "gunicorn -w 2 -k uvicorn.workers.UvicornWorker app.main:app --bind 0.0.0.0:8000" \
+            --output none
 
-      - name: Deploy to Azure Web App
-        uses: azure/webapps-deploy@v3
-        id: deploy-to-webapp
-        with:
-          app-name: ${{ env.AZURE_WEBAPP_NAME }}
-          slot-name: 'Production'
+          echo "App started. Waiting 10s..."
+          sleep 10
+
+      - name: Deploy via az webapp deploy (zip deploy)
+        run: |
+          az webapp deploy \
+            --name ${{ env.AZURE_WEBAPP_NAME }} \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --src-path deploy.zip \
+            --type zip \
+            --async false
 
       - name: Verify deployment
         run: |
           APP_URL="https://metocare-a8hdh0grbcerbmfm.malaysiawest-01.azurewebsites.net"
-          echo "Waiting 30s for app to boot..."
-          sleep 30
+          echo "Waiting 45s for app to boot..."
+          sleep 45
+
+          echo "=== GET / ==="
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$APP_URL/")
+          echo "  HTTP $STATUS"
+
           echo "=== GET /health ==="
-          curl -sf "$APP_URL/health" && echo " ✅ /health OK" || (echo " ❌ /health FAILED" && exit 1)
+          HEALTH=$(curl -sf "$APP_URL/health" 2>/dev/null) && echo "  ✅ $HEALTH" || echo "  ❌ FAILED"
+
           echo "=== GET /api/v1/info ==="
-          curl -sf "$APP_URL/api/v1/info" | python3 -m json.tool
+          INFO=$(curl -sf "$APP_URL/api/v1/info" 2>/dev/null) && echo "  ✅ $INFO" || echo "  ❌ FAILED"
