@@ -1,0 +1,73 @@
+# One-shot diagnostic: fetch Azure App Service startup logs and print them.
+# Trigger manually via workflow_dispatch only.
+
+name: Fetch Azure App Startup Logs
+
+on:
+  workflow_dispatch:
+
+env:
+  AZURE_WEBAPP_NAME: MetoCare
+  AZURE_RESOURCE_GROUP: rg-metocare-dev
+
+jobs:
+  fetch-logs:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_85913B813978481E9F2F8C1BBB437F62 }}
+          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_82802F503FBB4981BB11E7836D0FDE28 }}
+          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_42799659C6C44C1D8151F9153AD06872 }}
+
+      - name: Download and print startup failure log
+        run: |
+          echo "=== Downloading App Service logs ==="
+          az webapp log download \
+            --name ${{ env.AZURE_WEBAPP_NAME }} \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --log-file /tmp/app_logs.zip
+
+          echo "=== Unzipping ==="
+          mkdir -p /tmp/app_logs_dir
+          unzip -o /tmp/app_logs.zip -d /tmp/app_logs_dir
+
+          echo ""
+          echo "=== All log files found ==="
+          find /tmp/app_logs_dir -type f | sort
+
+          echo ""
+          echo "=== StartupLogs (failure logs) ==="
+          find /tmp/app_logs_dir -path '*/StartupLogs/*.log' -type f | sort | while read f; do
+            echo ""
+            echo "--- FILE: $f ---"
+            cat "$f"
+          done
+
+          echo ""
+          echo "=== Docker / container logs ==="
+          find /tmp/app_logs_dir -name '*docker*' -o -name '*default_docker*' | sort | while read f; do
+            echo ""
+            echo "--- FILE: $f ---"
+            tail -200 "$f"
+          done
+
+          echo ""
+          echo "=== All .log files (last 100 lines each) ==="
+          find /tmp/app_logs_dir -name '*.log' -type f | sort | while read f; do
+            echo ""
+            echo "--- FILE: $f ---"
+            tail -100 "$f"
+          done
+
+      - name: Fetch live log stream (30s)
+        run: |
+          echo "=== Live log tail (30s) ==="
+          timeout 30 az webapp log tail \
+            --name ${{ env.AZURE_WEBAPP_NAME }} \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} 2>&1 || true
