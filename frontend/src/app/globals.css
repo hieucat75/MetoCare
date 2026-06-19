@@ -1,0 +1,168 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Primary */
+  --color-primary: #1b4fd8;
+  --color-primary-hover: #1540b8;
+  --color-primary-light: #eff4ff;
+  --color-primary-foreground: #ffffff;
+  --color-primary-50: #eff4ff;
+  --color-primary-100: #d9e5fe;
+  --color-primary-200: #b3cbfd;
+  --color-primary-300: #7faafb;
+  --color-primary-400: #4c84f8;
+  --color-primary-500: #1b4fd8;
+  --color-primary-600: #1540b8;
+  --color-primary-700: #1032a0;
+  --color-primary-800: #0d2882;
+  --color-primary-900: #091c6b;
+  --color-primary-950: #050d3d;
+
+  /* Secondary */
+  --color-secondary: #475569;
+  --color-secondary-hover: #334155;
+  --color-secondary-light: #f1f5f9;
+  --color-secondary-foreground: #ffffff;
+
+  /* Accent */
+  --color-accent: #0891b2;
+  --color-accent-light: #e0f2fe;
+  --color-accent-foreground: #ffffff;
+
+  /* Semantic */
+  --color-success: #16a34a;
+  --color-success-light: #dcfce7;
+  --color-success-border: #86efac;
+  --color-success-foreground: #ffffff;
+
+  --color-warning: #d97706;
+  --color-warning-light: #fef3c7;
+  --color-warning-border: #fcd34d;
+  --color-warning-foreground: #ffffff;
+
+  --color-danger: #dc2626;
+  --color-danger-light: #fee2e2;
+  --color-danger-border: #fca5a5;
+  --color-danger-foreground: #ffffff;
+
+  --color-info: #2563eb;
+  --color-info-light: #dbeafe;
+  --color-info-border: #93c5fd;
+  --color-info-foreground: #ffffff;
+
+  /* Surface */
+  --color-background: #f8fafc;
+  --color-surface: #ffffff;
+  --color-border: #e2e8f0;
+
+  /* Text */
+  --color-text: #0f172a;
+  --color-text-muted: #64748b;
+  --color-text-subtle: #94a3b8;
+  --color-text-inverse: #ffffff;
+  --color-text-disabled: #cbd5e1;
+
+  /* Clinical status — pending review */
+  --clinical-pending-review: #d97706;
+  --clinical-pending-review-light: #fef3c7;
+  --clinical-pending-review-border: #fcd34d;
+
+  /* Clinical status — approved */
+  --clinical-approved: #16a34a;
+  --clinical-approved-light: #dcfce7;
+  --clinical-approved-border: #86efac;
+
+  /* Clinical status — rejected */
+  --clinical-rejected: #dc2626;
+  --clinical-rejected-light: #fee2e2;
+  --clinical-rejected-border: #fca5a5;
+
+  /* Clinical status — request info */
+  --clinical-request-info: #2563eb;
+  --clinical-request-info-light: #dbeafe;
+  --clinical-request-info-border: #93c5fd;
+
+  /* Clinical status — active */
+  --clinical-active: #16a34a;
+  --clinical-active-light: #dcfce7;
+  --clinical-active-border: #86efac;
+
+  /* Clinical status — revoked */
+  --clinical-revoked: #6b7280;
+  --clinical-revoked-light: #f3f4f6;
+  --clinical-revoked-border: #d1d5db;
+
+  /* Risk levels — high */
+  --clinical-high-risk: #dc2626;
+  --clinical-high-risk-light: #fee2e2;
+  --clinical-high-risk-border: #fca5a5;
+
+  /* Risk levels — medium */
+  --clinical-medium-risk: #d97706;
+  --clinical-medium-risk-light: #fef3c7;
+  --clinical-medium-risk-border: #fcd34d;
+
+  /* Risk levels — low */
+  --clinical-low-risk: #16a34a;
+  --clinical-low-risk-light: #dcfce7;
+  --clinical-low-risk-border: #86efac;
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    @apply bg-background text-text font-sans;
+  }
+
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    @apply font-sans font-semibold tracking-tight text-text;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+    border-radius: 0.25rem;
+  }
+}
+
+@layer utilities {
+  /* Hide scrollbar cross-browser */
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Balanced text wrapping */
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  /* iOS notch / home-indicator safe area padding for fixed bottom nav */
+  .safe-area-pb {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+}
