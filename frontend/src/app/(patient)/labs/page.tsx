@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { Upload, Bot, Stethoscope, FlaskConical } from 'lucide-react'
+import { Bot, Stethoscope, FlaskConical, Plus } from 'lucide-react'
 import {
   Alert,
   Badge,
@@ -14,14 +14,17 @@ import {
   Spinner,
   Skeleton,
   SkeletonText,
+  Modal,
+  FormField,
+  Input,
+  Select,
 } from '@/design-system'
 import { useAuth } from '@/lib/auth/context'
 import {
   getLabs,
-  uploadLab,
   type LabResult,
-  type LabStatus,
 } from '@/lib/api/patient'
+import { api } from '@/lib/api/client'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -39,7 +42,6 @@ function formatDate(iso: string): string {
 
 type BadgeVariant = 'pending_review' | 'approved' | 'rejected' | 'request_info'
 
-// Backend status values: 'uploaded' maps to pending_review for display
 function getLabStatusConfig(status: string): { variant: BadgeVariant; label: string } {
   const map: Record<string, { variant: BadgeVariant; label: string }> = {
     pending_review: { variant: 'pending_review', label: 'Chờ duyệt' },
@@ -53,59 +55,37 @@ function getLabStatusConfig(status: string): { variant: BadgeVariant; label: str
 
 // ── Lab result card ────────────────────────────────────────────────────────────
 
-function LabResultCard({
-  lab,
-  index,
-}: {
-  lab: LabResult
-  index: number
-}) {
+function LabResultCard({ lab, index }: { lab: LabResult; index: number }) {
   const { variant, label } = getLabStatusConfig(lab.status)
   const displayName = lab.file_name ?? `Xét nghiệm ${index + 1}`
 
   return (
     <Card variant="elevated" padding="none">
       <CardContent className="p-4 space-y-3">
-        {/* Header row */}
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-2 min-w-0">
-            <FlaskConical
-              className="size-4 shrink-0 text-text-muted"
-              aria-hidden="true"
-            />
-            <span className="text-body-sm font-medium text-text truncate">
-              {displayName}
-            </span>
+            <FlaskConical className="size-4 shrink-0 text-text-muted" aria-hidden="true" />
+            <span className="text-body-sm font-medium text-text truncate">{displayName}</span>
           </div>
-          <Badge variant={variant} dot size="sm">
-            {label}
-          </Badge>
+          <Badge variant={variant} dot size="sm">{label}</Badge>
         </div>
 
-        {/* Upload date */}
         <p className="text-body-xs text-text-muted">
           Tải lên: {formatDate(lab.uploaded_at ?? lab.created_at ?? new Date().toISOString())}
         </p>
 
-        {/* Pending spinner */}
         {(lab.status === 'pending_review' || lab.status === 'uploaded') && (
           <div className="flex items-center gap-2 text-body-xs text-amber-700">
             <Spinner size="sm" color="muted" />
-            <span>Chờ xử lý</span>
+            <span>Chờ bác sĩ xem xét</span>
           </div>
         )}
 
-        {/* AI explanation panel */}
         {lab.status === 'approved' && lab.ai_explanation && (
           <div className="rounded-md bg-amber-50 border border-amber-200 p-3 space-y-2">
             <div className="flex items-center gap-2">
-              <Bot
-                className="size-4 shrink-0 text-amber-600"
-                aria-hidden="true"
-              />
-              <span className="text-body-sm font-semibold text-amber-800">
-                Giải thích từ AI
-              </span>
+              <Bot className="size-4 shrink-0 text-amber-600" aria-hidden="true" />
+              <span className="text-body-sm font-semibold text-amber-800">Giải thích từ AI</span>
             </div>
             <p className="text-body-sm text-amber-900">{lab.ai_explanation}</p>
             <p className="text-body-xs text-amber-700 italic">
@@ -114,20 +94,11 @@ function LabResultCard({
           </div>
         )}
 
-        {/* Doctor notes panel */}
         {lab.doctor_notes && lab.status === 'approved' && (
           <div className="rounded-md bg-green-50 border border-green-200 p-3 space-y-2">
             <div className="flex items-center gap-2">
-              <Stethoscope
-                className="size-4 shrink-0 text-green-700"
-                aria-hidden="true"
-              />
-              <span className="text-body-sm font-semibold text-green-800">
-                Ghi chú bác sĩ
-              </span>
-              <span className="ml-auto text-body-xs text-green-700">
-                Đã duyệt bởi bác sĩ
-              </span>
+              <Stethoscope className="size-4 shrink-0 text-green-700" aria-hidden="true" />
+              <span className="text-body-sm font-semibold text-green-800">Ghi chú bác sĩ</span>
             </div>
             <p className="text-body-sm text-green-900">{lab.doctor_notes}</p>
           </div>
@@ -158,6 +129,134 @@ function LabsSkeleton() {
   )
 }
 
+// ── Add Lab Modal — simple form (backend accepts JSON, no binary upload in pilot) ──
+
+const FILE_TYPE_OPTIONS = [
+  { value: 'application/pdf', label: 'PDF' },
+  { value: 'image/jpeg', label: 'Ảnh JPEG' },
+  { value: 'image/png', label: 'Ảnh PNG' },
+  { value: 'other', label: 'Khác' },
+]
+
+interface AddLabModalProps {
+  open: boolean
+  onClose: () => void
+  onSuccess: (lab: LabResult) => void
+  patientId: string
+}
+
+function AddLabModal({ open, onClose, onSuccess, patientId }: AddLabModalProps) {
+  const [labName, setLabName] = React.useState('')
+  const [fileType, setFileType] = React.useState('application/pdf')
+  const [note, setNote] = React.useState('')
+  const [submitting, setSubmitting] = React.useState(false)
+  const [err, setErr] = React.useState<string | null>(null)
+
+  const reset = () => {
+    setLabName('')
+    setFileType('application/pdf')
+    setNote('')
+    setErr(null)
+  }
+
+  const handleClose = () => {
+    reset()
+    onClose()
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!labName.trim()) {
+      setErr('Vui lòng nhập tên xét nghiệm')
+      return
+    }
+    setSubmitting(true)
+    setErr(null)
+    try {
+      const storageKey = `pilot/manual/${Date.now()}_${labName.trim().replace(/\s+/g, '_')}`
+      const result = await api.post<LabResult>(`/patients/${patientId}/lab-documents`, {
+        storage_key: storageKey,
+        file_type: fileType,
+        lab_name: labName.trim(),
+        ...(note.trim() ? { note: note.trim() } : {}),
+      })
+      // Merge display-only fields absent from backend response
+      onSuccess({
+        ...result,
+        file_name: labName.trim(),
+        uploaded_at: new Date().toISOString(),
+      })
+      reset()
+      onClose()
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : 'Gửi thất bại. Vui lòng thử lại.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <Modal
+      open={open}
+      onOpenChange={(o) => !o && handleClose()}
+      title="Thêm hồ sơ xét nghiệm"
+      footer={
+        <>
+          <Button variant="outline" size="sm" onClick={handleClose} disabled={submitting}>
+            Hủy
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            type="submit"
+            form="add-lab-form"
+            loading={submitting}
+          >
+            Gửi
+          </Button>
+        </>
+      }
+    >
+      <form id="add-lab-form" onSubmit={handleSubmit} className="space-y-4">
+        {err && <Alert variant="danger" title={err} />}
+
+        <Alert variant="info" title="Lưu ý">
+          Trong phiên bản pilot, bác sĩ sẽ nhận hồ sơ và liên hệ bạn để xác nhận tài liệu.
+          Tính năng upload trực tiếp sẽ có trong phiên bản tiếp theo.
+        </Alert>
+
+        <FormField label="Tên xét nghiệm" required>
+          <Input
+            value={labName}
+            onChange={(e) => setLabName(e.target.value)}
+            placeholder="VD: Xét nghiệm máu tổng quát"
+            fullWidth
+            required
+          />
+        </FormField>
+
+        <FormField label="Loại tài liệu">
+          <Select
+            value={fileType}
+            onValueChange={setFileType}
+            options={FILE_TYPE_OPTIONS}
+            fullWidth
+          />
+        </FormField>
+
+        <FormField label="Ghi chú (tuỳ chọn)">
+          <Input
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="Thông tin thêm cho bác sĩ"
+            fullWidth
+          />
+        </FormField>
+      </form>
+    </Modal>
+  )
+}
+
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 export default function LabsPage() {
@@ -167,8 +266,8 @@ export default function LabsPage() {
   const [labs, setLabs] = React.useState<LabResult[]>([])
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
+  const [modalOpen, setModalOpen] = React.useState(false)
   const [successMsg, setSuccessMsg] = React.useState<string | null>(null)
-  const [uploading, setUploading] = React.useState(false)
 
   const fetchLabs = React.useCallback(async () => {
     if (!patientId) return
@@ -188,25 +287,6 @@ export default function LabsPage() {
     fetchLabs()
   }, [fetchLabs])
 
-  async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file || !patientId) return
-
-    setUploading(true)
-    setSuccessMsg(null)
-    try {
-      const newLab = await uploadLab(patientId, file)
-      setLabs((prev) => [newLab, ...prev])
-      setSuccessMsg(`Đã tải lên "${file.name}" thành công. Đang chờ bác sĩ xét duyệt.`)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Tải lên thất bại. Vui lòng thử lại.')
-    } finally {
-      setUploading(false)
-      // Reset file input so the same file can be re-uploaded if needed
-      e.target.value = ''
-    }
-  }
-
   if (!patientId) {
     return (
       <div className="p-4 lg:p-6 max-w-2xl mx-auto">
@@ -218,37 +298,25 @@ export default function LabsPage() {
   }
 
   return (
-    <div className="p-4 lg:p-6 space-y-4 max-w-2xl mx-auto">
-      {/* Hidden file input */}
-      <input
-        type="file"
-        id="lab-upload"
-        accept="image/*,.pdf"
-        onChange={handleFileUpload}
-        className="hidden"
-        aria-label="Tải lên kết quả xét nghiệm"
-      />
-
+    <div className="p-4 lg:p-6 space-y-4 max-w-2xl mx-auto pb-24">
       <PageHeader
         title="Kết quả xét nghiệm"
         actions={
           <Button
             variant="primary"
             size="sm"
-            onClick={() => document.getElementById('lab-upload')?.click()}
-            disabled={uploading}
-            leftIcon={<Upload className="size-4" aria-hidden="true" />}
+            onClick={() => setModalOpen(true)}
+            leftIcon={<Plus className="size-4" aria-hidden="true" />}
           >
-            {uploading ? 'Đang tải...' : 'Tải lên'}
+            Thêm mới
           </Button>
         }
       />
 
-      {/* Success alert */}
       {successMsg && (
         <Alert
           variant="success"
-          title="Tải lên thành công"
+          title="Đã gửi thành công"
           dismissible
           onDismiss={() => setSuccessMsg(null)}
         >
@@ -256,33 +324,21 @@ export default function LabsPage() {
         </Alert>
       )}
 
-      {/* Error alert */}
       {error && !loading && (
-        <ErrorState
-          variant="inline"
-          title="Lỗi"
-          message={error}
-          onRetry={fetchLabs}
-        />
+        <ErrorState variant="inline" title="Lỗi" message={error} onRetry={fetchLabs} />
       )}
 
-      {/* Loading skeleton */}
       {loading && <LabsSkeleton />}
 
-      {/* Empty state */}
       {!loading && !error && labs.length === 0 && (
         <EmptyState
           icon={<FlaskConical />}
           title="Chưa có kết quả xét nghiệm"
-          description="Tải lên kết quả xét nghiệm để bác sĩ xem xét và phân tích."
-          action={{
-            label: 'Tải lên ngay',
-            onClick: () => document.getElementById('lab-upload')?.click(),
-          }}
+          description="Gửi thông tin xét nghiệm để bác sĩ xem xét."
+          action={{ label: 'Thêm ngay', onClick: () => setModalOpen(true) }}
         />
       )}
 
-      {/* Lab list */}
       {!loading && labs.length > 0 && (
         <div className="space-y-3">
           {labs.map((lab, index) => (
@@ -290,6 +346,16 @@ export default function LabsPage() {
           ))}
         </div>
       )}
+
+      <AddLabModal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        onSuccess={(lab) => {
+          setLabs((prev) => [lab, ...prev])
+          setSuccessMsg(`Đã gửi "${lab.file_name ?? 'xét nghiệm'}". Bác sĩ sẽ xem xét sớm.`)
+        }}
+        patientId={patientId}
+      />
     </div>
   )
 }

@@ -12,7 +12,6 @@ import {
   User,
   Settings,
   ClipboardList,
-  Utensils,
   LogOut,
 } from 'lucide-react'
 import { AppShell, Sidebar, TopNav, PageLoading } from '@/design-system'
@@ -21,68 +20,46 @@ import { useAuth } from '@/lib/auth/context'
 import { PatientBottomNav } from '@/components/nav/PatientBottomNav'
 import { getRoleHomePath } from '@/lib/api/auth'
 
+// ── Nav items (sidebar for desktop) ──────────────────────────────────────────
+
 const NAV_ITEMS: NavItem[] = [
-  {
-    id: 'dashboard',
-    label: 'Tổng quan',
-    icon: <LayoutDashboard className="w-5 h-5" />,
-    href: '/dashboard',
-  },
-  {
-    id: 'metrics',
-    label: 'Chỉ số sức khỏe',
-    icon: <Activity className="w-5 h-5" />,
-    href: '/metrics',
-  },
-  {
-    id: 'labs',
-    label: 'Xét nghiệm',
-    icon: <FlaskConical className="w-5 h-5" />,
-    href: '/labs',
-  },
-  {
-    id: 'medications',
-    label: 'Thuốc',
-    icon: <Pill className="w-5 h-5" />,
-    href: '/medications',
-  },
-  {
-    id: 'nutrition',
-    label: 'Dinh dưỡng',
-    icon: <Utensils className="w-5 h-5" />,
-    href: '/nutrition',
-  },
-  {
-    id: 'care-plan',
-    label: 'Kế hoạch điều trị',
-    icon: <ClipboardList className="w-5 h-5" />,
-    href: '/care-plan',
-  },
-  {
-    id: 'ai-assistant',
-    label: 'Trợ lý AI',
-    icon: <MessageSquare className="w-5 h-5" />,
-    href: '/ai-assistant',
-  },
-  {
-    id: 'notifications',
-    label: 'Thông báo',
-    icon: <Bell className="w-5 h-5" />,
-    href: '/notifications',
-  },
-  {
-    id: 'profile',
-    label: 'Hồ sơ',
-    icon: <User className="w-5 h-5" />,
-    href: '/profile',
-  },
-  {
-    id: 'settings',
-    label: 'Cài đặt',
-    icon: <Settings className="w-5 h-5" />,
-    href: '/settings',
-  },
+  { id: 'dashboard',    label: 'Tổng quan',         icon: <LayoutDashboard className="w-5 h-5" />, href: '/dashboard' },
+  { id: 'metrics',      label: 'Chỉ số sức khỏe',   icon: <Activity className="w-5 h-5" />,        href: '/metrics' },
+  { id: 'labs',         label: 'Xét nghiệm',         icon: <FlaskConical className="w-5 h-5" />,    href: '/labs' },
+  { id: 'medications',  label: 'Thuốc',              icon: <Pill className="w-5 h-5" />,            href: '/medications' },
+  { id: 'care-plan',    label: 'Kế hoạch điều trị', icon: <ClipboardList className="w-5 h-5" />,   href: '/care-plan' },
+  { id: 'ai-assistant', label: 'Trợ lý AI',          icon: <MessageSquare className="w-5 h-5" />,   href: '/ai-assistant' },
+  { id: 'notifications',label: 'Thông báo',          icon: <Bell className="w-5 h-5" />,            href: '/notifications' },
+  { id: 'profile',      label: 'Hồ sơ',              icon: <User className="w-5 h-5" />,            href: '/profile' },
+  { id: 'settings',     label: 'Cài đặt',            icon: <Settings className="w-5 h-5" />,        href: '/settings' },
 ]
+
+// ── Route → page title map (mobile top bar) ───────────────────────────────────
+
+const PAGE_TITLES: Record<string, string> = {
+  '/dashboard':    'Tổng quan',
+  '/metrics':      'Chỉ số sức khỏe',
+  '/metrics/log':  'Ghi chỉ số',
+  '/labs':         'Xét nghiệm',
+  '/medications':  'Thuốc',
+  '/care-plan':    'Kế hoạch điều trị',
+  '/ai-assistant': 'Trợ lý AI',
+  '/notifications':'Thông báo',
+  '/profile':      'Hồ sơ cá nhân',
+  '/settings':     'Cài đặt',
+  '/consents':     'Đồng ý chia sẻ',
+}
+
+function getPageTitle(pathname: string): string {
+  // Exact match first
+  if (PAGE_TITLES[pathname]) return PAGE_TITLES[pathname]
+  // Prefix match (e.g. /care-plan/123, /medications/abc)
+  const sorted = Object.keys(PAGE_TITLES).sort((a, b) => b.length - a.length)
+  for (const key of sorted) {
+    if (pathname.startsWith(key + '/')) return PAGE_TITLES[key]
+  }
+  return 'MetoCare'
+}
 
 function getActiveId(pathname: string): string {
   const sorted = [...NAV_ITEMS].sort((a, b) => b.href.length - a.href.length)
@@ -92,6 +69,8 @@ function getActiveId(pathname: string): string {
   return 'dashboard'
 }
 
+// ── Layout ────────────────────────────────────────────────────────────────────
+
 export default function PatientLayout({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading, user, logout } = useAuth()
   const router = useRouter()
@@ -100,14 +79,8 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
 
   React.useEffect(() => {
     if (isLoading) return
-    if (!isAuthenticated) {
-      router.replace('/login')
-      return
-    }
-    // Redirect non-patients to their role home
-    if (user && user.role !== 'patient') {
-      router.replace(getRoleHomePath(user.role))
-    }
+    if (!isAuthenticated) { router.replace('/login'); return }
+    if (user && user.role !== 'patient') router.replace(getRoleHomePath(user.role))
   }, [isLoading, isAuthenticated, user, router])
 
   if (isLoading) {
@@ -118,15 +91,12 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
     )
   }
 
-  if (!isAuthenticated || (user && user.role !== 'patient')) {
-    return null
-  }
+  if (!isAuthenticated || (user && user.role !== 'patient')) return null
 
   const activeId = getActiveId(pathname)
+  const pageTitle = getPageTitle(pathname)
 
-  const handleNavItem = (item: NavItem) => {
-    router.push(item.href)
-  }
+  const handleNavItem = (item: NavItem) => router.push(item.href)
 
   const handleLogout = async () => {
     await logout()
@@ -140,9 +110,7 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
       onItemClick={handleNavItem}
       collapsed={sidebarCollapsed}
       header={
-        <div
-          className={`flex items-center gap-2.5 p-4 ${sidebarCollapsed ? 'justify-center' : ''}`}
-        >
+        <div className={`flex items-center gap-2.5 p-4 ${sidebarCollapsed ? 'justify-center' : ''}`}>
           <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center shrink-0">
             <span className="text-white font-bold text-sm">M</span>
           </div>
@@ -151,9 +119,7 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
           )}
         </div>
       }
-      userProfile={
-        user ? { name: user.full_name ?? user.email, role: 'Bệnh nhân' } : undefined
-      }
+      userProfile={user ? { name: user.full_name ?? user.email, role: 'Bệnh nhân' } : undefined}
       footer={
         <button
           type="button"
@@ -167,31 +133,50 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
     />
   )
 
-  const topNavContent = (
-    <TopNav
-      title="MetoCare"
-      onMenuToggle={() => setSidebarCollapsed((p) => !p)}
-      showMenuToggle
-    />
-  )
-
   return (
     <>
-      {/* ── Mobile (< lg): sticky top nav, scrollable content, fixed bottom nav ── */}
-      <div className="flex flex-col h-screen lg:hidden bg-background">
-        <TopNav
-          title="MetoCare"
-          showMenuToggle={false}
-        />
+      {/* ── Mobile (< lg): compact top bar + scrollable content + fixed bottom nav ── */}
+      <div className="flex flex-col min-h-screen lg:hidden bg-background">
+        {/* Mobile top bar — app-style, not admin-style */}
+        <header className="sticky top-0 z-30 bg-surface border-b border-border">
+          <div className="flex items-center justify-between h-14 px-4">
+            {/* Logo / brand */}
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-lg bg-primary flex items-center justify-center shrink-0">
+                <span className="text-white font-bold text-xs">M</span>
+              </div>
+              <span className="font-semibold text-text text-body-sm">{pageTitle}</span>
+            </div>
+            {/* User avatar / logout shortcut */}
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="w-8 h-8 rounded-full bg-primary-100 flex items-center justify-center text-primary hover:bg-primary-200 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+              aria-label="Đăng xuất"
+              title="Đăng xuất"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
+        </header>
+
+        {/* Page content — pb-16 so bottom nav doesn't overlap */}
         <main className="flex-1 overflow-auto pb-16">{children}</main>
+
         <PatientBottomNav />
       </div>
 
-      {/* ── Desktop (≥ lg): AppShell with sidebar + top nav ── */}
+      {/* ── Desktop (≥ lg): AppShell with sidebar ── */}
       <div className="hidden lg:block h-screen">
         <AppShell
           sidebar={sidebarContent}
-          topNav={topNavContent}
+          topNav={
+            <TopNav
+              title={pageTitle}
+              onMenuToggle={() => setSidebarCollapsed((p) => !p)}
+              showMenuToggle
+            />
+          }
           sidebarWidth="md"
           sidebarCollapsed={sidebarCollapsed}
           onSidebarToggle={() => setSidebarCollapsed((p) => !p)}

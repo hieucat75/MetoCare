@@ -45,13 +45,15 @@ export type MetricType =
 
 export interface HealthMetric {
   id: string
-  patient_id: string
+  patient_id?: string
   metric_type: MetricType
   value: number
   unit: string
-  recorded_at: string
-  notes: string | null
-  source: 'manual' | 'device' | 'lab'
+  // Backend uses measured_at; recorded_at is a UI alias populated during normalization
+  measured_at: string
+  recorded_at: string        // aliased from measured_at for backwards compat
+  notes?: string | null
+  source?: 'manual' | 'device' | 'lab'
   status: 'normal' | 'borderline' | 'abnormal' | 'critical' | null
 }
 
@@ -80,9 +82,14 @@ export async function getMetrics(
   if (params?.limit != null) qs.set('limit', String(params.limit))
   if (params?.offset != null) qs.set('offset', String(params.offset))
   const query = qs.toString()
-  return api.get<MetricListResponse>(
+  // Backend returns plain array (not {items, total}); normalize here.
+  const raw = await api.get<HealthMetric[] | MetricListResponse>(
     `/patients/${patientId}/metrics${query ? `?${query}` : ''}`,
   )
+  const items: HealthMetric[] = Array.isArray(raw)
+    ? raw.map((m) => ({ ...m, recorded_at: m.measured_at ?? (m as {recorded_at?: string}).recorded_at ?? '' }))
+    : (raw as MetricListResponse).items?.map((m) => ({ ...m, recorded_at: m.measured_at ?? m.recorded_at ?? '' })) ?? []
+  return { patient_id: patientId, total: items.length, items }
 }
 
 export async function getMetricTrend(
@@ -103,7 +110,8 @@ export async function logMetric(
     source?: 'manual'
   },
 ): Promise<HealthMetric> {
-  return api.post<HealthMetric>(`/patients/${patientId}/metrics`, data)
+  const raw = await api.post<HealthMetric>(`/patients/${patientId}/metrics`, data)
+  return { ...raw, recorded_at: raw.measured_at ?? raw.recorded_at ?? '' }
 }
 
 // ── Metabolic Score ───────────────────────────────────────────────────────────

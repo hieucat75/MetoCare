@@ -146,27 +146,37 @@ export default function PatientDashboardPage() {
     ])
       .then((results) => {
         const score = results[0] as MetabolicScore | null
-        const medsResp = results[1] as { items: Medication[] }
-        const m0 = results[2] as { items: HealthMetric[] }
-        const m1 = results[3] as { items: HealthMetric[] }
-        const m2 = results[4] as { items: HealthMetric[] }
-        const carePlansRaw = results[5] as CarePlan[]
-        const notificationsRaw = results[6] as import('@/lib/api/patient').Notification[]
-        const labsRaw = results[7] as { items: Array<{ status: string }> }
+        const medsResp = results[1] as { items?: Medication[] } | Medication[]
+        const m0 = results[2] as { items?: HealthMetric[] }
+        const m1 = results[3] as { items?: HealthMetric[] }
+        const m2 = results[4] as { items?: HealthMetric[] }
+        const carePlansRaw = results[5] as CarePlan[] | { items?: CarePlan[] }
+        const notificationsRaw = results[6] as import('@/lib/api/patient').Notification[] | { items?: import('@/lib/api/patient').Notification[] }
+        const labsRaw = results[7] as { items?: Array<{ status: string }> } | Array<{ status: string }>
+
+        // Safely extract arrays regardless of whether backend returns plain array or {items:[]}
+        function safeItems<T>(v: T[] | { items?: T[] }): T[] {
+          return Array.isArray(v) ? v : (v as { items?: T[] }).items ?? []
+        }
 
         const latestMetrics: HealthMetric[] = [
-          ...(m0.items.slice(0, 1)),
-          ...(m1.items.slice(0, 1)),
-          ...(m2.items.slice(0, 1)),
+          ...(m0.items ?? []).slice(0, 1),
+          ...(m1.items ?? []).slice(0, 1),
+          ...(m2.items ?? []).slice(0, 1),
         ]
+
+        const meds = safeItems(medsResp)
+        const plans = safeItems(carePlansRaw)
+        const notifs = safeItems(notificationsRaw)
+        const labItems = safeItems(labsRaw)
 
         setData({
           metabolicScore: score,
-          medications: medsResp.items,
+          medications: meds,
           metrics: latestMetrics,
-          carePlans: carePlansRaw.filter((p) => p.status === 'ACTIVE'),
-          unreadCount: notificationsRaw.filter((n) => !n.is_read).length,
-          hasPendingLabs: labsRaw.items.some((l) => l.status === 'pending_review'),
+          carePlans: plans.filter((p) => p.status === 'ACTIVE'),
+          unreadCount: notifs.filter((n) => !n.is_read).length,
+          hasPendingLabs: labItems.some((l) => l.status === 'pending_review'),
         })
       })
       .catch((err: Error) => setError(err.message))
@@ -280,7 +290,7 @@ export default function PatientDashboardPage() {
                 value={m.value}
                 unit={m.unit || metricUnit(m.metric_type)}
                 status={toMetricStatus(m.status)}
-                lastUpdated={m.recorded_at}
+                lastUpdated={m.measured_at ?? m.recorded_at}
                 compact
                 onClick={() => router.push(`/metrics?type=${m.metric_type}`)}
               />

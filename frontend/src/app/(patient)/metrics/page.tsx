@@ -99,7 +99,7 @@ function TrendChartPlaceholder() {
 
 function MetricRow({ metric }: { metric: HealthMetric }) {
   const unit = metric.unit || getUnit(metric.metric_type)
-  const dateStr = new Date(metric.recorded_at).toLocaleString('vi-VN', {
+  const dateStr = new Date(metric.measured_at ?? metric.recorded_at).toLocaleString('vi-VN', {
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
@@ -114,6 +114,7 @@ function MetricRow({ metric }: { metric: HealthMetric }) {
           {getMetricDisplayLabel(metric.metric_type)}
         </p>
         <p className="text-caption text-text-muted mt-0.5">{dateStr}</p>
+        {/* metric.notes may be absent from backend response */}
         {metric.notes && (
           <p className="text-caption text-text-muted mt-0.5 truncate max-w-[180px]">
             {metric.notes}
@@ -187,7 +188,7 @@ function MetricTabContent({
               </Badge>
             )}
           </div>
-          <p className="text-caption text-text-muted mt-1">{formatDate(latest.recorded_at)}</p>
+          <p className="text-caption text-text-muted mt-1">{formatDate(latest.measured_at ?? latest.recorded_at)}</p>
         </div>
       )}
 
