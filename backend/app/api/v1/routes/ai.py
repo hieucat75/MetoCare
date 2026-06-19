@@ -1,14 +1,18 @@
-"""AI assistant + triage + metabolic score routes.
+"""AI assistant + triage + metabolic score + patient-safe explanation routes.
 
 All AI responses pass through the guardrail (input + output) in the service
 layer. Triage runs the rule engine first. No external LLM/OCR is called.
 
-Auth: All 3 routes require a valid JWT (Bearer token).
-RBAC: PATIENT, DOCTOR, CLINIC_ADMIN, INTERNAL_ADMIN, SUPER_ADMIN allowed.
+Auth: All routes require a valid JWT (Bearer token).
+RBAC: PATIENT, DOCTOR, CLINIC_ADMIN, INTERNAL_ADMIN, SUPER_ADMIN allowed on
+      general AI consumer routes.
       AI_SERVICE is explicitly excluded — it uses the AISession API instead.
+      POST /ai/explain is PATIENT-only.
 """
 
 from __future__ import annotations
+
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -20,8 +24,12 @@ from app.llm import LLMRateLimitError
 from app.models.patient import PatientProfile
 from app.models.user import UserRole
 from app.schemas.ai import (
+    _DISCLAIMER,
+    AiExplainRequest,
+    AiExplainResponse,
     ChatRequest,
     ChatResponse,
+    ExplanationType,
     ScoreRequest,
     ScoreResponse,
     TriageRequest,
@@ -146,4 +154,103 @@ def score(
         band=result.band.value,
         factors=[{"name": f.name, "points": f.points, "detail": f.detail} for f in result.factors],
         explanation=result.explanation,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Patient-Safe Explanation Endpoint (PA-05)
+# RBAC: PATIENT only — DOCTOR, ADMIN, AI_SERVICE → 403
+# ---------------------------------------------------------------------------
+
+_require_patient_only = require_roles(UserRole.PATIENT)
+
+# Mock summaries per explanation_type — pilot mode, no external LLM call.
+_MOCK_SUMMARIES: dict[ExplanationType, str] = {
+    ExplanationType.metabolic_score: (
+        "Your metabolic wellness score reflects how well your key health metrics "
+        "are being managed. A lower score indicates healthier metabolic balance, "
+        "while a higher score suggests areas that may need attention. Your care "
+        "team will review this with you and recommend next steps."
+    ),
+    ExplanationType.health_metric: (
+        "Your health reading is within a range that your care team will review "
+        "with you. Small changes — like staying hydrated, eating balanced meals, "
+        "and moving regularly — all contribute positively over time. Track your "
+        "results regularly so you can spot trends together with your doctor."
+    ),
+    ExplanationType.lab_result: (
+        "Your lab result has been recorded. Lab values are one piece of the "
+        "bigger picture of your health. Your doctor will review these results and "
+        "discuss what they mean for your specific situation at your next "
+        "consultation."
+    ),
+    ExplanationType.general_summary: (
+        "Based on the information you have shared, your overall health data is "
+        "being tracked and monitored by your care team. Staying consistent with "
+        "your check-ins, medications, and lifestyle goals will help you and your "
+        "doctor make the best decisions for your wellbeing."
+    ),
+}
+
+
+@router.post("/explain", response_model=AiExplainResponse)
+def explain(
+    payload: AiExplainRequest,
+    user: CurrentUser = Depends(_require_patient_only),
+    db: Session = Depends(get_session),
+) -> AiExplainResponse:
+    """Return a patient-safe, plain-language explanation of health data.
+
+    • PATIENT-only endpoint.
+    • Caller must own the PatientProfile identified by patient_id.
+    • Mock implementation — no external AI call in pilot mode.
+    • Medical disclaimer is always included.
+    """
+    # Ownership check: resolve caller’s PatientProfile and compare to patient_id.
+    patient_profile = db.execute(
+        select(PatientProfile).where(PatientProfile.user_id == user.id)
+    ).scalar_one_or_none()
+
+    if patient_profile is None or str(patient_profile.id) != str(payload.patient_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not authorised to access this patient’s data.",
+        )
+
+    summary = _MOCK_SUMMARIES[payload.explanation_type]
+
+    # Enrich summary with context values when provided.
+    ctx = payload.context
+    if payload.explanation_type == ExplanationType.health_metric and ctx.metric_type:
+        value_str = f"{ctx.value} {ctx.unit}" if ctx.value is not None and ctx.unit else ""
+        trend_str = f" The trend is currently {ctx.trend}." if ctx.trend else ""
+        summary = (
+            f"Your {ctx.metric_type.replace('_', ' ')} reading"
+            + (f" of {value_str}" if value_str else "")
+            + " is being tracked by your care team."
+            + trend_str
+            + " Keep monitoring regularly for a clearer picture."
+        )
+    elif payload.explanation_type == ExplanationType.metabolic_score and ctx.score is not None:
+        # Map numeric score to a qualitative band — do NOT expose raw numeric value.
+        if ctx.score < 25:
+            band_label = "in a healthy range"
+        elif ctx.score < 50:
+            band_label = "in a fair range — some areas to watch"
+        elif ctx.score < 75:
+            band_label = "elevated — your care team will want to discuss this"
+        else:
+            band_label = "high — please speak with your doctor soon"
+        trend_str = f" The trend is {ctx.trend}." if ctx.trend else ""
+        summary = (
+            f"Your metabolic wellness is currently {band_label}."
+            + trend_str
+            + " Your care team will review this with you and suggest next steps."
+        )
+
+    return AiExplainResponse(
+        explanation_type=payload.explanation_type,
+        plain_language_summary=summary,
+        disclaimer=_DISCLAIMER,
+        generated_at=datetime.now(tz=UTC),
     )
