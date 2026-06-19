@@ -1,6 +1,5 @@
 # Docs for the Azure Web Apps Deploy action: https://github.com/Azure/webapps-deploy
 # More GitHub Actions for Azure: https://github.com/Azure/actions
-# More info on Python, GitHub Actions, and Azure App Service: https://aka.ms/python-webapps-actions
 
 name: Build and deploy Python app to Azure Web App - MetoCare
 
@@ -9,6 +8,10 @@ on:
     branches:
       - main
   workflow_dispatch:
+
+env:
+  AZURE_WEBAPP_NAME: MetoCare
+  PYTHON_VERSION: '3.11'
 
 jobs:
   build:
@@ -26,7 +29,7 @@ jobs:
       - name: Set up Python version
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Create virtual environment and install dependencies
         run: |
@@ -44,6 +47,7 @@ jobs:
             !backend/antenv/
             !backend/tests/
             !backend/requirements-dev.txt
+            !backend/data/
 
   deploy:
     runs-on: ubuntu-latest
@@ -65,10 +69,38 @@ jobs:
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_82802F503FBB4981BB11E7836D0FDE28 }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_42799659C6C44C1D8151F9153AD06872 }}
 
+      - name: Ensure App Service is running
+        run: |
+          # Detect resource group automatically
+          RG=$(az webapp list --query "[?name=='${{ env.AZURE_WEBAPP_NAME }}'].resourceGroup" -o tsv)
+          echo "Resource group: $RG"
+          echo "AZURE_RESOURCE_GROUP=$RG" >> $GITHUB_ENV
+
+          # Start the app (no-op if already running)
+          az webapp start --name ${{ env.AZURE_WEBAPP_NAME }} --resource-group "$RG"
+          echo "Waiting 15s for app to start..."
+          sleep 15
+
+      - name: Set startup command
+        run: |
+          az webapp config set \
+            --name ${{ env.AZURE_WEBAPP_NAME }} \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --startup-file "gunicorn -w 2 -k uvicorn.workers.UvicornWorker app.main:app --bind 0.0.0.0:8000"
+
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
         id: deploy-to-webapp
         with:
-          app-name: 'MetoCare'
+          app-name: ${{ env.AZURE_WEBAPP_NAME }}
           slot-name: 'Production'
-          startup-command: 'gunicorn -w 2 -k uvicorn.workers.UvicornWorker app.main:app --bind 0.0.0.0:8000'
+
+      - name: Verify deployment
+        run: |
+          APP_URL="https://metocare-a8hdh0grbcerbmfm.malaysiawest-01.azurewebsites.net"
+          echo "Waiting 30s for app to boot..."
+          sleep 30
+          echo "=== GET /health ==="
+          curl -sf "$APP_URL/health" && echo " ✅ /health OK" || (echo " ❌ /health FAILED" && exit 1)
+          echo "=== GET /api/v1/info ==="
+          curl -sf "$APP_URL/api/v1/info" | python3 -m json.tool
