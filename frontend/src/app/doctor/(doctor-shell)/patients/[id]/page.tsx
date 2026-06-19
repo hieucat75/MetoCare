@@ -358,7 +358,7 @@ export default function PatientDetailPage() {
                             {lab.file_name ?? 'Kết quả xét nghiệm'}
                           </CardTitle>
                           <p className="mt-0.5 text-body-xs text-text-muted">
-                            {formatRelativeTime(lab.uploaded_at)}
+                            {formatRelativeTime(lab.uploaded_at ?? lab.created_at ?? '')}
                           </p>
                         </div>
                         <Badge
@@ -402,12 +402,7 @@ export default function PatientDetailPage() {
                         </div>
                       )}
 
-                      {/* OCR text summary */}
-                      {lab.ai_summary && (
-                        <p className="mt-2 text-body-xs text-text-muted leading-relaxed line-clamp-3">
-                          {lab.ai_summary}
-                        </p>
-                      )}
+                      {/* OCR text summary — field removed in backend schema update (PA-08) */}
 
                       {/* File link */}
                       {lab.file_url && (

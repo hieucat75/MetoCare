@@ -42,6 +42,9 @@ class MfaEnrollmentMiddleware(BaseHTTPMiddleware):
         if authz.startswith("Bearer "):
             payload = decode_token(authz[7:])
             if payload and payload.get("mfa_enrollment_required"):
+                from app.core.config import get_settings as _gs
+                if _gs().skip_mfa_in_dev:
+                    return await call_next(request)
                 path = request.url.path
                 if path not in _ENROLL_ALLOW_EXACT and not path.endswith(_ENROLL_ALLOW_SUFFIXES):
                     return JSONResponse(

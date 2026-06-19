@@ -39,14 +39,16 @@ function formatDate(iso: string): string {
 
 type BadgeVariant = 'pending_review' | 'approved' | 'rejected' | 'request_info'
 
-const LAB_STATUS_CONFIG: Record<
-  LabStatus,
-  { variant: BadgeVariant; label: string }
-> = {
-  pending_review: { variant: 'pending_review', label: 'Chờ duyệt' },
-  approved: { variant: 'approved', label: 'Đã duyệt' },
-  rejected: { variant: 'rejected', label: 'Từ chối' },
-  request_info: { variant: 'request_info', label: 'Cần bổ sung' },
+// Backend status values: 'uploaded' maps to pending_review for display
+function getLabStatusConfig(status: string): { variant: BadgeVariant; label: string } {
+  const map: Record<string, { variant: BadgeVariant; label: string }> = {
+    pending_review: { variant: 'pending_review', label: 'Chờ duyệt' },
+    uploaded:       { variant: 'pending_review', label: 'Chờ xử lý' },
+    approved:       { variant: 'approved',       label: 'Đã duyệt' },
+    rejected:       { variant: 'rejected',       label: 'Từ chối' },
+    request_info:   { variant: 'request_info',   label: 'Cần bổ sung' },
+  }
+  return map[status] ?? { variant: 'pending_review', label: status }
 }
 
 // ── Lab result card ────────────────────────────────────────────────────────────
@@ -58,7 +60,7 @@ function LabResultCard({
   lab: LabResult
   index: number
 }) {
-  const { variant, label } = LAB_STATUS_CONFIG[lab.status]
+  const { variant, label } = getLabStatusConfig(lab.status)
   const displayName = lab.file_name ?? `Xét nghiệm ${index + 1}`
 
   return (
@@ -82,11 +84,11 @@ function LabResultCard({
 
         {/* Upload date */}
         <p className="text-body-xs text-text-muted">
-          Tải lên: {formatDate(lab.uploaded_at)}
+          Tải lên: {formatDate(lab.uploaded_at ?? lab.created_at ?? new Date().toISOString())}
         </p>
 
         {/* Pending spinner */}
-        {lab.status === 'pending_review' && (
+        {(lab.status === 'pending_review' || lab.status === 'uploaded') && (
           <div className="flex items-center gap-2 text-body-xs text-amber-700">
             <Spinner size="sm" color="muted" />
             <span>Chờ xử lý</span>

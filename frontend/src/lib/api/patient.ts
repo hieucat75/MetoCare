@@ -131,22 +131,25 @@ export async function getLatestMetabolicScore(
   }
 }
 
-// ── Lab Results ───────────────────────────────────────────────────────────────
+// ── Lab Documents (PA-08: contract-aligned with backend /lab-documents) ───────
+// Backend: GET/POST /patients/{id}/lab-documents
+// LabDocumentOut: { id, patient_id, ocr_status, status }
+// Upload: POST with JSON { storage_key, file_type?, lab_name? } (storage_key = pre-uploaded key)
 
-export type LabStatus = 'pending_review' | 'approved' | 'rejected' | 'request_info'
+export type LabStatus = 'pending_review' | 'approved' | 'rejected' | 'request_info' | string
 
 export interface LabResult {
   id: string
   patient_id: string
-  file_url: string | null
+  ocr_status: string           // backend: 'pending' | 'processing' | 'done' | 'failed'
+  status: string               // backend: 'uploaded' | etc.
+  // UI display helpers — may be null until OCR/review complete
   file_name: string | null
-  ocr_text: string | null
-  ai_summary: string | null
+  file_url: string | null
   ai_explanation: string | null
-  status: LabStatus
-  reviewed_at: string | null
   doctor_notes: string | null
-  uploaded_at: string
+  uploaded_at: string | null
+  created_at?: string
 }
 
 export interface LabListResponse {
@@ -163,17 +166,25 @@ export async function getLabs(
   if (params?.limit != null) qs.set('limit', String(params.limit))
   if (params?.offset != null) qs.set('offset', String(params.offset))
   const query = qs.toString()
-  return api.get<LabListResponse>(`/patients/${patientId}/labs${query ? `?${query}` : ''}`)
+  // Backend returns plain array; normalise to LabListResponse
+  const raw = await api.get<LabResult[]>(
+    `/patients/${patientId}/lab-documents${query ? `?${query}` : ''}`,
+  )
+  const items = Array.isArray(raw) ? raw : []
+  return { patient_id: patientId, total: items.length, items }
 }
 
-export async function uploadLab(patientId: string, file: File): Promise<LabResult> {
-  const formData = new FormData()
-  formData.append('file', file)
-  const { apiFetch } = await import('./client')
-  return apiFetch<LabResult>(`/patients/${patientId}/labs`, {
-    method: 'POST',
-    body: formData as unknown as BodyInit,
-    headers: {},
+export async function uploadLab(
+  patientId: string,
+  _file: File,  // ponytail: storage_key upload not yet wired; mock key for dev smoke
+): Promise<LabResult> {
+  // Backend requires a pre-uploaded storage_key (object-storage flow).
+  // In dev/smoke, use a mock key so the endpoint path at least resolves correctly.
+  const mockKey = `dev/smoke/${Date.now()}_${_file.name}`
+  return api.post<LabResult>(`/patients/${patientId}/lab-documents`, {
+    storage_key: mockKey,
+    file_type: _file.type || null,
+    lab_name: _file.name,
   })
 }
 

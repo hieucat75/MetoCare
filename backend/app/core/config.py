@@ -77,6 +77,11 @@ class Settings(BaseSettings):
     ocr_worker_enabled: bool = True
     ocr_queue_max_size: int = 256
 
+    # ---- Dev / Test flags ----
+    # Set MCP_SKIP_MFA_IN_DEV=true to bypass MFA enforcement in local dev/smoke.
+    # MUST be false (default) in production.
+    skip_mfa_in_dev: bool = False
+
     # ---- Observability ----
     log_level: str = "INFO"
     metrics_enabled: bool = True  # exposes /metrics; disable on untrusted edges
