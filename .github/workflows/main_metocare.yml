@@ -70,6 +70,9 @@ jobs:
         with:
           name: python-app
 
+      - name: Unzip artifact
+        run: unzip deploy.zip -d app_src
+
       - name: Login to Azure
         uses: azure/login@v2
         with:
@@ -77,7 +80,7 @@ jobs:
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_82802F503FBB4981BB11E7836D0FDE28 }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_42799659C6C44C1D8151F9153AD06872 }}
 
-      - name: Set app settings (before deploy; triggers restart)
+      - name: Configure app settings
         run: |
           az webapp config appsettings set \
             --name ${{ env.AZURE_WEBAPP_NAME }} \
@@ -88,40 +91,25 @@ jobs:
               MCP_AI_MODE=mock \
               MCP_OCR_MODE=mock \
               MCP_STORAGE_MODE=local \
-              SCM_DO_BUILD_DURING_DEPLOYMENT=false \
+              SCM_DO_BUILD_DURING_DEPLOYMENT=true \
             --output none
+          echo "App settings configured."
 
-          az webapp config set \
-            --name ${{ env.AZURE_WEBAPP_NAME }} \
-            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-            --startup-file 'gunicorn -w 2 -k uvicorn.workers.UvicornWorker app.main:app --bind 0.0.0.0:$PORT --timeout 120' \
-            --output none
-
-          echo "Settings applied. Waiting 30s for app to stabilize..."
-          sleep 30
-
-          # Ensure app is running after settings restart
-          az webapp start \
-            --name ${{ env.AZURE_WEBAPP_NAME }} \
-            --resource-group ${{ env.AZURE_RESOURCE_GROUP }}
-
-          echo "Waiting 20s for Kudu to be ready..."
-          sleep 20
-
-      - name: Deploy via az webapp deploy (zip deploy)
+      - name: Deploy via az webapp up
+        working-directory: app_src
         run: |
-          az webapp deploy \
+          az webapp up \
             --name ${{ env.AZURE_WEBAPP_NAME }} \
             --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-            --src-path deploy.zip \
-            --type zip \
-            --async false
+            --runtime "PYTHON:3.11" \
+            --sku B1 \
+            --startup-file 'gunicorn -w 2 -k uvicorn.workers.UvicornWorker app.main:app --bind 0.0.0.0:$PORT --timeout 120'
 
       - name: Verify deployment
         run: |
           APP_URL="https://metocare-a8hdh0grbcerbmfm.malaysiawest-01.azurewebsites.net"
-          echo "Waiting 45s for app to boot..."
-          sleep 45
+          echo "Waiting 60s for app to boot..."
+          sleep 60
 
           echo "=== GET / ==="
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$APP_URL/")
