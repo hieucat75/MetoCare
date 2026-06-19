@@ -12,6 +12,7 @@ import {
   User,
   Settings,
   ClipboardList,
+  Utensils,
   LogOut,
 } from 'lucide-react'
 import { AppShell, Sidebar, TopNav, PageLoading } from '@/design-system'
@@ -27,6 +28,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'metrics',      label: 'Chỉ số sức khỏe',   icon: <Activity className="w-5 h-5" />,        href: '/metrics' },
   { id: 'labs',         label: 'Xét nghiệm',         icon: <FlaskConical className="w-5 h-5" />,    href: '/labs' },
   { id: 'medications',  label: 'Thuốc',              icon: <Pill className="w-5 h-5" />,            href: '/medications' },
+  { id: 'nutrition',    label: 'Dinh dưỡng',         icon: <Utensils className="w-5 h-5" />,         href: '/nutrition' },
   { id: 'care-plan',    label: 'Kế hoạch điều trị', icon: <ClipboardList className="w-5 h-5" />,   href: '/care-plan' },
   { id: 'ai-assistant', label: 'Trợ lý AI',          icon: <MessageSquare className="w-5 h-5" />,   href: '/ai-assistant' },
   { id: 'notifications',label: 'Thông báo',          icon: <Bell className="w-5 h-5" />,            href: '/notifications' },
@@ -42,6 +44,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/metrics/log':  'Ghi chỉ số',
   '/labs':         'Xét nghiệm',
   '/medications':  'Thuốc',
+  '/nutrition':    'Dinh dưỡng',
   '/care-plan':    'Kế hoạch điều trị',
   '/ai-assistant': 'Trợ lý AI',
   '/notifications':'Thông báo',
