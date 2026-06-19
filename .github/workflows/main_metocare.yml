@@ -93,6 +93,8 @@ jobs:
               MCP_AI_MODE=mock \
               MCP_OCR_MODE=mock \
               MCP_STORAGE_MODE=local \
+              MCP_DATABASE_URL="sqlite:////home/site/wwwroot/data/mcp_dev.sqlite3" \
+              WEBSITES_ENABLE_APP_SERVICE_STORAGE=true \
               SCM_DO_BUILD_DURING_DEPLOYMENT=true \
               WEBSITES_CONTAINER_START_TIME_LIMIT=300 \
             --output none
@@ -152,6 +154,7 @@ jobs:
             fi
             if [ "$i" -eq 30 ]; then
               echo "  ❌ App not healthy after 5 minutes"
+              exit 1
             fi
             sleep 10
           done
@@ -174,8 +177,20 @@ jobs:
           az webapp log download \
             --name ${{ env.AZURE_WEBAPP_NAME }} \
             --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-            --log-file /tmp/app_logs.zip 2>/dev/null || echo "Could not download logs"
+            --log-file /tmp/app_logs.zip 2>&1 || echo "Could not download logs"
           
           if [ -f /tmp/app_logs.zip ]; then
-            unzip -p /tmp/app_logs.zip | tail -100
+            mkdir -p /tmp/app_logs_dir
+            unzip -q /tmp/app_logs.zip -d /tmp/app_logs_dir 2>/dev/null || true
+            find /tmp/app_logs_dir -name '*.log' -newer /tmp/app_logs.zip -o -name '*.log' | sort | tail -5 | while read f; do
+              echo "=== $f ==="
+              tail -100 "$f"
+            done
+            echo "--- All log files ---"
+            find /tmp/app_logs_dir -name '*.log' | sort
           fi
+          
+          echo "=== Live log stream (15s) ==="
+          timeout 15 az webapp log tail \
+            --name ${{ env.AZURE_WEBAPP_NAME }} \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} 2>&1 || true
