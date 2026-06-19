@@ -42,7 +42,13 @@ def create_app() -> FastAPI:
         # with zero setup. PostgreSQL/TimescaleDB MUST use Alembic migrations
         # (create_all would make plain tables without the hypertable/CAGG).
         if not settings.is_prod and settings.database_url.startswith("sqlite"):
-            create_all()
+            # P1-FIX-04: Gunicorn multi-worker race condition — multiple workers
+            # may call create_all simultaneously on the same SQLite file.
+            # Wrap with try/except to handle "table already exists" gracefully.
+            try:
+                create_all()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("create_all skipped (tables may already exist): %s", exc)
         # Start the async OCR worker (built-in asyncio queue; no Celery/Redis).
         worker = None
         if settings.ocr_worker_enabled:
