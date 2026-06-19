@@ -27,9 +27,24 @@ jobs:
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_82802F503FBB4981BB11E7836D0FDE28 }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_42799659C6C44C1D8151F9153AD06872 }}
 
+      - name: Check SP permissions
+        run: |
+          echo "Checking service principal role assignments on resource group..."
+          az role assignment list \
+            --scope "/subscriptions/${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_42799659C6C44C1D8151F9153AD06872 }}/resourceGroups/rg-metocare-dev" \
+            --output table 2>&1 || echo "Could not list role assignments (may need elevated permissions)"
+
       - name: Create PostgreSQL Flexible Server
         run: |
           echo "Creating PostgreSQL Flexible Server: metocare-pg-dev"
+          # Note: --database-name is for elastic clusters only, not flexible-server.
+          # Create the server first, then create the database separately.
+          # REQUIRES: The service principal must have Contributor role on rg-metocare-dev.
+          # If this step fails with AuthorizationFailed:
+          #   1. Go to Azure Portal > rg-metocare-dev > Access control (IAM)
+          #   2. Add role assignment: Contributor to the App Registration service principal
+          #   3. Re-run this workflow
+          # OR provision manually via Azure Portal and set MCP_DATABASE_URL secret.
           az postgres flexible-server create \
             --name metocare-pg-dev \
             --resource-group rg-metocare-dev \
@@ -40,7 +55,6 @@ jobs:
             --tier Burstable \
             --version 16 \
             --storage-size 32 \
-            --database-name metocare \
             --public-access 0.0.0.0 \
             --yes \
             --output table || {
@@ -48,8 +62,35 @@ jobs:
               az postgres flexible-server show \
                 --name metocare-pg-dev \
                 --resource-group rg-metocare-dev \
-                --output table
+                --output table || {
+                  echo ""
+                  echo "======================================================================"
+                  echo "PERMISSION ERROR: Service principal lacks PostgreSQL create permission."
+                  echo "MANUAL PROVISIONING STEPS:"
+                  echo "  1. Azure Portal > rg-metocare-dev > Access control (IAM)"
+                  echo "  2. Add role: Contributor to the service principal"
+                  echo "  3. OR provision via Portal: Create a resource > Azure Database for"
+                  echo "     PostgreSQL Flexible Server"
+                  echo "     - Name: metocare-pg-dev"
+                  echo "     - Region: Malaysia West"
+                  echo "     - Version: 16"
+                  echo "     - SKU: Burstable B1ms"
+                  echo "     - Storage: 32 GB"
+                  echo "     - Admin: mcpadmin / <password>"
+                  echo "  4. Then set: gh secret set MCP_DATABASE_URL ..."
+                  echo "======================================================================"
+                  exit 1
+                }
             }
+
+      - name: Create database 'metocare'
+        run: |
+          echo "Creating database metocare on server metocare-pg-dev"
+          az postgres flexible-server db create \
+            --server-name metocare-pg-dev \
+            --resource-group rg-metocare-dev \
+            --database-name metocare \
+            --output table || echo "Database may already exist"
 
       - name: Get server FQDN and print connection string
         run: |

@@ -66,6 +66,8 @@ jobs:
     needs: build-and-push
     # Only run migrations when MCP_DATABASE_URL secret is set (postgres prod mode)
     # Skip if running against SQLite (legacy dev path).
+    # IMPORTANT: PostgreSQL server must exist before this job can succeed.
+    # Run provision-postgres.yml ONCE first to create the server.
 
     steps:
       - uses: actions/checkout@v4
@@ -105,8 +107,20 @@ jobs:
         run: |
           cd backend
           echo "Running: alembic upgrade head"
-          alembic upgrade head
-          echo "✅ Alembic migrations complete"
+          # Retry up to 3 times with 10s delay (handles transient PG startup)
+          for attempt in 1 2 3; do
+            if alembic upgrade head; then
+              echo "✅ Alembic migrations complete (attempt $attempt)"
+              break
+            fi
+            if [ $attempt -eq 3 ]; then
+              echo "❌ Alembic migrations failed after 3 attempts"
+              echo "IMPORTANT: If the PostgreSQL server does not exist yet, run provision-postgres.yml first."
+              exit 1
+            fi
+            echo "Attempt $attempt failed, retrying in 10s..."
+            sleep 10
+          done
           echo ""
           echo "Migration history:"
           alembic history --verbose 2>/dev/null | tail -30 || true
