@@ -1,0 +1,414 @@
+{
+  "name": "MetoCare Design System",
+  "version": "1.0.0",
+  "description": "Production-ready design system for MetoCare metabolic health management platform",
+  "theme": "clean-medical",
+  "language": "vi",
+  "framework": "Next.js 14 + React 18 + Tailwind CSS 3 + TypeScript",
+  "tokens": {
+    "colors": {
+      "primary": {
+        "DEFAULT": "#1B4FD8",
+        "50": "#EFF4FF",
+        "100": "#D9E5FE",
+        "200": "#B3CBFD",
+        "300": "#7FAAFB",
+        "400": "#4C84F8",
+        "500": "#1B4FD8",
+        "600": "#1540B8",
+        "700": "#1032A0",
+        "800": "#0D2882",
+        "900": "#091C6B",
+        "950": "#050D3D",
+        "hover": "#1540B8",
+        "light": "#EFF4FF",
+        "foreground": "#FFFFFF",
+        "role": "Deep medical blue — primary actions, links, focus rings"
+      },
+      "secondary": {
+        "DEFAULT": "#475569",
+        "50": "#F8FAFC",
+        "100": "#F1F5F9",
+        "200": "#E2E8F0",
+        "300": "#CBD5E1",
+        "400": "#94A3B8",
+        "500": "#64748B",
+        "600": "#475569",
+        "700": "#334155",
+        "800": "#1E293B",
+        "900": "#0F172A",
+        "hover": "#334155",
+        "light": "#F1F5F9",
+        "foreground": "#FFFFFF",
+        "role": "Slate neutral — secondary actions, ghost buttons, muted UI"
+      },
+      "accent": {
+        "DEFAULT": "#0891B2",
+        "light": "#E0F2FE",
+        "foreground": "#FFFFFF",
+        "role": "Clinical teal — AI session cards, informational highlights"
+      },
+      "success": {
+        "DEFAULT": "#16A34A",
+        "light": "#DCFCE7",
+        "border": "#86EFAC",
+        "foreground": "#FFFFFF",
+        "role": "Positive outcomes, approved status, low-risk indicators"
+      },
+      "warning": {
+        "DEFAULT": "#D97706",
+        "light": "#FEF3C7",
+        "border": "#FCD34D",
+        "foreground": "#FFFFFF",
+        "role": "Caution, pending review, medium-risk indicators"
+      },
+      "danger": {
+        "DEFAULT": "#DC2626",
+        "light": "#FEE2E2",
+        "border": "#FCA5A5",
+        "foreground": "#FFFFFF",
+        "role": "Destructive actions, rejected status, high-risk indicators"
+      },
+      "info": {
+        "DEFAULT": "#2563EB",
+        "light": "#DBEAFE",
+        "border": "#93C5FD",
+        "foreground": "#FFFFFF",
+        "role": "Informational alerts, request-info clinical status"
+      },
+      "surface": {
+        "background": "#F8FAFC",
+        "surface": "#FFFFFF",
+        "border": "#E2E8F0"
+      },
+      "text": {
+        "DEFAULT": "#0F172A",
+        "muted": "#64748B",
+        "subtle": "#94A3B8",
+        "inverse": "#FFFFFF",
+        "disabled": "#CBD5E1"
+      },
+      "clinical": {
+        "pending_review": { "DEFAULT": "#D97706", "light": "#FEF3C7", "border": "#FCD34D", "label": "Cho xet duyet" },
+        "approved": { "DEFAULT": "#16A34A", "light": "#DCFCE7", "border": "#86EFAC", "label": "Da duyet" },
+        "rejected": { "DEFAULT": "#DC2626", "light": "#FEE2E2", "border": "#FCA5A5", "label": "Tu choi" },
+        "request_info": { "DEFAULT": "#2563EB", "light": "#DBEAFE", "border": "#93C5FD", "label": "Yeu cau them thong tin" },
+        "active": { "DEFAULT": "#16A34A", "light": "#DCFCE7", "border": "#86EFAC", "label": "Dang hoat dong" },
+        "revoked": { "DEFAULT": "#6B7280", "light": "#F3F4F6", "border": "#D1D5DB", "label": "Da thu hoi" },
+        "high_risk": { "DEFAULT": "#DC2626", "light": "#FEE2E2", "border": "#FCA5A5", "label": "Nguy co cao" },
+        "medium_risk": { "DEFAULT": "#D97706", "light": "#FEF3C7", "border": "#FCD34D", "label": "Nguy co trung binh" },
+        "low_risk": { "DEFAULT": "#16A34A", "light": "#DCFCE7", "border": "#86EFAC", "label": "Nguy co thap" }
+      }
+    },
+    "typography": {
+      "fontFamily": {
+        "sans": ["Inter", "ui-sans-serif", "system-ui", "sans-serif"],
+        "mono": ["JetBrains Mono", "ui-monospace", "monospace"]
+      },
+      "fontWeight": {
+        "light": "300",
+        "normal": "400",
+        "medium": "500",
+        "semibold": "600",
+        "bold": "700"
+      },
+      "fontSize": {
+        "display-2xl": "4.5rem",
+        "display-xl": "3.75rem",
+        "display-lg": "3rem",
+        "display-md": "2.25rem",
+        "display-sm": "1.875rem",
+        "display-xs": "1.5rem",
+        "heading-xl": "1.25rem",
+        "heading-lg": "1.125rem",
+        "heading-md": "1rem",
+        "heading-sm": "0.875rem",
+        "body-xl": "1.25rem",
+        "body-lg": "1.125rem",
+        "body-md": "1rem",
+        "body-sm": "0.875rem",
+        "body-xs": "0.75rem",
+        "label-lg": "0.875rem",
+        "label-md": "0.75rem",
+        "label-sm": "0.625rem",
+        "caption": "0.75rem",
+        "caption-sm": "0.625rem"
+      }
+    },
+    "spacing": {
+      "scale": "4px base unit (Tailwind default)",
+      "0": "0px",
+      "0.5": "0.125rem / 2px",
+      "1": "0.25rem / 4px",
+      "2": "0.5rem / 8px",
+      "3": "0.75rem / 12px",
+      "4": "1rem / 16px",
+      "5": "1.25rem / 20px",
+      "6": "1.5rem / 24px",
+      "8": "2rem / 32px",
+      "10": "2.5rem / 40px",
+      "12": "3rem / 48px",
+      "16": "4rem / 64px",
+      "20": "5rem / 80px",
+      "24": "6rem / 96px",
+      "32": "8rem / 128px",
+      "40": "10rem / 160px",
+      "48": "12rem / 192px",
+      "64": "16rem / 256px",
+      "80": "20rem / 320px",
+      "96": "24rem / 384px"
+    },
+    "radius": {
+      "none": "0",
+      "sm": "0.25rem / 4px",
+      "DEFAULT": "0.5rem / 8px",
+      "md": "0.5rem / 8px",
+      "lg": "0.75rem / 12px",
+      "xl": "1rem / 16px",
+      "2xl": "1.25rem / 20px",
+      "full": "9999px"
+    },
+    "shadows": {
+      "xs": "0 1px 2px 0 rgba(0,0,0,0.05)",
+      "sm": "0 1px 3px 0 rgba(0,0,0,0.07), 0 1px 2px -1px rgba(0,0,0,0.07)",
+      "md": "0 4px 6px -1px rgba(0,0,0,0.07), 0 2px 4px -2px rgba(0,0,0,0.07)",
+      "lg": "0 10px 15px -3px rgba(0,0,0,0.07), 0 4px 6px -4px rgba(0,0,0,0.07)",
+      "xl": "0 20px 25px -5px rgba(0,0,0,0.07), 0 8px 10px -6px rgba(0,0,0,0.07)",
+      "2xl": "0 25px 50px -12px rgba(0,0,0,0.12)",
+      "inner": "inset 0 2px 4px 0 rgba(0,0,0,0.05)",
+      "focus": "0 0 0 3px rgba(27,79,216,0.25)",
+      "focus-danger": "0 0 0 3px rgba(220,38,38,0.25)",
+      "none": "none"
+    }
+  },
+  "components": {
+    "core": [
+      {
+        "name": "Button",
+        "path": "src/design-system/components/core/Button.tsx",
+        "variants": ["primary", "secondary", "ghost", "outline", "danger", "link"],
+        "sizes": ["xs", "sm", "md", "lg"],
+        "props": ["loading", "leftIcon", "rightIcon", "fullWidth", "asChild", "disabled"],
+        "purpose": "Primary interactive action element with spinner support"
+      },
+      {
+        "name": "Badge",
+        "path": "src/design-system/components/core/Badge.tsx",
+        "variants": ["default", "primary", "success", "warning", "danger", "info", "pending_review", "approved", "rejected", "request_info", "active", "revoked", "high_risk", "medium_risk", "low_risk"],
+        "sizes": ["sm", "md"],
+        "props": ["dot"],
+        "purpose": "Inline status label; clinical variants auto-apply Vietnamese labels when children omitted"
+      },
+      {
+        "name": "Alert",
+        "path": "src/design-system/components/core/Alert.tsx",
+        "variants": ["info", "success", "warning", "danger", "neutral"],
+        "props": ["title", "dismissible", "onDismiss", "icon"],
+        "purpose": "Left-bordered contextual alert with icon, title, body, and optional dismiss"
+      },
+      {
+        "name": "Card",
+        "path": "src/design-system/components/core/Card.tsx",
+        "variants": ["default", "outlined", "elevated", "ghost", "flat"],
+        "padding": ["none", "sm", "md", "lg"],
+        "props": ["interactive"],
+        "purpose": "Generic content container with shadow/border presets"
+      },
+      {
+        "name": "Modal",
+        "path": "src/design-system/components/core/Modal.tsx",
+        "sizes": ["sm", "md", "lg", "xl", "full"],
+        "props": ["open", "onOpenChange", "title", "description", "footer", "closeOnOverlayClick"],
+        "purpose": "Accessible dialog built on Radix UI Dialog primitive"
+      },
+      {
+        "name": "Tabs",
+        "path": "src/design-system/components/core/Tabs.tsx",
+        "variants": ["line", "pill", "card"],
+        "props": ["defaultValue", "value", "onValueChange", "items"],
+        "purpose": "Tab navigation with badge count and icon support built on Radix Tabs"
+      },
+      {
+        "name": "Input",
+        "path": "src/design-system/components/core/Input.tsx",
+        "variants": ["Input", "PasswordInput"],
+        "props": ["leftIcon", "rightIcon", "error", "disabled"],
+        "purpose": "Text input with icon slots and error state; PasswordInput adds show/hide toggle"
+      },
+      {
+        "name": "Textarea",
+        "path": "src/design-system/components/core/Textarea.tsx",
+        "props": ["error", "disabled", "rows"],
+        "purpose": "Multi-line text area with consistent error styling"
+      },
+      {
+        "name": "Select",
+        "path": "src/design-system/components/core/Select.tsx",
+        "props": ["items", "value", "onChange", "placeholder", "error", "disabled"],
+        "purpose": "Single-select dropdown built on Radix Select"
+      },
+      {
+        "name": "Checkbox",
+        "path": "src/design-system/components/core/Checkbox.tsx",
+        "props": ["checked", "indeterminate", "label", "description", "error", "disabled"],
+        "purpose": "Accessible checkbox with label/description slots"
+      },
+      {
+        "name": "RadioGroup",
+        "path": "src/design-system/components/core/Radio.tsx",
+        "props": ["options", "value", "onChange", "orientation", "error", "disabled"],
+        "purpose": "Radio button group with horizontal/vertical orientation"
+      },
+      {
+        "name": "Switch",
+        "path": "src/design-system/components/core/Switch.tsx",
+        "props": ["checked", "onCheckedChange", "label", "description", "disabled"],
+        "purpose": "Toggle switch built on Radix Switch"
+      },
+      {
+        "name": "FormField",
+        "path": "src/design-system/components/core/FormField.tsx",
+        "props": ["label", "required", "hint", "error", "id"],
+        "purpose": "Form field wrapper providing label, hint, and error message layout"
+      },
+      {
+        "name": "Table",
+        "path": "src/design-system/components/core/Table.tsx",
+        "props": ["columns", "data", "loading", "emptyMessage", "onRowClick", "stickyHeader"],
+        "purpose": "Generic data table with column definitions, loading skeleton, and row click"
+      },
+      {
+        "name": "EmptyState",
+        "path": "src/design-system/components/core/EmptyState.tsx",
+        "props": ["icon", "title", "description", "actions"],
+        "purpose": "Placeholder view for zero-data scenarios with CTA actions"
+      },
+      {
+        "name": "LoadingState",
+        "path": "src/design-system/components/core/LoadingState.tsx",
+        "exports": ["Spinner", "Skeleton", "SkeletonText", "PageLoading", "CardSkeleton"],
+        "purpose": "Loading primitives: animated spinner, content skeleton, full-page loader"
+      },
+      {
+        "name": "ErrorState",
+        "path": "src/design-system/components/core/ErrorState.tsx",
+        "variants": ["ErrorVariant"],
+        "purpose": "Error boundary display with retry action support"
+      }
+    ],
+    "layout": [
+      {
+        "name": "AppShell",
+        "path": "src/design-system/components/layout/AppShell.tsx",
+        "variants": ["AppShellVariant"],
+        "props": ["sidebarWidth", "sidebar", "topNav", "children"],
+        "purpose": "Top-level page shell composing sidebar and top navigation"
+      },
+      {
+        "name": "Sidebar",
+        "path": "src/design-system/components/layout/Sidebar.tsx",
+        "props": ["items", "logo", "currentPath", "onNavigate", "collapsed"],
+        "purpose": "Role-aware vertical navigation with nested NavItem support"
+      },
+      {
+        "name": "TopNav",
+        "path": "src/design-system/components/layout/TopNav.tsx",
+        "props": ["breadcrumbs", "actions", "userMenu"],
+        "purpose": "Horizontal top bar with breadcrumb trail and action slots"
+      },
+      {
+        "name": "PageHeader",
+        "path": "src/design-system/components/layout/PageHeader.tsx",
+        "props": ["title", "description", "breadcrumbs", "actions"],
+        "purpose": "Consistent page-level heading with optional breadcrumbs and action buttons"
+      }
+    ],
+    "healthcare": [
+      {
+        "name": "PatientMetricCard",
+        "path": "src/design-system/components/healthcare/PatientMetricCard.tsx",
+        "purpose": "Displays a single metabolic metric (e.g. HbA1c, BMI) with value, unit, trend, and risk level"
+      },
+      {
+        "name": "RiskLevelBadge",
+        "path": "src/design-system/components/healthcare/RiskLevelBadge.tsx",
+        "variants": ["high_risk", "medium_risk", "low_risk"],
+        "purpose": "Standalone risk-level pill badge for patient cards and lists"
+      },
+      {
+        "name": "CarePlanCard",
+        "path": "src/design-system/components/healthcare/CarePlanCard.tsx",
+        "props": ["plan", "onView", "onEdit"],
+        "purpose": "Care plan summary card with goal progress indicators"
+      },
+      {
+        "name": "MedicationCard",
+        "path": "src/design-system/components/healthcare/MedicationCard.tsx",
+        "props": ["medication", "onAcknowledge"],
+        "purpose": "Medication detail card with dosage, schedule, and adherence status"
+      },
+      {
+        "name": "ConsentStatusCard",
+        "path": "src/design-system/components/healthcare/ConsentStatusCard.tsx",
+        "props": ["consent", "onRevoke", "onView"],
+        "purpose": "Patient consent record with status badge and revoke action"
+      },
+      {
+        "name": "AISessionCard",
+        "path": "src/design-system/components/healthcare/AISessionCard.tsx",
+        "props": ["session", "onView", "onReview"],
+        "purpose": "AI consultation session summary with status, risk level, and review CTA"
+      },
+      {
+        "name": "DoctorReviewQueueItem",
+        "path": "src/design-system/components/healthcare/DoctorReviewQueueItem.tsx",
+        "props": ["item", "onAssign", "onReview"],
+        "purpose": "Queue row for doctor review dashboard showing priority, type, and patient"
+      },
+      {
+        "name": "ClinicalRecommendationPanel",
+        "path": "src/design-system/components/healthcare/ClinicalRecommendationPanel.tsx",
+        "props": ["recommendations", "aiInsight", "onAccept", "onModify"],
+        "purpose": "AI-generated clinical recommendation list with accept/modify controls"
+      },
+      {
+        "name": "ReviewDecisionPanel",
+        "path": "src/design-system/components/healthcare/ReviewDecisionPanel.tsx",
+        "props": ["onDecide", "decision", "note"],
+        "purpose": "Doctor decision panel for approve/reject/request-info workflow actions"
+      },
+      {
+        "name": "PatientSummaryHeader",
+        "path": "src/design-system/components/healthcare/PatientSummaryHeader.tsx",
+        "props": ["profile", "riskLevel", "actions"],
+        "purpose": "Patient identity strip with avatar, demographics, and risk badge for detail pages"
+      },
+      {
+        "name": "TimelineItem",
+        "path": "src/design-system/components/healthcare/TimelineItem.tsx",
+        "props": ["event", "isLast"],
+        "purpose": "Single event in a vertical clinical timeline with icon, timestamp, and description"
+      }
+    ]
+  },
+  "clinicalWorkflowStatuses": [
+    "pending_review",
+    "approved",
+    "rejected",
+    "request_info",
+    "active",
+    "revoked",
+    "high_risk",
+    "medium_risk",
+    "low_risk"
+  ],
+  "roles": [
+    "patient",
+    "doctor",
+    "clinic_admin",
+    "internal_admin",
+    "super_admin"
+  ],
+  "galleryUrl": "/design-system",
+  "syncReadyAt": "2026-06-19"
+}
