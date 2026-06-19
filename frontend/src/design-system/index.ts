@@ -7,7 +7,9 @@ export * from './tokens/index';
 
 // Core components
 export * from './components/core/Button';
+export { default as Button } from './components/core/Button';
 export * from './components/core/Badge';
+export { default as Badge } from './components/core/Badge';
 export * from './components/core/Input';
 export * from './components/core/Textarea';
 export * from './components/core/Select';
