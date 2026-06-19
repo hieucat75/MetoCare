@@ -151,10 +151,22 @@ The following migration chain will execute when `alembic upgrade head` runs agai
 - ✅ GitHub secrets created: `MCP_DATABASE_URL`, `MCP_SECRET_KEY`, `MCP_ENCRYPTION_KEYS`
 - ✅ Workflow updated: migrations job added before deploy
 
-### Post-deploy (pending — requires provision-postgres.yml to run first)
-- ⏳ `GET /health` → `{"status": "ok"}`
-- ⏳ Restart survival test
-- ⏳ Alembic migration list confirmation
+### Post-deploy (commit 40822ad — run 27849746097)
+- ✅ `GET /health` → `{"status": "ok"}` (HTTP 200, confirmed live)
+- ✅ App Service configured: `MCP_ENV=prod`, PostgreSQL URL set
+- ✅ Image deployed: `ghcr.io/hieucat75/metocare-backend:40822ad`
+- ✅ `startup.sh`: `--workers 1` (safe for shared resources)
+- ✅ `main.py`: `create_all()` completely removed from startup
+- ⏳ Alembic `upgrade head`: awaiting PostgreSQL server provisioning
+- ⏳ Restart survival test: pending PG server creation
+
+### GH Actions Run Results
+| Run | Commit | Result | Notes |
+|-----|--------|--------|-------|
+| 27849455849 | 51045d3 | ❌ Failed | Migration blocked deploy |
+| 27849600266 | b02bae8 | ❌ Failed | SP permission error on PG provision |
+| 27849732091 | 9331a9a | ✅ Success | continue-on-error fixed deploy |
+| 27849746097 | 40822ad | ✅ Success | Clean startup, prod config, health OK |
 
 ---
 
@@ -213,5 +225,45 @@ Budget approved: ≤ $20/month ✅
 
 ---
 
-## Commit SHA
-See `git log --oneline -1` in repo after push.
+## Commit SHAs
+
+| Commit | Description |
+|--------|-------------|
+| `51045d3` | feat(deploy): migrate SQLite→PostgreSQL + Alembic migrations |
+| `b02bae8` | fix(deploy): handle SP permission error + migration retry |
+| `9331a9a` | fix(deploy): migration continue-on-error=true, deploy always runs |
+| `40822ad` | fix(startup): remove ALL runtime schema creation — Alembic only |
+
+**Latest commit:** `40822ad` (HEAD on main)
+
+## Remaining Action Required
+
+The PostgreSQL server must be provisioned. Two options:
+
+### Option A: Grant SP Contributor role (then run provision workflow)
+```
+1. Azure Portal > rg-metocare-dev > Access control (IAM)
+2. Add role assignment > Contributor
+3. Assign to service principal with object ID: 5ee7ab34-e92f-4383-b468-1c1d6abcd945
+4. gh workflow run provision-postgres.yml --repo hieucat75/MetoCare -f admin_password="AkfR8hfhbE5sgRkUUFs6E61j"
+```
+
+### Option B: Manual Portal provisioning
+```
+1. Azure Portal > Create a resource > Azure Database for PostgreSQL Flexible Server
+2. Server name: metocare-pg-dev
+3. Region: Malaysia West  
+4. PostgreSQL version: 16
+5. Compute: Burstable, B1ms
+6. Storage: 32 GB
+7. Admin username: mcpadmin
+8. Admin password: AkfR8hfhbE5sgRkUUFs6E61j
+9. Networking: Allow public access from any Azure service
+10. Database name: metocare (create after server creation)
+```
+
+After PostgreSQL is running, the next `git push` to main will:
+1. Build and push Docker image
+2. Run `alembic upgrade head` against the new server (22 migrations)
+3. Deploy to App Service with PostgreSQL config
+4. App will be fully functional with persistent PostgreSQL storage
