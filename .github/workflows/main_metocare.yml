@@ -45,15 +45,21 @@ jobs:
         run: |
           cd backend
           chmod +x startup.sh
+          # Include antenv/ in the zip so Azure finds the virtualenv at runtime.
+          # Oryx create-script checks /home/site/wwwroot/antenv and activates it.
+          # Without antenv in the zip, Oryx falls back to system Python 3.9 (no uvicorn).
           zip -r ../deploy.zip . \
-            --exclude "antenv/*" \
             --exclude "tests/*" \
             --exclude "requirements-dev.txt" \
             --exclude "data/*" \
             --exclude "__pycache__/*" \
-            --exclude "*.pyc"
-          echo "=== Zip contents (top level) ==="
-          unzip -l ../deploy.zip | grep -v "/$" | awk '{print $NF}' | head -20
+            --exclude "*.pyc" \
+            --exclude "antenv/lib/python*/site-packages/pip*" \
+            --exclude "antenv/lib/python*/site-packages/setuptools*"
+          echo "=== Zip size ==="
+          du -sh ../deploy.zip
+          echo "=== Key paths in zip ==="
+          unzip -l ../deploy.zip | grep -E "antenv/bin/|app/main|requirements\.txt|startup" | head -20
 
       - name: Upload deployment zip
         uses: actions/upload-artifact@v4
@@ -95,29 +101,18 @@ jobs:
               MCP_STORAGE_MODE=local \
               MCP_DATABASE_URL="sqlite:////home/site/wwwroot/data/mcp_dev.sqlite3" \
               WEBSITES_ENABLE_APP_SERVICE_STORAGE=true \
-              SCM_DO_BUILD_DURING_DEPLOYMENT=true \
               WEBSITES_CONTAINER_START_TIME_LIMIT=300 \
             --output none
           
-          # Set startup command — let Oryx wrap this with antenv activation.
-          # Oryx exports $PORT before running the user command so gunicorn gets the right port.
-          # Do NOT use 'bash /home/site/wwwroot/startup.sh' — startup.sh is not preserved
-          # in wwwroot after Oryx build; pass gunicorn directly.
+          # Startup command: Oryx finds antenv/ in wwwroot (shipped in zip),
+          # activates it, then runs this command. $PORT is exported by Azure runtime.
           az webapp config set \
             --name ${{ env.AZURE_WEBAPP_NAME }} \
             --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-            --startup-file 'gunicorn -w 2 -k uvicorn.workers.UvicornWorker app.main:app --bind 0.0.0.0:$PORT --timeout 120 --access-logfile - --error-logfile -' \
+            --startup-file 'gunicorn -w 2 -k uvicorn.workers.UvicornWorker app.main:app --bind 0.0.0.0:8000 --timeout 120' \
             --output none
           
           echo "✅ Config applied."
-          
-          # Verify startup command was saved correctly
-          echo "=== Verifying startup command ==="
-          az webapp config show \
-            --name ${{ env.AZURE_WEBAPP_NAME }} \
-            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-            --query 'appCommandLine' \
-            --output tsv
 
       - name: Ensure app is running before deploy
         run: |
