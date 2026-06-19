@@ -30,8 +30,7 @@ ENV NEXT_TELEMETRY_DISABLED=1
 
 RUN addgroup -g 1001 -S nodejs && adduser -S nextjs -u 1001
 
-# For standalone output (set in next.config); fallback: copy .next + node_modules
-COPY --from=builder /app/public ./public
+# standalone output; no public/ dir in this project so skip that copy
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
