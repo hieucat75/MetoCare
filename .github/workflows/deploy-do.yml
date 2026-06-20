@@ -1,5 +1,9 @@
-# MetoCare — Deploy to DigitalOcean VPS
-# Trigger: push to main (after CI passes) OR manual workflow_dispatch
+# MetoCare — Deploy to DigitalOcean VPS (PRIMARY PRODUCTION)
+# Trigger: OPT-IN only —
+#   • push to main whose HEAD commit message contains `[deploy-do]`, OR
+#   • manual workflow_dispatch.
+# A normal merge to main does NOT deploy production. Tag the commit `[deploy-do]`
+# (or run the workflow manually) when you intend to ship to DigitalOcean.
 # Flow: build+push image → SSH to VPS → pull image → alembic upgrade head → restart backend
 #
 # Required GitHub Secrets:
@@ -29,6 +33,10 @@ env:
 
 jobs:
   build:
+    # Opt-in guard: only deploy production on an explicit `[deploy-do]` push or a
+    # manual dispatch. migrate + deploy `needs: build`, so skipping build cascades
+    # and skips the whole pipeline for ordinary merges.
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[deploy-do]')
     runs-on: ubuntu-latest
     permissions:
       contents: read
