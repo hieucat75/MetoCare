@@ -325,7 +325,7 @@ def test_confirm_save_persists_canonical_record(client, patient, monkeypatch, oc
     pid = patient["patient_id"]
     save = client.post(
         f"/api/v1/patients/{pid}/lab-results",
-        json={"lab_name": "Phòng khám test", "results": results},
+        json={"lab_name": "Phòng khám test", "test_date": "2026-06-12", "results": results},
         headers=patient["headers"],
     )
     assert save.status_code == 201, save.text
@@ -355,3 +355,89 @@ def test_real_tesseract_roundtrip(monkeypatch, ocr_on):
     draft = lab_upload.process_bytes(buf.getvalue())
     names = {i.canonical for i in draft.parsed_values}
     assert "fasting_glucose" in names
+
+
+# --------------------------------------------------------------------------- #
+# Test-date extraction (parser) + required/validated test_date (endpoint)
+# --------------------------------------------------------------------------- #
+
+@pytest.mark.parametrize("text,expected,label_has", [
+    ("Ngày xét nghiệm: 15/10/2024\nGlucose 90 mg/dL", "2024-10-15", "xét nghiệm"),
+    # sample date wins over the print/report date:
+    ("Ngày lấy mẫu: 03/01/2025\nNgày in báo cáo: 05/01/2025", "2025-01-03", "lấy mẫu"),
+    ("Sample date 07-08-2023\nGlucose 90", "2023-08-07", "Sample"),
+    ("Ngày thực hiện\n22.09.2024", "2024-09-22", "thực hiện"),  # date on next line
+    ("Kết quả xét nghiệm ngày 02 tháng 03 năm 2024", "2024-03-02", None),
+])
+def test_parse_test_date_labels(text, expected, label_has):
+    res = lab_parser.parse_test_date(text)
+    assert res is not None and res.iso == expected, f"got {res}"
+    if label_has:
+        assert label_has.lower() in (res.raw_label or "").lower()
+
+
+def test_parse_test_date_none_when_absent():
+    assert lab_parser.parse_test_date("Glucose 126 mg/dL\nHbA1c 6.8 %") is None
+
+
+def test_parse_test_date_rejects_impossible():
+    # 32/13 is not a calendar date -> no labelled match, no fallback.
+    assert lab_parser.parse_test_date("Ngày xét nghiệm: 32/13/2024") is None
+
+
+def test_draft_includes_extracted_test_date(monkeypatch):
+    _patch_ocr(monkeypatch, text="Ngày xét nghiệm: 15/10/2024\nGlucose 126 mg/dL")
+    draft = lab_upload.process_bytes(_png())
+    assert draft.extracted_test_date == "2024-10-15"
+    assert draft.test_date_confidence > 0.7
+    assert "xét nghiệm" in (draft.test_date_label or "").lower()
+
+
+def test_draft_warns_when_no_test_date(monkeypatch):
+    _patch_ocr(monkeypatch, text="Glucose 126 mg/dL\nHbA1c 6.8 %")
+    draft = lab_upload.process_bytes(_png())
+    assert draft.extracted_test_date is None
+    assert any("ngày xét nghiệm" in w.lower() for w in draft.warnings)
+
+
+def test_manual_entry_requires_test_date(client, patient):
+    r = client.post(
+        f"/api/v1/patients/{patient['patient_id']}/lab-results",
+        json={"results": [{"test_name": "Glucose", "value": 90, "unit": "mg/dL"}]},
+        headers=patient["headers"],
+    )
+    assert r.status_code == 422, r.text
+
+
+def test_manual_entry_rejects_future_date(client, patient):
+    r = client.post(
+        f"/api/v1/patients/{patient['patient_id']}/lab-results",
+        json={"test_date": "2099-01-01", "results": [{"test_name": "Glucose", "value": 90}]},
+        headers=patient["headers"],
+    )
+    assert r.status_code == 422, r.text
+
+
+def test_manual_entry_rejects_too_old_date(client, patient):
+    r = client.post(
+        f"/api/v1/patients/{patient['patient_id']}/lab-results",
+        json={"test_date": "1900-01-01", "results": [{"test_name": "Glucose", "value": 90}]},
+        headers=patient["headers"],
+    )
+    assert r.status_code == 422, r.text
+
+
+def test_lab_results_sorted_by_test_date_desc(client, patient):
+    pid = patient["patient_id"]
+    # Insert out of chronological order; older exam date uploaded last.
+    for td, name in [("2024-01-10", "Old"), ("2025-12-01", "New"), ("2024-06-15", "Mid")]:
+        client.post(
+            f"/api/v1/patients/{pid}/lab-results",
+            json={"test_date": td, "results": [{"test_name": name, "value": 1}]},
+            headers=patient["headers"],
+        )
+    resp = client.get(f"/api/v1/patients/{pid}/lab-results", headers=patient["headers"])
+    items = resp.json()["items"]
+    dates = [it["test_date"] for it in items]
+    assert dates == sorted(dates, reverse=True), f"not test_date DESC: {dates}"
+    assert dates[0] == "2025-12-01"

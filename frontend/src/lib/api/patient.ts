@@ -385,6 +385,10 @@ export interface LabUploadDraft {
   raw_text_sha256: string
   low_confidence: boolean
   manual_fallback: boolean
+  // Exam date detected from the report (ISO YYYY-MM-DD), distinct from upload time.
+  extracted_test_date: string | null
+  test_date_label: string | null
+  test_date_confidence: number
 }
 
 /**

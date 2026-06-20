@@ -12,6 +12,7 @@ import {
   Trash2,
   Upload,
 } from 'lucide-react'
+import { CalendarDays } from 'lucide-react'
 import { Alert, Badge, Button, PageHeader } from '@/design-system'
 import { GlassCard, MintButton, PatientInput } from '@/components/patient'
 import { useAuth } from '@/lib/auth/context'
@@ -22,6 +23,7 @@ import {
   type LabUploadDraft,
   type ManualLabItem,
 } from '@/lib/api/patient'
+import { displayDateToIso, formatDateInput, isoToDisplayDate, validateExamDate } from '@/lib/utils'
 
 const MAX_MB = 10
 const ACCEPT = ['image/jpeg', 'image/png', 'application/pdf']
@@ -102,6 +104,8 @@ export default function LabUploadPage() {
   const [draft, setDraft] = React.useState<LabUploadDraft | null>(null)
   const [rows, setRows] = React.useState<EditRow[]>([])
   const [labName, setLabName] = React.useState('')
+  const [testDate, setTestDate] = React.useState('')       // display DD/MM/YYYY
+  const [testDateAuto, setTestDateAuto] = React.useState(false)  // detected by OCR
   const [saving, setSaving] = React.useState(false)
 
   const step: 'input' | 'review' = draft ? 'review' : 'input'
@@ -133,6 +137,10 @@ export default function LabUploadPage() {
       }
       const d = await uploadLabDraft(input)
       setDraft(d)
+      // Pre-fill the exam date from OCR if detected; else leave empty (the patient
+      // MUST choose it — never silently default to today).
+      setTestDate(isoToDisplayDate(d.extracted_test_date))
+      setTestDateAuto(Boolean(d.extracted_test_date))
       const mapped: EditRow[] = d.parsed_values.map((v) => ({
         test_name: v.test_name,
         value: String(v.value),
@@ -156,6 +164,11 @@ export default function LabUploadPage() {
 
   async function confirmSave() {
     if (!patientId) return
+    const dateErr = validateExamDate(testDate)
+    if (dateErr) {
+      setError(dateErr)
+      return
+    }
     const named = rows.filter((r) => r.test_name.trim())
     if (named.length === 0) {
       setError('Vui lòng nhập ít nhất một chỉ số.')
@@ -176,6 +189,7 @@ export default function LabUploadPage() {
     try {
       await createManualLabResults(patientId, {
         lab_name: labName.trim() || null,
+        test_date: displayDateToIso(testDate),
         results,
       })
       router.push('/labs')
@@ -296,6 +310,29 @@ export default function LabUploadPage() {
               <CheckCircle2 className="size-5" /> Đã đọc {draft.parsed_values.length} chỉ số. Hãy kiểm tra lại trước khi lưu.
             </div>
           )}
+
+          {/* Exam date — prominent, required, at the TOP of the review form. */}
+          <GlassCard>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="flex items-center gap-1.5 text-[16px] font-semibold text-mint-700">
+                <CalendarDays className="size-5" /> Ngày xét nghiệm
+              </label>
+              {testDateAuto && (
+                <Badge variant="mint" size="sm">Tự động phát hiện</Badge>
+              )}
+            </div>
+            <PatientInput
+              aria-label="Ngày xét nghiệm"
+              inputMode="numeric"
+              placeholder="DD/MM/YYYY"
+              value={testDate}
+              invalid={Boolean(testDate) && validateExamDate(testDate) !== null}
+              onChange={(e) => { setTestDate(formatDateInput(e.target.value)); setTestDateAuto(false) }}
+            />
+            <p className="mt-1.5 text-[14px] text-text-subtle">
+              Ngày khám/lấy mẫu thật trên phiếu — không phải ngày tải lên.
+            </p>
+          </GlassCard>
 
           <GlassCard>
             <label className="block text-[15px] font-medium text-mint-700 mb-1.5">Tên phòng khám / xét nghiệm (tuỳ chọn)</label>

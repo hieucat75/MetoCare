@@ -144,3 +144,109 @@ def parse_lab_text(text: str) -> list[RawLabValue]:
     # Preserve biomarker declaration order for a stable, readable draft.
     order = {spec.canonical: i for i, spec in enumerate(BIOMARKERS)}
     return [seen[c] for c in sorted(seen, key=lambda c: order.get(c, 999))]
+
+
+# --------------------------------------------------------------------------- #
+# Test-date extraction
+# --------------------------------------------------------------------------- #
+
+# Label → priority (higher wins). Accent-stripped, lower-cased. The sample/
+# collection date is the truest "when the blood was drawn"; the print/report date
+# is least meaningful, so it ranks lowest.
+_DATE_LABELS: tuple[tuple[str, int, str], ...] = (
+    ("ngay lay mau", 5, "Ngày lấy mẫu"),
+    ("ngay thu mau", 5, "Ngày thu mẫu"),
+    ("collection date", 5, "Collection date"),
+    ("sample date", 5, "Sample date"),
+    ("ngay xet nghiem", 4, "Ngày xét nghiệm"),
+    ("ngay xn", 4, "Ngày XN"),
+    ("test date", 4, "Test date"),
+    ("date of test", 4, "Date of test"),
+    ("ngay thuc hien", 3, "Ngày thực hiện"),
+    ("ngay ket qua", 2, "Ngày kết quả"),
+    ("ngay tra ket qua", 2, "Ngày trả kết quả"),
+    ("result date", 2, "Result date"),
+    ("ngay in bao cao", 1, "Ngày in báo cáo"),
+    ("ngay in", 1, "Ngày in"),
+    ("report date", 1, "Report date"),
+    ("ngay bao cao", 1, "Ngày báo cáo"),
+)
+
+# DD/MM/YYYY with / . or - separators.
+_DMY_RE = re.compile(r"\b(\d{1,2})\s*[/.\-]\s*(\d{1,2})\s*[/.\-]\s*(\d{4})\b")
+# "ngay DD thang MM nam YYYY" (accent-stripped).
+_VN_LONG_RE = re.compile(r"ngay\s+(\d{1,2})\s+thang\s+(\d{1,2})\s+nam\s+(\d{4})")
+
+# Sanity window: a real exam date is in the past 50 years and not in the future.
+_MIN_YEAR = 1975
+
+
+@dataclass
+class ExtractedDate:
+    iso: str            # YYYY-MM-DD
+    raw_label: str | None
+    confidence: float
+
+
+def _valid_dmy(d: int, m: int, y: int) -> str | None:
+    """Return an ISO date string if (d, m, y) is a sane calendar date, else None.
+    Uses no `Date.now()` (unavailable in some sandboxes) — a fixed upper bound year
+    plus calendar validation. The endpoint applies the strict ≤today check."""
+    if not (1 <= m <= 12 and 1 <= d <= 31 and _MIN_YEAR <= y <= 2100):
+        return None
+    days_in_month = [31, 29 if y % 4 == 0 and (y % 100 != 0 or y % 400 == 0) else 28,
+                     31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    if d > days_in_month[m - 1]:
+        return None
+    return f"{y:04d}-{m:02d}-{d:02d}"
+
+
+def _find_date_in(text_noacc: str) -> str | None:
+    m = _VN_LONG_RE.search(text_noacc)
+    if m:
+        iso = _valid_dmy(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        if iso:
+            return iso
+    m = _DMY_RE.search(text_noacc)
+    if m:
+        return _valid_dmy(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+    return None
+
+
+def parse_test_date(text: str) -> ExtractedDate | None:
+    """Detect the lab's *exam* date from OCR text. Prefers the highest-priority
+    labelled date (sample > test > performed > result > printed); falls back to a
+    bare date anywhere with low confidence. Returns None if nothing parses.
+
+    Never defaults to "today" — an undetected date must be filled by the patient."""
+    if not text:
+        return None
+    lines = [_strip_accents(ln).lower() for ln in text.splitlines()]
+    best: tuple[int, ExtractedDate] | None = None  # (priority, result)
+
+    for i, line in enumerate(lines):
+        for label, priority, display in _DATE_LABELS:
+            idx = line.find(label)
+            if idx < 0:
+                continue
+            # Look after the label on the same line, then the next line.
+            iso = _find_date_in(line[idx + len(label):])
+            search_window = "same"
+            if iso is None and i + 1 < len(lines):
+                iso = _find_date_in(lines[i + 1])
+                search_window = "next"
+            if iso is None:
+                continue
+            conf = 0.9 if (priority >= 4 and search_window == "same") else 0.75
+            if best is None or priority > best[0]:
+                best = (priority, ExtractedDate(iso=iso, raw_label=display, confidence=conf))
+
+    if best is not None:
+        return best[1]
+
+    # Fallback: any sane date anywhere, but low confidence + no label.
+    for line in lines:
+        iso = _find_date_in(line)
+        if iso:
+            return ExtractedDate(iso=iso, raw_label=None, confidence=0.4)
+    return None

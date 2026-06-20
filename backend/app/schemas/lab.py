@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class LabDocumentCreate(BaseModel):
@@ -25,8 +25,22 @@ class LabResultItemIn(BaseModel):
 
 class LabManualEntryCreate(BaseModel):
     lab_name: str | None = Field(None, max_length=255)
-    test_date: dt.date | None = None
+    # Required: the real exam date (when the sample was taken), NOT the upload date.
+    # A lab report can be months old, so this drives history ordering + trends.
+    test_date: dt.date = Field(
+        ..., description="Exam date (YYYY-MM-DD); must be ≤ today and within 50 years"
+    )
     results: list[LabResultItemIn] = Field(..., min_length=1)
+
+    @field_validator("test_date")
+    @classmethod
+    def _validate_test_date(cls, v: dt.date) -> dt.date:
+        today = dt.date.today()
+        if v > today:
+            raise ValueError("Ngày xét nghiệm không được ở tương lai.")
+        if v < today.replace(year=today.year - 50):
+            raise ValueError("Ngày xét nghiệm quá xa trong quá khứ (>50 năm).")
+        return v
 
 
 class LabResultOut(BaseModel):
