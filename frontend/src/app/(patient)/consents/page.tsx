@@ -45,12 +45,12 @@ function ConsentRow({ consent, onRevoke }: ConsentRowProps) {
     <div className="flex flex-col gap-3 py-4 border-b border-border last:border-0 sm:flex-row sm:items-start sm:justify-between">
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2 flex-wrap">
-          <p className="text-body-sm font-semibold text-text">{doctorLabel}</p>
+          <p className="text-body-md font-semibold text-text">{doctorLabel}</p>
           <Badge variant="active" size="sm" dot>
             Đang hoạt động
           </Badge>
         </div>
-        <p className="text-caption text-text-muted mt-0.5">{scopeLabel}</p>
+        <p className="text-body-sm text-text-muted mt-0.5">{scopeLabel}</p>
       </div>
 
       <div className="shrink-0">
@@ -135,7 +135,7 @@ export default function ConsentsPage() {
       {/* Intro card */}
       <Card variant="flat" padding="md">
         <CardContent>
-          <p className="text-body-sm text-text">
+          <p className="text-body-md text-text">
             Các bác sĩ dưới đây có quyền xem hồ sơ sức khỏe của bạn. Bạn có thể thu hồi quyền
             truy cập bất kỳ lúc nào.
           </p>
@@ -220,7 +220,7 @@ export default function ConsentsPage() {
           </>
         }
       >
-        <p className="text-body-sm text-text">
+        <p className="text-body-md text-text">
           Bạn có chắc muốn thu hồi quyền truy cập của bác sĩ này không? Họ sẽ không thể xem hồ
           sơ của bạn nữa.
         </p>

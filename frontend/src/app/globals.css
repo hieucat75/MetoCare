@@ -166,3 +166,22 @@
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }
 }
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * Patient app typography — larger, high-readability for 50+ patients.
+ * Scoped to `.patient-app` (patient routes + auth + onboarding) via element
+ * selectors so doctor/admin portals (no `.patient-app` wrapper) are unchanged.
+ * ──────────────────────────────────────────────────────────────────────── */
+.patient-app input:not([type='checkbox']):not([type='radio']),
+.patient-app textarea,
+.patient-app [role='combobox'] {
+  min-height: 3.25rem;        /* 52px — touch target + placeholder visible */
+  font-size: 1.0625rem;       /* 17px — input value & placeholder */
+  line-height: 1.55;
+}
+.patient-app textarea { min-height: 4.5rem; }
+.patient-app label { font-size: 1rem; }    /* 16px form labels */
+.patient-app ::placeholder { font-size: 1.0625rem; }
+/* Patient CTA buttons larger (exclude bottom-nav tabs). Icons unaffected. */
+.patient-app button:not(.bottomnav-btn) { font-size: 1rem; }
+.patient-app .bottomnav-btn { font-size: inherit; }

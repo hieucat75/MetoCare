@@ -131,7 +131,7 @@ export default function LogMetricPage() {
       <div className="p-4 lg:p-6 flex flex-col items-center justify-center min-h-[60vh] text-center">
         <CheckCircle className="size-16 text-green-500 mb-4" aria-hidden="true" />
         <h1 className="text-heading-md font-bold text-text mb-2">Đã lưu!</h1>
-        <p className="text-body-sm text-text-muted mb-6">
+        <p className="text-body-md text-text-muted mb-6">
           Chỉ số {METRIC_LABELS[form.metric_type] ?? form.metric_type} đã được ghi thành công.
         </p>
         <div className="flex gap-3">
@@ -156,8 +156,8 @@ export default function LogMetricPage() {
   return (
     <div className="p-4 lg:p-6 max-w-lg mx-auto">
       <div className="mb-6">
-        <h1 className="text-heading-lg font-bold text-text">Ghi chỉ số</h1>
-        <p className="text-body-sm text-text-muted mt-1">
+        <h1 className="text-heading-xl font-bold text-text">Ghi chỉ số</h1>
+        <p className="text-body-md text-text-muted mt-1">
           Nhập chỉ số sức khỏe để theo dõi xu hướng
         </p>
       </div>

@@ -38,13 +38,13 @@ export default function ForgotPasswordPage() {
           <Clock className="w-7 h-7 text-mint-600" aria-hidden="true" />
         </div>
         <h2 className="text-heading-xl font-bold text-text mb-2">Tính năng sắp ra mắt</h2>
-        <p className="text-body-sm text-text-muted mb-6">
+        <p className="text-body-md text-text-muted mb-6">
           Đặt lại mật khẩu qua SMS sẽ có trong phiên bản tiếp theo. Vui lòng liên hệ
           tổng đài hỗ trợ nếu bạn cần khôi phục tài khoản ngay.
         </p>
         <Link
           href="/login"
-          className="text-body-sm text-mint-700 font-semibold hover:underline underline-offset-2"
+          className="text-body-md text-mint-700 font-semibold hover:underline underline-offset-2"
         >
           ← Quay lại đăng nhập
         </Link>
@@ -55,7 +55,7 @@ export default function ForgotPasswordPage() {
   return (
     <div>
       <h1 className="text-heading-xl font-bold text-text mb-1">Quên mật khẩu</h1>
-      <p className="text-body-sm text-text-muted mb-4">
+      <p className="text-body-md text-text-muted mb-4">
         Nhập số điện thoại đăng ký. Chúng tôi sẽ gửi hướng dẫn đặt lại mật khẩu qua SMS.
       </p>
 
@@ -81,7 +81,7 @@ export default function ForgotPasswordPage() {
               placeholder="0901234567"
               autoComplete="tel"
               className={cn(
-                'h-12 w-full rounded-xl border bg-white/80 pl-10 pr-3 py-2 text-body-sm text-text',
+                'h-12 w-full rounded-xl border bg-white/80 pl-10 pr-3 py-2 text-body-md text-text',
                 'placeholder:text-text-subtle focus:outline-none focus:ring-2 transition-colors',
                 'border-mint-200 focus:border-mint-400 focus:ring-mint-400/25',
               )}
@@ -99,7 +99,7 @@ export default function ForgotPasswordPage() {
         </Button>
       </form>
 
-      <p className="text-center text-body-sm text-text-muted mt-6">
+      <p className="text-center text-body-md text-text-muted mt-6">
         <Link href="/login" className="text-mint-700 hover:underline underline-offset-2">
           ← Quay lại đăng nhập
         </Link>

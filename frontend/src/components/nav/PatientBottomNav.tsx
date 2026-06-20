@@ -49,7 +49,7 @@ export function PatientBottomNav() {
               aria-current={isActive ? 'page' : undefined}
               onClick={() => router.push(item.href)}
               className={cn(
-                'flex-1 flex flex-col items-center justify-center gap-1 min-w-0 transition-colors',
+                'bottomnav-btn flex-1 flex flex-col items-center justify-center gap-1 min-w-0 transition-colors',
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mint-400/40',
                 isActive ? 'text-mint-700' : 'text-text-subtle hover:text-text-muted',
               )}
@@ -63,7 +63,7 @@ export function PatientBottomNav() {
               >
                 {item.icon}
               </span>
-              <span className="text-label-sm truncate w-full text-center px-1">
+              <span className="text-[11px] font-medium truncate w-full text-center px-1">
                 {item.label}
               </span>
             </button>
