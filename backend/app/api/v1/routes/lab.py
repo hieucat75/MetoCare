@@ -14,11 +14,15 @@ from app.api.deps import CurrentUser, get_session, require_roles
 from app.models.clinical import LabDocument
 from app.models.patient import PatientProfile
 from app.models.user import UserRole
+from app.core.feature_flags import FeatureFlag, is_enabled
 from app.schemas.lab import (
     InterpretationOut,
     LabDocumentCreate,
     LabDocumentOut,
     LabDocumentStatusOut,
+    LabManualEntryCreate,
+    LabResultListResponse,
+    LabResultOut,
 )
 from app.services import consent, lab
 from app.services.lab_pipeline import get_worker
@@ -127,6 +131,76 @@ def register_document(
 
 
 @router.post(
+    "/patients/{patient_id}/lab-results",
+    response_model=LabResultListResponse,
+    status_code=201,
+    summary="Manually enter structured lab results (no OCR/file)",
+)
+def create_manual_lab_results(
+    patient_id: str,
+    payload: LabManualEntryCreate,
+    user: CurrentUser = Depends(
+        require_roles(
+            UserRole.PATIENT,
+            UserRole.DOCTOR,
+            UserRole.INTERNAL_ADMIN,
+            UserRole.SUPER_ADMIN,
+        )
+    ),
+    db: Session = Depends(get_session),
+) -> LabResultListResponse:
+    """Create a manual lab entry (PR-B) — a document + typed result rows.
+
+    No file/OCR. Available regardless of the OCR feature flag. Access rules
+    match the upload path (patient owns; doctor consent-gated; AI/CLINIC_ADMIN
+    excluded by role allowlist).
+    """
+    _require_patient_ownership(db, patient_id=patient_id, user=user)
+    _, rows = lab.create_manual_entry(
+        db,
+        patient_id=patient_id,
+        requester_id=user.id,
+        lab_name=payload.lab_name,
+        test_date=payload.test_date,
+        results=[r.model_dump() for r in payload.results],
+    )
+    return LabResultListResponse(
+        patient_id=patient_id,
+        total=len(rows),
+        items=[LabResultOut.model_validate(r) for r in rows],
+    )
+
+
+@router.get(
+    "/patients/{patient_id}/lab-results",
+    response_model=LabResultListResponse,
+    summary="List structured lab results for a patient (newest first)",
+)
+def list_lab_results(
+    patient_id: str,
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    user: CurrentUser = Depends(
+        require_roles(
+            UserRole.PATIENT,
+            UserRole.DOCTOR,
+            UserRole.INTERNAL_ADMIN,
+            UserRole.SUPER_ADMIN,
+        )
+    ),
+    db: Session = Depends(get_session),
+) -> LabResultListResponse:
+    _require_patient_ownership(db, patient_id=patient_id, user=user)
+    consent.require_access(db, patient_id=patient_id, requester_id=user.id, scope="lab")
+    total, rows = lab.list_lab_results(db, patient_id=patient_id, limit=limit, offset=offset)
+    return LabResultListResponse(
+        patient_id=patient_id,
+        total=total,
+        items=[LabResultOut.model_validate(r) for r in rows],
+    )
+
+
+@router.post(
     "/lab-documents/{document_id}/process",
     response_model=LabDocumentStatusOut,
     status_code=202,
@@ -144,6 +218,8 @@ def enqueue_document(
     db: Session = Depends(get_session),
 ) -> LabDocumentStatusOut:
     """Enqueue a document for async OCR + interpretation (idempotent)."""
+    if not is_enabled(FeatureFlag.OCR):
+        raise HTTPException(status_code=503, detail="OCR feature is disabled.")
     doc = db.get(LabDocument, document_id)
     if doc is None:
         raise HTTPException(status_code=404, detail="lab document not found")
@@ -191,6 +267,8 @@ def interpret_document(
     ),
     db: Session = Depends(get_session),
 ) -> InterpretationOut:
+    if not is_enabled(FeatureFlag.OCR):
+        raise HTTPException(status_code=503, detail="OCR feature is disabled.")
     doc = db.get(LabDocument, document_id)
     if doc is None:
         raise HTTPException(status_code=404, detail="lab document not found")

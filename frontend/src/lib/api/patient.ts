@@ -328,18 +328,53 @@ export async function getLabs(
   return { patient_id: patientId, total: items.length, items }
 }
 
-export async function uploadLab(
+// ── Manual lab-result entry (PR-B — structured, no OCR/file) ──────────────────
+
+export interface LabResultEntry {
+  id: string
+  patient_id: string
+  document_id: string | null
+  test_name: string
+  value: number | null
+  unit: string | null
+  reference_range: string | null
+  status: string | null
+  test_date: string | null
+  verified_by_user: boolean
+  created_at: string
+}
+
+export interface LabResultListResponse {
+  patient_id: string
+  total: number
+  items: LabResultEntry[]
+}
+
+export interface ManualLabItem {
+  test_name: string
+  value?: number | null
+  unit?: string | null
+  reference_range?: string | null
+}
+
+export async function createManualLabResults(
   patientId: string,
-  _file: File,  // ponytail: storage_key upload not yet wired; mock key for dev smoke
-): Promise<LabResult> {
-  // Backend requires a pre-uploaded storage_key (object-storage flow).
-  // In dev/smoke, use a mock key so the endpoint path at least resolves correctly.
-  const mockKey = `dev/smoke/${Date.now()}_${_file.name}`
-  return api.post<LabResult>(`/patients/${patientId}/lab-documents`, {
-    storage_key: mockKey,
-    file_type: _file.type || null,
-    lab_name: _file.name,
-  })
+  data: { lab_name?: string | null; test_date?: string | null; results: ManualLabItem[] },
+): Promise<LabResultListResponse> {
+  return api.post<LabResultListResponse>(`/patients/${patientId}/lab-results`, data)
+}
+
+export async function getLabResults(
+  patientId: string,
+  params?: { limit?: number; offset?: number },
+): Promise<LabResultListResponse> {
+  const qs = new URLSearchParams()
+  if (params?.limit != null) qs.set('limit', String(params.limit))
+  if (params?.offset != null) qs.set('offset', String(params.offset))
+  const query = qs.toString()
+  return api.get<LabResultListResponse>(
+    `/patients/${patientId}/lab-results${query ? `?${query}` : ''}`,
+  )
 }
 
 // ── AI Explanation (PA-05) ────────────────────────────────────────────────────

@@ -19,6 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import CurrentUser, get_session, require_roles
+from app.core.feature_flags import FeatureFlag, is_enabled
 from app.domain import metabolic_score, triage
 from app.llm import LLMRateLimitError
 from app.models.patient import PatientProfile
@@ -59,6 +60,8 @@ def chat(
     payload: ChatRequest,
     user: CurrentUser = Depends(_require_ai_consumer),
 ) -> ChatResponse:
+    if not is_enabled(FeatureFlag.AI_ASSISTANT):
+        raise HTTPException(status_code=503, detail="AI assistant is disabled.")
     try:
         resp = ai_assistant.respond(
             payload.message, intent=payload.intent, user_id=user.id
@@ -206,6 +209,8 @@ def explain(
     • Mock implementation — no external AI call in pilot mode.
     • Medical disclaimer is always included.
     """
+    if not is_enabled(FeatureFlag.AI_ASSISTANT):
+        raise HTTPException(status_code=503, detail="AI assistant is disabled.")
     # Ownership check: resolve caller’s PatientProfile and compare to patient_id.
     patient_profile = db.execute(
         select(PatientProfile).where(PatientProfile.user_id == user.id)

@@ -15,6 +15,7 @@ import {
 } from '@/design-system'
 import { useAuth } from '@/lib/auth/context'
 import { getAiExplanation, type AiExplainResponse } from '@/lib/api/patient'
+import { useFeatureFlags } from '@/lib/api/features'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -103,6 +104,7 @@ function QAHistoryItem({ qa }: { qa: QAPair }) {
 export default function AIAssistantPage() {
   const { user } = useAuth()
   const patientId = user?.patient_profile_id
+  const flags = useFeatureFlags()
 
   const [question, setQuestion] = React.useState('')
   const [history, setHistory] = React.useState<QAPair[]>([])
@@ -164,6 +166,19 @@ export default function AIAssistantPage() {
       <div className="p-4 lg:p-6 max-w-2xl mx-auto">
         <Alert variant="warning" title="Chưa có hồ sơ bệnh nhân">
           Tài khoản của bạn chưa được liên kết với hồ sơ bệnh nhân. Vui lòng liên hệ hỗ trợ.
+        </Alert>
+      </div>
+    )
+  }
+
+  // Feature-flagged OFF for MVP — no real AI. Show a disabled notice.
+  if (flags && !flags.ai_assistant) {
+    return (
+      <div className="p-4 lg:p-6 max-w-2xl mx-auto space-y-4">
+        <PageHeader title="Trợ lý AI" />
+        <Alert variant="info" title="Tính năng đang được hoàn thiện">
+          Trợ lý AI sẽ khả dụng ở giai đoạn tiếp theo (Phase 2). Hiện tại bạn có thể theo dõi
+          chỉ số, xét nghiệm, thuốc và kế hoạch điều trị mà không cần AI.
         </Alert>
       </div>
     )
