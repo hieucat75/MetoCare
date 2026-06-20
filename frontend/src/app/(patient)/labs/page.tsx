@@ -1,5 +1,6 @@
 'use client'
 
+import { PatientEmptyState } from '@/components/patient'
 import * as React from 'react'
 import { FlaskConical, Plus, Trash2, Upload } from 'lucide-react'
 import {
@@ -9,7 +10,6 @@ import {
   Card,
   CardContent,
   ErrorState,
-  EmptyState,
   PageHeader,
   Skeleton,
   SkeletonText,
@@ -33,7 +33,7 @@ function ResultCard({ r }: { r: LabResultEntry }) {
   const valueStr =
     r.value != null ? `${r.value}${r.unit ? ` ${r.unit}` : ''}` : '—'
   return (
-    <Card variant="default" padding="none">
+    <Card variant="glass" padding="none">
       <CardContent className="p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-2 min-w-0">
@@ -64,7 +64,7 @@ function LabsSkeleton() {
   return (
     <div className="space-y-3">
       {[1, 2, 3].map((n) => (
-        <Card key={n} variant="default" padding="none">
+        <Card key={n} variant="glass" padding="none">
           <CardContent className="p-4 space-y-3">
             <Skeleton width="50%" height="1rem" />
             <SkeletonText lines={1} />
@@ -160,7 +160,7 @@ function ManualEntryModal({
           <Button variant="outline" size="sm" onClick={onClose} disabled={submitting}>
             Hủy
           </Button>
-          <Button variant="primary" size="sm" type="submit" form="manual-lab-form" loading={submitting}>
+          <Button variant="mint" size="sm" type="submit" form="manual-lab-form" loading={submitting}>
             Lưu
           </Button>
         </>
@@ -260,7 +260,7 @@ export default function LabsPage() {
       <PageHeader
         title="Kết quả xét nghiệm"
         actions={
-          <Button variant="primary" size="sm" onClick={() => setModalOpen(true)}>
+          <Button variant="mint" size="sm" onClick={() => setModalOpen(true)}>
             <Plus className="size-4 mr-1" aria-hidden="true" /> Nhập kết quả
           </Button>
         }
@@ -269,7 +269,7 @@ export default function LabsPage() {
       {/* OCR upload — Phase 2 stub. Only shown as enabled if the OCR flag is on
           (object-storage + auto-read deferred); otherwise a disabled hint. */}
       {flags && (
-        <Card variant="default" padding="md">
+        <Card variant="glass" padding="md">
           <CardContent className="flex items-center justify-between gap-3 py-1">
             <div className="flex items-center gap-2 text-text-muted">
               <Upload className="size-4" aria-hidden="true" />
@@ -287,11 +287,11 @@ export default function LabsPage() {
       {loading && <LabsSkeleton />}
 
       {!loading && !error && results.length === 0 && (
-        <EmptyState
+        <PatientEmptyState
           icon={<FlaskConical />}
           title="Chưa có kết quả xét nghiệm"
           description="Nhập kết quả xét nghiệm của bạn để theo dõi theo thời gian."
-          action={{ label: 'Nhập kết quả', onClick: () => setModalOpen(true) }}
+          cta={{ label: 'Nhập kết quả', onClick: () => setModalOpen(true) }}
         />
       )}
 

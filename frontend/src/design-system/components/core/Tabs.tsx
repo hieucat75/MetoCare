@@ -39,6 +39,8 @@ export interface TabsProps {
   children?: React.ReactNode
   /** Visual style of the tab list. Defaults to 'line'. */
   variant?: TabVariant
+  /** Active-state color tone. 'mint' for the patient app; defaults to primary. */
+  tone?: 'primary' | 'mint'
   /** Additional class names applied to the root element. */
   className?: string
 }
@@ -93,7 +95,7 @@ const triggerVariantClasses: Record<TabVariant, string> = {
 // Badge sub-component
 // ---------------------------------------------------------------------------
 
-function TabBadge({ value }: { value: string | number }) {
+function TabBadge({ value, tone = 'primary' }: { value: string | number; tone?: 'primary' | 'mint' }) {
   return (
     <span
       className={cn(
@@ -101,7 +103,9 @@ function TabBadge({ value }: { value: string | number }) {
         'min-w-[1.25rem] h-5 px-1.5 rounded-full',
         'text-label-sm font-semibold',
         'bg-secondary-200 text-text-muted',
-        'group-data-[state=active]:bg-primary-100 group-data-[state=active]:text-primary',
+        tone === 'mint'
+          ? 'group-data-[state=active]:bg-mint-100 group-data-[state=active]:text-mint-700'
+          : 'group-data-[state=active]:bg-primary-100 group-data-[state=active]:text-primary',
         'transition-colors duration-150',
       )}
     >
@@ -214,10 +218,19 @@ function TabsRoot({
   tabs,
   children,
   variant = 'line',
+  tone = 'primary',
   className,
 }: TabsProps) {
   // Resolve a sensible defaultValue when the caller only passes `tabs`
   const resolvedDefault = defaultValue ?? (tabs && tabs.length > 0 ? tabs[0].value : undefined)
+  // Mint tone overrides the primary active color (patient app); doctor/admin keep
+  // primary. Literal classes (not runtime-built) so Tailwind's JIT generates them;
+  // `!` wins over the variant's primary active classes regardless of CSS order.
+  const triggerCls = cn(
+    triggerVariantClasses[variant],
+    tone === 'mint' &&
+      'data-[state=active]:!text-mint-700 data-[state=active]:!border-mint-500',
+  )
 
   return (
     <TabsPrimitive.Root
@@ -236,7 +249,7 @@ function TabsRoot({
               key={tab.value}
               value={tab.value}
               disabled={tab.disabled}
-              className={cn('group whitespace-nowrap', triggerVariantClasses[variant])}
+              className={cn('group whitespace-nowrap', triggerCls)}
             >
               {tab.icon && (
                 <span className="shrink-0 [&>svg]:h-4 [&>svg]:w-4" aria-hidden>
@@ -244,7 +257,7 @@ function TabsRoot({
                 </span>
               )}
               {tab.label}
-              {tab.badge != null && <TabBadge value={tab.badge} />}
+              {tab.badge != null && <TabBadge value={tab.badge} tone={tone} />}
             </TabsPrimitive.Trigger>
           ))}
         </TabsPrimitive.List>

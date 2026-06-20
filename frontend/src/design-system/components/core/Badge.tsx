@@ -12,6 +12,9 @@ const badgeVariants = cva(
           'bg-secondary-100 text-secondary-700',
         primary:
           'bg-primary-light text-primary-700',
+        // Patient app mint tone (additive; doctor/admin unaffected).
+        mint:
+          'bg-mint-100 text-mint-700',
         success:
           'bg-success-light text-green-800 border border-success-border',
         warning:
@@ -56,6 +59,7 @@ const badgeVariants = cva(
 const DOT_COLOR_MAP: Record<string, string> = {
   default: 'bg-secondary-400',
   primary: 'bg-primary',
+  mint: 'bg-mint-500',
   success: 'bg-success',
   warning: 'bg-warning',
   danger: 'bg-danger',

@@ -12,6 +12,8 @@ export interface SwitchProps {
   checked?: boolean
   onCheckedChange?: (checked: boolean) => void
   size?: 'sm' | 'md'
+  /** Checked color tone. 'mint' for the patient app; defaults to brand primary. */
+  tone?: 'primary' | 'mint'
   id?: string
   className?: string
 }
@@ -30,10 +32,14 @@ const sizeConfig = {
 const Switch = React.forwardRef<
   React.ElementRef<typeof SwitchPrimitive.Root>,
   SwitchProps
->(({ label, description, disabled, checked, onCheckedChange, size = 'md', id, className }, ref) => {
+>(({ label, description, disabled, checked, onCheckedChange, size = 'md', tone = 'primary', id, className }, ref) => {
   const generatedId = React.useId()
   const switchId = id ?? generatedId
   const { track, thumb } = sizeConfig[size]
+  const checkedTone =
+    tone === 'mint'
+      ? 'data-[state=checked]:bg-mint-500 focus-visible:ring-mint-400'
+      : 'data-[state=checked]:bg-primary focus-visible:ring-primary'
 
   return (
     <div className={cn('flex items-start gap-3', className)}>
@@ -48,8 +54,8 @@ const Switch = React.forwardRef<
           track,
           'relative inline-flex shrink-0 cursor-pointer items-center rounded-full',
           'bg-secondary-300 transition-colors',
-          'data-[state=checked]:bg-primary',
-          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2',
+          checkedTone,
+          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2',
           'disabled:cursor-not-allowed disabled:opacity-40',
         )}
       >

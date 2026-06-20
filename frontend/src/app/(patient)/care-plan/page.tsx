@@ -48,7 +48,7 @@ function CarePlanCard({ plan }: { plan: CarePlan }) {
   const cfg = STATUS_CONFIG[plan.status] ?? { variant: 'default' as BadgeVariant, label: plan.status }
 
   return (
-    <Card variant="elevated" padding="none">
+    <Card variant="glass" padding="none">
       <CardHeader className="p-4 pb-2">
         <div className="flex items-start justify-between gap-3">
           <CardTitle className="text-body-md font-semibold leading-snug">
@@ -92,7 +92,7 @@ function CarePlanSkeleton() {
   return (
     <div className="space-y-4">
       {[1, 2].map((n) => (
-        <Card key={n} variant="elevated" padding="none">
+        <Card key={n} variant="glass" padding="none">
           <CardContent className="p-4 space-y-3">
             <div className="flex items-center justify-between">
               <Skeleton width="55%" height="1rem" />

@@ -35,7 +35,7 @@ function MedicationsSkeleton() {
   return (
     <div className="space-y-3">
       {[1, 2, 3].map((n) => (
-        <Card key={n} variant="default" padding="none">
+        <Card key={n} variant="glass" padding="none">
           <CardContent className="p-4 space-y-3">
             <Skeleton width="55%" height="1rem" />
             <Skeleton width="40%" height="0.75rem" />
@@ -62,12 +62,12 @@ function MedRow({
 }) {
   const meta = [med.dose, med.frequency].filter(Boolean).join(' · ')
   return (
-    <Card variant="default" padding="none">
+    <Card variant="glass" padding="none">
       <CardContent className="p-4">
         <div className="flex items-start justify-between gap-3">
           <button type="button" onClick={onView} className="min-w-0 text-left flex items-start gap-3 flex-1">
-            <span className="flex items-center justify-center w-9 h-9 rounded-lg bg-primary-50 shrink-0">
-              <Pill className="size-4 text-primary" aria-hidden="true" />
+            <span className="flex items-center justify-center w-9 h-9 rounded-lg bg-mint-50 shrink-0">
+              <Pill className="size-4 text-mint-600" aria-hidden="true" />
             </span>
             <span className="min-w-0">
               <span className="block text-body-md font-medium text-text truncate">{med.name}</span>
@@ -168,7 +168,7 @@ function MedModal({ open, onClose, onSaved, patientId, editing }: MedModalProps)
           <Button variant="outline" size="sm" onClick={onClose} disabled={submitting}>
             Hủy
           </Button>
-          <Button variant="primary" size="sm" type="submit" form="med-form" loading={submitting}>
+          <Button variant="mint" size="sm" type="submit" form="med-form" loading={submitting}>
             {editing ? 'Lưu' : 'Thêm'}
           </Button>
         </>
@@ -257,7 +257,7 @@ export default function MedicationsPage() {
         actions={
           <Button
             size="sm"
-            variant="primary"
+            variant="mint"
             onClick={() => {
               setEditing(null)
               setModalOpen(true)

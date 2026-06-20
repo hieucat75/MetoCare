@@ -88,7 +88,7 @@ function QAHistoryItem({ qa }: { qa: QAPair }) {
     <div className="space-y-2">
       {/* Question bubble */}
       <div className="flex justify-end">
-        <div className="bg-primary text-white rounded-2xl rounded-tr-sm px-4 py-2 max-w-[85%]">
+        <div className="bg-mint-500 text-white rounded-2xl rounded-tr-sm px-4 py-2 max-w-[85%]">
           <p className="text-body-sm">{qa.question}</p>
         </div>
       </div>
@@ -176,7 +176,7 @@ export default function AIAssistantPage() {
     return (
       <div className="p-4 lg:p-6 max-w-2xl mx-auto space-y-4">
         <PageHeader title="Trợ lý AI" />
-        <Alert variant="info" title="Tính năng đang được hoàn thiện">
+        <Alert variant="mint" title="Tính năng đang được hoàn thiện">
           Trợ lý AI sẽ khả dụng ở giai đoạn tiếp theo (Phase 2). Hiện tại bạn có thể theo dõi
           chỉ số, xét nghiệm, thuốc và kế hoạch điều trị mà không cần AI.
         </Alert>
@@ -235,7 +235,7 @@ export default function AIAssistantPage() {
         <div className="space-y-2">
           {question && (
             <div className="flex justify-end">
-              <div className="bg-primary text-white rounded-2xl rounded-tr-sm px-4 py-2 max-w-[85%]">
+              <div className="bg-mint-500 text-white rounded-2xl rounded-tr-sm px-4 py-2 max-w-[85%]">
                 <p className="text-body-sm">{question}</p>
               </div>
             </div>
@@ -292,7 +292,7 @@ export default function AIAssistantPage() {
           />
           <Button
             type="submit"
-            variant="primary"
+            variant="mint"
             size="md"
             disabled={!question.trim() || loading}
             aria-label="Gửi câu hỏi"

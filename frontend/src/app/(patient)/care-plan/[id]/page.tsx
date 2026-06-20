@@ -89,7 +89,7 @@ export default function CarePlanDetailPage() {
         <button
           type="button"
           onClick={() => router.back()}
-          className="flex items-center gap-1.5 text-body-sm text-primary"
+          className="flex items-center gap-1.5 text-body-sm text-mint-600"
           aria-label="Quay lại"
         >
           <ArrowLeft className="size-4" />
@@ -127,7 +127,7 @@ export default function CarePlanDetailPage() {
       </p>
 
       {/* Content */}
-      <Card variant="default" padding="none">
+      <Card variant="glass" padding="none">
         <CardHeader className="px-4 pt-4 pb-2">
           <div className="flex items-center gap-2">
             <ClipboardList className="size-4 text-text-muted" aria-hidden="true" />

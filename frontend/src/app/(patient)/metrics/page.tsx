@@ -134,10 +134,10 @@ function TrendChart({ metrics, unit }: { metrics: HealthMetric[]; unit: string }
         </span>
       </div>
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-32" preserveAspectRatio="none" role="img" aria-label="Biểu đồ xu hướng chỉ số">
-        <path d={areaPath} fill="currentColor" className="text-primary/10" />
-        <path d={linePath} fill="none" stroke="currentColor" className="text-primary" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+        <path d={areaPath} fill="currentColor" className="text-mint-600/10" />
+        <path d={linePath} fill="none" stroke="currentColor" className="text-mint-600" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
         {coords.map((c, i) => (
-          <circle key={i} cx={c.x} cy={c.y} r={2.5} fill="currentColor" className="text-primary" />
+          <circle key={i} cx={c.x} cy={c.y} r={2.5} fill="currentColor" className="text-mint-600" />
         ))}
       </svg>
       <div className="flex items-center justify-between mt-1 text-caption text-text-muted">
@@ -322,7 +322,7 @@ function LogMetricModal({ open, onClose, onSuccess, patientId }: LogModalProps) 
             Hủy
           </Button>
           <Button
-            variant="primary"
+            variant="mint"
             size="sm"
             type="submit"
             form="log-metric-form"
@@ -421,6 +421,7 @@ export default function MetricsPage() {
         <PageHeader title="Chỉ số sức khỏe" />
 
         <Tabs
+        tone="mint"
           variant="pill"
           value={activeTab}
           onValueChange={(v) => {
@@ -452,7 +453,7 @@ export default function MetricsPage() {
       {/* FAB */}
       <div className="fixed bottom-20 right-4 z-40">
         <Button
-          variant="primary"
+          variant="mint"
           size="lg"
           onClick={() => setModalOpen(true)}
           className="rounded-full shadow-lg px-4"
