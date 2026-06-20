@@ -12,6 +12,7 @@ import {
   FormField,
   Input,
   Select,
+  Textarea,
 } from '@/design-system'
 import { useAuth } from '@/lib/auth/context'
 import { getPatientProfile, updatePatientProfile } from '@/lib/api/patient'
@@ -66,6 +67,36 @@ export default function ProfilePage() {
   const [gender, setGender] = React.useState('')
   const [heightCm, setHeightCm] = React.useState('')
   const [weightKg, setWeightKg] = React.useState('')
+  const [waistCm, setWaistCm] = React.useState('')
+  const [address, setAddress] = React.useState('')
+  const [knownConditions, setKnownConditions] = React.useState('')
+  const [allergies, setAllergies] = React.useState('')
+  const [familyHistory, setFamilyHistory] = React.useState('')
+  const [lifestyleProfile, setLifestyleProfile] = React.useState('')
+  const [validationError, setValidationError] = React.useState<string | null>(null)
+
+  function todayISO(): string {
+    const now = new Date()
+    const pad = (n: number) => String(n).padStart(2, '0')
+    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
+  }
+
+  function validate(): string | null {
+    if (dob && dob > todayISO()) return 'Ngày sinh không thể ở tương lai.'
+    if (heightCm) {
+      const h = parseFloat(heightCm)
+      if (isNaN(h) || h <= 0 || h > 300) return 'Chiều cao phải từ 1–300 cm.'
+    }
+    if (weightKg) {
+      const w = parseFloat(weightKg)
+      if (isNaN(w) || w <= 0 || w > 500) return 'Cân nặng phải từ 1–500 kg.'
+    }
+    if (waistCm) {
+      const wc = parseFloat(waistCm)
+      if (isNaN(wc) || wc <= 0 || wc > 300) return 'Vòng eo phải từ 1–300 cm.'
+    }
+    return null
+  }
 
   const load = React.useCallback(() => {
     if (!patientId) {
@@ -92,6 +123,13 @@ export default function ProfilePage() {
     setGender(profile.gender ?? '')
     setHeightCm(profile.height_cm != null ? String(profile.height_cm) : '')
     setWeightKg(profile.weight_kg != null ? String(profile.weight_kg) : '')
+    setWaistCm(profile.waist_cm != null ? String(profile.waist_cm) : '')
+    setAddress(profile.address ?? '')
+    setKnownConditions(profile.known_conditions ?? '')
+    setAllergies(profile.allergies ?? '')
+    setFamilyHistory(profile.family_history ?? '')
+    setLifestyleProfile(profile.lifestyle_profile ?? '')
+    setValidationError(null)
     setSaveError(null)
     setSaveSuccess(false)
     setEditing(true)
@@ -104,6 +142,12 @@ export default function ProfilePage() {
 
   const handleSave = async () => {
     if (!patientId) return
+    const v = validate()
+    if (v) {
+      setValidationError(v)
+      return
+    }
+    setValidationError(null)
     setSaving(true)
     setSaveError(null)
     setSaveSuccess(false)
@@ -116,6 +160,12 @@ export default function ProfilePage() {
         gender: (gender as PatientProfile['gender']) || null,
         height_cm: heightCm ? parseFloat(heightCm) : null,
         weight_kg: weightKg ? parseFloat(weightKg) : null,
+        waist_cm: waistCm ? parseFloat(waistCm) : null,
+        address: address.trim() || null,
+        known_conditions: knownConditions.trim() || null,
+        allergies: allergies.trim() || null,
+        family_history: familyHistory.trim() || null,
+        lifestyle_profile: lifestyleProfile.trim() || null,
       })
       setProfile(updated)
       setEditing(false)
@@ -179,6 +229,9 @@ export default function ProfilePage() {
       {saveError && (
         <Alert variant="danger" title={saveError} />
       )}
+      {validationError && (
+        <Alert variant="warning" title={validationError} />
+      )}
 
       {/* Email — always read-only */}
       <Card variant="default" padding="none">
@@ -204,6 +257,15 @@ export default function ProfilePage() {
                 label="Cân nặng (kg)"
                 value={profile?.weight_kg != null ? `${profile.weight_kg} kg` : null}
               />
+              <ProfileField
+                label="Vòng eo (cm)"
+                value={profile?.waist_cm != null ? `${profile.waist_cm} cm` : null}
+              />
+              <ProfileField label="Địa chỉ" value={profile?.address} />
+              <ProfileField label="Bệnh lý hiện có" value={profile?.known_conditions} />
+              <ProfileField label="Dị ứng" value={profile?.allergies} />
+              <ProfileField label="Tiền sử gia đình" value={profile?.family_history} />
+              <ProfileField label="Mục tiêu & lối sống" value={profile?.lifestyle_profile} />
             </>
           ) : (
             <div className="space-y-4 py-3">
@@ -264,6 +326,62 @@ export default function ProfilePage() {
                   onChange={(e) => setWeightKg(e.target.value)}
                   placeholder="kg"
                   fullWidth
+                />
+              </FormField>
+
+              <FormField label="Vòng eo (cm)">
+                <Input
+                  type="number"
+                  step="0.1"
+                  value={waistCm}
+                  onChange={(e) => setWaistCm(e.target.value)}
+                  placeholder="cm"
+                  fullWidth
+                />
+              </FormField>
+
+              <FormField label="Địa chỉ">
+                <Input
+                  value={address}
+                  onChange={(e) => setAddress(e.target.value)}
+                  placeholder="Nhập địa chỉ"
+                  fullWidth
+                />
+              </FormField>
+
+              <FormField label="Bệnh lý hiện có">
+                <Textarea
+                  value={knownConditions}
+                  onChange={(e) => setKnownConditions(e.target.value)}
+                  placeholder="VD: Tiền tiểu đường, tăng huyết áp…"
+                  rows={2}
+                />
+              </FormField>
+
+              <FormField label="Dị ứng">
+                <Textarea
+                  value={allergies}
+                  onChange={(e) => setAllergies(e.target.value)}
+                  placeholder="VD: Penicillin, hải sản…"
+                  rows={2}
+                />
+              </FormField>
+
+              <FormField label="Tiền sử gia đình">
+                <Textarea
+                  value={familyHistory}
+                  onChange={(e) => setFamilyHistory(e.target.value)}
+                  placeholder="VD: Cha bị tiểu đường type 2…"
+                  rows={2}
+                />
+              </FormField>
+
+              <FormField label="Mục tiêu & lối sống">
+                <Textarea
+                  value={lifestyleProfile}
+                  onChange={(e) => setLifestyleProfile(e.target.value)}
+                  placeholder="VD: Giảm 5kg, đi bộ 30 phút/ngày…"
+                  rows={3}
                 />
               </FormField>
             </div>

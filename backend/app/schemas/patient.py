@@ -24,30 +24,33 @@ class PatientProfileCreate(BaseModel):
 
 
 class PatientProfileUpdate(BaseModel):
-    """Partial update schema for patient profile (T12).
+    """Partial update schema for patient profile (T12, extended in PR-A).
 
-    All fields are optional. Only supplied fields are written.
-    Excludes ``address``, ``family_history``, and ``lifestyle_profile``
-    (deferred to extended-profile sprint).
+    All fields are optional. Only supplied fields are written. The extended
+    fields (``address``, ``family_history``, ``lifestyle_profile``) back the
+    patient onboarding flow — the underlying columns already exist on
+    ``PatientProfile``; this PR exposes them for write/read.
     """
 
     full_name: str | None = None
     dob: str | None = None
     phone: str | None = None
-    gender: str | None = None
+    address: str | None = None
+    gender: str | None = Field(None, pattern="^(male|female|other)$")
     height_cm: float | None = Field(None, gt=0, le=300)
     weight_kg: float | None = Field(None, gt=0, le=500)
     waist_cm: float | None = Field(None, gt=0, le=300)
     known_conditions: str | None = None
     allergies: str | None = None
+    family_history: str | None = None
+    lifestyle_profile: str | None = None
 
 
 class PatientProfileOut(BaseModel):
-    """Standard patient profile view — PHI-limited (T12).
+    """Standard patient profile view (T12, extended in PR-A).
 
-    Intentionally excludes ``address``, ``family_history``, and
-    ``lifestyle_profile`` (deferred to the extended-profile endpoint in a
-    future sprint, per T12 task card §Medical Safety Notes).
+    Now includes ``address``, ``family_history``, and ``lifestyle_profile`` so
+    the patient onboarding/profile UI can read back everything it writes.
     """
 
     id: str
@@ -55,6 +58,7 @@ class PatientProfileOut(BaseModel):
     full_name: str | None
     dob: str | None
     phone: str | None
+    address: str | None
     gender: str | None
     height_cm: float | None
     weight_kg: float | None
@@ -62,6 +66,8 @@ class PatientProfileOut(BaseModel):
     risk_segment: str | None
     known_conditions: str | None
     allergies: str | None
+    family_history: str | None
+    lifestyle_profile: str | None
 
     model_config = {"from_attributes": True}
 
