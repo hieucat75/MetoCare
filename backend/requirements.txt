@@ -18,6 +18,14 @@ pyotp>=2.9
 cryptography>=42.0
 # ---- PDF generation ----
 reportlab>=4.0
+# ---- OCR Lab Upload (Tesseract local default; cloud OCR is opt-in via flag+key) ----
+# Image must also install system binaries: tesseract-ocr, tesseract-ocr-vie, poppler-utils.
+python-multipart>=0.0.9   # multipart/form-data parsing for file + url upload
+pytesseract>=0.3.10       # thin wrapper over the tesseract binary
+Pillow>=10.0              # image decode/preprocess for OCR
+pypdf>=4.0                # PDF text-layer extraction (digital lab reports)
+pdf2image>=1.17           # rasterize scanned PDFs for OCR (needs poppler-utils)
+httpx>=0.27               # SSRF-guarded URL fetch + cloud OCR adapters (runtime)
 
 # ---- Dev / test (install separately or via pip install -r requirements-dev.txt) ----
 # pytest>=8
