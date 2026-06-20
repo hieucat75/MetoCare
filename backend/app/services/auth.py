@@ -68,6 +68,68 @@ def register(
     return user
 
 
+def change_password(
+    db: Session, *, user_id: str, current_password: str, new_password: str
+) -> User:
+    """Change a user's password after verifying the current one (PR-F).
+
+    Raises:
+        AuthError — user missing or current password incorrect.
+    """
+    user = db.get(User, user_id)
+    if user is None:
+        raise AuthError("user not found")
+    if not verify_password(current_password, user.password_hash):
+        raise AuthError("current password is incorrect")
+    user.password_hash = hash_password(new_password)
+    audit.record(
+        db,
+        actor_type="user",
+        actor_id=user.id,
+        action="change_password",
+        resource_type="user",
+        resource_id=user.id,
+    )
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+def update_account(db: Session, *, user_id: str, data: dict) -> User:
+    """Apply a partial account update (email + notification prefs) (PR-F).
+
+    Only keys present in *data* are written. Raises AuthError on a duplicate
+    email or missing user.
+    """
+    user = db.get(User, user_id)
+    if user is None:
+        raise AuthError("user not found")
+
+    new_email = data.get("email")
+    if new_email is not None and new_email != user.email:
+        taken = db.execute(
+            select(User).where(User.email == new_email, User.id != user.id)
+        ).scalar_one_or_none()
+        if taken is not None:
+            raise AuthError("email already registered")
+
+    for field in ("email", "notify_medication", "notify_lab_results", "notify_doctor_messages"):
+        if field in data and data[field] is not None:
+            setattr(user, field, data[field])
+
+    audit.record(
+        db,
+        actor_type="user",
+        actor_id=user.id,
+        action="update_account",
+        resource_type="user",
+        resource_id=user.id,
+    )
+    db.commit()
+    db.refresh(user)
+    return user
+
+
 def authenticate(db: Session, *, email: str, password: str) -> User:
     user = db.execute(select(User).where(User.email == email)).scalar_one_or_none()
     if user is None or not verify_password(password, user.password_hash):

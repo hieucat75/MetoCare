@@ -57,7 +57,25 @@ class UserOut(BaseModel):
     role: str
     full_name: str | None = None
     mfa_enabled: bool = False
+    # PR-F: notification preferences
+    notify_medication: bool = True
+    notify_lab_results: bool = True
+    notify_doctor_messages: bool = True
     # Populated for PATIENT role callers; None for all other roles.
     patient_profile_id: str | None = None
 
     model_config = {"from_attributes": True}
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=8)
+
+
+class AccountUpdateRequest(BaseModel):
+    """Partial update of account-level settings (PR-F). All fields optional."""
+
+    email: EmailStr | None = None
+    notify_medication: bool | None = None
+    notify_lab_results: bool | None = None
+    notify_doctor_messages: bool | None = None

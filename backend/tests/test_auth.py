@@ -79,3 +79,72 @@ def test_expired_token_rejected(client):
     expired = create_access_token(subject="u1", role="patient", expires_minutes=-1)
     r = client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {expired}"})
     assert r.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# PR-F — change password, account update (email + notification prefs)
+# ---------------------------------------------------------------------------
+
+
+def _auth_headers(client, email):
+    body = _register(client, email).json()
+    return {"Authorization": f"Bearer {body['access_token']}"}
+
+
+def test_change_password_success_and_relogin(client):
+    h = _auth_headers(client, "cp-ok@example.com")
+    r = client.post(
+        "/api/v1/auth/change-password",
+        headers=h,
+        json={"current_password": "password123", "new_password": "newpass456"},
+    )
+    assert r.status_code == 200, r.text
+    # Old password no longer works; new one does.
+    old = client.post("/api/v1/auth/login", json={"email": "cp-ok@example.com", "password": "password123"})
+    assert old.status_code == 401
+    new = client.post("/api/v1/auth/login", json={"email": "cp-ok@example.com", "password": "newpass456"})
+    assert new.status_code == 200, new.text
+
+
+def test_change_password_wrong_current_rejected(client):
+    h = _auth_headers(client, "cp-bad@example.com")
+    r = client.post(
+        "/api/v1/auth/change-password",
+        headers=h,
+        json={"current_password": "wrongpass", "new_password": "newpass456"},
+    )
+    assert r.status_code == 400, r.text
+
+
+def test_update_account_notification_prefs(client):
+    h = _auth_headers(client, "acct-prefs@example.com")
+    # defaults are all True
+    me = client.get("/api/v1/auth/me", headers=h).json()
+    assert me["notify_medication"] is True
+    r = client.patch(
+        "/api/v1/auth/account",
+        headers=h,
+        json={"notify_medication": False, "notify_lab_results": False},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["notify_medication"] is False
+    assert body["notify_lab_results"] is False
+    assert body["notify_doctor_messages"] is True  # untouched
+    # persisted
+    me2 = client.get("/api/v1/auth/me", headers=h).json()
+    assert me2["notify_medication"] is False
+
+
+def test_update_account_email_change(client):
+    h = _auth_headers(client, "acct-email@example.com")
+    r = client.patch("/api/v1/auth/account", headers=h, json={"email": "acct-email-new@example.com"})
+    assert r.status_code == 200, r.text
+    assert r.json()["email"] == "acct-email-new@example.com"
+
+
+def test_update_account_duplicate_email_rejected(client):
+    _register(client, "taken@example.com")
+    h = _auth_headers(client, "acct-dup@example.com")
+    r = client.patch("/api/v1/auth/account", headers=h, json={"email": "taken@example.com"})
+    assert r.status_code == 409, r.text

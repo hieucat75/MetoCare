@@ -13,6 +13,8 @@ from app.core.security import decode_token
 from app.models.patient import PatientProfile
 from app.models.user import User, UserRole
 from app.schemas.auth import (
+    AccountUpdateRequest,
+    ChangePasswordRequest,
     LoginRequest,
     LogoutRequest,
     MfaEnrollResponse,
@@ -131,14 +133,62 @@ def me(
     db_user = db.get(User, user.id)
     if db_user is None:
         raise HTTPException(status_code=404, detail="user not found")
+    return _user_out(db, db_user)
+
+
+def _user_out(db: Session, db_user: User) -> UserOut:
+    """Build a UserOut, resolving patient_profile_id for PATIENT callers."""
     out = UserOut.model_validate(db_user)
-    # Resolve patient_profile_id for PATIENT callers
     if db_user.role == UserRole.PATIENT:
         profile = db.execute(
             select(PatientProfile).where(PatientProfile.user_id == db_user.id)
         ).scalar_one_or_none()
         out.patient_profile_id = profile.id if profile is not None else None
     return out
+
+
+@router.post("/change-password", response_model=Message)
+def change_password(
+    request: Request,
+    payload: ChangePasswordRequest,
+    actor: CurrentUser = Depends(current_user),
+    db: Session = Depends(get_session),
+) -> Message:
+    """Change the current user's password (PR-F).
+
+    Requires the correct current password. Rate-limited to deter brute force.
+    """
+    enforce_rate_limit(request, "login")
+    try:
+        auth.change_password(
+            db,
+            user_id=actor.id,
+            current_password=payload.current_password,
+            new_password=payload.new_password,
+        )
+    except auth.AuthError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
+    return Message(message="password changed")
+
+
+@router.patch("/account", response_model=UserOut)
+def update_account(
+    payload: AccountUpdateRequest,
+    actor: CurrentUser = Depends(current_user),
+    db: Session = Depends(get_session),
+) -> UserOut:
+    """Update account settings: email + notification preferences (PR-F)."""
+    try:
+        db_user = auth.update_account(
+            db, user_id=actor.id, data=payload.model_dump(exclude_unset=True)
+        )
+    except auth.AuthError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=str(exc)
+        ) from exc
+    return _user_out(db, db_user)
 
 
 @router.post("/mfa/enroll", response_model=MfaEnrollResponse)

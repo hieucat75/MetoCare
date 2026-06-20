@@ -48,3 +48,7 @@ class User(UUIDPrimaryKey, TimestampMixin, Base):
     mfa_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     # TOTP shared secret, encrypted at rest (set during MFA enrollment).
     mfa_secret: Mapped[str | None] = mapped_column(EncryptedString)
+    # PR-F: notification preferences (in-app delivery toggles).
+    notify_medication: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    notify_lab_results: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    notify_doctor_messages: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
