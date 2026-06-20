@@ -59,6 +59,10 @@ jobs:
           # deterministic "<app-name>.<defaultDomain>" — valid even before the app
           # exists. This lets the frontend embed the correct API base at build.
           DOMAIN=$(az containerapp env show -g "$RG" -n "$ENV_NAME" --query 'properties.defaultDomain' -o tsv)
+          if [ -z "$DOMAIN" ]; then
+            echo "::error::could not resolve ACA env defaultDomain for $ENV_NAME — aborting before baking a broken API URL into the frontend"
+            exit 1
+          fi
           BACKEND_FQDN="${BACKEND_APP}.${DOMAIN}"
           FRONTEND_FQDN="${FRONTEND_APP}.${DOMAIN}"
           echo "BACKEND_FQDN=$BACKEND_FQDN" >> "$GITHUB_ENV"
