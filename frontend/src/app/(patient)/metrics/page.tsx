@@ -1,4 +1,5 @@
 'use client'
+import { PatientEmptyState } from '@/components/patient'
 
 import * as React from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -98,7 +99,7 @@ function TrendChart({ metrics, unit }: { metrics: HealthMetric[]; unit: string }
 
   if (points.length < 2) {
     return (
-      <div className="bg-secondary-50 rounded-lg h-32 flex items-center justify-center text-text-muted text-body-sm px-4 text-center">
+      <div className="bg-secondary-50 rounded-lg h-32 flex items-center justify-center text-text-muted text-[15px] px-4 text-center">
         Cần ít nhất 2 lần đo để hiển thị biểu đồ xu hướng
       </div>
     )
@@ -126,9 +127,9 @@ function TrendChart({ metrics, unit }: { metrics: HealthMetric[]; unit: string }
   return (
     <div className="rounded-lg border border-border bg-surface p-3">
       <div className="flex items-center justify-between mb-1">
-        <span className="text-body-sm text-text-muted">Xu hướng ({points.length} lần đo)</span>
+        <span className="text-[15px] text-text-muted">Xu hướng ({points.length} lần đo)</span>
         <span
-          className={`text-body-sm font-medium ${delta > 0 ? 'text-amber-600' : delta < 0 ? 'text-green-600' : 'text-text-muted'}`}
+          className={`text-[15px] font-medium ${delta > 0 ? 'text-amber-600' : delta < 0 ? 'text-green-600' : 'text-text-muted'}`}
         >
           {delta > 0 ? '↑' : delta < 0 ? '↓' : '→'} {Math.abs(delta).toFixed(1)} {unit}
         </span>
@@ -140,7 +141,7 @@ function TrendChart({ metrics, unit }: { metrics: HealthMetric[]; unit: string }
           <circle key={i} cx={c.x} cy={c.y} r={2.5} fill="currentColor" className="text-mint-600" />
         ))}
       </svg>
-      <div className="flex items-center justify-between mt-1 text-body-sm text-text-muted">
+      <div className="flex items-center justify-between mt-1 text-[15px] text-text-muted">
         <span>{minV.toFixed(1)}</span>
         <span>{maxV.toFixed(1)} {unit}</span>
       </div>
@@ -163,21 +164,21 @@ function MetricRow({ metric }: { metric: HealthMetric }) {
   return (
     <div className="flex items-center justify-between py-3 border-b border-border last:border-0 px-4">
       <div className="min-w-0">
-        <p className="text-body-md font-medium text-text">
+        <p className="text-[17px] font-medium text-text">
           {getMetricDisplayLabel(metric.metric_type)}
         </p>
-        <p className="text-body-sm text-text-muted mt-0.5">{dateStr}</p>
+        <p className="text-[15px] text-text-muted mt-0.5">{dateStr}</p>
         {/* metric.notes may be absent from backend response */}
         {metric.notes && (
-          <p className="text-body-sm text-text-muted mt-0.5 truncate max-w-[180px]">
+          <p className="text-[15px] text-text-muted mt-0.5 truncate max-w-[180px]">
             {metric.notes}
           </p>
         )}
       </div>
       <div className="flex items-center gap-3 shrink-0 ml-4">
-        <span className="text-heading-md font-bold text-text">
+        <span className="text-[18px] font-bold text-text">
           {metric.value}
-          <span className="text-body-sm text-text-muted font-normal ml-1">{unit}</span>
+          <span className="text-[15px] text-text-muted font-normal ml-1">{unit}</span>
         </span>
         {metric.status && (
           <Badge variant={toStatusVariant(metric.status)} size="sm">
@@ -229,9 +230,9 @@ function MetricTabContent({
     <div className="space-y-4">
       {latest && (
         <div className="rounded-lg border border-border bg-surface p-4">
-          <p className="text-body-sm text-text-muted mb-1">Giá trị gần nhất</p>
+          <p className="text-[15px] text-text-muted mb-1">Giá trị gần nhất</p>
           <div className="flex items-baseline gap-2 flex-wrap">
-            <span className="text-display-md font-bold text-text">{latest.value}</span>
+            <span className="text-[42px] tracking-tight font-bold text-text">{latest.value}</span>
             <span className="text-body-lg text-text-muted">
               {latest.unit || getUnit(latest.metric_type)}
             </span>
@@ -241,14 +242,14 @@ function MetricTabContent({
               </Badge>
             )}
           </div>
-          <p className="text-body-sm text-text-muted mt-1">{formatDate(latest.measured_at ?? latest.recorded_at)}</p>
+          <p className="text-[15px] text-text-muted mt-1">{formatDate(latest.measured_at ?? latest.recorded_at)}</p>
         </div>
       )}
 
       {metricType && <TrendChart metrics={filtered} unit={getUnit(metricType)} />}
 
       {filtered.length === 0 ? (
-        <EmptyState
+        <PatientEmptyState
           size="sm"
           title="Chưa có chỉ số nào"
           description={

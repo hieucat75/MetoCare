@@ -24,8 +24,9 @@ export function GlassCard({
   return (
     <div
       className={cn(
-        'rounded-3xl border border-white/60 bg-white/70 backdrop-blur-xl shadow-glass',
-        padded && 'p-4',
+        'rounded-3xl border border-white/70 ring-1 ring-mint-100/50 bg-white/85',
+        'backdrop-blur-xl shadow-glass',
+        padded && 'p-5',
         className,
       )}
       {...rest}
@@ -51,7 +52,7 @@ export function MintButton({
     ghost: 'ghost' as const,
   }
   return (
-    <Button variant={map[variant]} className={cn('h-12 rounded-xl', className)} {...rest}>
+    <Button variant={map[variant]} className={cn('h-12', className)} {...rest}>
       {children}
     </Button>
   )
@@ -72,7 +73,7 @@ export const PatientInput = React.forwardRef<
         ref={ref}
         aria-invalid={invalid}
         className={cn(
-          'h-12 w-full rounded-xl border bg-white/80 px-3 py-2 text-body-md text-text',
+          'h-12 w-full rounded-xl border bg-white/80 px-3 py-2 text-[17px] text-text',
           'placeholder:text-text-subtle focus:outline-none focus:ring-2 transition-colors',
           leftIcon && 'pl-10',
           invalid
@@ -102,8 +103,8 @@ export function SectionHeader({
   return (
     <div className={cn('flex items-start justify-between gap-3 mb-3', className)}>
       <div className="min-w-0">
-        <h2 className="text-heading-xl font-bold text-text">{title}</h2>
-        {subtitle && <p className="text-body-sm text-text-muted mt-0.5">{subtitle}</p>}
+        <h2 className="text-[24px] font-bold text-text">{title}</h2>
+        {subtitle && <p className="text-[15px] text-text-muted mt-0.5">{subtitle}</p>}
       </div>
       {action && <div className="shrink-0">{action}</div>}
     </div>
@@ -136,24 +137,25 @@ export function MetricCard({
     <Comp
       onClick={onClick}
       className={cn(
-        'text-left rounded-2xl border border-white/60 bg-white/70 backdrop-blur-xl shadow-glass p-4 w-full',
+        'relative text-left rounded-3xl border border-white/70 ring-1 ring-mint-100/50 bg-white/85 backdrop-blur-xl shadow-glass px-5 py-6 w-full overflow-hidden',
+        'before:absolute before:left-0 before:top-3 before:bottom-3 before:w-1 before:rounded-full before:bg-gradient-to-b before:from-mint-300 before:to-mint-500',
         onClick && 'transition-transform active:scale-[0.98]',
         className,
       )}
     >
-      <div className="flex items-center justify-between mb-1">
-        <span className="text-body-sm text-text-muted">{label}</span>
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="text-[16px] font-medium text-text-muted">{label}</span>
         {icon && (
-          <span className="flex items-center justify-center w-7 h-7 rounded-lg bg-mint-50 text-mint-600">
+          <span className="flex items-center justify-center w-8 h-8 rounded-lg bg-mint-50 text-mint-600">
             {icon}
           </span>
         )}
       </div>
-      <div className="flex items-baseline gap-1">
-        <span className="text-heading-xl font-bold text-text">{value}</span>
-        {unit && <span className="text-body-sm text-text-muted">{unit}</span>}
+      <div className="flex items-baseline gap-1.5">
+        <span className="text-[40px] font-bold text-text leading-none tracking-tight">{value}</span>
+        {unit && <span className="text-[21px] font-medium text-text-muted">{unit}</span>}
       </div>
-      {trend?.text && <p className={cn('text-body-sm mt-1', trendColor)}>{trend.text}</p>}
+      {trend?.text && <p className={cn('text-[15px] mt-1.5', trendColor)}>{trend.text}</p>}
     </Comp>
   )
 }
@@ -165,29 +167,37 @@ export function PatientEmptyState({
   title,
   description,
   cta,
+  action,
 }: {
   icon?: React.ReactNode
   title: string
   description?: string
+  /** Primary CTA. `action` is accepted as an alias for drop-in EmptyState swaps. */
   cta?: { label: string; onClick?: () => void; href?: string }
+  action?: { label: string; onClick?: () => void; href?: string }
+  /** Ignored — accepted so design-system EmptyState usages swap cleanly. */
+  size?: string
 }) {
+  const resolvedCta = cta ?? action
   return (
     <div className="flex flex-col items-center justify-center text-center py-10 px-4">
-      {icon && (
-        <div className="w-14 h-14 rounded-2xl bg-mint-100 flex items-center justify-center text-mint-600 mb-3">
-          {icon}
+      <div className="relative mb-4">
+        {/* soft mint glow halo */}
+        <div className="absolute inset-0 rounded-full bg-mint-300/30 blur-xl" aria-hidden="true" />
+        <div className="relative w-20 h-20 rounded-full bg-gradient-to-br from-mint-100 to-mint-50/50 ring-1 ring-mint-200/60 shadow-glow-mint flex items-center justify-center text-mint-600 [&>svg]:size-9">
+          {icon ?? <span className="w-3 h-3 rounded-full bg-mint-400" />}
         </div>
-      )}
-      <h3 className="text-heading-xl font-semibold text-text">{title}</h3>
-      {description && <p className="text-body-md text-text-muted mt-1 max-w-xs">{description}</p>}
-      {cta &&
-        (cta.href ? (
-          <Link href={cta.href} className="mt-4">
-            <MintButton size="sm">{cta.label}</MintButton>
+      </div>
+      <h3 className="text-[24px] font-semibold text-text">{title}</h3>
+      {description && <p className="text-[17px] text-text-muted mt-1 max-w-xs">{description}</p>}
+      {resolvedCta &&
+        (resolvedCta.href ? (
+          <Link href={resolvedCta.href} className="mt-4">
+            <MintButton size="sm">{resolvedCta.label}</MintButton>
           </Link>
         ) : (
-          <MintButton size="sm" className="mt-4" onClick={cta.onClick}>
-            {cta.label}
+          <MintButton size="sm" className="mt-4" onClick={resolvedCta.onClick}>
+            {resolvedCta.label}
           </MintButton>
         ))}
     </div>

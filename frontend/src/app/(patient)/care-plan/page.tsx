@@ -1,4 +1,5 @@
 'use client'
+import { PatientEmptyState } from '@/components/patient'
 
 import * as React from 'react'
 import { CheckCircle2, ClipboardList } from 'lucide-react'
@@ -51,7 +52,7 @@ function CarePlanCard({ plan }: { plan: CarePlan }) {
     <Card variant="glass" padding="none">
       <CardHeader className="p-4 pb-2">
         <div className="flex items-start justify-between gap-3">
-          <CardTitle className="text-body-md font-semibold leading-snug">
+          <CardTitle className="text-[17px] font-semibold leading-snug">
             {plan.title}
           </CardTitle>
           <Badge variant={cfg.variant} dot size="sm">
@@ -61,14 +62,14 @@ function CarePlanCard({ plan }: { plan: CarePlan }) {
 
         {/* Approval indicator */}
         {plan.approved_at && (
-          <div className="flex items-center gap-1.5 mt-2 text-body-sm text-green-700">
+          <div className="flex items-center gap-1.5 mt-2 text-[15px] text-green-700">
             <CheckCircle2 className="size-3.5 shrink-0" aria-hidden="true" />
             <span>Đã phê duyệt {formatDate(plan.approved_at)}</span>
           </div>
         )}
 
         {/* Meta */}
-        <p className="mt-1 text-body-sm text-text-muted">
+        <p className="mt-1 text-[15px] text-text-muted">
           Tạo: {formatDate(plan.created_at)}
           {plan.ai_generated && <> &middot; <span className="text-amber-600">AI hỗ trợ</span></>}
           {(plan.version ?? 0) > 1 && <> &middot; v{plan.version}</>}
@@ -77,9 +78,9 @@ function CarePlanCard({ plan }: { plan: CarePlan }) {
 
       <CardContent className="p-4 pt-0">
         {plan.content ? (
-          <p className="text-body-md text-text-muted whitespace-pre-line">{plan.content}</p>
+          <p className="text-[17px] text-text-muted whitespace-pre-line">{plan.content}</p>
         ) : (
-          <p className="text-body-sm text-text-subtle italic">Chưa có nội dung.</p>
+          <p className="text-[15px] text-text-subtle italic">Chưa có nội dung.</p>
         )}
       </CardContent>
     </Card>
@@ -161,7 +162,7 @@ export default function CarePlanPage() {
       )}
 
       {!loading && !error && plans.length === 0 && (
-        <EmptyState
+        <PatientEmptyState
           icon={<ClipboardList />}
           title="Chưa có kế hoạch điều trị"
           description="Bác sĩ của bạn sẽ tạo kế hoạch sau khi tư vấn."

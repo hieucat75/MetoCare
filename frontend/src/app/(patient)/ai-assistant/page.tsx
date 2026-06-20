@@ -42,14 +42,14 @@ function AIResponsePanel({ response }: { response: AiExplainResponse }) {
       <div className="rounded-md bg-amber-50 border border-amber-200 p-3 space-y-2">
         <div className="flex items-center gap-2">
           <Bot className="size-4 shrink-0 text-amber-600" aria-hidden="true" />
-          <span className="text-body-md font-semibold text-amber-800">
+          <span className="text-[17px] font-semibold text-amber-800">
             Trợ lý AI MetoCare
           </span>
         </div>
-        <p className="text-body-md text-amber-900 leading-relaxed">
+        <p className="text-[17px] text-amber-900 leading-relaxed">
           {response.plain_language_summary}
         </p>
-        <p className="text-body-sm text-amber-700 italic border-t border-amber-200 pt-2">
+        <p className="text-[15px] text-amber-700 italic border-t border-amber-200 pt-2">
           {response.disclaimer}
         </p>
       </div>
@@ -89,7 +89,7 @@ function QAHistoryItem({ qa }: { qa: QAPair }) {
       {/* Question bubble */}
       <div className="flex justify-end">
         <div className="bg-mint-500 text-white rounded-2xl rounded-tr-sm px-4 py-2 max-w-[85%]">
-          <p className="text-body-md">{qa.question}</p>
+          <p className="text-[17px]">{qa.question}</p>
         </div>
       </div>
 
@@ -213,7 +213,7 @@ export default function AIAssistantPage() {
               type="button"
               onClick={() => handleChipClick(chip)}
               disabled={loading}
-              className="whitespace-nowrap rounded-full border border-amber-300 bg-amber-50 px-3 py-1.5 text-body-sm font-medium text-amber-800 hover:bg-amber-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="whitespace-nowrap rounded-full border border-amber-300 bg-amber-50 px-3 py-1.5 text-[15px] font-medium text-amber-800 hover:bg-amber-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {chip}
             </button>
@@ -236,7 +236,7 @@ export default function AIAssistantPage() {
           {question && (
             <div className="flex justify-end">
               <div className="bg-mint-500 text-white rounded-2xl rounded-tr-sm px-4 py-2 max-w-[85%]">
-                <p className="text-body-md">{question}</p>
+                <p className="text-[17px]">{question}</p>
               </div>
             </div>
           )}
@@ -263,7 +263,7 @@ export default function AIAssistantPage() {
           <CardContent>
             <div className="flex flex-col items-center gap-3 text-center py-4">
               <Bot className="size-10 text-amber-400" aria-hidden="true" />
-              <p className="text-body-md text-text-muted">
+              <p className="text-[17px] text-text-muted">
                 Chọn câu hỏi gợi ý ở trên hoặc nhập câu hỏi của bạn bên dưới.
               </p>
             </div>

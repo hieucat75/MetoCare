@@ -1,4 +1,5 @@
 'use client'
+import { PatientEmptyState } from '@/components/patient'
 
 import * as React from 'react'
 import { Plus, Flame, Sunrise, Sun, Moon, Coffee, Bot } from 'lucide-react'
@@ -109,22 +110,22 @@ function EntryItem({ entry }: { entry: NutritionEntry }) {
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between gap-2">
             <div className="min-w-0">
-              <span className="text-body-sm font-medium text-mint-600">{label}</span>
-              <p className="text-body-md text-text truncate">{entry.description}</p>
+              <span className="text-[15px] font-medium text-mint-600">{label}</span>
+              <p className="text-[17px] text-text truncate">{entry.description}</p>
             </div>
             <div className="text-right shrink-0">
               {entry.calories_kcal != null && (
-                <p className="text-body-md font-semibold text-text">
+                <p className="text-[17px] font-semibold text-text">
                   {entry.calories_kcal} kcal
                 </p>
               )}
-              <p className="text-body-sm text-text-muted">{formatTime(entry.logged_at)}</p>
+              <p className="text-[15px] text-text-muted">{formatTime(entry.logged_at)}</p>
             </div>
           </div>
 
           {/* Macros */}
           {(entry.carbs_g != null || entry.protein_g != null || entry.fat_g != null) && (
-            <p className="text-body-sm text-text-muted mt-0.5">
+            <p className="text-[15px] text-text-muted mt-0.5">
               {[
                 entry.carbs_g != null && `Carb ${entry.carbs_g}g`,
                 entry.protein_g != null && `Đạm ${entry.protein_g}g`,
@@ -142,7 +143,7 @@ function EntryItem({ entry }: { entry: NutritionEntry }) {
         <div className="mt-2 ml-11">
           <div className="flex items-start gap-2 rounded-md bg-amber-50 border border-amber-200 p-2.5">
             <Bot className="size-4 text-amber-600 shrink-0 mt-0.5" aria-hidden="true" />
-            <p className="text-body-sm text-amber-800">
+            <p className="text-[15px] text-amber-800">
               <span className="font-medium">Gợi ý AI:</span> {entry.ai_coaching}
               <span className="block text-amber-600 mt-0.5">
                 (AI - không thay thế tư vấn dinh dưỡng)
@@ -377,10 +378,10 @@ export default function NutritionPage() {
               <Flame className="size-5 text-orange-500" aria-hidden="true" />
             </div>
             <div>
-              <p className="text-body-sm text-text-muted">Tổng calo hôm nay</p>
-              <p className="text-heading-xl font-bold text-text">
+              <p className="text-[15px] text-text-muted">Tổng calo hôm nay</p>
+              <p className="text-[24px] font-bold text-text">
                 {todayKcal.toLocaleString('vi-VN')}{' '}
-                <span className="text-body-md font-normal text-text-muted">kcal</span>
+                <span className="text-[17px] font-normal text-text-muted">kcal</span>
               </p>
             </div>
           </div>
@@ -406,7 +407,7 @@ export default function NutritionPage() {
 
       {/* Empty today */}
       {!loading && !error && todayEntries.length === 0 && (
-        <EmptyState
+        <PatientEmptyState
           title="Chưa có nhật ký hôm nay"
           description="Chưa có nhật ký dinh dưỡng hôm nay. Hãy ghi lại bữa ăn của bạn!"
           action={{
@@ -422,7 +423,7 @@ export default function NutritionPage() {
           {groups.map(({ label, items }) => (
             <Card key={label} variant="glass" padding="none">
               <CardHeader className="px-5 pt-4 pb-0">
-                <CardTitle className="text-body-md font-semibold text-text-muted">
+                <CardTitle className="text-[17px] font-semibold text-text-muted">
                   {label}
                 </CardTitle>
               </CardHeader>

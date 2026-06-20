@@ -135,7 +135,7 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
         <button
           type="button"
           onClick={handleLogout}
-          className="w-full flex items-center gap-2.5 px-3 py-2 text-secondary-400 hover:text-white hover:bg-secondary-800 rounded-md transition-colors text-body-md"
+          className="w-full flex items-center gap-2.5 px-3 py-2 text-secondary-400 hover:text-white hover:bg-secondary-800 rounded-md transition-colors text-[17px]"
         >
           <LogOut className="w-4 h-4 shrink-0" aria-hidden="true" />
           {!sidebarCollapsed && <span>Đăng xuất</span>}
@@ -147,16 +147,16 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
   return (
     <>
       {/* ── Mobile (< lg): compact top bar + scrollable content + fixed bottom nav ── */}
-      <div className="patient-app flex flex-col min-h-screen lg:hidden bg-gradient-to-br from-mint-50 via-background to-mint-100">
+      <div className="patient-app flex flex-col min-h-screen lg:hidden">
         {/* Mobile top bar — mint glass app bar */}
-        <header className="sticky top-0 z-30 bg-white/70 backdrop-blur-xl border-b border-white/60">
+        <header className="sticky top-0 z-30 bg-white/55 backdrop-blur-2xl backdrop-saturate-150 border-b border-white/50">
           <div className="flex items-center justify-between h-14 px-4">
             {/* Logo / brand */}
             <div className="flex items-center gap-2">
               <div className="w-7 h-7 rounded-xl bg-gradient-to-br from-mint-400 to-mint-600 flex items-center justify-center shrink-0">
                 <span className="text-white font-bold text-xs">M</span>
               </div>
-              <span className="font-semibold text-text text-body-md">{pageTitle}</span>
+              <span className="font-semibold text-text text-[17px]">{pageTitle}</span>
             </div>
             {/* User avatar / logout shortcut */}
             <button

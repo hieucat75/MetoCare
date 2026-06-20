@@ -61,7 +61,7 @@ function MintInput({
         disabled={disabled}
         aria-invalid={error}
         className={cn(
-          'h-12 w-full rounded-xl border bg-white/80 px-3 py-2 text-body-md text-text',
+          'h-12 w-full rounded-xl border bg-white/80 px-3 py-2 text-[17px] text-text',
           'placeholder:text-text-subtle',
           'focus:outline-none focus:ring-2',
           'disabled:bg-secondary-50 disabled:text-text-muted disabled:cursor-not-allowed',
@@ -82,7 +82,7 @@ function MintInput({
 
 function FieldError({ message }: { message: string }) {
   return (
-    <p className="mt-1 text-body-sm text-danger flex items-center gap-1">
+    <p className="mt-1 text-[15px] text-danger flex items-center gap-1">
       <span aria-hidden="true">⚠</span>
       {message}
     </p>
@@ -160,16 +160,16 @@ export default function RegisterPage() {
         <div className="w-14 h-14 rounded-2xl bg-mint-100 flex items-center justify-center mx-auto mb-4">
           <CheckCircle2 className="w-8 h-8 text-mint-600" aria-hidden="true" />
         </div>
-        <h2 className="text-heading-xl font-bold text-text mb-2">Đăng ký thành công!</h2>
-        <p className="text-body-md text-text-muted">Đang thiết lập hồ sơ của bạn...</p>
+        <h2 className="text-[24px] font-bold text-text mb-2">Đăng ký thành công!</h2>
+        <p className="text-[17px] text-text-muted">Đang thiết lập hồ sơ của bạn...</p>
       </div>
     )
   }
 
   return (
     <div>
-      <h1 className="text-heading-xl font-bold text-text mb-1">Tạo tài khoản</h1>
-      <p className="text-body-md text-text-muted mb-6">
+      <h1 className="text-[24px] font-bold text-text mb-1">Tạo tài khoản</h1>
+      <p className="text-[17px] text-text-muted mb-6">
         Đăng ký bằng số điện thoại để bắt đầu quản lý sức khỏe.
       </p>
 
@@ -262,14 +262,14 @@ export default function RegisterPage() {
         </Button>
       </form>
 
-      <p className="text-center text-body-md text-text-muted mt-6">
+      <p className="text-center text-[17px] text-text-muted mt-6">
         Đã có tài khoản?{' '}
         <Link href="/login" className="text-mint-700 font-semibold hover:underline underline-offset-2">
           Đăng nhập
         </Link>
       </p>
 
-      <p className="text-center text-body-sm text-text-subtle mt-4 leading-relaxed">
+      <p className="text-center text-[15px] text-text-subtle mt-4 leading-relaxed">
         Bằng cách đăng ký, bạn đồng ý với{' '}
         <span className="text-mint-700">Điều khoản sử dụng</span> và{' '}
         <span className="text-mint-700">Chính sách bảo mật</span> của MetoCare.

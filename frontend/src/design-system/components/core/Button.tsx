@@ -17,12 +17,15 @@ const buttonVariants = cva(
       variant: {
         primary:
           'bg-primary hover:bg-primary-hover text-white shadow-sm rounded-md',
-        // Patient app (mint / soft-green wellness tone). Additive — does not
-        // affect doctor/admin which use `primary`.
+        // Patient app — pillow liquid button (mint gradient + inner highlight +
+        // mint-tinted depth shadow). Additive; doctor/admin keep `primary`.
         mint:
-          'bg-mint-500 hover:bg-mint-600 text-white shadow-glass rounded-xl',
+          'relative overflow-hidden bg-gradient-to-br from-mint-400 to-mint-600 text-white rounded-2xl ' +
+          'shadow-pillow-mint transition-all active:scale-[0.97] active:shadow-glow-mint ' +
+          'before:absolute before:inset-x-0 before:top-0 before:h-1/2 before:bg-gradient-to-b before:from-white/25 before:to-transparent before:pointer-events-none',
         'mint-soft':
-          'bg-mint-50 hover:bg-mint-100 text-mint-700 rounded-xl',
+          'bg-white/60 backdrop-blur-md text-mint-700 border border-white/70 ring-1 ring-mint-100/60 ' +
+          'shadow-glass rounded-2xl transition-all active:scale-[0.98] hover:bg-white/80',
         secondary:
           'bg-secondary-100 hover:bg-secondary-200 text-secondary-800 rounded-md',
         ghost:

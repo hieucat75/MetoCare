@@ -222,8 +222,21 @@ const config: Config = {
         inner: 'inset 0 2px 4px 0 rgba(0, 0, 0, 0.05)',
         focus: '0 0 0 3px rgba(27, 79, 216, 0.25)',
         'focus-danger': '0 0 0 3px rgba(220, 38, 38, 0.25)',
-        // Soft, diffuse glass shadow for liquid-glass cards (mint-tinted).
-        glass: '0 8px 32px -8px rgba(16, 185, 129, 0.18), 0 2px 8px -2px rgba(16, 185, 129, 0.10)',
+        // Liquid-glass card: a clear neutral lift (so the frosted pane separates
+        // from the mint ambient) layered with a tight contact shadow + a bright
+        // glass top-edge highlight.
+        glass:
+          '0 18px 30px -14px rgba(15,23,42,0.20), 0 4px 10px -4px rgba(15,23,42,0.12), inset 0 1px 0 rgba(255,255,255,0.9)',
+        // Pillow button — mint-tinted depth + inner top highlight.
+        'pillow-mint':
+          '0 10px 24px -6px rgba(16,185,129,0.45), 0 2px 6px -2px rgba(16,185,129,0.28), inset 0 1px 0 rgba(255,255,255,0.35)',
+        // Frosted bottom-nav — soft upward mint glow.
+        'frost-up':
+          '0 -10px 32px -12px rgba(16,185,129,0.18), inset 0 1px 0 rgba(255,255,255,0.6)',
+        // Mint glow halo for empty-state icon discs.
+        'glow-mint': '0 10px 36px -6px rgba(16,185,129,0.30)',
+        // Soft inset for glass inputs.
+        'inset-mint': 'inset 0 2px 5px rgba(16,185,129,0.06)',
         'focus-mint': '0 0 0 3px rgba(16, 185, 129, 0.22)',
         none: 'none',
       },

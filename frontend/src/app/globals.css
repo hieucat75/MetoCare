@@ -175,13 +175,44 @@
 .patient-app input:not([type='checkbox']):not([type='radio']),
 .patient-app textarea,
 .patient-app [role='combobox'] {
-  min-height: 3.25rem;        /* 52px — touch target + placeholder visible */
-  font-size: 1.0625rem;       /* 17px — input value & placeholder */
+  min-height: 3.5rem;         /* 56px — touch target + placeholder visible */
+  font-size: 1.125rem;        /* 18px — input value & placeholder */
   line-height: 1.55;
+  /* Glass field: translucent + soft mint inset so it reads as liquid-glass. */
+  background-color: rgba(255, 255, 255, 0.72);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  border-radius: 1rem;
+  border-color: rgba(167, 240, 214, 0.75);
+  box-shadow: inset 0 2px 5px rgba(16, 185, 129, 0.06);
 }
-.patient-app textarea { min-height: 4.5rem; }
-.patient-app label { font-size: 1rem; }    /* 16px form labels */
-.patient-app ::placeholder { font-size: 1.0625rem; }
+.patient-app input:focus,
+.patient-app textarea:focus,
+.patient-app [role='combobox']:focus {
+  background-color: #ffffff;
+  border-color: rgb(52, 211, 153);
+  box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.18), inset 0 1px 3px rgba(16, 185, 129, 0.08);
+  outline: none;
+}
+.patient-app textarea { min-height: 5rem; }
+.patient-app label { font-size: 1.0625rem; }    /* 17px form labels */
+.patient-app ::placeholder { font-size: 1.125rem; }   /* 18px */
 /* Patient CTA buttons larger (exclude bottom-nav tabs). Icons unaffected. */
-.patient-app button:not(.bottomnav-btn) { font-size: 1rem; }
-.patient-app .bottomnav-btn { font-size: inherit; }
+.patient-app button:not(.bottomnav-btn) { font-size: 1.0625rem; }   /* 17px */
+.patient-app .bottomnav-btn { font-size: 0.75rem; }   /* 12px nav label */
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * Patient app — Liquid Glass ambient. A rich, always-visible mint gradient +
+ * soft radial glows behind the glass cards so translucency/backdrop-blur reads
+ * as real glass (not flat white). Scoped to `.patient-app` (patient + auth +
+ * onboarding); doctor/admin portals never get this.
+ * ──────────────────────────────────────────────────────────────────────── */
+.patient-app {
+  background:
+    radial-gradient(780px 460px at 6% -6%, rgba(52, 211, 153, 0.13), transparent 62%),
+    radial-gradient(680px 560px at 112% 10%, rgba(16, 185, 129, 0.10), transparent 60%),
+    radial-gradient(560px 480px at 80% 40%, rgba(16, 185, 129, 0.06), transparent 66%),
+    radial-gradient(760px 620px at 90% 110%, rgba(110, 231, 183, 0.12), transparent 62%),
+    linear-gradient(165deg, #EDFBF5 0%, #FBFFFE 48%, #EFFCF8 100%);
+  background-attachment: fixed;
+}

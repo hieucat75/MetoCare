@@ -26,8 +26,10 @@ const variantClasses: Record<CardVariant, string> = {
   elevated: 'bg-surface rounded-lg shadow-md',
   ghost: 'bg-background rounded-lg',
   flat: 'bg-secondary-50 rounded-lg',
-  // Patient app liquid-glass surface (mint-tinted soft shadow + blur).
-  glass: 'bg-white/70 backdrop-blur-xl border border-white/60 rounded-2xl shadow-glass',
+  // Patient app TRUE liquid-glass surface: translucent so the mint ambient
+  // shows through, saturated backdrop blur, mint ring + glass inner highlight.
+  glass:
+    'bg-white/85 backdrop-blur-xl border border-white/90 ring-1 ring-mint-100/70 rounded-3xl shadow-glass',
 }
 
 const paddingClasses: Record<CardPadding, string> = {

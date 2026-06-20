@@ -38,8 +38,8 @@ function genderLabel(g: PatientProfile['gender']): string {
 function ProfileField({ label, value }: { label: string; value: string | null | undefined }) {
   return (
     <div className="flex flex-col gap-0.5 py-3 border-b border-border last:border-0">
-      <p className="text-body-sm text-text-muted">{label}</p>
-      <p className="text-body-md text-text">{value ?? '—'}</p>
+      <p className="text-[15px] text-text-muted">{label}</p>
+      <p className="text-[17px] text-text">{value ?? '—'}</p>
     </div>
   )
 }

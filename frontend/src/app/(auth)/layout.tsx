@@ -7,7 +7,7 @@ export const metadata: Metadata = {
 
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="patient-app relative min-h-screen flex items-center justify-center p-4 overflow-hidden bg-gradient-to-br from-mint-50 via-background to-mint-100">
+    <div className="patient-app relative min-h-screen flex items-center justify-center p-4 overflow-hidden">
       {/* Soft mint glow blobs for the liquid-glass backdrop */}
       <div className="pointer-events-none absolute -top-24 -left-16 w-72 h-72 rounded-full bg-mint-300/30 blur-3xl" aria-hidden="true" />
       <div className="pointer-events-none absolute -bottom-24 -right-16 w-80 h-80 rounded-full bg-mint-200/40 blur-3xl" aria-hidden="true" />
@@ -21,7 +21,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
             </div>
             <span className="text-display-xs font-bold text-text tracking-tight">MetoCare</span>
           </div>
-          <p className="text-body-md text-mint-700">Chăm sóc sức khỏe chuyển hóa</p>
+          <p className="text-[17px] text-mint-700">Chăm sóc sức khỏe chuyển hóa</p>
         </div>
 
         {/* Liquid-glass card */}
@@ -30,7 +30,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         </div>
 
         {/* Footer */}
-        <p className="text-center text-body-sm text-text-subtle mt-6">
+        <p className="text-center text-[15px] text-text-subtle mt-6">
           © 2026 MetoCare. Mọi quyền được bảo lưu.
         </p>
       </div>
