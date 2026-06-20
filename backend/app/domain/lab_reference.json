@@ -1,0 +1,582 @@
+{
+  "version": "2026-06-21",
+  "categories": [
+    {
+      "key": "diabetes",
+      "name": "Đường huyết & Tiểu đường",
+      "biomarkers": [
+        "fasting_glucose",
+        "postprandial_glucose",
+        "hba1c"
+      ]
+    },
+    {
+      "key": "lipid",
+      "name": "Lipid máu",
+      "biomarkers": [
+        "total_cholesterol",
+        "ldl",
+        "hdl",
+        "triglyceride"
+      ]
+    },
+    {
+      "key": "liver",
+      "name": "Chức năng gan",
+      "biomarkers": [
+        "ast",
+        "alt",
+        "ggt",
+        "bilirubin_total"
+      ]
+    },
+    {
+      "key": "kidney",
+      "name": "Chức năng thận",
+      "biomarkers": [
+        "creatinine",
+        "urea",
+        "egfr"
+      ]
+    },
+    {
+      "key": "thyroid",
+      "name": "Tuyến giáp",
+      "biomarkers": [
+        "tsh",
+        "ft4",
+        "ft3"
+      ]
+    },
+    {
+      "key": "hematology",
+      "name": "Huyết học cơ bản",
+      "biomarkers": [
+        "wbc",
+        "rbc",
+        "hemoglobin",
+        "hematocrit",
+        "platelet"
+      ]
+    }
+  ],
+  "biomarkers": {
+    "fasting_glucose": {
+      "name_vn": "Đường huyết lúc đói",
+      "name_en": "Fasting Glucose",
+      "category": "diabetes",
+      "units": [
+        {
+          "key": "mmol_per_l",
+          "label": "mmol/L",
+          "ref_range": {
+            "low": 3.9,
+            "high": 5.6
+          },
+          "is_primary": false
+        },
+        {
+          "key": "mg_per_dl",
+          "label": "mg/dL",
+          "ref_range": {
+            "low": 70,
+            "high": 99
+          },
+          "is_primary": true
+        }
+      ],
+      "value_precision": 1,
+      "notes": "Nhịn ăn ≥8 giờ trước khi lấy máu",
+      "higher_is_better": false
+    },
+    "postprandial_glucose": {
+      "name_vn": "Đường huyết sau ăn 2h",
+      "name_en": "Postprandial Glucose",
+      "category": "diabetes",
+      "units": [
+        {
+          "key": "mmol_per_l",
+          "label": "mmol/L",
+          "ref_range": {
+            "low": 0,
+            "high": 7.8
+          },
+          "is_primary": false
+        },
+        {
+          "key": "mg_per_dl",
+          "label": "mg/dL",
+          "ref_range": {
+            "low": 0,
+            "high": 140
+          },
+          "is_primary": true
+        }
+      ],
+      "value_precision": 1,
+      "notes": "Đo sau khi ăn 2 giờ",
+      "higher_is_better": false
+    },
+    "hba1c": {
+      "name_vn": "HbA1c",
+      "name_en": "HbA1c",
+      "category": "diabetes",
+      "units": [
+        {
+          "key": "percent",
+          "label": "%",
+          "ref_range": {
+            "low": 4.0,
+            "high": 5.6
+          },
+          "is_primary": true
+        }
+      ],
+      "value_precision": 1,
+      "notes": "Phản ánh đường huyết trung bình 2–3 tháng",
+      "higher_is_better": false
+    },
+    "total_cholesterol": {
+      "name_vn": "Cholesterol toàn phần",
+      "name_en": "Total Cholesterol",
+      "category": "lipid",
+      "units": [
+        {
+          "key": "mmol_per_l",
+          "label": "mmol/L",
+          "ref_range": {
+            "low": 0,
+            "high": 5.2
+          },
+          "is_primary": false
+        },
+        {
+          "key": "mg_per_dl",
+          "label": "mg/dL",
+          "ref_range": {
+            "low": 0,
+            "high": 200
+          },
+          "is_primary": true
+        }
+      ],
+      "value_precision": 2,
+      "notes": "",
+      "higher_is_better": false
+    },
+    "ldl": {
+      "name_vn": "LDL-Cholesterol",
+      "name_en": "LDL-C",
+      "category": "lipid",
+      "units": [
+        {
+          "key": "mmol_per_l",
+          "label": "mmol/L",
+          "ref_range": {
+            "low": 0,
+            "high": 3.4
+          },
+          "is_primary": false
+        },
+        {
+          "key": "mg_per_dl",
+          "label": "mg/dL",
+          "ref_range": {
+            "low": 0,
+            "high": 130
+          },
+          "is_primary": true
+        }
+      ],
+      "value_precision": 2,
+      "notes": "Cholesterol 'xấu' — càng thấp càng tốt",
+      "higher_is_better": false
+    },
+    "hdl": {
+      "name_vn": "HDL-Cholesterol",
+      "name_en": "HDL-C",
+      "category": "lipid",
+      "units": [
+        {
+          "key": "mmol_per_l",
+          "label": "mmol/L",
+          "ref_range": {
+            "low": 1.0,
+            "high": 2.0
+          },
+          "is_primary": false
+        },
+        {
+          "key": "mg_per_dl",
+          "label": "mg/dL",
+          "ref_range": {
+            "low": 40,
+            "high": 80
+          },
+          "is_primary": true
+        }
+      ],
+      "value_precision": 2,
+      "notes": "Cholesterol 'tốt' — cao có lợi",
+      "higher_is_better": true
+    },
+    "triglyceride": {
+      "name_vn": "Triglyceride",
+      "name_en": "Triglycerides",
+      "category": "lipid",
+      "units": [
+        {
+          "key": "mmol_per_l",
+          "label": "mmol/L",
+          "ref_range": {
+            "low": 0,
+            "high": 1.7
+          },
+          "is_primary": false
+        },
+        {
+          "key": "mg_per_dl",
+          "label": "mg/dL",
+          "ref_range": {
+            "low": 0,
+            "high": 150
+          },
+          "is_primary": true
+        }
+      ],
+      "value_precision": 2,
+      "notes": "",
+      "higher_is_better": false
+    },
+    "ast": {
+      "name_vn": "AST (SGOT)",
+      "name_en": "AST",
+      "category": "liver",
+      "units": [
+        {
+          "key": "u_per_l",
+          "label": "U/L",
+          "ref_range": {
+            "low": 0,
+            "high": 37
+          },
+          "is_primary": true
+        }
+      ],
+      "value_precision": 0,
+      "notes": "Men gan",
+      "higher_is_better": false
+    },
+    "alt": {
+      "name_vn": "ALT (SGPT)",
+      "name_en": "ALT",
+      "category": "liver",
+      "units": [
+        {
+          "key": "u_per_l",
+          "label": "U/L",
+          "ref_range": {
+            "low": 0,
+            "high": 41
+          },
+          "is_primary": true
+        }
+      ],
+      "value_precision": 0,
+      "notes": "Men gan",
+      "higher_is_better": false
+    },
+    "ggt": {
+      "name_vn": "GGT",
+      "name_en": "GGT",
+      "category": "liver",
+      "units": [
+        {
+          "key": "u_per_l",
+          "label": "U/L",
+          "ref_range": {
+            "low": 0,
+            "high": 55
+          },
+          "is_primary": true
+        }
+      ],
+      "value_precision": 0,
+      "notes": "",
+      "higher_is_better": false
+    },
+    "bilirubin_total": {
+      "name_vn": "Bilirubin toàn phần",
+      "name_en": "Total Bilirubin",
+      "category": "liver",
+      "units": [
+        {
+          "key": "umol_per_l",
+          "label": "µmol/L",
+          "ref_range": {
+            "low": 5,
+            "high": 21
+          },
+          "is_primary": true
+        },
+        {
+          "key": "mg_per_dl",
+          "label": "mg/dL",
+          "ref_range": {
+            "low": 0.3,
+            "high": 1.2
+          },
+          "is_primary": false
+        }
+      ],
+      "value_precision": 1,
+      "notes": "",
+      "higher_is_better": false
+    },
+    "creatinine": {
+      "name_vn": "Creatinine",
+      "name_en": "Creatinine",
+      "category": "kidney",
+      "units": [
+        {
+          "key": "umol_per_l",
+          "label": "µmol/L",
+          "ref_range": {
+            "low": 62,
+            "high": 106
+          },
+          "is_primary": true
+        },
+        {
+          "key": "mg_per_dl",
+          "label": "mg/dL",
+          "ref_range": {
+            "low": 0.7,
+            "high": 1.2
+          },
+          "is_primary": false
+        }
+      ],
+      "value_precision": 1,
+      "notes": "",
+      "higher_is_better": false
+    },
+    "urea": {
+      "name_vn": "Urê",
+      "name_en": "Urea",
+      "category": "kidney",
+      "units": [
+        {
+          "key": "mmol_per_l",
+          "label": "mmol/L",
+          "ref_range": {
+            "low": 2.5,
+            "high": 7.5
+          },
+          "is_primary": true
+        },
+        {
+          "key": "mg_per_dl",
+          "label": "mg/dL",
+          "ref_range": {
+            "low": 15,
+            "high": 45
+          },
+          "is_primary": false
+        }
+      ],
+      "value_precision": 1,
+      "notes": "",
+      "higher_is_better": false
+    },
+    "egfr": {
+      "name_vn": "Độ lọc cầu thận (eGFR)",
+      "name_en": "eGFR",
+      "category": "kidney",
+      "units": [
+        {
+          "key": "ml_min_173",
+          "label": "mL/min/1.73m²",
+          "ref_range": {
+            "low": 90,
+            "high": 200
+          },
+          "is_primary": true
+        }
+      ],
+      "value_precision": 0,
+      "notes": "≥90 bình thường; thấp gợi ý suy giảm chức năng thận",
+      "higher_is_better": true
+    },
+    "tsh": {
+      "name_vn": "TSH",
+      "name_en": "TSH",
+      "category": "thyroid",
+      "units": [
+        {
+          "key": "miu_per_l",
+          "label": "mIU/L",
+          "ref_range": {
+            "low": 0.4,
+            "high": 4.0
+          },
+          "is_primary": true
+        }
+      ],
+      "value_precision": 2,
+      "notes": "",
+      "higher_is_better": false
+    },
+    "ft4": {
+      "name_vn": "FT4",
+      "name_en": "Free T4",
+      "category": "thyroid",
+      "units": [
+        {
+          "key": "pmol_per_l",
+          "label": "pmol/L",
+          "ref_range": {
+            "low": 12,
+            "high": 22
+          },
+          "is_primary": true
+        }
+      ],
+      "value_precision": 1,
+      "notes": "",
+      "higher_is_better": false
+    },
+    "ft3": {
+      "name_vn": "FT3",
+      "name_en": "Free T3",
+      "category": "thyroid",
+      "units": [
+        {
+          "key": "pmol_per_l",
+          "label": "pmol/L",
+          "ref_range": {
+            "low": 3.1,
+            "high": 6.8
+          },
+          "is_primary": true
+        }
+      ],
+      "value_precision": 1,
+      "notes": "",
+      "higher_is_better": false
+    },
+    "wbc": {
+      "name_vn": "Bạch cầu (WBC)",
+      "name_en": "White Blood Cell",
+      "category": "hematology",
+      "units": [
+        {
+          "key": "x10_9_per_l",
+          "label": "10⁹/L",
+          "ref_range": {
+            "low": 4.0,
+            "high": 10.0
+          },
+          "is_primary": true
+        }
+      ],
+      "value_precision": 1,
+      "notes": "",
+      "higher_is_better": false
+    },
+    "rbc": {
+      "name_vn": "Hồng cầu (RBC)",
+      "name_en": "Red Blood Cell",
+      "category": "hematology",
+      "units": [
+        {
+          "key": "x10_12_per_l",
+          "label": "10¹²/L",
+          "ref_range": {
+            "low": 4.2,
+            "high": 5.9
+          },
+          "is_primary": true
+        }
+      ],
+      "value_precision": 2,
+      "notes": "",
+      "higher_is_better": false
+    },
+    "hemoglobin": {
+      "name_vn": "Huyết sắc tố (Hb)",
+      "name_en": "Hemoglobin",
+      "category": "hematology",
+      "units": [
+        {
+          "key": "g_per_l",
+          "label": "g/L",
+          "ref_range": {
+            "low": 130,
+            "high": 175
+          },
+          "is_primary": true
+        },
+        {
+          "key": "g_per_dl",
+          "label": "g/dL",
+          "ref_range": {
+            "low": 13.0,
+            "high": 17.5
+          },
+          "is_primary": false
+        }
+      ],
+      "value_precision": 1,
+      "notes": "",
+      "higher_is_better": false
+    },
+    "hematocrit": {
+      "name_vn": "Hematocrit (HCT)",
+      "name_en": "Hematocrit",
+      "category": "hematology",
+      "units": [
+        {
+          "key": "percent",
+          "label": "%",
+          "ref_range": {
+            "low": 36,
+            "high": 50
+          },
+          "is_primary": true
+        },
+        {
+          "key": "l_per_l",
+          "label": "L/L",
+          "ref_range": {
+            "low": 0.36,
+            "high": 0.5
+          },
+          "is_primary": false
+        }
+      ],
+      "value_precision": 1,
+      "notes": "",
+      "higher_is_better": false
+    },
+    "platelet": {
+      "name_vn": "Tiểu cầu (PLT)",
+      "name_en": "Platelets",
+      "category": "hematology",
+      "units": [
+        {
+          "key": "x10_9_per_l",
+          "label": "10⁹/L",
+          "ref_range": {
+            "low": 150,
+            "high": 400
+          },
+          "is_primary": true
+        }
+      ],
+      "value_precision": 0,
+      "notes": "",
+      "higher_is_better": false
+    }
+  }
+}
