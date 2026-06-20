@@ -216,3 +216,5 @@
     linear-gradient(165deg, #EDFBF5 0%, #FBFFFE 48%, #EFFCF8 100%);
   background-attachment: fixed;
 }
+/* Patient page titles (PageHeader h1 + route greetings) larger for 50+. */
+.patient-app h1 { font-size: 1.625rem; line-height: 1.2; }   /* 26px */

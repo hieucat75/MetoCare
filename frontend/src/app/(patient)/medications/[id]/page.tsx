@@ -22,13 +22,13 @@ function InfoRow({
   value: string
 }) {
   return (
-    <div className="flex items-start gap-3 py-3 border-b border-border last:border-0">
-      <span className="flex items-center justify-center w-8 h-8 rounded-lg bg-secondary-50 shrink-0">
-        <Icon className="size-4 text-text-muted" aria-hidden="true" />
+    <div className="flex items-start gap-3 py-4 border-b border-mint-100/60 last:border-0">
+      <span className="flex items-center justify-center w-9 h-9 rounded-lg bg-mint-50 shrink-0">
+        <Icon className="size-4 text-mint-600" aria-hidden="true" />
       </span>
       <div className="flex-1 min-w-0">
-        <p className="text-label-sm text-text-muted">{label}</p>
-        <p className="text-[17px] text-text mt-0.5">{value}</p>
+        <p className="text-[16px] font-medium text-mint-700">{label}</p>
+        <p className="text-[20px] font-semibold text-text mt-1 leading-snug">{value}</p>
       </div>
     </div>
   )
