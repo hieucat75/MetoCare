@@ -19,18 +19,18 @@ import {
   TabsContent,
 } from '@/design-system'
 import { useAuth } from '@/lib/auth/context'
-import { getMetrics, logMetric } from '@/lib/api/patient'
+import { getMetrics, logMetric, METRIC_LABELS, METRIC_UNITS, metricLabel, metricUnit } from '@/lib/api/patient'
 import type { HealthMetric, MetricType } from '@/lib/api/patient'
 import { formatDate } from '@/lib/utils'
 
-// ─── Config ───────────────────────────────────────────────────────────���───────
+// ─── Config (canonical taxonomy — see lib/api/patient.ts) ──────────────────────
 
 type TabKey =
   | 'overview'
-  | 'blood_glucose'
+  | 'fasting_glucose'
   | 'weight'
   | 'blood_pressure_systolic'
-  | 'cholesterol_total'
+  | 'hba1c'
 
 interface TabDef {
   value: TabKey
@@ -40,30 +40,22 @@ interface TabDef {
 
 const TABS: TabDef[] = [
   { value: 'overview', label: 'Tổng quan' },
-  { value: 'blood_glucose', label: 'Đường huyết', metricType: 'blood_glucose' },
+  { value: 'fasting_glucose', label: 'Đường huyết', metricType: 'fasting_glucose' },
   { value: 'weight', label: 'Cân nặng', metricType: 'weight' },
   { value: 'blood_pressure_systolic', label: 'Huyết áp', metricType: 'blood_pressure_systolic' },
-  { value: 'cholesterol_total', label: 'Cholesterol', metricType: 'cholesterol_total' },
+  { value: 'hba1c', label: 'HbA1c', metricType: 'hba1c' },
 ]
 
-const METRIC_OPTIONS: { value: MetricType; label: string; unit: string }[] = [
-  { value: 'blood_glucose', label: 'Đường huyết', unit: 'mmol/L' },
-  { value: 'weight', label: 'Cân nặng', unit: 'kg' },
-  { value: 'blood_pressure_systolic', label: 'Huyết áp (tâm thu)', unit: 'mmHg' },
-  { value: 'blood_pressure_diastolic', label: 'Huyết áp (tâm trương)', unit: 'mmHg' },
-  { value: 'cholesterol_total', label: 'Cholesterol tổng', unit: 'mmol/L' },
-  { value: 'heart_rate', label: 'Nhịp tim', unit: 'bpm' },
-  { value: 'hba1c', label: 'HbA1c', unit: '%' },
-  { value: 'triglycerides', label: 'Triglyceride', unit: 'mmol/L' },
-  { value: 'waist_circumference', label: 'Vòng eo', unit: 'cm' },
-]
+const METRIC_OPTIONS: { value: MetricType; label: string; unit: string }[] = (
+  Object.keys(METRIC_LABELS) as MetricType[]
+).map((t) => ({ value: t, label: METRIC_LABELS[t], unit: METRIC_UNITS[t] }))
 
 function getUnit(type: MetricType): string {
-  return METRIC_OPTIONS.find((o) => o.value === type)?.unit ?? ''
+  return metricUnit(type)
 }
 
 function getMetricDisplayLabel(type: MetricType): string {
-  return METRIC_OPTIONS.find((o) => o.value === type)?.label ?? type
+  return metricLabel(type)
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────���──────
@@ -85,12 +77,73 @@ function toStatusLabel(status: HealthMetric['status']): string {
   return 'Chưa rõ'
 }
 
-// ─── Trend chart placeholder ──────────────────────────────────────────────────
+// ─── Trend chart (inline SVG sparkline — no chart dependency) ──────────────────
 
-function TrendChartPlaceholder() {
+/**
+ * Lightweight line chart of a metric over time, built from the metric list
+ * (value vs measured_at). Replaces the former grey placeholder box (P1-2).
+ * Points are passed newest-first (as the list returns them) and reversed here
+ * so the x-axis runs oldest → newest.
+ */
+function TrendChart({ metrics, unit }: { metrics: HealthMetric[]; unit: string }) {
+  const points = React.useMemo(() => {
+    return [...metrics]
+      .filter((m) => typeof m.value === 'number' && !isNaN(m.value))
+      .sort(
+        (a, b) =>
+          new Date(a.measured_at ?? a.recorded_at).getTime() -
+          new Date(b.measured_at ?? b.recorded_at).getTime(),
+      )
+  }, [metrics])
+
+  if (points.length < 2) {
+    return (
+      <div className="bg-secondary-50 rounded-lg h-32 flex items-center justify-center text-text-muted text-caption px-4 text-center">
+        Cần ít nhất 2 lần đo để hiển thị biểu đồ xu hướng
+      </div>
+    )
+  }
+
+  const W = 320
+  const H = 120
+  const PAD = 8
+  const values = points.map((p) => p.value)
+  const minV = Math.min(...values)
+  const maxV = Math.max(...values)
+  const span = maxV - minV || 1
+  const stepX = (W - PAD * 2) / (points.length - 1)
+  const coords = points.map((p, i) => {
+    const x = PAD + i * stepX
+    const y = PAD + (H - PAD * 2) * (1 - (p.value - minV) / span)
+    return { x, y, v: p.value }
+  })
+  const linePath = coords.map((c, i) => `${i === 0 ? 'M' : 'L'}${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(' ')
+  const areaPath = `${linePath} L${coords[coords.length - 1].x.toFixed(1)},${H - PAD} L${coords[0].x.toFixed(1)},${H - PAD} Z`
+  const first = values[0]
+  const last = values[values.length - 1]
+  const delta = last - first
+
   return (
-    <div className="bg-secondary-50 rounded-lg h-32 flex items-center justify-center text-text-muted text-sm">
-      Biểu đồ xu hướng
+    <div className="rounded-lg border border-border bg-surface p-3">
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-caption text-text-muted">Xu hướng ({points.length} lần đo)</span>
+        <span
+          className={`text-caption font-medium ${delta > 0 ? 'text-amber-600' : delta < 0 ? 'text-green-600' : 'text-text-muted'}`}
+        >
+          {delta > 0 ? '↑' : delta < 0 ? '↓' : '→'} {Math.abs(delta).toFixed(1)} {unit}
+        </span>
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-32" preserveAspectRatio="none" role="img" aria-label="Biểu đồ xu hướng chỉ số">
+        <path d={areaPath} fill="currentColor" className="text-primary/10" />
+        <path d={linePath} fill="none" stroke="currentColor" className="text-primary" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+        {coords.map((c, i) => (
+          <circle key={i} cx={c.x} cy={c.y} r={2.5} fill="currentColor" className="text-primary" />
+        ))}
+      </svg>
+      <div className="flex items-center justify-between mt-1 text-caption text-text-muted">
+        <span>{minV.toFixed(1)}</span>
+        <span>{maxV.toFixed(1)} {unit}</span>
+      </div>
     </div>
   )
 }
@@ -192,7 +245,7 @@ function MetricTabContent({
         </div>
       )}
 
-      {metricType && <TrendChartPlaceholder />}
+      {metricType && <TrendChart metrics={filtered} unit={getUnit(metricType)} />}
 
       {filtered.length === 0 ? (
         <EmptyState
@@ -225,9 +278,8 @@ interface LogModalProps {
 }
 
 function LogMetricModal({ open, onClose, onSuccess, patientId }: LogModalProps) {
-  const [metricType, setMetricType] = React.useState<MetricType>('blood_glucose')
+  const [metricType, setMetricType] = React.useState<MetricType>('fasting_glucose')
   const [value, setValue] = React.useState('')
-  const [notes, setNotes] = React.useState('')
   const [submitting, setSubmitting] = React.useState(false)
   const [submitError, setSubmitError] = React.useState<string | null>(null)
 
@@ -247,11 +299,9 @@ function LogMetricModal({ open, onClose, onSuccess, patientId }: LogModalProps) 
         metric_type: metricType,
         value: numValue,
         unit: selectedUnit,
-        notes: notes.trim() || undefined,
         source: 'manual',
       })
       setValue('')
-      setNotes('')
       onSuccess()
       onClose()
     } catch (err: unknown) {
@@ -304,15 +354,6 @@ function LogMetricModal({ open, onClose, onSuccess, patientId }: LogModalProps) 
             placeholder={selectedUnit ? `Nhập giá trị (${selectedUnit})` : 'Nhập giá trị'}
             fullWidth
             required
-          />
-        </FormField>
-
-        <FormField label="Ghi chú">
-          <Input
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            placeholder="Ghi chú tuỳ chọn"
-            fullWidth
           />
         </FormField>
       </form>
