@@ -12,6 +12,22 @@ Deliverables liên quan:
 
 ---
 
+## Architecture roles (LOCKED) — cập nhật 2026-06-20: staging LIVE
+
+| Platform | Role | Status |
+|---|---|---|
+| **DigitalOcean VPS** | **PRIMARY PRODUCTION** | Live — không đụng |
+| **Azure Container Apps** | **SECONDARY STAGING** | **LIVE** (`azure-staging.yml`, `workflow_dispatch`) |
+| ~~Azure App Service~~ | Deprecated | Archived → `.github/workflows/_archived/main_metocare.yml.archived` |
+
+- ❌ **KHÔNG merge cả 2 approach.** DigitalOcean (Docker Compose + self-managed PostgreSQL/TimescaleDB TSL) và Azure ACA (managed PG Flexible Apache + serverless containers) là 2 stack độc lập, migration behavior khác nhau (TSL full CAGG vs Apache skip CAGG). Giữ tách biệt.
+- ❌ **KHÔNG continue / reactivate App Service path.** Azure staging chỉ dùng Container Apps.
+- ✅ DigitalOcean = PRIMARY, không bị staging làm phiền (merge main dùng `[skip ci]` hoặc opt-in `[deploy-do]` tag).
+
+> Báo cáo deploy đầy đủ: [`AZURE_ACA_STAGING_REPORT.md`](./AZURE_ACA_STAGING_REPORT.md).
+
+---
+
 ## Phần 1 — Azure resource architecture
 
 | # | Resource | Tên | SKU/Tier | Ghi chú |
