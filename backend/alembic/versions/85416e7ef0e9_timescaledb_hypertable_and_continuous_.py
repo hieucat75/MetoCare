@@ -21,6 +21,17 @@ A single daily continuous aggregate (`health_metric_daily`) is created; the
 7/30/90/365-day trends are served by querying date ranges over that aggregate —
 the idiomatic TimescaleDB pattern (one fine-grained CAGG, many query windows)
 rather than four separate materialized views.
+
+License awareness: continuous aggregates and compression are TimescaleDB
+*community (TSL)* features. They are unavailable on the *Apache-2* build shipped
+by some managed providers (e.g. Azure Database for PostgreSQL Flexible Server),
+where calling them raises `functionality not supported under the current
+"apache" license`. The hypertable itself is Apache-licensed and always created.
+This migration therefore detects the active license and applies CAGG +
+compression only on a `timescale` (TSL) build, so the same chain runs on:
+  - SQLite / non-Postgres  -> full no-op
+  - Apache TimescaleDB     -> hypertable only (CAGG/compression skipped)
+  - TSL  TimescaleDB       -> hypertable + CAGG + compression (full)
 """
 from __future__ import annotations
 
@@ -70,6 +81,24 @@ def _try_create_timescaledb_extension() -> bool:
         return False
 
 
+def _timescale_license() -> str:
+    """Return the active TimescaleDB edition: 'timescale' (TSL), 'apache', or ''.
+
+    `timescaledb.license` is set once the extension is loaded; it reads 'apache'
+    on the Apache-2 build (no CAGG/compression) and 'timescale' on the community
+    TSL build. Returns '' if the GUC is unavailable (extension not loaded yet).
+    """
+    try:
+        import sqlalchemy as sa
+
+        row = op.get_bind().execute(
+            sa.text("SELECT current_setting('timescaledb.license', true)")
+        ).fetchone()
+        return (row[0] or "").strip() if row else ""
+    except Exception:
+        return ""
+
+
 def upgrade() -> None:
     if not _is_postgres():
         return  # hypertable / CAGG are TimescaleDB features; skip on SQLite et al.
@@ -85,10 +114,26 @@ def upgrade() -> None:
     op.execute("ALTER TABLE health_metrics ADD PRIMARY KEY (id, measured_at)")
 
     # Convert to a hypertable partitioned by measured_at, migrating existing rows.
+    # (Apache-licensed — always available.)
     op.execute(
         "SELECT create_hypertable('health_metrics', 'measured_at', "
         "migrate_data => true, if_not_exists => true)"
     )
+
+    # Continuous aggregates + compression are TSL (community) features. On an
+    # Apache build (e.g. Azure PG Flexible) they raise; skip them and keep the
+    # plain hypertable. Trends are served by querying the hypertable directly.
+    if _timescale_license() != "timescale":
+        import warnings
+
+        warnings.warn(
+            "TimescaleDB Apache license -- skipping continuous aggregate "
+            f"'{CAGG_NAME}' and compression policy (TSL-only features). "
+            "health_metrics remains a plain hypertable on this instance.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return
 
     # Daily continuous aggregate (avg/min/max/count per patient+metric+day).
     op.execute(
@@ -134,9 +179,14 @@ def downgrade() -> None:
     if not _is_postgres():
         return
 
-    op.execute(f"DROP MATERIALIZED VIEW IF EXISTS {CAGG_NAME}")
-    # Drop policies are removed automatically with the objects; reset compression.
-    op.execute("SELECT remove_compression_policy('health_metrics', if_exists => true)")
+    # CAGG + compression only exist on a TSL build; on Apache they were skipped,
+    # and `remove_compression_policy` itself is TSL-only (would raise on Apache).
+    # `_timescale_license()` returns '' when the extension is absent or not loaded
+    # (current_setting(..., true) -> NULL), so this is False on plain PG too.
+    if _timescale_license() == "timescale":
+        op.execute(f"DROP MATERIALIZED VIEW IF EXISTS {CAGG_NAME}")
+        # Drop policies are removed automatically with the objects; reset compression.
+        op.execute("SELECT remove_compression_policy('health_metrics', if_exists => true)")
     # NOTE: a table cannot be un-hypertabled in place; for a full rollback restore
     # from migration 2c30ffd33627. We at least restore the original primary key.
     op.execute("ALTER TABLE health_metrics DROP CONSTRAINT IF EXISTS health_metrics_pkey")
