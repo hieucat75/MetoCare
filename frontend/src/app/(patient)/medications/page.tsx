@@ -1,4 +1,5 @@
 'use client'
+import { PatientEmptyState } from '@/components/patient'
 
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
@@ -70,10 +71,10 @@ function MedRow({
               <Pill className="size-4 text-mint-600" aria-hidden="true" />
             </span>
             <span className="min-w-0">
-              <span className="block text-body-md font-medium text-text truncate">{med.name}</span>
-              {meta && <span className="block text-body-sm text-text-muted mt-0.5">{meta}</span>}
-              {med.note && <span className="block text-body-sm text-text-muted mt-0.5 truncate">{med.note}</span>}
-              <span className="block text-body-sm text-text-subtle mt-0.5">Thêm ngày {formatDate(med.created_at)}</span>
+              <span className="block text-[17px] font-medium text-text truncate">{med.name}</span>
+              {meta && <span className="block text-[15px] text-text-muted mt-0.5">{meta}</span>}
+              {med.note && <span className="block text-[15px] text-text-muted mt-0.5 truncate">{med.note}</span>}
+              <span className="block text-[15px] text-text-subtle mt-0.5">Thêm ngày {formatDate(med.created_at)}</span>
             </span>
           </button>
           <div className="flex items-center gap-1 shrink-0">
@@ -275,7 +276,7 @@ export default function MedicationsPage() {
       )}
 
       {!loading && !error && meds.length === 0 && (
-        <EmptyState
+        <PatientEmptyState
           icon={<Pill />}
           title="Chưa có thuốc nào"
           description="Thêm thuốc bạn đang dùng để theo dõi, hoặc bác sĩ sẽ kê đơn khi cần."
@@ -323,7 +324,7 @@ export default function MedicationsPage() {
           </>
         }
       >
-        <p className="text-body-md text-text-muted">
+        <p className="text-[17px] text-text-muted">
           Bạn có chắc muốn xoá <span className="font-medium text-text">{deleteTarget?.name}</span> khỏi danh sách thuốc?
         </p>
       </Modal>

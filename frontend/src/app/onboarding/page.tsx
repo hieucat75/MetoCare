@@ -216,28 +216,28 @@ export default function OnboardingPage() {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-background text-center p-6">
         <CheckCircle2 className="size-16 text-success mb-4" aria-hidden="true" />
-        <h1 className="text-heading-xl font-bold text-text mb-1">Hoàn tất hồ sơ!</h1>
-        <p className="text-body-md text-text-muted">Đang chuyển đến trang tổng quan…</p>
+        <h1 className="text-[24px] font-bold text-text mb-1">Hoàn tất hồ sơ!</h1>
+        <p className="text-[17px] text-text-muted">Đang chuyển đến trang tổng quan…</p>
       </div>
     )
   }
 
   return (
-    <div className="patient-app min-h-screen bg-gradient-to-br from-mint-50 via-background to-mint-100 flex flex-col">
+    <div className="patient-app min-h-screen flex flex-col">
       <div className="w-full max-w-lg mx-auto px-4 py-8 flex-1 flex flex-col">
         {/* Header + progress */}
         <div className="mb-6">
           <div className="flex items-center justify-between mb-2">
-            <h1 className="text-heading-xl font-bold text-text">Thiết lập hồ sơ</h1>
+            <h1 className="text-[24px] font-bold text-text">Thiết lập hồ sơ</h1>
             <button
               type="button"
               onClick={skip}
-              className="text-body-md text-text-muted hover:text-text underline underline-offset-2"
+              className="text-[17px] text-text-muted hover:text-text underline underline-offset-2"
             >
               Bỏ qua
             </button>
           </div>
-          <p className="text-body-md text-text-muted mb-4">
+          <p className="text-[17px] text-text-muted mb-4">
             Bước {step + 1}/{STEPS.length} · {STEPS[step]}
           </p>
           <div className="flex gap-1.5" role="progressbar" aria-valuenow={step + 1} aria-valuemax={STEPS.length}>
@@ -315,7 +315,7 @@ export default function OnboardingPage() {
                     rows={4}
                   />
                 </FormField>
-                <p className="text-body-sm text-text-muted">
+                <p className="text-[15px] text-text-muted">
                   Thông tin này giúp cá nhân hoá kế hoạch theo dõi của bạn. Bạn có thể cập nhật bất cứ lúc nào trong mục Hồ sơ.
                 </p>
               </>

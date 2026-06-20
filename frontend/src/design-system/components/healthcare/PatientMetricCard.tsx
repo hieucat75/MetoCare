@@ -192,7 +192,7 @@ export function PatientMetricCard({
 
   return (
     <Card
-      variant="default"
+      variant="glass"
       padding="none"
       interactive={isInteractive}
       className={cn('overflow-hidden', className)}
@@ -307,12 +307,12 @@ function MetricCardInner({
 
         {/* Content */}
         <div className="flex-1 min-w-0">
-          <p className="text-label-md text-text-muted truncate">{label}</p>
-          <div className="flex items-baseline gap-1 mt-0.5">
-            <span className="text-heading-lg font-bold text-text leading-tight">
+          <p className="text-[16px] font-medium text-text-muted truncate">{label}</p>
+          <div className="flex items-baseline gap-1 mt-1">
+            <span className="text-[36px] font-bold text-text leading-none tracking-tight">
               {value}
             </span>
-            <span className="text-body-xs text-text-muted">{unit}</span>
+            <span className="text-[18px] font-medium text-text-muted">{unit}</span>
           </div>
         </div>
 
@@ -340,7 +340,7 @@ function MetricCardInner({
           >
             <Icon className={cn('size-5', iconColor)} />
           </span>
-          <CardTitle className="text-body-md font-semibold text-text-muted">
+          <CardTitle className="text-[18px] font-semibold text-text-muted">
             {label}
           </CardTitle>
         </div>
@@ -354,12 +354,12 @@ function MetricCardInner({
       <CardContent>
         <div className="flex items-end gap-2 mb-3">
           <span
-            className="text-display-md font-bold text-text leading-none"
+            className="text-[42px] font-bold text-text leading-none tracking-tight"
             aria-label={`${value} ${unit}`}
           >
             {value}
           </span>
-          <span className="text-body-lg text-text-muted mb-1">{unit}</span>
+          <span className="text-[22px] font-medium text-text-muted mb-1">{unit}</span>
         </div>
 
         {/* Trend row */}

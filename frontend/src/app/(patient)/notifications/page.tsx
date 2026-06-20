@@ -1,4 +1,5 @@
 'use client'
+import { PatientEmptyState } from '@/components/patient'
 
 import * as React from 'react'
 import { Bell, Pill, FileText, ClipboardList, MessageCircle } from 'lucide-react'
@@ -67,14 +68,14 @@ function NotificationRow({ notification, onRead }: NotificationRowProps) {
       {/* Content */}
       <div className="flex-1 min-w-0">
         <p
-          className={`text-body-md truncate ${
+          className={`text-[17px] truncate ${
             notification.is_read ? 'text-text-muted' : 'font-semibold text-text'
           }`}
         >
           {notification.title}
         </p>
-        <p className="text-body-sm text-text-muted mt-0.5 line-clamp-2">{notification.body}</p>
-        <p className="text-body-sm text-text-subtle mt-1">
+        <p className="text-[15px] text-text-muted mt-0.5 line-clamp-2">{notification.body}</p>
+        <p className="text-[15px] text-text-subtle mt-1">
           {formatRelativeTime(notification.created_at)}
         </p>
       </div>
@@ -185,7 +186,7 @@ export default function NotificationsPage() {
       >
         <TabsContent value="all">
           {all.length === 0 ? (
-            <EmptyState
+            <PatientEmptyState
               title="Không có thông báo"
               description="Bạn chưa có thông báo nào."
             />
@@ -200,7 +201,7 @@ export default function NotificationsPage() {
 
         <TabsContent value="unread">
           {unread.length === 0 ? (
-            <EmptyState
+            <PatientEmptyState
               title="Không có thông báo chưa đọc"
               description="Tất cả thông báo đã được đọc."
             />

@@ -204,10 +204,10 @@ export default function PatientDashboardPage() {
 
       {/* Greeting */}
       <div>
-        <h1 className="text-heading-xl font-bold text-text">
+        <h1 className="text-[24px] font-bold text-text">
           Xin chào, {user.full_name ?? user.email}!
         </h1>
-        <p className="text-body-md text-text-muted mt-0.5">{todayStr}</p>
+        <p className="text-[17px] text-text-muted mt-0.5">{todayStr}</p>
       </div>
 
       {/* Profile completion nudge (PR-A) */}
@@ -237,10 +237,10 @@ export default function PatientDashboardPage() {
           {metabolicScore ? (
             <div className="flex items-center justify-between gap-4">
               <div>
-                <p className="text-body-md text-text-muted mb-1">Đánh giá sức khỏe</p>
-                <p className="text-body-md font-medium text-text">
-                  Điểm chuyển hóa:{' '}
-                  <span className="font-bold">{metabolicScore.score}/100</span>
+                <p className="text-[16px] font-medium text-text-muted mb-1">Điểm chuyển hóa</p>
+                <p className="flex items-baseline gap-1">
+                  <span className="text-[40px] font-bold text-text leading-none tracking-tight">{metabolicScore.score}</span>
+                  <span className="text-[20px] font-medium text-text-muted">/100</span>
                 </p>
               </div>
               <RiskLevelBadge
@@ -251,7 +251,7 @@ export default function PatientDashboardPage() {
               />
             </div>
           ) : (
-            <EmptyState
+            <PatientEmptyState
               size="sm"
               title="Chưa có điểm chuyển hóa"
               description="Điểm sẽ được tính sau khi bạn ghi đủ chỉ số sức khỏe."
@@ -263,7 +263,7 @@ export default function PatientDashboardPage() {
       {/* Health metrics grid */}
       <section aria-label="Chỉ số sức khỏe gần đây">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-heading-md font-semibold text-text">Chỉ số sức khỏe</h2>
+          <h2 className="text-[18px] font-semibold text-text">Chỉ số sức khỏe</h2>
           <Button variant="ghost" size="sm" onClick={() => router.push('/metrics')}>
             Xem tất cả
           </Button>
@@ -299,12 +299,12 @@ export default function PatientDashboardPage() {
           <CardHeader className="px-4 pt-4 pb-2">
             <div className="flex items-center gap-2">
               <Pill className="size-4 text-mint-600" aria-hidden="true" />
-              <CardTitle className="text-heading-md font-semibold">Nhắc nhở thuốc</CardTitle>
+              <CardTitle className="text-[18px] font-semibold">Nhắc nhở thuốc</CardTitle>
             </div>
           </CardHeader>
           <CardContent className="px-4 pb-4">
             {medications.length === 0 ? (
-              <EmptyState
+              <PatientEmptyState
                 size="sm"
                 title="Không có thuốc đang dùng"
                 description="Bạn chưa có đơn thuốc nào đang hoạt động."
@@ -317,11 +317,11 @@ export default function PatientDashboardPage() {
                       className="flex items-start justify-between gap-3 rounded-lg p-3 bg-secondary-50"
                     >
                       <div className="min-w-0 flex-1">
-                        <p className="text-body-md font-medium text-text truncate">
+                        <p className="text-[17px] font-medium text-text truncate">
                           {med.name}
                         </p>
                         {med.dose && (
-                          <p className="text-body-sm text-text-muted mt-0.5">{med.dose}</p>
+                          <p className="text-[15px] text-text-muted mt-0.5">{med.dose}</p>
                         )}
                       </div>
                     </div>
@@ -329,7 +329,7 @@ export default function PatientDashboardPage() {
                 <button
                   type="button"
                   onClick={() => router.push('/medications')}
-                  className="flex items-center gap-1 text-body-md text-mint-600 hover:underline mt-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mint-400/30 rounded"
+                  className="flex items-center gap-1 text-[17px] text-mint-600 hover:underline mt-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mint-400/30 rounded"
                 >
                   Xem tất cả
                   <ChevronRight className="size-4" aria-hidden="true" />
@@ -346,26 +346,26 @@ export default function PatientDashboardPage() {
           <CardHeader className="px-4 pt-4 pb-2">
             <div className="flex items-center gap-2">
               <ClipboardList className="size-4 text-mint-600" aria-hidden="true" />
-              <CardTitle className="text-heading-md font-semibold">Kế hoạch điều trị</CardTitle>
+              <CardTitle className="text-[18px] font-semibold">Kế hoạch điều trị</CardTitle>
             </div>
           </CardHeader>
           <CardContent className="px-4 pb-4">
             {!activePlan ? (
-              <EmptyState
+              <PatientEmptyState
                 size="sm"
                 title="Chưa có kế hoạch điều trị"
                 description="Bác sĩ của bạn chưa tạo kế hoạch điều trị."
               />
             ) : (
               <div className="space-y-3">
-                <p className="text-body-md font-medium text-text">{activePlan.title}</p>
+                <p className="text-[17px] font-medium text-text">{activePlan.title}</p>
                 {activePlan.content && (
-                  <p className="text-body-sm text-text-muted line-clamp-2">{activePlan.content}</p>
+                  <p className="text-[15px] text-text-muted line-clamp-2">{activePlan.content}</p>
                 )}
                 <button
                   type="button"
                   onClick={() => router.push('/care-plan')}
-                  className="flex items-center gap-1 text-body-md text-mint-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mint-400/30 rounded"
+                  className="flex items-center gap-1 text-[17px] text-mint-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mint-400/30 rounded"
                 >
                   Xem kế hoạch
                   <ChevronRight className="size-4" aria-hidden="true" />
@@ -387,13 +387,13 @@ export default function PatientDashboardPage() {
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-0.5">
-                  <p className="text-body-md font-semibold text-text">Trợ lý AI MetoCare</p>
+                  <p className="text-[17px] font-semibold text-text">Trợ lý AI MetoCare</p>
                   <Badge variant="warning" size="sm">AI</Badge>
                 </div>
-                <p className="text-body-sm text-text-muted mb-2">
+                <p className="text-[15px] text-text-muted mb-2">
                   Đặt câu hỏi về sức khỏe của bạn
                 </p>
-                <p className="text-body-sm text-amber-700 mb-3">
+                <p className="text-[15px] text-amber-700 mb-3">
                   Thông tin từ AI, không thay thế tư vấn bác sĩ
                 </p>
                 <Button

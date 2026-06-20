@@ -162,7 +162,7 @@ export default function SettingsPage() {
             {user.phone && (
               <div>
                 <p className="text-label-lg font-medium text-text-muted mb-1">Số điện thoại</p>
-                <p className="text-body-md text-text">{user.phone}</p>
+                <p className="text-[17px] text-text">{user.phone}</p>
               </div>
             )}
             {/* Email (optional for phone-registered patients) */}
@@ -170,7 +170,7 @@ export default function SettingsPage() {
               <p className="text-label-lg font-medium text-text-muted mb-1">Email</p>
               {!editingEmail ? (
                 <div className="flex items-center justify-between gap-3">
-                  <p className="text-body-md text-text">{user.email ?? 'Chưa có'}</p>
+                  <p className="text-[17px] text-text">{user.email ?? 'Chưa có'}</p>
                   <Button
                     variant="outline"
                     size="sm"
@@ -191,7 +191,7 @@ export default function SettingsPage() {
                     onChange={(e) => setEmailValue(e.target.value)}
                     fullWidth
                   />
-                  {emailError && <p className="text-body-sm text-danger">{emailError}</p>}
+                  {emailError && <p className="text-[15px] text-danger">{emailError}</p>}
                   <div className="flex gap-2">
                     <Button variant="outline" size="sm" onClick={() => setEditingEmail(false)} disabled={emailSaving}>
                       Hủy
@@ -202,7 +202,7 @@ export default function SettingsPage() {
                   </div>
                 </div>
               )}
-              {emailSuccess && <p className="text-body-sm text-success mt-1">Đã cập nhật email.</p>}
+              {emailSuccess && <p className="text-[15px] text-success mt-1">Đã cập nhật email.</p>}
             </div>
 
             {/* Role */}
@@ -216,7 +216,7 @@ export default function SettingsPage() {
               <Button variant="outline" size="sm" onClick={openPwModal}>
                 Đổi mật khẩu
               </Button>
-              {pwSuccess && <p className="text-body-sm text-success mt-1">Đã đổi mật khẩu thành công.</p>}
+              {pwSuccess && <p className="text-[15px] text-success mt-1">Đã đổi mật khẩu thành công.</p>}
             </div>
           </div>
         </CardContent>
@@ -267,7 +267,7 @@ export default function SettingsPage() {
           <button
             type="button"
             onClick={() => router.push('/consents')}
-            className="text-body-md text-mint-600 hover:underline underline-offset-2 transition-colors"
+            className="text-[17px] text-mint-600 hover:underline underline-offset-2 transition-colors"
           >
             Quản lý quyền truy cập dữ liệu →
           </button>
@@ -280,7 +280,7 @@ export default function SettingsPage() {
           <CardTitle>Phiên bản</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-body-md text-text-muted">MetoCare v1.0.3 (MVP)</p>
+          <p className="text-[17px] text-text-muted">MetoCare v1.0.3 (MVP)</p>
         </CardContent>
       </Card>
 

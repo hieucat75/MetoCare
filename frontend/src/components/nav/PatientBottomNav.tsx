@@ -35,7 +35,7 @@ export function PatientBottomNav() {
 
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 z-40 bg-white/80 backdrop-blur-xl border-t border-white/60 shadow-glass safe-area-pb"
+      className="fixed bottom-0 left-0 right-0 z-40 bg-white/65 backdrop-blur-2xl backdrop-saturate-150 border-t border-white/60 shadow-frost-up safe-area-pb"
       aria-label="Điều hướng chính"
     >
       <div className="flex items-stretch h-16">
@@ -49,21 +49,22 @@ export function PatientBottomNav() {
               aria-current={isActive ? 'page' : undefined}
               onClick={() => router.push(item.href)}
               className={cn(
-                'bottomnav-btn flex-1 flex flex-col items-center justify-center gap-1 min-w-0 transition-colors',
+                'bottomnav-btn flex-1 flex flex-col items-center justify-center gap-1 min-w-0 transition-all duration-200',
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mint-400/40',
-                isActive ? 'text-mint-700' : 'text-text-subtle hover:text-text-muted',
+                isActive ? 'text-mint-700 scale-105' : 'text-text-subtle hover:text-text-muted',
               )}
             >
               <span
                 className={cn(
-                  'inline-flex items-center justify-center w-10 h-6 rounded-full transition-colors',
-                  isActive && 'bg-mint-100',
+                  'inline-flex items-center justify-center w-11 h-7 rounded-full transition-all duration-200',
+                  isActive &&
+                    'bg-gradient-to-br from-mint-100 to-mint-50 ring-1 ring-mint-200/70 shadow-glow-mint',
                 )}
                 aria-hidden="true"
               >
                 {item.icon}
               </span>
-              <span className="text-[11px] font-medium truncate w-full text-center px-1">
+              <span className="text-[13px] font-medium truncate w-full text-center px-1">
                 {item.label}
               </span>
             </button>
