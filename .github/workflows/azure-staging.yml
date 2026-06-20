@@ -108,12 +108,12 @@ jobs:
           JOB="caj-metocare-migrate"
           # Recreate the job each run so it always uses the current image.
           az containerapp job delete -g "$RG" -n "$JOB" --yes -o none 2>/dev/null || true
+          # Image is public on GHCR — no registry credential needed (ACA pulls
+          # anonymously from the image URL). Avoids the expired-GITHUB_TOKEN
+          # ImagePullBackOff on scale-from-zero.
           az containerapp job create \
             --name "$JOB" --resource-group "$RG" --environment "$ENV_NAME" \
             --image "$IMG" \
-            --registry-server "$REGISTRY" \
-            --registry-username "${{ github.actor }}" \
-            --registry-password "${{ secrets.GITHUB_TOKEN }}" \
             --trigger-type Manual \
             --replica-timeout 600 --replica-retry-limit 1 \
             --parallelism 1 --replica-completion-count 1 \
@@ -153,8 +153,6 @@ jobs:
             az containerapp create -g "$RG" -n "$BACKEND_APP" --environment "$ENV_NAME" \
               --image "$IMG" --target-port 8000 --ingress external \
               --min-replicas 0 --max-replicas 1 --cpu 0.5 --memory 1.0Gi \
-              --registry-server "$REGISTRY" --registry-username "${{ github.actor }}" \
-              --registry-password "${{ secrets.GITHUB_TOKEN }}" \
               --secrets $COMMON_SECRETS --env-vars $COMMON_ENV -o none
           fi
           FQDN=$(az containerapp show -g "$RG" -n "$BACKEND_APP" --query properties.configuration.ingress.fqdn -o tsv)
@@ -171,8 +169,6 @@ jobs:
             az containerapp create -g "$RG" -n "$FRONTEND_APP" --environment "$ENV_NAME" \
               --image "$IMG" --target-port 3000 --ingress external \
               --min-replicas 0 --max-replicas 1 --cpu 0.25 --memory 0.5Gi \
-              --registry-server "$REGISTRY" --registry-username "${{ github.actor }}" \
-              --registry-password "${{ secrets.GITHUB_TOKEN }}" \
               --env-vars "NEXT_PUBLIC_API_URL=$API_URL" -o none
           fi
 
