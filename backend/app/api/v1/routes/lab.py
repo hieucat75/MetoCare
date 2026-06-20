@@ -11,10 +11,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import CurrentUser, get_session, require_roles
+from app.core.feature_flags import FeatureFlag, is_enabled
 from app.models.clinical import LabDocument
 from app.models.patient import PatientProfile
 from app.models.user import UserRole
-from app.core.feature_flags import FeatureFlag, is_enabled
 from app.schemas.lab import (
     InterpretationOut,
     LabDocumentCreate,

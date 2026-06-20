@@ -113,7 +113,10 @@ def test_ocr_disabled_returns_503_on_interpret(client, patient_setup, monkeypatc
         headers=patient_setup["headers"],
         json={"storage_key": "k", "file_type": "pdf", "lab_name": "L"},
     ).json()
-    r = client.post(f"/api/v1/lab-documents/{doc['id']}/interpret", headers=patient_setup["headers"])
+    r = client.post(
+        f"/api/v1/lab-documents/{doc['id']}/interpret",
+        headers=patient_setup["headers"],
+    )
     assert r.status_code == 503, r.text
 
 
