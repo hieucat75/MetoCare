@@ -51,6 +51,25 @@ const config: Config = {
           light: '#E0F2FE',
           foreground: '#FFFFFF',
         },
+        // Mint / soft-green — patient-facing wellness tone (Claude Design / Soft UI).
+        // Additive: does NOT replace `primary`; used only on patient auth/wellness
+        // surfaces so doctor/admin (which use `primary`) are unchanged.
+        mint: {
+          DEFAULT: '#10B981',
+          50: '#F0FDF9',
+          100: '#D9F9EC',
+          200: '#A7F0D6',
+          300: '#6EE7BC',
+          400: '#34D9A0',
+          500: '#10B981',
+          600: '#059567',
+          700: '#047852',
+          800: '#065F43',
+          900: '#064E38',
+          hover: '#059567',
+          light: '#F0FDF9',
+          foreground: '#FFFFFF',
+        },
         // Semantic
         success: {
           DEFAULT: '#16A34A',
@@ -203,6 +222,9 @@ const config: Config = {
         inner: 'inset 0 2px 4px 0 rgba(0, 0, 0, 0.05)',
         focus: '0 0 0 3px rgba(27, 79, 216, 0.25)',
         'focus-danger': '0 0 0 3px rgba(220, 38, 38, 0.25)',
+        // Soft, diffuse glass shadow for liquid-glass cards (mint-tinted).
+        glass: '0 8px 32px -8px rgba(16, 185, 129, 0.18), 0 2px 8px -2px rgba(16, 185, 129, 0.10)',
+        'focus-mint': '0 0 0 3px rgba(16, 185, 129, 0.22)',
         none: 'none',
       },
     },

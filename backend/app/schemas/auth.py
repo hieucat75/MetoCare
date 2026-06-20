@@ -2,26 +2,43 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, model_validator
 
 from app.models.user import UserRole
 
 
 class RegisterRequest(BaseModel):
-    email: EmailStr
+    # Patients self-register with `phone`; `email` path is kept for compatibility
+    # (e.g. admin-provisioned / legacy). Exactly one identifier is required.
+    email: EmailStr | None = None
+    phone: str | None = None
     password: str = Field(min_length=8)
     full_name: str | None = None
     # Self-service registration is patient-only; elevated roles are provisioned
     # by an admin (not via this public endpoint).
     role: UserRole = UserRole.PATIENT
 
+    @model_validator(mode="after")
+    def _one_identifier(self) -> RegisterRequest:
+        if bool(self.email) == bool(self.phone):
+            raise ValueError("provide exactly one of email or phone")
+        return self
+
 
 class LoginRequest(BaseModel):
-    email: EmailStr
+    # Patients log in with `phone`; admin/doctor with `email`. Exactly one.
+    email: EmailStr | None = None
+    phone: str | None = None
     password: str
     # Required only when the account has MFA enabled.
     totp_code: str | None = None
     backup_code: str | None = None
+
+    @model_validator(mode="after")
+    def _one_identifier(self) -> LoginRequest:
+        if bool(self.email) == bool(self.phone):
+            raise ValueError("provide exactly one of email or phone")
+        return self
 
 
 class TokenResponse(BaseModel):
@@ -53,7 +70,8 @@ class MfaVerifyRequest(BaseModel):
 
 class UserOut(BaseModel):
     id: str
-    email: str
+    email: str | None = None
+    phone: str | None = None
     role: str
     full_name: str | None = None
     mfa_enabled: bool = False

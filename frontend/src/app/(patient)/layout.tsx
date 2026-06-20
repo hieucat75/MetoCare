@@ -130,7 +130,7 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
           )}
         </div>
       }
-      userProfile={user ? { name: user.full_name ?? user.email, role: 'Bệnh nhân' } : undefined}
+      userProfile={user ? { name: user.full_name ?? user.phone ?? user.email ?? 'Bệnh nhân', role: 'Bệnh nhân' } : undefined}
       footer={
         <button
           type="button"

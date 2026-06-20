@@ -34,17 +34,31 @@ class AuthError(Exception):
 def register(
     db: Session,
     *,
-    email: str,
+    email: str | None = None,
+    phone: str | None = None,
     password: str,
     full_name: str | None = None,
     role: UserRole = UserRole.PATIENT,
 ) -> User:
-    existing = db.execute(select(User).where(User.email == email)).scalar_one_or_none()
-    if existing is not None:
-        raise AuthError("email already registered")
+    """Create a user identified by either email or phone (exactly one).
+
+    ``phone`` is expected already-normalized (``+84…``) by the caller.
+    """
+    if bool(email) == bool(phone):
+        raise AuthError("exactly one of email or phone is required")
+
+    if email is not None:
+        existing = db.execute(select(User).where(User.email == email)).scalar_one_or_none()
+        if existing is not None:
+            raise AuthError("email already registered")
+    else:
+        existing = db.execute(select(User).where(User.phone == phone)).scalar_one_or_none()
+        if existing is not None:
+            raise AuthError("phone already registered")
 
     user = User(
         email=email,
+        phone=phone,
         password_hash=hash_password(password),
         full_name=full_name,
         role=role,
@@ -130,10 +144,18 @@ def update_account(db: Session, *, user_id: str, data: dict) -> User:
     return user
 
 
-def authenticate(db: Session, *, email: str, password: str) -> User:
-    user = db.execute(select(User).where(User.email == email)).scalar_one_or_none()
+def authenticate(
+    db: Session, *, email: str | None = None, phone: str | None = None, password: str
+) -> User:
+    """Authenticate by email or phone (exactly one). ``phone`` already-normalized."""
+    if bool(email) == bool(phone):
+        raise AuthError("exactly one of email or phone is required")
+    if email is not None:
+        user = db.execute(select(User).where(User.email == email)).scalar_one_or_none()
+    else:
+        user = db.execute(select(User).where(User.phone == phone)).scalar_one_or_none()
     if user is None or not verify_password(password, user.password_hash):
-        raise AuthError("invalid email or password")
+        raise AuthError("invalid credentials")
     if not user.is_active:
         raise AuthError("account is disabled")
     audit.record(

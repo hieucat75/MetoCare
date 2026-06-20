@@ -20,7 +20,8 @@ export interface TokenResponse {
 
 export interface UserResponse {
   id: string
-  email: string
+  email: string | null
+  phone: string | null
   role: UserRole
   full_name: string | null
   mfa_enabled: boolean
@@ -57,12 +58,24 @@ export interface MfaEnrollResponse {
   backup_codes: string[]
 }
 
+/** A login/registration identifier — exactly one of email or phone. */
+export interface AuthIdentifier {
+  email?: string
+  phone?: string
+}
+
+/** True if the input looks like a VN phone number (digits / +84 / leading 0). */
+export function looksLikePhone(input: string): boolean {
+  const s = input.trim()
+  return /^(\+?84|0)?[\d\s.\-()]{6,}$/.test(s) && !s.includes('@')
+}
+
 export async function login(
-  email: string,
+  identifier: AuthIdentifier,
   password: string,
   totpCode?: string,
 ): Promise<TokenResponse> {
-  const body: Record<string, string> = { email, password }
+  const body: Record<string, string> = { password, ...identifier }
   if (totpCode) body.totp_code = totpCode
   const res = await api.post<TokenResponse>('/auth/login', body, { skipAuth: true })
   setTokens(res.access_token, res.refresh_token)
@@ -70,13 +83,13 @@ export async function login(
 }
 
 export async function register(
-  email: string,
+  identifier: AuthIdentifier,
   password: string,
   fullName?: string,
 ): Promise<TokenResponse> {
   const res = await api.post<TokenResponse>(
     '/auth/register',
-    { email, password, full_name: fullName },
+    { ...identifier, password, full_name: fullName },
     { skipAuth: true },
   )
   setTokens(res.access_token, res.refresh_token)

@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import CurrentUser, current_user, enforce_rate_limit, get_session
 from app.core.config import get_settings
+from app.core.phone import normalize_vn_phone
 from app.core.ratelimit import get_lockout
 from app.core.security import decode_token
 from app.models.patient import PatientProfile
@@ -35,11 +36,21 @@ def register(
     request: Request, payload: RegisterRequest, db: Session = Depends(get_session)
 ) -> TokenResponse:
     enforce_rate_limit(request, "register")
-    role = UserRole.PATIENT if payload.role != UserRole.PATIENT else payload.role
+    # Public self-registration is always patient-only.
+    role = UserRole.PATIENT
+    normalized_phone: str | None = None
+    if payload.phone:
+        normalized_phone = normalize_vn_phone(payload.phone)
+        if normalized_phone is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Số điện thoại di động Việt Nam không hợp lệ.",
+            )
     try:
         user = auth.register(
             db,
-            email=str(payload.email),
+            email=str(payload.email) if payload.email else None,
+            phone=normalized_phone,
             password=payload.password,
             full_name=payload.full_name,
             role=role,
@@ -60,7 +71,17 @@ def login(
     enforce_rate_limit(request, "login")
     settings = get_settings()
     lockout = get_lockout()
-    lkey = str(payload.email).lower()
+    # Patients log in by phone, admin/doctor by email. Normalize phone for a
+    # stable lookup + lockout key; reject a malformed phone early.
+    phone_id: str | None = None
+    if payload.phone:
+        phone_id = normalize_vn_phone(payload.phone)
+        if phone_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Số điện thoại di động Việt Nam không hợp lệ.",
+            )
+    lkey = phone_id or str(payload.email).lower()
     if lockout.is_locked(
         lkey,
         max_failures=settings.lockout_max_failures,
@@ -72,7 +93,12 @@ def login(
         )
 
     try:
-        user = auth.authenticate(db, email=str(payload.email), password=payload.password)
+        user = auth.authenticate(
+            db,
+            email=str(payload.email) if payload.email else None,
+            phone=phone_id,
+            password=payload.password,
+        )
     except auth.AuthError as exc:
         lockout.record_failure(lkey)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
