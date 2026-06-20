@@ -100,9 +100,15 @@ def test_change_password_success_and_relogin(client):
     )
     assert r.status_code == 200, r.text
     # Old password no longer works; new one does.
-    old = client.post("/api/v1/auth/login", json={"email": "cp-ok@example.com", "password": "password123"})
+    old = client.post(
+        "/api/v1/auth/login",
+        json={"email": "cp-ok@example.com", "password": "password123"},
+    )
     assert old.status_code == 401
-    new = client.post("/api/v1/auth/login", json={"email": "cp-ok@example.com", "password": "newpass456"})
+    new = client.post(
+        "/api/v1/auth/login",
+        json={"email": "cp-ok@example.com", "password": "newpass456"},
+    )
     assert new.status_code == 200, new.text
 
 
@@ -138,7 +144,9 @@ def test_update_account_notification_prefs(client):
 
 def test_update_account_email_change(client):
     h = _auth_headers(client, "acct-email@example.com")
-    r = client.patch("/api/v1/auth/account", headers=h, json={"email": "acct-email-new@example.com"})
+    r = client.patch(
+        "/api/v1/auth/account", headers=h, json={"email": "acct-email-new@example.com"}
+    )
     assert r.status_code == 200, r.text
     assert r.json()["email"] == "acct-email-new@example.com"
 
