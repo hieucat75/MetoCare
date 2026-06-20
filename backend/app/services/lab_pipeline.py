@@ -126,20 +126,25 @@ def process_document(db: Session, *, document_id: str) -> LabDocument | None:
     # ---- Interpretation + normalized LabResult rows ----
     try:
         interpretation = lab_interpreter.interpret_panel(extraction.values)
+        new_rows: list[LabResult] = []
         for b in interpretation.biomarkers:
-            db.add(
-                LabResult(
-                    patient_id=doc.patient_id,
-                    document_id=doc.id,
-                    test_name=b.raw_name,
-                    canonical_name=b.canonical,
-                    value=b.value,
-                    unit=b.unit,
-                    reference_range=b.reference_range,
-                    status=b.status.value,
-                    ocr_confidence=b.ocr_confidence,
-                )
+            lr = LabResult(
+                patient_id=doc.patient_id,
+                document_id=doc.id,
+                test_name=b.raw_name,
+                canonical_name=b.canonical,
+                value=b.value,
+                unit=b.unit,
+                reference_range=b.reference_range,
+                status=b.status.value,
+                ocr_confidence=b.ocr_confidence,
             )
+            db.add(lr)
+            new_rows.append(lr)
+        db.flush()
+        # Promote into health_metrics so the dashboard + trends reflect these results.
+        from app.services.lab import promote_lab_rows_to_metrics
+        promote_lab_rows_to_metrics(db, patient_id=doc.patient_id, rows=new_rows, test_date=None)
         _transition(doc, LabDocStatus.INTERPRETED)
     except Exception as exc:  # interpretation must never crash the worker
         _transition(doc, LabDocStatus.INTERPRETATION_FAILED)
