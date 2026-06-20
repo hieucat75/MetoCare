@@ -17,6 +17,12 @@ const buttonVariants = cva(
       variant: {
         primary:
           'bg-primary hover:bg-primary-hover text-white shadow-sm rounded-md',
+        // Patient app (mint / soft-green wellness tone). Additive — does not
+        // affect doctor/admin which use `primary`.
+        mint:
+          'bg-mint-500 hover:bg-mint-600 text-white shadow-glass rounded-xl',
+        'mint-soft':
+          'bg-mint-50 hover:bg-mint-100 text-mint-700 rounded-xl',
         secondary:
           'bg-secondary-100 hover:bg-secondary-200 text-secondary-800 rounded-md',
         ghost:

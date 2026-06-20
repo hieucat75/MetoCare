@@ -152,13 +152,13 @@ export default function SettingsPage() {
       <PageHeader title="Cài đặt" />
 
       {/* ── Tài khoản ──────────────────────────────────────────────────────── */}
-      <Card variant="default" padding="md">
+      <Card variant="glass" padding="md">
         <CardHeader>
           <CardTitle>Tài khoản</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {/* Phone — primary identifier for patient accounts */}
+            {/* Phone — main identifier for patient accounts */}
             {user.phone && (
               <div>
                 <p className="text-label-md font-medium text-text-muted mb-1">Số điện thoại</p>
@@ -196,7 +196,7 @@ export default function SettingsPage() {
                     <Button variant="outline" size="sm" onClick={() => setEditingEmail(false)} disabled={emailSaving}>
                       Hủy
                     </Button>
-                    <Button variant="primary" size="sm" onClick={saveEmail} loading={emailSaving}>
+                    <Button variant="mint" size="sm" onClick={saveEmail} loading={emailSaving}>
                       Lưu
                     </Button>
                   </div>
@@ -208,7 +208,7 @@ export default function SettingsPage() {
             {/* Role */}
             <div>
               <p className="text-label-md font-medium text-text-muted mb-1">Vai trò</p>
-              <Badge variant="primary">Bệnh nhân</Badge>
+              <Badge variant="mint">Bệnh nhân</Badge>
             </div>
 
             {/* Đổi mật khẩu */}
@@ -223,7 +223,7 @@ export default function SettingsPage() {
       </Card>
 
       {/* ── Thông báo ──────────────────────────────────────────────────────── */}
-      <Card variant="default" padding="md">
+      <Card variant="glass" padding="md">
         <CardHeader>
           <CardTitle>Thông báo</CardTitle>
         </CardHeader>
@@ -233,6 +233,7 @@ export default function SettingsPage() {
               <Switch
                 key={key}
                 label={label}
+                tone="mint"
                 checked={user[key]}
                 disabled={notifSaving === key}
                 onCheckedChange={(v) => toggleNotif(key, v)}
@@ -248,7 +249,7 @@ export default function SettingsPage() {
       </Card>
 
       {/* ── Ngôn ngữ ───────────────────────────────────────────────────────── */}
-      <Card variant="default" padding="md">
+      <Card variant="glass" padding="md">
         <CardHeader>
           <CardTitle>Ngôn ngữ</CardTitle>
         </CardHeader>
@@ -258,7 +259,7 @@ export default function SettingsPage() {
       </Card>
 
       {/* ── Quyền riêng tư ─────────────────────────────────────────────────── */}
-      <Card variant="default" padding="md">
+      <Card variant="glass" padding="md">
         <CardHeader>
           <CardTitle>Quyền riêng tư</CardTitle>
         </CardHeader>
@@ -266,7 +267,7 @@ export default function SettingsPage() {
           <button
             type="button"
             onClick={() => router.push('/consents')}
-            className="text-body-sm text-primary hover:underline underline-offset-2 transition-colors"
+            className="text-body-sm text-mint-600 hover:underline underline-offset-2 transition-colors"
           >
             Quản lý quyền truy cập dữ liệu →
           </button>
@@ -274,7 +275,7 @@ export default function SettingsPage() {
       </Card>
 
       {/* ── Phiên bản ──────────────────────────────────────────────────────── */}
-      <Card variant="default" padding="md">
+      <Card variant="glass" padding="md">
         <CardHeader>
           <CardTitle>Phiên bản</CardTitle>
         </CardHeader>
@@ -300,7 +301,7 @@ export default function SettingsPage() {
             <Button variant="outline" size="sm" onClick={() => setPwModal(false)} disabled={pwSaving}>
               Hủy
             </Button>
-            <Button variant="primary" size="sm" type="submit" form="pw-form" loading={pwSaving}>
+            <Button variant="mint" size="sm" type="submit" form="pw-form" loading={pwSaving}>
               Lưu
             </Button>
           </>

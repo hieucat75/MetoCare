@@ -215,7 +215,7 @@ export default function ProfilePage() {
               <Button variant="outline" size="sm" onClick={cancelEdit} disabled={saving}>
                 Hủy
               </Button>
-              <Button variant="primary" size="sm" onClick={handleSave} loading={saving}>
+              <Button variant="mint" size="sm" onClick={handleSave} loading={saving}>
                 Lưu
               </Button>
             </div>
@@ -234,14 +234,14 @@ export default function ProfilePage() {
       )}
 
       {/* Email — always read-only */}
-      <Card variant="default" padding="none">
+      <Card variant="glass" padding="none">
         <CardContent className="px-4 py-2">
           <ProfileField label="Email" value={user.email} />
         </CardContent>
       </Card>
 
       {/* Profile fields */}
-      <Card variant="default" padding="none">
+      <Card variant="glass" padding="none">
         <CardContent className="px-4 py-2">
           {!editing ? (
             <>

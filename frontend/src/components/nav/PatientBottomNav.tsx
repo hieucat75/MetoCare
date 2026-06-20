@@ -35,7 +35,7 @@ export function PatientBottomNav() {
 
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 z-40 bg-surface border-t border-border safe-area-pb"
+      className="fixed bottom-0 left-0 right-0 z-40 bg-white/80 backdrop-blur-xl border-t border-white/60 shadow-glass safe-area-pb"
       aria-label="Điều hướng chính"
     >
       <div className="flex items-stretch h-16">
@@ -50,14 +50,14 @@ export function PatientBottomNav() {
               onClick={() => router.push(item.href)}
               className={cn(
                 'flex-1 flex flex-col items-center justify-center gap-1 min-w-0 transition-colors',
-                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30',
-                isActive ? 'text-primary' : 'text-text-subtle hover:text-text-muted',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mint-400/40',
+                isActive ? 'text-mint-700' : 'text-text-subtle hover:text-text-muted',
               )}
             >
               <span
                 className={cn(
                   'inline-flex items-center justify-center w-10 h-6 rounded-full transition-colors',
-                  isActive && 'bg-primary-50',
+                  isActive && 'bg-mint-100',
                 )}
                 aria-hidden="true"
               >

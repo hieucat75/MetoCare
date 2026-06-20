@@ -170,7 +170,7 @@ export default function ConsentsPage() {
 
       {/* List */}
       {!loading && !error && consents.length > 0 && (
-        <Card variant="default" padding="none">
+        <Card variant="glass" padding="none">
           <CardHeader className="px-5 pt-5 pb-0">
             <CardTitle>Danh sách quyền truy cập</CardTitle>
           </CardHeader>

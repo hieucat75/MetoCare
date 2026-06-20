@@ -23,7 +23,7 @@ function NotificationIcon({ type }: { type: Notification['type'] }) {
   const iconClass = 'size-5 shrink-0'
   switch (type) {
     case 'medication_reminder':
-      return <Pill className={`${iconClass} text-primary`} aria-hidden="true" />
+      return <Pill className={`${iconClass} text-mint-600`} aria-hidden="true" />
     case 'lab_result':
       return <FileText className={`${iconClass} text-info`} aria-hidden="true" />
     case 'care_plan':
@@ -54,8 +54,8 @@ function NotificationRow({ notification, onRead }: NotificationRowProps) {
     <button
       type="button"
       onClick={handleClick}
-      className={`w-full text-left flex items-start gap-3 px-4 py-3 border-b border-border last:border-0 transition-colors hover:bg-secondary-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 ${
-        !notification.is_read ? 'bg-primary/5' : 'bg-surface'
+      className={`w-full text-left flex items-start gap-3 px-4 py-3 border-b border-border last:border-0 transition-colors hover:bg-secondary-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mint-400/30 ${
+        !notification.is_read ? 'bg-mint-500/5' : 'bg-surface'
       }`}
       aria-label={notification.title}
     >
@@ -82,7 +82,7 @@ function NotificationRow({ notification, onRead }: NotificationRowProps) {
       {/* Unread dot */}
       {!notification.is_read && (
         <span
-          className="mt-1.5 w-2 h-2 rounded-full bg-primary shrink-0"
+          className="mt-1.5 w-2 h-2 rounded-full bg-mint-500 shrink-0"
           aria-label="Chưa đọc"
         />
       )}
@@ -167,7 +167,7 @@ export default function NotificationsPage() {
         title="Thông báo"
         actions={
           unreadCount > 0 ? (
-            <Badge variant="primary" size="md">
+            <Badge variant="mint" size="md">
               {unreadCount} chưa đọc
             </Badge>
           ) : undefined
@@ -175,6 +175,7 @@ export default function NotificationsPage() {
       />
 
       <Tabs
+        tone="mint"
         variant="line"
         defaultValue="all"
         tabs={[

@@ -144,7 +144,7 @@ export default function LogMetricPage() {
           >
             Ghi tiếp
           </Button>
-          <Button variant="primary" onClick={() => router.push('/metrics')}>
+          <Button variant="mint" onClick={() => router.push('/metrics')}>
             Xem chỉ số
           </Button>
         </div>
@@ -162,14 +162,14 @@ export default function LogMetricPage() {
         </p>
       </div>
 
-      <Card variant="default" padding="lg">
+      <Card variant="glass" padding="lg">
         <form onSubmit={handleSubmit} noValidate>
           <CardContent className="space-y-5">
 
             {/* Metric type */}
             <FormField label="Loại chỉ số" required>
               <select
-                className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-body-md text-text focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+                className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-body-md text-text focus:outline-none focus:ring-2 focus:ring-mint-400/30 focus:border-mint-400"
                 value={form.metric_type}
                 onChange={handleTypeChange}
               >
@@ -214,7 +214,7 @@ export default function LogMetricPage() {
             {/* Source */}
             <FormField label="Nguồn đo">
               <select
-                className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-body-md text-text focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+                className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-body-md text-text focus:outline-none focus:ring-2 focus:ring-mint-400/30 focus:border-mint-400"
                 value={form.source}
                 onChange={(e) => setForm((f) => ({ ...f, source: e.target.value }))}
               >
@@ -244,7 +244,7 @@ export default function LogMetricPage() {
               </Button>
               <Button
                 type="submit"
-                variant="primary"
+                variant="mint"
                 loading={submitting}
                 className="flex-1"
               >

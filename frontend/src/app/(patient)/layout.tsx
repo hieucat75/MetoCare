@@ -122,7 +122,7 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
       collapsed={sidebarCollapsed}
       header={
         <div className={`flex items-center gap-2.5 p-4 ${sidebarCollapsed ? 'justify-center' : ''}`}>
-          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center shrink-0">
+          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-mint-400 to-mint-600 flex items-center justify-center shrink-0">
             <span className="text-white font-bold text-sm">M</span>
           </div>
           {!sidebarCollapsed && (
@@ -147,13 +147,13 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
   return (
     <>
       {/* ── Mobile (< lg): compact top bar + scrollable content + fixed bottom nav ── */}
-      <div className="flex flex-col min-h-screen lg:hidden bg-background">
-        {/* Mobile top bar — app-style, not admin-style */}
-        <header className="sticky top-0 z-30 bg-surface border-b border-border">
+      <div className="flex flex-col min-h-screen lg:hidden bg-gradient-to-br from-mint-50 via-background to-mint-100">
+        {/* Mobile top bar — mint glass app bar */}
+        <header className="sticky top-0 z-30 bg-white/70 backdrop-blur-xl border-b border-white/60">
           <div className="flex items-center justify-between h-14 px-4">
             {/* Logo / brand */}
             <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-lg bg-primary flex items-center justify-center shrink-0">
+              <div className="w-7 h-7 rounded-xl bg-gradient-to-br from-mint-400 to-mint-600 flex items-center justify-center shrink-0">
                 <span className="text-white font-bold text-xs">M</span>
               </div>
               <span className="font-semibold text-text text-body-sm">{pageTitle}</span>
@@ -162,7 +162,7 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
             <button
               type="button"
               onClick={handleLogout}
-              className="w-8 h-8 rounded-full bg-primary-100 flex items-center justify-center text-primary hover:bg-primary-200 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+              className="w-8 h-8 rounded-full bg-mint-100 flex items-center justify-center text-mint-700 hover:bg-mint-200 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mint-400/40"
               aria-label="Đăng xuất"
               title="Đăng xuất"
             >

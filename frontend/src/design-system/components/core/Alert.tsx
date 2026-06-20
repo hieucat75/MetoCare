@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils'
 // Types
 // ---------------------------------------------------------------------------
 
-export type AlertVariant = 'info' | 'success' | 'warning' | 'danger' | 'neutral'
+export type AlertVariant = 'info' | 'success' | 'warning' | 'danger' | 'neutral' | 'mint'
 
 export interface AlertProps {
   variant?: AlertVariant
@@ -35,6 +35,12 @@ const variantConfig: Record<AlertVariant, VariantConfig> = {
   info: {
     root: 'bg-info-light border-l-4 border-info text-text',
     iconColor: 'text-info',
+    DefaultIcon: Info,
+  },
+  // Patient app mint tone (additive; doctor/admin keep info=blue).
+  mint: {
+    root: 'bg-mint-50 border-l-4 border-mint-400 text-text',
+    iconColor: 'text-mint-600',
     DefaultIcon: Info,
   },
   success: {

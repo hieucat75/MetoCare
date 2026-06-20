@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils'
 // Types
 // ---------------------------------------------------------------------------
 
-export type CardVariant = 'default' | 'outlined' | 'elevated' | 'ghost' | 'flat'
+export type CardVariant = 'default' | 'outlined' | 'elevated' | 'ghost' | 'flat' | 'glass'
 export type CardPadding = 'none' | 'sm' | 'md' | 'lg'
 
 export interface CardProps {
@@ -26,6 +26,8 @@ const variantClasses: Record<CardVariant, string> = {
   elevated: 'bg-surface rounded-lg shadow-md',
   ghost: 'bg-background rounded-lg',
   flat: 'bg-secondary-50 rounded-lg',
+  // Patient app liquid-glass surface (mint-tinted soft shadow + blur).
+  glass: 'bg-white/70 backdrop-blur-xl border border-white/60 rounded-2xl shadow-glass',
 }
 
 const paddingClasses: Record<CardPadding, string> = {

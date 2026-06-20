@@ -1,5 +1,6 @@
 'use client'
 
+import { PatientEmptyState } from '@/components/patient'
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
 import { Bot, Pill, ClipboardList, ChevronRight } from 'lucide-react'
@@ -211,11 +212,11 @@ export default function PatientDashboardPage() {
 
       {/* Profile completion nudge (PR-A) */}
       {!profileComplete && (
-        <Alert variant="info" title="Hoàn thiện hồ sơ của bạn">
+        <Alert variant="mint" title="Hoàn thiện hồ sơ của bạn">
           <div className="flex flex-col gap-2">
             <span>Bổ sung ngày sinh, giới tính, chiều cao và cân nặng để cá nhân hoá theo dõi sức khỏe.</span>
             <div>
-              <Button size="sm" variant="primary" onClick={() => router.push('/onboarding')}>
+              <Button size="sm" variant="mint" onClick={() => router.push('/onboarding')}>
                 Hoàn thiện ngay
               </Button>
             </div>
@@ -231,7 +232,7 @@ export default function PatientDashboardPage() {
       )}
 
       {/* Risk / Metabolic score */}
-      <Card variant="default" padding="md">
+      <Card variant="glass" padding="md">
         <CardContent>
           {metabolicScore ? (
             <div className="flex items-center justify-between gap-4">
@@ -268,11 +269,10 @@ export default function PatientDashboardPage() {
           </Button>
         </div>
         {metrics.length === 0 ? (
-          <EmptyState
-            size="sm"
+          <PatientEmptyState
             title="Chưa có chỉ số nào"
             description="Bắt đầu theo dõi sức khỏe bằng cách ghi chỉ số đầu tiên."
-            action={{ label: 'Ghi chỉ số', onClick: () => router.push('/metrics') }}
+            cta={{ label: 'Ghi chỉ số', onClick: () => router.push('/metrics') }}
           />
         ) : (
           <div className="grid grid-cols-2 gap-3">
@@ -295,10 +295,10 @@ export default function PatientDashboardPage() {
 
       {/* Medication reminder */}
       <section aria-label="Nhắc nhở thuốc">
-        <Card variant="default" padding="none">
+        <Card variant="glass" padding="none">
           <CardHeader className="px-4 pt-4 pb-2">
             <div className="flex items-center gap-2">
-              <Pill className="size-4 text-primary" aria-hidden="true" />
+              <Pill className="size-4 text-mint-600" aria-hidden="true" />
               <CardTitle className="text-heading-sm font-semibold">Nhắc nhở thuốc</CardTitle>
             </div>
           </CardHeader>
@@ -329,7 +329,7 @@ export default function PatientDashboardPage() {
                 <button
                   type="button"
                   onClick={() => router.push('/medications')}
-                  className="flex items-center gap-1 text-body-sm text-primary hover:underline mt-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 rounded"
+                  className="flex items-center gap-1 text-body-sm text-mint-600 hover:underline mt-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mint-400/30 rounded"
                 >
                   Xem tất cả
                   <ChevronRight className="size-4" aria-hidden="true" />
@@ -342,10 +342,10 @@ export default function PatientDashboardPage() {
 
       {/* Care plan */}
       <section aria-label="Kế hoạch điều trị">
-        <Card variant="default" padding="none">
+        <Card variant="glass" padding="none">
           <CardHeader className="px-4 pt-4 pb-2">
             <div className="flex items-center gap-2">
-              <ClipboardList className="size-4 text-primary" aria-hidden="true" />
+              <ClipboardList className="size-4 text-mint-600" aria-hidden="true" />
               <CardTitle className="text-heading-sm font-semibold">Kế hoạch điều trị</CardTitle>
             </div>
           </CardHeader>
@@ -365,7 +365,7 @@ export default function PatientDashboardPage() {
                 <button
                   type="button"
                   onClick={() => router.push('/care-plan')}
-                  className="flex items-center gap-1 text-body-sm text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 rounded"
+                  className="flex items-center gap-1 text-body-sm text-mint-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mint-400/30 rounded"
                 >
                   Xem kế hoạch
                   <ChevronRight className="size-4" aria-hidden="true" />
@@ -379,7 +379,7 @@ export default function PatientDashboardPage() {
       {/* AI Assistant entry — only when the AI feature flag is on (MVP: OFF) */}
       {flags?.ai_assistant && (
       <section aria-label="Trợ lý AI">
-        <Card variant="default" padding="none" className="border-amber-200 bg-amber-50">
+        <Card variant="glass" padding="none" className="border-amber-200 bg-amber-50">
           <CardContent className="px-4 py-4">
             <div className="flex items-start gap-3">
               <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-amber-100 shrink-0">

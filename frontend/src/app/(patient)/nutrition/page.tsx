@@ -109,7 +109,7 @@ function EntryItem({ entry }: { entry: NutritionEntry }) {
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between gap-2">
             <div className="min-w-0">
-              <span className="text-caption font-medium text-primary">{label}</span>
+              <span className="text-caption font-medium text-mint-600">{label}</span>
               <p className="text-body-sm text-text truncate">{entry.description}</p>
             </div>
             <div className="text-right shrink-0">
@@ -236,7 +236,7 @@ function AddMealModal({ open, onOpenChange, onAdd, patientId }: AddMealModalProp
             Huỷ
           </Button>
           <Button
-            variant="primary"
+            variant="mint"
             size="sm"
             loading={submitting}
             onClick={handleSubmit}
@@ -359,7 +359,7 @@ export default function NutritionPage() {
         title="Nhật ký dinh dưỡng"
         actions={
           <Button
-            variant="primary"
+            variant="mint"
             size="sm"
             leftIcon={<Plus className="size-4" />}
             onClick={() => setAddModalOpen(true)}
@@ -370,7 +370,7 @@ export default function NutritionPage() {
       />
 
       {/* Today's calorie summary */}
-      <Card variant="default" padding="md">
+      <Card variant="glass" padding="md">
         <CardContent>
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full bg-orange-100 flex items-center justify-center shrink-0">
@@ -420,7 +420,7 @@ export default function NutritionPage() {
       {!loading && !error && entries.length > 0 && (
         <div className="space-y-4">
           {groups.map(({ label, items }) => (
-            <Card key={label} variant="default" padding="none">
+            <Card key={label} variant="glass" padding="none">
               <CardHeader className="px-5 pt-4 pb-0">
                 <CardTitle className="text-body-sm font-semibold text-text-muted">
                   {label}

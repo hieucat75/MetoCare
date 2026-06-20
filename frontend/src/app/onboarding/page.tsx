@@ -225,7 +225,7 @@ export default function OnboardingPage() {
             {STEPS.map((_, i) => (
               <div
                 key={i}
-                className={`h-1.5 flex-1 rounded-full ${i <= step ? 'bg-primary' : 'bg-secondary-100'}`}
+                className={`h-1.5 flex-1 rounded-full ${i <= step ? 'bg-mint-500' : 'bg-secondary-100'}`}
               />
             ))}
           </div>
@@ -309,11 +309,11 @@ export default function OnboardingPage() {
             <span />
           )}
           {step < STEPS.length - 1 ? (
-            <Button variant="primary" onClick={next}>
+            <Button variant="mint" onClick={next}>
               Tiếp tục <ArrowRight className="size-4 ml-1" aria-hidden="true" />
             </Button>
           ) : (
-            <Button variant="primary" onClick={finish} loading={saving}>
+            <Button variant="mint" onClick={finish} loading={saving}>
               Hoàn tất
             </Button>
           )}

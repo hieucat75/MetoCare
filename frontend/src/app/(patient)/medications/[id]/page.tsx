@@ -98,7 +98,7 @@ export default function MedicationDetailPage() {
         <button
           type="button"
           onClick={() => router.back()}
-          className="flex items-center gap-1.5 text-body-sm text-primary"
+          className="flex items-center gap-1.5 text-body-sm text-mint-600"
           aria-label="Quay lại"
         >
           <ArrowLeft className="size-4" />
@@ -114,7 +114,7 @@ export default function MedicationDetailPage() {
         )}
       </div>
 
-      <Card variant="default" padding="none" className="mb-4">
+      <Card variant="glass" padding="none" className="mb-4">
         <CardContent className="p-1">
           {medication.dose && (
             <InfoRow icon={Pill} label="Liều dùng" value={medication.dose} />

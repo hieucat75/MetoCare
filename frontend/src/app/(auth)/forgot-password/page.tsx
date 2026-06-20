@@ -59,7 +59,7 @@ export default function ForgotPasswordPage() {
         Nhập số điện thoại đăng ký. Chúng tôi sẽ gửi hướng dẫn đặt lại mật khẩu qua SMS.
       </p>
 
-      <Alert variant="info" className="mb-6">
+      <Alert variant="mint" className="mb-6">
         Tính năng đặt lại mật khẩu đang được phát triển (Phase 2). Vui lòng liên hệ hỗ trợ nếu cần.
       </Alert>
 
