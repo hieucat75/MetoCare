@@ -280,7 +280,7 @@ export default function SettingsPage() {
           <CardTitle>Phiên bản</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-[17px] text-text-muted">MetoCare v1.0.8 (MVP)</p>
+          <p className="text-[17px] text-text-muted">MetoCare v1.0.9 (MVP)</p>
         </CardContent>
       </Card>
 
