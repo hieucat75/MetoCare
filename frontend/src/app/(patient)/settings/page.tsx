@@ -161,16 +161,16 @@ export default function SettingsPage() {
             {/* Phone — main identifier for patient accounts */}
             {user.phone && (
               <div>
-                <p className="text-label-lg font-medium text-text-muted mb-1">Số điện thoại</p>
-                <p className="text-[17px] text-text">{user.phone}</p>
+                <p className="text-[16px] font-medium text-mint-700 mb-1.5">Số điện thoại</p>
+                <p className="text-[21px] font-semibold text-text">{user.phone}</p>
               </div>
             )}
             {/* Email (optional for phone-registered patients) */}
             <div>
-              <p className="text-label-lg font-medium text-text-muted mb-1">Email</p>
+              <p className="text-[16px] font-medium text-mint-700 mb-1.5">Email</p>
               {!editingEmail ? (
                 <div className="flex items-center justify-between gap-3">
-                  <p className="text-[17px] text-text">{user.email ?? 'Chưa có'}</p>
+                  <p className={user.email ? 'text-[21px] font-semibold text-text' : 'text-[16px] italic text-text-subtle'}>{user.email ?? 'Chưa cập nhật'}</p>
                   <Button
                     variant="outline"
                     size="sm"
@@ -207,7 +207,7 @@ export default function SettingsPage() {
 
             {/* Role */}
             <div>
-              <p className="text-label-lg font-medium text-text-muted mb-1">Vai trò</p>
+              <p className="text-[16px] font-medium text-mint-700 mb-1.5">Vai trò</p>
               <Badge variant="mint">Bệnh nhân</Badge>
             </div>
 

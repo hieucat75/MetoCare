@@ -35,11 +35,23 @@ function genderLabel(g: PatientProfile['gender']): string {
 
 // ─── Read-only field row ──────────────────────────────────────────────────────
 
+// ISO YYYY-MM-DD → DD/MM/YYYY (vi-VN). Pass-through for already-short/other values.
+function formatDateVN(v: string | null | undefined): string | null {
+  if (!v) return null
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(v)
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : v
+}
+
 function ProfileField({ label, value }: { label: string; value: string | null | undefined }) {
+  const empty = value == null || value.trim() === ''
   return (
-    <div className="flex flex-col gap-0.5 py-3 border-b border-border last:border-0">
-      <p className="text-[15px] text-text-muted">{label}</p>
-      <p className="text-[17px] text-text">{value ?? '—'}</p>
+    <div className="flex flex-col gap-2 py-4 border-b border-mint-100/60 last:border-0">
+      <p className="text-[16px] font-medium text-mint-700">{label}</p>
+      {empty ? (
+        <p className="text-[16px] italic text-text-subtle">Chưa cập nhật</p>
+      ) : (
+        <p className="text-[21px] font-semibold text-text leading-snug">{value}</p>
+      )}
     </div>
   )
 }
@@ -246,7 +258,7 @@ export default function ProfilePage() {
           {!editing ? (
             <>
               <ProfileField label="Họ tên" value={profile?.full_name} />
-              <ProfileField label="Ngày sinh" value={profile?.dob} />
+              <ProfileField label="Ngày sinh" value={formatDateVN(profile?.dob)} />
               <ProfileField label="Số điện thoại" value={profile?.phone} />
               <ProfileField label="Giới tính" value={genderLabel(profile?.gender ?? null)} />
               <ProfileField
