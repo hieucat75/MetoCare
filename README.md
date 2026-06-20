@@ -18,6 +18,17 @@ Nền tảng chăm sóc sức khỏe chuyển hóa (tiền tiểu đường, r�
   lab interpreter, metabolic score — toàn bộ là **pure-Python, test độc lập** trong `backend/app/domain`.
 - **Bảo mật:** consent gate + audit log + config không hardcode secret. Xem `docs/Security_Compliance_Framework.md`.
 
+## Deployment & môi trường (LOCKED)
+
+| Platform | Role | Deploy |
+|---|---|---|
+| **DigitalOcean VPS** | **PRIMARY PRODUCTION** | `.github/workflows/deploy-do.yml` — opt-in (`[deploy-do]` commit tag hoặc manual dispatch) |
+| **Azure Container Apps** | **SECONDARY STAGING** | `.github/workflows/azure-staging.yml` — manual `workflow_dispatch`, OIDC-only |
+| ~~Azure App Service~~ | Deprecated | archived → `.github/workflows/_archived/` |
+
+- ❌ **KHÔNG merge 2 approach** (DigitalOcean self-managed PG/TimescaleDB-TSL vs Azure managed PG-Flexible-Apache là 2 stack độc lập) · ❌ **KHÔNG reactivate App Service path**.
+- Chi tiết staging: [`docs/agent/AZURE_ACA_STAGING_REPORT.md`](docs/agent/AZURE_ACA_STAGING_REPORT.md).
+
 ## Nguyên tắc an toàn (bắt buộc)
 
 AI **không** chẩn đoán khẳng định · **không** kê đơn · **không** đổi liều · red flag → escalation.
