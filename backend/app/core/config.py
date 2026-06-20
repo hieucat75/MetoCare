@@ -77,6 +77,16 @@ class Settings(BaseSettings):
     ocr_worker_enabled: bool = True
     ocr_queue_max_size: int = 256
 
+    # ---- OCR Lab Upload track — synchronous draft pipeline (default Tesseract local) ----
+    # Primary OCR is Tesseract running locally in-container, cost $0. Cloud OCR is an
+    # opt-in fallback gated by FeatureFlag.OCR_CLOUD_FALLBACK + a provider key (read
+    # from the unprefixed ANTHROPIC_API_KEY / AZURE_DOC_INTEL_* env at call time).
+    ocr_lang: str = "vie+eng"               # Tesseract language packs
+    ocr_cloud_provider: str = ""            # "" | anthropic | azure (only read when fallback ON)
+    ocr_max_upload_mb: int = 10             # reject larger uploads with 413
+    ocr_url_fetch_timeout_seconds: int = 10  # SSRF-guarded URL paste fetch
+    ocr_pdf_max_pages: int = 3              # rasterize/scan at most N pages
+
     # ---- CORS ----
     # Comma-separated list of allowed origins for CORS preflight.
     # Default includes localhost variants for local dev.

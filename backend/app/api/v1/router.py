@@ -16,6 +16,7 @@ from .routes import (
     encounters,
     health,
     lab,
+    lab_upload,
     notifications,
     patients,
     system,
@@ -26,6 +27,7 @@ api_router.include_router(system.router)
 api_router.include_router(auth.router)
 api_router.include_router(health.router)
 api_router.include_router(lab.router)
+api_router.include_router(lab_upload.router)
 api_router.include_router(ai.router)
 api_router.include_router(consent.router)
 api_router.include_router(admin.router)

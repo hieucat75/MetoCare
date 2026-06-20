@@ -2,10 +2,18 @@
 # Python 3.11 slim (matches requires-python = ">=3.11")
 FROM python:3.11-slim
 
-# System deps: libpq for psycopg2-binary; curl for healthcheck
+# System deps:
+#   libpq5            — psycopg2-binary runtime
+#   curl              — container healthcheck
+#   tesseract-ocr     — local OCR engine (default provider, cost $0)
+#   tesseract-ocr-vie — Vietnamese language pack (~5MB) for VN lab reports
+#   poppler-utils     — pdf2image rasterization of scanned PDFs
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
     curl \
+    tesseract-ocr \
+    tesseract-ocr-vie \
+    poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
