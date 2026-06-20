@@ -162,6 +162,11 @@ jobs:
           COMMON_SECRETS="db-url=$DB_URL secret-key=$SECRET_KEY enc-keys=$ENC_KEYS appi=$APPI"
           # CORS: NEXT_PUBLIC_* and the browser run from the frontend origin, so the
           # backend must allow it. Persisted as an env var here (no manual hotfix).
+          # OCR (v1.0.6): MCP_FEATURE_OCR=true enables the lab-upload draft pipeline on
+          # STAGING only (Tesseract runs locally in-container, cost $0). Cloud OCR stays
+          # OFF — MCP_FEATURE_OCR_CLOUD_FALLBACK=false and no ANTHROPIC_API_KEY /
+          # AZURE_DOC_INTEL_* are provided, so no medical image ever leaves the box.
+          # Production enablement is a separate decision (DigitalOcean untouched).
           COMMON_ENV="MCP_ENV=staging MCP_DEBUG=false \
             MCP_DATABASE_URL=secretref:db-url MCP_SECRET_KEY=secretref:secret-key \
             MCP_ENCRYPTION_KEYS=secretref:enc-keys \
@@ -170,7 +175,8 @@ jobs:
             MCP_AI_MODE=mock MCP_LLM_PROVIDER=mock MCP_OCR_MODE=mock \
             MCP_OCR_WORKER_ENABLED=false MCP_RAG_ENABLED=false \
             MCP_STORAGE_MODE=local MCP_RATELIMIT_BACKEND=memory \
-            MCP_METRICS_ENABLED=true MCP_ENABLE_DOCS=false"
+            MCP_METRICS_ENABLED=true MCP_ENABLE_DOCS=false \
+            MCP_FEATURE_OCR=true MCP_FEATURE_OCR_CLOUD_FALLBACK=false"
           if az containerapp show -g "$RG" -n "$BACKEND_APP" -o none 2>/dev/null; then
             az containerapp secret set -g "$RG" -n "$BACKEND_APP" --secrets $COMMON_SECRETS -o none
             az containerapp update -g "$RG" -n "$BACKEND_APP" --image "$IMG" \
