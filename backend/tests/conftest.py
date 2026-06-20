@@ -15,6 +15,12 @@ os.environ["MCP_DATABASE_URL"] = f"sqlite:///{_DB_DIR}/test.sqlite3"
 os.environ["MCP_ENV"] = "test"
 os.environ["MCP_AI_MODE"] = "mock"
 os.environ["MCP_OCR_MODE"] = "mock"
+# PR-B: the patient-facing AI/OCR feature flags default OFF (no real AI for MVP).
+# Tests that exercise those features run with them ON; dedicated tests flip them
+# OFF via monkeypatch to assert the 503 fail-closed behaviour.
+os.environ["FEATURE_AI_ASSISTANT"] = "true"
+os.environ["FEATURE_OCR"] = "true"
+os.environ["FEATURE_AI_RECOMMENDATION"] = "true"
 # Drive the OCR pipeline deterministically in tests; the background worker is
 # exercised by a dedicated async test, not the shared TestClient app.
 os.environ["MCP_OCR_WORKER_ENABLED"] = "false"

@@ -97,3 +97,91 @@ def interpret_document(
     )
     db.commit()
     return interpretation
+
+
+def create_manual_entry(
+    db: Session,
+    *,
+    patient_id: str,
+    requester_id: str,
+    lab_name: str | None,
+    test_date,
+    results: list[dict],
+) -> tuple[LabDocument, list[LabResult]]:
+    """Create a lab document + structured results from manual patient entry (PR-B).
+
+    No OCR/file involved — the patient types the values. The document is marked
+    ``status='manual'`` / ``ocr_status='done'`` and each result is flagged
+    ``verified_by_user=True``. Consent-gated + audited, same as upload.
+    """
+    consent.require_access(db, patient_id=patient_id, requester_id=requester_id, scope="lab")
+
+    doc = LabDocument(
+        patient_id=patient_id,
+        storage_key=f"manual:{patient_id}",
+        file_type="manual",
+        lab_name=lab_name,
+        ocr_status="done",
+        status="manual",
+    )
+    db.add(doc)
+    db.flush()
+
+    rows: list[LabResult] = []
+    for item in results:
+        row = LabResult(
+            patient_id=patient_id,
+            document_id=doc.id,
+            test_name=item["test_name"],
+            value=item.get("value"),
+            unit=item.get("unit"),
+            reference_range=item.get("reference_range"),
+            test_date=test_date,
+            verified_by_user=True,
+        )
+        db.add(row)
+        rows.append(row)
+    db.flush()
+
+    audit.record(
+        db,
+        actor_type="user",
+        actor_id=requester_id,
+        action="manual_lab_entry",
+        resource_type="lab_document",
+        resource_id=doc.id,
+    )
+    db.commit()
+    for row in rows:
+        db.refresh(row)
+    return doc, rows
+
+
+def list_lab_results(
+    db: Session,
+    *,
+    patient_id: str,
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[int, list[LabResult]]:
+    """Return (total, items) of the patient's lab results (newest first)."""
+    from sqlalchemy import func, select
+
+    limit = min(limit, 100)
+    base = (
+        LabResult.patient_id == patient_id,
+        LabResult.deleted_at.is_(None),
+    )
+    total = db.execute(
+        select(func.count()).select_from(LabResult).where(*base)
+    ).scalar_one()
+    rows = list(
+        db.execute(
+            select(LabResult)
+            .where(*base)
+            .order_by(LabResult.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        ).scalars()
+    )
+    return total, rows

@@ -31,6 +31,7 @@ import {
   metricLabel,
   metricUnit,
 } from '@/lib/api/patient'
+import { useFeatureFlags } from '@/lib/api/features'
 import type {
   MetabolicScore,
   Medication,
@@ -86,6 +87,7 @@ export default function PatientDashboardPage() {
   const router = useRouter()
   const { user } = useAuth()
   const patientId = user?.patient_profile_id
+  const flags = useFeatureFlags()
 
   const [data, setData] = React.useState<DashboardData | null>(null)
   const [loading, setLoading] = React.useState(true)
@@ -374,7 +376,8 @@ export default function PatientDashboardPage() {
         </Card>
       </section>
 
-      {/* AI Assistant entry */}
+      {/* AI Assistant entry — only when the AI feature flag is on (MVP: OFF) */}
+      {flags?.ai_assistant && (
       <section aria-label="Trợ lý AI">
         <Card variant="default" padding="none" className="border-amber-200 bg-amber-50">
           <CardContent className="px-4 py-4">
@@ -406,6 +409,7 @@ export default function PatientDashboardPage() {
           </CardContent>
         </Card>
       </section>
+      )}
 
     </div>
   )

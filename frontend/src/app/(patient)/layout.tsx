@@ -20,6 +20,7 @@ import type { NavItem } from '@/design-system'
 import { useAuth } from '@/lib/auth/context'
 import { PatientBottomNav } from '@/components/nav/PatientBottomNav'
 import { getRoleHomePath } from '@/lib/api/auth'
+import { useFeatureFlags } from '@/lib/api/features'
 
 // ── Nav items (sidebar for desktop) ──────────────────────────────────────────
 
@@ -78,7 +79,14 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
   const { isAuthenticated, isLoading, user, logout } = useAuth()
   const router = useRouter()
   const pathname = usePathname()
+  const flags = useFeatureFlags()
   const [sidebarCollapsed, setSidebarCollapsed] = React.useState(false)
+
+  // Hide the AI assistant nav entry unless the feature flag is enabled (MVP: OFF).
+  const navItems = React.useMemo(
+    () => NAV_ITEMS.filter((it) => it.id !== 'ai-assistant' || flags?.ai_assistant),
+    [flags],
+  )
 
   React.useEffect(() => {
     if (isLoading) return
@@ -108,7 +116,7 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
 
   const sidebarContent = (
     <Sidebar
-      items={NAV_ITEMS}
+      items={navItems}
       activeItemId={activeId}
       onItemClick={handleNavItem}
       collapsed={sidebarCollapsed}
