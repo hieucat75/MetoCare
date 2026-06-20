@@ -119,6 +119,9 @@ export default function MedicationDetailPage() {
           {medication.dose && (
             <InfoRow icon={Pill} label="Liều dùng" value={medication.dose} />
           )}
+          {medication.frequency && (
+            <InfoRow icon={Calendar} label="Tần suất" value={medication.frequency} />
+          )}
           <InfoRow icon={Calendar} label="Ngày tạo" value={formatDate(medication.created_at)} />
           {medication.note && (
             <InfoRow icon={FileText} label="Ghi chú" value={medication.note} />

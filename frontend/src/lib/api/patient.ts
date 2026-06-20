@@ -404,24 +404,15 @@ export async function logSymptom(
 
 // ── Medications ───────────────────────────────────────────────────────────────
 
+/** Backend Medication (PR-D adds `frequency`). All real columns; no placeholders. */
 export interface Medication {
   id: string
   patient_id: string
   name: string
-  /** Backend field (PA-07). Pages may also use legacy alias `dosage`. */
   dose: string | null
-  /** Backend field (PA-07). Pages may also use legacy alias `notes`. */
+  frequency: string | null
   note: string | null
   created_at: string
-  // Optional fields not yet in backend schema — will be undefined at runtime
-  dosage?: string | null
-  frequency?: string | null
-  start_date?: string | null
-  end_date?: string | null
-  notes?: string | null
-  prescribed_by?: string | null
-  status?: 'active' | 'completed' | 'discontinued'
-  next_dose_at?: string | null
 }
 
 export interface MedicationListResponse {
@@ -430,18 +421,43 @@ export interface MedicationListResponse {
   items: Medication[]
 }
 
+export interface MedicationInput {
+  name: string
+  dose?: string | null
+  frequency?: string | null
+  note?: string | null
+}
+
 export async function getMedications(
   patientId: string,
-  params?: { status?: 'active' | 'completed'; limit?: number; offset?: number },
+  params?: { limit?: number; offset?: number },
 ): Promise<MedicationListResponse> {
   const qs = new URLSearchParams()
-  if (params?.status) qs.set('status', params.status)
   if (params?.limit) qs.set('limit', String(params.limit))
   if (params?.offset) qs.set('offset', String(params.offset))
   const query = qs.toString()
   return api.get<MedicationListResponse>(
     `/patients/${patientId}/medications${query ? `?${query}` : ''}`,
   )
+}
+
+export async function addMedication(
+  patientId: string,
+  data: MedicationInput,
+): Promise<Medication> {
+  return api.post<Medication>(`/patients/${patientId}/medications`, data)
+}
+
+export async function updateMedication(
+  patientId: string,
+  medId: string,
+  data: Partial<MedicationInput>,
+): Promise<Medication> {
+  return api.patch<Medication>(`/patients/${patientId}/medications/${medId}`, data)
+}
+
+export async function deleteMedication(patientId: string, medId: string): Promise<void> {
+  return api.del(`/patients/${patientId}/medications/${medId}`)
 }
 
 // ── Nutrition Log ─────────────────────────────────────────────────────────────
