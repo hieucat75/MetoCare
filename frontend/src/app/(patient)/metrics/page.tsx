@@ -1,284 +1,42 @@
 'use client'
-import { PatientEmptyState } from '@/components/patient'
 
 import * as React from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
-import { FlaskConical, Plus } from 'lucide-react'
+import { Plus, LineChart } from 'lucide-react'
 import {
-  PageHeader,
-  PageLoading,
-  ErrorState,
   Alert,
   Button,
-  Badge,
-  EmptyState,
-  Modal,
   FormField,
   Input,
+  Modal,
+  PageHeader,
   Select,
-  Tabs,
-  TabsContent,
+  Skeleton,
 } from '@/design-system'
+import { PatientEmptyState } from '@/components/patient'
+import { MetricCategoryGroup } from '@/components/patient/metrics/MetricCategoryGroup'
 import { useAuth } from '@/lib/auth/context'
-import { getMetrics, isLabSourced, logMetric, METRIC_LABELS, METRIC_UNITS, metricLabel, metricUnit } from '@/lib/api/patient'
-import type { HealthMetric, MetricType } from '@/lib/api/patient'
-import { formatDate } from '@/lib/utils'
+import {
+  getMetrics,
+  logMetric,
+  METRIC_LABELS,
+  METRIC_UNITS,
+  type MetricType,
+  type HealthMetric,
+} from '@/lib/api/patient'
+import { useLabReference } from '@/lib/api/labReference'
+import { groupMetricsByCategory } from '@/lib/metrics/kpi'
 
-// ─── Config (canonical taxonomy — see lib/api/patient.ts) ──────────────────────
-
-type TabKey =
-  | 'overview'
-  | 'fasting_glucose'
-  | 'weight'
-  | 'blood_pressure_systolic'
-  | 'hba1c'
-
-interface TabDef {
-  value: TabKey
-  label: string
-  metricType?: MetricType
-}
-
-const TABS: TabDef[] = [
-  { value: 'overview', label: 'Tổng quan' },
-  { value: 'fasting_glucose', label: 'Đường huyết', metricType: 'fasting_glucose' },
-  { value: 'weight', label: 'Cân nặng', metricType: 'weight' },
-  { value: 'blood_pressure_systolic', label: 'Huyết áp', metricType: 'blood_pressure_systolic' },
-  { value: 'hba1c', label: 'HbA1c', metricType: 'hba1c' },
-]
-
-const METRIC_OPTIONS: { value: MetricType; label: string; unit: string }[] = (
+const METRIC_OPTIONS: { value: MetricType; label: string }[] = (
   Object.keys(METRIC_LABELS) as MetricType[]
-).map((t) => ({ value: t, label: METRIC_LABELS[t], unit: METRIC_UNITS[t] }))
+).map((t) => ({ value: t, label: METRIC_LABELS[t] }))
 
 function getUnit(type: MetricType): string {
-  return metricUnit(type)
+  return METRIC_UNITS[type] ?? ''
 }
 
-function getMetricDisplayLabel(type: MetricType): string {
-  return metricLabel(type)
-}
+// ─── Log metric modal (quick self-report) ─────────────────────────────────────
 
-// ─── Helpers ──────────────────────────────────────────────────────────���──────
-
-function toStatusVariant(
-  status: HealthMetric['status'],
-): 'success' | 'warning' | 'danger' | 'default' {
-  if (status === 'normal') return 'success'
-  if (status === 'borderline') return 'warning'
-  if (status === 'abnormal' || status === 'critical') return 'danger'
-  return 'default'
-}
-
-function toStatusLabel(status: HealthMetric['status']): string {
-  if (status === 'normal') return 'Bình thường'
-  if (status === 'borderline') return 'Cảnh báo'
-  if (status === 'abnormal') return 'Bất thường'
-  if (status === 'critical') return 'Nguy hiểm'
-  return 'Chưa rõ'
-}
-
-// ─── Trend chart (inline SVG sparkline — no chart dependency) ──────────────────
-
-/**
- * Lightweight line chart of a metric over time, built from the metric list
- * (value vs measured_at). Replaces the former grey placeholder box (P1-2).
- * Points are passed newest-first (as the list returns them) and reversed here
- * so the x-axis runs oldest → newest.
- */
-function TrendChart({ metrics, unit }: { metrics: HealthMetric[]; unit: string }) {
-  const points = React.useMemo(() => {
-    return [...metrics]
-      .filter((m) => typeof m.value === 'number' && !isNaN(m.value))
-      .sort(
-        (a, b) =>
-          new Date(a.measured_at ?? a.recorded_at).getTime() -
-          new Date(b.measured_at ?? b.recorded_at).getTime(),
-      )
-  }, [metrics])
-
-  if (points.length < 2) {
-    return (
-      <div className="bg-secondary-50 rounded-lg h-32 flex items-center justify-center text-text-muted text-[15px] px-4 text-center">
-        Cần ít nhất 2 lần đo để hiển thị biểu đồ xu hướng
-      </div>
-    )
-  }
-
-  const W = 320
-  const H = 120
-  const PAD = 8
-  const values = points.map((p) => p.value)
-  const minV = Math.min(...values)
-  const maxV = Math.max(...values)
-  const span = maxV - minV || 1
-  const stepX = (W - PAD * 2) / (points.length - 1)
-  const coords = points.map((p, i) => {
-    const x = PAD + i * stepX
-    const y = PAD + (H - PAD * 2) * (1 - (p.value - minV) / span)
-    return { x, y, v: p.value }
-  })
-  const linePath = coords.map((c, i) => `${i === 0 ? 'M' : 'L'}${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(' ')
-  const areaPath = `${linePath} L${coords[coords.length - 1].x.toFixed(1)},${H - PAD} L${coords[0].x.toFixed(1)},${H - PAD} Z`
-  const first = values[0]
-  const last = values[values.length - 1]
-  const delta = last - first
-
-  return (
-    <div className="rounded-lg border border-border bg-surface p-3">
-      <div className="flex items-center justify-between mb-1">
-        <span className="text-[15px] text-text-muted">Xu hướng ({points.length} lần đo)</span>
-        <span
-          className={`text-[15px] font-medium ${delta > 0 ? 'text-amber-600' : delta < 0 ? 'text-green-600' : 'text-text-muted'}`}
-        >
-          {delta > 0 ? '↑' : delta < 0 ? '↓' : '→'} {Math.abs(delta).toFixed(1)} {unit}
-        </span>
-      </div>
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-32" preserveAspectRatio="none" role="img" aria-label="Biểu đồ xu hướng chỉ số">
-        <path d={areaPath} fill="currentColor" className="text-mint-600/10" />
-        <path d={linePath} fill="none" stroke="currentColor" className="text-mint-600" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
-        {coords.map((c, i) => (
-          <circle key={i} cx={c.x} cy={c.y} r={2.5} fill="currentColor" className="text-mint-600" />
-        ))}
-      </svg>
-      <div className="flex items-center justify-between mt-1 text-[15px] text-text-muted">
-        <span>{minV.toFixed(1)}</span>
-        <span>{maxV.toFixed(1)} {unit}</span>
-      </div>
-    </div>
-  )
-}
-
-// ─── Single metric row ────────────────────────────────────────────────────────
-
-function MetricRow({ metric }: { metric: HealthMetric }) {
-  const unit = metric.unit || getUnit(metric.metric_type)
-  const dateStr = new Date(metric.measured_at ?? metric.recorded_at).toLocaleString('vi-VN', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-
-  return (
-    <div className="flex items-center justify-between py-3 border-b border-border last:border-0 px-4">
-      <div className="min-w-0">
-        <p className="text-[17px] font-medium text-text">
-          {getMetricDisplayLabel(metric.metric_type)}
-        </p>
-        <div className="flex items-center gap-1.5 mt-0.5">
-          <p className="text-[15px] text-text-muted">{dateStr}</p>
-          {isLabSourced(metric) && (
-            <span className="inline-flex items-center gap-1 text-[13px] text-mint-700 bg-mint-50 rounded-full px-2 py-0.5">
-              <FlaskConical className="size-3" aria-hidden="true" /> Từ xét nghiệm
-            </span>
-          )}
-        </div>
-        {/* metric.notes may be absent from backend response */}
-        {metric.notes && (
-          <p className="text-[15px] text-text-muted mt-0.5 truncate max-w-[180px]">
-            {metric.notes}
-          </p>
-        )}
-      </div>
-      <div className="flex items-center gap-3 shrink-0 ml-4">
-        <span className="text-[18px] font-bold text-text">
-          {metric.value}
-          <span className="text-[15px] text-text-muted font-normal ml-1">{unit}</span>
-        </span>
-        {metric.status && (
-          <Badge variant={toStatusVariant(metric.status)} size="sm">
-            {toStatusLabel(metric.status)}
-          </Badge>
-        )}
-      </div>
-    </div>
-  )
-}
-
-// ─── Metric tab content ───────────────────────────────────────────────────────
-
-interface MetricTabContentProps {
-  metrics: HealthMetric[]
-  loading: boolean
-  error: string | null
-  onRetry: () => void
-  metricType?: MetricType
-}
-
-function MetricTabContent({
-  metrics,
-  loading,
-  error,
-  onRetry,
-  metricType,
-}: MetricTabContentProps) {
-  if (loading) return <PageLoading label="Đang tải..." />
-
-  if (error) {
-    return (
-      <ErrorState
-        variant="card"
-        title="Không tải được chỉ số"
-        message={error}
-        onRetry={onRetry}
-      />
-    )
-  }
-
-  const filtered = metricType
-    ? metrics.filter((m) => m.metric_type === metricType)
-    : metrics
-
-  const latest = filtered[0] ?? null
-
-  return (
-    <div className="space-y-4">
-      {latest && (
-        <div className="rounded-lg border border-border bg-surface p-4">
-          <p className="text-[15px] text-text-muted mb-1">Giá trị gần nhất</p>
-          <div className="flex items-baseline gap-2 flex-wrap">
-            <span className="text-[42px] tracking-tight font-bold text-text">{latest.value}</span>
-            <span className="text-body-lg text-text-muted">
-              {latest.unit || getUnit(latest.metric_type)}
-            </span>
-            {latest.status && (
-              <Badge variant={toStatusVariant(latest.status)} size="sm">
-                {toStatusLabel(latest.status)}
-              </Badge>
-            )}
-          </div>
-          <p className="text-[15px] text-text-muted mt-1">{formatDate(latest.measured_at ?? latest.recorded_at)}</p>
-        </div>
-      )}
-
-      {metricType && <TrendChart metrics={filtered} unit={getUnit(metricType)} />}
-
-      {filtered.length === 0 ? (
-        <PatientEmptyState
-          size="sm"
-          title="Chưa có chỉ số nào"
-          description={
-            metricType
-              ? `Chưa có dữ liệu ${getMetricDisplayLabel(metricType)}.`
-              : 'Bắt đầu theo dõi sức khỏe bằng cách ghi chỉ số đầu tiên.'
-          }
-        />
-      ) : (
-        <div className="rounded-lg border border-border bg-surface overflow-hidden">
-          {filtered.slice(0, 20).map((m) => (
-            <MetricRow key={m.id} metric={m} />
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ─── Log metric modal ─────────────────────────────────────────────────────────
-
-interface LogModalProps {
+type LogModalProps = {
   open: boolean
   onClose: () => void
   onSuccess: () => void
@@ -329,13 +87,7 @@ function LogMetricModal({ open, onClose, onSuccess, patientId }: LogModalProps) 
           <Button variant="outline" size="sm" onClick={onClose} disabled={submitting}>
             Hủy
           </Button>
-          <Button
-            variant="mint"
-            size="sm"
-            type="submit"
-            form="log-metric-form"
-            loading={submitting}
-          >
+          <Button variant="mint" size="sm" type="submit" form="log-metric-form" loading={submitting}>
             Lưu
           </Button>
         </>
@@ -343,7 +95,6 @@ function LogMetricModal({ open, onClose, onSuccess, patientId }: LogModalProps) 
     >
       <form id="log-metric-form" onSubmit={handleSubmit} className="space-y-4">
         {submitError && <Alert variant="danger" title={submitError} />}
-
         <FormField label="Loại chỉ số" required>
           <Select
             value={metricType}
@@ -352,7 +103,6 @@ function LogMetricModal({ open, onClose, onSuccess, patientId }: LogModalProps) 
             fullWidth
           />
         </FormField>
-
         <FormField label={selectedUnit ? `Giá trị (${selectedUnit})` : 'Giá trị'} required>
           <Input
             type="number"
@@ -369,22 +119,30 @@ function LogMetricModal({ open, onClose, onSuccess, patientId }: LogModalProps) 
   )
 }
 
-// ─── Metrics page ─────────────────────────────────────────────────────────────
+// ─── Metrics page (KPI cards grouped by category) ─────────────────────────────
+
+function KpiSkeleton() {
+  return (
+    <div className="space-y-5">
+      {[1, 2].map((g) => (
+        <div key={g} className="space-y-3">
+          <Skeleton width="40%" height="1.1rem" />
+          <div className="grid grid-cols-2 gap-3">
+            {[1, 2].map((c) => (
+              <Skeleton key={c} height="9rem" className="rounded-3xl" />
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
 
 export default function MetricsPage() {
-  const router = useRouter()
-  const searchParams = useSearchParams()
   const { user } = useAuth()
   const patientId = user?.patient_profile_id
+  const catalog = useLabReference()
 
-  const typeParam = searchParams.get('type') as MetricType | null
-
-  const resolveTab = React.useCallback((t: MetricType | null): TabKey => {
-    const match = TABS.find((tab) => tab.metricType === t)
-    return match?.value ?? 'overview'
-  }, [])
-
-  const [activeTab, setActiveTab] = React.useState<TabKey>(() => resolveTab(typeParam))
   const [allMetrics, setAllMetrics] = React.useState<HealthMetric[]>([])
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
@@ -397,7 +155,7 @@ export default function MetricsPage() {
     }
     setLoading(true)
     setError(null)
-    getMetrics(patientId, { limit: 100 })
+    getMetrics(patientId, { limit: 300 })
       .then((resp) => setAllMetrics(resp.items))
       .catch((err: Error) => setError(err.message))
       .finally(() => setLoading(false))
@@ -407,9 +165,8 @@ export default function MetricsPage() {
     fetchMetrics()
   }, [fetchMetrics])
 
-  React.useEffect(() => {
-    setActiveTab(resolveTab(typeParam))
-  }, [typeParam, resolveTab])
+  const buckets = catalog ? groupMetricsByCategory(allMetrics, catalog) : []
+  const isLoading = loading || !catalog
 
   if (!user) return null
 
@@ -425,40 +182,35 @@ export default function MetricsPage() {
 
   return (
     <>
-      <div className="p-4 lg:p-6 space-y-4 max-w-md mx-auto lg:max-w-2xl pb-24">
+      <div className="p-4 lg:p-6 space-y-5 max-w-md mx-auto lg:max-w-2xl pb-28">
         <PageHeader title="Chỉ số sức khỏe" />
 
-        <Tabs
-        tone="mint"
-          variant="pill"
-          value={activeTab}
-          onValueChange={(v) => {
-            const key = v as TabKey
-            setActiveTab(key)
-            const tab = TABS.find((t) => t.value === key)
-            if (tab?.metricType) {
-              router.replace(`/metrics?type=${tab.metricType}`)
-            } else {
-              router.replace('/metrics')
-            }
-          }}
-          tabs={TABS.map((t) => ({ value: t.value, label: t.label }))}
-        >
-          {TABS.map((tab) => (
-            <TabsContent key={tab.value} value={tab.value}>
-              <MetricTabContent
-                metrics={allMetrics}
-                loading={loading}
-                error={error}
-                onRetry={fetchMetrics}
-                metricType={tab.metricType}
-              />
-            </TabsContent>
-          ))}
-        </Tabs>
+        {isLoading && <KpiSkeleton />}
+
+        {!isLoading && error && (
+          <Alert variant="danger" title="Lỗi">
+            {error}
+          </Alert>
+        )}
+
+        {!isLoading && !error && buckets.length === 0 && (
+          <PatientEmptyState
+            icon={<LineChart />}
+            title="Chưa có chỉ số nào"
+            description="Ghi chỉ số sức khỏe hoặc tải kết quả xét nghiệm để theo dõi theo thời gian."
+            cta={{ label: 'Ghi chỉ số', onClick: () => setModalOpen(true) }}
+          />
+        )}
+
+        {!isLoading && !error && buckets.length > 0 && (
+          <div className="space-y-6">
+            {buckets.map((bucket) => (
+              <MetricCategoryGroup key={bucket.theme.key} bucket={bucket} />
+            ))}
+          </div>
+        )}
       </div>
 
-      {/* FAB */}
       <div className="fixed bottom-20 right-4 z-40">
         <Button
           variant="mint"
