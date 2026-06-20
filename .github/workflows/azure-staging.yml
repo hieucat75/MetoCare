@@ -41,6 +41,31 @@ jobs:
         id: tag
         run: echo "tag=${{ github.event.inputs.image_tag || github.sha }}" >> "$GITHUB_OUTPUT"
 
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Ensure containerapp CLI extension
+        run: az extension add --name containerapp --upgrade --only-show-errors
+
+      - name: Compute Container Apps FQDNs
+        run: |
+          # NEXT_PUBLIC_* is baked into the frontend bundle at build time, so the
+          # backend FQDN must be known BEFORE the frontend image is built. The ACA
+          # environment's default domain is stable, so an app's FQDN is the
+          # deterministic "<app-name>.<defaultDomain>" — valid even before the app
+          # exists. This lets the frontend embed the correct API base at build.
+          DOMAIN=$(az containerapp env show -g "$RG" -n "$ENV_NAME" --query 'properties.defaultDomain' -o tsv)
+          BACKEND_FQDN="${BACKEND_APP}.${DOMAIN}"
+          FRONTEND_FQDN="${FRONTEND_APP}.${DOMAIN}"
+          echo "BACKEND_FQDN=$BACKEND_FQDN" >> "$GITHUB_ENV"
+          echo "FRONTEND_FQDN=$FRONTEND_FQDN" >> "$GITHUB_ENV"
+          echo "Backend:  https://$BACKEND_FQDN"
+          echo "Frontend: https://$FRONTEND_FQDN"
+
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
@@ -62,17 +87,11 @@ jobs:
           context: ./frontend
           file: ./frontend/Dockerfile
           push: true
+          # NEXT_PUBLIC_API_URL must be injected at build time (baked into the
+          # bundle); a runtime container env var has no effect for NEXT_PUBLIC_*.
+          build-args: |
+            NEXT_PUBLIC_API_URL=https://${{ env.BACKEND_FQDN }}/api/v1
           tags: ${{ env.REGISTRY }}/${{ github.repository_owner }}/metocare-frontend:${{ steps.tag.outputs.tag }}
-
-      - name: Azure login (OIDC)
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Ensure containerapp CLI extension
-        run: az extension add --name containerapp --upgrade --only-show-errors
 
       - name: Resume Postgres if stopped
         run: |
@@ -137,10 +156,13 @@ jobs:
         run: |
           IMG="${REGISTRY}/${{ github.repository_owner }}/metocare-backend:${{ steps.tag.outputs.tag }}"
           COMMON_SECRETS="db-url=$DB_URL secret-key=$SECRET_KEY enc-keys=$ENC_KEYS appi=$APPI"
+          # CORS: NEXT_PUBLIC_* and the browser run from the frontend origin, so the
+          # backend must allow it. Persisted as an env var here (no manual hotfix).
           COMMON_ENV="MCP_ENV=staging MCP_DEBUG=false \
             MCP_DATABASE_URL=secretref:db-url MCP_SECRET_KEY=secretref:secret-key \
             MCP_ENCRYPTION_KEYS=secretref:enc-keys \
             APPLICATIONINSIGHTS_CONNECTION_STRING=secretref:appi \
+            MCP_CORS_ALLOWED_ORIGINS=https://${FRONTEND_FQDN} \
             MCP_AI_MODE=mock MCP_LLM_PROVIDER=mock MCP_OCR_MODE=mock \
             MCP_OCR_WORKER_ENABLED=false MCP_RAG_ENABLED=false \
             MCP_STORAGE_MODE=local MCP_RATELIMIT_BACKEND=memory \

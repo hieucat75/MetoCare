@@ -13,8 +13,13 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# Build-time API URL injected here so Next.js bakes it into the static bundle
-ARG NEXT_PUBLIC_API_URL=http://172.20.0.100:8000/api/v1
+# Build-time API URL injected here so Next.js bakes it into the static bundle.
+# NO default: NEXT_PUBLIC_* is inlined at build time and cannot be overridden at
+# runtime, so a stale dev default would silently ship to prod. CI MUST pass
+# --build-arg NEXT_PUBLIC_API_URL=https://<backend-fqdn>/api/v1. If omitted the
+# value is empty; the build still succeeds (Next.js tolerates it) and the broken
+# URL surfaces in smoke tests instead of masquerading as a working dev IP.
+ARG NEXT_PUBLIC_API_URL=
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 
 # Enable standalone output for minimal runtime image
