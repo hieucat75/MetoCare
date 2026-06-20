@@ -113,3 +113,62 @@ def test_metrics_status_classified_on_promotion(client, patient, db):
     _save_labs(client, patient, results=[{"test_name": "fasting_glucose", "value": 140}])
     m = _metrics(db, patient, "fasting_glucose")[0]
     assert m.status in ("high", "critical")
+
+
+# --------------------------------------------------------------------------- #
+# Backfill — fixes orphan labs (pre-sync / interpret / pipeline paths)
+# --------------------------------------------------------------------------- #
+
+def _orphan_lab(db, patient, **kw):
+    """Insert a lab_result directly with NO promotion (simulates a pre-sync lab)."""
+    row = LabResult(
+        patient_id=patient["patient_id"], verified_by_user=True,
+        **{"test_name": "fasting_glucose", "canonical_name": "fasting_glucose",
+           "value": 140.0, "unit": "mg/dL", "test_date": dt.date(2024, 10, 15), **kw},
+    )
+    db.add(row)
+    db.commit()
+    return row
+
+
+def test_backfill_promotes_orphan_labs(db, patient):
+    _orphan_lab(db, patient)
+    assert _metrics(db, patient, "fasting_glucose") == []  # orphan: not promoted yet
+    n = lab.backfill_lab_metrics(db)
+    assert n == 1
+    m = _metrics(db, patient, "fasting_glucose")
+    assert len(m) == 1 and m[0].value == 140 and m[0].source == "lab_result"
+    assert m[0].measured_at.date() == dt.date(2024, 10, 15)  # uses the exam date
+
+
+def test_backfill_is_idempotent(db, patient):
+    _orphan_lab(db, patient)
+    assert lab.backfill_lab_metrics(db) == 1
+    assert lab.backfill_lab_metrics(db) == 0  # nothing left to promote
+    assert len(_metrics(db, patient, "fasting_glucose")) == 1  # no duplicate
+
+
+def test_backfill_skips_already_synced(client, patient, db):
+    # A normally-saved (already promoted) lab is not re-promoted by the backfill.
+    _save_labs(client, patient, results=[{"test_name": "fasting_glucose", "value": 99}])
+    before = len(_metrics(db, patient, "fasting_glucose"))
+    assert lab.backfill_lab_metrics(db) == 0
+    assert len(_metrics(db, patient, "fasting_glucose")) == before
+
+
+def test_backfill_orphan_without_test_date_uses_created_at(db, patient):
+    _orphan_lab(db, patient, test_date=None)
+    lab.backfill_lab_metrics(db)
+    m = _metrics(db, patient, "fasting_glucose")
+    assert len(m) == 1  # promoted even without a test_date (measured_at = created_at)
+
+
+def test_interpret_document_promotes_metrics(db, patient):
+    # The synchronous interpret path (mock OCR) must also promote — was an orphan source.
+    doc = lab.register_document(
+        db, patient_id=patient["patient_id"], requester_id=patient["user_id"],
+        storage_key="normal-panel", file_type="pdf",
+    )
+    lab.interpret_document(db, document_id=doc.id, requester_id=patient["user_id"])
+    promoted = _metrics(db, patient)
+    assert promoted and all(m.source == "lab_result" for m in promoted)

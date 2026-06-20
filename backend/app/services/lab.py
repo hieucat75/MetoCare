@@ -26,6 +26,49 @@ from app.services.health_metrics import classify_status
 _PROMOTABLE = {spec.canonical for spec in lab_interpreter.BIOMARKERS}
 
 
+def _measured_at_for(row: LabResult, test_date: dt.date | None) -> dt.datetime:
+    """When the metric was 'measured' = the exam date (test_date), else the row's
+    own test_date, else its insert time — NEVER 'now', so trends stay chronological."""
+    d = test_date or row.test_date
+    if d is not None:
+        return as_naive_utc(dt.datetime.combine(d, dt.time()))
+    return as_naive_utc(getattr(row, "created_at", None)) or utcnow()
+
+
+def _promote_row(db: Session, row: LabResult, measured_at: dt.datetime) -> bool:
+    """Promote a single lab row into a health_metric (idempotent per row). Returns
+    True if a metric was written."""
+    canonical = row.canonical_name or lab_interpreter.normalize_biomarker(row.test_name)
+    if not canonical or canonical not in _PROMOTABLE or row.value is None:
+        return False
+    # Idempotent: drop any prior promotion of this exact lab row first (ORM-level
+    # delete so a freshly-added-but-uncommitted metric is removed too).
+    for prior in db.execute(
+        select(HealthMetric).where(HealthMetric.source_ref == row.id)
+    ).scalars():
+        db.delete(prior)
+    db.flush()
+    spec = lab_interpreter._ALIAS_INDEX.get(canonical)
+    nmin = spec.ref_low if spec else None
+    nmax = spec.ref_high if spec else None
+    db.add(
+        HealthMetric(
+            patient_id=row.patient_id,
+            metric_type=canonical,
+            value=row.value,
+            unit=row.unit,
+            measured_at=measured_at,
+            source="lab_result",
+            source_ref=row.id,
+            normal_range_min=nmin,
+            normal_range_max=nmax,
+            status=classify_status(canonical, row.value, nmin, nmax),
+        )
+    )
+    db.flush()  # session is autoflush=False — make the row visible to the next lookup
+    return True
+
+
 def promote_lab_rows_to_metrics(
     db: Session,
     *,
@@ -33,46 +76,28 @@ def promote_lab_rows_to_metrics(
     rows: list[LabResult],
     test_date: dt.date | None,
 ) -> int:
-    """Create `health_metrics` rows from confirmed lab results (idempotent per row).
+    """Promote confirmed lab rows into health_metrics so the dashboard + trends
+    update. Idempotent per row; measured at the exam date. Returns count written."""
+    return sum(_promote_row(db, row, _measured_at_for(row, test_date)) for row in rows)
 
-    Each lab row whose name maps to a known biomarker AND has a numeric value is
-    promoted to a metric measured at `test_date` (NOT today) so trends stay in
-    chronological order. Re-promoting the same lab row replaces its metric. Returns
-    the number of metrics written."""
-    measured = (
-        as_naive_utc(dt.datetime.combine(test_date, dt.time())) if test_date else utcnow()
-    )
-    written = 0
-    for row in rows:
-        canonical = row.canonical_name or lab_interpreter.normalize_biomarker(row.test_name)
-        if not canonical or canonical not in _PROMOTABLE or row.value is None:
-            continue
-        # Idempotent: drop any prior promotion of this exact lab row first (ORM-level
-        # delete so a freshly-added-but-uncommitted metric is removed too).
-        for prior in db.execute(
-            select(HealthMetric).where(HealthMetric.source_ref == row.id)
-        ).scalars():
-            db.delete(prior)
-        db.flush()
-        spec = lab_interpreter._ALIAS_INDEX.get(canonical)
-        nmin = spec.ref_low if spec else None
-        nmax = spec.ref_high if spec else None
-        db.add(
-            HealthMetric(
-                patient_id=patient_id,
-                metric_type=canonical,
-                value=row.value,
-                unit=row.unit,
-                measured_at=measured,
-                source="lab_result",
-                source_ref=row.id,
-                normal_range_min=nmin,
-                normal_range_max=nmax,
-                status=classify_status(canonical, row.value, nmin, nmax),
-            )
+
+def backfill_lab_metrics(db: Session, *, commit: bool = True) -> int:
+    """One-time backfill: promote every lab_result that has no health_metric yet.
+
+    Fixes labs created before lab→metric sync existed (and via the interpret/
+    pipeline paths). Idempotent — rows already promoted (a health_metric points at
+    them via source_ref) are skipped, so re-running is safe. Returns count written."""
+    promoted_refs = select(HealthMetric.source_ref).where(HealthMetric.source_ref.is_not(None))
+    orphans = db.execute(
+        select(LabResult).where(
+            LabResult.deleted_at.is_(None),
+            LabResult.value.is_not(None),
+            LabResult.id.not_in(promoted_refs),
         )
-        db.flush()  # session is autoflush=False — make the row visible to the next lookup
-        written += 1
+    ).scalars().all()
+    written = sum(_promote_row(db, row, _measured_at_for(row, None)) for row in orphans)
+    if commit:
+        db.commit()
     return written
 
 
@@ -132,22 +157,25 @@ def interpret_document(
     interpretation = lab_interpreter.interpret_panel(raw_values)
 
     # Persist normalized results.
+    new_rows: list[LabResult] = []
     for b in interpretation.biomarkers:
-        db.add(
-            LabResult(
-                patient_id=doc.patient_id,
-                document_id=doc.id,
-                test_name=b.raw_name,
-                canonical_name=b.canonical,
-                value=b.value,
-                unit=b.unit,
-                reference_range=b.reference_range,
-                status=b.status.value,
-                ocr_confidence=b.ocr_confidence,
-            )
+        lr = LabResult(
+            patient_id=doc.patient_id,
+            document_id=doc.id,
+            test_name=b.raw_name,
+            canonical_name=b.canonical,
+            value=b.value,
+            unit=b.unit,
+            reference_range=b.reference_range,
+            status=b.status.value,
+            ocr_confidence=b.ocr_confidence,
         )
+        db.add(lr)
+        new_rows.append(lr)
     doc.ocr_status = "done"
     db.flush()
+    # Promote into health_metrics so the dashboard + trends reflect these results.
+    promote_lab_rows_to_metrics(db, patient_id=doc.patient_id, rows=new_rows, test_date=None)
     audit.record(
         db,
         actor_type="user",
