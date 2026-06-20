@@ -107,4 +107,7 @@ async def create_lab_upload_draft(
         raw_text_sha256=draft.raw_text_sha256,
         low_confidence=draft.low_confidence,
         manual_fallback=draft.manual_fallback,
+        extracted_test_date=draft.extracted_test_date,
+        test_date_label=draft.test_date_label,
+        test_date_confidence=draft.test_date_confidence,
     )

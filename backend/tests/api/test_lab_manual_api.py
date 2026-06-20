@@ -77,7 +77,10 @@ def test_list_lab_results_returns_entered(client, patient_setup):
     client.post(
         _results_url(patient_setup["patient_id"]),
         headers=patient_setup["headers"],
-        json={"results": [{"test_name": "LDL", "value": 110, "unit": "mg/dL"}]},
+        json={
+            "test_date": "2026-06-10",
+            "results": [{"test_name": "LDL", "value": 110, "unit": "mg/dL"}],
+        },
     )
     r = client.get(_results_url(patient_setup["patient_id"]), headers=patient_setup["headers"])
     assert r.status_code == 200, r.text
@@ -147,6 +150,9 @@ def test_manual_entry_unaffected_by_ocr_flag(client, patient_setup, monkeypatch)
     r = client.post(
         _results_url(patient_setup["patient_id"]),
         headers=patient_setup["headers"],
-        json={"results": [{"test_name": "Glucose", "value": 90, "unit": "mg/dL"}]},
+        json={
+            "test_date": "2026-06-10",
+            "results": [{"test_name": "Glucose", "value": 90, "unit": "mg/dL"}],
+        },
     )
     assert r.status_code == 201, r.text

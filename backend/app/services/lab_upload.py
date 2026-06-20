@@ -74,6 +74,10 @@ class LabUploadDraft:
     raw_text_sha256: str = ""
     low_confidence: bool = False
     manual_fallback: bool = False
+    # Exam date detected from the report (ISO YYYY-MM-DD) — distinct from upload time.
+    extracted_test_date: str | None = None
+    test_date_label: str | None = None
+    test_date_confidence: float = 0.0
 
 
 def sniff_mime(data: bytes) -> str | None:
@@ -182,6 +186,7 @@ def build_draft(data: bytes, mime: str) -> LabUploadDraft:
     raw_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()[:16] if text else ""
 
     raw_values = lab_parser.parse_lab_text(text)
+    detected_date = lab_parser.parse_test_date(text)
 
     # Combine OCR-text confidence with the per-line parse confidence, then let the
     # interpreter classify + flag low-confidence rows needing verification.
@@ -220,6 +225,10 @@ def build_draft(data: bytes, mime: str) -> LabUploadDraft:
         warnings.append(
             "Chưa nhận diện được chỉ số nào — bạn có thể nhập tay kết quả xét nghiệm."
         )
+    if detected_date is None:
+        warnings.append(
+            "Chưa nhận diện được ngày xét nghiệm — vui lòng chọn ngày khám trước khi lưu."
+        )
 
     return LabUploadDraft(
         provider_used=provider,
@@ -229,6 +238,9 @@ def build_draft(data: bytes, mime: str) -> LabUploadDraft:
         raw_text_sha256=raw_hash,
         low_confidence=low_confidence,
         manual_fallback=manual_fallback,
+        extracted_test_date=detected_date.iso if detected_date else None,
+        test_date_label=detected_date.raw_label if detected_date else None,
+        test_date_confidence=round(detected_date.confidence, 4) if detected_date else 0.0,
     )
 
 

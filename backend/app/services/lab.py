@@ -164,7 +164,11 @@ def list_lab_results(
     limit: int = 50,
     offset: int = 0,
 ) -> tuple[int, list[LabResult]]:
-    """Return (total, items) of the patient's lab results (newest first)."""
+    """Return (total, items) of the patient's lab results, newest *exam date* first.
+
+    Ordered by ``test_date`` DESC (the real exam date) so history/trends are
+    chronological even when an old report is uploaded later. Rows without a
+    test_date (legacy) sort last; ``created_at`` breaks ties."""
     from sqlalchemy import func, select
 
     limit = min(limit, 100)
@@ -179,7 +183,13 @@ def list_lab_results(
         db.execute(
             select(LabResult)
             .where(*base)
-            .order_by(LabResult.created_at.desc())
+            # test_date IS NULL -> 1 (sorts after non-null 0); then newest date,
+            # then newest insert. Portable across SQLite + Postgres.
+            .order_by(
+                LabResult.test_date.is_(None),
+                LabResult.test_date.desc(),
+                LabResult.created_at.desc(),
+            )
             .limit(limit)
             .offset(offset)
         ).scalars()

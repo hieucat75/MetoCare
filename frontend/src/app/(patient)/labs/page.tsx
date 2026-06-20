@@ -3,6 +3,7 @@
 import { PatientEmptyState } from '@/components/patient'
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
+import { CalendarDays } from 'lucide-react'
 import { FlaskConical, Plus, Trash2, Upload } from 'lucide-react'
 import {
   Alert,
@@ -26,7 +27,7 @@ import {
   type ManualLabItem,
 } from '@/lib/api/patient'
 import { useFeatureFlags } from '@/lib/api/features'
-import { formatDate } from '@/lib/utils'
+import { displayDateToIso, formatDate, formatDateInput, validateExamDate } from '@/lib/utils'
 
 // ── Result card ────────────────────────────────────────────────────────────────
 
@@ -36,6 +37,11 @@ function ResultCard({ r }: { r: LabResultEntry }) {
   return (
     <Card variant="glass" padding="none">
       <CardContent className="p-4">
+        {/* Exam date — prominent (the real test date, not the upload date). */}
+        <div className="flex items-center gap-1.5 text-[15px] font-semibold text-mint-700 mb-1.5">
+          <CalendarDays className="size-4 shrink-0" aria-hidden="true" />
+          {r.test_date ? formatDate(r.test_date) : 'Chưa có ngày xét nghiệm'}
+        </div>
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-2 min-w-0">
             <FlaskConical className="size-4 shrink-0 text-text-muted" aria-hidden="true" />
@@ -47,9 +53,8 @@ function ResultCard({ r }: { r: LabResultEntry }) {
           <span className="text-[15px] text-text-muted">
             {r.reference_range ? `Tham chiếu: ${r.reference_range}` : ''}
           </span>
-          <span className="text-[15px] text-text-subtle">
-            {r.test_date ? formatDate(r.test_date) : formatDate(r.created_at)}
-          </span>
+          {/* Upload date — muted, clearly distinct from the exam date. */}
+          <span className="text-[13px] text-text-subtle">Tải lên {formatDate(r.created_at)}</span>
         </div>
         {r.verified_by_user && (
           <div className="mt-2 pl-6">
@@ -119,6 +124,11 @@ function ManualEntryModal({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    const dateErr = validateExamDate(testDate)
+    if (dateErr) {
+      setErr(dateErr)
+      return
+    }
     const named = rows.filter((r) => r.test_name.trim())
     if (named.length === 0) {
       setErr('Vui lòng nhập ít nhất một chỉ số xét nghiệm.')
@@ -139,7 +149,7 @@ function ManualEntryModal({
     try {
       await createManualLabResults(patientId, {
         lab_name: labName.trim() || null,
-        test_date: testDate || null,
+        test_date: displayDateToIso(testDate),
         results,
       })
       onSaved()
@@ -174,8 +184,14 @@ function ManualEntryModal({
           <FormField label="Tên xét nghiệm">
             <Input value={labName} onChange={(e) => setLabName(e.target.value)} placeholder="VD: Máu tổng quát" fullWidth />
           </FormField>
-          <FormField label="Ngày xét nghiệm">
-            <Input type="date" value={testDate} onChange={(e) => setTestDate(e.target.value)} fullWidth />
+          <FormField label="Ngày xét nghiệm" required>
+            <Input
+              inputMode="numeric"
+              placeholder="DD/MM/YYYY"
+              value={testDate}
+              onChange={(e) => setTestDate(formatDateInput(e.target.value))}
+              fullWidth
+            />
           </FormField>
         </div>
 

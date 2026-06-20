@@ -27,3 +27,7 @@ class LabUploadDraftOut(BaseModel):
     raw_text_sha256: str = ""
     low_confidence: bool = False
     manual_fallback: bool = False
+    # Exam date detected from the report (ISO YYYY-MM-DD), distinct from upload time.
+    extracted_test_date: str | None = None
+    test_date_label: str | None = None
+    test_date_confidence: float = 0.0
