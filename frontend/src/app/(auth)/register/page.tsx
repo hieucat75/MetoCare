@@ -3,10 +3,11 @@
 import * as React from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Eye, EyeOff, CheckCircle2 } from 'lucide-react'
+import { Eye, EyeOff, CheckCircle2, Phone, User as UserIcon } from 'lucide-react'
 import { useAuth } from '@/lib/auth/context'
 import { ApiError } from '@/lib/api/client'
 import { getRoleHomePath } from '@/lib/api/auth'
+import { normalizeVnPhone, isValidVnPhone } from '@/lib/phone'
 import Button from '@/design-system/components/core/Button'
 import { Alert } from '@/design-system/components/core/Alert'
 import { cn } from '@/lib/utils'
@@ -19,7 +20,7 @@ function FieldLabel({ htmlFor, children }: { htmlFor: string; children: React.Re
   )
 }
 
-function FieldInput({
+function MintInput({
   id,
   type,
   value,
@@ -28,7 +29,9 @@ function FieldInput({
   autoComplete,
   disabled,
   error,
+  leftIcon,
   rightElement,
+  inputMode,
 }: {
   id: string
   type: string
@@ -38,13 +41,19 @@ function FieldInput({
   autoComplete?: string
   disabled?: boolean
   error?: boolean
+  leftIcon?: React.ReactNode
   rightElement?: React.ReactNode
+  inputMode?: 'text' | 'tel' | 'numeric'
 }) {
   return (
     <div className="relative">
+      {leftIcon && (
+        <div className="absolute inset-y-0 left-0 flex items-center pl-3 text-mint-600">{leftIcon}</div>
+      )}
       <input
         id={id}
         type={type}
+        inputMode={inputMode}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
@@ -52,15 +61,16 @@ function FieldInput({
         disabled={disabled}
         aria-invalid={error}
         className={cn(
-          'h-10 w-full rounded-md border bg-surface px-3 py-2 text-body-sm text-text',
+          'h-12 w-full rounded-xl border bg-white/80 px-3 py-2 text-body-sm text-text',
           'placeholder:text-text-subtle',
           'focus:outline-none focus:ring-2',
           'disabled:bg-secondary-50 disabled:text-text-muted disabled:cursor-not-allowed',
           'transition-colors',
+          leftIcon && 'pl-10',
+          rightElement && 'pr-10',
           error
             ? 'border-danger focus:border-danger focus:ring-danger/20'
-            : 'border-border focus:border-primary focus:ring-primary/20',
-          rightElement && 'pr-10',
+            : 'border-mint-200 focus:border-mint-400 focus:ring-mint-400/25',
         )}
       />
       {rightElement && (
@@ -83,13 +93,12 @@ export default function RegisterPage() {
   const { register, user } = useAuth()
   const router = useRouter()
 
-  // Redirect already-authenticated users to their role home
   React.useEffect(() => {
     if (user) router.replace(getRoleHomePath(user.role))
   }, [user, router])
 
   const [fullName, setFullName] = React.useState('')
-  const [email, setEmail] = React.useState('')
+  const [phone, setPhone] = React.useState('')
   const [password, setPassword] = React.useState('')
   const [showPassword, setShowPassword] = React.useState(false)
   const [isLoading, setIsLoading] = React.useState(false)
@@ -99,8 +108,9 @@ export default function RegisterPage() {
 
   const validateForm = () => {
     const errs: Record<string, string> = {}
-    if (!email.trim()) errs.email = 'Email là bắt buộc'
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errs.email = 'Email không hợp lệ'
+    if (!fullName.trim()) errs.fullName = 'Vui lòng nhập họ tên'
+    if (!phone.trim()) errs.phone = 'Số điện thoại là bắt buộc'
+    else if (!isValidVnPhone(phone)) errs.phone = 'Số điện thoại di động không hợp lệ (VD: 0901234567)'
     if (!password) errs.password = 'Mật khẩu là bắt buộc'
     else if (password.length < 8) errs.password = 'Mật khẩu tối thiểu 8 ký tự'
     return errs
@@ -117,16 +127,20 @@ export default function RegisterPage() {
     setError(null)
     setIsLoading(true)
     try {
-      await register(email.trim(), password, fullName.trim() || undefined)
+      await register(
+        { phone: normalizeVnPhone(phone) ?? phone.trim() },
+        password,
+        fullName.trim() || undefined,
+      )
       setSuccess(true)
-      // New patients go through onboarding to fill the clinical profile (PR-A).
+      // New patients go through onboarding to fill the clinical profile.
       setTimeout(() => router.replace('/onboarding'), 1500)
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.status === 409) {
-          setFieldErrors({ email: 'Email này đã được đăng ký. Hãy thử đăng nhập.' })
+          setFieldErrors({ phone: 'Số điện thoại này đã được đăng ký. Hãy thử đăng nhập.' })
         } else if (err.status === 422) {
-          setError('Thông tin không hợp lệ. Vui lòng kiểm tra lại.')
+          setFieldErrors({ phone: 'Số điện thoại di động Việt Nam không hợp lệ.' })
         } else if (err.status === 429) {
           setError('Quá nhiều yêu cầu. Vui lòng thử lại sau ít phút.')
         } else {
@@ -143,7 +157,9 @@ export default function RegisterPage() {
   if (success) {
     return (
       <div className="text-center py-4">
-        <CheckCircle2 className="w-12 h-12 text-success mx-auto mb-4" aria-hidden="true" />
+        <div className="w-14 h-14 rounded-2xl bg-mint-100 flex items-center justify-center mx-auto mb-4">
+          <CheckCircle2 className="w-8 h-8 text-mint-600" aria-hidden="true" />
+        </div>
         <h2 className="text-heading-xl font-bold text-text mb-2">Đăng ký thành công!</h2>
         <p className="text-body-sm text-text-muted">Đang thiết lập hồ sơ của bạn...</p>
       </div>
@@ -154,7 +170,7 @@ export default function RegisterPage() {
     <div>
       <h1 className="text-heading-xl font-bold text-text mb-1">Tạo tài khoản</h1>
       <p className="text-body-sm text-text-muted mb-6">
-        Đăng ký để bắt đầu quản lý sức khỏe của bạn.
+        Đăng ký bằng số điện thoại để bắt đầu quản lý sức khỏe.
       </p>
 
       {error && (
@@ -166,38 +182,46 @@ export default function RegisterPage() {
       <form onSubmit={handleSubmit} noValidate>
         <div className="mb-4">
           <FieldLabel htmlFor="fullName">Họ và tên</FieldLabel>
-          <FieldInput
+          <MintInput
             id="fullName"
             type="text"
             value={fullName}
-            onChange={setFullName}
+            onChange={(v) => {
+              setFullName(v)
+              if (fieldErrors.fullName) setFieldErrors((p) => ({ ...p, fullName: '' }))
+            }}
             placeholder="Nguyễn Văn An"
             autoComplete="name"
             disabled={isLoading}
+            error={!!fieldErrors.fullName}
+            leftIcon={<UserIcon className="w-4 h-4" aria-hidden="true" />}
           />
+          {fieldErrors.fullName && <FieldError message={fieldErrors.fullName} />}
         </div>
 
         <div className="mb-4">
-          <FieldLabel htmlFor="email">Email</FieldLabel>
-          <FieldInput
-            id="email"
-            type="email"
-            value={email}
+          <FieldLabel htmlFor="phone">Số điện thoại</FieldLabel>
+          <MintInput
+            id="phone"
+            type="tel"
+            inputMode="tel"
+            value={phone}
             onChange={(v) => {
-              setEmail(v)
-              if (fieldErrors.email) setFieldErrors((p) => ({ ...p, email: '' }))
+              setPhone(v)
+              if (fieldErrors.phone) setFieldErrors((p) => ({ ...p, phone: '' }))
             }}
-            placeholder="ban@example.com"
-            autoComplete="email"
+            placeholder="0901234567"
+            autoComplete="tel"
             disabled={isLoading}
-            error={!!fieldErrors.email}
+            error={!!fieldErrors.phone}
+            leftIcon={<Phone className="w-4 h-4" aria-hidden="true" />}
           />
-          {fieldErrors.email && <FieldError message={fieldErrors.email} />}
+          {fieldErrors.phone && <FieldError message={fieldErrors.phone} />}
         </div>
 
         <div className="mb-5">
           <FieldLabel htmlFor="password">Mật khẩu</FieldLabel>
-          <FieldInput
+          <MintInput
             id="password"
             type={showPassword ? 'text' : 'password'}
             value={password}
@@ -214,7 +238,7 @@ export default function RegisterPage() {
                 type="button"
                 aria-label={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
                 onClick={() => setShowPassword((p) => !p)}
-                className="text-text-subtle hover:text-text transition-colors"
+                className="text-text-subtle hover:text-mint-600 transition-colors"
               >
                 {showPassword ? (
                   <EyeOff className="w-4 h-4" aria-hidden="true" />
@@ -231,7 +255,8 @@ export default function RegisterPage() {
           type="submit"
           fullWidth
           loading={isLoading}
-          disabled={!email.trim() || !password}
+          disabled={!phone.trim() || !password || !fullName.trim()}
+          className="h-12 rounded-xl bg-mint-500 hover:bg-mint-600 shadow-glass"
         >
           Đăng ký
         </Button>
@@ -239,15 +264,15 @@ export default function RegisterPage() {
 
       <p className="text-center text-body-sm text-text-muted mt-6">
         Đã có tài khoản?{' '}
-        <Link href="/login" className="text-primary font-medium hover:underline underline-offset-2">
+        <Link href="/login" className="text-mint-700 font-semibold hover:underline underline-offset-2">
           Đăng nhập
         </Link>
       </p>
 
       <p className="text-center text-body-xs text-text-subtle mt-4 leading-relaxed">
         Bằng cách đăng ký, bạn đồng ý với{' '}
-        <span className="text-primary">Điều khoản sử dụng</span> và{' '}
-        <span className="text-primary">Chính sách bảo mật</span> của MetoCare.
+        <span className="text-mint-700">Điều khoản sử dụng</span> và{' '}
+        <span className="text-mint-700">Chính sách bảo mật</span> của MetoCare.
       </p>
     </div>
   )

@@ -157,7 +157,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             </div>
           }
           userProfile={
-            user ? { name: user.full_name ?? user.email, role: roleLabel } : undefined
+            user ? { name: user.full_name ?? user.email ?? '', role: roleLabel } : undefined
           }
           footer={
             <button

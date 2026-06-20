@@ -38,7 +38,11 @@ MFA_REQUIRED_ROLES = frozenset(
 class User(UUIDPrimaryKey, TimestampMixin, Base):
     __tablename__ = "users"
 
-    email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
+    # Email is the identifier for admin/doctor accounts. Patients self-register
+    # with a phone number instead, so email is nullable (one of email/phone set).
+    email: Mapped[str | None] = mapped_column(String(255), unique=True, index=True, nullable=True)
+    # VN mobile in canonical +84 form; primary identifier for patient self-signup.
+    phone: Mapped[str | None] = mapped_column(String(20), unique=True, index=True, nullable=True)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[UserRole] = mapped_column(
         Enum(UserRole, native_enum=False, length=32), default=UserRole.PATIENT, nullable=False

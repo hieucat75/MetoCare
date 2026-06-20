@@ -158,17 +158,24 @@ export default function SettingsPage() {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {/* Email */}
+            {/* Phone — primary identifier for patient accounts */}
+            {user.phone && (
+              <div>
+                <p className="text-label-md font-medium text-text-muted mb-1">Số điện thoại</p>
+                <p className="text-body-sm text-text">{user.phone}</p>
+              </div>
+            )}
+            {/* Email (optional for phone-registered patients) */}
             <div>
               <p className="text-label-md font-medium text-text-muted mb-1">Email</p>
               {!editingEmail ? (
                 <div className="flex items-center justify-between gap-3">
-                  <p className="text-body-sm text-text">{user.email}</p>
+                  <p className="text-body-sm text-text">{user.email ?? 'Chưa có'}</p>
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={() => {
-                      setEmailValue(user.email)
+                      setEmailValue(user.email ?? '')
                       setEmailError(null)
                       setEditingEmail(true)
                     }}

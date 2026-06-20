@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { HeartPulse } from 'lucide-react'
 
 export const metadata: Metadata = {
   title: 'MetoCare — Đăng nhập',
@@ -6,21 +7,25 @@ export const metadata: Metadata = {
 
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary-50 via-background to-secondary-50 flex items-center justify-center p-4">
-      <div className="w-full max-w-[420px]">
+    <div className="relative min-h-screen flex items-center justify-center p-4 overflow-hidden bg-gradient-to-br from-mint-50 via-background to-mint-100">
+      {/* Soft mint glow blobs for the liquid-glass backdrop */}
+      <div className="pointer-events-none absolute -top-24 -left-16 w-72 h-72 rounded-full bg-mint-300/30 blur-3xl" aria-hidden="true" />
+      <div className="pointer-events-none absolute -bottom-24 -right-16 w-80 h-80 rounded-full bg-mint-200/40 blur-3xl" aria-hidden="true" />
+
+      <div className="relative w-full max-w-[420px]">
         {/* Brand header */}
-        <div className="text-center mb-8">
+        <div className="text-center mb-7">
           <div className="inline-flex items-center justify-center gap-2.5 mb-3">
-            <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center shadow-md">
-              <span className="text-white font-bold text-xl leading-none">M</span>
+            <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-mint-400 to-mint-600 flex items-center justify-center shadow-glass">
+              <HeartPulse className="w-6 h-6 text-white" aria-hidden="true" />
             </div>
             <span className="text-display-xs font-bold text-text tracking-tight">MetoCare</span>
           </div>
-          <p className="text-body-sm text-text-muted">Quản lý sức khỏe chuyển hóa</p>
+          <p className="text-body-sm text-mint-700">Chăm sóc sức khỏe chuyển hóa</p>
         </div>
 
-        {/* Card */}
-        <div className="bg-surface rounded-2xl shadow-lg border border-border p-8">
+        {/* Liquid-glass card */}
+        <div className="rounded-3xl border border-white/60 bg-white/70 backdrop-blur-xl shadow-glass p-7 sm:p-8">
           {children}
         </div>
 

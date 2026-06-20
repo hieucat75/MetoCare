@@ -8,6 +8,7 @@ import {
   me,
   type UserResponse,
   type TokenResponse,
+  type AuthIdentifier,
 } from '@/lib/api/auth'
 import { clearTokens, getAccessToken, getRefreshToken } from '@/lib/api/client'
 
@@ -15,8 +16,12 @@ interface AuthContextValue {
   user: UserResponse | null
   isLoading: boolean
   isAuthenticated: boolean
-  login: (email: string, password: string, totpCode?: string) => Promise<TokenResponse>
-  register: (email: string, password: string, fullName?: string) => Promise<TokenResponse>
+  login: (identifier: AuthIdentifier, password: string, totpCode?: string) => Promise<TokenResponse>
+  register: (
+    identifier: AuthIdentifier,
+    password: string,
+    fullName?: string,
+  ) => Promise<TokenResponse>
   logout: () => Promise<void>
   refresh: () => Promise<void>
 }
@@ -47,8 +52,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [refresh])
 
   const login = React.useCallback(
-    async (email: string, password: string, totpCode?: string) => {
-      const res = await apiLogin(email, password, totpCode)
+    async (identifier: AuthIdentifier, password: string, totpCode?: string) => {
+      const res = await apiLogin(identifier, password, totpCode)
       await refresh()
       return res
     },
@@ -56,8 +61,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   )
 
   const register = React.useCallback(
-    async (email: string, password: string, fullName?: string) => {
-      const res = await apiRegister(email, password, fullName)
+    async (identifier: AuthIdentifier, password: string, fullName?: string) => {
+      const res = await apiRegister(identifier, password, fullName)
       await refresh()
       return res
     },

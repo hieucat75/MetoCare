@@ -124,7 +124,7 @@ export default function DoctorLayout({ children }: { children: React.ReactNode }
           userProfile={
             user
               ? {
-                  name: user.full_name ?? user.email,
+                  name: user.full_name ?? user.email ?? '',
                   role: user.role === 'medical_reviewer' ? 'Chuyên gia duyệt' : 'Bác sĩ',
                 }
               : undefined
