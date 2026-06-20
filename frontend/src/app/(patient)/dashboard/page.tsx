@@ -26,6 +26,8 @@ import {
   getCarePlans,
   getNotifications,
   getLabs,
+  metricLabel,
+  metricUnit,
 } from '@/lib/api/patient'
 import type {
   MetabolicScore,
@@ -55,43 +57,13 @@ function toRiskLevel(level: MetabolicScore['risk_level'] | null | undefined): Ri
 
 function toMetricKey(type: MetricType): string {
   const map: Partial<Record<MetricType, string>> = {
-    blood_glucose: 'glucose',
+    fasting_glucose: 'glucose',
     weight: 'weight',
     blood_pressure_systolic: 'blood_pressure',
-    cholesterol_total: 'cholesterol',
+    blood_pressure_diastolic: 'blood_pressure',
     heart_rate: 'heart_rate',
   }
   return map[type] ?? type
-}
-
-function metricLabel(type: MetricType): string {
-  const labels: Partial<Record<MetricType, string>> = {
-    blood_glucose: 'Đường huyết',
-    weight: 'Cân nặng',
-    blood_pressure_systolic: 'Huyết áp',
-    blood_pressure_diastolic: 'Huyết áp (tâm trương)',
-    cholesterol_total: 'Cholesterol',
-    heart_rate: 'Nhịp tim',
-    hba1c: 'HbA1c',
-    triglycerides: 'Triglyceride',
-    waist_circumference: 'Vòng eo',
-  }
-  return labels[type] ?? type
-}
-
-function metricUnit(type: MetricType): string {
-  const units: Partial<Record<MetricType, string>> = {
-    blood_glucose: 'mmol/L',
-    weight: 'kg',
-    blood_pressure_systolic: 'mmHg',
-    blood_pressure_diastolic: 'mmHg',
-    cholesterol_total: 'mmol/L',
-    heart_rate: 'bpm',
-    hba1c: '%',
-    triglycerides: 'mmol/L',
-    waist_circumference: 'cm',
-  }
-  return units[type] ?? ''
 }
 
 // ─── Dashboard state ──────────────────────────────────────────────────────────
@@ -124,7 +96,7 @@ export default function PatientDashboardPage() {
     setLoading(true)
     setError(null)
 
-    const metricTypes: MetricType[] = ['blood_glucose', 'weight', 'blood_pressure_systolic']
+    const metricTypes: MetricType[] = ['fasting_glucose', 'weight', 'blood_pressure_systolic']
 
     Promise.all([
       getLatestMetabolicScore(patientId),

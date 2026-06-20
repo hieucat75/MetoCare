@@ -30,18 +30,81 @@ export async function updatePatientProfile(
 
 // ── Health Metrics ────────────────────────────────────────────────────────────
 
+/**
+ * Canonical metric taxonomy — SINGLE SOURCE OF TRUTH for the patient app.
+ *
+ * The backend `HealthMetric.metric_type` column is a free-form string (no enum),
+ * so the *de-facto* contract is defined by what the backend already uses:
+ *   • the metabolic-score domain (`app/domain/metabolic_score.py`):
+ *       fasting_glucose (mg/dL), hba1c (%), triglyceride (mg/dL), hdl (mg/dL),
+ *       systolic_bp (mmHg), waist_cm (cm)
+ *   • the health-metric tests (`tests/api/test_health_api.py`):
+ *       blood_pressure_systolic, fasting_glucose, weight
+ *
+ * Frontend follows the backend, never the reverse. A second divergent client
+ * (`lib/api/metrics.ts` with `blood_glucose`/`blood_pressure`/`spo2`) used to
+ * exist and caused "logged but not shown" bugs — it has been removed and folded
+ * into this module. Keep this list and the label/unit maps below in sync.
+ */
 export type MetricType =
-  | 'blood_glucose'
+  | 'fasting_glucose'
   | 'hba1c'
   | 'weight'
   | 'blood_pressure_systolic'
   | 'blood_pressure_diastolic'
-  | 'cholesterol_total'
-  | 'cholesterol_ldl'
-  | 'cholesterol_hdl'
-  | 'triglycerides'
-  | 'waist_circumference'
+  | 'triglyceride'
+  | 'hdl'
+  | 'waist_cm'
   | 'heart_rate'
+  | 'spo2'
+
+/** Canonical display labels (vi-VN). Keyed by {@link MetricType}. */
+export const METRIC_LABELS: Record<MetricType, string> = {
+  fasting_glucose: 'Đường huyết đói',
+  hba1c: 'HbA1c',
+  weight: 'Cân nặng',
+  blood_pressure_systolic: 'Huyết áp (tâm thu)',
+  blood_pressure_diastolic: 'Huyết áp (tâm trương)',
+  triglyceride: 'Triglyceride',
+  hdl: 'HDL',
+  waist_cm: 'Vòng eo',
+  heart_rate: 'Nhịp tim',
+  spo2: 'SpO₂',
+}
+
+/** Canonical default units. Keyed by {@link MetricType}. */
+export const METRIC_UNITS: Record<MetricType, string> = {
+  fasting_glucose: 'mg/dL',
+  hba1c: '%',
+  weight: 'kg',
+  blood_pressure_systolic: 'mmHg',
+  blood_pressure_diastolic: 'mmHg',
+  triglyceride: 'mg/dL',
+  hdl: 'mg/dL',
+  waist_cm: 'cm',
+  heart_rate: 'bpm',
+  spo2: '%',
+}
+
+/** Reference normal ranges (used to attach normal_range_min/max on log). */
+export const METRIC_NORMAL_RANGES: Partial<Record<MetricType, { min: number; max: number }>> = {
+  fasting_glucose: { min: 70, max: 100 },
+  hba1c: { min: 4, max: 5.7 },
+  blood_pressure_systolic: { min: 90, max: 120 },
+  blood_pressure_diastolic: { min: 60, max: 80 },
+  triglyceride: { min: 0, max: 150 },
+  hdl: { min: 40, max: 100 },
+  heart_rate: { min: 60, max: 100 },
+  spo2: { min: 95, max: 100 },
+}
+
+export function metricLabel(type: MetricType | string): string {
+  return METRIC_LABELS[type as MetricType] ?? type
+}
+
+export function metricUnit(type: MetricType | string): string {
+  return METRIC_UNITS[type as MetricType] ?? ''
+}
 
 export interface HealthMetric {
   id: string
@@ -57,14 +120,17 @@ export interface HealthMetric {
   status: 'normal' | 'borderline' | 'abnormal' | 'critical' | null
 }
 
+/** Matches backend `TrendOut` (app/schemas/health.py) — aggregate summary, not a series. */
 export interface MetricTrend {
   metric_type: MetricType
-  current: number | null
-  unit: string
-  change_pct: number | null
-  trend: 'up' | 'down' | 'stable' | null
-  status: 'normal' | 'borderline' | 'abnormal' | 'critical' | null
-  data_points: Array<{ value: number; recorded_at: string }>
+  days: number
+  count: number
+  min: number | null
+  max: number | null
+  avg: number | null
+  first: number | null
+  last: number | null
+  direction: 'improving' | 'worsening' | 'stable' | null
 }
 
 export interface MetricListResponse {
@@ -95,20 +161,27 @@ export async function getMetrics(
 export async function getMetricTrend(
   patientId: string,
   metricType: MetricType,
+  days = 30,
 ): Promise<MetricTrend> {
-  return api.get<MetricTrend>(`/patients/${patientId}/metrics/trend?metric_type=${metricType}`)
+  return api.get<MetricTrend>(
+    `/patients/${patientId}/metrics/trend?metric_type=${metricType}&days=${days}`,
+  )
+}
+
+/** Payload matches backend `MetricCreate` (app/schemas/health.py). */
+export interface LogMetricInput {
+  metric_type: MetricType
+  value: number
+  unit?: string
+  measured_at?: string
+  source?: string
+  normal_range_min?: number
+  normal_range_max?: number
 }
 
 export async function logMetric(
   patientId: string,
-  data: {
-    metric_type: MetricType
-    value: number
-    unit: string
-    recorded_at?: string
-    notes?: string
-    source?: 'manual'
-  },
+  data: LogMetricInput,
 ): Promise<HealthMetric> {
   const raw = await api.post<HealthMetric>(`/patients/${patientId}/metrics`, data)
   return { ...raw, recorded_at: raw.measured_at ?? raw.recorded_at ?? '' }
@@ -126,14 +199,72 @@ export interface MetabolicScore {
   calculated_at: string
 }
 
+/** Raw item shape from backend `RiskScoreOut` (app/schemas/risk_score.py). */
+interface RiskScoreItem {
+  id: string
+  metabolic_score: number
+  band: string // ScoreBand: good | fair | elevated | high_concern
+  top_risks: unknown[]
+  created_at: string
+}
+
+interface RiskScoreHistoryResponse {
+  patient_id: string
+  total: number
+  items: RiskScoreItem[]
+  trend: string
+}
+
+/** Map backend ScoreBand → UI risk level. */
+function bandToRiskLevel(band: string): MetabolicScore['risk_level'] {
+  switch (band) {
+    case 'good':
+      return 'low'
+    case 'fair':
+      return 'medium'
+    case 'elevated':
+      return 'high'
+    case 'high_concern':
+      return 'very_high'
+    default:
+      return 'medium'
+  }
+}
+
+/**
+ * Latest metabolic score for the patient.
+ *
+ * Backend endpoint is `GET /patients/{id}/metabolic-scores` (plural) returning a
+ * `{ patient_id, total, items, trend }` envelope of `RiskScoreOut` rows — NOT the
+ * singular `/metabolic-score` array the UI previously (wrongly) called, which 404'd
+ * and silently rendered an empty card forever (P0-1).
+ */
 export async function getLatestMetabolicScore(
   patientId: string,
 ): Promise<MetabolicScore | null> {
   try {
-    const items = await api.get<MetabolicScore[]>(
-      `/patients/${patientId}/metabolic-score?limit=1`,
+    const resp = await api.get<RiskScoreHistoryResponse>(
+      `/patients/${patientId}/metabolic-scores?limit=1`,
     )
-    return items[0] ?? null
+    const item = resp.items?.[0]
+    if (!item) return null
+    return {
+      id: item.id,
+      patient_id: patientId,
+      score: item.metabolic_score,
+      risk_level: bandToRiskLevel(item.band),
+      // Backend top_risks rows are objects {name, points, detail}; surface a readable label.
+      top_risks: (item.top_risks ?? []).map((r) => {
+        if (typeof r === 'string') return r
+        if (r && typeof r === 'object') {
+          const o = r as { detail?: string; name?: string }
+          return o.detail ?? o.name ?? ''
+        }
+        return String(r)
+      }).filter(Boolean),
+      suggested_actions: [],
+      calculated_at: item.created_at,
+    }
   } catch {
     return null
   }

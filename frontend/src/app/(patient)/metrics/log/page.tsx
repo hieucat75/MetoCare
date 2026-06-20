@@ -10,22 +10,24 @@ import { Input } from '@/design-system/components/core/Input'
 
 import { Alert } from '@/design-system/components/core/Alert'
 import { useAuth } from '@/lib/auth/context'
-import { logMetric, METRIC_LABELS, METRIC_UNITS, METRIC_NORMAL_RANGES } from '@/lib/api/metrics'
+import {
+  logMetric,
+  METRIC_LABELS,
+  METRIC_UNITS,
+  METRIC_NORMAL_RANGES,
+} from '@/lib/api/patient'
+import type { MetricType } from '@/lib/api/patient'
 
-// ─── Metric type options ──────────────────────────────────────────────────────
+// ─── Metric type options (canonical taxonomy, see lib/api/patient.ts) ──────────
 
-const METRIC_TYPE_OPTIONS = [
-  { value: 'blood_glucose', label: 'Đường huyết (mmol/L)' },
-  { value: 'blood_pressure', label: 'Huyết áp (mmHg)' },
-  { value: 'weight', label: 'Cân nặng (kg)' },
-  { value: 'heart_rate', label: 'Nhịp tim (bpm)' },
-  { value: 'spo2', label: 'SpO₂ (%)' },
-]
+const METRIC_TYPE_OPTIONS: { value: MetricType; label: string }[] = (
+  Object.keys(METRIC_LABELS) as MetricType[]
+).map((t) => ({ value: t, label: `${METRIC_LABELS[t]} (${METRIC_UNITS[t]})` }))
 
 // ─── Form state ───────────────────────────────────────────────────────────────
 
 interface FormState {
-  metric_type: string
+  metric_type: MetricType
   value: string
   unit: string
   measured_at: string
@@ -53,9 +55,9 @@ export default function LogMetricPage() {
   const patientId = user?.patient_profile_id
 
   const [form, setForm] = React.useState<FormState>({
-    metric_type: 'blood_glucose',
+    metric_type: 'fasting_glucose',
     value: '',
-    unit: METRIC_UNITS['blood_glucose'] ?? '',
+    unit: METRIC_UNITS['fasting_glucose'] ?? '',
     measured_at: toISOLocalDefault(),
     source: 'manual',
   })
@@ -66,7 +68,7 @@ export default function LogMetricPage() {
 
   // Update unit when metric type changes
   function handleTypeChange(e: React.ChangeEvent<HTMLSelectElement>) {
-    const type = e.target.value
+    const type = e.target.value as MetricType
     setForm((f) => ({
       ...f,
       metric_type: type,
