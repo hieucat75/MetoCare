@@ -7,12 +7,73 @@ Access is consent-gated + audited.
 
 from __future__ import annotations
 
+import datetime as dt
+
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.clock import as_naive_utc, utcnow
 from app.core.config import get_settings
 from app.domain import lab_interpreter
-from app.models.clinical import LabDocument, LabResult
+from app.models.clinical import HealthMetric, LabDocument, LabResult
 from app.services import audit, consent
+from app.services.health_metrics import classify_status
+
+# Lab biomarkers that double as trackable health metrics. Promoting them into
+# `health_metrics` (source='lab_result') makes the dashboard tiles + trend charts
+# update the moment a patient confirms lab results — the canonical key is shared,
+# so the mapping is identity (any recognised biomarker is promotable).
+_PROMOTABLE = {spec.canonical for spec in lab_interpreter.BIOMARKERS}
+
+
+def promote_lab_rows_to_metrics(
+    db: Session,
+    *,
+    patient_id: str,
+    rows: list[LabResult],
+    test_date: dt.date | None,
+) -> int:
+    """Create `health_metrics` rows from confirmed lab results (idempotent per row).
+
+    Each lab row whose name maps to a known biomarker AND has a numeric value is
+    promoted to a metric measured at `test_date` (NOT today) so trends stay in
+    chronological order. Re-promoting the same lab row replaces its metric. Returns
+    the number of metrics written."""
+    measured = (
+        as_naive_utc(dt.datetime.combine(test_date, dt.time())) if test_date else utcnow()
+    )
+    written = 0
+    for row in rows:
+        canonical = row.canonical_name or lab_interpreter.normalize_biomarker(row.test_name)
+        if not canonical or canonical not in _PROMOTABLE or row.value is None:
+            continue
+        # Idempotent: drop any prior promotion of this exact lab row first (ORM-level
+        # delete so a freshly-added-but-uncommitted metric is removed too).
+        for prior in db.execute(
+            select(HealthMetric).where(HealthMetric.source_ref == row.id)
+        ).scalars():
+            db.delete(prior)
+        db.flush()
+        spec = lab_interpreter._ALIAS_INDEX.get(canonical)
+        nmin = spec.ref_low if spec else None
+        nmax = spec.ref_high if spec else None
+        db.add(
+            HealthMetric(
+                patient_id=patient_id,
+                metric_type=canonical,
+                value=row.value,
+                unit=row.unit,
+                measured_at=measured,
+                source="lab_result",
+                source_ref=row.id,
+                normal_range_min=nmin,
+                normal_range_max=nmax,
+                status=classify_status(canonical, row.value, nmin, nmax),
+            )
+        )
+        db.flush()  # session is autoflush=False — make the row visible to the next lookup
+        written += 1
+    return written
 
 
 def register_document(
@@ -129,10 +190,14 @@ def create_manual_entry(
 
     rows: list[LabResult] = []
     for item in results:
+        # Resolve the canonical biomarker so the row is self-describing and can be
+        # promoted into health_metrics (dashboard/trend sync).
+        canonical = lab_interpreter.normalize_biomarker(item["test_name"])
         row = LabResult(
             patient_id=patient_id,
             document_id=doc.id,
             test_name=item["test_name"],
+            canonical_name=canonical,
             value=item.get("value"),
             unit=item.get("unit"),
             reference_range=item.get("reference_range"),
@@ -142,6 +207,10 @@ def create_manual_entry(
         db.add(row)
         rows.append(row)
     db.flush()
+
+    # Promote overlapping biomarkers into health_metrics so the dashboard + trend
+    # charts reflect the new values immediately (measured at the exam date).
+    promote_lab_rows_to_metrics(db, patient_id=patient_id, rows=rows, test_date=test_date)
 
     audit.record(
         db,

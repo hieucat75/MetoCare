@@ -24,6 +24,7 @@ class MetricOut(BaseModel):
     unit: str | None
     measured_at: dt.datetime
     status: str | None
+    source: str | None = None  # self_report/manual | lab_result | device …
 
     model_config = {"from_attributes": True}
 

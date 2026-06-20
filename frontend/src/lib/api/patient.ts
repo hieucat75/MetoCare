@@ -131,8 +131,13 @@ export interface HealthMetric {
   measured_at: string
   recorded_at: string        // aliased from measured_at for backwards compat
   notes?: string | null
-  source?: 'manual' | 'device' | 'lab'
+  source?: 'manual' | 'device' | 'lab' | 'lab_result' | string
   status: 'normal' | 'borderline' | 'abnormal' | 'critical' | null
+}
+
+/** A reading that was promoted from a confirmed lab result (vs self-reported). */
+export function isLabSourced(m: { source?: string | null }): boolean {
+  return m.source === 'lab_result' || m.source === 'lab'
 }
 
 /** Matches backend `TrendOut` (app/schemas/health.py) — aggregate summary, not a series. */
