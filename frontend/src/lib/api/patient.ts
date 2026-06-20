@@ -8,6 +8,7 @@ export interface PatientProfile {
   full_name: string | null
   dob: string | null
   phone: string | null
+  address: string | null
   gender: 'male' | 'female' | 'other' | null
   height_cm: number | null
   weight_kg: number | null
@@ -15,6 +16,20 @@ export interface PatientProfile {
   risk_segment: 'low' | 'medium' | 'high' | 'very_high' | null
   known_conditions: string | null
   allergies: string | null
+  // PR-A onboarding/extended-profile fields
+  family_history: string | null
+  lifestyle_profile: string | null
+}
+
+/**
+ * Whether the patient has completed the essential onboarding fields.
+ * "Essential" = the clinical basics the dashboard/metabolic score need:
+ * date of birth, gender, height and weight. Used to drive the onboarding
+ * redirect and the dashboard "complete your profile" nudge.
+ */
+export function isProfileComplete(p: PatientProfile | null | undefined): boolean {
+  if (!p) return false
+  return Boolean(p.dob && p.gender && p.height_cm && p.weight_kg)
 }
 
 export async function getPatientProfile(patientId: string): Promise<PatientProfile> {

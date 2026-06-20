@@ -119,7 +119,8 @@ export default function RegisterPage() {
     try {
       await register(email.trim(), password, fullName.trim() || undefined)
       setSuccess(true)
-      setTimeout(() => router.replace('/dashboard'), 1500)
+      // New patients go through onboarding to fill the clinical profile (PR-A).
+      setTimeout(() => router.replace('/onboarding'), 1500)
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.status === 409) {
@@ -144,7 +145,7 @@ export default function RegisterPage() {
       <div className="text-center py-4">
         <CheckCircle2 className="w-12 h-12 text-success mx-auto mb-4" aria-hidden="true" />
         <h2 className="text-heading-xl font-bold text-text mb-2">Đăng ký thành công!</h2>
-        <p className="text-body-sm text-text-muted">Đang chuyển đến trang chủ...</p>
+        <p className="text-body-sm text-text-muted">Đang thiết lập hồ sơ của bạn...</p>
       </div>
     )
   }

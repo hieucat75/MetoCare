@@ -158,10 +158,11 @@ def test_patient_reads_own_profile(client: TestClient, patient_setup):
     assert body["id"] == patient_setup["patient_id"]
     assert body["user_id"] == patient_setup["user_id"]
     assert "full_name" in body
-    # address / family_history / lifestyle_profile intentionally excluded (T12)
-    assert "address" not in body
-    assert "family_history" not in body
-    assert "lifestyle_profile" not in body
+    # PR-A: address / family_history / lifestyle_profile are now exposed for the
+    # onboarding/extended-profile flow (previously excluded under T12).
+    assert "address" in body
+    assert "family_history" in body
+    assert "lifestyle_profile" in body
 
 
 def test_patient_cannot_read_another_patients_profile(
@@ -307,3 +308,46 @@ def test_update_profile_creates_audit_record(
     assert audit_row is not None, "Expected an AuditLog row for update_profile"
     assert audit_row.outcome == "success"
     assert audit_row.resource_type == "patient_profile"
+
+
+# ---------------------------------------------------------------------------
+# PR-A — extended onboarding fields (family_history, lifestyle_profile, address)
+# ---------------------------------------------------------------------------
+
+
+def test_patient_updates_extended_onboarding_fields(client: TestClient, patient_setup):
+    """PR-A: family_history / lifestyle_profile / address round-trip via PATCH+GET."""
+    r = client.patch(
+        _profile_url(patient_setup["patient_id"]),
+        headers=patient_setup["headers"],
+        json={
+            "family_history": "Cha bị tiểu đường type 2",
+            "lifestyle_profile": "Mục tiêu: giảm 5kg, đi bộ 30 phút/ngày",
+            "address": "123 Lê Lợi, Q1, TPHCM",
+            "waist_cm": 88.0,
+            "known_conditions": "Tiền tiểu đường",
+            "allergies": "Không",
+        },
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["family_history"] == "Cha bị tiểu đường type 2"
+    assert body["lifestyle_profile"].startswith("Mục tiêu")
+    assert body["address"].startswith("123 Lê Lợi")
+    assert body["waist_cm"] == 88.0
+
+    # Confirm persistence on a fresh GET
+    r_get = client.get(_profile_url(patient_setup["patient_id"]), headers=patient_setup["headers"])
+    assert r_get.status_code == 200, r_get.text
+    assert r_get.json()["family_history"] == "Cha bị tiểu đường type 2"
+    assert r_get.json()["lifestyle_profile"].startswith("Mục tiêu")
+
+
+def test_update_profile_rejects_invalid_gender(client: TestClient, patient_setup):
+    """PR-A: gender is now pattern-validated (male|female|other) — 422 otherwise."""
+    r = client.patch(
+        _profile_url(patient_setup["patient_id"]),
+        headers=patient_setup["headers"],
+        json={"gender": "robot"},
+    )
+    assert r.status_code == 422, r.text

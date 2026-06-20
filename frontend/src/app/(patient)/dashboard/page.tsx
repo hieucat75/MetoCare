@@ -26,6 +26,8 @@ import {
   getCarePlans,
   getNotifications,
   getLabs,
+  getPatientProfile,
+  isProfileComplete,
   metricLabel,
   metricUnit,
 } from '@/lib/api/patient'
@@ -75,6 +77,7 @@ interface DashboardData {
   carePlans: CarePlan[]
   unreadCount: number
   hasPendingLabs: boolean
+  profileComplete: boolean
 }
 
 // ─── Dashboard page ───────────────────────────────────────────────────────────
@@ -115,6 +118,7 @@ export default function PatientDashboardPage() {
         patient_id: patientId,
         total: 0,
       })),
+      getPatientProfile(patientId).catch(() => null),
     ])
       .then((results) => {
         const score = results[0] as MetabolicScore | null
@@ -125,6 +129,7 @@ export default function PatientDashboardPage() {
         const carePlansRaw = results[5] as CarePlan[] | { items?: CarePlan[] }
         const notificationsRaw = results[6] as import('@/lib/api/patient').Notification[] | { items?: import('@/lib/api/patient').Notification[] }
         const labsRaw = results[7] as { items?: Array<{ status: string }> } | Array<{ status: string }>
+        const profile = results[8] as import('@/lib/api/patient').PatientProfile | null
 
         // Safely extract arrays regardless of whether backend returns plain array or {items:[]}
         function safeItems<T>(v: T[] | { items?: T[] }): T[] {
@@ -149,6 +154,7 @@ export default function PatientDashboardPage() {
           carePlans: plans.filter((p) => p.status === 'ACTIVE'),
           unreadCount: notifs.filter((n) => !n.is_read).length,
           hasPendingLabs: labItems.some((l) => l.status === 'pending_review'),
+          profileComplete: isProfileComplete(profile),
         })
       })
       .catch((err: Error) => setError(err.message))
@@ -185,7 +191,7 @@ export default function PatientDashboardPage() {
     )
   }
 
-  const { metabolicScore, medications, metrics, carePlans, hasPendingLabs } = data
+  const { metabolicScore, medications, metrics, carePlans, hasPendingLabs, profileComplete } = data
   const todayStr = formatDate(new Date())
   const activePlan = carePlans[0] ?? null
   // CarePlan.items[] removed — backend uses content:string, no task checklist
@@ -200,6 +206,20 @@ export default function PatientDashboardPage() {
         </h1>
         <p className="text-body-sm text-text-muted mt-0.5">{todayStr}</p>
       </div>
+
+      {/* Profile completion nudge (PR-A) */}
+      {!profileComplete && (
+        <Alert variant="info" title="Hoàn thiện hồ sơ của bạn">
+          <div className="flex flex-col gap-2">
+            <span>Bổ sung ngày sinh, giới tính, chiều cao và cân nặng để cá nhân hoá theo dõi sức khỏe.</span>
+            <div>
+              <Button size="sm" variant="primary" onClick={() => router.push('/onboarding')}>
+                Hoàn thiện ngay
+              </Button>
+            </div>
+          </div>
+        </Alert>
+      )}
 
       {/* Pending lab alert */}
       {hasPendingLabs && (
