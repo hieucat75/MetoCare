@@ -2,6 +2,7 @@
 
 import { PatientEmptyState } from '@/components/patient'
 import * as React from 'react'
+import { useRouter } from 'next/navigation'
 import { FlaskConical, Plus, Trash2, Upload } from 'lucide-react'
 import {
   Alert,
@@ -219,6 +220,7 @@ function ManualEntryModal({
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 export default function LabsPage() {
+  const router = useRouter()
   const { user } = useAuth()
   const patientId = user?.patient_profile_id
   const flags = useFeatureFlags()
@@ -266,16 +268,33 @@ export default function LabsPage() {
         }
       />
 
-      {/* OCR upload — Phase 2 stub. Only shown as enabled if the OCR flag is on
-          (object-storage + auto-read deferred); otherwise a disabled hint. */}
-      {flags && (
+      {/* OCR upload — real CTA when the OCR flag is on; otherwise a "coming soon" hint. */}
+      {flags && flags.ocr && (
+        <button
+          type="button"
+          onClick={() => router.push('/labs/upload')}
+          className="w-full text-left rounded-2xl bg-mint-500 text-white px-4 py-4 shadow-glow-mint hover:bg-mint-600 transition-colors flex items-center justify-between gap-3"
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            <span className="flex items-center justify-center size-11 rounded-xl bg-white/20 shrink-0">
+              <Upload className="size-5" aria-hidden="true" />
+            </span>
+            <div className="min-w-0">
+              <span className="block text-[17px] font-semibold">Tải lên kết quả xét nghiệm</span>
+              <span className="block text-[14px] text-white/85">Chụp ảnh, tải tệp hoặc dán link — tự động đọc</span>
+            </div>
+          </div>
+          <span aria-hidden="true" className="text-[20px]">→</span>
+        </button>
+      )}
+      {flags && !flags.ocr && (
         <Card variant="glass" padding="md">
           <CardContent className="flex items-center justify-between gap-3 py-1">
             <div className="flex items-center gap-2 text-text-muted">
               <Upload className="size-4" aria-hidden="true" />
               <span className="text-[17px]">Tải ảnh/PDF và tự động đọc kết quả</span>
             </div>
-            <Badge variant="default" size="sm">{flags.ocr ? 'Sắp có' : 'Phase 2'}</Badge>
+            <Badge variant="default" size="sm">Sắp ra mắt</Badge>
           </CardContent>
         </Card>
       )}

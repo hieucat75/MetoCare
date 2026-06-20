@@ -115,6 +115,46 @@ export async function apiFetch<T>(path: string, options: FetchOptions = {}): Pro
   return res.json() as Promise<T>
 }
 
+/**
+ * Multipart upload. Unlike {@link apiFetch} this does NOT set a JSON
+ * Content-Type — the browser sets `multipart/form-data` with the correct
+ * boundary itself. Auth header is attached; a single 401 retry-after-refresh is
+ * performed (matching apiFetch) before redirecting to /login.
+ */
+export async function apiUpload<T>(path: string, form: FormData): Promise<T> {
+  const headers: Record<string, string> = {}
+  const token = getAccessToken()
+  if (token) headers['Authorization'] = `Bearer ${token}`
+
+  let res = await fetch(`${API_BASE}${path}`, { method: 'POST', headers, body: form })
+
+  if (res.status === 401) {
+    const refreshed = await tryRefreshTokens()
+    if (refreshed) {
+      const newToken = getAccessToken()
+      if (newToken) headers['Authorization'] = `Bearer ${newToken}`
+      res = await fetch(`${API_BASE}${path}`, { method: 'POST', headers, body: form })
+    }
+    if (!refreshed || res.status === 401) {
+      clearTokens()
+      if (typeof window !== 'undefined') window.location.href = '/login'
+      throw new ApiError(401, 'Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.')
+    }
+  }
+
+  if (!res.ok) {
+    let detail = `Lỗi ${res.status}`
+    try {
+      const body = await res.json()
+      if (typeof body.detail === 'string') detail = body.detail
+      else if (Array.isArray(body.detail))
+        detail = body.detail.map((e: { msg?: string }) => e.msg).join('; ')
+    } catch {}
+    throw new ApiError(res.status, detail)
+  }
+  return res.json() as Promise<T>
+}
+
 export const api = {
   get: <T>(path: string, opts?: FetchOptions) =>
     apiFetch<T>(path, { method: 'GET', ...opts }),

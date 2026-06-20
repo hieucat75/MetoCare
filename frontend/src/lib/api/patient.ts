@@ -1,4 +1,4 @@
-import { api } from './client'
+import { api, apiUpload } from './client'
 
 // ── Profile ──────────────────────────────────────────────────────────────────
 
@@ -362,6 +362,42 @@ export async function createManualLabResults(
   data: { lab_name?: string | null; test_date?: string | null; results: ManualLabItem[] },
 ): Promise<LabResultListResponse> {
   return api.post<LabResultListResponse>(`/patients/${patientId}/lab-results`, data)
+}
+
+// ── OCR lab upload — review-only draft (OCR Lab Upload track) ─────────────────
+
+export interface LabUploadDraftItem {
+  test_name: string          // canonical key — feeds straight into the confirm form
+  canonical: string
+  value: number
+  unit: string
+  reference_range: string | null
+  status: string             // normal | low | high | critical | unknown
+  confidence: number         // 0..1
+  needs_verification: boolean
+}
+
+export interface LabUploadDraft {
+  provider_used: string
+  confidence_avg: number
+  parsed_values: LabUploadDraftItem[]
+  warnings: string[]
+  raw_text_sha256: string
+  low_confidence: boolean
+  manual_fallback: boolean
+}
+
+/**
+ * Upload a lab image/PDF (file) OR a pasted URL for OCR. Returns a REVIEW-ONLY
+ * draft — nothing is saved until the patient confirms via {@link createManualLabResults}.
+ */
+export async function uploadLabDraft(
+  input: { file: File } | { url: string },
+): Promise<LabUploadDraft> {
+  const form = new FormData()
+  if ('file' in input) form.append('file', input.file)
+  else form.append('url', input.url)
+  return apiUpload<LabUploadDraft>('/lab-uploads', form)
 }
 
 export async function getLabResults(
