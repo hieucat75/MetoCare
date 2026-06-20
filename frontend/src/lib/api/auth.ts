@@ -24,7 +24,31 @@ export interface UserResponse {
   role: UserRole
   full_name: string | null
   mfa_enabled: boolean
+  notify_medication: boolean
+  notify_lab_results: boolean
+  notify_doctor_messages: boolean
   patient_profile_id?: string | null
+}
+
+export interface AccountUpdate {
+  email?: string
+  notify_medication?: boolean
+  notify_lab_results?: boolean
+  notify_doctor_messages?: boolean
+}
+
+export async function changePassword(
+  currentPassword: string,
+  newPassword: string,
+): Promise<{ message: string }> {
+  return api.post<{ message: string }>('/auth/change-password', {
+    current_password: currentPassword,
+    new_password: newPassword,
+  })
+}
+
+export async function updateAccount(data: AccountUpdate): Promise<UserResponse> {
+  return api.patch<UserResponse>('/auth/account', data)
 }
 
 export interface MfaEnrollResponse {
