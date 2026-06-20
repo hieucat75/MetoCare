@@ -1,0 +1,189 @@
+# =============================================================================
+# MetoCare — Azure Container Apps STAGING deploy
+# Auth: GitHub OIDC -> Azure federated credential (no long-lived secrets).
+# Migrations: Alembic one-shot Container Apps Job (NO runtime create_all).
+# Secrets: read from Key Vault via OIDC az, injected as ACA secrets.
+#
+# Manual only (workflow_dispatch). DigitalOcean production is NOT touched here.
+# Requires PR #4 (license-aware migration) merged to main before first run.
+# =============================================================================
+name: Azure Staging Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Image tag (default: commit SHA)"
+        required: false
+
+permissions:
+  id-token: write   # OIDC -> Azure
+  contents: read
+  packages: write   # push to GHCR
+
+env:
+  REGISTRY: ghcr.io
+  RG: rg-metocare-staging
+  ENV_NAME: cae-metocare-staging
+  PG_NAME: psql-metocare-staging
+  KV_NAME: kv-metocare-stgd9e7
+  BACKEND_APP: ca-metocare-backend
+  FRONTEND_APP: ca-metocare-frontend
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: azure-staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve image tag
+        id: tag
+        run: echo "tag=${{ github.event.inputs.image_tag || github.sha }}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & push backend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ github.repository_owner }}/metocare-backend:${{ steps.tag.outputs.tag }}
+
+      - name: Build & push frontend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ github.repository_owner }}/metocare-frontend:${{ steps.tag.outputs.tag }}
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Ensure containerapp CLI extension
+        run: az extension add --name containerapp --upgrade --only-show-errors
+
+      - name: Resume Postgres if stopped
+        run: |
+          STATE=$(az postgres flexible-server show -g "$RG" -n "$PG_NAME" --query state -o tsv)
+          echo "PG state: $STATE"
+          if [ "$STATE" != "Ready" ]; then
+            az postgres flexible-server start -g "$RG" -n "$PG_NAME"
+            until [ "$(az postgres flexible-server show -g "$RG" -n "$PG_NAME" --query state -o tsv)" = "Ready" ]; do
+              echo "  waiting for PG..."; sleep 10
+            done
+          fi
+
+      - name: Read secrets from Key Vault
+        id: kv
+        run: |
+          # SP has "Key Vault Secrets User" on the vault (granted during provisioning).
+          DB_URL=$(az keyvault secret show --vault-name "$KV_NAME" -n mcp-database-url --query value -o tsv)
+          SECRET_KEY=$(az keyvault secret show --vault-name "$KV_NAME" -n mcp-secret-key --query value -o tsv)
+          ENC_KEYS=$(az keyvault secret show --vault-name "$KV_NAME" -n mcp-encryption-keys --query value -o tsv)
+          APPI=$(az keyvault secret show --vault-name "$KV_NAME" -n appinsights-connection-string --query value -o tsv)
+          # Mask + export to later steps via env file (never echoed).
+          echo "::add-mask::$DB_URL"; echo "::add-mask::$SECRET_KEY"; echo "::add-mask::$ENC_KEYS"
+          {
+            echo "DB_URL<<EOF"; echo "$DB_URL"; echo "EOF"
+            echo "SECRET_KEY<<EOF"; echo "$SECRET_KEY"; echo "EOF"
+            echo "ENC_KEYS<<EOF"; echo "$ENC_KEYS"; echo "EOF"
+            echo "APPI<<EOF"; echo "$APPI"; echo "EOF"
+          } >> "$GITHUB_ENV"
+
+      - name: Run Alembic migration (one-shot Container Apps Job)
+        run: |
+          IMG="${REGISTRY}/${{ github.repository_owner }}/metocare-backend:${{ steps.tag.outputs.tag }}"
+          JOB="caj-metocare-migrate"
+          # Recreate the job each run so it always uses the current image.
+          az containerapp job delete -g "$RG" -n "$JOB" --yes -o none 2>/dev/null || true
+          az containerapp job create \
+            --name "$JOB" --resource-group "$RG" --environment "$ENV_NAME" \
+            --image "$IMG" \
+            --registry-server "$REGISTRY" \
+            --registry-username "${{ github.actor }}" \
+            --registry-password "${{ secrets.GITHUB_TOKEN }}" \
+            --trigger-type Manual \
+            --replica-timeout 600 --replica-retry-limit 1 \
+            --parallelism 1 --replica-completion-count 1 \
+            --cpu 0.5 --memory 1.0Gi \
+            --secrets "db-url=$DB_URL" \
+            --env-vars "MCP_DATABASE_URL=secretref:db-url" "MCP_ENV=staging" \
+            --command "alembic" --args "upgrade" "head" \
+            -o none
+          az containerapp job start -g "$RG" -n "$JOB" -o none
+          echo "Polling migration job execution..."
+          for i in $(seq 1 40); do
+            ST=$(az containerapp job execution list -g "$RG" -n "$JOB" \
+              --query "[0].properties.status" -o tsv 2>/dev/null || echo Running)
+            echo "  $i: $ST"
+            [ "$ST" = "Succeeded" ] && break
+            [ "$ST" = "Failed" ] && { echo "::error::migration failed"; exit 1; }
+            sleep 10
+          done
+
+      - name: Deploy backend Container App
+        run: |
+          IMG="${REGISTRY}/${{ github.repository_owner }}/metocare-backend:${{ steps.tag.outputs.tag }}"
+          COMMON_SECRETS="db-url=$DB_URL secret-key=$SECRET_KEY enc-keys=$ENC_KEYS appi=$APPI"
+          COMMON_ENV="MCP_ENV=staging MCP_DEBUG=false \
+            MCP_DATABASE_URL=secretref:db-url MCP_SECRET_KEY=secretref:secret-key \
+            MCP_ENCRYPTION_KEYS=secretref:enc-keys \
+            APPLICATIONINSIGHTS_CONNECTION_STRING=secretref:appi \
+            MCP_AI_MODE=mock MCP_LLM_PROVIDER=mock MCP_OCR_MODE=mock \
+            MCP_OCR_WORKER_ENABLED=false MCP_RAG_ENABLED=false \
+            MCP_STORAGE_MODE=local MCP_RATELIMIT_BACKEND=memory \
+            MCP_METRICS_ENABLED=true MCP_ENABLE_DOCS=false"
+          if az containerapp show -g "$RG" -n "$BACKEND_APP" -o none 2>/dev/null; then
+            az containerapp secret set -g "$RG" -n "$BACKEND_APP" --secrets $COMMON_SECRETS -o none
+            az containerapp update -g "$RG" -n "$BACKEND_APP" --image "$IMG" \
+              --set-env-vars $COMMON_ENV -o none
+          else
+            az containerapp create -g "$RG" -n "$BACKEND_APP" --environment "$ENV_NAME" \
+              --image "$IMG" --target-port 8000 --ingress external \
+              --min-replicas 0 --max-replicas 1 --cpu 0.5 --memory 1.0Gi \
+              --registry-server "$REGISTRY" --registry-username "${{ github.actor }}" \
+              --registry-password "${{ secrets.GITHUB_TOKEN }}" \
+              --secrets $COMMON_SECRETS --env-vars $COMMON_ENV -o none
+          fi
+          FQDN=$(az containerapp show -g "$RG" -n "$BACKEND_APP" --query properties.configuration.ingress.fqdn -o tsv)
+          echo "BACKEND_FQDN=$FQDN" >> "$GITHUB_ENV"
+
+      - name: Deploy frontend Container App
+        run: |
+          IMG="${REGISTRY}/${{ github.repository_owner }}/metocare-frontend:${{ steps.tag.outputs.tag }}"
+          API_URL="https://${BACKEND_FQDN}/api/v1"
+          if az containerapp show -g "$RG" -n "$FRONTEND_APP" -o none 2>/dev/null; then
+            az containerapp update -g "$RG" -n "$FRONTEND_APP" --image "$IMG" \
+              --set-env-vars "NEXT_PUBLIC_API_URL=$API_URL" -o none
+          else
+            az containerapp create -g "$RG" -n "$FRONTEND_APP" --environment "$ENV_NAME" \
+              --image "$IMG" --target-port 3000 --ingress external \
+              --min-replicas 0 --max-replicas 1 --cpu 0.25 --memory 0.5Gi \
+              --registry-server "$REGISTRY" --registry-username "${{ github.actor }}" \
+              --registry-password "${{ secrets.GITHUB_TOKEN }}" \
+              --env-vars "NEXT_PUBLIC_API_URL=$API_URL" -o none
+          fi
+
+      - name: Health gate (liveness /health)
+        run: |
+          echo "Backend: https://${BACKEND_FQDN}/health"
+          for i in $(seq 1 30); do
+            H=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "https://${BACKEND_FQDN}/health" || echo 000)
+            echo "  $i: /health -> $H"
+            [ "$H" = "200" ] && { echo "✅ healthy"; exit 0; }
+            sleep 10
+          done
+          echo "::error::backend unhealthy — ACA keeps previous healthy revision (auto-rollback)"
+          exit 1
