@@ -131,3 +131,38 @@ Both fixes persist on Azure and are reproduced in any fresh provisioning.
 - Successful deploy run: `27857823291`
 
 > All merges to `main` for this work used `[skip ci]` to avoid auto-triggering DigitalOcean production (`deploy-do.yml` push trigger). A follow-up PR gates `deploy-do.yml` behind an opt-in `[deploy-do]` tag so the workaround is no longer needed.
+
+---
+
+## 10. Post-verification (2026-06-20) — scale-from-zero, frontend build-arg, CORS
+
+A follow-up test package (full pytest + backend smoke + browser-driven frontend flow) surfaced and fixed three issues. The original "LIVE" claim was true only **while warm**; the items below make staging durably reachable and the UI functional.
+
+### 10.1 ImagePullBackOff on scale-from-zero (fixed)
+The ACA apps were created with `--registry-password ${{ secrets.GITHUB_TOKEN }}` — an ephemeral token. After scale-to-zero + node recycle, the scale-from-zero re-pull used the expired credential → `Pending:ImagePullBackOff` → backend unreachable after idle.
+
+**Fix:** made the `metocare-backend` + `metocare-frontend` GHCR packages **public** and removed all `--registry-*` flags from the workflow (job + both app creates). ACA now pulls anonymously; there is no credential to expire. Verified: registry config empty, fresh replica (revision restart) serves `/health`, `/api/v1/health`, `/api/v1/info`, `/login` → all 200.
+
+### 10.2 Frontend baked the dev API URL (fixed)
+The frontend bundle called `http://172.20.0.100:8000/api/v1` (dev IP) → `ERR_CONNECTION_REFUSED` + Mixed Content; UI login/register broken. Root cause: `NEXT_PUBLIC_*` is **inlined at build time**, `frontend/Dockerfile` carried a dev-IP default, and the workflow passed the value only as a (no-op) runtime env var.
+
+**Fix:** removed the dev default from the Dockerfile (`ARG NEXT_PUBLIC_API_URL=`); the workflow now computes the deterministic backend FQDN (`<app>.<ACA-env-defaultDomain>`) **before** the frontend build and passes `--build-arg NEXT_PUBLIC_API_URL=https://<backend-fqdn>/api/v1`. The build step order was changed: Azure login → Compute FQDNs → builds.
+
+### 10.3 CORS (fixed + persisted)
+Backend allowed only `localhost` origins → the frontend origin got a 400 preflight. **Fix:** the workflow now sets `MCP_CORS_ALLOWED_ORIGINS=https://<frontend-fqdn>` on the backend deploy env (create + update paths). Preflight from the frontend origin now returns 200 with `access-control-allow-origin`.
+
+### 10.4 Acceptance after fix (deploy run `27859677885`)
+| Check | Result |
+|---|---|
+| Backend smoke (warm + post-restart cold) | `/health`, `/api/v1/health` (`db:ok`), `/api/v1/info` → 200 |
+| Frontend register (UI) | ✅ → `/dashboard`, JWT in `localStorage` |
+| Frontend login (UI, incl. fresh post-cold-start) | ✅ → `/dashboard` |
+| 9 patient routes (`/dashboard … /settings`) | ✅ 9/9 → 200, no redirect to `/login` |
+| Session persist (hard reload `/dashboard`) | ✅ stays authenticated |
+| Backend pytest | 535 passed + 1 skipped, 0 fail |
+
+**Minor (app-level, not deployment):** the dashboard widget data calls (`/metrics`, `/lab-documents`, `/care_plans`, `/notifications`, `/medications`, `/metabolic-score`) show `net::ERR_ABORTED` + a couple of 404s for a brand-new patient with no data (React double-fetch cancellation). Auth, routing, and session are unaffected.
+
+**Cost:** unchanged — no new resources; PG B1ms + scale-to-zero ACA, ~$13–16/mo, under the $20 cap. PG kept running 24/7 per decision.
+
+> Defects 10.1–10.3 were pre-existing in the deploy setup, independent of the application code. All fixes are OIDC-only, introduce no long-lived secrets, and do not touch DigitalOcean.
