@@ -98,7 +98,7 @@ export default function MedicationDetailPage() {
         <button
           type="button"
           onClick={() => router.back()}
-          className="flex items-center gap-1.5 text-body-sm text-mint-600"
+          className="flex items-center gap-1.5 text-body-md text-mint-600"
           aria-label="Quay lại"
         >
           <ArrowLeft className="size-4" />
@@ -108,7 +108,7 @@ export default function MedicationDetailPage() {
 
       {/* Title */}
       <div className="mb-4">
-        <h1 className="text-heading-lg font-bold text-text">{medication.name}</h1>
+        <h1 className="text-heading-xl font-bold text-text">{medication.name}</h1>
         {medication.dose && (
           <p className="text-body-md text-text-muted mt-0.5">{medication.dose}</p>
         )}

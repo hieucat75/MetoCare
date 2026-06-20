@@ -73,7 +73,7 @@ function MintInput({
         disabled={disabled}
         aria-invalid={error}
         className={cn(
-          'h-12 w-full rounded-xl border bg-white/80 px-3 py-2 text-body-sm text-text',
+          'h-12 w-full rounded-xl border bg-white/80 px-3 py-2 text-body-md text-text',
           'placeholder:text-text-subtle focus:outline-none focus:ring-2 transition-colors',
           'disabled:bg-secondary-50 disabled:text-text-muted disabled:cursor-not-allowed',
           leftIcon && 'pl-10',
@@ -165,7 +165,7 @@ export default function LoginPage() {
     return (
       <div>
         <h1 className="text-heading-xl font-bold text-text mb-1">Xác thực 2 bước</h1>
-        <p className="text-body-sm text-text-muted mb-6">
+        <p className="text-body-md text-text-muted mb-6">
           Nhập mã 6 số từ ứng dụng xác thực của bạn.
         </p>
 
@@ -205,7 +205,7 @@ export default function LoginPage() {
             setTotpCode('')
             setError(null)
           }}
-          className="mt-4 w-full text-center text-body-sm text-mint-700 hover:underline"
+          className="mt-4 w-full text-center text-body-md text-mint-700 hover:underline"
         >
           ← Quay lại đăng nhập
         </button>
@@ -216,7 +216,7 @@ export default function LoginPage() {
   return (
     <div>
       <h1 className="text-heading-xl font-bold text-text mb-1">Đăng nhập</h1>
-      <p className="text-body-sm text-text-muted mb-6">
+      <p className="text-body-md text-text-muted mb-6">
         Chào mừng trở lại. Đăng nhập để tiếp tục chăm sóc sức khỏe.
       </p>
 
@@ -243,7 +243,7 @@ export default function LoginPage() {
             <FieldLabel htmlFor="password">Mật khẩu</FieldLabel>
             <Link
               href="/forgot-password"
-              className="text-body-sm text-mint-700 hover:underline underline-offset-2"
+              className="text-body-md text-mint-700 hover:underline underline-offset-2"
               tabIndex={0}
             >
               Quên mật khẩu?
@@ -285,7 +285,7 @@ export default function LoginPage() {
         </Button>
       </form>
 
-      <p className="text-center text-body-sm text-text-muted mt-6">
+      <p className="text-center text-body-md text-text-muted mt-6">
         Chưa có tài khoản?{' '}
         <Link href="/register" className="text-mint-700 font-semibold hover:underline underline-offset-2">
           Đăng ký ngay

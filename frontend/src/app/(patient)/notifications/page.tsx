@@ -67,14 +67,14 @@ function NotificationRow({ notification, onRead }: NotificationRowProps) {
       {/* Content */}
       <div className="flex-1 min-w-0">
         <p
-          className={`text-body-sm truncate ${
+          className={`text-body-md truncate ${
             notification.is_read ? 'text-text-muted' : 'font-semibold text-text'
           }`}
         >
           {notification.title}
         </p>
-        <p className="text-body-xs text-text-muted mt-0.5 line-clamp-2">{notification.body}</p>
-        <p className="text-caption text-text-subtle mt-1">
+        <p className="text-body-sm text-text-muted mt-0.5 line-clamp-2">{notification.body}</p>
+        <p className="text-body-sm text-text-subtle mt-1">
           {formatRelativeTime(notification.created_at)}
         </p>
       </div>

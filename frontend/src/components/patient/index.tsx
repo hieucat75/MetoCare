@@ -72,7 +72,7 @@ export const PatientInput = React.forwardRef<
         ref={ref}
         aria-invalid={invalid}
         className={cn(
-          'h-12 w-full rounded-xl border bg-white/80 px-3 py-2 text-body-sm text-text',
+          'h-12 w-full rounded-xl border bg-white/80 px-3 py-2 text-body-md text-text',
           'placeholder:text-text-subtle focus:outline-none focus:ring-2 transition-colors',
           leftIcon && 'pl-10',
           invalid
@@ -102,8 +102,8 @@ export function SectionHeader({
   return (
     <div className={cn('flex items-start justify-between gap-3 mb-3', className)}>
       <div className="min-w-0">
-        <h2 className="text-heading-md font-bold text-text">{title}</h2>
-        {subtitle && <p className="text-caption text-text-muted mt-0.5">{subtitle}</p>}
+        <h2 className="text-heading-xl font-bold text-text">{title}</h2>
+        {subtitle && <p className="text-body-sm text-text-muted mt-0.5">{subtitle}</p>}
       </div>
       {action && <div className="shrink-0">{action}</div>}
     </div>
@@ -142,7 +142,7 @@ export function MetricCard({
       )}
     >
       <div className="flex items-center justify-between mb-1">
-        <span className="text-caption text-text-muted">{label}</span>
+        <span className="text-body-sm text-text-muted">{label}</span>
         {icon && (
           <span className="flex items-center justify-center w-7 h-7 rounded-lg bg-mint-50 text-mint-600">
             {icon}
@@ -150,10 +150,10 @@ export function MetricCard({
         )}
       </div>
       <div className="flex items-baseline gap-1">
-        <span className="text-heading-lg font-bold text-text">{value}</span>
-        {unit && <span className="text-caption text-text-muted">{unit}</span>}
+        <span className="text-heading-xl font-bold text-text">{value}</span>
+        {unit && <span className="text-body-sm text-text-muted">{unit}</span>}
       </div>
-      {trend?.text && <p className={cn('text-caption mt-1', trendColor)}>{trend.text}</p>}
+      {trend?.text && <p className={cn('text-body-sm mt-1', trendColor)}>{trend.text}</p>}
     </Comp>
   )
 }
@@ -178,8 +178,8 @@ export function PatientEmptyState({
           {icon}
         </div>
       )}
-      <h3 className="text-heading-sm font-semibold text-text">{title}</h3>
-      {description && <p className="text-body-sm text-text-muted mt-1 max-w-xs">{description}</p>}
+      <h3 className="text-heading-xl font-semibold text-text">{title}</h3>
+      {description && <p className="text-body-md text-text-muted mt-1 max-w-xs">{description}</p>}
       {cta &&
         (cta.href ? (
           <Link href={cta.href} className="mt-4">

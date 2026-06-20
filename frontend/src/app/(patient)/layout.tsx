@@ -135,7 +135,7 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
         <button
           type="button"
           onClick={handleLogout}
-          className="w-full flex items-center gap-2.5 px-3 py-2 text-secondary-400 hover:text-white hover:bg-secondary-800 rounded-md transition-colors text-body-sm"
+          className="w-full flex items-center gap-2.5 px-3 py-2 text-secondary-400 hover:text-white hover:bg-secondary-800 rounded-md transition-colors text-body-md"
         >
           <LogOut className="w-4 h-4 shrink-0" aria-hidden="true" />
           {!sidebarCollapsed && <span>Đăng xuất</span>}
@@ -147,7 +147,7 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
   return (
     <>
       {/* ── Mobile (< lg): compact top bar + scrollable content + fixed bottom nav ── */}
-      <div className="flex flex-col min-h-screen lg:hidden bg-gradient-to-br from-mint-50 via-background to-mint-100">
+      <div className="patient-app flex flex-col min-h-screen lg:hidden bg-gradient-to-br from-mint-50 via-background to-mint-100">
         {/* Mobile top bar — mint glass app bar */}
         <header className="sticky top-0 z-30 bg-white/70 backdrop-blur-xl border-b border-white/60">
           <div className="flex items-center justify-between h-14 px-4">
@@ -156,7 +156,7 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
               <div className="w-7 h-7 rounded-xl bg-gradient-to-br from-mint-400 to-mint-600 flex items-center justify-center shrink-0">
                 <span className="text-white font-bold text-xs">M</span>
               </div>
-              <span className="font-semibold text-text text-body-sm">{pageTitle}</span>
+              <span className="font-semibold text-text text-body-md">{pageTitle}</span>
             </div>
             {/* User avatar / logout shortcut */}
             <button
@@ -178,7 +178,7 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
       </div>
 
       {/* ── Desktop (≥ lg): AppShell with sidebar ── */}
-      <div className="hidden lg:block h-screen">
+      <div className="patient-app hidden lg:block h-screen">
         <AppShell
           sidebar={sidebarContent}
           topNav={

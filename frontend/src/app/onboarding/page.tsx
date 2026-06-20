@@ -26,9 +26,8 @@ const STEPS = ['Thông tin cơ bản', 'Bệnh sử', 'Mục tiêu sức khỏe'
 
 interface OnboardingForm {
   full_name: string
-  dob: string
+  dob: string // display format DD/MM/YYYY
   gender: string
-  phone: string
   height_cm: string
   weight_kg: string
   waist_cm: string
@@ -42,7 +41,6 @@ const EMPTY: OnboardingForm = {
   full_name: '',
   dob: '',
   gender: '',
-  phone: '',
   height_cm: '',
   weight_kg: '',
   waist_cm: '',
@@ -56,6 +54,25 @@ function todayISO(): string {
   const now = new Date()
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
+}
+
+// ── DOB: short DD/MM/YYYY display <-> ISO YYYY-MM-DD (no native long format) ──
+function isoToDisplay(iso: string | null | undefined): string {
+  if (!iso) return ''
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso)
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : ''
+}
+function displayToIso(disp: string): string | null {
+  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(disp.trim())
+  if (!m) return null
+  const [, dd, mm, yyyy] = m
+  const d = new Date(`${yyyy}-${mm}-${dd}T00:00:00`)
+  if (isNaN(d.getTime()) || d.getDate() !== +dd || d.getMonth() + 1 !== +mm) return null
+  return `${yyyy}-${mm}-${dd}`
+}
+function formatDobInput(raw: string): string {
+  const digits = raw.replace(/\D/g, '').slice(0, 8)
+  return [digits.slice(0, 2), digits.slice(2, 4), digits.slice(4, 8)].filter(Boolean).join('/')
 }
 
 export default function OnboardingPage() {
@@ -86,10 +103,10 @@ export default function OnboardingPage() {
       .then((p) => {
         setForm((f) => ({
           ...f,
-          full_name: p.full_name ?? f.full_name,
-          dob: p.dob ?? '',
+          // Prefill name from profile, fall back to the registered account name.
+          full_name: p.full_name ?? user?.full_name ?? f.full_name,
+          dob: isoToDisplay(p.dob),
           gender: p.gender ?? '',
-          phone: p.phone ?? '',
           height_cm: p.height_cm != null ? String(p.height_cm) : '',
           weight_kg: p.weight_kg != null ? String(p.weight_kg) : '',
           waist_cm: p.waist_cm != null ? String(p.waist_cm) : '',
@@ -112,7 +129,9 @@ export default function OnboardingPage() {
 
   function validateBasics(): string | null {
     if (form.dob) {
-      if (form.dob > todayISO()) return 'Ngày sinh không thể ở tương lai.'
+      const iso = displayToIso(form.dob)
+      if (!iso) return 'Ngày sinh không hợp lệ (định dạng DD/MM/YYYY).'
+      if (iso > todayISO()) return 'Ngày sinh không thể ở tương lai.'
     }
     if (form.height_cm) {
       const h = parseFloat(form.height_cm)
@@ -161,9 +180,9 @@ export default function OnboardingPage() {
     try {
       await updatePatientProfile(patientId, {
         full_name: form.full_name.trim() || null,
-        dob: form.dob || null,
+        dob: displayToIso(form.dob),
         gender: (form.gender as 'male' | 'female' | 'other') || null,
-        phone: form.phone.trim() || null,
+        // phone intentionally omitted — already set at registration (no redundant ask).
         height_cm: form.height_cm ? parseFloat(form.height_cm) : null,
         weight_kg: form.weight_kg ? parseFloat(form.weight_kg) : null,
         waist_cm: form.waist_cm ? parseFloat(form.waist_cm) : null,
@@ -197,28 +216,28 @@ export default function OnboardingPage() {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-background text-center p-6">
         <CheckCircle2 className="size-16 text-success mb-4" aria-hidden="true" />
-        <h1 className="text-heading-lg font-bold text-text mb-1">Hoàn tất hồ sơ!</h1>
-        <p className="text-body-sm text-text-muted">Đang chuyển đến trang tổng quan…</p>
+        <h1 className="text-heading-xl font-bold text-text mb-1">Hoàn tất hồ sơ!</h1>
+        <p className="text-body-md text-text-muted">Đang chuyển đến trang tổng quan…</p>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <div className="patient-app min-h-screen bg-gradient-to-br from-mint-50 via-background to-mint-100 flex flex-col">
       <div className="w-full max-w-lg mx-auto px-4 py-8 flex-1 flex flex-col">
         {/* Header + progress */}
         <div className="mb-6">
           <div className="flex items-center justify-between mb-2">
-            <h1 className="text-heading-lg font-bold text-text">Thiết lập hồ sơ</h1>
+            <h1 className="text-heading-xl font-bold text-text">Thiết lập hồ sơ</h1>
             <button
               type="button"
               onClick={skip}
-              className="text-body-sm text-text-muted hover:text-text underline underline-offset-2"
+              className="text-body-md text-text-muted hover:text-text underline underline-offset-2"
             >
               Bỏ qua
             </button>
           </div>
-          <p className="text-body-sm text-text-muted mb-4">
+          <p className="text-body-md text-text-muted mb-4">
             Bước {step + 1}/{STEPS.length} · {STEPS[step]}
           </p>
           <div className="flex gap-1.5" role="progressbar" aria-valuenow={step + 1} aria-valuemax={STEPS.length}>
@@ -242,14 +261,19 @@ export default function OnboardingPage() {
                 <FormField label="Họ và tên">
                   <Input value={form.full_name} onChange={(e) => set('full_name', e.target.value)} placeholder="Nguyễn Văn An" fullWidth />
                 </FormField>
-                <FormField label="Ngày sinh">
-                  <Input type="date" value={form.dob} max={todayISO()} onChange={(e) => set('dob', e.target.value)} fullWidth />
+                <FormField label="Ngày sinh" hint="Định dạng: ngày/tháng/năm">
+                  <Input
+                    type="text"
+                    inputMode="numeric"
+                    value={form.dob}
+                    onChange={(e) => set('dob', formatDobInput(e.target.value))}
+                    placeholder="DD/MM/YYYY"
+                    maxLength={10}
+                    fullWidth
+                  />
                 </FormField>
                 <FormField label="Giới tính">
                   <Select value={form.gender} onValueChange={(v) => set('gender', v)} options={GENDER_OPTIONS} placeholder="Chọn giới tính" fullWidth />
-                </FormField>
-                <FormField label="Số điện thoại">
-                  <Input type="tel" value={form.phone} onChange={(e) => set('phone', e.target.value)} placeholder="09xxxxxxxx" fullWidth />
                 </FormField>
                 <div className="grid grid-cols-2 gap-3">
                   <FormField label="Chiều cao (cm)">
@@ -291,7 +315,7 @@ export default function OnboardingPage() {
                     rows={4}
                   />
                 </FormField>
-                <p className="text-caption text-text-muted">
+                <p className="text-body-sm text-text-muted">
                   Thông tin này giúp cá nhân hoá kế hoạch theo dõi của bạn. Bạn có thể cập nhật bất cứ lúc nào trong mục Hồ sơ.
                 </p>
               </>

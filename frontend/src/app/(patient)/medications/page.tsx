@@ -71,9 +71,9 @@ function MedRow({
             </span>
             <span className="min-w-0">
               <span className="block text-body-md font-medium text-text truncate">{med.name}</span>
-              {meta && <span className="block text-caption text-text-muted mt-0.5">{meta}</span>}
-              {med.note && <span className="block text-caption text-text-muted mt-0.5 truncate">{med.note}</span>}
-              <span className="block text-caption text-text-subtle mt-0.5">Thêm ngày {formatDate(med.created_at)}</span>
+              {meta && <span className="block text-body-sm text-text-muted mt-0.5">{meta}</span>}
+              {med.note && <span className="block text-body-sm text-text-muted mt-0.5 truncate">{med.note}</span>}
+              <span className="block text-body-sm text-text-subtle mt-0.5">Thêm ngày {formatDate(med.created_at)}</span>
             </span>
           </button>
           <div className="flex items-center gap-1 shrink-0">
@@ -323,7 +323,7 @@ export default function MedicationsPage() {
           </>
         }
       >
-        <p className="text-body-sm text-text-muted">
+        <p className="text-body-md text-text-muted">
           Bạn có chắc muốn xoá <span className="font-medium text-text">{deleteTarget?.name}</span> khỏi danh sách thuốc?
         </p>
       </Modal>

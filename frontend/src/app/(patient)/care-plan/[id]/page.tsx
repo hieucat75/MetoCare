@@ -89,7 +89,7 @@ export default function CarePlanDetailPage() {
         <button
           type="button"
           onClick={() => router.back()}
-          className="flex items-center gap-1.5 text-body-sm text-mint-600"
+          className="flex items-center gap-1.5 text-body-md text-mint-600"
           aria-label="Quay lại"
         >
           <ArrowLeft className="size-4" />
@@ -99,7 +99,7 @@ export default function CarePlanDetailPage() {
 
       {/* Title + status */}
       <div className="flex items-start justify-between mb-2">
-        <h1 className="text-heading-lg font-bold text-text flex-1 mr-3">{plan.title}</h1>
+        <h1 className="text-heading-xl font-bold text-text flex-1 mr-3">{plan.title}</h1>
         <Badge variant={statusCfg.variant}>{statusCfg.label}</Badge>
       </div>
 
@@ -107,7 +107,7 @@ export default function CarePlanDetailPage() {
       {plan.approved_at && (
         <div className="flex items-center gap-1.5 mb-4">
           <CheckCircle2 className="size-4 text-success shrink-0" aria-hidden="true" />
-          <p className="text-body-sm text-success">
+          <p className="text-body-md text-success">
             Đã phê duyệt {formatDate(plan.approved_at)}
           </p>
         </div>
@@ -120,7 +120,7 @@ export default function CarePlanDetailPage() {
       )}
 
       {/* Meta */}
-      <p className="text-body-sm text-text-muted mb-4">
+      <p className="text-body-md text-text-muted mb-4">
         Tạo: {formatDate(plan.created_at)}
         {plan.ai_generated && <> &middot; <span className="text-amber-600">AI hỗ trợ</span></>}
         {(plan.version ?? 1) > 1 && <> &middot; v{plan.version}</>}
@@ -136,9 +136,9 @@ export default function CarePlanDetailPage() {
         </CardHeader>
         <CardContent className="px-4 pb-4">
           {plan.content ? (
-            <p className="text-body-sm text-text-muted whitespace-pre-line">{plan.content}</p>
+            <p className="text-body-md text-text-muted whitespace-pre-line">{plan.content}</p>
           ) : (
-            <p className="text-body-sm text-text-subtle italic">Chưa có nội dung kế hoạch.</p>
+            <p className="text-body-md text-text-subtle italic">Chưa có nội dung kế hoạch.</p>
           )}
         </CardContent>
       </Card>

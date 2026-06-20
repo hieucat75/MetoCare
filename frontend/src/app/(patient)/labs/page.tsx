@@ -38,15 +38,15 @@ function ResultCard({ r }: { r: LabResultEntry }) {
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-2 min-w-0">
             <FlaskConical className="size-4 shrink-0 text-text-muted" aria-hidden="true" />
-            <span className="text-body-sm font-medium text-text truncate">{r.test_name}</span>
+            <span className="text-body-md font-medium text-text truncate">{r.test_name}</span>
           </div>
-          <span className="text-heading-sm font-bold text-text shrink-0">{valueStr}</span>
+          <span className="text-heading-md font-bold text-text shrink-0">{valueStr}</span>
         </div>
         <div className="flex items-center justify-between mt-1 pl-6">
-          <span className="text-caption text-text-muted">
+          <span className="text-body-sm text-text-muted">
             {r.reference_range ? `Tham chiếu: ${r.reference_range}` : ''}
           </span>
-          <span className="text-caption text-text-subtle">
+          <span className="text-body-sm text-text-subtle">
             {r.test_date ? formatDate(r.test_date) : formatDate(r.created_at)}
           </span>
         </div>
@@ -179,7 +179,7 @@ function ManualEntryModal({
         </div>
 
         <div className="space-y-3">
-          <p className="text-label-md font-medium text-text-muted">Chỉ số</p>
+          <p className="text-label-lg font-medium text-text-muted">Chỉ số</p>
           {rows.map((row, i) => (
             <div key={i} className="rounded-lg border border-border p-3 space-y-2">
               <div className="flex items-center gap-2">
@@ -273,7 +273,7 @@ export default function LabsPage() {
           <CardContent className="flex items-center justify-between gap-3 py-1">
             <div className="flex items-center gap-2 text-text-muted">
               <Upload className="size-4" aria-hidden="true" />
-              <span className="text-body-sm">Tải ảnh/PDF và tự động đọc kết quả</span>
+              <span className="text-body-md">Tải ảnh/PDF và tự động đọc kết quả</span>
             </div>
             <Badge variant="default" size="sm">{flags.ocr ? 'Sắp có' : 'Phase 2'}</Badge>
           </CardContent>
