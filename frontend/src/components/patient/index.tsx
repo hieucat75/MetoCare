@@ -203,3 +203,5 @@ export function PatientEmptyState({
     </div>
   )
 }
+
+export { LabEntryModal } from './LabEntryModal'
