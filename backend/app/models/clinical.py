@@ -29,7 +29,10 @@ class HealthMetric(UUIDPrimaryKey, TimestampMixin, Base):
     value: Mapped[float] = mapped_column(Float, nullable=False)
     unit: Mapped[str | None] = mapped_column(String(24))
     measured_at: Mapped[dt.datetime] = mapped_column(index=True, nullable=False)
-    source: Mapped[str | None] = mapped_column(String(48))
+    source: Mapped[str | None] = mapped_column(String(48))  # self_report | lab_result | …
+    # Originating record id when source != self_report (e.g. the lab_result id).
+    # Lets lab→metric promotion stay idempotent + traceable.
+    source_ref: Mapped[str | None] = mapped_column(String(64), index=True)
     device_id: Mapped[str | None] = mapped_column(String(64))
     normal_range_min: Mapped[float | None] = mapped_column(Float)
     normal_range_max: Mapped[float | None] = mapped_column(Float)

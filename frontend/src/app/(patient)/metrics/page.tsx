@@ -3,7 +3,7 @@ import { PatientEmptyState } from '@/components/patient'
 
 import * as React from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Plus } from 'lucide-react'
+import { FlaskConical, Plus } from 'lucide-react'
 import {
   PageHeader,
   PageLoading,
@@ -20,7 +20,7 @@ import {
   TabsContent,
 } from '@/design-system'
 import { useAuth } from '@/lib/auth/context'
-import { getMetrics, logMetric, METRIC_LABELS, METRIC_UNITS, metricLabel, metricUnit } from '@/lib/api/patient'
+import { getMetrics, isLabSourced, logMetric, METRIC_LABELS, METRIC_UNITS, metricLabel, metricUnit } from '@/lib/api/patient'
 import type { HealthMetric, MetricType } from '@/lib/api/patient'
 import { formatDate } from '@/lib/utils'
 
@@ -167,7 +167,14 @@ function MetricRow({ metric }: { metric: HealthMetric }) {
         <p className="text-[17px] font-medium text-text">
           {getMetricDisplayLabel(metric.metric_type)}
         </p>
-        <p className="text-[15px] text-text-muted mt-0.5">{dateStr}</p>
+        <div className="flex items-center gap-1.5 mt-0.5">
+          <p className="text-[15px] text-text-muted">{dateStr}</p>
+          {isLabSourced(metric) && (
+            <span className="inline-flex items-center gap-1 text-[13px] text-mint-700 bg-mint-50 rounded-full px-2 py-0.5">
+              <FlaskConical className="size-3" aria-hidden="true" /> Từ xét nghiệm
+            </span>
+          )}
+        </div>
         {/* metric.notes may be absent from backend response */}
         {metric.notes && (
           <p className="text-[15px] text-text-muted mt-0.5 truncate max-w-[180px]">
