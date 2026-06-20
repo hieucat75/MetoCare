@@ -94,6 +94,8 @@ class Medication(UUIDPrimaryKey, TimestampMixin, SoftDeleteMixin, Base):
     # Record-only. AI must NEVER modify dose (enforced in guardrails/domain).
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     dose: Mapped[str | None] = mapped_column(String(128))
+    # PR-D: human-readable schedule, e.g. "2 lần/ngày", "sáng & tối".
+    frequency: Mapped[str | None] = mapped_column(String(128))
     note: Mapped[str | None] = mapped_column(Text)
 
 

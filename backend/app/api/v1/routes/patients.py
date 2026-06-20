@@ -26,7 +26,7 @@ from app.api.deps import CurrentUser, current_user, get_session
 from app.models.patient import PatientProfile as _PatientProfile
 from app.models.user import User as _UserModel
 from app.models.user import UserRole
-from app.schemas.medication import MedicationCreate, MedicationOut
+from app.schemas.medication import MedicationCreate, MedicationOut, MedicationUpdate
 from app.schemas.nutrition import NutritionLogCreate, NutritionLogOut
 from app.schemas.patient import PatientProfileOut, PatientProfileUpdate, PatientSummaryOut
 from app.schemas.risk_score import RiskScoreHistoryResponse, RiskScoreOut
@@ -443,6 +443,51 @@ def delete_medication(
     _check_write_access(db, patient_id=patient_id, requester=user)
 
     medication_svc.delete_medication(db, patient_id=patient_id, med_id=med_id)
+
+
+@router.patch(
+    "/{patient_id}/medications/{med_id}",
+    response_model=MedicationOut,
+    status_code=status.HTTP_200_OK,
+    summary="Update a medication record (partial)",
+)
+def update_medication(
+    patient_id: str,
+    med_id: str,
+    payload: MedicationUpdate,
+    user: CurrentUser = Depends(current_user),
+    db: Session = Depends(get_session),
+) -> MedicationOut:
+    """Partially update a medication record for *patient_id* (PR-D).
+
+    Access rules mirror POST /medications:
+    - **PATIENT** — own record only.
+    - **DOCTOR** — consent-gated (scope='profile').
+    - **INTERNAL_ADMIN / SUPER_ADMIN** — unrestricted.
+    - **AI_SERVICE / CLINIC_ADMIN** — always 403 (AI must never modify meds).
+
+    Produces an ``AuditLog`` entry with ``action='update_medication'``.
+    """
+    _check_write_access(db, patient_id=patient_id, requester=user)
+
+    data = payload.model_dump(exclude_unset=True)
+    record = medication_svc.update_medication(
+        db, patient_id=patient_id, med_id=med_id, data=data
+    )
+
+    audit.record(
+        db,
+        actor_type=user.role,
+        actor_id=user.id,
+        action="update_medication",
+        resource_type="medication",
+        resource_id=record.id,
+        outcome="success",
+        severity="info",
+    )
+    db.commit()
+
+    return MedicationOut.model_validate(record)
 
     audit.record(
         db,

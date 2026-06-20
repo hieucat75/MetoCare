@@ -430,3 +430,83 @@ def test_unauthenticated_cannot_create_symptom(client: TestClient, patient_a):
         json={"description": "Unauthorised attempt"},
     )
     assert r.status_code == 401, r.text
+
+
+# ---------------------------------------------------------------------------
+# PR-D — medication frequency field + PATCH (edit)
+# ---------------------------------------------------------------------------
+
+
+def test_add_medication_with_frequency(client: TestClient, patient_a):
+    """PR-D: frequency persists on create and is returned."""
+    r = client.post(
+        _medications_url(patient_a["patient_id"]),
+        headers=patient_a["headers"],
+        json={"name": "Metformin", "dose": "500mg", "frequency": "2 lần/ngày", "note": "Sau ăn"},
+    )
+    assert r.status_code == 201, r.text
+    assert r.json()["frequency"] == "2 lần/ngày"
+
+
+def test_patient_updates_own_medication(client: TestClient, patient_a):
+    """PR-D: PATIENT can PATCH their own medication — fields update, others preserved."""
+    created = client.post(
+        _medications_url(patient_a["patient_id"]),
+        headers=patient_a["headers"],
+        json={"name": "Metformin", "dose": "500mg", "frequency": "1 lần/ngày"},
+    ).json()
+    med_id = created["id"]
+
+    r = client.patch(
+        _medication_url(patient_a["patient_id"], med_id),
+        headers=patient_a["headers"],
+        json={"dose": "850mg", "frequency": "2 lần/ngày"},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["dose"] == "850mg"
+    assert body["frequency"] == "2 lần/ngày"
+    assert body["name"] == "Metformin"  # unchanged
+
+
+def test_patient_cannot_update_another_patients_medication(
+    client: TestClient, patient_a, patient_b
+):
+    """PR-D: cross-patient PATCH is blocked (403 on ownership before 404)."""
+    created = client.post(
+        _medications_url(patient_a["patient_id"]),
+        headers=patient_a["headers"],
+        json={"name": "Metformin"},
+    ).json()
+    r = client.patch(
+        _medication_url(patient_b["patient_id"], created["id"]),
+        headers=patient_a["headers"],
+        json={"dose": "999mg"},
+    )
+    assert r.status_code == 403, r.text
+
+
+def test_update_nonexistent_medication_404(client: TestClient, patient_a):
+    """PR-D: PATCH on a missing medication id → 404."""
+    r = client.patch(
+        _medication_url(patient_a["patient_id"], "00000000-0000-0000-0000-000000000000"),
+        headers=patient_a["headers"],
+        json={"dose": "1mg"},
+    )
+    assert r.status_code == 404, r.text
+
+
+def test_ai_service_cannot_update_medication(client: TestClient, patient_a):
+    """PR-D: AI_SERVICE must be blocked from PATCH (CRITICAL SAFETY) — 403."""
+    created = client.post(
+        _medications_url(patient_a["patient_id"]),
+        headers=patient_a["headers"],
+        json={"name": "Metformin"},
+    ).json()
+    ai_token = create_access_token(subject=f"ai-{os.urandom(4).hex()}", role="ai_service")
+    r = client.patch(
+        _medication_url(patient_a["patient_id"], created["id"]),
+        headers={"Authorization": f"Bearer {ai_token}"},
+        json={"dose": "1mg"},
+    )
+    assert r.status_code == 403, r.text

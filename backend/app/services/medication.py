@@ -36,9 +36,39 @@ def add_medication(
         patient_id=patient_id,
         name=data["name"],
         dose=data.get("dose"),
+        frequency=data.get("frequency"),
         note=data.get("note"),
     )
     db.add(record)
+    db.commit()
+    db.refresh(record)
+    return record
+
+
+def update_medication(
+    db: Session,
+    *,
+    patient_id: str,
+    med_id: str,
+    data: dict,
+) -> Medication:
+    """Apply a partial update to a Medication record (PR-D).
+
+    Only keys present in *data* are written (caller passes ``exclude_unset``).
+    Raises 404 if the record does not exist, is soft-deleted, or belongs to a
+    different patient.
+    """
+    record = db.get(Medication, med_id)
+
+    if record is None or record.patient_id != patient_id or record.deleted_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Medication not found.",
+        )
+
+    for field, value in data.items():
+        setattr(record, field, value)
+
     db.commit()
     db.refresh(record)
     return record

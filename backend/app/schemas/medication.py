@@ -17,6 +17,16 @@ from pydantic import BaseModel, ConfigDict, Field
 class MedicationCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     dose: str | None = Field(None, max_length=128)
+    frequency: str | None = Field(None, max_length=128)
+    note: str | None = Field(None, max_length=1024)
+
+
+class MedicationUpdate(BaseModel):
+    """Partial update for a medication record (PR-D). All fields optional."""
+
+    name: str | None = Field(None, min_length=1, max_length=255)
+    dose: str | None = Field(None, max_length=128)
+    frequency: str | None = Field(None, max_length=128)
     note: str | None = Field(None, max_length=1024)
 
 
@@ -25,6 +35,7 @@ class MedicationOut(BaseModel):
     patient_id: str
     name: str
     dose: str | None
+    frequency: str | None
     note: str | None
     created_at: dt.datetime
 
