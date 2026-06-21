@@ -171,8 +171,8 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
           </div>
         </header>
 
-        {/* Page content — pb-16 so bottom nav doesn't overlap */}
-        <main className="flex-1 overflow-auto pb-16">{children}</main>
+        {/* Page content — pb-24 clears the floating glass 5-tab nav bar */}
+        <main className="flex-1 overflow-auto pb-24">{children}</main>
 
         <PatientBottomNav />
       </div>

@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Be+Vietnam+Pro:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -208,13 +208,18 @@
  * onboarding); doctor/admin portals never get this.
  * ──────────────────────────────────────────────────────────────────────── */
 .patient-app {
+  /* Liquid Glass ambient — mint-forward with faint blue + amber layers for the
+   * handoff's "chiều sâu phân lớp" (layered depth). Mint hues track the handoff
+   * (#1BB082 / #0F9C6E); kept light so glass cards read as frosted over it. */
+  color: #0E2A33;
   background:
-    radial-gradient(780px 460px at 6% -6%, rgba(52, 211, 153, 0.13), transparent 62%),
-    radial-gradient(680px 560px at 112% 10%, rgba(16, 185, 129, 0.10), transparent 60%),
-    radial-gradient(560px 480px at 80% 40%, rgba(16, 185, 129, 0.06), transparent 66%),
-    radial-gradient(760px 620px at 90% 110%, rgba(110, 231, 183, 0.12), transparent 62%),
-    linear-gradient(165deg, #EDFBF5 0%, #FBFFFE 48%, #EFFCF8 100%);
+    radial-gradient(800px 520px at 6% -4%, rgba(27, 176, 130, 0.16), transparent 60%),
+    radial-gradient(760px 600px at 110% 12%, rgba(37, 99, 235, 0.07), transparent 60%),
+    radial-gradient(640px 540px at 80% 44%, rgba(16, 140, 99, 0.08), transparent 64%),
+    radial-gradient(720px 600px at 24% 86%, rgba(252, 222, 140, 0.12), transparent 62%),
+    radial-gradient(760px 620px at 92% 108%, rgba(15, 156, 110, 0.12), transparent 62%),
+    linear-gradient(160deg, #EAF6F0 0%, #FBFFFE 46%, #EFF6F3 100%);
   background-attachment: fixed;
 }
 /* Patient page titles (PageHeader h1 + route greetings) larger for 50+. */
-.patient-app h1 { font-size: 1.625rem; line-height: 1.2; }   /* 26px */
+.patient-app h1 { font-size: 1.625rem; line-height: 1.2; color: #0E2A33; }   /* 26px */

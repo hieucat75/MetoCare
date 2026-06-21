@@ -51,23 +51,34 @@ const config: Config = {
           light: '#E0F2FE',
           foreground: '#FFFFFF',
         },
-        // Mint / soft-green — patient-facing wellness tone (Claude Design / Soft UI).
+        // Mint / soft-green — patient-facing wellness tone.
+        // Aligned to the Claude Design "Liquid Glass" handoff (MetoCare App.dc.html):
+        // primary action = #0F9C6E, glass gradient top #1BB082 → bottom #0B7F5B.
         // Additive: does NOT replace `primary`; used only on patient auth/wellness
         // surfaces so doctor/admin (which use `primary`) are unchanged.
         mint: {
-          DEFAULT: '#10B981',
-          50: '#F0FDF9',
-          100: '#D9F9EC',
-          200: '#A7F0D6',
-          300: '#6EE7BC',
-          400: '#34D9A0',
-          500: '#10B981',
-          600: '#059567',
-          700: '#047852',
-          800: '#065F43',
-          900: '#064E38',
-          hover: '#059567',
-          light: '#F0FDF9',
+          DEFAULT: '#0F9C6E',
+          50: '#ECFBF4',
+          100: '#D2F3E6',
+          200: '#A6E7CD',
+          300: '#6FD8B2',
+          400: '#1BB082', // glass gradient top
+          500: '#0F9C6E', // primary action
+          600: '#0B8C61',
+          700: '#0B7F5B', // glass gradient bottom / pressed
+          800: '#0A6B4D',
+          900: '#08543D',
+          hover: '#0B8C61',
+          light: '#ECFBF4',
+          foreground: '#FFFFFF',
+        },
+        // AI provenance — purple, distinguishes AI-generated content awaiting
+        // doctor review ("AI tạo · chờ bác sĩ duyệt") from clinician-approved
+        // content. From the Liquid Glass handoff foundations palette.
+        ai: {
+          DEFAULT: '#6D3FBE',
+          light: '#F3EEFB',
+          border: '#E5D9F5',
           foreground: '#FFFFFF',
         },
         // Semantic
@@ -139,7 +150,7 @@ const config: Config = {
         },
       },
       fontFamily: {
-        sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        sans: ['Inter', 'Be Vietnam Pro', 'ui-sans-serif', 'system-ui', 'sans-serif'],
         mono: ['JetBrains Mono', 'ui-monospace', 'monospace'],
       },
       fontSize: {
