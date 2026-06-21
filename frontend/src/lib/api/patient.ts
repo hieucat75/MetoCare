@@ -38,7 +38,7 @@ export async function getPatientProfile(patientId: string): Promise<PatientProfi
 
 export async function updatePatientProfile(
   patientId: string,
-  data: Partial<Omit<PatientProfile, 'id' | 'user_id'>>,
+  data: Partial<Omit<PatientProfile, 'id' | 'user_id'>>
 ): Promise<PatientProfile> {
   return api.patch<PatientProfile>(`/patients/${patientId}/profile`, data)
 }
@@ -129,7 +129,7 @@ export interface HealthMetric {
   unit: string
   // Backend uses measured_at; recorded_at is a UI alias populated during normalization
   measured_at: string
-  recorded_at: string        // aliased from measured_at for backwards compat
+  recorded_at: string // aliased from measured_at for backwards compat
   notes?: string | null
   source?: 'manual' | 'device' | 'lab' | 'lab_result' | string
   status: 'normal' | 'borderline' | 'abnormal' | 'critical' | null
@@ -161,7 +161,7 @@ export interface MetricListResponse {
 
 export async function getMetrics(
   patientId: string,
-  params?: { metric_type?: MetricType; limit?: number; offset?: number },
+  params?: { metric_type?: MetricType; limit?: number; offset?: number }
 ): Promise<MetricListResponse> {
   const qs = new URLSearchParams()
   if (params?.metric_type) qs.set('metric_type', params.metric_type)
@@ -170,21 +170,27 @@ export async function getMetrics(
   const query = qs.toString()
   // Backend returns plain array (not {items, total}); normalize here.
   const raw = await api.get<HealthMetric[] | MetricListResponse>(
-    `/patients/${patientId}/metrics${query ? `?${query}` : ''}`,
+    `/patients/${patientId}/metrics${query ? `?${query}` : ''}`
   )
   const items: HealthMetric[] = Array.isArray(raw)
-    ? raw.map((m) => ({ ...m, recorded_at: m.measured_at ?? (m as {recorded_at?: string}).recorded_at ?? '' }))
-    : (raw as MetricListResponse).items?.map((m) => ({ ...m, recorded_at: m.measured_at ?? m.recorded_at ?? '' })) ?? []
+    ? raw.map((m) => ({
+        ...m,
+        recorded_at: m.measured_at ?? (m as { recorded_at?: string }).recorded_at ?? '',
+      }))
+    : ((raw as MetricListResponse).items?.map((m) => ({
+        ...m,
+        recorded_at: m.measured_at ?? m.recorded_at ?? '',
+      })) ?? [])
   return { patient_id: patientId, total: items.length, items }
 }
 
 export async function getMetricTrend(
   patientId: string,
   metricType: MetricType,
-  days = 30,
+  days = 30
 ): Promise<MetricTrend> {
   return api.get<MetricTrend>(
-    `/patients/${patientId}/metrics/trend?metric_type=${metricType}&days=${days}`,
+    `/patients/${patientId}/metrics/trend?metric_type=${metricType}&days=${days}`
   )
 }
 
@@ -199,10 +205,7 @@ export interface LogMetricInput {
   normal_range_max?: number
 }
 
-export async function logMetric(
-  patientId: string,
-  data: LogMetricInput,
-): Promise<HealthMetric> {
+export async function logMetric(patientId: string, data: LogMetricInput): Promise<HealthMetric> {
   const raw = await api.post<HealthMetric>(`/patients/${patientId}/metrics`, data)
   return { ...raw, recorded_at: raw.measured_at ?? raw.recorded_at ?? '' }
 }
@@ -259,12 +262,10 @@ function bandToRiskLevel(band: string): MetabolicScore['risk_level'] {
  * singular `/metabolic-score` array the UI previously (wrongly) called, which 404'd
  * and silently rendered an empty card forever (P0-1).
  */
-export async function getLatestMetabolicScore(
-  patientId: string,
-): Promise<MetabolicScore | null> {
+export async function getLatestMetabolicScore(patientId: string): Promise<MetabolicScore | null> {
   try {
     const resp = await api.get<RiskScoreHistoryResponse>(
-      `/patients/${patientId}/metabolic-scores?limit=1`,
+      `/patients/${patientId}/metabolic-scores?limit=1`
     )
     const item = resp.items?.[0]
     if (!item) return null
@@ -274,14 +275,16 @@ export async function getLatestMetabolicScore(
       score: item.metabolic_score,
       risk_level: bandToRiskLevel(item.band),
       // Backend top_risks rows are objects {name, points, detail}; surface a readable label.
-      top_risks: (item.top_risks ?? []).map((r) => {
-        if (typeof r === 'string') return r
-        if (r && typeof r === 'object') {
-          const o = r as { detail?: string; name?: string }
-          return o.detail ?? o.name ?? ''
-        }
-        return String(r)
-      }).filter(Boolean),
+      top_risks: (item.top_risks ?? [])
+        .map((r) => {
+          if (typeof r === 'string') return r
+          if (r && typeof r === 'object') {
+            const o = r as { detail?: string; name?: string }
+            return o.detail ?? o.name ?? ''
+          }
+          return String(r)
+        })
+        .filter(Boolean),
       suggested_actions: [],
       calculated_at: item.created_at,
     }
@@ -307,13 +310,9 @@ export interface LiveMetabolicScore {
  * always reflects the data that actually exists. Returns `null` only on a
  * network/parse failure; an empty patient yields `{available:false}`.
  */
-export async function getLiveMetabolicScore(
-  patientId: string,
-): Promise<LiveMetabolicScore | null> {
+export async function getLiveMetabolicScore(patientId: string): Promise<LiveMetabolicScore | null> {
   try {
-    return await api.get<LiveMetabolicScore>(
-      `/patients/${patientId}/metabolic-score/live`,
-    )
+    return await api.get<LiveMetabolicScore>(`/patients/${patientId}/metabolic-score/live`)
   } catch {
     return null
   }
@@ -329,8 +328,8 @@ export type LabStatus = 'pending_review' | 'approved' | 'rejected' | 'request_in
 export interface LabResult {
   id: string
   patient_id: string
-  ocr_status: string           // backend: 'pending' | 'processing' | 'done' | 'failed'
-  status: string               // backend: 'uploaded' | etc.
+  ocr_status: string // backend: 'pending' | 'processing' | 'done' | 'failed'
+  status: string // backend: 'uploaded' | etc.
   // UI display helpers — may be null until OCR/review complete
   file_name: string | null
   file_url: string | null
@@ -348,7 +347,7 @@ export interface LabListResponse {
 
 export async function getLabs(
   patientId: string,
-  params?: { limit?: number; offset?: number },
+  params?: { limit?: number; offset?: number }
 ): Promise<LabListResponse> {
   const qs = new URLSearchParams()
   if (params?.limit != null) qs.set('limit', String(params.limit))
@@ -356,7 +355,7 @@ export async function getLabs(
   const query = qs.toString()
   // Backend returns plain array; normalise to LabListResponse
   const raw = await api.get<LabResult[]>(
-    `/patients/${patientId}/lab-documents${query ? `?${query}` : ''}`,
+    `/patients/${patientId}/lab-documents${query ? `?${query}` : ''}`
   )
   const items = Array.isArray(raw) ? raw : []
   return { patient_id: patientId, total: items.length, items }
@@ -393,7 +392,7 @@ export interface ManualLabItem {
 
 export async function createManualLabResults(
   patientId: string,
-  data: { lab_name?: string | null; test_date?: string | null; results: ManualLabItem[] },
+  data: { lab_name?: string | null; test_date?: string | null; results: ManualLabItem[] }
 ): Promise<LabResultListResponse> {
   return api.post<LabResultListResponse>(`/patients/${patientId}/lab-results`, data)
 }
@@ -401,13 +400,13 @@ export async function createManualLabResults(
 // ── OCR lab upload — review-only draft (OCR Lab Upload track) ─────────────────
 
 export interface LabUploadDraftItem {
-  test_name: string          // canonical key — feeds straight into the confirm form
+  test_name: string // canonical key — feeds straight into the confirm form
   canonical: string
   value: number
   unit: string
   reference_range: string | null
-  status: string             // normal | low | high | critical | unknown
-  confidence: number         // 0..1
+  status: string // normal | low | high | critical | unknown
+  confidence: number // 0..1
   needs_verification: boolean
 }
 
@@ -430,7 +429,7 @@ export interface LabUploadDraft {
  * draft — nothing is saved until the patient confirms via {@link createManualLabResults}.
  */
 export async function uploadLabDraft(
-  input: { file: File } | { url: string },
+  input: { file: File } | { url: string }
 ): Promise<LabUploadDraft> {
   const form = new FormData()
   if ('file' in input) form.append('file', input.file)
@@ -440,14 +439,14 @@ export async function uploadLabDraft(
 
 export async function getLabResults(
   patientId: string,
-  params?: { limit?: number; offset?: number },
+  params?: { limit?: number; offset?: number }
 ): Promise<LabResultListResponse> {
   const qs = new URLSearchParams()
   if (params?.limit != null) qs.set('limit', String(params.limit))
   if (params?.offset != null) qs.set('offset', String(params.offset))
   const query = qs.toString()
   return api.get<LabResultListResponse>(
-    `/patients/${patientId}/lab-results${query ? `?${query}` : ''}`,
+    `/patients/${patientId}/lab-results${query ? `?${query}` : ''}`
   )
 }
 
@@ -469,9 +468,7 @@ export interface AiExplainResponse {
   generated_at: string
 }
 
-export async function getAiExplanation(
-  payload: AiExplainRequest,
-): Promise<AiExplainResponse> {
+export async function getAiExplanation(payload: AiExplainRequest): Promise<AiExplainResponse> {
   return api.post<AiExplainResponse>('/ai/explain', payload)
 }
 
@@ -481,7 +478,7 @@ export interface SymptomLog {
   id: string
   patient_id: string
   description: string
-  severity: number | null   // 0–10 integer
+  severity: number | null // 0–10 integer
   reported_at: string
   created_at: string
 }
@@ -494,7 +491,7 @@ export interface SymptomLogListResponse {
 
 export async function getSymptomLogs(
   patientId: string,
-  params?: { limit?: number },
+  params?: { limit?: number }
 ): Promise<SymptomLogListResponse> {
   const qs = params?.limit ? `?limit=${params.limit}` : ''
   return api.get<SymptomLogListResponse>(`/patients/${patientId}/symptoms${qs}`)
@@ -504,9 +501,9 @@ export async function logSymptom(
   patientId: string,
   data: {
     description: string
-    severity?: number   // 0–10
+    severity?: number // 0–10
     reported_at?: string
-  },
+  }
 ): Promise<SymptomLog> {
   return api.post<SymptomLog>(`/patients/${patientId}/symptoms`, data)
 }
@@ -539,28 +536,25 @@ export interface MedicationInput {
 
 export async function getMedications(
   patientId: string,
-  params?: { limit?: number; offset?: number },
+  params?: { limit?: number; offset?: number }
 ): Promise<MedicationListResponse> {
   const qs = new URLSearchParams()
   if (params?.limit) qs.set('limit', String(params.limit))
   if (params?.offset) qs.set('offset', String(params.offset))
   const query = qs.toString()
   return api.get<MedicationListResponse>(
-    `/patients/${patientId}/medications${query ? `?${query}` : ''}`,
+    `/patients/${patientId}/medications${query ? `?${query}` : ''}`
   )
 }
 
-export async function addMedication(
-  patientId: string,
-  data: MedicationInput,
-): Promise<Medication> {
+export async function addMedication(patientId: string, data: MedicationInput): Promise<Medication> {
   return api.post<Medication>(`/patients/${patientId}/medications`, data)
 }
 
 export async function updateMedication(
   patientId: string,
   medId: string,
-  data: Partial<MedicationInput>,
+  data: Partial<MedicationInput>
 ): Promise<Medication> {
   return api.patch<Medication>(`/patients/${patientId}/medications/${medId}`, data)
 }
@@ -592,14 +586,14 @@ export interface NutritionListResponse {
 
 export async function getNutritionLog(
   patientId: string,
-  params?: { limit?: number; date?: string },
+  params?: { limit?: number; date?: string }
 ): Promise<NutritionListResponse> {
   const qs = new URLSearchParams()
   if (params?.limit) qs.set('limit', String(params.limit))
   if (params?.date) qs.set('date', params.date)
   const query = qs.toString()
   return api.get<NutritionListResponse>(
-    `/patients/${patientId}/nutrition${query ? `?${query}` : ''}`,
+    `/patients/${patientId}/nutrition${query ? `?${query}` : ''}`
   )
 }
 
@@ -612,7 +606,7 @@ export async function logNutrition(
     carbs_g?: number
     protein_g?: number
     fat_g?: number
-  },
+  }
 ): Promise<NutritionEntry> {
   return api.post<NutritionEntry>(`/patients/${patientId}/nutrition`, data)
 }
@@ -635,7 +629,14 @@ export interface CarePlan {
   title: string
   content: string | null
   /** Backend uses uppercase enum (PA-07). */
-  status: 'DRAFT' | 'PENDING_REVIEW' | 'APPROVED' | 'ACTIVE' | 'SUPERSEDED' | 'ARCHIVED' | 'REJECTED'
+  status:
+    | 'DRAFT'
+    | 'PENDING_REVIEW'
+    | 'APPROVED'
+    | 'ACTIVE'
+    | 'SUPERSEDED'
+    | 'ARCHIVED'
+    | 'REJECTED'
   approved_by_doctor_id?: string | null
   approved_at?: string | null
   ai_generated?: boolean
@@ -673,20 +674,18 @@ export type NotificationListResponse = Notification[]
 
 export async function getNotifications(
   _patientId: string,
-  params?: { limit?: number; unread_only?: boolean },
+  params?: { limit?: number; unread_only?: boolean }
 ): Promise<NotificationListResponse> {
   const qs = new URLSearchParams()
   if (params?.limit) qs.set('limit', String(params.limit))
   if (params?.unread_only) qs.set('unread_only', 'true')
   const query = qs.toString()
-  return api.get<NotificationListResponse>(
-    `/notifications${query ? `?${query}` : ''}`,
-  )
+  return api.get<NotificationListResponse>(`/notifications${query ? `?${query}` : ''}`)
 }
 
 export async function markNotificationRead(
   _patientId: string,
-  notificationId: string,
+  notificationId: string
 ): Promise<void> {
   return api.patch(`/notifications/${notificationId}/read`, {})
 }
@@ -697,7 +696,7 @@ export interface Consent {
   id: string
   patient_id: string
   data_scope: string
-  granted_to: string  // doctor user_id
+  granted_to: string // doctor user_id
 }
 
 export async function getConsents(patientId: string): Promise<Consent[]> {

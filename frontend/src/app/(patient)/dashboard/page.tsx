@@ -16,12 +16,7 @@ import {
   TrendingUp,
 } from 'lucide-react'
 import { PageLoading, ErrorState } from '@/design-system'
-import {
-  GlassCard,
-  MintButton,
-  PatientEmptyState,
-  SectionHeader,
-} from '@/components/patient'
+import { GlassCard, MintButton, PatientEmptyState, SectionHeader } from '@/components/patient'
 import { useAuth } from '@/lib/auth/context'
 import {
   getLiveMetabolicScore,
@@ -455,7 +450,9 @@ function TaskRow({ task }: { task: TodayTask }) {
       </span>
       <span className="min-w-0 flex-1">
         <span className="block text-[17px] font-medium text-text truncate">{task.label}</span>
-        {task.hint && <span className="block text-[14px] text-text-muted truncate">{task.hint}</span>}
+        {task.hint && (
+          <span className="block text-[14px] text-text-muted truncate">{task.hint}</span>
+        )}
       </span>
       <ChevronRight className="size-5 text-text-subtle shrink-0" aria-hidden="true" />
     </button>
@@ -464,7 +461,9 @@ function TaskRow({ task }: { task: TodayTask }) {
 
 function ConcernRow({ concern, onClick }: { concern: IndicatorConcern; onClick: () => void }) {
   const tone =
-    concern.severity === 'danger' ? 'border-rose-200 bg-rose-50/70' : 'border-amber-200 bg-amber-50/70'
+    concern.severity === 'danger'
+      ? 'border-rose-200 bg-rose-50/70'
+      : 'border-amber-200 bg-amber-50/70'
   const dot = concern.severity === 'danger' ? 'bg-rose-500' : 'bg-amber-500'
   const label = concern.severity === 'danger' ? 'text-rose-700' : 'text-amber-700'
   return (
@@ -489,12 +488,15 @@ function ConcernRow({ concern, onClick }: { concern: IndicatorConcern; onClick: 
 function TrendRow({ mover }: { mover: TrendMover }) {
   const { direction, pct, good } = mover.trend
   const Icon = direction === 'up' ? ArrowUpRight : direction === 'down' ? ArrowDownRight : Minus
-  const color = good === true ? 'text-mint-600' : good === false ? 'text-rose-600' : 'text-text-muted'
+  const color =
+    good === true ? 'text-mint-600' : good === false ? 'text-rose-600' : 'text-text-muted'
   const pctText = pct != null ? `${pct > 0 ? '+' : ''}${pct}%` : '—'
   return (
     <div className="flex items-center gap-3 px-4 py-3">
       <TrendingUp className="size-4 text-mint-500 shrink-0" aria-hidden="true" />
-      <span className="min-w-0 flex-1 text-[16px] font-medium text-text truncate">{mover.label}</span>
+      <span className="min-w-0 flex-1 text-[16px] font-medium text-text truncate">
+        {mover.label}
+      </span>
       <span className="text-[15px] text-text-muted">
         {mover.value} {mover.unit}
       </span>
@@ -533,7 +535,9 @@ function LatestLabCard({ lab, onClick }: { lab: LabResult; onClick: () => void }
         <span className="block text-[17px] font-medium text-text truncate">
           {lab.file_name ?? 'Kết quả xét nghiệm'}
         </span>
-        {date && <span className="block text-[14px] text-text-muted">{formatDate(new Date(date))}</span>}
+        {date && (
+          <span className="block text-[14px] text-text-muted">{formatDate(new Date(date))}</span>
+        )}
       </span>
       <span className={`text-[13px] font-medium px-2.5 py-1 rounded-full shrink-0 ${statusTone}`}>
         {statusLabel}

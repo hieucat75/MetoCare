@@ -84,11 +84,7 @@ function classifySeries(series: MetricSeries): {
 } {
   // Lab biomarker with a catalog-matched unit → use the unit's reference range.
   if (series.unit) {
-    const status = classifyLabValue(
-      series.latest.value,
-      series.unit,
-      series.higherIsBetter,
-    )
+    const status = classifyLabValue(series.latest.value, series.unit, series.higherIsBetter)
     const severity: ConcernSeverity =
       status.tone === 'danger' ? 'danger' : status.tone === 'warning' ? 'warning' : 'normal'
     return { severity, statusLabel: status.label }
@@ -100,7 +96,7 @@ function classifySeries(series: MetricSeries): {
 
 export function buildDashboardSummary(
   metrics: HealthMetric[],
-  catalog: LabCatalog | null,
+  catalog: LabCatalog | null
 ): DashboardSummary {
   if (metrics.length === 0 || !catalog) {
     return {
@@ -162,11 +158,7 @@ export function buildDashboardSummary(
 
   const hasDanger = concerns.some((c) => c.severity === 'danger')
   const hasWarning = concerns.some((c) => c.severity === 'warning')
-  const overallStatus: OverallStatus = hasDanger
-    ? 'at_risk'
-    : hasWarning
-      ? 'attention'
-      : 'stable'
+  const overallStatus: OverallStatus = hasDanger ? 'at_risk' : hasWarning ? 'attention' : 'stable'
 
   return {
     overallStatus,
