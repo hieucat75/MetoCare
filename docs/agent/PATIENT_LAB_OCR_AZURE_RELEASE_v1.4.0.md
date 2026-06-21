@@ -1,5 +1,10 @@
 # Patient Lab OCR — Azure Document Intelligence fallback (v1.4.0)
 
+> **Release v1.4.0 (2026-06-21)** — major bump (v1.3.0 → v1.4.0): first paid-capable Azure
+> resource + OCR cloud commitment. Feature landed via PR #45 (`228909b`). This release PR
+> carries the workflow change (Key Vault fetch + ACA env) and triggers Azure Staging Deploy.
+> No DB migration (head stays `hmbk_backfill`). DigitalOcean production untouched.
+
 **Track:** OCR Lab Upload (provider policy E — Tesseract local primary + cloud opt-in fallback).
 **Why:** Free Tesseract OCR quality on phone photos of Vietnamese lab printouts was poor
 (missed/garbled biomarkers). Azure AI Document Intelligence (Form Recognizer) `prebuilt-layout`
