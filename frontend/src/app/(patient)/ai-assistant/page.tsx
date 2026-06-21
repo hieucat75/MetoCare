@@ -1,16 +1,18 @@
 'use client'
 
 import * as React from 'react'
+import { Bot, AlertTriangle, Send } from 'lucide-react'
 import {
-  AlertTriangle,
-  ArrowLeft,
-  ArrowUp,
-  CheckCircle,
-  Info,
-  Plus,
-  Sparkles,
-} from 'lucide-react'
-import { Alert, ErrorState, PageHeader, Skeleton, SkeletonText } from '@/design-system'
+  Alert,
+  Button,
+  Card,
+  CardContent,
+  ErrorState,
+  PageHeader,
+  Skeleton,
+  SkeletonText,
+  Textarea,
+} from '@/design-system'
 import { useAuth } from '@/lib/auth/context'
 import { getAiExplanation, type AiExplainResponse } from '@/lib/api/patient'
 import { useFeatureFlags } from '@/lib/api/features'
@@ -32,72 +34,35 @@ const PREDEFINED_QUESTIONS = [
   'Khi nào cần gặp bác sĩ gấp?',
 ]
 
-// ── AI provenance pill ─────────────────────────────────────────────────────────
-
-function AIProvenancePill() {
-  return (
-    <div className="flex items-center gap-1.5 mt-1.5 px-2.5 py-1 rounded-md bg-ai-light border border-[rgba(109,63,190,0.25)] w-fit">
-      <Sparkles className="size-3 text-ai shrink-0" aria-hidden="true" />
-      <span className="text-[11px] font-medium text-ai">AI tạo · chờ bác sĩ duyệt</span>
-    </div>
-  )
-}
-
-// ── AI info box (inside rich AI bubbles) ───────────────────────────────────────
-
-function AIInfoBox() {
-  return (
-    <div className="flex items-start gap-2 mt-3 p-2.5 rounded-md bg-[rgba(243,238,251,0.85)] border border-[rgba(109,63,190,0.2)]">
-      <Info className="size-3.5 text-ai shrink-0 mt-0.5" aria-hidden="true" />
-      <p className="text-[11px] leading-relaxed text-ai">
-        Nội dung do AI tạo, mang tính tham khảo và{' '}
-        <strong>đang chờ bác sĩ duyệt</strong>. Không thay thế tư vấn y tế.
-      </p>
-    </div>
-  )
-}
-
 // ── AI response panel ──────────────────────────────────────────────────────────
 
 function AIResponsePanel({ response }: { response: AiExplainResponse }) {
-  const isUrgent = response.safety_level === 'urgent'
-
   return (
-    <div className="flex flex-col items-start max-w-[85%]">
-      {/* Glass AI bubble */}
-      <div
-        className="
-          bg-white/[0.66] backdrop-blur-xl border border-white/80
-          rounded-[13px_13px_13px_4px] px-4 py-3
-          shadow-glass
-          border-l-[3px] border-l-ai/50
-          space-y-2
-        "
-      >
-        <p className="text-[15px] text-[#244744] leading-relaxed">
+    <div className="space-y-2">
+      <div className="rounded-md bg-amber-50 border border-amber-200 p-3 space-y-2">
+        <div className="flex items-center gap-2">
+          <Bot className="size-4 shrink-0 text-amber-600" aria-hidden="true" />
+          <span className="text-[17px] font-semibold text-amber-800">
+            Trợ lý AI MetoCare
+          </span>
+        </div>
+        <p className="text-[17px] text-amber-900 leading-relaxed">
           {response.plain_language_summary}
         </p>
-
-        {/* Disclaimer as a checklist-style item */}
-        {response.disclaimer && (
-          <div className="flex items-start gap-2 pt-1">
-            <CheckCircle className="size-3.5 text-mint-400 shrink-0 mt-0.5" aria-hidden="true" />
-            <p className="text-[13px] text-[#365651] leading-relaxed">{response.disclaimer}</p>
-          </div>
-        )}
-
-        {isUrgent && (
-          <div className="mt-2 flex items-center gap-2 p-2 rounded bg-danger-light border border-danger-border">
-            <AlertTriangle className="size-3.5 text-danger shrink-0" aria-hidden="true" />
-            <p className="text-[12px] text-danger font-medium">Vui lòng liên hệ bác sĩ ngay!</p>
-          </div>
-        )}
-
-        <AIInfoBox />
+        <p className="text-[15px] text-amber-700 italic border-t border-amber-200 pt-2">
+          {response.disclaimer}
+        </p>
       </div>
 
-      {/* Provenance pill below bubble */}
-      <AIProvenancePill />
+      {response.safety_level === 'urgent' && (
+        <Alert
+          variant="danger"
+          icon={<AlertTriangle className="size-5 shrink-0 mt-0.5 text-red-600" aria-hidden="true" />}
+          title="Cần chú ý ngay"
+        >
+          Vui lòng liên hệ bác sĩ ngay lập tức!
+        </Alert>
+      )}
     </div>
   )
 }
@@ -106,35 +71,12 @@ function AIResponsePanel({ response }: { response: AiExplainResponse }) {
 
 function AIAnswerSkeleton() {
   return (
-    <div className="flex flex-col items-start max-w-[85%]">
-      <div className="bg-white/[0.66] backdrop-blur-xl border border-white/80 border-l-[3px] border-l-ai/50 rounded-[13px_13px_13px_4px] px-4 py-3 shadow-glass space-y-2 w-56">
-        <div className="flex items-center gap-2">
-          <Skeleton width="1rem" height="1rem" className="rounded" />
-          <Skeleton width="8rem" height="0.875rem" />
-        </div>
-        <SkeletonText lines={3} />
+    <div className="rounded-md bg-amber-50 border border-amber-200 p-3 space-y-2">
+      <div className="flex items-center gap-2">
+        <Skeleton width="1rem" height="1rem" className="rounded" />
+        <Skeleton width="8rem" height="0.875rem" />
       </div>
-      <div className="flex items-center gap-1.5 mt-1.5 px-2.5 py-1 rounded-md bg-ai-light border border-[rgba(109,63,190,0.25)] w-fit">
-        <Skeleton width="6rem" height="0.75rem" />
-      </div>
-    </div>
-  )
-}
-
-// ── User message bubble ────────────────────────────────────────────────────────
-
-function UserBubble({ text }: { text: string }) {
-  return (
-    <div className="flex justify-end">
-      <div
-        className="
-          bg-gradient-to-br from-mint-400 to-mint-700 text-white
-          rounded-[13px_13px_4px_13px] px-4 py-2.5 max-w-[85%]
-          shadow-pillow-mint
-        "
-      >
-        <p className="text-[15px] leading-relaxed">{text}</p>
-      </div>
+      <SkeletonText lines={3} />
     </div>
   )
 }
@@ -143,8 +85,15 @@ function UserBubble({ text }: { text: string }) {
 
 function QAHistoryItem({ qa }: { qa: QAPair }) {
   return (
-    <div className="space-y-3">
-      <UserBubble text={qa.question} />
+    <div className="space-y-2">
+      {/* Question bubble */}
+      <div className="flex justify-end">
+        <div className="bg-mint-500 text-white rounded-2xl rounded-tr-sm px-4 py-2 max-w-[85%]">
+          <p className="text-[17px]">{qa.question}</p>
+        </div>
+      </div>
+
+      {/* AI answer */}
       <AIResponsePanel response={qa.response} />
     </div>
   )
@@ -163,7 +112,6 @@ export default function AIAssistantPage() {
   const [error, setError] = React.useState<string | null>(null)
 
   const bottomRef = React.useRef<HTMLDivElement>(null)
-  const inputRef = React.useRef<HTMLInputElement>(null)
 
   function scrollToBottom() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -197,11 +145,7 @@ export default function AIAssistantPage() {
       setQuestion('')
       setTimeout(scrollToBottom, 100)
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : 'Không thể kết nối với trợ lý AI. Vui lòng thử lại.',
-      )
+      setError(err instanceof Error ? err.message : 'Không thể kết nối với trợ lý AI. Vui lòng thử lại.')
     } finally {
       setLoading(false)
     }
@@ -215,11 +159,6 @@ export default function AIAssistantPage() {
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     submitQuestion(question)
-  }
-
-  function handlePlusClick() {
-    setQuestion('')
-    inputRef.current?.focus()
   }
 
   if (!patientId) {
@@ -246,55 +185,27 @@ export default function AIAssistantPage() {
   }
 
   return (
-    <div className="flex flex-col min-h-full max-w-2xl mx-auto">
-      {/* ── Header ──────────────────────────────────────────────────────────── */}
-      <div className="flex items-center gap-3 px-4 pt-4 pb-3">
-        {/* Back button: round glass */}
-        <button
-          type="button"
-          aria-label="Quay lại"
-          className="
-            size-9 rounded-full flex items-center justify-center shrink-0
-            bg-white/[0.66] backdrop-blur-xl border border-white/80 shadow-glass
-            text-[#0E2A33] hover:bg-white/80 transition-colors
-          "
-        >
-          <ArrowLeft className="size-4" aria-hidden="true" />
-        </button>
+    <div className="p-4 lg:p-6 space-y-4 max-w-2xl mx-auto pb-4">
+      <PageHeader
+        title="Trợ lý AI"
+        subtitle="Hỏi đáp thông tin sức khỏe"
+        actions={
+          <Bot className="size-6 text-amber-500" aria-hidden="true" />
+        }
+      />
 
-        {/* Mint-gradient rounded square icon */}
-        <div className="size-10 rounded-xl flex items-center justify-center shrink-0 bg-gradient-to-br from-mint-400 to-mint-700 shadow-pillow-mint">
-          <Sparkles className="size-5 text-white" aria-hidden="true" />
-        </div>
+      {/* Safety notice */}
+      <Alert
+        variant="warning"
+        icon={<AlertTriangle className="size-5 shrink-0 mt-0.5 text-amber-600" aria-hidden="true" />}
+        title="Lưu ý quan trọng"
+      >
+        Trợ lý AI MetoCare cung cấp thông tin sức khỏe chung. Nội dung AI{' '}
+        <strong>KHÔNG thay thế</strong> chẩn đoán hoặc điều trị từ bác sĩ.
+      </Alert>
 
-        {/* Title + online status */}
-        <div className="flex flex-col min-w-0">
-          <h1 className="text-[15px] font-bold text-[#0E2A33] leading-tight truncate">
-            Trợ lý AI MetoCare
-          </h1>
-          <span className="flex items-center gap-1 text-[12px] text-[#15915A] font-medium">
-            <span className="inline-block size-1.5 rounded-full bg-[#15915A]" aria-hidden="true" />
-            Trực tuyến
-          </span>
-        </div>
-      </div>
-
-      {/* ── Amber disclaimer pill ─────────────────────────────────────────── */}
-      <div className="flex justify-center px-4 pb-3">
-        <div
-          className="
-            flex items-center gap-1.5 px-3.5 py-1.5 rounded-full
-            bg-[rgba(252,239,201,0.9)] border border-[rgba(199,122,6,0.3)]
-            text-[#C77A06]
-          "
-        >
-          <AlertTriangle className="size-3.5 shrink-0" aria-hidden="true" />
-          <span className="text-[12px] font-medium">Không dùng cho tình huống cấp cứu</span>
-        </div>
-      </div>
-
-      {/* ── Predefined question chips ─────────────────────────────────────── */}
-      <div className="overflow-x-auto -mx-4 px-4 pb-3">
+      {/* Predefined question chips */}
+      <div className="overflow-x-auto -mx-4 px-4">
         <div className="flex gap-2 w-max">
           {PREDEFINED_QUESTIONS.map((chip) => (
             <button
@@ -302,13 +213,7 @@ export default function AIAssistantPage() {
               type="button"
               onClick={() => handleChipClick(chip)}
               disabled={loading}
-              className="
-                whitespace-nowrap rounded-full px-3 py-1.5
-                bg-white/[0.66] backdrop-blur-xl border border-white/80 shadow-xs
-                text-[13px] font-medium text-[#244744]
-                hover:bg-white/80 transition-colors
-                disabled:opacity-50 disabled:cursor-not-allowed
-              "
+              className="whitespace-nowrap rounded-full border border-amber-300 bg-amber-50 px-3 py-1.5 text-[15px] font-medium text-amber-800 hover:bg-amber-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {chip}
             </button>
@@ -316,106 +221,85 @@ export default function AIAssistantPage() {
         </div>
       </div>
 
-      {/* ── Chat area ────────────────────────────────────────────────────────── */}
-      <div className="flex-1 px-4 space-y-6 overflow-y-auto pb-4">
-        {/* Q&A history */}
-        {history.map((qa) => (
-          <QAHistoryItem key={qa.id} qa={qa} />
-        ))}
+      {/* Q&A history */}
+      {history.length > 0 && (
+        <div className="space-y-6">
+          {history.map((qa) => (
+            <QAHistoryItem key={qa.id} qa={qa} />
+          ))}
+        </div>
+      )}
 
-        {/* Loading state */}
-        {loading && (
-          <div className="space-y-3">
-            {question && <UserBubble text={question} />}
-            <AIAnswerSkeleton />
-          </div>
-        )}
-
-        {/* Error */}
-        {error && !loading && (
-          <ErrorState
-            variant="inline"
-            title="Không thể kết nối AI"
-            message={error}
-            onRetry={() => {
-              setError(null)
-              if (question.trim()) submitQuestion(question)
-            }}
-          />
-        )}
-
-        {/* Empty state */}
-        {history.length === 0 && !loading && !error && (
-          <div className="flex flex-col items-center gap-3 text-center py-10">
-            <div className="size-14 rounded-2xl flex items-center justify-center bg-gradient-to-br from-mint-400 to-mint-700 shadow-glow-mint">
-              <Sparkles className="size-7 text-white" aria-hidden="true" />
+      {/* Loading skeleton */}
+      {loading && (
+        <div className="space-y-2">
+          {question && (
+            <div className="flex justify-end">
+              <div className="bg-mint-500 text-white rounded-2xl rounded-tr-sm px-4 py-2 max-w-[85%]">
+                <p className="text-[17px]">{question}</p>
+              </div>
             </div>
-            <p className="text-[15px] text-[#244744]">
-              Chọn câu hỏi gợi ý ở trên hoặc nhập câu hỏi của bạn bên dưới.
-            </p>
-          </div>
-        )}
+          )}
+          <AIAnswerSkeleton />
+        </div>
+      )}
 
-        <div ref={bottomRef} />
-      </div>
+      {/* Error */}
+      {error && !loading && (
+        <ErrorState
+          variant="inline"
+          title="Không thể kết nối AI"
+          message={error}
+          onRetry={() => {
+            setError(null)
+            if (question.trim()) submitQuestion(question)
+          }}
+        />
+      )}
 
-      {/* ── Composer bar ─────────────────────────────────────────────────── */}
-      <div className="sticky bottom-0 bg-background/90 backdrop-blur-sm pt-2 pb-3 px-4 border-t border-border">
-        <form onSubmit={handleSubmit} className="flex items-center gap-2">
-          {/* Round glass "+" button */}
-          <button
-            type="button"
-            onClick={handlePlusClick}
-            aria-label="Xóa câu hỏi"
-            className="
-              size-10 rounded-full flex items-center justify-center shrink-0
-              bg-white/[0.66] backdrop-blur-xl border border-white/80 shadow-glass
-              text-[#244744] hover:bg-white/80 transition-colors
-            "
-          >
-            <Plus className="size-4" aria-hidden="true" />
-          </button>
+      {/* Empty state when no history */}
+      {history.length === 0 && !loading && !error && (
+        <Card variant="flat" padding="lg">
+          <CardContent>
+            <div className="flex flex-col items-center gap-3 text-center py-4">
+              <Bot className="size-10 text-amber-400" aria-hidden="true" />
+              <p className="text-[17px] text-text-muted">
+                Chọn câu hỏi gợi ý ở trên hoặc nhập câu hỏi của bạn bên dưới.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
-          {/* Glass pill input */}
-          <input
-            ref={inputRef}
-            type="text"
+      <div ref={bottomRef} />
+
+      {/* Input area */}
+      <div className="sticky bottom-0 bg-background pt-2 pb-2 -mx-4 px-4 border-t border-border">
+        <form onSubmit={handleSubmit} className="flex gap-2 items-end">
+          <Textarea
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
-            placeholder="Nhập câu hỏi…"
+            placeholder="Nhập câu hỏi của bạn về sức khỏe..."
+            rows={2}
+            className="flex-1 resize-none"
             disabled={loading}
-            aria-label="Nhập câu hỏi về sức khỏe"
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault()
                 submitQuestion(question)
               }
             }}
-            className="
-              flex-1 min-w-0 h-10 px-4 rounded-full
-              bg-white/[0.66] backdrop-blur-xl border border-white/80 shadow-inset-mint
-              text-[15px] text-[#244744] placeholder:text-[#365651]/50
-              focus:outline-none focus:shadow-focus-mint focus:border-mint-400/50
-              disabled:opacity-50 disabled:cursor-not-allowed
-              transition-shadow
-            "
           />
-
-          {/* Round mint-gradient send button */}
-          <button
+          <Button
             type="submit"
+            variant="mint"
+            size="md"
             disabled={!question.trim() || loading}
             aria-label="Gửi câu hỏi"
-            className="
-              size-10 rounded-full flex items-center justify-center shrink-0
-              bg-gradient-to-br from-mint-400 to-mint-700 shadow-pillow-mint
-              text-white
-              hover:from-mint-400/90 hover:to-mint-700/90 transition-colors
-              disabled:opacity-40 disabled:cursor-not-allowed
-            "
           >
-            <ArrowUp className="size-4" aria-hidden="true" />
-          </button>
+            <Send className="size-4" aria-hidden="true" />
+            <span className="ml-1">Gửi</span>
+          </Button>
         </form>
       </div>
     </div>
