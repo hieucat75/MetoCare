@@ -256,6 +256,161 @@ def test_cloud_flag_on_but_no_key_falls_through(monkeypatch):
 
 
 # --------------------------------------------------------------------------- #
+# Azure Document Intelligence provider (real impl, mocked HTTP)
+# --------------------------------------------------------------------------- #
+
+class _FakeResp:
+    """Minimal stand-in for an httpx.Response."""
+
+    def __init__(self, *, headers=None, json_body=None):
+        self.headers = headers or {}
+        self._json = json_body or {}
+
+    def raise_for_status(self):
+        return None
+
+    def json(self):
+        return self._json
+
+
+# A realistic prebuilt-layout success payload: content text + a ruled table +
+# per-word confidences.
+_AZURE_SUCCESS = {
+    "status": "succeeded",
+    "analyzeResult": {
+        "content": "Ngày xét nghiệm: 15/10/2024\nHbA1c 6.8 %",
+        "pages": [{"words": [{"confidence": 0.99}, {"confidence": 0.97}, {"confidence": 0.95}]}],
+        "tables": [
+            {
+                "cells": [
+                    {"rowIndex": 0, "columnIndex": 0, "content": "Chỉ số"},
+                    {"rowIndex": 0, "columnIndex": 1, "content": "Kết quả"},
+                    {"rowIndex": 1, "columnIndex": 0, "content": "Glucose lúc đói"},
+                    {"rowIndex": 1, "columnIndex": 1, "content": "126 mg/dL"},
+                ]
+            }
+        ],
+    },
+}
+
+
+def _patch_azure_http(monkeypatch, *, poll_body=_AZURE_SUCCESS):
+    import httpx
+
+    monkeypatch.setattr(
+        httpx, "post",
+        lambda *a, **k: _FakeResp(headers={"operation-location": "https://az/op/123"}),
+    )
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: _FakeResp(json_body=poll_body))
+
+
+def test_azure_build_text_reflows_tables():
+    from app.services.ocr_engine import AzureDocIntelEngine
+
+    text = AzureDocIntelEngine._build_text(_AZURE_SUCCESS["analyzeResult"])
+    # Table row is reflowed onto one line so the parser sees "name ... value unit".
+    assert "Glucose lúc đói 126 mg/dL" in text
+    assert "HbA1c 6.8 %" in text  # content preserved too
+
+
+def test_azure_avg_word_confidence_real_and_default():
+    from app.services.ocr_engine import AzureDocIntelEngine
+
+    assert AzureDocIntelEngine._avg_word_confidence(
+        _AZURE_SUCCESS["analyzeResult"]
+    ) == pytest.approx(0.97, abs=1e-3)
+    # No per-word confidence -> high default, never 0.
+    assert AzureDocIntelEngine._avg_word_confidence({"pages": []}) == 0.9
+
+
+def test_azure_provider_run_parses_layout(monkeypatch):
+    from app.services.ocr_engine import AzureDocIntelEngine
+
+    monkeypatch.setenv("AZURE_DOC_INTEL_KEY", "k")
+    monkeypatch.setenv("AZURE_DOC_INTEL_ENDPOINT", "https://docintel.example.com")
+    _patch_azure_http(monkeypatch)
+    res = AzureDocIntelEngine().run(b"\xff\xd8\xff", "image/jpeg")
+    assert res.provider == "azure"
+    assert res.confidence == pytest.approx(0.97, abs=1e-3)
+    # Real-world: the parser turns the Azure text into canonical biomarkers.
+    parsed = {v.test_name for v in lab_parser.parse_lab_text(res.text)}
+    assert {"fasting_glucose", "hba1c"} <= parsed
+
+
+def test_azure_provider_raises_on_failed_status(monkeypatch):
+    from app.services.ocr_engine import AzureDocIntelEngine, OcrEngineError
+
+    monkeypatch.setenv("AZURE_DOC_INTEL_KEY", "k")
+    monkeypatch.setenv("AZURE_DOC_INTEL_ENDPOINT", "https://docintel.example.com")
+    _patch_azure_http(monkeypatch, poll_body={"status": "failed"})
+    with pytest.raises(OcrEngineError):
+        AzureDocIntelEngine().run(b"\xff\xd8\xff", "image/jpeg")
+
+
+def test_azure_fallback_used_on_low_confidence(monkeypatch):
+    monkeypatch.setenv("MCP_FEATURE_OCR_CLOUD_FALLBACK", "true")
+    monkeypatch.setenv("AZURE_DOC_INTEL_KEY", "k")
+    monkeypatch.setenv("AZURE_DOC_INTEL_ENDPOINT", "https://docintel.example.com")
+    ocr_engine = _force_local(monkeypatch, confidence=0.3)  # low -> escalate
+    monkeypatch.setattr(
+        ocr_engine, "get_settings",
+        lambda: SimpleNamespace(ocr_cloud_provider="azure", ocr_lang="vie+eng"),
+    )
+    monkeypatch.setattr(
+        ocr_engine.AzureDocIntelEngine, "run",
+        lambda self, data, mime: OcrTextResult(
+            text="Glucose 99 mg/dL", confidence=0.96, provider="azure"
+        ),
+    )
+    res = ocr_engine.run_ocr(b"x", "image/png")
+    assert res.provider == "azure"
+
+
+def test_azure_fallback_skipped_when_no_key(monkeypatch):
+    monkeypatch.setenv("MCP_FEATURE_OCR_CLOUD_FALLBACK", "true")
+    monkeypatch.delenv("AZURE_DOC_INTEL_KEY", raising=False)
+    monkeypatch.delenv("AZURE_DOC_INTEL_ENDPOINT", raising=False)
+    ocr_engine = _force_local(monkeypatch, confidence=0.3)
+    monkeypatch.setattr(
+        ocr_engine, "get_settings",
+        lambda: SimpleNamespace(ocr_cloud_provider="azure", ocr_lang="vie+eng"),
+    )
+
+    def _boom(self, data, mime):
+        raise AssertionError("Azure must NOT be called without a key")
+
+    monkeypatch.setattr(ocr_engine.AzureDocIntelEngine, "run", _boom)
+    res = ocr_engine.run_ocr(b"x", "image/png")  # must NOT crash
+    assert res.provider == "tesseract"
+
+
+def test_zero_biomarker_escalation_uses_cloud(monkeypatch):
+    # Local OCR is high-confidence but parses nothing -> escalate to permitted cloud.
+    _patch_ocr(monkeypatch, text="(ảnh mờ không đọc được)", confidence=0.95)
+    monkeypatch.setattr(
+        lab_upload, "run_cloud_ocr_if_permitted",
+        lambda data, mime: OcrTextResult(
+            text="Glucose lúc đói 126 mg/dL", confidence=0.97, provider="azure"
+        ),
+    )
+    draft = lab_upload.process_bytes(_png())
+    assert draft.provider_used == "azure"
+    assert any(i.canonical == "fasting_glucose" for i in draft.parsed_values)
+    assert any("đám mây" in w.lower() for w in draft.warnings)
+
+
+def test_zero_biomarker_no_escalation_when_cloud_not_permitted(monkeypatch):
+    _patch_ocr(monkeypatch, text="(ảnh mờ không đọc được)", confidence=0.95)
+    monkeypatch.setattr(
+        lab_upload, "run_cloud_ocr_if_permitted", lambda data, mime: None
+    )
+    draft = lab_upload.process_bytes(_png())
+    assert draft.provider_used == "tesseract"
+    assert draft.manual_fallback is True
+    assert draft.parsed_values == []
+
+
+# --------------------------------------------------------------------------- #
 # Endpoint: flag gate, RBAC, file + url, confirm-save
 # --------------------------------------------------------------------------- #
 

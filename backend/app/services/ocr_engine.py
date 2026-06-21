@@ -179,7 +179,29 @@ class AnthropicVisionEngine:
 
 
 class AzureDocIntelEngine:
+    """Azure AI Document Intelligence (Form Recognizer) cloud fallback — real impl.
+
+    Uses the GA REST API (``2024-11-30``) with the ``prebuilt-layout`` model by
+    default: layout reconstructs ruled lab-result tables (test | value | unit |
+    range) far better than Tesseract on phone photos, which is exactly where the
+    local engine is weak. The model is overridable via ``AZURE_DOC_INTEL_MODEL``
+    (e.g. ``prebuilt-read`` for the cheaper read model).
+
+    Returns the document ``content`` (reading-order text) augmented with one line
+    per detected table row, plus the **real** average word confidence reported by
+    the service — so the orchestrator keeps whichever transcription scores higher
+    rather than trusting a hardcoded guess.
+    """
+
     name = "azure"
+    _API_VERSION = "2024-11-30"
+    _DEFAULT_MODEL = "prebuilt-layout"
+    _SUBMIT_TIMEOUT_S = 30.0
+    _POLL_TIMEOUT_S = 30.0
+    _POLL_MAX_ATTEMPTS = 30
+    _POLL_INTERVAL_S = 1.0
+    _POLL_BACKOFF_CAP_S = 5.0
+    _NO_WORD_CONF_DEFAULT = 0.9  # service returned no per-word confidence
 
     @staticmethod
     def configured() -> bool:
@@ -190,38 +212,94 @@ class AzureDocIntelEngine:
         endpoint = os.getenv("AZURE_DOC_INTEL_ENDPOINT")
         if not (key and endpoint):
             raise OcrEngineError("AZURE_DOC_INTEL_* chưa được cấu hình.")
-        import time
-
         import httpx
 
+        model = (os.getenv("AZURE_DOC_INTEL_MODEL") or self._DEFAULT_MODEL).strip()
         analyze = (
             f"{endpoint.rstrip('/')}/documentintelligence/documentModels/"
-            "prebuilt-read:analyze?api-version=2024-02-29-preview"
+            f"{model}:analyze?api-version={self._API_VERSION}"
         )
         try:
             submit = httpx.post(
                 analyze,
                 headers={"Ocp-Apim-Subscription-Key": key, "Content-Type": mime},
                 content=image_bytes,
-                timeout=30.0,
+                timeout=self._SUBMIT_TIMEOUT_S,
             )
             submit.raise_for_status()
             op_url = submit.headers.get("operation-location")
             if not op_url:
                 raise OcrEngineError("Azure Doc Intel không trả operation-location.")
-            for _ in range(15):
-                poll = httpx.get(
-                    op_url, headers={"Ocp-Apim-Subscription-Key": key}, timeout=30.0
-                )
-                poll.raise_for_status()
-                body = poll.json()
-                if body.get("status") in ("succeeded", "failed"):
-                    break
-                time.sleep(1.0)
-            text = body.get("analyzeResult", {}).get("content", "")
+            body = self._poll(httpx, op_url, key)
         except httpx.HTTPError as exc:
             raise OcrEngineError("Cloud OCR (Azure) thất bại.") from exc
-        return OcrTextResult(text=text, confidence=0.9, provider=self.name)
+
+        analyze_result = body.get("analyzeResult", {}) or {}
+        text = self._build_text(analyze_result)
+        confidence = self._avg_word_confidence(analyze_result)
+        return OcrTextResult(text=text, confidence=confidence, provider=self.name)
+
+    def _poll(self, httpx, op_url: str, key: str) -> dict:
+        """Poll the long-running analyze operation until terminal. Honours the
+        server-suggested ``retry-after`` backoff; raises on failure/timeout."""
+        import time
+
+        for _ in range(self._POLL_MAX_ATTEMPTS):
+            poll = httpx.get(
+                op_url, headers={"Ocp-Apim-Subscription-Key": key},
+                timeout=self._POLL_TIMEOUT_S,
+            )
+            poll.raise_for_status()
+            body = poll.json()
+            status = (body.get("status") or "").lower()
+            if status == "succeeded":
+                return body
+            if status == "failed":
+                raise OcrEngineError("Azure Doc Intel báo lỗi khi phân tích tài liệu.")
+            retry_after = poll.headers.get("retry-after")
+            try:
+                delay = float(retry_after) if retry_after else self._POLL_INTERVAL_S
+            except (TypeError, ValueError):
+                delay = self._POLL_INTERVAL_S
+            time.sleep(min(delay, self._POLL_BACKOFF_CAP_S))
+        raise OcrEngineError("Azure Doc Intel hết thời gian chờ phân tích.")
+
+    @staticmethod
+    def _build_text(analyze_result: dict) -> str:
+        """Document content (reading order) + one reflowed line per table row, so
+        columnar lab data lands on a single line for the heuristic parser."""
+        content = (analyze_result.get("content") or "").strip()
+        table_lines: list[str] = []
+        for table in analyze_result.get("tables", []) or []:
+            rows: dict[int, list[tuple[int, str]]] = {}
+            for cell in table.get("cells", []) or []:
+                txt = (cell.get("content") or "").strip()
+                if not txt:
+                    continue
+                rows.setdefault(cell.get("rowIndex", 0), []).append(
+                    (cell.get("columnIndex", 0), txt)
+                )
+            for r in sorted(rows):
+                cells = [t for _, t in sorted(rows[r])]
+                if cells:
+                    table_lines.append(" ".join(cells))
+        if table_lines:
+            return (content + "\n" + "\n".join(table_lines)).strip()
+        return content
+
+    @classmethod
+    def _avg_word_confidence(cls, analyze_result: dict) -> float:
+        """Mean of the per-word confidences the service reports (0..1). Falls back
+        to a high default when the model returns none."""
+        confs = [
+            w["confidence"]
+            for page in analyze_result.get("pages", []) or []
+            for w in page.get("words", []) or []
+            if isinstance(w.get("confidence"), (int, float))
+        ]
+        if not confs:
+            return cls._NO_WORD_CONF_DEFAULT
+        return round(sum(confs) / len(confs), 4)
 
 
 def _cloud_engine() -> AnthropicVisionEngine | AzureDocIntelEngine | None:
@@ -239,6 +317,24 @@ def _cloud_engine() -> AnthropicVisionEngine | AzureDocIntelEngine | None:
     if provider == "azure" and AzureDocIntelEngine.configured():
         return AzureDocIntelEngine()
     return None
+
+
+def run_cloud_ocr_if_permitted(image_bytes: bytes, mime: str) -> OcrTextResult | None:
+    """Run the configured cloud engine ONLY when permitted (flag ON + provider +
+    key). Used by the draft builder to escalate when the local transcription
+    parsed *zero* biomarkers despite acceptable confidence — a layout the cloud
+    engine usually handles. Never raises: a cloud failure returns None so the
+    caller keeps its local result. Returns None when cloud is not permitted, so a
+    medical image is never sent out unless the opt-in fallback is explicitly on.
+    """
+    cloud = _cloud_engine()
+    if cloud is None:
+        return None
+    try:
+        return cloud.run(image_bytes, mime)
+    except OcrEngineError:
+        logger.warning("cloud_ocr_escalation_failed provider=%s", cloud.name)
+        return None
 
 
 # --------------------------------------------------------------------------- #
