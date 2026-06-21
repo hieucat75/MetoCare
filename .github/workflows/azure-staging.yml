@@ -116,13 +116,20 @@ jobs:
           SECRET_KEY=$(az keyvault secret show --vault-name "$KV_NAME" -n mcp-secret-key --query value -o tsv)
           ENC_KEYS=$(az keyvault secret show --vault-name "$KV_NAME" -n mcp-encryption-keys --query value -o tsv)
           APPI=$(az keyvault secret show --vault-name "$KV_NAME" -n appinsights-connection-string --query value -o tsv)
+          # Azure Document Intelligence (OCR cloud fallback, v1.4.0). Endpoint is not
+          # secret (a public FQDN) but kept in KV for one place to manage; key IS secret.
+          DOC_INTEL_ENDPOINT=$(az keyvault secret show --vault-name "$KV_NAME" -n azure-doc-intel-endpoint --query value -o tsv)
+          DOC_INTEL_KEY=$(az keyvault secret show --vault-name "$KV_NAME" -n azure-doc-intel-key --query value -o tsv)
           # Mask + export to later steps via env file (never echoed).
           echo "::add-mask::$DB_URL"; echo "::add-mask::$SECRET_KEY"; echo "::add-mask::$ENC_KEYS"
+          echo "::add-mask::$DOC_INTEL_KEY"
           {
             echo "DB_URL<<EOF"; echo "$DB_URL"; echo "EOF"
             echo "SECRET_KEY<<EOF"; echo "$SECRET_KEY"; echo "EOF"
             echo "ENC_KEYS<<EOF"; echo "$ENC_KEYS"; echo "EOF"
             echo "APPI<<EOF"; echo "$APPI"; echo "EOF"
+            echo "DOC_INTEL_ENDPOINT<<EOF"; echo "$DOC_INTEL_ENDPOINT"; echo "EOF"
+            echo "DOC_INTEL_KEY<<EOF"; echo "$DOC_INTEL_KEY"; echo "EOF"
           } >> "$GITHUB_ENV"
 
       - name: Run Alembic migration (one-shot Container Apps Job)
@@ -159,14 +166,18 @@ jobs:
       - name: Deploy backend Container App
         run: |
           IMG="${REGISTRY}/${{ github.repository_owner }}/metocare-backend:${{ steps.tag.outputs.tag }}"
-          COMMON_SECRETS="db-url=$DB_URL secret-key=$SECRET_KEY enc-keys=$ENC_KEYS appi=$APPI"
+          COMMON_SECRETS="db-url=$DB_URL secret-key=$SECRET_KEY enc-keys=$ENC_KEYS appi=$APPI doc-intel-key=$DOC_INTEL_KEY"
           # CORS: NEXT_PUBLIC_* and the browser run from the frontend origin, so the
           # backend must allow it. Persisted as an env var here (no manual hotfix).
           # OCR (v1.0.6): MCP_FEATURE_OCR=true enables the lab-upload draft pipeline on
-          # STAGING only (Tesseract runs locally in-container, cost $0). Cloud OCR stays
-          # OFF — MCP_FEATURE_OCR_CLOUD_FALLBACK=false and no ANTHROPIC_API_KEY /
-          # AZURE_DOC_INTEL_* are provided, so no medical image ever leaves the box.
-          # Production enablement is a separate decision (DigitalOcean untouched).
+          # STAGING only (Tesseract runs locally in-container, cost $0).
+          # OCR cloud fallback (v1.4.0): Tesseract stays PRIMARY; Azure Document
+          # Intelligence (F0 free tier, docintel-metocare-staging) is the OPT-IN
+          # fallback, called ONLY when local confidence is low OR zero biomarkers were
+          # parsed. MCP_FEATURE_OCR_CLOUD_FALLBACK=true + MCP_OCR_CLOUD_PROVIDER=azure +
+          # AZURE_DOC_INTEL_ENDPOINT/KEY enable it. No ANTHROPIC_API_KEY is provisioned.
+          # STAGING only — production enablement is a separate decision (DigitalOcean
+          # untouched, its OCR flags stay default-off).
           COMMON_ENV="MCP_ENV=staging MCP_DEBUG=false \
             MCP_DATABASE_URL=secretref:db-url MCP_SECRET_KEY=secretref:secret-key \
             MCP_ENCRYPTION_KEYS=secretref:enc-keys \
@@ -176,7 +187,10 @@ jobs:
             MCP_OCR_WORKER_ENABLED=false MCP_RAG_ENABLED=false \
             MCP_STORAGE_MODE=local MCP_RATELIMIT_BACKEND=memory \
             MCP_METRICS_ENABLED=true MCP_ENABLE_DOCS=false \
-            MCP_FEATURE_OCR=true MCP_FEATURE_OCR_CLOUD_FALLBACK=false"
+            MCP_FEATURE_OCR=true MCP_FEATURE_OCR_CLOUD_FALLBACK=true \
+            MCP_OCR_CLOUD_PROVIDER=azure \
+            AZURE_DOC_INTEL_ENDPOINT=${DOC_INTEL_ENDPOINT} \
+            AZURE_DOC_INTEL_KEY=secretref:doc-intel-key"
           if az containerapp show -g "$RG" -n "$BACKEND_APP" -o none 2>/dev/null; then
             az containerapp secret set -g "$RG" -n "$BACKEND_APP" --secrets $COMMON_SECRETS -o none
             az containerapp update -g "$RG" -n "$BACKEND_APP" --image "$IMG" \

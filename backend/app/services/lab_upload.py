@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from app.core.config import get_settings
 from app.domain import lab_interpreter
 from app.services import lab_parser
-from app.services.ocr_engine import OcrEngineError, run_ocr
+from app.services.ocr_engine import OcrEngineError, run_cloud_ocr_if_permitted, run_ocr
 
 logger = logging.getLogger("mcp.lab_upload")
 
@@ -183,9 +183,26 @@ def _extract_text(data: bytes, mime: str) -> tuple[str, float, str, list[str]]:
 
 def build_draft(data: bytes, mime: str) -> LabUploadDraft:
     text, ocr_conf, provider, warnings = _extract_text(data, mime)
-    raw_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()[:16] if text else ""
-
     raw_values = lab_parser.parse_lab_text(text)
+
+    # Zero-biomarker escalation: the local engine may report acceptable confidence
+    # yet parse nothing on a tricky layout (the confidence trigger inside run_ocr
+    # would not have fired). When cloud OCR is permitted (flag + provider + key),
+    # try it once and adopt the result only if it actually recognizes biomarkers.
+    # Skipped when the transcription already came from a cloud provider.
+    if not raw_values and provider in ("tesseract", "pdf_text"):
+        cloud_res = run_cloud_ocr_if_permitted(data, mime)
+        if cloud_res is not None:
+            cloud_values = lab_parser.parse_lab_text(cloud_res.text)
+            if cloud_values:
+                text, ocr_conf, provider = cloud_res.text, cloud_res.confidence, cloud_res.provider
+                raw_values = cloud_values
+                warnings.extend(cloud_res.warnings)
+                warnings.append(
+                    "Đã dùng OCR đám mây (fallback) do không nhận diện được chỉ số nào."
+                )
+
+    raw_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()[:16] if text else ""
     detected_date = lab_parser.parse_test_date(text)
 
     # Combine OCR-text confidence with the per-line parse confidence, then let the
