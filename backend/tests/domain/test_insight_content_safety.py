@@ -114,3 +114,38 @@ def test_mixed_unit_trend_is_normalized():
     assert insight.trend.direction == "up"
     assert insight.trend.improved is False  # LDL up = worse
     assert insight.trend.pct is not None and 0 < insight.trend.pct < 25
+
+
+def test_si_unit_lab_not_falsely_flagged():
+    """Codex P1 (round 2): creatinine 80 µmol/L (~0.9 mg/dL, normal) must NOT be
+    compared to the mg/dL range and become critical — trust the stored status when
+    the unit is unconvertible; classify-from-raw only when the unit matches."""
+    insight = ci.build_metric_insight(
+        "creatinine", [_metric("creatinine", 80.0, "µmol/L", "normal")]
+    )
+    assert insight.status == "normal"
+    assert insight.risks == []
+    # And with no stored status, an unconvertible SI unit stays 'unknown', not high.
+    unknown = ci.build_metric_insight(
+        "creatinine", [_metric("creatinine", 80.0, "µmol/L", None)]
+    )
+    assert unknown.status == "unknown"
+
+
+def test_low_blood_pressure_dropping_is_not_improved():
+    """Codex P2: a low BP falling 90 → 80 (still low) is worse, not improved."""
+    rows = [
+        _metric("blood_pressure_systolic", 80.0, "mmHg", "low", days_ago=0),
+        _metric("blood_pressure_systolic", 90.0, "mmHg", "low", days_ago=2),
+    ]
+    insight = ci.build_metric_insight("blood_pressure", rows)
+    assert insight.trend.improved is False
+
+
+def test_abnormal_without_bespoke_status_gets_generic_risk():
+    """Codex P2: low HbA1c has no bespoke 'low' block → generic abnormal content
+    so the insight still carries a risk bullet (not an empty 'monitor')."""
+    insight = ci.build_metric_insight("hba1c", [_metric("hba1c", 3.0, "%", "low")])
+    assert insight.status == "low"
+    assert len(insight.risks) >= 1
+    assert insight.priority in {"watch", "see_doctor"}

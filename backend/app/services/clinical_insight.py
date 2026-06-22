@@ -37,14 +37,6 @@ from app.services import metabolic_live
 ABNORMAL: frozenset[str] = frozenset({"low", "high", "critical"})
 _SEVERITY: dict[str, int] = {"normal": 0, "unknown": 0, "low": 1, "high": 1, "critical": 2}
 
-# Direction-of-good per content key (for same-severity trend judgement). TSH is
-# intentionally absent (both directions can be unfavourable → severity-only).
-_LOWER_BETTER: frozenset[str] = frozenset({
-    "fasting_glucose", "hba1c", "ldl", "total_cholesterol", "triglyceride",
-    "alt", "ast", "blood_pressure", "weight", "waist_cm",
-})
-_HIGHER_BETTER: frozenset[str] = frozenset({"hdl"})
-
 # mmol/L → mg/dL: reuse the live-score factors + lipids the classifier needs.
 _MMOL_TO_MGDL: dict[str, float] = {
     **metabolic_live._MMOL_TO_MGDL,
@@ -127,21 +119,31 @@ def _to_mgdl(canon: str, value: float, unit: str | None) -> float:
 
 
 def _status(row: HealthMetric) -> str:
-    """Resolve a metric's status.
+    """Resolve a metric's status, unit-safely.
 
-    For biomarkers the lab classifier knows, trust the **unit-aware classifier** —
-    a stored ``health_metrics.status`` can be wrong when lab rows are promoted in
-    mmol/L but compared against mg/dL reference ranges (e.g. glucose 5.73 mmol/L
-    wrongly stored as ``normal``). For everything else (blood pressure, weight,
-    waist, …) the lab classifier has no spec, so use the stored status."""
+    1. Convertible lipids/glucose stored in mmol/L can carry a *wrong* stored
+       status (lab promotion compared mmol/L against mg/dL ranges), so for those
+       we reclassify with ``_to_mgdl`` (e.g. glucose 5.73 mmol/L → HIGH).
+    2. Otherwise trust the stored status — it was computed at write time in the
+       reading's own unit (correct for creatinine µmol/L, BP, weight, …).
+    3. With no stored status, classify from the raw value ONLY when its unit
+       matches the classifier's reference unit, to avoid SI-vs-mg/dL false
+       positives (e.g. creatinine 80 µmol/L must not be read as 80 mg/dL)."""
     canon = normalize_biomarker(row.metric_type)
-    if canon and canon in _ALIAS_INDEX:
+    unit = (row.unit or "").lower()
+    if canon in _MMOL_TO_MGDL and "mmol" in unit:
         st = classify_value(canon, _to_mgdl(canon, row.value, row.unit))
         if st != LabStatus.UNKNOWN:
             return st.value
     stored = (row.status or "").strip().lower()
     if stored in {"normal", "low", "high", "critical"}:
         return stored
+    if canon and canon in _ALIAS_INDEX:
+        spec = _ALIAS_INDEX[canon]
+        if not unit or unit == spec.unit.lower():
+            st = classify_value(canon, row.value)
+            if st != LabStatus.UNKNOWN:
+                return st.value
     return "unknown"
 
 
@@ -160,16 +162,22 @@ def _trend_label(direction: str, pct: float | None, improved: bool | None) -> st
     return base
 
 
-def _improved(ckey: str, prev: float, cur: float, prev_status: str, cur_status: str) -> bool | None:
+def _improved(prev: float, cur: float, prev_status: str, cur_status: str) -> bool | None:
+    """Did the metric move favourably?
+
+    Cross-severity → toward/away from normal. Same-severity abnormal → toward the
+    normal range, which is status-aware: a too-high value improves by falling, a
+    too-low value improves by rising (so a low BP that drops further is NOT
+    'improved')."""
     if _SEVERITY[cur_status] != _SEVERITY[prev_status]:
         return _SEVERITY[cur_status] < _SEVERITY[prev_status]
-    if cur_status == "normal":
-        return None  # stable and within range
-    if ckey in _LOWER_BETTER:
-        return None if cur == prev else cur < prev
-    if ckey in _HIGHER_BETTER:
-        return None if cur == prev else cur > prev
-    return None  # ambiguous marker, same severity
+    if cur == prev:
+        return None
+    if cur_status == "high":   # too high → lower is better
+        return cur < prev
+    if cur_status == "low":    # too low → higher is better
+        return cur > prev
+    return None  # normal / unknown / same-bucket critical
 
 
 def _compute_trend(metric_type: str, rows: list[HealthMetric]) -> Trend:
@@ -184,8 +192,7 @@ def _compute_trend(metric_type: str, rows: list[HealthMetric]) -> Trend:
         return Trend("none", None, None, _trend_label("none", None, None))
     pct = (cur - prev) / abs(prev) * 100.0
     direction = "flat" if abs(pct) < _TONE_THRESHOLD_PCT else ("up" if pct > 0 else "down")
-    ckey = ic.content_key(metric_type)
-    improved = _improved(ckey, prev, cur, _status(rows[1]), _status(rows[0]))
+    improved = _improved(prev, cur, _status(rows[1]), _status(rows[0]))
     pct_r = round(pct, 1)
     return Trend(direction, pct_r, improved, _trend_label(direction, pct_r, improved))
 
@@ -212,7 +219,9 @@ def _history(db: Session, patient_id: str) -> dict[str, list[HealthMetric]]:
     )
     by_type: dict[str, list[HealthMetric]] = {}
     for r in rows:
-        by_type.setdefault(r.metric_type, []).append(r)  # newest-first per type
+        # Group by the canonical content key so aliases (glucose/fasting_glucose,
+        # ldl_c/ldl) form ONE history and trend correctly across sources.
+        by_type.setdefault(ic.content_key(r.metric_type), []).append(r)  # newest-first
     return by_type
 
 
@@ -224,6 +233,10 @@ def build_metric_insight(metric_type: str, rows: list[HealthMetric]) -> MetricIn
     status = _status(cur)
     content = ic.get_content(metric_type)
     status_content = content["by_status"].get(status)
+    if status_content is None and status in ABNORMAL:
+        # Abnormal but no bespoke block (e.g. low HbA1c, high HDL) → safe generic
+        # abnormal content so the insight still carries risk + appropriate urgency.
+        status_content = ic._GENERIC["by_status"].get(status)
     if status_content is not None:
         risks = [_safe(r) for r in status_content["risks"]]
         priority = status_content["priority"]
@@ -265,23 +278,30 @@ def list_insights(
 
 def get_insight(db: Session, *, patient_id: str, metric_type: str) -> MetricInsight | None:
     """Single-metric insight for the detail card (returns even when normal)."""
-    rows = _history(db, patient_id).get(metric_type)
+    rows = _history(db, patient_id).get(ic.content_key(metric_type))
     if not rows:
         return None
-    return build_metric_insight(metric_type, rows)
+    return build_metric_insight(ic.content_key(metric_type), rows)
+
+
+_RISK_RANK: dict[str, int] = {"low": 0, "medium": 1, "high": 2}
 
 
 def _overall_risk(db: Session, patient_id: str, abnormal_count: int) -> str:
+    """Overall risk = the higher of the metabolic-band risk and the abnormal-count
+    risk, so non-metabolic findings (e.g. a critical TSH while metabolic inputs
+    are GOOD) are never understated."""
+    count_risk = "low" if abnormal_count == 0 else ("medium" if abnormal_count <= 2 else "high")
+    band_risk = count_risk
     result = metabolic_live.compute_live_score(db, patient_id=patient_id)
     if result is not None:
-        if result.band in (ScoreBand.GOOD,):
-            return "low"
-        if result.band in (ScoreBand.FAIR,):
-            return "medium"
-        return "high"  # ELEVATED / HIGH_CONCERN
-    if abnormal_count == 0:
-        return "low"
-    return "medium" if abnormal_count <= 2 else "high"
+        if result.band == ScoreBand.GOOD:
+            band_risk = "low"
+        elif result.band == ScoreBand.FAIR:
+            band_risk = "medium"
+        else:
+            band_risk = "high"  # ELEVATED / HIGH_CONCERN
+    return max(band_risk, count_risk, key=lambda r: _RISK_RANK[r])
 
 
 def build_health_summary(db: Session, *, patient_id: str) -> HealthSummary:
