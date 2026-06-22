@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.clinical_thresholds import get_vital_thresholds_dict
 from app.domain import insight_content as ic
 from app.domain import policies
 from app.domain.guardrails import check_output
@@ -41,6 +42,16 @@ _MMOL_TO_MGDL: dict[str, float] = {
     **metabolic_live._MMOL_TO_MGDL,
     "ldl": 38.67,
     "total_cholesterol": 38.67,
+}
+
+# Supported manual VITALS (not lab biomarkers): board-sourced CRITICAL bounds from
+# clinical_thresholds + normal-range (low_below, high_at) bounds aligned to the
+# metabolic score (systolic ≥140 = high). Lets us classify a manually-logged BP
+# instead of trusting a possibly-wrong stored status.
+_VITAL_CRITICAL: dict[str, dict[str, float]] = get_vital_thresholds_dict()
+_VITAL_RANGES: dict[str, tuple[float, float]] = {
+    "blood_pressure_systolic": (90.0, 140.0),
+    "blood_pressure_diastolic": (60.0, 90.0),
 }
 
 # Vietnamese display labels for the authored metrics (fallback = metric_type).
@@ -127,6 +138,39 @@ def _canonical(metric_type: str) -> str | None:
     return spec.canonical if spec else None
 
 
+def _lab_canonical(metric_type: str) -> str | None:
+    """Lab canonical for a metric_type, resolving exact lab aliases AND the
+    insight-only aliases (ldl_c→ldl, hdl_c→hdl, cholesterol→total_cholesterol) so
+    those are classified, not dropped. None for non-lab metrics (BP, weight, …)."""
+    canon = _canonical(metric_type)
+    if canon:
+        return canon
+    aliased = ic.METRIC_TYPE_ALIASES.get((metric_type or "").strip().lower())
+    return _canonical(aliased) if aliased else None
+
+
+def _classify_vital(metric_type: str, value: float, unit: str) -> str | None:
+    """Classify a supported manual vital (blood pressure) from board-sourced
+    critical bounds + normal-range bounds — so a manually-logged systolic 150
+    (which `create_metric` may store as 'normal') is correctly 'high'. Returns
+    None for non-vital metrics or a mismatched unit."""
+    if metric_type not in _VITAL_RANGES:
+        return None
+    if unit and "mmhg" not in unit:
+        return None
+    crit = _VITAL_CRITICAL.get(metric_type, {})
+    if crit.get("critical_high") is not None and value >= crit["critical_high"]:
+        return "critical"
+    if crit.get("critical_low") is not None and value <= crit["critical_low"]:
+        return "critical"
+    low_below, high_at = _VITAL_RANGES[metric_type]
+    if value >= high_at:
+        return "high"
+    if value < low_below:
+        return "low"
+    return "normal"
+
+
 def _status(row: HealthMetric) -> str:
     """Resolve a metric's status, unit-safely.
 
@@ -141,7 +185,7 @@ def _status(row: HealthMetric) -> str:
     Otherwise (non-lab metric like BP/weight, or an unconvertible SI unit such as
     creatinine µmol/L) trust the stored status, which was computed in the
     reading's own unit at write time. This avoids SI-vs-mg/dL false positives."""
-    canon = _canonical(row.metric_type)
+    canon = _lab_canonical(row.metric_type)
     unit = (row.unit or "").lower()
     if canon and canon in _ALIAS_INDEX:
         spec = _ALIAS_INDEX[canon]
@@ -155,6 +199,15 @@ def _status(row: HealthMetric) -> str:
             if st != LabStatus.UNKNOWN:
                 return st.value
     stored = (row.status or "").strip().lower()
+    # Supported manual vital (BP) — classify rather than trust a default 'normal',
+    # but NEVER downgrade an abnormal status that was set from supplied custom
+    # ranges (e.g. systolic 135 stored 'high' via normal_range_max=130). Take the
+    # more severe of stored-abnormal vs the default-range classification.
+    vital = _classify_vital(row.metric_type, row.value, unit)
+    if vital is not None:
+        if stored in ABNORMAL and _SEVERITY[stored] > _SEVERITY[vital]:
+            return stored
+        return vital
     if stored in {"normal", "low", "high", "critical"}:
         return stored
     return "unknown"
