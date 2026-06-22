@@ -19,13 +19,15 @@ RBAC matrix (symptom + medication writes):
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import CurrentUser, current_user, get_session
+from app.core.feature_flags import FeatureFlag, is_enabled
 from app.models.patient import PatientProfile as _PatientProfile
 from app.models.user import User as _UserModel
 from app.models.user import UserRole
+from app.schemas.insight import HealthSummaryOut, MetricInsightOut
 from app.schemas.medication import MedicationCreate, MedicationOut, MedicationUpdate
 from app.schemas.nutrition import NutritionLogCreate, NutritionLogOut
 from app.schemas.patient import PatientProfileOut, PatientProfileUpdate, PatientSummaryOut
@@ -37,12 +39,13 @@ from app.schemas.risk_score import (
 from app.schemas.symptom import SymptomLogCreate, SymptomLogOut
 from app.schemas.triage_log import TriageLogHistoryResponse, TriageLogOut
 from app.services import audit
+from app.services import clinical_insight as clinical_insight_svc
 from app.services import medication as medication_svc
+from app.services import metabolic_live as metabolic_live_svc
 from app.services import nutrition_log as nutrition_log_svc
 from app.services import patient_profile as svc
 from app.services import patient_summary as summary_svc
 from app.services import pdf_report as pdf_report_svc
-from app.services import metabolic_live as metabolic_live_svc
 from app.services import risk_score as risk_score_svc
 from app.services import symptom_log as symptom_log_svc
 from app.services import triage_log as triage_log_svc
@@ -311,6 +314,89 @@ def get_live_metabolic_score(
             for f in result.factors
         ],
         explanation=result.explanation,
+    )
+
+
+# ---------------------------------------------------------------------------
+# PA-11 — Clinical Insight Engine (rules-first patient guidance)
+# ---------------------------------------------------------------------------
+
+
+def _require_insight_access(db: Session, user: CurrentUser, patient_id: str) -> None:
+    """RBAC for insight reads — same boundary as the live-score route. PATIENT-own
+    and ADMIN are granted by get_profile; a DOCTOR additionally needs
+    health-metric-scope consent because insights expose raw metric-derived values."""
+    svc.get_profile(db, patient_id=patient_id, requester=user)
+    if user.role == UserRole.DOCTOR:
+        require_access(db, patient_id=patient_id, requester_id=user.id, scope="health_metric")
+
+
+def _ensure_insight_enabled() -> None:
+    if not is_enabled(FeatureFlag.CLINICAL_INSIGHT):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Clinical insight feature is not enabled.",
+        )
+
+
+@router.get(
+    "/{patient_id}/insights",
+    response_model=list[MetricInsightOut],
+    summary="Patient-friendly insights for noteworthy metrics",
+)
+def get_patient_insights(
+    patient_id: str,
+    user: CurrentUser = Depends(current_user),
+    db: Session = Depends(get_session),
+) -> list[MetricInsightOut]:
+    """Rules-first insight (meaning + trend + risk + lifestyle + follow-up) for
+    each abnormal/noteworthy metric. Read-only; educational, never diagnostic."""
+    _ensure_insight_enabled()
+    _require_insight_access(db, user, patient_id)
+    return [
+        MetricInsightOut.model_validate(i)
+        for i in clinical_insight_svc.list_insights(db, patient_id=patient_id)
+    ]
+
+
+@router.get(
+    "/{patient_id}/insights/{metric_type}",
+    response_model=MetricInsightOut,
+    summary="Full insight detail for one metric",
+)
+def get_patient_metric_insight(
+    patient_id: str,
+    metric_type: str,
+    user: CurrentUser = Depends(current_user),
+    db: Session = Depends(get_session),
+) -> MetricInsightOut:
+    _ensure_insight_enabled()
+    _require_insight_access(db, user, patient_id)
+    insight = clinical_insight_svc.get_insight(
+        db, patient_id=patient_id, metric_type=metric_type
+    )
+    if insight is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No readings for this metric.",
+        )
+    return MetricInsightOut.model_validate(insight)
+
+
+@router.get(
+    "/{patient_id}/health-summary",
+    response_model=HealthSummaryOut,
+    summary="Overall health summary + what changed since last time",
+)
+def get_patient_health_summary(
+    patient_id: str,
+    user: CurrentUser = Depends(current_user),
+    db: Session = Depends(get_session),
+) -> HealthSummaryOut:
+    _ensure_insight_enabled()
+    _require_insight_access(db, user, patient_id)
+    return HealthSummaryOut.model_validate(
+        clinical_insight_svc.build_health_summary(db, patient_id=patient_id)
     )
 
 
