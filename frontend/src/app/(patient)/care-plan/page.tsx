@@ -2,15 +2,10 @@
 import { PatientEmptyState } from '@/components/patient'
 
 import * as React from 'react'
-import { CheckCircle2, ClipboardList } from 'lucide-react'
+import { ClipboardList } from 'lucide-react'
 import {
   Alert,
-  Badge,
   Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  EmptyState,
   ErrorState,
   PageHeader,
   Skeleton,
@@ -18,74 +13,7 @@ import {
 } from '@/design-system'
 import { useAuth } from '@/lib/auth/context'
 import { getCarePlans, type CarePlan } from '@/lib/api/patient'
-
-// ── Helpers ────────────────────────────────────────────────────────────────────
-
-function formatDate(iso: string): string {
-  return new Intl.DateTimeFormat('vi-VN', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  }).format(new Date(iso))
-}
-
-// ── Status badge map (backend uses UPPERCASE status) ──────────────────────────
-
-type BadgeVariant = 'active' | 'approved' | 'pending_review' | 'default'
-
-const STATUS_CONFIG: Record<string, { variant: BadgeVariant; label: string }> = {
-  ACTIVE:         { variant: 'active',         label: 'Đang thực hiện' },
-  APPROVED:       { variant: 'approved',       label: 'Đã phê duyệt' },
-  PENDING_REVIEW: { variant: 'pending_review', label: 'Chờ phê duyệt' },
-  DRAFT:          { variant: 'default',        label: 'Bản nháp' },
-  ARCHIVED:       { variant: 'default',        label: 'Lưu trữ' },
-  SUPERSEDED:     { variant: 'default',        label: 'Đã thay thế' },
-  REJECTED:       { variant: 'default',        label: 'Bị từ chối' },
-}
-
-// ── Care plan card ─────────────────────────────────────────────────────────────
-
-function CarePlanCard({ plan }: { plan: CarePlan }) {
-  const cfg = STATUS_CONFIG[plan.status] ?? { variant: 'default' as BadgeVariant, label: plan.status }
-
-  return (
-    <Card variant="glass" padding="none">
-      <CardHeader className="p-4 pb-2">
-        <div className="flex items-start justify-between gap-3">
-          <CardTitle className="text-[17px] font-semibold leading-snug">
-            {plan.title}
-          </CardTitle>
-          <Badge variant={cfg.variant} dot size="sm">
-            {cfg.label}
-          </Badge>
-        </div>
-
-        {/* Approval indicator */}
-        {plan.approved_at && (
-          <div className="flex items-center gap-1.5 mt-2 text-[15px] text-green-700">
-            <CheckCircle2 className="size-3.5 shrink-0" aria-hidden="true" />
-            <span>Đã phê duyệt {formatDate(plan.approved_at)}</span>
-          </div>
-        )}
-
-        {/* Meta */}
-        <p className="mt-1 text-[15px] text-text-muted">
-          Tạo: {formatDate(plan.created_at)}
-          {plan.ai_generated && <> &middot; <span className="text-amber-600">AI hỗ trợ</span></>}
-          {(plan.version ?? 0) > 1 && <> &middot; v{plan.version}</>}
-        </p>
-      </CardHeader>
-
-      <CardContent className="p-4 pt-0">
-        {plan.content ? (
-          <p className="text-[17px] text-text-muted whitespace-pre-line">{plan.content}</p>
-        ) : (
-          <p className="text-[15px] text-text-subtle italic">Chưa có nội dung.</p>
-        )}
-      </CardContent>
-    </Card>
-  )
-}
+import { CarePlanCard } from './CarePlanCard'
 
 // ── Loading skeleton ───────────────────────────────────────────────────────────
 
@@ -93,15 +21,15 @@ function CarePlanSkeleton() {
   return (
     <div className="space-y-4">
       {[1, 2].map((n) => (
-        <Card key={n} variant="glass" padding="none">
-          <CardContent className="p-4 space-y-3">
+        <Card key={n} variant="glass" padding="md">
+          <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <Skeleton width="55%" height="1rem" />
+              <Skeleton width="55%" height="1.25rem" />
               <Skeleton width="5rem" height="1.25rem" className="rounded-full" />
             </div>
-            <Skeleton width="30%" height="0.75rem" />
+            <Skeleton width="100%" height="5rem" className="rounded-3xl" />
             <SkeletonText lines={3} />
-          </CardContent>
+          </div>
         </Card>
       ))}
     </div>
@@ -138,7 +66,7 @@ export default function CarePlanPage() {
 
   if (!patientId) {
     return (
-      <div className="p-4 lg:p-6 max-w-2xl mx-auto">
+      <div className="mx-auto max-w-2xl p-4 lg:p-6">
         <Alert variant="warning" title="Chưa có hồ sơ bệnh nhân">
           Tài khoản của bạn chưa được liên kết với hồ sơ bệnh nhân. Vui lòng liên hệ hỗ trợ.
         </Alert>
@@ -147,7 +75,7 @@ export default function CarePlanPage() {
   }
 
   return (
-    <div className="p-4 lg:p-6 space-y-4 max-w-2xl mx-auto">
+    <div className="mx-auto max-w-2xl space-y-4 p-4 lg:p-6">
       <PageHeader title="Kế hoạch điều trị" />
 
       {loading && <CarePlanSkeleton />}
