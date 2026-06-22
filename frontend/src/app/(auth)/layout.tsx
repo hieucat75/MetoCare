@@ -9,8 +9,14 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
   return (
     <div className="patient-app relative min-h-screen flex items-center justify-center p-4 overflow-hidden">
       {/* Soft mint glow blobs for the liquid-glass backdrop */}
-      <div className="pointer-events-none absolute -top-24 -left-16 w-72 h-72 rounded-full bg-mint-300/30 blur-3xl" aria-hidden="true" />
-      <div className="pointer-events-none absolute -bottom-24 -right-16 w-80 h-80 rounded-full bg-mint-200/40 blur-3xl" aria-hidden="true" />
+      <div
+        className="pointer-events-none absolute -top-24 -left-16 w-72 h-72 rounded-full bg-mint-300/30 blur-3xl"
+        aria-hidden="true"
+      />
+      <div
+        className="pointer-events-none absolute -bottom-24 -right-16 w-80 h-80 rounded-full bg-mint-200/40 blur-3xl"
+        aria-hidden="true"
+      />
 
       <div className="relative w-full max-w-[420px]">
         {/* Brand header */}
@@ -23,9 +29,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         </div>
 
         {/* Liquid-glass card */}
-        <div className="mc-glass rounded-3xl p-7 sm:p-8">
-          {children}
-        </div>
+        <div className="mc-glass rounded-3xl p-7 sm:p-8">{children}</div>
 
         {/* Footer */}
         <p className="text-center text-[15px] text-text-subtle mt-6">

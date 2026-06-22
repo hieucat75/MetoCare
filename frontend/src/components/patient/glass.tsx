@@ -132,7 +132,15 @@ export function Ring({
   const r = (size - stroke) / 2
   const c = 2 * Math.PI * r
   return (
-    <div style={{ position: 'relative', width: size, height: size, display: 'grid', placeItems: 'center' }}>
+    <div
+      style={{
+        position: 'relative',
+        width: size,
+        height: size,
+        display: 'grid',
+        placeItems: 'center',
+      }}
+    >
       <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }} aria-hidden="true">
         <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={track} strokeWidth={stroke} />
         <circle

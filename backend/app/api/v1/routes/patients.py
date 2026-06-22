@@ -279,12 +279,23 @@ def get_live_metabolic_score(
 
     Access rules (same as the profile / history endpoints):
     - **PATIENT** — own score only.
-    - **DOCTOR** — consent-gated (scope='profile').
+    - **DOCTOR** — consent-gated; needs scope='health_metric' (live factors
+      expose raw metric values), not merely scope='profile'.
     - **INTERNAL_ADMIN / SUPER_ADMIN** — unrestricted.
     - **AI_SERVICE / CLINIC_ADMIN** — always 403.
     """
-    # Reuse the profile RBAC check (raises 403/404 for blocked/missing patients).
+    # Role RBAC + profile gate (raises 403/404 for blocked/missing patients;
+    # AI_SERVICE / CLINIC_ADMIN are rejected here).
     svc.get_profile(db, patient_id=patient_id, requester=user)
+    # The live score's factors expose raw health-metric values (glucose / HDL /
+    # blood pressure …), so a DOCTOR must hold health-metric-scope consent — the
+    # profile gate above is not sufficient. Mirrors the consent boundary on the
+    # GET /metrics routes. PATIENT-own and ADMIN access are already granted by
+    # get_profile, so the scope check is limited to DOCTOR.
+    if user.role == UserRole.DOCTOR:
+        require_access(
+            db, patient_id=patient_id, requester_id=user.id, scope="health_metric"
+        )
 
     result = metabolic_live_svc.compute_live_score(db, patient_id=patient_id)
     if result is None:
