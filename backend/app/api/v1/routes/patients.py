@@ -29,7 +29,11 @@ from app.models.user import UserRole
 from app.schemas.medication import MedicationCreate, MedicationOut, MedicationUpdate
 from app.schemas.nutrition import NutritionLogCreate, NutritionLogOut
 from app.schemas.patient import PatientProfileOut, PatientProfileUpdate, PatientSummaryOut
-from app.schemas.risk_score import RiskScoreHistoryResponse, RiskScoreOut
+from app.schemas.risk_score import (
+    LiveScoreOut,
+    RiskScoreHistoryResponse,
+    RiskScoreOut,
+)
 from app.schemas.symptom import SymptomLogCreate, SymptomLogOut
 from app.schemas.triage_log import TriageLogHistoryResponse, TriageLogOut
 from app.services import audit
@@ -38,6 +42,7 @@ from app.services import nutrition_log as nutrition_log_svc
 from app.services import patient_profile as svc
 from app.services import patient_summary as summary_svc
 from app.services import pdf_report as pdf_report_svc
+from app.services import metabolic_live as metabolic_live_svc
 from app.services import risk_score as risk_score_svc
 from app.services import symptom_log as symptom_log_svc
 from app.services import triage_log as triage_log_svc
@@ -250,6 +255,51 @@ def get_metabolic_score_history(
         total=total,
         items=[RiskScoreOut.model_validate(item) for item in items],
         trend=trend,
+    )
+
+
+@router.get(
+    "/{patient_id}/metabolic-score/live",
+    response_model=LiveScoreOut,
+    status_code=status.HTTP_200_OK,
+    summary="Compute the metabolic score live from the latest metrics",
+)
+def get_live_metabolic_score(
+    patient_id: str,
+    user: CurrentUser = Depends(current_user),
+    db: Session = Depends(get_session),
+) -> LiveScoreOut:
+    """Compute the metabolic score **on demand** from the patient's latest
+    ``health_metrics`` + profile.
+
+    Unlike ``GET /metabolic-scores`` (which reads the AI-written ``risk_scores``
+    table that the patient app never populates), this endpoint always reflects
+    the data that actually exists, so the dashboard never shows a false empty
+    state. Read-only — nothing is persisted; not behind the AI feature gate.
+
+    Access rules (same as the profile / history endpoints):
+    - **PATIENT** — own score only.
+    - **DOCTOR** — consent-gated (scope='profile').
+    - **INTERNAL_ADMIN / SUPER_ADMIN** — unrestricted.
+    - **AI_SERVICE / CLINIC_ADMIN** — always 403.
+    """
+    # Reuse the profile RBAC check (raises 403/404 for blocked/missing patients).
+    svc.get_profile(db, patient_id=patient_id, requester=user)
+
+    result = metabolic_live_svc.compute_live_score(db, patient_id=patient_id)
+    if result is None:
+        return LiveScoreOut(patient_id=patient_id, available=False)
+
+    return LiveScoreOut(
+        patient_id=patient_id,
+        available=True,
+        score=result.score,
+        band=result.band.value,
+        factors=[
+            {"name": f.name, "points": f.points, "detail": f.detail}
+            for f in result.factors
+        ],
+        explanation=result.explanation,
     )
 
 

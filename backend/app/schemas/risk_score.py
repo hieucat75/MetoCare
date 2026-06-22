@@ -62,3 +62,32 @@ class RiskScoreHistoryResponse(BaseModel):
     total: int
     items: list[RiskScoreOut]
     trend: str  # "improving" | "worsening" | "stable" | "insufficient_data"
+
+
+# ---------------------------------------------------------------------------
+# LiveScoreFactor / LiveScoreOut — on-demand score computed from metrics
+# ---------------------------------------------------------------------------
+
+
+class LiveScoreFactor(BaseModel):
+    """A single contributing factor of the live metabolic score (explainable)."""
+
+    name: str
+    points: int
+    detail: str
+
+
+class LiveScoreOut(BaseModel):
+    """Response for ``GET /patients/{patient_id}/metabolic-score/live``.
+
+    ``available=False`` (with ``score=None``) means the patient has no metric
+    readings usable for scoring — a *genuine* empty state, distinct from the old
+    bug where a stored-but-empty table produced a false empty.
+    """
+
+    patient_id: str
+    available: bool
+    score: int | None = None
+    band: str | None = None  # good | fair | elevated | high_concern
+    factors: list[LiveScoreFactor] = []
+    explanation: str | None = None

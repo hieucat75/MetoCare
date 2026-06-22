@@ -223,3 +223,124 @@
 }
 /* Patient page titles (PageHeader h1 + route greetings) larger for 50+. */
 .patient-app h1 { font-size: 1.625rem; line-height: 1.2; color: #0E2A33; }   /* 26px */
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * PX-02 "Soft UI" component kit tokens + primitives.
+ * Additive: only declares --mc-* tokens (scoped to .patient-app) and the
+ * mc-* component classes consumed by components/patient/*. Does NOT override
+ * the .patient-app ambient/font foundation defined above.
+ * ──────────────────────────────────────────────────────────────────────── */
+.patient-app {
+  /* mint brand */
+  --mc-mint: #0f9c6e;
+  --mc-mint-deep: #0b7f5b;
+  --mc-mint-grad: linear-gradient(150deg, #1bb082, #0b7f5b);
+  /* text — pushed dark for WCAG AA on the soft surface */
+  --mc-text: #0e2a33;
+  --mc-body: #244744;
+  --mc-muted: #365651;
+  --mc-subtle: #566e66;
+  /* semantic */
+  --mc-success: #15915a;
+  --mc-warning: #c77a06;
+  --mc-danger: #d92d20;
+  --mc-info: #2563eb;
+  --mc-ai: #6d3fbe;
+}
+
+@layer components {
+  /* Frosted glass surface. */
+  .mc-glass {
+    background: rgba(255, 255, 255, 0.66);
+    backdrop-filter: blur(22px) saturate(180%);
+    -webkit-backdrop-filter: blur(22px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.85);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.9),
+      0 10px 28px -18px rgba(16, 48, 44, 0.5);
+  }
+
+  /* Mint hero / primary CTA gradient surface. */
+  .mc-hero {
+    background: var(--mc-mint-grad);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.35),
+      0 22px 44px -18px rgba(16, 140, 99, 0.85);
+    color: #fff;
+  }
+
+  /* Primary pill button. */
+  .mc-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 48px;
+    padding: 0 20px;
+    border-radius: 14px;
+    background: var(--mc-mint-grad);
+    color: #fff;
+    font-weight: 700;
+    font-size: 16px;
+    border: none;
+    box-shadow:
+      0 14px 28px -12px rgba(16, 140, 99, 0.9),
+      inset 0 1px 0 rgba(255, 255, 255, 0.25);
+    transition: transform 0.12s ease, filter 0.12s ease;
+  }
+  .mc-btn:active { transform: scale(0.98); }
+  .mc-btn:disabled {
+    filter: grayscale(0.3) opacity(0.6);
+    box-shadow: none;
+  }
+
+  /* Glass / secondary button. */
+  .mc-btn-glass {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 48px;
+    padding: 0 18px;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.6);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.85);
+    color: var(--mc-mint);
+    font-weight: 600;
+    font-size: 16px;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+    transition: transform 0.12s ease;
+  }
+  .mc-btn-glass:active { transform: scale(0.98); }
+
+  /* Glass text input (50px touch target, 16px font to avoid iOS zoom). */
+  .mc-input {
+    width: 100%;
+    min-height: 50px;
+    border-radius: 13px;
+    background: rgba(255, 255, 255, 0.72);
+    border: 1px solid rgba(16, 48, 44, 0.12);
+    padding: 0 14px;
+    font-size: 16px;
+    color: var(--mc-text);
+    transition: border-color 0.12s ease, box-shadow 0.12s ease;
+  }
+  .mc-input::placeholder { color: var(--mc-subtle); }
+  .mc-input:focus {
+    outline: none;
+    border-color: var(--mc-mint);
+    box-shadow: 0 0 0 4px rgba(16, 140, 99, 0.12);
+  }
+}
+
+@layer utilities {
+  /* Mint skeleton pulse used by components/patient/states.tsx. */
+  .mc-pulse { animation: mc-pulse 1.5s ease-in-out infinite; }
+  @keyframes mc-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+}

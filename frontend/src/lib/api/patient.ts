@@ -290,6 +290,35 @@ export async function getLatestMetabolicScore(
   }
 }
 
+/** Backend `LiveScoreOut` — score computed on-demand from latest metrics. */
+export interface LiveMetabolicScore {
+  patient_id: string
+  available: boolean
+  score: number | null
+  band: 'good' | 'fair' | 'elevated' | 'high_concern' | null
+  factors: { name: string; points: number; detail: string }[]
+  explanation: string | null
+}
+
+/**
+ * Live metabolic score — computed on demand from the patient's latest metrics +
+ * profile (root-cause fix). Unlike {@link getLatestMetabolicScore} (which reads
+ * the AI-written `risk_scores` table the patient app never populates), this
+ * always reflects the data that actually exists. Returns `null` only on a
+ * network/parse failure; an empty patient yields `{available:false}`.
+ */
+export async function getLiveMetabolicScore(
+  patientId: string,
+): Promise<LiveMetabolicScore | null> {
+  try {
+    return await api.get<LiveMetabolicScore>(
+      `/patients/${patientId}/metabolic-score/live`,
+    )
+  } catch {
+    return null
+  }
+}
+
 // ── Lab Documents (PA-08: contract-aligned with backend /lab-documents) ───────
 // Backend: GET/POST /patients/{id}/lab-documents
 // LabDocumentOut: { id, patient_id, ocr_status, status }
