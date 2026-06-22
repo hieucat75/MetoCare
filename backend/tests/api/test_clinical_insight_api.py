@@ -197,3 +197,29 @@ def test_feature_flag_off_returns_404(client: TestClient, patient_setup, monkeyp
     monkeypatch.setenv("FEATURE_CLINICAL_INSIGHT", "false")
     r = client.get(_insights_url(patient_setup["patient_id"]), headers=patient_setup["headers"])
     assert r.status_code == 404, r.text
+
+
+def test_bp_components_are_separate_trends(client: TestClient, db, patient_setup):
+    """Codex P2: systolic and diastolic must not collapse into one history/trend."""
+    pid = patient_setup["patient_id"]
+    _add_metric(db, pid, "blood_pressure_systolic", 150.0, "mmHg", "high", days_ago=2)
+    _add_metric(db, pid, "blood_pressure_systolic", 145.0, "mmHg", "high", days_ago=0)
+    _add_metric(db, pid, "blood_pressure_diastolic", 95.0, "mmHg", "high", days_ago=2)
+    _add_metric(db, pid, "blood_pressure_diastolic", 92.0, "mmHg", "high", days_ago=0)
+
+    r = client.get(_insights_url(pid), headers=patient_setup["headers"])
+    assert r.status_code == 200, r.text
+    types = {i["metric_type"] for i in r.json()}
+    assert "blood_pressure_systolic" in types
+    assert "blood_pressure_diastolic" in types  # not merged into one
+    labels = {i["label"] for i in r.json()}
+    assert "Huyết áp (tâm thu)" in labels and "Huyết áp (tâm trương)" in labels
+
+
+def test_single_critical_finding_is_high_risk(client: TestClient, db, patient_setup):
+    """Codex P2: one critical metric → overall_risk 'high', not 'medium'."""
+    pid = patient_setup["patient_id"]
+    _add_metric(db, pid, "tsh", 0.005, "mIU/L", "critical")  # ≤ critical_low 0.01
+    r = client.get(f"/api/v1/patients/{pid}/health-summary", headers=patient_setup["headers"])
+    assert r.status_code == 200, r.text
+    assert r.json()["overall_risk"] == "high"

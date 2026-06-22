@@ -28,7 +28,6 @@ from app.domain.lab_interpreter import (
     _ALIAS_INDEX,
     LabStatus,
     classify_value,
-    normalize_biomarker,
 )
 from app.domain.metabolic_score import ScoreBand
 from app.models.clinical import HealthMetric
@@ -56,6 +55,8 @@ _LABELS: dict[str, str] = {
     "hdl": "HDL (cholesterol tốt)",
     "triglyceride": "Triglyceride",
     "blood_pressure": "Huyết áp",
+    "blood_pressure_systolic": "Huyết áp (tâm thu)",
+    "blood_pressure_diastolic": "Huyết áp (tâm trương)",
     "weight": "Cân nặng",
     "waist_cm": "Vòng eo",
 }
@@ -118,6 +119,14 @@ def _to_mgdl(canon: str, value: float, unit: str | None) -> float:
     return value
 
 
+def _canonical(metric_type: str) -> str | None:
+    """Exact canonical biomarker key for a metric_type, or None for non-lab
+    metrics. Uses ONLY exact alias lookup — never fuzzy substring matching, which
+    would mis-map 'diastolic'→ast or 'pressure'→urea."""
+    spec = _ALIAS_INDEX.get((metric_type or "").strip().lower())
+    return spec.canonical if spec else None
+
+
 def _status(row: HealthMetric) -> str:
     """Resolve a metric's status, unit-safely.
 
@@ -129,7 +138,7 @@ def _status(row: HealthMetric) -> str:
     3. With no stored status, classify from the raw value ONLY when its unit
        matches the classifier's reference unit, to avoid SI-vs-mg/dL false
        positives (e.g. creatinine 80 µmol/L must not be read as 80 mg/dL)."""
-    canon = normalize_biomarker(row.metric_type)
+    canon = _canonical(row.metric_type)
     unit = (row.unit or "").lower()
     if canon in _MMOL_TO_MGDL and "mmol" in unit:
         st = classify_value(canon, _to_mgdl(canon, row.value, row.unit))
@@ -185,7 +194,7 @@ def _compute_trend(metric_type: str, rows: list[HealthMetric]) -> Trend:
         return Trend("none", None, None, _trend_label("none", None, None))
     # Normalise both readings to a common unit (mg/dL) so a mixed-unit history
     # (e.g. mg/dL self-report then a mmol/L lab upload) yields a correct % change.
-    canon = normalize_biomarker(metric_type) or ""
+    canon = _canonical(metric_type) or ""
     cur = _to_mgdl(canon, rows[0].value, rows[0].unit)
     prev = _to_mgdl(canon, rows[1].value, rows[1].unit)
     if prev == 0:
@@ -201,8 +210,17 @@ def _retest_phrase(weeks: int) -> str:
     return f"Xét nghiệm/đo lại sau khoảng {weeks} tuần."
 
 
+def _group_key(metric_type: str) -> str:
+    """Identity key for grouping a metric's history. Canonicalises TRUE lab
+    aliases (glucose→fasting_glucose, ldl_c→ldl) so they form one trend, but
+    keeps distinct measurements distinct — notably systolic vs diastolic blood
+    pressure, which share content/label but must never share a trend."""
+    return _canonical(metric_type) or (metric_type or "").strip().lower()
+
+
 def _label(metric_type: str) -> str:
-    return _LABELS.get(ic.content_key(metric_type), metric_type)
+    # Raw metric_type first (distinguishes BP components), then the content key.
+    return _LABELS.get(metric_type) or _LABELS.get(ic.content_key(metric_type), metric_type)
 
 
 # --------------------------------------------------------------------------- #
@@ -219,9 +237,7 @@ def _history(db: Session, patient_id: str) -> dict[str, list[HealthMetric]]:
     )
     by_type: dict[str, list[HealthMetric]] = {}
     for r in rows:
-        # Group by the canonical content key so aliases (glucose/fasting_glucose,
-        # ldl_c/ldl) form ONE history and trend correctly across sources.
-        by_type.setdefault(ic.content_key(r.metric_type), []).append(r)  # newest-first
+        by_type.setdefault(_group_key(r.metric_type), []).append(r)  # newest-first
     return by_type
 
 
@@ -278,20 +294,26 @@ def list_insights(
 
 def get_insight(db: Session, *, patient_id: str, metric_type: str) -> MetricInsight | None:
     """Single-metric insight for the detail card (returns even when normal)."""
-    rows = _history(db, patient_id).get(ic.content_key(metric_type))
+    key = _group_key(metric_type)
+    rows = _history(db, patient_id).get(key)
     if not rows:
         return None
-    return build_metric_insight(ic.content_key(metric_type), rows)
+    return build_metric_insight(key, rows)
 
 
 _RISK_RANK: dict[str, int] = {"low": 0, "medium": 1, "high": 2}
 
 
-def _overall_risk(db: Session, patient_id: str, abnormal_count: int) -> str:
-    """Overall risk = the higher of the metabolic-band risk and the abnormal-count
-    risk, so non-metabolic findings (e.g. a critical TSH while metabolic inputs
-    are GOOD) are never understated."""
-    count_risk = "low" if abnormal_count == 0 else ("medium" if abnormal_count <= 2 else "high")
+def _overall_risk(
+    db: Session, patient_id: str, abnormal_count: int, *, has_critical: bool = False
+) -> str:
+    """Overall risk = the higher of the metabolic-band risk and the findings risk,
+    so non-metabolic findings (e.g. a critical TSH while metabolic inputs are
+    GOOD) are never understated. Any critical finding ⇒ high."""
+    if has_critical:
+        count_risk = "high"
+    else:
+        count_risk = "low" if abnormal_count == 0 else ("medium" if abnormal_count <= 2 else "high")
     band_risk = count_risk
     result = metabolic_live.compute_live_score(db, patient_id=patient_id)
     if result is not None:
@@ -322,7 +344,8 @@ def build_health_summary(db: Session, *, patient_id: str) -> HealthSummary:
     positives = [i.label for i in insights if i.trend.improved is True]
     focus = [i.label for i in abnormal]
 
-    overall_risk = _overall_risk(db, patient_id, len(abnormal))
+    has_critical = any(i.status == "critical" for i in abnormal)
+    overall_risk = _overall_risk(db, patient_id, len(abnormal), has_critical=has_critical)
     if focus:
         lead = ", ".join(focus[:2])
         top_action = _safe(
