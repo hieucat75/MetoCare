@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { HeartPulse } from 'lucide-react'
+import { MetoMark } from '@/components/patient/glass'
 
 export const metadata: Metadata = {
   title: 'MetoCare — Đăng nhập',
@@ -16,16 +16,14 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         {/* Brand header */}
         <div className="text-center mb-7">
           <div className="inline-flex items-center justify-center gap-2.5 mb-3">
-            <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-mint-400 to-mint-600 flex items-center justify-center shadow-glass">
-              <HeartPulse className="w-6 h-6 text-white" aria-hidden="true" />
-            </div>
+            <MetoMark size={44} />
             <span className="text-display-xs font-bold text-text tracking-tight">MetoCare</span>
           </div>
           <p className="text-[17px] text-mint-700">Chăm sóc sức khỏe chuyển hóa</p>
         </div>
 
         {/* Liquid-glass card */}
-        <div className="rounded-3xl border border-white/60 bg-white/70 backdrop-blur-xl shadow-glass p-7 sm:p-8">
+        <div className="mc-glass rounded-3xl p-7 sm:p-8">
           {children}
         </div>
 
