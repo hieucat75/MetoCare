@@ -173,3 +173,29 @@ def test_group_key_merges_insight_aliases_but_splits_bp():
     assert ci._group_key("waist") == "waist_cm"
     assert ci._group_key("blood_pressure_systolic") == "blood_pressure_systolic"
     assert ci._group_key("blood_pressure_diastolic") == "blood_pressure_diastolic"
+
+
+@pytest.mark.parametrize(
+    "metric_type,value,expected",
+    [
+        ("blood_pressure_systolic", 150.0, "high"),    # ≥140 normal-range high
+        ("blood_pressure_systolic", 185.0, "critical"),  # ≥180 critical
+        ("blood_pressure_systolic", 85.0, "low"),      # <90 low
+        ("blood_pressure_systolic", 120.0, "normal"),
+        ("blood_pressure_diastolic", 95.0, "high"),    # ≥90
+        ("blood_pressure_diastolic", 125.0, "critical"),  # ≥120
+    ],
+)
+def test_manual_vital_reclassified_over_stored_normal(metric_type, value, expected):
+    """P2 #1: a manually-logged BP stored as 'normal' (create_metric applies only
+    critical thresholds) is reclassified by clinical_thresholds + normal ranges."""
+    insight = ci.build_metric_insight(metric_type, [_metric(metric_type, value, "mmHg", "normal")])
+    assert insight.status == expected
+
+
+def test_insight_alias_resolved_before_status():
+    """P2 #2: an ldl_c row (insight-only alias) stored 'normal' must resolve to
+    ldl and classify (3.59 mmol/L ≈ 139 mg/dL = HIGH), not be dropped."""
+    assert ci._lab_canonical("ldl_c") == "ldl"
+    insight = ci.build_metric_insight("ldl_c", [_metric("ldl_c", 3.59, "mmol/L", "normal")])
+    assert insight.status == "high"
