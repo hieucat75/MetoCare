@@ -319,6 +319,66 @@ export async function getLiveMetabolicScore(
   }
 }
 
+// ── Clinical Insights (PA-11) ─────────────────────────────────────────────────
+// Backend (live): GET /patients/{id}/insights, /insights/{metric_type}, /health-summary
+
+export interface InsightTrend {
+  direction: 'up' | 'down' | 'flat' | 'none'
+  pct: number | null
+  improved: boolean | null
+  label: string
+}
+
+export interface MetricInsight {
+  metric_type: string
+  label: string
+  value: number
+  unit: string | null
+  status: 'normal' | 'low' | 'high' | 'critical' | 'unknown'
+  trend: InsightTrend
+  meaning: string
+  risks: string[]
+  lifestyle: string[]
+  follow_up: string
+  priority: 'monitor' | 'watch' | 'see_doctor'
+  priority_label: string
+  disclaimer: string
+}
+
+export interface HealthSummary {
+  abnormal_count: number
+  improved: string[]
+  worsened: string[]
+  stable: string[]
+  positives: string[]
+  focus: string[]
+  overall_risk: 'low' | 'medium' | 'high'
+  top_action: string
+  disclaimer: string
+}
+
+/**
+ * Patient-friendly insights for noteworthy (abnormal) metrics — meaning, trend,
+ * risk, lifestyle, follow-up. Returns `null` on failure or when the feature flag
+ * is off (endpoint 404s), so the dashboard degrades gracefully.
+ */
+export async function getInsights(patientId: string): Promise<MetricInsight[] | null> {
+  try {
+    return await api.get<MetricInsight[]>(`/patients/${patientId}/insights`)
+  } catch {
+    return null
+  }
+}
+
+/** Overall health summary + "what changed since last time" buckets. Null on failure. */
+export async function getHealthSummary(patientId: string): Promise<HealthSummary | null> {
+  try {
+    return await api.get<HealthSummary>(`/patients/${patientId}/health-summary`)
+  } catch {
+    return null
+  }
+}
+
 // ── Lab Documents (PA-08: contract-aligned with backend /lab-documents) ───────
 // Backend: GET/POST /patients/{id}/lab-documents
 // LabDocumentOut: { id, patient_id, ocr_status, status }
