@@ -149,3 +149,27 @@ def test_abnormal_without_bespoke_status_gets_generic_risk():
     assert insight.status == "low"
     assert len(insight.risks) >= 1
     assert insight.priority in {"watch", "see_doctor"}
+
+
+@pytest.mark.parametrize(
+    "metric_type,value,unit,stored",
+    [
+        ("hba1c", 12.0, "%", "high"),       # critical_high 10.0
+        ("alt", 400.0, "U/L", "high"),      # critical_high 300
+        ("tsh", 0.005, "mIU/L", "low"),     # critical_low 0.01
+    ],
+)
+def test_critical_threshold_escalated_over_stored_status(metric_type, value, unit, stored):
+    """Codex P1 (r4): values past a lab critical threshold must be 'critical' even
+    when promotion stored only 'high'/'low' (it ignores critical thresholds)."""
+    insight = ci.build_metric_insight(metric_type, [_metric(metric_type, value, unit, stored)])
+    assert insight.status == "critical"
+
+
+def test_group_key_merges_insight_aliases_but_splits_bp():
+    assert ci._group_key("glucose") == "fasting_glucose"   # lab alias
+    assert ci._group_key("ldl_c") == "ldl"                 # insight-only alias
+    assert ci._group_key("weight_kg") == "weight"
+    assert ci._group_key("waist") == "waist_cm"
+    assert ci._group_key("blood_pressure_systolic") == "blood_pressure_systolic"
+    assert ci._group_key("blood_pressure_diastolic") == "blood_pressure_diastolic"

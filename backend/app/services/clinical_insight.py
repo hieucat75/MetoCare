@@ -130,29 +130,33 @@ def _canonical(metric_type: str) -> str | None:
 def _status(row: HealthMetric) -> str:
     """Resolve a metric's status, unit-safely.
 
-    1. Convertible lipids/glucose stored in mmol/L can carry a *wrong* stored
-       status (lab promotion compared mmol/L against mg/dL ranges), so for those
-       we reclassify with ``_to_mgdl`` (e.g. glucose 5.73 mmol/L → HIGH).
-    2. Otherwise trust the stored status — it was computed at write time in the
-       reading's own unit (correct for creatinine µmol/L, BP, weight, …).
-    3. With no stored status, classify from the raw value ONLY when its unit
-       matches the classifier's reference unit, to avoid SI-vs-mg/dL false
-       positives (e.g. creatinine 80 µmol/L must not be read as 80 mg/dL)."""
+    For a known lab biomarker, classify whenever the value can be expressed in
+    the classifier's reference unit — either the unit already matches, or it is a
+    convertible mmol/L. The classifier is then **authoritative**: it applies the
+    CRITICAL thresholds that the generic metric writer / lab promotion does NOT,
+    so e.g. HbA1c 12%, ALT 400 U/L or TSH 0.005 mIU/L are escalated to
+    ``critical`` even if stored merely as ``high``/``low`` (and glucose 5.73
+    mmol/L is read as HIGH rather than a wrongly-stored ``normal``).
+
+    Otherwise (non-lab metric like BP/weight, or an unconvertible SI unit such as
+    creatinine µmol/L) trust the stored status, which was computed in the
+    reading's own unit at write time. This avoids SI-vs-mg/dL false positives."""
     canon = _canonical(row.metric_type)
     unit = (row.unit or "").lower()
-    if canon in _MMOL_TO_MGDL and "mmol" in unit:
-        st = classify_value(canon, _to_mgdl(canon, row.value, row.unit))
-        if st != LabStatus.UNKNOWN:
-            return st.value
+    if canon and canon in _ALIAS_INDEX:
+        spec = _ALIAS_INDEX[canon]
+        value_in_ref: float | None = None
+        if canon in _MMOL_TO_MGDL and "mmol" in unit:
+            value_in_ref = _to_mgdl(canon, row.value, row.unit)
+        elif not unit or unit == spec.unit.lower():
+            value_in_ref = row.value
+        if value_in_ref is not None:
+            st = classify_value(canon, value_in_ref)
+            if st != LabStatus.UNKNOWN:
+                return st.value
     stored = (row.status or "").strip().lower()
     if stored in {"normal", "low", "high", "critical"}:
         return stored
-    if canon and canon in _ALIAS_INDEX:
-        spec = _ALIAS_INDEX[canon]
-        if not unit or unit == spec.unit.lower():
-            st = classify_value(canon, row.value)
-            if st != LabStatus.UNKNOWN:
-                return st.value
     return "unknown"
 
 
@@ -215,7 +219,16 @@ def _group_key(metric_type: str) -> str:
     aliases (glucose→fasting_glucose, ldl_c→ldl) so they form one trend, but
     keeps distinct measurements distinct — notably systolic vs diastolic blood
     pressure, which share content/label but must never share a trend."""
-    return _canonical(metric_type) or (metric_type or "").strip().lower()
+    raw = (metric_type or "").strip().lower()
+    canon = _canonical(raw)
+    if canon:
+        return canon
+    # Insight-only aliases (ldl_c→ldl, weight_kg→weight, waist→waist_cm, …) merge
+    # too, EXCEPT the blood-pressure collapse (systolic/diastolic stay distinct).
+    aliased = ic.METRIC_TYPE_ALIASES.get(raw)
+    if aliased and aliased != "blood_pressure":
+        return aliased
+    return raw
 
 
 def _label(metric_type: str) -> str:
