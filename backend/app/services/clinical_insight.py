@@ -127,16 +127,21 @@ def _to_mgdl(canon: str, value: float, unit: str | None) -> float:
 
 
 def _status(row: HealthMetric) -> str:
-    """Prefer the stored status (computed in the reading's own unit at write
-    time); fall back to the lab classifier for known biomarkers."""
-    stored = (row.status or "").strip().lower()
-    if stored in {"normal", "low", "high", "critical"}:
-        return stored
+    """Resolve a metric's status.
+
+    For biomarkers the lab classifier knows, trust the **unit-aware classifier** —
+    a stored ``health_metrics.status`` can be wrong when lab rows are promoted in
+    mmol/L but compared against mg/dL reference ranges (e.g. glucose 5.73 mmol/L
+    wrongly stored as ``normal``). For everything else (blood pressure, weight,
+    waist, …) the lab classifier has no spec, so use the stored status."""
     canon = normalize_biomarker(row.metric_type)
     if canon and canon in _ALIAS_INDEX:
         st = classify_value(canon, _to_mgdl(canon, row.value, row.unit))
         if st != LabStatus.UNKNOWN:
             return st.value
+    stored = (row.status or "").strip().lower()
+    if stored in {"normal", "low", "high", "critical"}:
+        return stored
     return "unknown"
 
 
@@ -168,9 +173,15 @@ def _improved(ckey: str, prev: float, cur: float, prev_status: str, cur_status: 
 
 
 def _compute_trend(metric_type: str, rows: list[HealthMetric]) -> Trend:
-    if len(rows) < 2 or rows[1].value == 0:
+    if len(rows) < 2:
         return Trend("none", None, None, _trend_label("none", None, None))
-    cur, prev = rows[0].value, rows[1].value
+    # Normalise both readings to a common unit (mg/dL) so a mixed-unit history
+    # (e.g. mg/dL self-report then a mmol/L lab upload) yields a correct % change.
+    canon = normalize_biomarker(metric_type) or ""
+    cur = _to_mgdl(canon, rows[0].value, rows[0].unit)
+    prev = _to_mgdl(canon, rows[1].value, rows[1].unit)
+    if prev == 0:
+        return Trend("none", None, None, _trend_label("none", None, None))
     pct = (cur - prev) / abs(prev) * 100.0
     direction = "flat" if abs(pct) < _TONE_THRESHOLD_PCT else ("up" if pct > 0 else "down")
     ckey = ic.content_key(metric_type)

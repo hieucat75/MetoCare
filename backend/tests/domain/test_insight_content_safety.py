@@ -56,7 +56,7 @@ def _metric(metric_type, value, unit, status, days_ago=0):
         ("tsh", 0.03, "mIU/L", "low"),
         ("fasting_glucose", 5.73, "mmol/L", "high"),
         ("ldl", 3.59, "mmol/L", "high"),
-        ("alt", 51.0, "U/L", "high"),
+        ("alt", 80.0, "U/L", "high"),  # > ref_high 56 → genuinely high
         ("blood_pressure_systolic", 150.0, "mmHg", "high"),
     ],
 )
@@ -90,3 +90,27 @@ def test_unknown_marker_uses_safe_generic():
     assert insight.meaning == ic._GENERIC["meaning"]
     assert len(insight.lifestyle) >= 1
     assert check_output(insight.meaning).allowed
+
+
+def test_mmol_lab_status_reclassified_over_wrong_stored():
+    """Codex P1: glucose 5.73 mmol/L (~103 mg/dL = HIGH) may be promoted with a
+    wrong stored status 'normal'. The unit-aware classifier must win for known
+    biomarkers, so the abnormal value is not hidden from /insights."""
+    insight = ci.build_metric_insight(
+        "fasting_glucose", [_metric("fasting_glucose", 5.73, "mmol/L", "normal")]
+    )
+    assert insight.status == "high"
+    assert len(insight.risks) >= 1
+
+
+def test_mixed_unit_trend_is_normalized():
+    """Codex P2: prev 129 mg/dL then cur 3.59 mmol/L (~138.8 mg/dL) is a slight
+    increase, not a ~97% drop — both readings normalised before % change."""
+    rows = [
+        _metric("ldl", 3.59, "mmol/L", "high", days_ago=0),   # newest
+        _metric("ldl", 129.0, "mg/dL", "high", days_ago=2),   # previous
+    ]
+    insight = ci.build_metric_insight("ldl", rows)
+    assert insight.trend.direction == "up"
+    assert insight.trend.improved is False  # LDL up = worse
+    assert insight.trend.pct is not None and 0 < insight.trend.pct < 25
