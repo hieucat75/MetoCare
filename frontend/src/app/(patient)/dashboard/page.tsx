@@ -29,10 +29,14 @@ import {
   getMedications,
   getLabs,
   getPatientProfile,
+  getHealthSummary,
+  getInsights,
   isProfileComplete,
   type HealthMetric,
+  type HealthSummary,
   type LiveMetabolicScore,
   type Medication,
+  type MetricInsight,
   type LabResult,
   type PatientProfile,
 } from '@/lib/api/patient'
@@ -44,7 +48,7 @@ import {
   type TrendMover,
 } from '@/lib/dashboard/summary'
 import { useLabReference } from '@/lib/api/labReference'
-import { formatDate } from '@/lib/utils'
+import { cn, formatDate } from '@/lib/utils'
 
 // ─── Status presentation ──────────────────────────────────────────────────────
 
@@ -95,6 +99,8 @@ interface DashboardData {
   medications: Medication[]
   labs: LabResult[]
   profile: PatientProfile | null
+  healthSummary: HealthSummary | null
+  insights: MetricInsight[] | null
 }
 
 // ─── Page ───────────────────────────────────────────────────────────────────────
@@ -135,14 +141,18 @@ export default function PatientDashboardPage() {
         total: 0,
       })),
       getPatientProfile(patientId).catch(() => null),
+      getHealthSummary(patientId),
+      getInsights(patientId),
     ])
-      .then(([metricsResp, liveScore, medsResp, labsResp, profile]) => {
+      .then(([metricsResp, liveScore, medsResp, labsResp, profile, healthSummary, insights]) => {
         setData({
           summary: buildDashboardSummary(metricsResp.items, catalog),
           liveScore,
           medications: medsResp.items ?? [],
           labs: labsResp.items ?? [],
           profile,
+          healthSummary,
+          insights,
         })
       })
       .catch((err: Error) => setError(err.message))
@@ -181,7 +191,9 @@ export default function PatientDashboardPage() {
     )
   }
 
-  const { summary, liveScore, medications, labs, profile } = data
+  const { summary, liveScore, medications, labs, profile, healthSummary, insights } = data
+  // /insights already returns only noteworthy (abnormal) metrics, worst-first.
+  const insightCards = insights ?? []
   const todayStr = formatDate(new Date())
   const hasAnyData = summary.totalTracked > 0
   const profileComplete = isProfileComplete(profile)
@@ -248,6 +260,9 @@ export default function PatientDashboardPage() {
         onStart={() => router.push('/metrics/log')}
       />
 
+      {/* PA-11 — Tóm tắt sức khỏe lần này */}
+      {healthSummary && <HealthSummaryBlock summary={healthSummary} />}
+
       {/* SECTION 2 — Việc cần làm hôm nay */}
       <section aria-label="Việc cần làm hôm nay">
         <SectionHeader title="Việc cần làm hôm nay" />
@@ -258,8 +273,29 @@ export default function PatientDashboardPage() {
         </div>
       </section>
 
-      {/* SECTION 3 — Top Indicators Requiring Attention */}
-      {topConcerns.length > 0 && (
+      {/* SECTION 3 — Chỉ số cần chú ý (clinical insights: meaning / trend / risk / advice) */}
+      {insightCards.length > 0 ? (
+        <section aria-label="Chỉ số cần chú ý">
+          <SectionHeader
+            title="Chỉ số cần chú ý"
+            action={
+              <button
+                type="button"
+                onClick={() => router.push('/metrics')}
+                className="text-[15px] text-mint-600 hover:underline"
+              >
+                Tất cả
+              </button>
+            }
+          />
+          <div className="space-y-2.5">
+            {insightCards.map((it) => (
+              <InsightCard key={it.metric_type} insight={it} />
+            ))}
+          </div>
+        </section>
+      ) : topConcerns.length > 0 ? (
+        // Fallback when the insight API is unavailable (flag off / error).
         <section aria-label="Chỉ số cần chú ý">
           <SectionHeader
             title="Chỉ số cần chú ý"
@@ -283,7 +319,20 @@ export default function PatientDashboardPage() {
             ))}
           </div>
         </section>
-      )}
+      ) : hasAnyData ? (
+        <section aria-label="Chỉ số cần chú ý">
+          <GlassCard>
+            <PatientEmptyState
+              icon={<CheckCircle2 aria-hidden="true" />}
+              title="Các chỉ số đang trong tầm kiểm soát"
+              description="Hiện chưa có chỉ số nào cần đặc biệt chú ý. Hãy tiếp tục duy trì thói quen lành mạnh và đo lại định kỳ."
+            />
+          </GlassCard>
+        </section>
+      ) : null}
+
+      {/* PA-11 — Điều gì thay đổi từ lần trước? */}
+      {healthSummary && <WhatChangedSection summary={healthSummary} />}
 
       {/* SECTION 4 — Health Trend */}
       {topMovers.length > 0 && (
@@ -354,6 +403,171 @@ export default function PatientDashboardPage() {
         )}
       </section>
     </div>
+  )
+}
+
+// ─── PA-11 — Clinical insight presentation ────────────────────────────────────
+
+const RISK_BADGE: Record<HealthSummary['overall_risk'], { label: string; cls: string; dot: string }> = {
+  low: { label: 'Thấp', cls: 'bg-mint-100 text-mint-700', dot: '🟢' },
+  medium: { label: 'Trung bình', cls: 'bg-amber-100 text-amber-700', dot: '🟠' },
+  high: { label: 'Cao', cls: 'bg-rose-100 text-rose-700', dot: '🔴' },
+}
+
+const PRIORITY_DOT: Record<MetricInsight['priority'], string> = {
+  see_doctor: 'bg-rose-500',
+  watch: 'bg-amber-500',
+  monitor: 'bg-mint-500',
+}
+
+/** "Tóm tắt sức khỏe lần này" — count, positives, focus, overall risk, top action. */
+function HealthSummaryBlock({ summary }: { summary: HealthSummary }) {
+  const risk = RISK_BADGE[summary.overall_risk]
+  return (
+    <section aria-label="Tóm tắt sức khỏe lần này">
+      <SectionHeader title="Tóm tắt sức khỏe lần này" />
+      <GlassCard>
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-[15px] text-text">
+            Bạn hiện có <span className="font-bold">{summary.abnormal_count}</span> chỉ số cần chú ý.
+          </p>
+          <span
+            className={cn(
+              'inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[13px] font-semibold',
+              risk.cls,
+            )}
+          >
+            {risk.dot} Rủi ro {risk.label}
+          </span>
+        </div>
+
+        {summary.positives.length > 0 && (
+          <div className="mt-3">
+            <p className="text-[13px] font-semibold text-mint-700">Điểm tích cực</p>
+            <ul className="mt-1 space-y-0.5">
+              {summary.positives.map((p) => (
+                <li key={p} className="text-[14px] text-text-muted">
+                  • {p}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {summary.focus.length > 0 && (
+          <div className="mt-3">
+            <p className="text-[13px] font-semibold text-amber-700">Điểm cần tập trung</p>
+            <ul className="mt-1 space-y-0.5">
+              {summary.focus.map((f) => (
+                <li key={f} className="text-[14px] text-text-muted">
+                  • {f}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {summary.top_action && (
+          <div className="mt-3 rounded-xl bg-mint-50 p-3">
+            <p className="text-[13px] font-semibold text-mint-800">Việc quan trọng nhất</p>
+            <p className="mt-0.5 text-[14px] text-text">{summary.top_action}</p>
+          </div>
+        )}
+
+        <p className="mt-3 text-[12px] text-text-subtle">{summary.disclaimer}</p>
+      </GlassCard>
+    </section>
+  )
+}
+
+/** "Điều gì thay đổi từ lần trước?" — 📈 improved / 📉 worsened / ⚪ stable. */
+function WhatChangedSection({ summary }: { summary: HealthSummary }) {
+  const groups = [
+    { key: 'up', title: '📈 Cải thiện', items: summary.improved, cls: 'text-mint-700' },
+    { key: 'down', title: '📉 Xấu đi', items: summary.worsened, cls: 'text-rose-700' },
+    { key: 'flat', title: '⚪ Ổn định', items: summary.stable, cls: 'text-text-muted' },
+  ].filter((g) => g.items.length > 0)
+  if (groups.length === 0) return null
+  return (
+    <section aria-label="Điều gì thay đổi từ lần trước?">
+      <SectionHeader title="Điều gì thay đổi từ lần trước?" subtitle="So với lần đo trước" />
+      <GlassCard className="space-y-3">
+        {groups.map((g) => (
+          <div key={g.key}>
+            <p className={cn('text-[14px] font-semibold', g.cls)}>{g.title}</p>
+            <ul className="mt-1 space-y-0.5">
+              {g.items.map((it) => (
+                <li key={it} className="text-[14px] text-text-muted">
+                  • {it}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </GlassCard>
+    </section>
+  )
+}
+
+/** Abnormal-metric insight card: meaning + trend + main risk + main advice. */
+function InsightCard({ insight }: { insight: MetricInsight }) {
+  const { trend } = insight
+  const TrendIcon =
+    trend.direction === 'up' ? ArrowUpRight : trend.direction === 'down' ? ArrowDownRight : Minus
+  const trendColor =
+    trend.improved === true
+      ? 'text-mint-600'
+      : trend.improved === false
+        ? 'text-rose-600'
+        : 'text-text-muted'
+  return (
+    <GlassCard>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span
+              className={cn('size-2 shrink-0 rounded-full', PRIORITY_DOT[insight.priority])}
+              aria-hidden="true"
+            />
+            <h3 className="truncate text-[16px] font-bold text-text">{insight.label}</h3>
+          </div>
+          <p className="mt-0.5 text-[18px] font-bold text-text">
+            {insight.value}
+            {insight.unit ? (
+              <span className="text-[14px] font-medium text-text-muted"> {insight.unit}</span>
+            ) : null}
+          </p>
+        </div>
+        <span className="shrink-0 rounded-full bg-white/70 px-2.5 py-1 text-[12px] font-semibold text-text-muted">
+          {insight.priority_label}
+        </span>
+      </div>
+
+      {/* ý nghĩa ngắn */}
+      <p className="mt-2 text-[14px] leading-relaxed text-text-muted">{insight.meaning}</p>
+
+      {/* xu hướng so với lần trước */}
+      <p className={cn('mt-2 inline-flex items-center gap-1 text-[13px] font-medium', trendColor)}>
+        <TrendIcon className="size-4" aria-hidden="true" />
+        {trend.label}
+      </p>
+
+      {/* nguy cơ chính */}
+      {insight.risks.length > 0 && (
+        <div className="mt-2 flex items-start gap-1.5">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-500" aria-hidden="true" />
+          <p className="text-[14px] text-text-muted">{insight.risks[0]}</p>
+        </div>
+      )}
+
+      {/* lời khuyên chính */}
+      {insight.lifestyle.length > 0 && (
+        <div className="mt-1.5 flex items-start gap-1.5">
+          <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-mint-600" aria-hidden="true" />
+          <p className="text-[14px] text-text-muted">{insight.lifestyle[0]}</p>
+        </div>
+      )}
+    </GlassCard>
   )
 }
 
