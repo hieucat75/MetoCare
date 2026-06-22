@@ -198,11 +198,16 @@ def _status(row: HealthMetric) -> str:
             st = classify_value(canon, value_in_ref)
             if st != LabStatus.UNKNOWN:
                 return st.value
-    # Supported manual vital (BP) — classify rather than trust a default 'normal'.
+    stored = (row.status or "").strip().lower()
+    # Supported manual vital (BP) — classify rather than trust a default 'normal',
+    # but NEVER downgrade an abnormal status that was set from supplied custom
+    # ranges (e.g. systolic 135 stored 'high' via normal_range_max=130). Take the
+    # more severe of stored-abnormal vs the default-range classification.
     vital = _classify_vital(row.metric_type, row.value, unit)
     if vital is not None:
+        if stored in ABNORMAL and _SEVERITY[stored] > _SEVERITY[vital]:
+            return stored
         return vital
-    stored = (row.status or "").strip().lower()
     if stored in {"normal", "low", "high", "critical"}:
         return stored
     return "unknown"

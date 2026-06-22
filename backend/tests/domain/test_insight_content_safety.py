@@ -193,6 +193,15 @@ def test_manual_vital_reclassified_over_stored_normal(metric_type, value, expect
     assert insight.status == expected
 
 
+def test_manual_vital_does_not_downgrade_custom_abnormal():
+    """Codex P2: a BP stored 'high' from supplied custom ranges (135 with
+    normal_range_max=130) must NOT be downgraded to 'normal' by default ranges."""
+    insight = ci.build_metric_insight(
+        "blood_pressure_systolic", [_metric("blood_pressure_systolic", 135.0, "mmHg", "high")]
+    )
+    assert insight.status == "high"
+
+
 def test_insight_alias_resolved_before_status():
     """P2 #2: an ldl_c row (insight-only alias) stored 'normal' must resolve to
     ldl and classify (3.59 mmol/L ≈ 139 mg/dL = HIGH), not be dropped."""
