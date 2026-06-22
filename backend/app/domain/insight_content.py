@@ -74,11 +74,15 @@ _GENERIC: BiomarkerContent = {
     "retest_weeks": 12,
     "by_status": {
         "low": {
-            "risks": ("Khi chỉ số nằm ngoài khoảng tham chiếu, cơ thể có thể bị ảnh hưởng tùy mức độ.",),
+            "risks": (
+                "Khi chỉ số nằm ngoài khoảng tham chiếu, cơ thể có thể bị ảnh hưởng tùy mức độ.",
+            ),
             "priority": "watch",
         },
         "high": {
-            "risks": ("Khi chỉ số nằm ngoài khoảng tham chiếu, cơ thể có thể bị ảnh hưởng tùy mức độ.",),
+            "risks": (
+                "Khi chỉ số nằm ngoài khoảng tham chiếu, cơ thể có thể bị ảnh hưởng tùy mức độ.",
+            ),
             "priority": "watch",
         },
         "critical": {

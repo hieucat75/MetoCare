@@ -20,6 +20,9 @@ class FeatureFlag(enum.StrEnum):
     # OCR Lab Upload track: cloud OCR is an OPT-IN fallback. Default OFF so medical
     # images are NEVER sent to a third party unless explicitly enabled with a key.
     OCR_CLOUD_FALLBACK = "ocr_cloud_fallback"    # Gates cloud OCR fallback (anthropic|azure)
+    # PA-11: Clinical Insight Engine — rules-first patient guidance.
+    CLINICAL_INSIGHT    = "clinical_insight"     # Gates insight + health-summary endpoints
+    CLINICAL_INSIGHT_AI = "clinical_insight_ai"  # Gates OPTIONAL LLM rephrasing of rules text
 
 _DEFAULTS = {
     FeatureFlag.AI_TRIAGE: False,
@@ -37,6 +40,9 @@ _DEFAULTS = {
     FeatureFlag.OCR: False,
     FeatureFlag.AI_RECOMMENDATION: False,
     FeatureFlag.OCR_CLOUD_FALLBACK: False,  # opt-in only; never silently send images out
+    # PA-11: rules-first insight is deterministic + guardrail-checked → safe ON by default.
+    FeatureFlag.CLINICAL_INSIGHT: True,
+    FeatureFlag.CLINICAL_INSIGHT_AI: False,  # LLM rephrasing OFF in v1 (rules-only)
 }
 
 def is_enabled(flag: FeatureFlag | str) -> bool:
