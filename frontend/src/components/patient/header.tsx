@@ -26,7 +26,7 @@ export function PatientScreenHeader({
         type="button"
         aria-label="Quay lại"
         onClick={onBack ?? (() => router.back())}
-        className="grid size-11 shrink-0 place-items-center rounded-full border border-white/85 bg-white/60 backdrop-blur-md"
+        className="grid size-12 shrink-0 place-items-center rounded-full border border-white/85 bg-white/60 backdrop-blur-md"
       >
         <ArrowLeft className="size-5 text-[#0e2a33]" aria-hidden="true" />
       </button>
