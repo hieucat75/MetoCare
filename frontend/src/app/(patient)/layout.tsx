@@ -25,33 +25,63 @@ import { useFeatureFlags } from '@/lib/api/features'
 // ── Nav items (sidebar for desktop) ──────────────────────────────────────────
 
 const NAV_ITEMS: NavItem[] = [
-  { id: 'dashboard',    label: 'Tổng quan',         icon: <LayoutDashboard className="w-5 h-5" />, href: '/dashboard' },
-  { id: 'metrics',      label: 'Chỉ số sức khỏe',   icon: <Activity className="w-5 h-5" />,        href: '/metrics' },
-  { id: 'labs',         label: 'Xét nghiệm',         icon: <FlaskConical className="w-5 h-5" />,    href: '/labs' },
-  { id: 'medications',  label: 'Thuốc',              icon: <Pill className="w-5 h-5" />,            href: '/medications' },
-  { id: 'nutrition',    label: 'Dinh dưỡng',         icon: <Utensils className="w-5 h-5" />,         href: '/nutrition' },
-  { id: 'care-plan',    label: 'Kế hoạch điều trị', icon: <ClipboardList className="w-5 h-5" />,   href: '/care-plan' },
-  { id: 'ai-assistant', label: 'Trợ lý AI',          icon: <MessageSquare className="w-5 h-5" />,   href: '/ai-assistant' },
-  { id: 'notifications',label: 'Thông báo',          icon: <Bell className="w-5 h-5" />,            href: '/notifications' },
-  { id: 'profile',      label: 'Hồ sơ',              icon: <User className="w-5 h-5" />,            href: '/profile' },
-  { id: 'settings',     label: 'Cài đặt',            icon: <Settings className="w-5 h-5" />,        href: '/settings' },
+  {
+    id: 'dashboard',
+    label: 'Tổng quan',
+    icon: <LayoutDashboard className="w-5 h-5" />,
+    href: '/dashboard',
+  },
+  {
+    id: 'metrics',
+    label: 'Chỉ số sức khỏe',
+    icon: <Activity className="w-5 h-5" />,
+    href: '/metrics',
+  },
+  { id: 'labs', label: 'Xét nghiệm', icon: <FlaskConical className="w-5 h-5" />, href: '/labs' },
+  { id: 'medications', label: 'Thuốc', icon: <Pill className="w-5 h-5" />, href: '/medications' },
+  {
+    id: 'nutrition',
+    label: 'Dinh dưỡng',
+    icon: <Utensils className="w-5 h-5" />,
+    href: '/nutrition',
+  },
+  {
+    id: 'care-plan',
+    label: 'Kế hoạch điều trị',
+    icon: <ClipboardList className="w-5 h-5" />,
+    href: '/care-plan',
+  },
+  {
+    id: 'ai-assistant',
+    label: 'Trợ lý AI',
+    icon: <MessageSquare className="w-5 h-5" />,
+    href: '/ai-assistant',
+  },
+  {
+    id: 'notifications',
+    label: 'Thông báo',
+    icon: <Bell className="w-5 h-5" />,
+    href: '/notifications',
+  },
+  { id: 'profile', label: 'Hồ sơ', icon: <User className="w-5 h-5" />, href: '/profile' },
+  { id: 'settings', label: 'Cài đặt', icon: <Settings className="w-5 h-5" />, href: '/settings' },
 ]
 
 // ── Route → page title map (mobile top bar) ───────────────────────────────────
 
 const PAGE_TITLES: Record<string, string> = {
-  '/dashboard':    'Tổng quan',
-  '/metrics':      'Chỉ số sức khỏe',
-  '/metrics/log':  'Ghi chỉ số',
-  '/labs':         'Xét nghiệm',
-  '/medications':  'Thuốc',
-  '/nutrition':    'Dinh dưỡng',
-  '/care-plan':    'Kế hoạch điều trị',
+  '/dashboard': 'Tổng quan',
+  '/metrics': 'Chỉ số sức khỏe',
+  '/metrics/log': 'Ghi chỉ số',
+  '/labs': 'Xét nghiệm',
+  '/medications': 'Thuốc',
+  '/nutrition': 'Dinh dưỡng',
+  '/care-plan': 'Kế hoạch điều trị',
   '/ai-assistant': 'Trợ lý AI',
-  '/notifications':'Thông báo',
-  '/profile':      'Hồ sơ cá nhân',
-  '/settings':     'Cài đặt',
-  '/consents':     'Đồng ý chia sẻ',
+  '/notifications': 'Thông báo',
+  '/profile': 'Hồ sơ cá nhân',
+  '/settings': 'Cài đặt',
+  '/consents': 'Đồng ý chia sẻ',
 }
 
 function getPageTitle(pathname: string): string {
@@ -73,6 +103,22 @@ function getActiveId(pathname: string): string {
   return 'dashboard'
 }
 
+/**
+ * Mobile bottom nav shows on the 5 hub routes and HIDES on deep detail/form
+ * routes (which provide their own back button). Deep routes:
+ *   /metrics/<anything>  (metric detail + /metrics/log form)
+ *   /labs/upload
+ *   /medications/<id>
+ */
+function shouldHideBottomNav(pathname: string): boolean {
+  // Any /metrics/* sub-route (detail or log), but NOT /metrics itself.
+  if (pathname !== '/metrics' && pathname.startsWith('/metrics/')) return true
+  if (pathname.startsWith('/labs/upload')) return true
+  // /medications/<id> but NOT /medications itself.
+  if (pathname !== '/medications' && pathname.startsWith('/medications/')) return true
+  return false
+}
+
 // ── Layout ────────────────────────────────────────────────────────────────────
 
 export default function PatientLayout({ children }: { children: React.ReactNode }) {
@@ -85,12 +131,15 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
   // Hide the AI assistant nav entry unless the feature flag is enabled (MVP: OFF).
   const navItems = React.useMemo(
     () => NAV_ITEMS.filter((it) => it.id !== 'ai-assistant' || flags?.ai_assistant),
-    [flags],
+    [flags]
   )
 
   React.useEffect(() => {
     if (isLoading) return
-    if (!isAuthenticated) { router.replace('/login'); return }
+    if (!isAuthenticated) {
+      router.replace('/login')
+      return
+    }
     if (user && user.role !== 'patient') router.replace(getRoleHomePath(user.role))
   }, [isLoading, isAuthenticated, user, router])
 
@@ -106,6 +155,7 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
 
   const activeId = getActiveId(pathname)
   const pageTitle = getPageTitle(pathname)
+  const hideBottomNav = shouldHideBottomNav(pathname)
 
   const handleNavItem = (item: NavItem) => router.push(item.href)
 
@@ -121,7 +171,9 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
       onItemClick={handleNavItem}
       collapsed={sidebarCollapsed}
       header={
-        <div className={`flex items-center gap-2.5 p-4 ${sidebarCollapsed ? 'justify-center' : ''}`}>
+        <div
+          className={`flex items-center gap-2.5 p-4 ${sidebarCollapsed ? 'justify-center' : ''}`}
+        >
           <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-mint-400 to-mint-600 flex items-center justify-center shrink-0">
             <span className="text-white font-bold text-sm">M</span>
           </div>
@@ -130,7 +182,11 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
           )}
         </div>
       }
-      userProfile={user ? { name: user.full_name ?? user.phone ?? user.email ?? 'Bệnh nhân', role: 'Bệnh nhân' } : undefined}
+      userProfile={
+        user
+          ? { name: user.full_name ?? user.phone ?? user.email ?? 'Bệnh nhân', role: 'Bệnh nhân' }
+          : undefined
+      }
       footer={
         <button
           type="button"
@@ -159,10 +215,11 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
               <span className="font-semibold text-text text-[17px]">{pageTitle}</span>
             </div>
             {/* User avatar / logout shortcut */}
+            {/* TODO(ux): consider relocating logout + confirm */}
             <button
               type="button"
               onClick={handleLogout}
-              className="w-8 h-8 rounded-full bg-mint-100 flex items-center justify-center text-mint-700 hover:bg-mint-200 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mint-400/40"
+              className="size-12 min-h-[48px] min-w-[48px] rounded-full bg-mint-100 flex items-center justify-center text-mint-700 hover:bg-mint-200 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mint-400/40"
               aria-label="Đăng xuất"
               title="Đăng xuất"
             >
@@ -171,10 +228,13 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
           </div>
         </header>
 
-        {/* Page content — pb-24 clears the floating glass 5-tab nav bar */}
-        <main className="flex-1 overflow-auto pb-24">{children}</main>
+        {/* Page content — pb-24 clears the floating glass 5-tab nav bar; deep
+            routes hide the nav, so they don't need the bottom clearance. */}
+        <main className={`flex-1 overflow-auto ${hideBottomNav ? 'pb-6' : 'pb-24'}`}>
+          {children}
+        </main>
 
-        <PatientBottomNav />
+        {!hideBottomNav && <PatientBottomNav />}
       </div>
 
       {/* ── Desktop (≥ lg): AppShell with sidebar ── */}
