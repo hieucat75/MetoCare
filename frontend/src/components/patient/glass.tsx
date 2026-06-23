@@ -19,11 +19,11 @@ export function MetoMark({
   className?: string
   style?: React.CSSProperties
 }) {
-  // Renders public/metocare-logo.png (mark-test.png) exactly as-is, aspect preserved.
+  // Icon-only mark: renders public/brand/metocare-mark.png (mark-test.png) as-is.
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img
-      src="/metocare-logo.png"
+      src="/brand/metocare-mark.png"
       alt="MetoCare"
       width={size}
       className={className}

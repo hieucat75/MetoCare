@@ -176,13 +176,19 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
           className={`flex items-center gap-2.5 p-4 ${sidebarCollapsed ? 'justify-center' : ''}`}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/metocare-logo.png"
-            alt="MetoCare"
-            className="w-8 h-8 rounded-xl object-contain shrink-0"
-          />
-          {!sidebarCollapsed && (
-            <span className="font-semibold text-white tracking-tight">MetoCare</span>
+          {sidebarCollapsed ? (
+            <img
+              src="/brand/metocare-mark.png"
+              alt="MetoCare"
+              className="w-8 h-8 rounded-xl object-contain shrink-0"
+            />
+          ) : (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src="/brand/metocare-logo.png"
+              alt="MetoCare"
+              className="h-8 w-auto rounded-lg bg-white object-contain p-1"
+            />
           )}
         </div>
       }
@@ -218,7 +224,7 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
               <div className="flex items-center gap-2">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src="/metocare-logo.png"
+                  src="/brand/metocare-mark.png"
                   alt="MetoCare"
                   className="w-7 h-7 rounded-xl object-contain shrink-0"
                 />

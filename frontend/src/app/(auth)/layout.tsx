@@ -1,5 +1,4 @@
 import type { Metadata } from 'next'
-import { MetoMark } from '@/components/patient/glass'
 
 export const metadata: Metadata = {
   title: 'MetoCare — Đăng nhập',
@@ -11,12 +10,13 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
       <div className="relative w-full max-w-[420px]">
         {/* Brand header */}
         <div className="mb-7 text-center">
-          <div className="mb-3 inline-flex items-center justify-center gap-2.5">
-            <MetoMark size={44} />
-            <span className="text-[28px] font-extrabold tracking-[-0.02em] text-neu-text">
-              MetoCare
-            </span>
-          </div>
+          {/* Full MetoCare logo (symbol + wordmark) — exact image, never text. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/brand/metocare-logo.png"
+            alt="MetoCare"
+            className="mx-auto mb-3 h-14 w-auto"
+          />
           <p className="text-[15px] text-neu-secondary">Chăm sóc sức khỏe chuyển hóa</p>
         </div>
 
