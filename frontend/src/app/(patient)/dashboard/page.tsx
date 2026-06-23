@@ -5,23 +5,15 @@ import { useRouter } from 'next/navigation'
 import {
   Activity,
   AlertTriangle,
-  ArrowDownRight,
-  ArrowUpRight,
-  CheckCircle2,
+  Bell,
   ChevronRight,
   ClipboardList,
   FlaskConical,
-  Minus,
   Pill,
-  TrendingUp,
+  ShieldCheck,
 } from 'lucide-react'
 import { PageLoading, ErrorState } from '@/design-system'
-import {
-  GlassCard,
-  MintButton,
-  PatientEmptyState,
-  SectionHeader,
-} from '@/components/patient'
+import { GlassCard, PatientEmptyState, SectionHeader } from '@/components/patient'
 import { useAuth } from '@/lib/auth/context'
 import {
   getLiveMetabolicScore,
@@ -32,6 +24,7 @@ import {
   getHealthSummary,
   getInsights,
   isProfileComplete,
+  metricUnit,
   type HealthMetric,
   type HealthSummary,
   type LiveMetabolicScore,
@@ -40,47 +33,52 @@ import {
   type LabResult,
   type PatientProfile,
 } from '@/lib/api/patient'
-import {
-  buildDashboardSummary,
-  type DashboardSummary,
-  type IndicatorConcern,
-  type OverallStatus,
-  type TrendMover,
-} from '@/lib/dashboard/summary'
-import { useLabReference } from '@/lib/api/labReference'
+import { buildDashboardSummary, type DashboardSummary } from '@/lib/dashboard/summary'
+import { useLabReference, type LabCatalog } from '@/lib/api/labReference'
+import { groupMetricsByCategory, type MetricSeries } from '@/lib/metrics/kpi'
 import { cn, formatDate } from '@/lib/utils'
 
-// ─── Status presentation ──────────────────────────────────────────────────────
+// ─── Risk band presentation (spec §2 risk colors) ─────────────────────────────
 
-interface StatusPresentation {
-  title: string
-  ring: string
-  chip: string
+interface RiskPresentation {
+  label: string
+  bg: string
   text: string
 }
 
-const STATUS_PRESENTATION: Record<Exclude<OverallStatus, 'no_data'>, StatusPresentation> = {
-  stable: {
-    title: 'Ổn định',
-    ring: 'from-mint-300 to-mint-500',
-    chip: 'bg-mint-100 text-mint-700',
-    text: 'text-mint-700',
+const RISK_PRESENTATION: Record<HealthSummary['overall_risk'], RiskPresentation> = {
+  low: { label: 'Nguy cơ thấp', bg: 'bg-[#DCFCE7]', text: 'text-[#0E5B2F]' },
+  medium: { label: 'Nguy cơ trung bình', bg: 'bg-[#FEF3C7]', text: 'text-[#78350F]' },
+  high: { label: 'Nguy cơ cao', bg: 'bg-[#FEE2E2]', text: 'text-[#991B1B]' },
+}
+
+// ─── Priority (DecisionCard) tone by insight priority (spec §7.1) ──────────────
+
+interface PriorityTone {
+  outline: string // soft outline + glow
+  accentText: string
+  iconWrap: string
+}
+
+const PRIORITY_TONE: Record<MetricInsight['priority'], PriorityTone> = {
+  see_doctor: {
+    outline: 'border-[1.5px] border-[#FCA5A5] shadow-[0_10px_40px_rgba(220,38,38,0.10)]',
+    accentText: 'text-[#991B1B]',
+    iconWrap: 'bg-[#FEE2E2] text-[#991B1B]',
   },
-  attention: {
-    title: 'Cần chú ý',
-    ring: 'from-amber-300 to-amber-500',
-    chip: 'bg-amber-100 text-amber-700',
-    text: 'text-amber-700',
+  watch: {
+    outline: 'border-[1.5px] border-[#FDE68A] shadow-[0_10px_40px_rgba(180,120,20,0.10)]',
+    accentText: 'text-[#78350F]',
+    iconWrap: 'bg-[#FEF3C7] text-[#78350F]',
   },
-  at_risk: {
-    title: 'Nguy cơ chuyển hóa',
-    ring: 'from-rose-300 to-rose-500',
-    chip: 'bg-rose-100 text-rose-700',
-    text: 'text-rose-700',
+  monitor: {
+    outline: 'border-[1.5px] border-mint-200 shadow-glass',
+    accentText: 'text-[#0E5B2F]',
+    iconWrap: 'bg-[#DCFCE7] text-[#0E5B2F]',
   },
 }
 
-// ─── Task model (Section 2) ─────────────────────────────────────────────────────
+// ─── Task model ───────────────────────────────────────────────────────────────
 
 interface TodayTask {
   id: string
@@ -91,10 +89,11 @@ interface TodayTask {
   urgent?: boolean
 }
 
-// ─── Dashboard data ─────────────────────────────────────────────────────────────
+// ─── Dashboard data ───────────────────────────────────────────────────────────
 
 interface DashboardData {
   summary: DashboardSummary
+  metrics: HealthMetric[]
   liveScore: LiveMetabolicScore | null
   medications: Medication[]
   labs: LabResult[]
@@ -114,6 +113,8 @@ export default function PatientDashboardPage() {
   const [data, setData] = React.useState<DashboardData | null>(null)
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
+  // Local-only dismissal of the priority card (no API / no persistence per spec).
+  const [priorityDismissed, setPriorityDismissed] = React.useState(false)
 
   const load = React.useCallback(() => {
     if (!patientId) {
@@ -147,6 +148,7 @@ export default function PatientDashboardPage() {
       .then(([metricsResp, liveScore, medsResp, labsResp, profile, healthSummary, insights]) => {
         setData({
           summary: buildDashboardSummary(metricsResp.items, catalog),
+          metrics: metricsResp.items ?? [],
           liveScore,
           medications: medsResp.items ?? [],
           labs: labsResp.items ?? [],
@@ -191,14 +193,24 @@ export default function PatientDashboardPage() {
     )
   }
 
-  const { summary, liveScore, medications, labs, profile, healthSummary, insights } = data
-  // /insights already returns only noteworthy (abnormal) metrics, worst-first.
-  const insightCards = insights ?? []
+  const { summary, metrics, liveScore, medications, labs, profile, healthSummary, insights } = data
   const todayStr = formatDate(new Date())
-  const hasAnyData = summary.totalTracked > 0
   const profileComplete = isProfileComplete(profile)
+  // /insights returns abnormal metrics worst-first; [0] drives the priority card.
+  const topInsight = insights && insights.length > 0 ? insights[0] : null
+  // Clinical-safety guard: the calm/reassuring card may ONLY appear when there
+  // are genuinely zero things to look at. If insights are empty but the patient
+  // still has abnormal/concern metrics, show a neutral fallback that routes to
+  // /metrics — never tell an at-risk patient "nothing is urgent".
+  // Take the MAX across every signal so a 0 from one source can never mask a
+  // nonzero from another — any concern at all suppresses the calm card.
+  const concernCount = Math.max(
+    healthSummary?.abnormal_count ?? 0,
+    summary.abnormalCount,
+    summary.concerns.length,
+  )
 
-  // ── Section 2 tasks ──────────────────────────────────────────────────────────
+  // ── Today's actions ──────────────────────────────────────────────────────────
   const tasks: TodayTask[] = []
   if (!profileComplete) {
     tasks.push({
@@ -237,33 +249,37 @@ export default function PatientDashboardPage() {
     onClick: () => router.push('/metrics/log'),
   })
 
-  const topConcerns = summary.concerns.slice(0, 3)
-  const topMovers = summary.movers.slice(0, 3)
-  const latestLab = labs[0] ?? null
-  const todayMeds = medications // all active meds are the patient's current regimen
-
   return (
-    <div className="p-4 lg:p-6 space-y-6 max-w-md mx-auto lg:max-w-2xl pb-28">
-      {/* Greeting */}
-      <div>
-        <h1 className="text-[24px] font-bold text-text">
-          Xin chào, {user.full_name ?? user.email}!
-        </h1>
-        <p className="text-[15px] text-text-muted mt-0.5">{todayStr}</p>
-      </div>
-
-      {/* SECTION 1 — Health Summary Hero */}
-      <HealthSummaryHero
-        summary={summary}
-        liveScore={liveScore}
-        hasAnyData={hasAnyData}
-        onStart={() => router.push('/metrics/log')}
+    <div className="p-4 lg:p-6 space-y-5 max-w-md mx-auto lg:max-w-2xl pb-28">
+      {/* 1 — Header */}
+      <DashboardHeader
+        name={user.full_name ?? user.email ?? 'bạn'}
+        dateStr={todayStr}
+        onBell={() => router.push('/notifications')}
       />
 
-      {/* PA-11 — Tóm tắt sức khỏe lần này */}
-      {healthSummary && <HealthSummaryBlock summary={healthSummary} />}
+      {/* 2 — Health Score Card (scan in 1s) */}
+      <HealthScoreCard liveScore={liveScore} healthSummary={healthSummary} summary={summary} />
 
-      {/* SECTION 2 — Việc cần làm hôm nay */}
+      {/* 3 — Health Priority Engine (biggest card, DecisionCard) */}
+      {!priorityDismissed &&
+        (topInsight ? (
+          <PriorityCard
+            insight={topInsight}
+            onPrimary={() => router.push(`/metrics/${topInsight.metric_type}`)}
+            onDismiss={() => setPriorityDismissed(true)}
+          />
+        ) : concernCount > 0 ? (
+          // Insights empty but concerns exist → neutral fallback (never reassure).
+          <FallbackPriorityCard count={concernCount} onPrimary={() => router.push('/metrics')} />
+        ) : (
+          <CalmPriorityCard />
+        ))}
+
+      {/* 4 — KPI row */}
+      <KpiRow healthSummary={healthSummary} summary={summary} />
+
+      {/* 5 — Today's actions */}
       <section aria-label="Việc cần làm hôm nay">
         <SectionHeader title="Việc cần làm hôm nay" />
         <div className="space-y-2.5">
@@ -273,503 +289,621 @@ export default function PatientDashboardPage() {
         </div>
       </section>
 
-      {/* SECTION 3 — Chỉ số cần chú ý (clinical insights: meaning / trend / risk / advice) */}
-      {insightCards.length > 0 ? (
-        <section aria-label="Chỉ số cần chú ý">
-          <SectionHeader
-            title="Chỉ số cần chú ý"
-            action={
-              <button
-                type="button"
-                onClick={() => router.push('/metrics')}
-                className="text-[15px] text-mint-600 hover:underline"
-              >
-                Tất cả
-              </button>
-            }
-          />
-          <div className="space-y-2.5">
-            {insightCards.map((it) => (
-              <InsightCard key={it.metric_type} insight={it} />
-            ))}
-          </div>
-        </section>
-      ) : topConcerns.length > 0 ? (
-        // Fallback when the insight API is unavailable (flag off / error).
-        <section aria-label="Chỉ số cần chú ý">
-          <SectionHeader
-            title="Chỉ số cần chú ý"
-            action={
-              <button
-                type="button"
-                onClick={() => router.push('/metrics')}
-                className="text-[15px] text-mint-600 hover:underline"
-              >
-                Tất cả
-              </button>
-            }
-          />
-          <div className="space-y-2.5">
-            {topConcerns.map((c) => (
-              <ConcernRow
-                key={c.metricType}
-                concern={c}
-                onClick={() => router.push(`/metrics?type=${c.metricType}`)}
-              />
-            ))}
-          </div>
-        </section>
-      ) : hasAnyData ? (
-        <section aria-label="Chỉ số cần chú ý">
-          <GlassCard>
-            <PatientEmptyState
-              icon={<CheckCircle2 aria-hidden="true" />}
-              title="Các chỉ số đang trong tầm kiểm soát"
-              description="Hiện chưa có chỉ số nào cần đặc biệt chú ý. Hãy tiếp tục duy trì thói quen lành mạnh và đo lại định kỳ."
-            />
-          </GlassCard>
-        </section>
-      ) : null}
-
-      {/* PA-11 — Điều gì thay đổi từ lần trước? */}
-      {healthSummary && <WhatChangedSection summary={healthSummary} />}
-
-      {/* SECTION 4 — Health Trend */}
-      {topMovers.length > 0 && (
-        <section aria-label="Xu hướng sức khỏe">
-          <SectionHeader title="Xu hướng sức khỏe" subtitle="So với lần đo trước" />
-          <GlassCard padded={false} className="divide-y divide-mint-100/70">
-            {topMovers.map((m) => (
-              <TrendRow key={m.metricType} mover={m} />
-            ))}
-          </GlassCard>
-        </section>
-      )}
-
-      {/* SECTION 5 — Latest Lab Results */}
-      <section aria-label="Kết quả xét nghiệm mới nhất">
-        <SectionHeader
-          title="Xét nghiệm gần đây"
-          action={
-            <button
-              type="button"
-              onClick={() => router.push('/labs')}
-              className="text-[15px] text-mint-600 hover:underline"
-            >
-              Tất cả
-            </button>
-          }
-        />
-        {latestLab ? (
-          <LatestLabCard lab={latestLab} onClick={() => router.push('/labs')} />
-        ) : (
-          <GlassCard>
-            <p className="text-[15px] text-text-muted">
-              Chưa có kết quả xét nghiệm. Tải kết quả để theo dõi chỉ số chuyên sâu.
-            </p>
-            <MintButton size="sm" className="mt-3" onClick={() => router.push('/labs/upload')}>
-              Tải xét nghiệm
-            </MintButton>
-          </GlassCard>
-        )}
-      </section>
-
-      {/* SECTION 6 — Today's Medication */}
-      <section aria-label="Thuốc hôm nay">
-        <SectionHeader
-          title="Thuốc hôm nay"
-          action={
-            todayMeds.length > 0 ? (
-              <button
-                type="button"
-                onClick={() => router.push('/medications')}
-                className="text-[15px] text-mint-600 hover:underline"
-              >
-                Tất cả
-              </button>
-            ) : undefined
-          }
-        />
-        {todayMeds.length === 0 ? (
-          <GlassCard>
-            <p className="text-[15px] text-text-muted">Không có thuốc đang dùng.</p>
-          </GlassCard>
-        ) : (
-          <div className="space-y-2.5">
-            {todayMeds.slice(0, 4).map((med) => (
-              <MedicationRow key={med.id} med={med} />
-            ))}
-          </div>
-        )}
-      </section>
+      {/* 6 — Recent metrics snapshot */}
+      <RecentMetricsSnapshot
+        metrics={metrics}
+        catalog={catalog}
+        profile={profile}
+        summary={summary}
+      />
     </div>
   )
 }
 
-// ─── PA-11 — Clinical insight presentation ────────────────────────────────────
+// ─── 1 — Header ───────────────────────────────────────────────────────────────
 
-const RISK_BADGE: Record<HealthSummary['overall_risk'], { label: string; cls: string; dot: string }> = {
-  low: { label: 'Thấp', cls: 'bg-mint-100 text-mint-700', dot: '🟢' },
-  medium: { label: 'Trung bình', cls: 'bg-amber-100 text-amber-700', dot: '🟠' },
-  high: { label: 'Cao', cls: 'bg-rose-100 text-rose-700', dot: '🔴' },
+function initialsOf(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean)
+  if (parts.length === 0) return '?'
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
 }
 
-const PRIORITY_DOT: Record<MetricInsight['priority'], string> = {
-  see_doctor: 'bg-rose-500',
-  watch: 'bg-amber-500',
-  monitor: 'bg-mint-500',
-}
-
-/** "Tóm tắt sức khỏe lần này" — count, positives, focus, overall risk, top action. */
-function HealthSummaryBlock({ summary }: { summary: HealthSummary }) {
-  const risk = RISK_BADGE[summary.overall_risk]
-  return (
-    <section aria-label="Tóm tắt sức khỏe lần này">
-      <SectionHeader title="Tóm tắt sức khỏe lần này" />
-      <GlassCard>
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-[15px] text-text">
-            Bạn hiện có <span className="font-bold">{summary.abnormal_count}</span> chỉ số cần chú ý.
-          </p>
-          <span
-            className={cn(
-              'inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[13px] font-semibold',
-              risk.cls,
-            )}
-          >
-            {risk.dot} Rủi ro {risk.label}
-          </span>
-        </div>
-
-        {summary.positives.length > 0 && (
-          <div className="mt-3">
-            <p className="text-[13px] font-semibold text-mint-700">Điểm tích cực</p>
-            <ul className="mt-1 space-y-0.5">
-              {summary.positives.map((p) => (
-                <li key={p} className="text-[14px] text-text-muted">
-                  • {p}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        {summary.focus.length > 0 && (
-          <div className="mt-3">
-            <p className="text-[13px] font-semibold text-amber-700">Điểm cần tập trung</p>
-            <ul className="mt-1 space-y-0.5">
-              {summary.focus.map((f) => (
-                <li key={f} className="text-[14px] text-text-muted">
-                  • {f}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        {summary.top_action && (
-          <div className="mt-3 rounded-xl bg-mint-50 p-3">
-            <p className="text-[13px] font-semibold text-mint-800">Việc quan trọng nhất</p>
-            <p className="mt-0.5 text-[14px] text-text">{summary.top_action}</p>
-          </div>
-        )}
-
-        <p className="mt-3 text-[12px] text-text-subtle">{summary.disclaimer}</p>
-      </GlassCard>
-    </section>
-  )
-}
-
-/** "Điều gì thay đổi từ lần trước?" — 📈 improved / 📉 worsened / ⚪ stable. */
-function WhatChangedSection({ summary }: { summary: HealthSummary }) {
-  const groups = [
-    { key: 'up', title: '📈 Cải thiện', items: summary.improved, cls: 'text-mint-700' },
-    { key: 'down', title: '📉 Xấu đi', items: summary.worsened, cls: 'text-rose-700' },
-    { key: 'flat', title: '⚪ Ổn định', items: summary.stable, cls: 'text-text-muted' },
-  ].filter((g) => g.items.length > 0)
-  if (groups.length === 0) return null
-  return (
-    <section aria-label="Điều gì thay đổi từ lần trước?">
-      <SectionHeader title="Điều gì thay đổi từ lần trước?" subtitle="So với lần đo trước" />
-      <GlassCard className="space-y-3">
-        {groups.map((g) => (
-          <div key={g.key}>
-            <p className={cn('text-[14px] font-semibold', g.cls)}>{g.title}</p>
-            <ul className="mt-1 space-y-0.5">
-              {g.items.map((it) => (
-                <li key={it} className="text-[14px] text-text-muted">
-                  • {it}
-                </li>
-              ))}
-            </ul>
-          </div>
-        ))}
-      </GlassCard>
-    </section>
-  )
-}
-
-/** Abnormal-metric insight card: meaning + trend + main risk + main advice. */
-function InsightCard({ insight }: { insight: MetricInsight }) {
-  const { trend } = insight
-  const TrendIcon =
-    trend.direction === 'up' ? ArrowUpRight : trend.direction === 'down' ? ArrowDownRight : Minus
-  const trendColor =
-    trend.improved === true
-      ? 'text-mint-600'
-      : trend.improved === false
-        ? 'text-rose-600'
-        : 'text-text-muted'
-  return (
-    <GlassCard>
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <span
-              className={cn('size-2 shrink-0 rounded-full', PRIORITY_DOT[insight.priority])}
-              aria-hidden="true"
-            />
-            <h3 className="truncate text-[16px] font-bold text-text">{insight.label}</h3>
-          </div>
-          <p className="mt-0.5 text-[18px] font-bold text-text">
-            {insight.value}
-            {insight.unit ? (
-              <span className="text-[14px] font-medium text-text-muted"> {insight.unit}</span>
-            ) : null}
-          </p>
-        </div>
-        <span className="shrink-0 rounded-full bg-white/70 px-2.5 py-1 text-[12px] font-semibold text-text-muted">
-          {insight.priority_label}
-        </span>
-      </div>
-
-      {/* ý nghĩa ngắn */}
-      <p className="mt-2 text-[14px] leading-relaxed text-text-muted">{insight.meaning}</p>
-
-      {/* xu hướng so với lần trước */}
-      <p className={cn('mt-2 inline-flex items-center gap-1 text-[13px] font-medium', trendColor)}>
-        <TrendIcon className="size-4" aria-hidden="true" />
-        {trend.label}
-      </p>
-
-      {/* nguy cơ chính */}
-      {insight.risks.length > 0 && (
-        <div className="mt-2 flex items-start gap-1.5">
-          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-500" aria-hidden="true" />
-          <p className="text-[14px] text-text-muted">{insight.risks[0]}</p>
-        </div>
-      )}
-
-      {/* lời khuyên chính */}
-      {insight.lifestyle.length > 0 && (
-        <div className="mt-1.5 flex items-start gap-1.5">
-          <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-mint-600" aria-hidden="true" />
-          <p className="text-[14px] text-text-muted">{insight.lifestyle[0]}</p>
-        </div>
-      )}
-    </GlassCard>
-  )
-}
-
-// ─── Section 1 — Hero ────────────────────────────────────────────────────────────
-
-function HealthSummaryHero({
-  summary,
-  liveScore,
-  hasAnyData,
-  onStart,
+function DashboardHeader({
+  name,
+  dateStr,
+  onBell,
 }: {
-  summary: DashboardSummary
-  liveScore: LiveMetabolicScore | null
-  hasAnyData: boolean
-  onStart: () => void
+  name: string
+  dateStr: string
+  onBell: () => void
 }) {
-  if (!hasAnyData) {
-    return (
-      <GlassCard>
-        <PatientEmptyState
-          icon={<Activity />}
-          title="Bắt đầu theo dõi sức khỏe"
-          description="Ghi chỉ số đầu tiên hoặc tải kết quả xét nghiệm để xem tổng quan sức khỏe của bạn."
-          cta={{ label: 'Bắt đầu', onClick: onStart }}
-        />
-      </GlassCard>
-    )
-  }
+  return (
+    <div className="flex items-center gap-3">
+      <span className="grid size-12 shrink-0 place-items-center rounded-full bg-gradient-to-br from-mint-400 to-mint-600 text-[16px] font-bold text-white shadow-glass">
+        {initialsOf(name)}
+      </span>
+      <div className="min-w-0 flex-1">
+        <h1 className="truncate text-[22px] font-bold leading-tight text-text">Xin chào, {name}</h1>
+        <p className="text-[14px] text-text-muted">{dateStr}</p>
+      </div>
+      <button
+        type="button"
+        onClick={onBell}
+        aria-label="Thông báo"
+        className="grid size-12 shrink-0 place-items-center rounded-full border border-white/70 bg-white/70 text-text-muted backdrop-blur-md transition-transform active:scale-95"
+      >
+        <Bell className="size-5" aria-hidden="true" />
+      </button>
+    </div>
+  )
+}
 
-  const key = summary.overallStatus === 'no_data' ? 'stable' : summary.overallStatus
-  const p = STATUS_PRESENTATION[key]
+// ─── 2 — Health Score Card ────────────────────────────────────────────────────
+
+function HealthScoreCard({
+  liveScore,
+  healthSummary,
+  summary,
+}: {
+  liveScore: LiveMetabolicScore | null
+  healthSummary: HealthSummary | null
+  summary: DashboardSummary
+}) {
   const score = liveScore?.available ? liveScore.score : null
+  const risk = healthSummary ? RISK_PRESENTATION[healthSummary.overall_risk] : null
+  const abnormal = healthSummary?.abnormal_count ?? summary.abnormalCount
 
   return (
-    <GlassCard className="relative overflow-hidden">
-      {/* ambient halo */}
+    <GlassCard className="relative overflow-hidden glow-mint-soft">
       <div
-        className={`absolute -right-10 -top-10 w-40 h-40 rounded-full bg-gradient-to-br ${p.ring} opacity-20 blur-2xl`}
+        className="absolute -right-10 -top-10 size-40 rounded-full bg-gradient-to-br from-mint-300 to-mint-500 opacity-20 blur-2xl"
         aria-hidden="true"
       />
-      <div className="relative">
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <span
-              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[14px] font-semibold ${p.chip}`}
-            >
-              {summary.overallStatus === 'stable' ? (
-                <CheckCircle2 className="size-4" aria-hidden="true" />
-              ) : (
-                <AlertTriangle className="size-4" aria-hidden="true" />
-              )}
-              Tình trạng tổng quát
+      <div className="relative flex items-center justify-between gap-4">
+        <div className="min-w-0">
+          <p className="text-[14px] font-medium text-text-muted">Điểm sức khỏe chuyển hóa</p>
+          <p className="mt-1 flex items-baseline gap-1">
+            <span className="text-[44px] font-bold leading-none tracking-tight text-brand-gradient">
+              {score != null ? score : '--'}
             </span>
-            <h2 className={`text-[28px] font-bold mt-2 leading-tight ${p.text}`}>{p.title}</h2>
-            <p className="text-[15px] text-text-muted mt-1">
-              {summary.abnormalCount > 0
-                ? `${summary.abnormalCount} chỉ số cần chú ý trên ${summary.totalTracked} chỉ số`
-                : `Tất cả ${summary.totalTracked} chỉ số trong ngưỡng bình thường`}
-            </p>
-            {summary.lastUpdated && (
-              <p className="text-[13px] text-text-subtle mt-1">
-                Cập nhật gần nhất: {formatDate(new Date(summary.lastUpdated))}
-              </p>
-            )}
-          </div>
-
-          {score != null && (
-            <div className="shrink-0 text-right">
-              <p className="text-[13px] font-medium text-text-muted">Điểm chuyển hóa</p>
-              <p className="flex items-baseline gap-0.5 justify-end">
-                <span className={`text-[40px] font-bold leading-none tracking-tight ${p.text}`}>
-                  {score}
-                </span>
-                <span className="text-[16px] font-medium text-text-muted">/100</span>
-              </p>
-            </div>
+            <span className="text-[18px] font-medium text-text-muted">/100</span>
+          </p>
+          {risk && (
+            <span
+              className={cn(
+                'mt-3 inline-flex items-center rounded-full px-3 py-1 text-[14px] font-semibold',
+                risk.bg,
+                risk.text
+              )}
+            >
+              {risk.label}
+            </span>
           )}
+        </div>
+        <div className="shrink-0 text-right">
+          <p className="text-[28px] font-bold leading-none text-text">{abnormal}</p>
+          <p className="mt-1 text-[13px] text-text-muted">chỉ số cần chú ý</p>
         </div>
       </div>
     </GlassCard>
   )
 }
 
-// ─── Rows ────────────────────────────────────────────────────────────────────────
+// ─── 3 — Priority card (DecisionCard) ─────────────────────────────────────────
+
+function PriorityCard({
+  insight,
+  onPrimary,
+  onDismiss,
+}: {
+  insight: MetricInsight
+  onPrimary: () => void
+  onDismiss: () => void
+}) {
+  const tone = PRIORITY_TONE[insight.priority]
+  const action = insight.follow_up || insight.lifestyle[0] || ''
+  const mainRisk = insight.risks[0] ?? ''
+
+  return (
+    <section aria-label="Ưu tiên số 1 hôm nay">
+      <SectionHeader title="Ưu tiên số 1 hôm nay" />
+      <GlassCard className={cn('relative overflow-hidden', tone.outline)}>
+        <div className="flex items-start gap-3">
+          <span
+            className={cn('grid size-11 shrink-0 place-items-center rounded-2xl', tone.iconWrap)}
+          >
+            <AlertTriangle className="size-5" aria-hidden="true" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <h3 className={cn('text-[20px] font-bold leading-tight', tone.accentText)}>
+              {insight.label}
+            </h3>
+            <p className="mt-0.5 text-[15px] font-semibold text-text">
+              {insight.priority_label}
+              {insight.value != null && (
+                <span className="font-normal text-text-muted">
+                  {' · '}
+                  {insight.value}
+                  {insight.unit ? ` ${insight.unit}` : ''}
+                </span>
+              )}
+            </p>
+          </div>
+        </div>
+
+        {mainRisk && (
+          <div className="mt-4">
+            <p className="text-[14px] font-semibold text-text">Nguy cơ:</p>
+            <p className="mt-0.5 text-[16px] leading-relaxed text-[#1A4535]">{mainRisk}</p>
+          </div>
+        )}
+
+        {action && (
+          <div className="mt-3">
+            <p className="text-[14px] font-semibold text-text">Hành động:</p>
+            <p className="mt-0.5 text-[16px] leading-relaxed text-[#1A4535]">{action}</p>
+          </div>
+        )}
+
+        <div className="mt-5 space-y-2.5">
+          <button
+            type="button"
+            onClick={onPrimary}
+            className="h-[52px] w-full rounded-2xl bg-[#0D815A] text-[18px] font-bold text-white shadow-glass transition-transform active:scale-[0.99]"
+          >
+            Xem chi tiết
+          </button>
+          <button
+            type="button"
+            onClick={onDismiss}
+            className="h-12 w-full rounded-2xl border border-mint-200 bg-white/70 text-[16px] font-semibold text-text-muted transition-transform active:scale-[0.99]"
+          >
+            Đã hiểu
+          </button>
+        </div>
+      </GlassCard>
+    </section>
+  )
+}
+
+// Neutral fallback when insights are empty yet concern metrics exist. No
+// fabricated clinical text — just a factual count + a CTA into the metrics list.
+function FallbackPriorityCard({ count, onPrimary }: { count: number; onPrimary: () => void }) {
+  return (
+    <section aria-label="Ưu tiên hôm nay">
+      <SectionHeader title="Ưu tiên hôm nay" />
+      <GlassCard className="border-[1.5px] border-[#FDE68A]">
+        <div className="flex items-start gap-3">
+          <span className="grid size-11 shrink-0 place-items-center rounded-2xl bg-[#FEF3C7] text-[#78350F]">
+            <AlertTriangle className="size-5" aria-hidden="true" />
+          </span>
+          <div className="min-w-0">
+            <h3 className="text-[18px] font-bold text-[#78350F]">
+              Có {count} chỉ số cần chú ý
+            </h3>
+            <p className="mt-1 text-[15px] leading-relaxed text-[#1A4535]">
+              Hãy xem chi tiết các chỉ số của bạn để theo dõi và trao đổi với bác sĩ khi cần.
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onPrimary}
+          className="mt-5 h-[52px] w-full rounded-2xl bg-[#0D815A] text-[18px] font-bold text-white shadow-glass transition-transform active:scale-[0.99]"
+        >
+          Xem chỉ số
+        </button>
+      </GlassCard>
+    </section>
+  )
+}
+
+function CalmPriorityCard() {
+  return (
+    <section aria-label="Ưu tiên hôm nay">
+      <SectionHeader title="Ưu tiên hôm nay" />
+      <GlassCard className="border-[1.5px] border-mint-200">
+        <div className="flex items-start gap-3">
+          <span className="grid size-11 shrink-0 place-items-center rounded-2xl bg-[#DCFCE7] text-[#0E5B2F]">
+            <ShieldCheck className="size-5" aria-hidden="true" />
+          </span>
+          <div className="min-w-0">
+            <h3 className="text-[18px] font-bold text-[#0E5B2F]">
+              Hôm nay không có ưu tiên khẩn cấp
+            </h3>
+            <p className="mt-1 text-[15px] leading-relaxed text-[#1A4535]">
+              Các chỉ số của bạn đang trong tầm kiểm soát. Hãy tiếp tục duy trì thói quen lành mạnh
+              và đo lại định kỳ.
+            </p>
+          </div>
+        </div>
+      </GlassCard>
+    </section>
+  )
+}
+
+// ─── 4 — KPI row ──────────────────────────────────────────────────────────────
+
+interface Kpi {
+  key: string
+  label: string
+  value: number
+  cls: string
+}
+
+function KpiRow({
+  healthSummary,
+  summary,
+}: {
+  healthSummary: HealthSummary | null
+  summary: DashboardSummary
+}) {
+  let kpis: Kpi[]
+  if (healthSummary) {
+    kpis = [
+      {
+        key: 'attention',
+        label: 'Cần chú ý',
+        value: healthSummary.abnormal_count,
+        cls: 'text-[#991B1B]',
+      },
+      {
+        key: 'improved',
+        label: 'Cải thiện',
+        value: healthSummary.improved.length,
+        cls: 'text-[#0E5B2F]',
+      },
+      {
+        key: 'worsened',
+        label: 'Xấu đi',
+        value: healthSummary.worsened.length,
+        cls: 'text-[#78350F]',
+      },
+      {
+        key: 'stable',
+        label: 'Ổn định',
+        value: healthSummary.stable.length,
+        cls: 'text-text-muted',
+      },
+    ]
+  } else {
+    // Fallback: derive from the local dashboard summary (movers split by trend.good).
+    const improved = summary.movers.filter((m) => m.trend.good === true).length
+    const worsened = summary.movers.filter((m) => m.trend.good === false).length
+    const stable = Math.max(summary.totalTracked - summary.concerns.length, 0)
+    kpis = [
+      {
+        key: 'attention',
+        label: 'Cần chú ý',
+        value: summary.concerns.length,
+        cls: 'text-[#991B1B]',
+      },
+      { key: 'improved', label: 'Cải thiện', value: improved, cls: 'text-[#0E5B2F]' },
+      { key: 'worsened', label: 'Xấu đi', value: worsened, cls: 'text-[#78350F]' },
+      { key: 'stable', label: 'Ổn định', value: stable, cls: 'text-text-muted' },
+    ]
+  }
+
+  return (
+    <section aria-label="Tóm tắt chỉ số">
+      <div className="grid grid-cols-4 gap-2.5">
+        {kpis.map((k) => (
+          <GlassCard key={k.key} padded={false} className="px-2 py-3 text-center">
+            <p className={cn('text-[24px] font-bold leading-none', k.cls)}>{k.value}</p>
+            <p className="mt-1 text-[12px] font-medium text-text-muted">{k.label}</p>
+          </GlassCard>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+// ─── 5 — Task row ─────────────────────────────────────────────────────────────
 
 function TaskRow({ task }: { task: TodayTask }) {
   return (
     <button
       type="button"
       onClick={task.onClick}
-      className="w-full flex items-center gap-3 rounded-2xl border border-white/70 ring-1 ring-mint-100/50 bg-white/85 backdrop-blur-xl shadow-glass px-4 py-3.5 text-left transition-transform active:scale-[0.99]"
+      className="flex w-full items-center gap-3 rounded-2xl border border-white/70 bg-white/85 px-4 py-3.5 text-left shadow-glass ring-1 ring-mint-100/50 backdrop-blur-xl transition-transform active:scale-[0.99]"
     >
       <span
-        className={`flex items-center justify-center w-11 h-11 rounded-xl shrink-0 ${
-          task.urgent ? 'bg-amber-100 text-amber-700' : 'bg-mint-50 text-mint-600'
-        }`}
+        className={cn(
+          'grid size-11 shrink-0 place-items-center rounded-xl',
+          task.urgent ? 'bg-[#FEF3C7] text-[#78350F]' : 'bg-mint-50 text-mint-600'
+        )}
       >
         {task.icon}
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block text-[17px] font-medium text-text truncate">{task.label}</span>
-        {task.hint && <span className="block text-[14px] text-text-muted truncate">{task.hint}</span>}
-      </span>
-      <ChevronRight className="size-5 text-text-subtle shrink-0" aria-hidden="true" />
-    </button>
-  )
-}
-
-function ConcernRow({ concern, onClick }: { concern: IndicatorConcern; onClick: () => void }) {
-  const tone =
-    concern.severity === 'danger' ? 'border-rose-200 bg-rose-50/70' : 'border-amber-200 bg-amber-50/70'
-  const dot = concern.severity === 'danger' ? 'bg-rose-500' : 'bg-amber-500'
-  const label = concern.severity === 'danger' ? 'text-rose-700' : 'text-amber-700'
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`w-full flex items-center gap-3 rounded-2xl border ${tone} px-4 py-3.5 text-left transition-transform active:scale-[0.99]`}
-    >
-      <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${dot}`} aria-hidden="true" />
-      <span className="min-w-0 flex-1">
-        <span className="block text-[17px] font-medium text-text truncate">{concern.label}</span>
-        <span className={`block text-[14px] ${label}`}>{concern.statusLabel}</span>
-      </span>
-      <span className="text-right shrink-0">
-        <span className="block text-[18px] font-bold text-text leading-none">{concern.value}</span>
-        <span className="block text-[13px] text-text-muted mt-0.5">{concern.unit}</span>
-      </span>
-    </button>
-  )
-}
-
-function TrendRow({ mover }: { mover: TrendMover }) {
-  const { direction, pct, good } = mover.trend
-  const Icon = direction === 'up' ? ArrowUpRight : direction === 'down' ? ArrowDownRight : Minus
-  const color = good === true ? 'text-mint-600' : good === false ? 'text-rose-600' : 'text-text-muted'
-  const pctText = pct != null ? `${pct > 0 ? '+' : ''}${pct}%` : '—'
-  return (
-    <div className="flex items-center gap-3 px-4 py-3">
-      <TrendingUp className="size-4 text-mint-500 shrink-0" aria-hidden="true" />
-      <span className="min-w-0 flex-1 text-[16px] font-medium text-text truncate">{mover.label}</span>
-      <span className="text-[15px] text-text-muted">
-        {mover.value} {mover.unit}
-      </span>
-      <span
-        className={`inline-flex items-center gap-0.5 text-[15px] font-semibold ${color} w-[72px] justify-end`}
-      >
-        <Icon className="size-4" aria-hidden="true" />
-        {pctText}
-      </span>
-    </div>
-  )
-}
-
-function LatestLabCard({ lab, onClick }: { lab: LabResult; onClick: () => void }) {
-  const date = lab.uploaded_at ?? lab.created_at ?? null
-  const statusLabel =
-    lab.status === 'pending_review'
-      ? 'Đang chờ bác sĩ duyệt'
-      : lab.status === 'approved'
-        ? 'Đã duyệt'
-        : lab.ocr_status === 'done'
-          ? 'Đã xử lý'
-          : 'Đang xử lý'
-  const statusTone =
-    lab.status === 'pending_review' ? 'text-amber-700 bg-amber-100' : 'text-mint-700 bg-mint-100'
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="w-full flex items-center gap-3 rounded-2xl border border-white/70 ring-1 ring-mint-100/50 bg-white/85 backdrop-blur-xl shadow-glass px-4 py-3.5 text-left transition-transform active:scale-[0.99]"
-    >
-      <span className="flex items-center justify-center w-11 h-11 rounded-xl bg-mint-50 text-mint-600 shrink-0">
-        <FlaskConical className="size-5" aria-hidden="true" />
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block text-[17px] font-medium text-text truncate">
-          {lab.file_name ?? 'Kết quả xét nghiệm'}
-        </span>
-        {date && <span className="block text-[14px] text-text-muted">{formatDate(new Date(date))}</span>}
-      </span>
-      <span className={`text-[13px] font-medium px-2.5 py-1 rounded-full shrink-0 ${statusTone}`}>
-        {statusLabel}
-      </span>
-    </button>
-  )
-}
-
-function MedicationRow({ med }: { med: Medication }) {
-  return (
-    <div className="flex items-center gap-3 rounded-2xl border border-white/70 ring-1 ring-mint-100/50 bg-white/85 backdrop-blur-xl shadow-glass px-4 py-3.5">
-      <span className="flex items-center justify-center w-11 h-11 rounded-xl bg-mint-50 text-mint-600 shrink-0">
-        <Pill className="size-5" aria-hidden="true" />
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block text-[17px] font-medium text-text truncate">{med.name}</span>
-        {(med.dose || med.frequency) && (
-          <span className="block text-[14px] text-text-muted truncate">
-            {[med.dose, med.frequency].filter(Boolean).join(' · ')}
-          </span>
+        <span className="block truncate text-[17px] font-medium text-text">{task.label}</span>
+        {task.hint && (
+          <span className="block truncate text-[14px] text-text-muted">{task.hint}</span>
         )}
       </span>
-    </div>
+      <ChevronRight className="size-5 shrink-0 text-text-subtle" aria-hidden="true" />
+    </button>
+  )
+}
+
+// ─── 6 — Recent metrics snapshot ──────────────────────────────────────────────
+// Real data only (latest reading per series); BMI is derived from latest weight +
+// profile height. Status badges come from the shared dashboard summary — never
+// fabricated. Tappable cards route to the metric detail screen.
+
+type TileTone = 'mint' | 'blue' | 'amber'
+
+const TILE_SPARK_COLOR: Record<TileTone, string> = {
+  mint: '#0F9C6E',
+  blue: '#2563EB',
+  amber: '#8A6A25',
+}
+
+interface TileVM {
+  key: string
+  label: string
+  valueText: string | null
+  unit: string
+  tone: TileTone
+  points: number[] // oldest → newest
+  badge: { text: string; cls: string } | null
+  trendText: string | null
+  trendCls: string
+  onClick?: () => void
+}
+
+function Sparkline({ points, color }: { points: number[]; color: string }) {
+  if (points.length < 2) return null
+  const max = Math.max(...points)
+  const min = Math.min(...points)
+  const range = max - min || 1
+  const w = 80
+  const h = 24
+  const xs = points.map((_, i) => (i / (points.length - 1)) * w)
+  const ys = points.map((p) => h - ((p - min) / range) * h)
+  const d = xs.map((x, i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${ys[i].toFixed(1)}`).join(' ')
+  return (
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} aria-hidden="true" className="mt-1">
+      <path
+        d={d}
+        fill="none"
+        stroke={color}
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+function fmtValue(v: number): string {
+  return Number.isInteger(v) ? String(v) : v.toFixed(1)
+}
+
+/** history is newest-first; sparkline wants oldest → newest. */
+function sparkPoints(history: HealthMetric[], n = 7): number[] {
+  return history
+    .slice(0, n)
+    .map((h) => h.value)
+    .reverse()
+}
+
+/** Reuse the dashboard summary classification so badges are never fabricated. */
+function concernBadge(
+  summary: DashboardSummary,
+  ...types: string[]
+): { text: string; cls: string } | null {
+  for (const t of types) {
+    const c = summary.concerns.find((x) => x.metricType === t)
+    if (c) {
+      return {
+        text: c.statusLabel,
+        cls:
+          c.severity === 'danger' ? 'bg-[#FEE2E2] text-[#991B1B]' : 'bg-[#FEF3C7] text-[#78350F]',
+      }
+    }
+  }
+  return null
+}
+
+/** Simple ↑/↓ % from the latest vs previous reading. */
+function trendOf(series: MetricSeries | undefined): { text: string | null; cls: string } {
+  if (!series || series.history.length < 2) return { text: null, cls: 'text-text-muted' }
+  const latest = series.history[0].value
+  const prev = series.history[1].value
+  if (prev === 0 || latest === prev) return { text: null, cls: 'text-text-muted' }
+  const pct = Math.round(((latest - prev) / Math.abs(prev)) * 100)
+  const up = latest > prev
+  return {
+    text: `${up ? '↑' : '↓'} ${Math.abs(pct)}%`,
+    cls: 'text-text-muted',
+  }
+}
+
+function buildTiles(
+  metrics: HealthMetric[],
+  catalog: LabCatalog,
+  profile: PatientProfile | null,
+  summary: DashboardSummary,
+  router: ReturnType<typeof useRouter>
+): TileVM[] {
+  const byType = new Map<string, MetricSeries>()
+  for (const bucket of groupMetricsByCategory(metrics, catalog)) {
+    for (const s of bucket.series) byType.set(s.metricType, s)
+  }
+  const unitOf = (s: MetricSeries, fallback: string) => s.unit?.label ?? s.latest.unit ?? fallback
+
+  const glucose = byType.get('fasting_glucose')
+  const sys = byType.get('blood_pressure_systolic')
+  const dia = byType.get('blood_pressure_diastolic')
+  const weight = byType.get('weight')
+
+  const glucoseTrend = trendOf(glucose)
+  const glucoseTile: TileVM = {
+    key: 'glucose',
+    label: 'Đường huyết',
+    valueText: glucose ? fmtValue(glucose.latest.value) : null,
+    unit: glucose ? unitOf(glucose, metricUnit('fasting_glucose')) : metricUnit('fasting_glucose'),
+    tone: 'mint',
+    points: glucose ? sparkPoints(glucose.history) : [],
+    badge: concernBadge(summary, 'fasting_glucose'),
+    trendText: glucoseTrend.text,
+    trendCls: glucoseTrend.cls,
+    onClick: glucose ? () => router.push('/metrics/fasting_glucose') : undefined,
+  }
+
+  const bpTrend = trendOf(sys)
+  const bpValueText =
+    sys && dia
+      ? `${fmtValue(sys.latest.value)}/${fmtValue(dia.latest.value)}`
+      : sys
+        ? fmtValue(sys.latest.value)
+        : null
+  const bpTile: TileVM = {
+    key: 'bp',
+    label: 'Huyết áp',
+    valueText: bpValueText,
+    unit: 'mmHg',
+    tone: 'blue',
+    points: sys ? sparkPoints(sys.history) : [],
+    badge: concernBadge(summary, 'blood_pressure_systolic', 'blood_pressure_diastolic'),
+    trendText: bpTrend.text,
+    trendCls: bpTrend.cls,
+    onClick: sys ? () => router.push('/metrics/blood_pressure_systolic') : undefined,
+  }
+
+  const weightTrend = trendOf(weight)
+  const weightTile: TileVM = {
+    key: 'weight',
+    label: 'Cân nặng',
+    valueText: weight ? fmtValue(weight.latest.value) : null,
+    unit: weight ? unitOf(weight, 'kg') : 'kg',
+    tone: 'mint',
+    points: weight ? sparkPoints(weight.history) : [],
+    badge: concernBadge(summary, 'weight'),
+    trendText: weightTrend.text,
+    trendCls: weightTrend.cls,
+    onClick: weight ? () => router.push('/metrics/weight') : undefined,
+  }
+
+  // BMI — derived from latest weight + profile height. NOT clickable (no insight
+  // endpoint for a derived metric).
+  const heightCm = profile?.height_cm ?? null
+  let bmiText: string | null = null
+  let bmiPoints: number[] = []
+  if (weight && heightCm && heightCm > 0) {
+    const hM = heightCm / 100
+    const toBmi = (kg: number) => Number((kg / (hM * hM)).toFixed(1))
+    bmiText = toBmi(weight.latest.value).toFixed(1)
+    bmiPoints = sparkPoints(weight.history).map(toBmi)
+  }
+  const bmiTile: TileVM = {
+    key: 'bmi',
+    label: 'BMI',
+    valueText: bmiText,
+    unit: 'kg/m²',
+    tone: 'amber',
+    points: bmiPoints,
+    badge: null, // no clinical rule for derived BMI → don't fabricate
+    trendText: null,
+    trendCls: 'text-text-muted',
+    onClick: undefined,
+  }
+
+  return [glucoseTile, bpTile, weightTile, bmiTile]
+}
+
+function MetricTileCard({ tile }: { tile: TileVM }) {
+  const hasData = tile.valueText !== null
+  const inner = (
+    <>
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[14px] font-semibold text-text">{tile.label}</span>
+        {tile.badge && (
+          <span
+            className={cn('rounded-full px-2 py-0.5 text-[11px] font-semibold', tile.badge.cls)}
+          >
+            {tile.badge.text}
+          </span>
+        )}
+      </div>
+      {hasData ? (
+        <>
+          <div className="mt-1 flex items-baseline gap-1">
+            <span className="text-[26px] font-bold leading-none text-text">{tile.valueText}</span>
+            <span className="text-[13px] text-text-muted">{tile.unit}</span>
+          </div>
+          <div className="flex items-end justify-between">
+            <Sparkline points={tile.points} color={TILE_SPARK_COLOR[tile.tone]} />
+            {tile.trendText && (
+              <span className={cn('text-[13px] font-semibold', tile.trendCls)}>
+                {tile.trendText}
+              </span>
+            )}
+          </div>
+        </>
+      ) : (
+        <p className="mt-1 text-[13px] text-text-muted">Chưa có dữ liệu</p>
+      )}
+    </>
+  )
+
+  const cls = cn(
+    'flex flex-col gap-1 rounded-3xl border border-white/70 bg-white/85 p-4 text-left shadow-glass ring-1 ring-mint-100/50 backdrop-blur-xl',
+    !hasData && 'opacity-70'
+  )
+
+  if (tile.onClick) {
+    return (
+      <button
+        type="button"
+        onClick={tile.onClick}
+        className={cn(cls, 'transition-transform active:scale-[0.98]')}
+      >
+        {inner}
+      </button>
+    )
+  }
+  return <div className={cls}>{inner}</div>
+}
+
+function RecentMetricsSnapshot({
+  metrics,
+  catalog,
+  profile,
+  summary,
+}: {
+  metrics: HealthMetric[]
+  catalog: LabCatalog
+  profile: PatientProfile | null
+  summary: DashboardSummary
+}) {
+  const router = useRouter()
+  const tiles = React.useMemo(
+    () => buildTiles(metrics, catalog, profile, summary, router),
+    [metrics, catalog, profile, summary, router]
+  )
+
+  return (
+    <section aria-label="Các chỉ số gần đây">
+      <SectionHeader title="Các chỉ số gần đây" />
+      {tiles.some((t) => t.valueText !== null) ? (
+        <div className="grid grid-cols-2 gap-3">
+          {tiles.map((t) => (
+            <MetricTileCard key={t.key} tile={t} />
+          ))}
+        </div>
+      ) : (
+        <GlassCard>
+          <PatientEmptyState
+            icon={<Activity aria-hidden="true" />}
+            title="Chưa có chỉ số nào"
+            description="Ghi chỉ số đầu tiên để bắt đầu theo dõi sức khỏe của bạn."
+            cta={{ label: 'Ghi chỉ số', onClick: () => router.push('/metrics/log') }}
+          />
+        </GlassCard>
+      )}
+    </section>
   )
 }
