@@ -1,12 +1,11 @@
 import Link from 'next/link'
+import { BrandMark } from '@/components/brand'
 
 export default function NotFound() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <div className="text-center max-w-sm">
-        <div className="w-16 h-16 rounded-2xl bg-primary-50 flex items-center justify-center mx-auto mb-6">
-          <span className="text-3xl font-bold text-primary">M</span>
-        </div>
+        <BrandMark className="h-16 w-16 object-contain mx-auto mb-6 rounded-2xl" />
         <h1 className="text-display-xs font-bold text-text mb-2">404</h1>
         <p className="text-body-md text-text-muted mb-6">Trang bạn tìm không tồn tại.</p>
         <Link

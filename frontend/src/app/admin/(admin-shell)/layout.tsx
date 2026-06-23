@@ -2,6 +2,7 @@
 
 import * as React from 'react'
 import { useRouter, usePathname } from 'next/navigation'
+import { BrandLogo, BrandMark } from '@/components/brand'
 import {
   LayoutDashboard,
   Users,
@@ -145,12 +146,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             <div
               className={`flex items-center gap-2.5 p-4 ${sidebarCollapsed ? 'justify-center' : ''}`}
             >
-              <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center shrink-0">
-                <span className="text-white font-bold text-sm">M</span>
-              </div>
-              {!sidebarCollapsed && (
+              {sidebarCollapsed ? (
+                <BrandMark className="w-8 h-8 rounded-lg object-contain shrink-0" />
+              ) : (
                 <div className="min-w-0">
-                  <p className="font-semibold text-white text-body-sm tracking-tight">MetoCare</p>
+                  <BrandLogo className="h-7 w-auto rounded bg-white object-contain p-0.5" />
                   <p className="text-secondary-400 text-body-xs truncate">{roleLabel}</p>
                 </div>
               )}

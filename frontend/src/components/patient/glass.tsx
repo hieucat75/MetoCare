@@ -8,29 +8,8 @@
 import * as React from 'react'
 import { cn } from '@/lib/utils'
 
-// ── Brand mark — canonical MetoCare logo (exact image asset, never redrawn) ───
-
-export function MetoMark({
-  size = 40,
-  className,
-  style,
-}: {
-  size?: number
-  className?: string
-  style?: React.CSSProperties
-}) {
-  // Icon-only mark: renders public/brand/metocare-mark.png (mark-test.png) as-is.
-  return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      src="/brand/metocare-mark.png"
-      alt="MetoCare"
-      width={size}
-      className={className}
-      style={{ display: 'block', height: 'auto', ...style }}
-    />
-  )
-}
+// Brand artwork now lives in @/components/brand (BrandLogo / BrandMark).
+// MetoMark was removed — screens must use the shared Brand components.
 
 // ── Sparkline ─────────────────────────────────────────────────────────────────
 
