@@ -14,10 +14,7 @@ type Props = {
  */
 export function NeuCard({ children, size = 'default', className, ...rest }: Props) {
   return (
-    <div
-      className={cn(size === 'lg' ? 'neu-card-lg' : 'neu-card', 'p-5', className)}
-      {...rest}
-    >
+    <div className={cn(size === 'lg' ? 'neu-card-lg' : 'neu-card', 'p-5', className)} {...rest}>
       {children}
     </div>
   )

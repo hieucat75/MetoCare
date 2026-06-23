@@ -2,30 +2,27 @@
 
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
+import { ArrowLeft, ChevronRight, Globe, Info, KeyRound, Lock, LogOut } from 'lucide-react'
+import { Alert, Button, FormField, Input, Modal, Switch } from '@/design-system'
+import { NeuCard } from '@/components/patient/neu'
 import { useAuth } from '@/lib/auth/context'
-import {
-  Button,
-  Badge,
-  Card,
-  CardHeader,
-  CardTitle,
-  CardContent,
-  Alert,
-  PageHeader,
-  Modal,
-  FormField,
-  Input,
-  Switch,
-} from '@/design-system'
 import { changePassword, updateAccount } from '@/lib/api/auth'
 
 type NotifKey = 'notify_medication' | 'notify_lab_results' | 'notify_doctor_messages'
 
 const NOTIF_FIELDS: { key: NotifKey; label: string }[] = [
-  { key: 'notify_medication', label: 'Nhắc nhở thuốc' },
+  { key: 'notify_medication', label: 'Nhắc uống thuốc' },
   { key: 'notify_lab_results', label: 'Kết quả xét nghiệm mới' },
   { key: 'notify_doctor_messages', label: 'Tin nhắn từ bác sĩ' },
 ]
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.06em] text-neu-muted">
+      {children}
+    </p>
+  )
+}
 
 export default function SettingsPage() {
   const router = useRouter()
@@ -76,7 +73,7 @@ export default function SettingsPage() {
           ? 'Email này đã được sử dụng.'
           : err instanceof Error
             ? err.message
-            : 'Không đổi được email.',
+            : 'Không đổi được email.'
       )
     } finally {
       setEmailSaving(false)
@@ -123,7 +120,7 @@ export default function SettingsPage() {
           ? 'Mật khẩu hiện tại không đúng.'
           : err instanceof Error
             ? err.message
-            : 'Không đổi được mật khẩu.',
+            : 'Không đổi được mật khẩu.'
       )
     } finally {
       setPwSaving(false)
@@ -141,155 +138,179 @@ export default function SettingsPage() {
 
   if (!user?.patient_profile_id) {
     return (
-      <div className="p-4 lg:p-6 max-w-2xl mx-auto">
+      <div className="p-4 max-w-md mx-auto mt-10">
         <Alert variant="warning">Không tìm thấy hồ sơ bệnh nhân. Vui lòng liên hệ hỗ trợ.</Alert>
       </div>
     )
   }
 
   return (
-    <div className="p-4 lg:p-6 space-y-6 max-w-2xl mx-auto pb-10">
-      <PageHeader title="Cài đặt" />
+    <div className="p-4 max-w-md mx-auto pb-28 space-y-5">
+      {/* Header */}
+      <header className="flex items-center gap-3">
+        <button
+          type="button"
+          aria-label="Quay lại"
+          onClick={() => router.back()}
+          className="neu-icon-btn !h-11 !w-11 !rounded-full text-neu-text"
+        >
+          <ArrowLeft className="size-5" />
+        </button>
+        <h1 className="text-[20px] font-extrabold tracking-[-0.02em] text-neu-text">Cài đặt</h1>
+      </header>
 
-      {/* ── Tài khoản ──────────────────────────────────────────────────────── */}
-      <Card variant="glass" padding="md">
-        <CardHeader>
-          <CardTitle>Tài khoản</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            {/* Phone — main identifier for patient accounts */}
-            {user.phone && (
-              <div>
-                <p className="text-[16px] font-medium text-mint-700 mb-1.5">Số điện thoại</p>
-                <p className="text-[21px] font-semibold text-text">{user.phone}</p>
-              </div>
-            )}
-            {/* Email (optional for phone-registered patients) */}
-            <div>
-              <p className="text-[16px] font-medium text-mint-700 mb-1.5">Email</p>
-              {!editingEmail ? (
-                <div className="flex items-center justify-between gap-3">
-                  <p className={user.email ? 'text-[21px] font-semibold text-text' : 'text-[16px] italic text-text-subtle'}>{user.email ?? 'Chưa cập nhật'}</p>
-                  <Button
-                    variant="outline"
-                    size="sm"
+      {emailSuccess && <Alert variant="success" title="Đã cập nhật email" />}
+      {pwSuccess && <Alert variant="success" title="Đã đổi mật khẩu thành công" />}
+
+      {/* ── Account ── */}
+      <section>
+        <SectionLabel>Tài khoản</SectionLabel>
+        <NeuCard className="!px-4 !py-1">
+          {user.phone && (
+            <div className="flex items-center justify-between gap-4 border-b border-[rgba(16,48,44,0.06)] py-3.5">
+              <span className="text-[14px] text-neu-muted">Số điện thoại</span>
+              <span className="text-[14px] font-semibold text-neu-text">{user.phone}</span>
+            </div>
+          )}
+
+          <div className="border-b border-[rgba(16,48,44,0.06)] py-3.5">
+            {!editingEmail ? (
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-[14px] text-neu-muted">Email</span>
+                <div className="flex items-center gap-2">
+                  <span
+                    className={
+                      user.email
+                        ? 'text-[14px] font-semibold text-neu-text'
+                        : 'text-[14px] italic text-neu-subtle'
+                    }
+                  >
+                    {user.email ?? 'Chưa cập nhật'}
+                  </span>
+                  <button
+                    type="button"
                     onClick={() => {
                       setEmailValue(user.email ?? '')
                       setEmailError(null)
                       setEditingEmail(true)
                     }}
+                    className="text-[13px] font-semibold text-neu-green"
                   >
-                    Đổi email
+                    Đổi
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <span className="text-[14px] text-neu-muted">Email</span>
+                <Input
+                  type="email"
+                  value={emailValue}
+                  onChange={(e) => setEmailValue(e.target.value)}
+                  fullWidth
+                />
+                {emailError && <p className="text-[13px] text-danger">{emailError}</p>}
+                <div className="flex gap-2 pt-1">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setEditingEmail(false)}
+                    disabled={emailSaving}
+                  >
+                    Hủy
+                  </Button>
+                  <Button variant="mint" size="sm" onClick={saveEmail} loading={emailSaving}>
+                    Lưu
                   </Button>
                 </div>
-              ) : (
-                <div className="space-y-2">
-                  <Input
-                    type="email"
-                    value={emailValue}
-                    onChange={(e) => setEmailValue(e.target.value)}
-                    fullWidth
-                  />
-                  {emailError && <p className="text-[15px] text-danger">{emailError}</p>}
-                  <div className="flex gap-2">
-                    <Button variant="outline" size="sm" onClick={() => setEditingEmail(false)} disabled={emailSaving}>
-                      Hủy
-                    </Button>
-                    <Button variant="mint" size="sm" onClick={saveEmail} loading={emailSaving}>
-                      Lưu
-                    </Button>
-                  </div>
-                </div>
-              )}
-              {emailSuccess && <p className="text-[15px] text-success mt-1">Đã cập nhật email.</p>}
-            </div>
-
-            {/* Role */}
-            <div>
-              <p className="text-[16px] font-medium text-mint-700 mb-1.5">Vai trò</p>
-              <Badge variant="mint">Bệnh nhân</Badge>
-            </div>
-
-            {/* Đổi mật khẩu */}
-            <div>
-              <Button variant="outline" size="sm" onClick={openPwModal}>
-                Đổi mật khẩu
-              </Button>
-              {pwSuccess && <p className="text-[15px] text-success mt-1">Đã đổi mật khẩu thành công.</p>}
-            </div>
+              </div>
+            )}
           </div>
-        </CardContent>
-      </Card>
 
-      {/* ── Thông báo ──────────────────────────────────────────────────────── */}
-      <Card variant="glass" padding="md">
-        <CardHeader>
-          <CardTitle>Thông báo</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
+          <div className="flex items-center justify-between gap-4 border-b border-[rgba(16,48,44,0.06)] py-3.5">
+            <span className="text-[14px] text-neu-muted">Vai trò</span>
+            <span className="rounded-full bg-[#E3F5EC] px-3 py-1 text-[12px] font-bold text-neu-green">
+              Bệnh nhân
+            </span>
+          </div>
+
+          <button
+            type="button"
+            onClick={openPwModal}
+            className="flex w-full items-center gap-3 py-3.5 text-left"
+          >
+            <KeyRound className="size-5 text-[#2563EB]" aria-hidden="true" />
+            <span className="flex-1 text-[14.5px] font-semibold text-neu-text">Đổi mật khẩu</span>
+            <ChevronRight className="size-[18px] text-neu-subtle" aria-hidden="true" />
+          </button>
+        </NeuCard>
+      </section>
+
+      {/* ── Notifications (real, persisted toggles) ── */}
+      <section>
+        <SectionLabel>Thông báo</SectionLabel>
+        <NeuCard className="!px-4 !py-2">
+          <div className="space-y-1">
             {NOTIF_FIELDS.map(({ key, label }) => (
-              <Switch
-                key={key}
-                label={label}
-                tone="mint"
-                checked={user[key]}
-                disabled={notifSaving === key}
-                onCheckedChange={(v) => toggleNotif(key, v)}
-              />
+              <div key={key} className="py-1.5">
+                <Switch
+                  label={label}
+                  tone="mint"
+                  checked={user[key]}
+                  disabled={notifSaving === key}
+                  onCheckedChange={(v) => toggleNotif(key, v)}
+                />
+              </div>
             ))}
           </div>
           {notifError && (
-            <div className="mt-3">
+            <div className="mt-2">
               <Alert variant="danger">{notifError}</Alert>
             </div>
           )}
-        </CardContent>
-      </Card>
+        </NeuCard>
+      </section>
 
-      {/* ── Ngôn ngữ ───────────────────────────────────────────────────────── */}
-      <Card variant="glass" padding="md">
-        <CardHeader>
-          <CardTitle>Ngôn ngữ</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Badge variant="default">Tiếng Việt</Badge>
-        </CardContent>
-      </Card>
-
-      {/* ── Quyền riêng tư ─────────────────────────────────────────────────── */}
-      <Card variant="glass" padding="md">
-        <CardHeader>
-          <CardTitle>Quyền riêng tư</CardTitle>
-        </CardHeader>
-        <CardContent>
+      {/* ── Privacy / language / version ── */}
+      <section>
+        <SectionLabel>Khác</SectionLabel>
+        <NeuCard className="!px-4 !py-1">
           <button
             type="button"
             onClick={() => router.push('/consents')}
-            className="text-[17px] text-mint-600 hover:underline underline-offset-2 transition-colors"
+            className="flex w-full items-center gap-3 border-b border-[rgba(16,48,44,0.06)] py-3.5 text-left"
           >
-            Quản lý quyền truy cập dữ liệu →
+            <Lock className="size-5 text-neu-muted" aria-hidden="true" />
+            <span className="flex-1 text-[14.5px] font-semibold text-neu-text">
+              Quyền riêng tư &amp; chia sẻ dữ liệu
+            </span>
+            <ChevronRight className="size-[18px] text-neu-subtle" aria-hidden="true" />
           </button>
-        </CardContent>
-      </Card>
 
-      {/* ── Phiên bản ──────────────────────────────────────────────────────── */}
-      <Card variant="glass" padding="md">
-        <CardHeader>
-          <CardTitle>Phiên bản</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-[17px] text-text-muted">MetoCare v1.3.0 (MVP)</p>
-        </CardContent>
-      </Card>
+          <div className="flex items-center gap-3 border-b border-[rgba(16,48,44,0.06)] py-3.5">
+            <Globe className="size-5 text-neu-muted" aria-hidden="true" />
+            <span className="flex-1 text-[14.5px] font-semibold text-neu-text">Ngôn ngữ</span>
+            <span className="text-[13.5px] text-neu-muted">Tiếng Việt</span>
+          </div>
 
-      {/* ── Đăng xuất ──────────────────────────────────────────────────────── */}
-      <div className="pt-2 pb-6">
-        <Button variant="danger" fullWidth loading={loggingOut} onClick={handleLogout}>
-          Đăng xuất
-        </Button>
-      </div>
+          <div className="flex items-center gap-3 py-3.5">
+            <Info className="size-5 text-neu-muted" aria-hidden="true" />
+            <span className="flex-1 text-[14.5px] font-semibold text-neu-text">Phiên bản</span>
+            <span className="text-[13.5px] text-neu-muted">v1.3.0 (MVP)</span>
+          </div>
+        </NeuCard>
+      </section>
+
+      {/* ── Logout ── */}
+      <button
+        type="button"
+        onClick={handleLogout}
+        disabled={loggingOut}
+        className="flex h-12 w-full items-center justify-center gap-2 rounded-[13px] border border-[rgba(217,45,32,0.2)] bg-[rgba(251,231,229,0.93)] text-[14px] font-bold text-[#D92D20] transition-transform active:scale-[0.99] disabled:opacity-60"
+      >
+        <LogOut className="size-[18px]" />
+        {loggingOut ? 'Đang đăng xuất...' : 'Đăng xuất'}
+      </button>
 
       {/* Password change modal */}
       <Modal
@@ -298,7 +319,12 @@ export default function SettingsPage() {
         title="Đổi mật khẩu"
         footer={
           <>
-            <Button variant="outline" size="sm" onClick={() => setPwModal(false)} disabled={pwSaving}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPwModal(false)}
+              disabled={pwSaving}
+            >
               Hủy
             </Button>
             <Button variant="mint" size="sm" type="submit" form="pw-form" loading={pwSaving}>
@@ -310,13 +336,32 @@ export default function SettingsPage() {
         <form id="pw-form" onSubmit={savePassword} className="space-y-4">
           {pwError && <Alert variant="danger" title={pwError} />}
           <FormField label="Mật khẩu hiện tại" required>
-            <Input type="password" value={currentPw} onChange={(e) => setCurrentPw(e.target.value)} fullWidth required />
+            <Input
+              type="password"
+              value={currentPw}
+              onChange={(e) => setCurrentPw(e.target.value)}
+              fullWidth
+              required
+            />
           </FormField>
           <FormField label="Mật khẩu mới" required>
-            <Input type="password" value={newPw} onChange={(e) => setNewPw(e.target.value)} placeholder="Tối thiểu 8 ký tự" fullWidth required />
+            <Input
+              type="password"
+              value={newPw}
+              onChange={(e) => setNewPw(e.target.value)}
+              placeholder="Tối thiểu 8 ký tự"
+              fullWidth
+              required
+            />
           </FormField>
           <FormField label="Xác nhận mật khẩu mới" required>
-            <Input type="password" value={confirmPw} onChange={(e) => setConfirmPw(e.target.value)} fullWidth required />
+            <Input
+              type="password"
+              value={confirmPw}
+              onChange={(e) => setConfirmPw(e.target.value)}
+              fullWidth
+              required
+            />
           </FormField>
         </form>
       </Modal>

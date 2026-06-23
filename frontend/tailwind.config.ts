@@ -255,8 +255,7 @@ const config: Config = {
         'pillow-mint':
           '0 10px 24px -6px rgba(16,185,129,0.45), 0 2px 6px -2px rgba(16,185,129,0.28), inset 0 1px 0 rgba(255,255,255,0.35)',
         // Frosted bottom-nav — soft upward mint glow.
-        'frost-up':
-          '0 -10px 32px -12px rgba(16,185,129,0.18), inset 0 1px 0 rgba(255,255,255,0.6)',
+        'frost-up': '0 -10px 32px -12px rgba(16,185,129,0.18), inset 0 1px 0 rgba(255,255,255,0.6)',
         // Mint glow halo for empty-state icon discs.
         'glow-mint': '0 10px 36px -6px rgba(16,185,129,0.30)',
         // Soft inset for glass inputs.

@@ -25,33 +25,63 @@ import { useFeatureFlags } from '@/lib/api/features'
 // ── Nav items (sidebar for desktop) ──────────────────────────────────────────
 
 const NAV_ITEMS: NavItem[] = [
-  { id: 'dashboard',    label: 'Tổng quan',         icon: <LayoutDashboard className="w-5 h-5" />, href: '/dashboard' },
-  { id: 'metrics',      label: 'Chỉ số sức khỏe',   icon: <Activity className="w-5 h-5" />,        href: '/metrics' },
-  { id: 'labs',         label: 'Xét nghiệm',         icon: <FlaskConical className="w-5 h-5" />,    href: '/labs' },
-  { id: 'medications',  label: 'Thuốc',              icon: <Pill className="w-5 h-5" />,            href: '/medications' },
-  { id: 'nutrition',    label: 'Dinh dưỡng',         icon: <Utensils className="w-5 h-5" />,         href: '/nutrition' },
-  { id: 'care-plan',    label: 'Kế hoạch điều trị', icon: <ClipboardList className="w-5 h-5" />,   href: '/care-plan' },
-  { id: 'ai-assistant', label: 'Trợ lý AI',          icon: <MessageSquare className="w-5 h-5" />,   href: '/ai-assistant' },
-  { id: 'notifications',label: 'Thông báo',          icon: <Bell className="w-5 h-5" />,            href: '/notifications' },
-  { id: 'profile',      label: 'Hồ sơ',              icon: <User className="w-5 h-5" />,            href: '/profile' },
-  { id: 'settings',     label: 'Cài đặt',            icon: <Settings className="w-5 h-5" />,        href: '/settings' },
+  {
+    id: 'dashboard',
+    label: 'Tổng quan',
+    icon: <LayoutDashboard className="w-5 h-5" />,
+    href: '/dashboard',
+  },
+  {
+    id: 'metrics',
+    label: 'Chỉ số sức khỏe',
+    icon: <Activity className="w-5 h-5" />,
+    href: '/metrics',
+  },
+  { id: 'labs', label: 'Xét nghiệm', icon: <FlaskConical className="w-5 h-5" />, href: '/labs' },
+  { id: 'medications', label: 'Thuốc', icon: <Pill className="w-5 h-5" />, href: '/medications' },
+  {
+    id: 'nutrition',
+    label: 'Dinh dưỡng',
+    icon: <Utensils className="w-5 h-5" />,
+    href: '/nutrition',
+  },
+  {
+    id: 'care-plan',
+    label: 'Kế hoạch điều trị',
+    icon: <ClipboardList className="w-5 h-5" />,
+    href: '/care-plan',
+  },
+  {
+    id: 'ai-assistant',
+    label: 'Trợ lý AI',
+    icon: <MessageSquare className="w-5 h-5" />,
+    href: '/ai-assistant',
+  },
+  {
+    id: 'notifications',
+    label: 'Thông báo',
+    icon: <Bell className="w-5 h-5" />,
+    href: '/notifications',
+  },
+  { id: 'profile', label: 'Hồ sơ', icon: <User className="w-5 h-5" />, href: '/profile' },
+  { id: 'settings', label: 'Cài đặt', icon: <Settings className="w-5 h-5" />, href: '/settings' },
 ]
 
 // ── Route → page title map (mobile top bar) ───────────────────────────────────
 
 const PAGE_TITLES: Record<string, string> = {
-  '/dashboard':    'Tổng quan',
-  '/metrics':      'Chỉ số sức khỏe',
-  '/metrics/log':  'Ghi chỉ số',
-  '/labs':         'Xét nghiệm',
-  '/medications':  'Thuốc',
-  '/nutrition':    'Dinh dưỡng',
-  '/care-plan':    'Kế hoạch điều trị',
+  '/dashboard': 'Tổng quan',
+  '/metrics': 'Chỉ số sức khỏe',
+  '/metrics/log': 'Ghi chỉ số',
+  '/labs': 'Xét nghiệm',
+  '/medications': 'Thuốc',
+  '/nutrition': 'Dinh dưỡng',
+  '/care-plan': 'Kế hoạch điều trị',
   '/ai-assistant': 'Trợ lý AI',
-  '/notifications':'Thông báo',
-  '/profile':      'Hồ sơ cá nhân',
-  '/settings':     'Cài đặt',
-  '/consents':     'Đồng ý chia sẻ',
+  '/notifications': 'Thông báo',
+  '/profile': 'Hồ sơ cá nhân',
+  '/settings': 'Cài đặt',
+  '/consents': 'Đồng ý chia sẻ',
 }
 
 function getPageTitle(pathname: string): string {
@@ -85,12 +115,15 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
   // Hide the AI assistant nav entry unless the feature flag is enabled (MVP: OFF).
   const navItems = React.useMemo(
     () => NAV_ITEMS.filter((it) => it.id !== 'ai-assistant' || flags?.ai_assistant),
-    [flags],
+    [flags]
   )
 
   React.useEffect(() => {
     if (isLoading) return
-    if (!isAuthenticated) { router.replace('/login'); return }
+    if (!isAuthenticated) {
+      router.replace('/login')
+      return
+    }
     if (user && user.role !== 'patient') router.replace(getRoleHomePath(user.role))
   }, [isLoading, isAuthenticated, user, router])
 
@@ -106,6 +139,24 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
 
   const activeId = getActiveId(pathname)
   const pageTitle = getPageTitle(pathname)
+  // Screens that render their own in-page header suppress the compact mobile top
+  // bar: the dashboard (avatar + greeting) and metric detail (back + metric name).
+  const isMetricDetail = pathname.startsWith('/metrics/') && pathname !== '/metrics/log'
+  const isMedicationDetail = pathname.startsWith('/medications/')
+  // All reskinned Soft-UI screens render their own in-page header, so the legacy
+  // mobile top bar is suppressed across them for a consistent header treatment.
+  const NEU_TOPBAR_HIDDEN = new Set([
+    '/dashboard',
+    '/profile',
+    '/notifications',
+    '/metrics',
+    '/labs',
+    '/labs/upload',
+    '/medications',
+    '/settings',
+    '/ai-assistant',
+  ])
+  const hideMobileTopBar = NEU_TOPBAR_HIDDEN.has(pathname) || isMetricDetail || isMedicationDetail
 
   const handleNavItem = (item: NavItem) => router.push(item.href)
 
@@ -121,7 +172,9 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
       onItemClick={handleNavItem}
       collapsed={sidebarCollapsed}
       header={
-        <div className={`flex items-center gap-2.5 p-4 ${sidebarCollapsed ? 'justify-center' : ''}`}>
+        <div
+          className={`flex items-center gap-2.5 p-4 ${sidebarCollapsed ? 'justify-center' : ''}`}
+        >
           <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-mint-400 to-mint-600 flex items-center justify-center shrink-0">
             <span className="text-white font-bold text-sm">M</span>
           </div>
@@ -130,7 +183,11 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
           )}
         </div>
       }
-      userProfile={user ? { name: user.full_name ?? user.phone ?? user.email ?? 'Bệnh nhân', role: 'Bệnh nhân' } : undefined}
+      userProfile={
+        user
+          ? { name: user.full_name ?? user.phone ?? user.email ?? 'Bệnh nhân', role: 'Bệnh nhân' }
+          : undefined
+      }
       footer={
         <button
           type="button"
@@ -149,28 +206,31 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
       {/* ── Mobile (< lg): compact top bar + scrollable content + fixed bottom nav ── */}
       {/* neu-canvas = neumorphic Soft-UI backdrop the raised surfaces float above. */}
       <div className="patient-app neu-canvas flex flex-col min-h-screen lg:hidden">
-        {/* Mobile top bar — raised neumorphic surface (dual shadow). */}
-        <header className="sticky top-0 z-30 neu-raised">
-          <div className="flex items-center justify-between h-14 px-4">
-            {/* Logo / brand */}
-            <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-xl bg-gradient-to-br from-[#17AE7B] to-[#0B6B4D] flex items-center justify-center shrink-0">
-                <span className="text-white font-bold text-xs">M</span>
+        {/* Mobile top bar — raised neumorphic surface (dual shadow).
+            Hidden on /dashboard, which renders its own in-page header. */}
+        {!hideMobileTopBar && (
+          <header className="sticky top-0 z-30 neu-raised">
+            <div className="flex items-center justify-between h-14 px-4">
+              {/* Logo / brand */}
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-xl bg-gradient-to-br from-[#17AE7B] to-[#0B6B4D] flex items-center justify-center shrink-0">
+                  <span className="text-white font-bold text-xs">M</span>
+                </div>
+                <span className="font-semibold text-neu-text text-[17px]">{pageTitle}</span>
               </div>
-              <span className="font-semibold text-neu-text text-[17px]">{pageTitle}</span>
+              {/* User avatar / logout shortcut — neumorphic icon button */}
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="neu-icon-btn !w-9 !h-9 !rounded-full text-neu-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mint-400/40"
+                aria-label="Đăng xuất"
+                title="Đăng xuất"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
             </div>
-            {/* User avatar / logout shortcut — neumorphic icon button */}
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="neu-icon-btn !w-9 !h-9 !rounded-full text-neu-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mint-400/40"
-              aria-label="Đăng xuất"
-              title="Đăng xuất"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
-          </div>
-        </header>
+          </header>
+        )}
 
         {/* Page content — pb-24 clears the floating neu 5-tab nav bar */}
         <main className="flex-1 overflow-auto pb-24">{children}</main>

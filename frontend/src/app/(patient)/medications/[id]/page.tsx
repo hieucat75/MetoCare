@@ -2,37 +2,15 @@
 
 import * as React from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { ArrowLeft, Pill, Calendar, FileText } from 'lucide-react'
+import { ArrowLeft, Pill, Layers, Clock, FileText } from 'lucide-react'
 import { useAuth } from '@/lib/auth/context'
-import { getMedications } from '@/lib/api/patient'
-import type { Medication } from '@/lib/api/patient'
-import { Card, CardContent } from '@/design-system/components/core/Card'
-import Button from '@/design-system/components/core/Button'
+import { getMedications, type Medication } from '@/lib/api/patient'
 import { PageLoading } from '@/design-system/components/core/LoadingState'
 import { ErrorState } from '@/design-system/components/core/ErrorState'
 import { Alert } from '@/design-system/components/core/Alert'
+import { NeuCard, NeuButton } from '@/components/patient/neu'
 
-function InfoRow({
-  icon: Icon,
-  label,
-  value,
-}: {
-  icon: React.ElementType
-  label: string
-  value: string
-}) {
-  return (
-    <div className="flex items-start gap-3 py-4 border-b border-mint-100/60 last:border-0">
-      <span className="flex items-center justify-center w-9 h-9 rounded-lg bg-mint-50 shrink-0">
-        <Icon className="size-4 text-mint-600" aria-hidden="true" />
-      </span>
-      <div className="flex-1 min-w-0">
-        <p className="text-[16px] font-medium text-mint-700">{label}</p>
-        <p className="text-[20px] font-semibold text-text mt-1 leading-snug">{value}</p>
-      </div>
-    </div>
-  )
-}
+const PILL_GRADIENT = 'linear-gradient(160deg,#5B8DEF,#2563EB)'
 
 function formatDate(dateStr: string): string {
   try {
@@ -81,7 +59,7 @@ export default function MedicationDetailPage() {
 
   if (!patientId) {
     return (
-      <div className="p-4">
+      <div className="p-4 max-w-md mx-auto mt-10">
         <Alert variant="warning">Chưa có hồ sơ bệnh nhân. Vui lòng liên hệ hỗ trợ.</Alert>
       </div>
     )
@@ -91,51 +69,88 @@ export default function MedicationDetailPage() {
   if (error) return <ErrorState message={error} onRetry={load} />
   if (!medication) return null
 
+  const subtitle = [medication.dose, medication.frequency].filter(Boolean).join(' · ')
+
   return (
-    <div className="max-w-lg mx-auto px-4 pb-8">
-      {/* Back header */}
-      <div className="flex items-center gap-3 py-4">
+    <div className="p-4 max-w-md mx-auto pb-28 space-y-4">
+      {/* Header: back + title */}
+      <header className="flex items-center gap-3">
         <button
           type="button"
-          onClick={() => router.back()}
-          className="flex items-center gap-1.5 text-[17px] text-mint-600"
           aria-label="Quay lại"
+          onClick={() => router.back()}
+          className="neu-icon-btn !h-11 !w-11 !rounded-full text-neu-text"
         >
-          <ArrowLeft className="size-4" />
-          Quay lại
+          <ArrowLeft className="size-5" />
         </button>
-      </div>
+        <h1 className="text-[20px] font-extrabold tracking-[-0.02em] text-neu-text">
+          Chi tiết thuốc
+        </h1>
+      </header>
 
-      {/* Title */}
-      <div className="mb-4">
-        <h1 className="text-[24px] font-bold text-text">{medication.name}</h1>
-        {medication.dose && (
-          <p className="text-[17px] text-text-muted mt-0.5">{medication.dose}</p>
-        )}
-      </div>
+      {/* Hero — name + dose/frequency */}
+      <NeuCard className="!p-5">
+        <div className="flex items-center gap-4">
+          <span
+            className="grid size-16 shrink-0 place-items-center rounded-[16px] text-white"
+            style={{ background: PILL_GRADIENT, boxShadow: '0 10px 20px -8px rgba(37,99,235,0.5)' }}
+            aria-hidden="true"
+          >
+            <Pill className="size-8" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-[21px] font-extrabold tracking-[-0.01em] text-neu-text">
+              {medication.name}
+            </p>
+            {subtitle && <p className="mt-1 text-[13.5px] text-neu-secondary">{subtitle}</p>}
+          </div>
+        </div>
+      </NeuCard>
 
-      <Card variant="glass" padding="none" className="mb-4">
-        <CardContent className="p-1">
+      {/* Dose / timing chips — only what real data provides */}
+      {(medication.dose || medication.frequency) && (
+        <div className="grid grid-cols-2 gap-2.5">
           {medication.dose && (
-            <InfoRow icon={Pill} label="Liều dùng" value={medication.dose} />
+            <div className="neu-raised rounded-[14px] p-3.5" style={{ backgroundColor: '#E9F2ED' }}>
+              <div className="flex items-center gap-1.5 text-neu-muted">
+                <Layers className="size-4 text-neu-green" aria-hidden="true" />
+                <span className="text-[11.5px] font-semibold">Liều dùng</span>
+              </div>
+              <p className="mt-2 text-[16px] font-extrabold text-neu-text">{medication.dose}</p>
+            </div>
           )}
           {medication.frequency && (
-            <InfoRow icon={Calendar} label="Tần suất" value={medication.frequency} />
+            <div className="neu-raised rounded-[14px] p-3.5" style={{ backgroundColor: '#F7EFDF' }}>
+              <div className="flex items-center gap-1.5 text-[#8a6a25]">
+                <Clock className="size-4 text-[#C77A06]" aria-hidden="true" />
+                <span className="text-[11.5px] font-semibold">Tần suất</span>
+              </div>
+              <p className="mt-2 text-[16px] font-extrabold text-neu-text">
+                {medication.frequency}
+              </p>
+            </div>
           )}
-          <InfoRow icon={Calendar} label="Ngày tạo" value={formatDate(medication.created_at)} />
-          {medication.note && (
-            <InfoRow icon={FileText} label="Ghi chú" value={medication.note} />
-          )}
-        </CardContent>
-      </Card>
+        </div>
+      )}
 
-      <Button
-        variant="outline"
-        onClick={() => router.push('/medications')}
-        className="w-full"
-      >
+      {/* Notes — patient/clinician-entered only (no fabricated guidance) */}
+      {medication.note && (
+        <NeuCard className="!p-4">
+          <div className="mb-2 flex items-center gap-2">
+            <FileText className="size-4 text-neu-green" aria-hidden="true" />
+            <p className="text-[13px] font-bold text-neu-text">Ghi chú</p>
+          </div>
+          <p className="text-[14px] leading-relaxed text-neu-secondary">{medication.note}</p>
+        </NeuCard>
+      )}
+
+      <p className="px-1 text-[12.5px] text-neu-subtle">
+        Thêm ngày {formatDate(medication.created_at)}
+      </p>
+
+      <NeuButton variant="secondary" onClick={() => router.push('/medications')}>
         Xem tất cả thuốc
-      </Button>
+      </NeuButton>
     </div>
   )
 }

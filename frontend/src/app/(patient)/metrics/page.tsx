@@ -1,17 +1,9 @@
 'use client'
 
 import * as React from 'react'
+import { useRouter } from 'next/navigation'
 import { Plus, LineChart } from 'lucide-react'
-import {
-  Alert,
-  Button,
-  FormField,
-  Input,
-  Modal,
-  PageHeader,
-  Select,
-  Skeleton,
-} from '@/design-system'
+import { Alert, Button, FormField, Input, Modal, Select, Skeleton } from '@/design-system'
 import { PatientEmptyState } from '@/components/patient'
 import { MetricCategoryGroup } from '@/components/patient/metrics/MetricCategoryGroup'
 import { useAuth } from '@/lib/auth/context'
@@ -87,7 +79,13 @@ function LogMetricModal({ open, onClose, onSuccess, patientId }: LogModalProps) 
           <Button variant="outline" size="sm" onClick={onClose} disabled={submitting}>
             Hủy
           </Button>
-          <Button variant="mint" size="sm" type="submit" form="log-metric-form" loading={submitting}>
+          <Button
+            variant="mint"
+            size="sm"
+            type="submit"
+            form="log-metric-form"
+            loading={submitting}
+          >
             Lưu
           </Button>
         </>
@@ -139,6 +137,7 @@ function KpiSkeleton() {
 }
 
 export default function MetricsPage() {
+  const router = useRouter()
   const { user } = useAuth()
   const patientId = user?.patient_profile_id
   const catalog = useLabReference()
@@ -182,8 +181,10 @@ export default function MetricsPage() {
 
   return (
     <>
-      <div className="p-4 lg:p-6 space-y-5 max-w-md mx-auto lg:max-w-2xl pb-28">
-        <PageHeader title="Chỉ số sức khỏe" />
+      <div className="p-4 space-y-4 max-w-md mx-auto pb-28">
+        <h1 className="px-1 text-[21px] font-extrabold tracking-[-0.02em] text-neu-text">
+          Chỉ số sức khoẻ
+        </h1>
 
         {isLoading && <KpiSkeleton />}
 
@@ -205,24 +206,24 @@ export default function MetricsPage() {
         {!isLoading && !error && buckets.length > 0 && (
           <div className="space-y-6">
             {buckets.map((bucket) => (
-              <MetricCategoryGroup key={bucket.theme.key} bucket={bucket} />
+              <MetricCategoryGroup
+                key={bucket.theme.key}
+                bucket={bucket}
+                onOpen={(metricType) => router.push(`/metrics/${metricType}`)}
+              />
             ))}
           </div>
         )}
       </div>
 
-      <div className="fixed bottom-20 right-4 z-40">
-        <Button
-          variant="mint"
-          size="lg"
-          onClick={() => setModalOpen(true)}
-          className="rounded-full shadow-lg px-4"
-          aria-label="Ghi chỉ số mới"
-        >
-          <Plus className="size-5" aria-hidden="true" />
-          <span className="sr-only">Ghi chỉ số mới</span>
-        </Button>
-      </div>
+      <button
+        type="button"
+        aria-label="Ghi chỉ số mới"
+        onClick={() => setModalOpen(true)}
+        className="fixed bottom-28 right-5 z-30 flex size-14 items-center justify-center rounded-full text-white neu-btn-primary !min-h-0 !p-0"
+      >
+        <Plus className="size-7" aria-hidden="true" />
+      </button>
 
       <LogMetricModal
         open={modalOpen}

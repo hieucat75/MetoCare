@@ -2,16 +2,9 @@
 
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
-import {
-  Activity,
-  Bell,
-  ChevronRight,
-  Pill,
-  Plus,
-  User as UserIcon,
-} from 'lucide-react'
+import { Activity, Bell, Droplet, Heart, Pill, Plus, Scale } from 'lucide-react'
 import { PageLoading, ErrorState } from '@/design-system'
-import { NeuCard, NeuButton, NeuIconButton, NeuBadge, NeuStat } from '@/components/patient/neu'
+import { NeuCard, NeuButton, NeuIconButton, NeuBadge } from '@/components/patient/neu'
 import { useAuth } from '@/lib/auth/context'
 import {
   getLiveMetabolicScore,
@@ -36,7 +29,7 @@ import {
 } from '@/lib/dashboard/summary'
 import { groupMetricsByCategory, type MetricSeries } from '@/lib/metrics/kpi'
 import { useLabReference } from '@/lib/api/labReference'
-import { cn, formatDate } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 
 // ─── Data model ───────────────────────────────────────────────────────────────
 
@@ -98,7 +91,9 @@ export default function PatientDashboardPage() {
         const metricItems = metricsResp.items ?? []
         setData({
           summary: buildDashboardSummary(metricItems, catalog),
-          series: catalog ? groupMetricsByCategory(metricItems, catalog).flatMap((b) => b.series) : [],
+          series: catalog
+            ? groupMetricsByCategory(metricItems, catalog).flatMap((b) => b.series)
+            : [],
           liveScore,
           medications: medsResp.items ?? [],
           labs: labsResp.items ?? [],
@@ -143,9 +138,9 @@ export default function PatientDashboardPage() {
     )
   }
 
-  const { summary, series, liveScore, medications, healthSummary } = data
+  const { summary, series, medications, healthSummary } = data
   const hasAnyData = summary.totalTracked > 0
-  const greeting = `Chào buổi ${timeOfDay()}, ${user.full_name ?? user.email}`
+  const displayName = user.full_name ?? user.email ?? 'Bạn'
   const nextMed = medications[0] ?? null
 
   return (
@@ -153,26 +148,35 @@ export default function PatientDashboardPage() {
       {/* ── Header ── */}
       <header className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
-          <span className="neu-icon-btn !rounded-full text-neu-secondary" aria-hidden="true">
-            <UserIcon className="size-6" />
+          <span
+            className="neu-icon-btn !w-12 !h-12 !rounded-full text-[16px] font-extrabold text-neu-green"
+            aria-hidden="true"
+          >
+            {initials(displayName)}
           </span>
           <div className="min-w-0">
-            <p className="neu-caption">Xin chào</p>
-            <h1 className="text-[20px] font-bold text-neu-text truncate">{greeting}</h1>
+            <p className="text-[13px] text-neu-secondary">Chào buổi {timeOfDay()},</p>
+            <h1 className="text-[20px] font-extrabold tracking-[-0.02em] text-neu-text truncate">
+              {displayName}
+            </h1>
           </div>
         </div>
-        <NeuIconButton aria-label="Thông báo" onClick={() => router.push('/notifications')}>
+        <NeuIconButton
+          aria-label="Thông báo"
+          className="!w-12 !h-12 !rounded-full"
+          onClick={() => router.push('/notifications')}
+        >
           <Bell className="size-5" />
         </NeuIconButton>
       </header>
 
       {hasAnyData ? (
         <>
-          {/* ── Daily summary ── */}
-          <DailySummaryCard summary={summary} healthSummary={healthSummary} liveScore={liveScore} />
+          {/* ── Daily summary (green hero) ── */}
+          <HeroSummaryCard summary={summary} healthSummary={healthSummary} />
 
           {/* ── Medication reminder ── */}
-          {nextMed && <MedicationReminderCard med={nextMed} onAll={() => router.push('/medications')} />}
+          {nextMed && <MedicationReminderCard med={nextMed} />}
 
           {/* ── 2×2 metric tiles ── */}
           <MetricTileGrid
@@ -199,105 +203,151 @@ export default function PatientDashboardPage() {
   )
 }
 
-// ─── Daily summary ──────────────────────────────────────────────────────────
+// ─── Daily summary (green gradient hero) ──────────────────────────────────────
 
-const RISK_TONE: Record<HealthSummary['overall_risk'], { tone: BadgeTone; label: string }> = {
-  low: { tone: 'ok', label: 'Rủi ro thấp' },
-  medium: { tone: 'watch', label: 'Rủi ro trung bình' },
-  high: { tone: 'alert', label: 'Rủi ro cao' },
+const RISK_LABEL: Record<HealthSummary['overall_risk'], string> = {
+  low: 'Nguy cơ thấp',
+  medium: 'Nguy cơ trung bình',
+  high: 'Nguy cơ cao',
 }
 
-function DailySummaryCard({
+const HERO_GRADIENT = 'linear-gradient(160deg,#17AE7B,#0B6B4D)'
+
+function HeroSummaryCard({
   summary,
   healthSummary,
-  liveScore,
 }: {
   summary: DashboardSummary
   healthSummary: HealthSummary | null
-  liveScore: LiveMetabolicScore | null
 }) {
   // Prefer the clinical health-summary risk; fall back to the dashboard status.
-  const risk = healthSummary
-    ? RISK_TONE[healthSummary.overall_risk]
+  const riskLevel: HealthSummary['overall_risk'] = healthSummary
+    ? healthSummary.overall_risk
     : summary.overallStatus === 'at_risk'
-      ? RISK_TONE.high
+      ? 'high'
       : summary.overallStatus === 'attention'
-        ? RISK_TONE.medium
-        : RISK_TONE.low
+        ? 'medium'
+        : 'low'
   const abnormal = healthSummary?.abnormal_count ?? summary.abnormalCount
-  const score = liveScore?.available ? liveScore.score : null
-  const dateStr = summary.lastUpdated ? formatDate(new Date(summary.lastUpdated)) : formatDate(new Date())
+  const dateStr = formatVnDate(summary.lastUpdated ? new Date(summary.lastUpdated) : new Date())
+  const subtitle =
+    abnormal > 0
+      ? `${abnormal} chỉ số cần chú ý trên ${summary.totalTracked} chỉ số`
+      : `Tất cả ${summary.totalTracked} chỉ số trong ngưỡng bình thường`
 
   return (
-    <NeuCard size="lg">
-      <div className="flex items-start justify-between gap-3">
-        <p className="neu-caption">{dateStr}</p>
-        <NeuBadge tone={risk.tone}>{risk.label}</NeuBadge>
+    <div
+      className="relative overflow-hidden rounded-[24px] px-6 pb-7 pt-6 text-white"
+      style={{ background: HERO_GRADIENT, boxShadow: '0 18px 32px -16px rgba(11,107,77,0.6)' }}
+    >
+      <MetoWatermark />
+      <div className="relative flex items-start justify-between gap-3">
+        <p className="text-[13px] font-medium text-white/85">Tóm tắt hôm nay · {dateStr}</p>
+        <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-white/20 px-3 py-1 text-[12px] font-bold text-white backdrop-blur">
+          <span className="size-1.5 rounded-full bg-white" aria-hidden="true" />
+          {RISK_LABEL[riskLevel]}
+        </span>
       </div>
+      <h2 className="relative mt-4 text-[26px] font-extrabold leading-[1.15] tracking-[-0.02em]">
+        Các chỉ số chuyển hoá
+      </h2>
+      <p className="relative mt-1.5 text-[14px] text-white/85">{subtitle}</p>
+    </div>
+  )
+}
 
-      <div className="mt-3 flex items-end justify-between gap-4">
-        <div className="min-w-0">
-          <p className="text-[14px] font-semibold text-neu-secondary">Các chỉ số chuyển hoá</p>
-          <p className="mt-1 text-[15px] text-neu-muted">
-            {abnormal > 0
-              ? `${abnormal} chỉ số cần chú ý trên ${summary.totalTracked} chỉ số`
-              : `Tất cả ${summary.totalTracked} chỉ số trong ngưỡng bình thường`}
-          </p>
-        </div>
-        {score != null && (
-          <div className="shrink-0 text-right">
-            <p className="neu-caption">Điểm chuyển hoá</p>
-            <p className="flex items-baseline justify-end gap-0.5">
-              <span className="text-[30px] font-extrabold leading-none tracking-tight text-neu-green">
-                {score}
-              </span>
-              <span className="text-[14px] font-medium text-neu-muted">/100</span>
-            </p>
-          </div>
-        )}
-      </div>
-    </NeuCard>
+/** Faint brand-mark watermark (approximation of the M-in-ring logo). */
+function MetoWatermark() {
+  return (
+    <svg
+      viewBox="0 0 100 100"
+      className="pointer-events-none absolute -right-2 top-1/2 h-32 w-32 -translate-y-1/2 opacity-[0.12]"
+      aria-hidden="true"
+    >
+      <circle cx="50" cy="50" r="40" fill="none" stroke="#fff" strokeWidth="7" />
+      <text
+        x="50"
+        y="64"
+        textAnchor="middle"
+        fontSize="48"
+        fontWeight="800"
+        fill="#fff"
+        fontFamily="Inter, sans-serif"
+      >
+        M
+      </text>
+    </svg>
   )
 }
 
 // ─── Medication reminder (local-only "Đã uống") ──────────────────────────────
 
-function MedicationReminderCard({ med, onAll }: { med: Medication; onAll: () => void }) {
+const PINK_GRADIENT = 'linear-gradient(160deg,#F0608E,#D6336C)'
+
+function MedicationReminderCard({ med }: { med: Medication }) {
   // Local-only adherence toggle until a backend endpoint exists.
   const [taken, setTaken] = React.useState(false) // TODO(backend): adherence
 
-  const subtitle = [med.dose, med.frequency].filter(Boolean).join(' · ')
+  const subtitle = [[med.name, med.dose].filter(Boolean).join(' '), med.frequency]
+    .filter(Boolean)
+    .join(' · ')
 
   return (
-    <NeuCard>
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-[14px] font-semibold text-neu-secondary">Nhắc uống thuốc</p>
-        <button type="button" onClick={onAll} className="neu-caption hover:underline">
-          Tất cả
-        </button>
-      </div>
-      <div className="mt-3 flex items-center gap-3">
-        <span className="neu-icon-btn text-neu-green" aria-hidden="true">
-          <Pill className="size-5" />
+    <NeuCard className="!p-4">
+      <div className="flex items-center gap-3.5">
+        <span
+          className="grid size-[52px] shrink-0 place-items-center rounded-[16px] text-white"
+          style={{ background: PINK_GRADIENT, boxShadow: '0 8px 16px -8px rgba(229,84,126,0.6)' }}
+          aria-hidden="true"
+        >
+          <Pill className="size-6" />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="text-[17px] font-bold text-neu-text truncate">{med.name}</p>
-          {subtitle && <p className="text-[14px] text-neu-muted truncate">{subtitle}</p>}
+          <p className="text-[15px] font-bold text-neu-text">Nhắc uống thuốc</p>
+          {subtitle && <p className="text-[13.5px] text-neu-muted truncate">{subtitle}</p>}
         </div>
+        <button
+          type="button"
+          onClick={() => setTaken((v) => !v)}
+          aria-pressed={taken}
+          className={cn(
+            'shrink-0 rounded-full px-4 text-[13px] font-bold transition-transform active:scale-95',
+            'min-h-[40px]',
+            taken ? 'text-neu-secondary' : 'text-white'
+          )}
+          style={
+            taken
+              ? { boxShadow: 'inset -4px -5px 10px #ffffff, inset 5px 6px 12px #bdccc7' }
+              : { background: PINK_GRADIENT, boxShadow: '0 8px 16px -8px rgba(229,84,126,0.6)' }
+          }
+        >
+          {taken ? 'Đã uống ✓' : 'Đã uống'}
+        </button>
       </div>
-      <NeuButton
-        className="mt-4"
-        variant={taken ? 'secondary' : 'primary'}
-        onClick={() => setTaken((v) => !v)}
-        aria-pressed={taken}
-      >
-        {taken ? 'Đã uống ✓' : 'Đã uống'}
-      </NeuButton>
     </NeuCard>
   )
 }
 
 // ─── Metric tiles (2×2) ──────────────────────────────────────────────────────
+
+interface TileTheme {
+  Icon: React.ComponentType<{ className?: string }>
+  iconBg: string
+  tint: string
+  spark: string
+}
+
+const TILE_THEME: Record<string, TileTheme> = {
+  glucose: { Icon: Droplet, iconBg: HERO_GRADIENT, tint: '#E9F2ED', spark: '#0B7F5B' },
+  bp: { Icon: Heart, iconBg: PINK_GRADIENT, tint: '#F8EAF0', spark: '#E5547E' },
+  weight: { Icon: Scale, iconBg: HERO_GRADIENT, tint: '#E9F2ED', spark: '#0B7F5B' },
+  bmi: {
+    Icon: Activity,
+    iconBg: 'linear-gradient(160deg,#F5B547,#E08A1E)',
+    tint: '#F7EFDF',
+    spark: '#B8740A',
+  },
+}
 
 interface TileModel {
   key: string
@@ -346,13 +396,13 @@ function MetricTileGrid({
       ? {
           key: 'glucose',
           metricType: 'fasting_glucose',
-          label: 'Đường huyết đói',
+          label: 'Đường huyết',
           value: fmt(glucose.latest.value),
           unit: glucose.unit?.label ?? glucose.latest.unit ?? 'mg/dL',
           ...toneFor('fasting_glucose'),
           history: histValues(glucose),
         }
-      : emptyTile('glucose', 'fasting_glucose', 'Đường huyết đói'),
+      : emptyTile('glucose', 'fasting_glucose', 'Đường huyết')
   )
 
   // Blood pressure — systolic/diastolic
@@ -369,7 +419,7 @@ function MetricTileGrid({
           ...mergeTone(toneFor('blood_pressure_systolic'), toneFor('blood_pressure_diastolic')),
           history: histValues(sys),
         }
-      : emptyTile('bp', 'blood_pressure_systolic', 'Huyết áp'),
+      : emptyTile('bp', 'blood_pressure_systolic', 'Huyết áp')
   )
 
   // Weight
@@ -385,7 +435,7 @@ function MetricTileGrid({
           ...toneFor('weight'),
           history: histValues(weight),
         }
-      : emptyTile('weight', 'weight', 'Cân nặng'),
+      : emptyTile('weight', 'weight', 'Cân nặng')
   )
 
   // BMI — derived (weight ÷ (height_cm/100)²), NOT tappable
@@ -402,7 +452,6 @@ function MetricTileGrid({
 
   return (
     <section aria-label="Chỉ số nổi bật">
-      <p className="neu-caption mb-2 px-1">Chỉ số nổi bật</p>
       <div className="grid grid-cols-2 gap-3">
         {tiles.map((t) => (
           <MetricTile key={t.key} tile={t} onOpen={onOpen} />
@@ -413,28 +462,45 @@ function MetricTileGrid({
 }
 
 function MetricTile({ tile, onOpen }: { tile: TileModel; onOpen: (metricType: string) => void }) {
+  const theme = TILE_THEME[tile.key] ?? TILE_THEME.glucose
   const tappable = tile.metricType != null && tile.value != null
+  const Icon = theme.Icon
+
   const content = (
     <>
-      <div className="flex items-start justify-between gap-1">
-        <NeuStat
-          label={tile.label}
-          value={tile.value ?? <span className="text-[15px] font-semibold text-neu-muted">—</span>}
-          unit={tile.value != null ? tile.unit : null}
-        />
-        {tappable && <ChevronRight className="size-4 shrink-0 text-neu-subtle" aria-hidden="true" />}
+      <div className="flex items-start justify-between gap-2">
+        <span
+          className="grid size-10 shrink-0 place-items-center rounded-[14px] text-white"
+          style={{ background: theme.iconBg, boxShadow: '0 6px 14px -8px rgba(16,40,36,0.5)' }}
+          aria-hidden="true"
+        >
+          <Icon className="size-5" />
+        </span>
+        {tile.value != null && tile.statusLabel && (
+          <NeuBadge tone={tile.tone} className="!text-[11px] !px-2.5 !py-1 before:!hidden">
+            {tile.statusLabel}
+          </NeuBadge>
+        )}
       </div>
+
+      <p className="mt-3 text-[13px] text-neu-muted">{tile.label}</p>
+
       {tile.value == null ? (
-        <p className="mt-2 text-[13px] text-neu-muted">Chưa có dữ liệu</p>
+        <p className="mt-0.5 text-[13px] text-neu-muted">Chưa có dữ liệu</p>
       ) : (
-        <div className="mt-2 flex items-center justify-between gap-2">
-          {tile.statusLabel && (
-            <NeuBadge tone={tile.tone} className="!text-[11px] !px-2 !py-0.5">
-              {tile.statusLabel}
-            </NeuBadge>
-          )}
-          <Sparkline values={tile.history} tone={tile.tone} />
-        </div>
+        <>
+          <p className="mt-0.5 flex items-baseline gap-1">
+            <span className="text-[28px] font-extrabold leading-none tracking-[-0.02em] text-neu-text">
+              {tile.value}
+            </span>
+            {tile.unit && (
+              <span className="text-[13px] font-medium text-neu-muted">{tile.unit}</span>
+            )}
+          </p>
+          <div className="mt-3">
+            <Sparkline values={tile.history} color={theme.spark} />
+          </div>
+        </>
       )}
     </>
   )
@@ -445,42 +511,84 @@ function MetricTile({ tile, onOpen }: { tile: TileModel; onOpen: (metricType: st
         type="button"
         onClick={() => onOpen(tile.metricType as string)}
         className="neu-card p-4 text-left transition-transform active:scale-[0.98]"
+        style={{ backgroundColor: theme.tint }}
       >
         {content}
       </button>
     )
   }
-  return <div className="neu-card p-4">{content}</div>
+  return (
+    <div className="neu-card p-4" style={{ backgroundColor: theme.tint }}>
+      {content}
+    </div>
+  )
 }
 
 // ─── Sparkline (inline SVG, no deps) ─────────────────────────────────────────
 
-const SPARK_COLOR: Record<BadgeTone, string> = {
-  ok: '#0B7F5B',
-  watch: '#B5862B',
-  alert: '#C0392B',
+interface Pt {
+  x: number
+  y: number
 }
 
-function Sparkline({ values, tone }: { values: number[]; tone: BadgeTone }) {
+/** Catmull-Rom → cubic-bezier smoothing for a soft, curved sparkline. */
+function smoothPath(pts: Pt[]): string {
+  let d = `M${pts[0].x.toFixed(1)},${pts[0].y.toFixed(1)}`
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[i - 1] ?? pts[i]
+    const p1 = pts[i]
+    const p2 = pts[i + 1]
+    const p3 = pts[i + 2] ?? p2
+    const cp1x = p1.x + (p2.x - p0.x) / 6
+    const cp1y = p1.y + (p2.y - p0.y) / 6
+    const cp2x = p2.x - (p3.x - p1.x) / 6
+    const cp2y = p2.y - (p3.y - p1.y) / 6
+    d += ` C${cp1x.toFixed(1)},${cp1y.toFixed(1)} ${cp2x.toFixed(1)},${cp2y.toFixed(1)} ${p2.x.toFixed(1)},${p2.y.toFixed(1)}`
+  }
+  return d
+}
+
+function Sparkline({ values, color }: { values: number[]; color: string }) {
   // values are newest-first; draw oldest→newest left→right.
   const points = [...values].reverse()
-  if (points.length < 2) return <span className="h-6 w-[72px]" aria-hidden="true" />
-  const w = 72
-  const h = 24
+  if (points.length < 2) return <div className="h-8" aria-hidden="true" />
+  const w = 100
+  const h = 32
+  const pad = 4
   const min = Math.min(...points)
   const max = Math.max(...points)
   const span = max - min || 1
   const step = w / (points.length - 1)
-  const d = points
-    .map((v, i) => {
-      const x = i * step
-      const y = h - ((v - min) / span) * (h - 4) - 2
-      return `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`
-    })
-    .join(' ')
+  const pts: Pt[] = points.map((v, i) => ({
+    x: i * step,
+    y: h - ((v - min) / span) * (h - pad * 2) - pad,
+  }))
+  const line = smoothPath(pts)
+  const area = `${line} L${w},${h} L0,${h} Z`
+  const gid = `spark${React.useId().replace(/:/g, '')}`
   return (
-    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className="shrink-0" aria-hidden="true">
-      <path d={d} fill="none" stroke={SPARK_COLOR[tone]} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+    <svg
+      viewBox={`0 0 ${w} ${h}`}
+      preserveAspectRatio="none"
+      className="h-8 w-full"
+      aria-hidden="true"
+    >
+      <defs>
+        <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.22" />
+          <stop offset="100%" stopColor={color} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <path d={area} fill={`url(#${gid})`} stroke="none" />
+      <path
+        d={line}
+        fill="none"
+        stroke={color}
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        vectorEffect="non-scaling-stroke"
+      />
     </svg>
   )
 }
@@ -490,7 +598,10 @@ function Sparkline({ values, tone }: { values: number[]; tone: BadgeTone }) {
 function EmptyDashboard({ onLog }: { onLog: () => void }) {
   return (
     <NeuCard size="lg" className="text-center">
-      <span className="neu-pressed mx-auto flex size-16 items-center justify-center rounded-full" aria-hidden="true">
+      <span
+        className="neu-pressed mx-auto flex size-16 items-center justify-center rounded-full"
+        aria-hidden="true"
+      >
         <Activity className="size-7 text-neu-green" />
       </span>
       <h2 className="mt-4 text-[20px] font-bold text-neu-text">Chưa có dữ liệu hôm nay</h2>
@@ -513,6 +624,19 @@ function timeOfDay(): string {
   return 'tối'
 }
 
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean)
+  if (parts.length === 0) return '?'
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+}
+
+const VN_WEEKDAY = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7']
+
+function formatVnDate(d: Date): string {
+  return `${VN_WEEKDAY[d.getDay()]}, ${d.getDate()} Thg ${d.getMonth() + 1}`
+}
+
 function fmt(n: number): string {
   return Number.isInteger(n) ? String(n) : n.toFixed(1)
 }
@@ -523,12 +647,21 @@ function histValues(s: MetricSeries): number[] {
 }
 
 function emptyTile(key: string, metricType: string, label: string): TileModel {
-  return { key, metricType, label, value: null, unit: null, tone: 'ok', statusLabel: null, history: [] }
+  return {
+    key,
+    metricType,
+    label,
+    value: null,
+    unit: null,
+    tone: 'ok',
+    statusLabel: null,
+    history: [],
+  }
 }
 
 function mergeTone(
   a: { tone: BadgeTone; statusLabel: string | null },
-  b: { tone: BadgeTone; statusLabel: string | null },
+  b: { tone: BadgeTone; statusLabel: string | null }
 ): { tone: BadgeTone; statusLabel: string | null } {
   const rank: Record<BadgeTone, number> = { ok: 0, watch: 1, alert: 2 }
   return rank[a.tone] >= rank[b.tone] ? a : b

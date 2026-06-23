@@ -24,7 +24,7 @@ export function NeuButton({
       className={cn(
         variant === 'primary' ? 'neu-btn-primary' : 'neu-btn-secondary',
         'w-full',
-        className,
+        className
       )}
       {...rest}
     >

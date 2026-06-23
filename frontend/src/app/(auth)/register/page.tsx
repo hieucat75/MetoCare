@@ -48,7 +48,7 @@ function MintInput({
   return (
     <div className="relative">
       {leftIcon && (
-        <div className="absolute inset-y-0 left-0 flex items-center pl-3 text-mint-600">{leftIcon}</div>
+        <div className="absolute inset-y-0 left-0 flex items-center pl-3 text-neu-green">{leftIcon}</div>
       )}
       <input
         id={id}
@@ -70,7 +70,7 @@ function MintInput({
           rightElement && 'pr-10',
           error
             ? 'border-danger focus:border-danger focus:ring-danger/20'
-            : 'border-mint-200 focus:border-mint-400 focus:ring-mint-400/25',
+            : 'border-[rgba(16,48,44,0.12)] focus:border-neu-green focus:ring-neu-green/25',
         )}
       />
       {rightElement && (
@@ -158,9 +158,9 @@ export default function RegisterPage() {
     return (
       <div className="text-center py-4">
         <div className="w-14 h-14 rounded-2xl bg-mint-100 flex items-center justify-center mx-auto mb-4">
-          <CheckCircle2 className="w-8 h-8 text-mint-600" aria-hidden="true" />
+          <CheckCircle2 className="w-8 h-8 text-neu-green" aria-hidden="true" />
         </div>
-        <h2 className="text-[24px] font-bold text-text mb-2">Đăng ký thành công!</h2>
+        <h2 className="text-[24px] font-extrabold text-neu-text mb-2">Đăng ký thành công!</h2>
         <p className="text-[17px] text-text-muted">Đang thiết lập hồ sơ của bạn...</p>
       </div>
     )
@@ -168,7 +168,7 @@ export default function RegisterPage() {
 
   return (
     <div>
-      <h1 className="text-[24px] font-bold text-text mb-1">Tạo tài khoản</h1>
+      <h1 className="text-[24px] font-extrabold text-neu-text mb-1">Tạo tài khoản</h1>
       <p className="text-[17px] text-text-muted mb-6">
         Đăng ký bằng số điện thoại để bắt đầu quản lý sức khỏe.
       </p>
@@ -238,7 +238,7 @@ export default function RegisterPage() {
                 type="button"
                 aria-label={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
                 onClick={() => setShowPassword((p) => !p)}
-                className="text-text-subtle hover:text-mint-600 transition-colors"
+                className="text-text-subtle hover:text-neu-green transition-colors"
               >
                 {showPassword ? (
                   <EyeOff className="w-4 h-4" aria-hidden="true" />
@@ -256,7 +256,7 @@ export default function RegisterPage() {
           fullWidth
           loading={isLoading}
           disabled={!phone.trim() || !password || !fullName.trim()}
-          className="h-12 rounded-xl bg-mint-500 hover:bg-mint-600 shadow-glass"
+          className="h-12 rounded-xl bg-gradient-to-b from-[#17AE7B] to-[#0B6B4D] text-white shadow-[0_12px_24px_-8px_rgba(11,107,77,0.6)] hover:opacity-95"
         >
           Đăng ký
         </Button>
@@ -264,15 +264,15 @@ export default function RegisterPage() {
 
       <p className="text-center text-[17px] text-text-muted mt-6">
         Đã có tài khoản?{' '}
-        <Link href="/login" className="text-mint-700 font-semibold hover:underline underline-offset-2">
+        <Link href="/login" className="text-neu-green font-semibold hover:underline underline-offset-2">
           Đăng nhập
         </Link>
       </p>
 
       <p className="text-center text-[15px] text-text-subtle mt-4 leading-relaxed">
         Bằng cách đăng ký, bạn đồng ý với{' '}
-        <span className="text-mint-700">Điều khoản sử dụng</span> và{' '}
-        <span className="text-mint-700">Chính sách bảo mật</span> của MetoCare.
+        <span className="text-neu-green">Điều khoản sử dụng</span> và{' '}
+        <span className="text-neu-green">Chính sách bảo mật</span> của MetoCare.
       </p>
     </div>
   )

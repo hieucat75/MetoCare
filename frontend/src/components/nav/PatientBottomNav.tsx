@@ -16,10 +16,30 @@ interface BottomNavItem {
 // Visual language = neumorphic "Soft UI Lab" (floating raised pill bar + teal-gradient
 // active tile); information architecture stays as-is per product decision.
 const BOTTOM_NAV_ITEMS: BottomNavItem[] = [
-  { id: 'dashboard', label: 'Tổng quan', icon: <LayoutDashboard className="w-[22px] h-[22px]" />, href: '/dashboard' },
-  { id: 'metrics', label: 'Chỉ số', icon: <Activity className="w-[22px] h-[22px]" />, href: '/metrics' },
-  { id: 'labs', label: 'Xét nghiệm', icon: <FlaskConical className="w-[22px] h-[22px]" />, href: '/labs' },
-  { id: 'medications', label: 'Thuốc', icon: <Pill className="w-[22px] h-[22px]" />, href: '/medications' },
+  {
+    id: 'dashboard',
+    label: 'Tổng quan',
+    icon: <LayoutDashboard className="w-[22px] h-[22px]" />,
+    href: '/dashboard',
+  },
+  {
+    id: 'metrics',
+    label: 'Chỉ số',
+    icon: <Activity className="w-[22px] h-[22px]" />,
+    href: '/metrics',
+  },
+  {
+    id: 'labs',
+    label: 'Xét nghiệm',
+    icon: <FlaskConical className="w-[22px] h-[22px]" />,
+    href: '/labs',
+  },
+  {
+    id: 'medications',
+    label: 'Thuốc',
+    icon: <Pill className="w-[22px] h-[22px]" />,
+    href: '/medications',
+  },
   { id: 'profile', label: 'Hồ sơ', icon: <User className="w-[22px] h-[22px]" />, href: '/profile' },
 ]
 
@@ -42,9 +62,7 @@ export function PatientBottomNav() {
       aria-label="Điều hướng chính"
     >
       {/* Floating raised neumorphic pill bar (Soft-UI Lab spec, 5-tab IA). */}
-      <div
-        className="pointer-events-auto mx-auto flex max-w-md items-stretch justify-around gap-1 rounded-[26px] bg-[#E7EEEC] p-[9px_10px] shadow-[-7px_-8px_16px_#ffffff,8px_10px_22px_#c0cfca]"
-      >
+      <div className="pointer-events-auto mx-auto flex max-w-md items-stretch justify-around gap-1 rounded-[26px] bg-[#E7EEEC] p-[9px_10px] shadow-[-7px_-8px_16px_#ffffff,8px_10px_22px_#c0cfca]">
         {BOTTOM_NAV_ITEMS.map((item) => {
           const isActive = item.id === activeId
           return (
@@ -60,7 +78,7 @@ export function PatientBottomNav() {
                 // Active = teal-gradient tile with white icon+label; inactive = muted.
                 isActive
                   ? 'bg-gradient-to-br from-[#17AE7B] to-[#0B6B4D] text-white shadow-[0_9px_18px_-8px_rgba(11,107,77,0.7)]'
-                  : 'text-[#52706A] hover:text-neu-secondary',
+                  : 'text-[#52706A] hover:text-neu-secondary'
               )}
             >
               <span className="inline-flex items-center justify-center" aria-hidden="true">
