@@ -13,12 +13,10 @@ import {
   getLabs,
   getPatientProfile,
   getHealthSummary,
-  getInsights,
   type HealthMetric,
   type HealthSummary,
   type LiveMetabolicScore,
   type Medication,
-  type MetricInsight,
   type LabResult,
   type PatientProfile,
 } from '@/lib/api/patient'
@@ -41,7 +39,6 @@ interface DashboardData {
   labs: LabResult[]
   profile: PatientProfile | null
   healthSummary: HealthSummary | null
-  insights: MetricInsight[] | null
 }
 
 type BadgeTone = 'ok' | 'watch' | 'alert'
@@ -85,9 +82,8 @@ export default function PatientDashboardPage() {
       })),
       getPatientProfile(patientId).catch(() => null),
       getHealthSummary(patientId),
-      getInsights(patientId),
     ])
-      .then(([metricsResp, liveScore, medsResp, labsResp, profile, healthSummary, insights]) => {
+      .then(([metricsResp, liveScore, medsResp, labsResp, profile, healthSummary]) => {
         const metricItems = metricsResp.items ?? []
         setData({
           summary: buildDashboardSummary(metricItems, catalog),
@@ -99,7 +95,6 @@ export default function PatientDashboardPage() {
           labs: labsResp.items ?? [],
           profile,
           healthSummary,
-          insights,
         })
       })
       .catch((err: Error) => setError(err.message))
@@ -549,6 +544,7 @@ function smoothPath(pts: Pt[]): string {
 }
 
 function Sparkline({ values, color }: { values: number[]; color: string }) {
+  const gid = `spark${React.useId().replace(/:/g, '')}`
   // values are newest-first; draw oldest→newest left→right.
   const points = [...values].reverse()
   if (points.length < 2) return <div className="h-8" aria-hidden="true" />
@@ -565,7 +561,6 @@ function Sparkline({ values, color }: { values: number[]; color: string }) {
   }))
   const line = smoothPath(pts)
   const area = `${line} L${w},${h} L0,${h} Z`
-  const gid = `spark${React.useId().replace(/:/g, '')}`
   return (
     <svg
       viewBox={`0 0 ${w} ${h}`}
