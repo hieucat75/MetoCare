@@ -8,58 +8,27 @@
 import * as React from 'react'
 import { cn } from '@/lib/utils'
 
-// ── Brand mark (ring + M + leaf) ──────────────────────────────────────────────
+// ── Brand mark — canonical MetoCare logo (exact image asset, never redrawn) ───
 
 export function MetoMark({
   size = 40,
-  ring = '#13B981',
-  leaf = '#34D89C',
   className,
   style,
 }: {
   size?: number
-  ring?: string
-  leaf?: string
   className?: string
   style?: React.CSSProperties
 }) {
+  // Renders public/metocare-logo.png (mark-test.png) exactly as-is, aspect preserved.
   return (
-    <svg
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src="/metocare-logo.png"
+      alt="MetoCare"
       width={size}
-      height={size}
-      viewBox="0 0 96 96"
-      fill="none"
       className={className}
-      style={{ display: 'block', ...style }}
-      aria-hidden="true"
-    >
-      <path
-        d="M48 14 a34 34 0 1 1 -0.2 0"
-        stroke={ring}
-        strokeWidth="7.5"
-        strokeLinecap="round"
-        fill="none"
-        strokeDasharray="188 26"
-        strokeDashoffset="-150"
-        transform="rotate(8 48 48)"
-      />
-      <path
-        d="M30 64 L34 36 Q35 32 38.5 36 L46 50 Q48 53 50 50 L57.5 36 Q61 32 62 36 L66 64"
-        stroke={ring}
-        strokeWidth="8.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        fill="none"
-      />
-      <path d="M48 50 C58 52 60 64 51 73 C42 66 41 56 48 50 Z" fill={leaf} />
-      <path
-        d="M50 56 C50 62 50 68 50.5 72"
-        stroke="#fff"
-        strokeWidth="2.2"
-        strokeLinecap="round"
-        opacity="0.85"
-      />
-    </svg>
+      style={{ display: 'block', height: 'auto', ...style }}
+    />
   )
 }
 

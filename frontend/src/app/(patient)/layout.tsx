@@ -175,9 +175,12 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
         <div
           className={`flex items-center gap-2.5 p-4 ${sidebarCollapsed ? 'justify-center' : ''}`}
         >
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-mint-400 to-mint-600 flex items-center justify-center shrink-0">
-            <span className="text-white font-bold text-sm">M</span>
-          </div>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/metocare-logo.png"
+            alt="MetoCare"
+            className="w-8 h-8 rounded-xl object-contain shrink-0"
+          />
           {!sidebarCollapsed && (
             <span className="font-semibold text-white tracking-tight">MetoCare</span>
           )}
@@ -213,9 +216,12 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
             <div className="flex items-center justify-between h-14 px-4">
               {/* Logo / brand */}
               <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-xl bg-gradient-to-br from-[#17AE7B] to-[#0B6B4D] flex items-center justify-center shrink-0">
-                  <span className="text-white font-bold text-xs">M</span>
-                </div>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src="/metocare-logo.png"
+                  alt="MetoCare"
+                  className="w-7 h-7 rounded-xl object-contain shrink-0"
+                />
                 <span className="font-semibold text-neu-text text-[17px]">{pageTitle}</span>
               </div>
               {/* User avatar / logout shortcut — neumorphic icon button */}

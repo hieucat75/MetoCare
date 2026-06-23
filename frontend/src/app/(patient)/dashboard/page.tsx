@@ -235,7 +235,6 @@ function HeroSummaryCard({
       className="relative overflow-hidden rounded-[24px] px-6 pb-7 pt-6 text-white"
       style={{ background: HERO_GRADIENT, boxShadow: '0 18px 32px -16px rgba(11,107,77,0.6)' }}
     >
-      <MetoWatermark />
       <div className="relative flex items-start justify-between gap-3">
         <p className="text-[13px] font-medium text-white/85">Tóm tắt hôm nay · {dateStr}</p>
         <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-white/20 px-3 py-1 text-[12px] font-bold text-white backdrop-blur">
@@ -248,30 +247,6 @@ function HeroSummaryCard({
       </h2>
       <p className="relative mt-1.5 text-[14px] text-white/85">{subtitle}</p>
     </div>
-  )
-}
-
-/** Faint brand-mark watermark (approximation of the M-in-ring logo). */
-function MetoWatermark() {
-  return (
-    <svg
-      viewBox="0 0 100 100"
-      className="pointer-events-none absolute -right-2 top-1/2 h-32 w-32 -translate-y-1/2 opacity-[0.12]"
-      aria-hidden="true"
-    >
-      <circle cx="50" cy="50" r="40" fill="none" stroke="#fff" strokeWidth="7" />
-      <text
-        x="50"
-        y="64"
-        textAnchor="middle"
-        fontSize="48"
-        fontWeight="800"
-        fill="#fff"
-        fontFamily="Inter, sans-serif"
-      >
-        M
-      </text>
-    </svg>
   )
 }
 
