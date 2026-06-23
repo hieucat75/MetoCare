@@ -1,24 +1,10 @@
 'use client'
-import { PatientEmptyState } from '@/components/patient'
 
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
-import { Pill, Plus, Pencil, Trash2 } from 'lucide-react'
-import {
-  Alert,
-  Button,
-  Card,
-  CardContent,
-  EmptyState,
-  ErrorState,
-  FormField,
-  Input,
-  Modal,
-  PageHeader,
-  Skeleton,
-  SkeletonText,
-  Textarea,
-} from '@/design-system'
+import { Pill, Plus, Pencil, Trash2, Check, Sunrise, Sun, Moon, Clock } from 'lucide-react'
+import { Alert, Button, ErrorState, FormField, Input, Modal, Textarea } from '@/design-system'
+import { GlassCard, PatientEmptyState, SectionHeader, MintButton } from '@/components/patient'
 import { useAuth } from '@/lib/auth/context'
 import {
   getMedications,
@@ -28,80 +14,224 @@ import {
   type Medication,
   type MedicationInput,
 } from '@/lib/api/patient'
-import { formatDate } from '@/lib/utils'
+import { cn, formatDate } from '@/lib/utils'
 
-// ── Loading skeleton ───────────────────────────────────────────────────────────
+// ─── Time-of-day grouping (visual schedule, derived from free-text frequency) ──
+// The backend has NO structured schedule field — we infer a time-of-day bucket
+// from the Vietnamese `frequency`/`note` text purely for visual grouping. This
+// is presentation only; it never changes or persists any data.
+
+type SlotKey = 'morning' | 'noon' | 'evening' | 'anytime'
+
+interface Slot {
+  key: SlotKey
+  label: string
+  hint: string
+  icon: React.ReactNode
+}
+
+const SLOTS: Slot[] = [
+  {
+    key: 'morning',
+    label: 'Buổi sáng',
+    hint: 'Sau khi thức dậy / sau ăn sáng',
+    icon: <Sunrise className="size-5" aria-hidden="true" />,
+  },
+  {
+    key: 'noon',
+    label: 'Buổi trưa',
+    hint: 'Sau ăn trưa',
+    icon: <Sun className="size-5" aria-hidden="true" />,
+  },
+  {
+    key: 'evening',
+    label: 'Buổi tối',
+    hint: 'Sau ăn tối / trước khi ngủ',
+    icon: <Moon className="size-5" aria-hidden="true" />,
+  },
+  {
+    key: 'anytime',
+    label: 'Khác / theo chỉ định',
+    hint: 'Theo hướng dẫn của bác sĩ',
+    icon: <Clock className="size-5" aria-hidden="true" />,
+  },
+]
+
+const SLOT_BY_KEY: Record<SlotKey, Slot> = SLOTS.reduce(
+  (acc, s) => ({ ...acc, [s.key]: s }),
+  {} as Record<SlotKey, Slot>
+)
+
+/** Infer a visual time-of-day slot from free-text frequency/note (best-effort).
+ *  Only commit to a specific slot when EXACTLY ONE time-of-day term is present.
+ *  Multi-dose text ("sáng & tối", "sáng, chiều") or no match → "anytime", so a
+ *  twice-daily med is never mislabeled as morning-only. Presentation only. */
+function inferSlot(med: Medication): SlotKey {
+  const text = `${med.frequency ?? ''} ${med.note ?? ''}`.toLowerCase()
+  const matches: SlotKey[] = []
+  if (/sáng|buổi sáng|morning/.test(text)) matches.push('morning')
+  if (/trưa|buổi trưa|noon/.test(text)) matches.push('noon')
+  if (/tối|chiều|đêm|buổi tối|trước khi ngủ|evening|night/.test(text)) matches.push('evening')
+  return matches.length === 1 ? matches[0] : 'anytime'
+}
+
+// ─── Loading skeleton ──────────────────────────────────────────────────────────
 
 function MedicationsSkeleton() {
   return (
     <div className="space-y-3">
       {[1, 2, 3].map((n) => (
-        <Card key={n} variant="glass" padding="none">
-          <CardContent className="p-4 space-y-3">
-            <Skeleton width="55%" height="1rem" />
-            <Skeleton width="40%" height="0.75rem" />
-            <SkeletonText lines={1} />
-          </CardContent>
-        </Card>
+        <GlassCard key={n}>
+          <div className="flex items-center gap-3">
+            <div className="size-11 shrink-0 animate-pulse rounded-2xl bg-mint-100/70" />
+            <div className="flex-1 space-y-2">
+              <div className="h-4 w-1/2 animate-pulse rounded bg-mint-100/70" />
+              <div className="h-3 w-1/3 animate-pulse rounded bg-mint-100/60" />
+            </div>
+          </div>
+        </GlassCard>
       ))}
     </div>
   )
 }
 
-// ── Honest medication card — real fields only ──────────────────────────────────
+// ─── Medication row — real fields only, decision-first ─────────────────────────
 
 function MedRow({
   med,
-  onEdit,
-  onDelete,
+  taken,
+  onToggleTaken,
   onView,
 }: {
   med: Medication
-  onEdit: () => void
-  onDelete: () => void
+  taken: boolean
+  onToggleTaken: () => void
   onView: () => void
 }) {
   const meta = [med.dose, med.frequency].filter(Boolean).join(' · ')
   return (
-    <Card variant="glass" padding="none">
-      <CardContent className="p-4">
-        <div className="flex items-start justify-between gap-3">
-          <button type="button" onClick={onView} className="min-w-0 text-left flex items-start gap-3 flex-1">
-            <span className="flex items-center justify-center w-9 h-9 rounded-lg bg-mint-50 shrink-0">
-              <Pill className="size-4 text-mint-600" aria-hidden="true" />
-            </span>
-            <span className="min-w-0">
-              <span className="block text-[17px] font-medium text-text truncate">{med.name}</span>
-              {meta && <span className="block text-[15px] text-text-muted mt-0.5">{meta}</span>}
-              {med.note && <span className="block text-[15px] text-text-muted mt-0.5 truncate">{med.note}</span>}
-              <span className="block text-[15px] text-text-subtle mt-0.5">Thêm ngày {formatDate(med.created_at)}</span>
-            </span>
-          </button>
-          <div className="flex items-center gap-1 shrink-0">
-            <button
-              type="button"
-              onClick={onEdit}
-              aria-label="Sửa thuốc"
-              className="p-2 rounded-md text-text-muted hover:text-text hover:bg-secondary-50 transition-colors"
-            >
-              <Pencil className="size-4" />
-            </button>
-            <button
-              type="button"
-              onClick={onDelete}
-              aria-label="Xoá thuốc"
-              className="p-2 rounded-md text-danger hover:bg-danger-light transition-colors"
-            >
-              <Trash2 className="size-4" />
-            </button>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
+    <div
+      className={cn(
+        'flex items-center gap-3 rounded-3xl border border-white/70 bg-white/85 p-3.5 shadow-glass ring-1 ring-mint-100/50 backdrop-blur-xl transition-colors',
+        taken && 'bg-mint-50/70'
+      )}
+    >
+      <button
+        type="button"
+        onClick={onView}
+        className="flex min-w-0 flex-1 items-center gap-3 text-left"
+        aria-label={`Xem chi tiết ${med.name}`}
+      >
+        <span className="grid size-11 shrink-0 place-items-center rounded-2xl bg-mint-50 text-mint-600">
+          <Pill className="size-5" aria-hidden="true" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span
+            className={cn(
+              'block truncate text-[17px] font-medium text-text',
+              taken && 'text-text-muted line-through'
+            )}
+          >
+            {med.name}
+          </span>
+          {meta && <span className="block truncate text-[14px] text-text-muted">{meta}</span>}
+          {med.note && (
+            <span className="block truncate text-[14px] text-text-subtle">{med.note}</span>
+          )}
+        </span>
+      </button>
+
+      {/* Local-only "Đã uống" affordance. NO adherence persistence exists.
+          TODO(backend): adherence API to persist mark-taken per dose/day. */}
+      <button
+        type="button"
+        onClick={onToggleTaken}
+        aria-pressed={taken}
+        aria-label={taken ? `Bỏ đánh dấu đã uống ${med.name}` : `Đánh dấu đã uống ${med.name}`}
+        className={cn(
+          'grid size-12 shrink-0 place-items-center rounded-full border transition-transform active:scale-95',
+          taken
+            ? 'border-mint-400 bg-mint-500 text-white shadow-glow-mint'
+            : 'border-mint-300 bg-white/70 text-mint-600'
+        )}
+      >
+        <Check className="size-5" aria-hidden="true" />
+      </button>
+    </div>
   )
 }
 
-// ── Add / edit modal ───────────────────────────────────────────────────────────
+// ─── Schedule slot group ───────────────────────────────────────────────────────
+
+function SlotGroup({
+  slot,
+  meds,
+  takenSet,
+  onToggleTaken,
+  onEdit,
+  onDelete,
+  onView,
+}: {
+  slot: Slot
+  meds: Medication[]
+  takenSet: Set<string>
+  onToggleTaken: (id: string) => void
+  onEdit: (med: Medication) => void
+  onDelete: (med: Medication) => void
+  onView: (id: string) => void
+}) {
+  if (meds.length === 0) return null
+  const takenCount = meds.filter((m) => takenSet.has(m.id)).length
+  return (
+    <section aria-label={slot.label}>
+      <div className="mb-2 flex items-center gap-2.5 px-1">
+        <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-mint-50 text-mint-600">
+          {slot.icon}
+        </span>
+        <div className="min-w-0 flex-1">
+          <h2 className="text-[18px] font-bold leading-tight text-text">{slot.label}</h2>
+          <p className="text-[13px] text-text-muted">{slot.hint}</p>
+        </div>
+        <span className="shrink-0 text-[13px] font-medium text-mint-700">
+          {takenCount}/{meds.length}
+        </span>
+      </div>
+      <div className="space-y-2.5">
+        {meds.map((med) => (
+          <div key={med.id} className="group">
+            <MedRow
+              med={med}
+              taken={takenSet.has(med.id)}
+              onToggleTaken={() => onToggleTaken(med.id)}
+              onView={() => onView(med.id)}
+            />
+            {/* Inline edit/delete row — large targets, always visible (no hover dependency). */}
+            <div className="mt-1 flex items-center justify-end gap-1 px-1">
+              <button
+                type="button"
+                onClick={() => onEdit(med)}
+                aria-label={`Sửa ${med.name}`}
+                className="flex h-12 min-w-12 items-center gap-1 rounded-full px-3 text-[13px] font-medium text-text-muted transition-colors hover:bg-mint-50 hover:text-mint-700"
+              >
+                <Pencil className="size-4" aria-hidden="true" /> Sửa
+              </button>
+              <button
+                type="button"
+                onClick={() => onDelete(med)}
+                aria-label={`Xoá ${med.name}`}
+                className="flex h-12 min-w-12 items-center gap-1 rounded-full px-3 text-[13px] font-medium text-danger transition-colors hover:bg-danger-light"
+              >
+                <Trash2 className="size-4" aria-hidden="true" /> Xoá
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+// ─── Add / edit modal — preserves the exact form + API contract ────────────────
 
 interface MedModalProps {
   open: boolean
@@ -166,11 +296,11 @@ function MedModal({ open, onClose, onSaved, patientId, editing }: MedModalProps)
       title={editing ? 'Sửa thông tin thuốc' : 'Thêm thuốc'}
       footer={
         <>
-          <Button variant="outline" size="sm" onClick={onClose} disabled={submitting}>
+          <Button variant="mint-soft" size="lg" onClick={onClose} disabled={submitting}>
             Hủy
           </Button>
-          <Button variant="mint" size="sm" type="submit" form="med-form" loading={submitting}>
-            {editing ? 'Lưu' : 'Thêm'}
+          <Button variant="mint" size="lg" type="submit" form="med-form" loading={submitting}>
+            {editing ? 'Lưu' : 'Thêm thuốc'}
           </Button>
         </>
       }
@@ -178,23 +308,44 @@ function MedModal({ open, onClose, onSaved, patientId, editing }: MedModalProps)
       <form id="med-form" onSubmit={handleSubmit} className="space-y-4">
         {error && <Alert variant="danger" title={error} />}
         <FormField label="Tên thuốc" required>
-          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="VD: Metformin" fullWidth required />
+          <Input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="VD: Metformin"
+            fullWidth
+            required
+          />
         </FormField>
         <FormField label="Liều dùng">
-          <Input value={dose} onChange={(e) => setDose(e.target.value)} placeholder="VD: 500mg" fullWidth />
+          <Input
+            value={dose}
+            onChange={(e) => setDose(e.target.value)}
+            placeholder="VD: 500mg, 1 viên"
+            fullWidth
+          />
         </FormField>
         <FormField label="Tần suất">
-          <Input value={frequency} onChange={(e) => setFrequency(e.target.value)} placeholder="VD: 2 lần/ngày, sáng & tối" fullWidth />
+          <Input
+            value={frequency}
+            onChange={(e) => setFrequency(e.target.value)}
+            placeholder="VD: 2 lần/ngày, sáng & tối"
+            fullWidth
+          />
         </FormField>
         <FormField label="Ghi chú">
-          <Textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="VD: Uống sau ăn" rows={2} />
+          <Textarea
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="VD: Uống sau ăn"
+            rows={2}
+          />
         </FormField>
       </form>
     </Modal>
   )
 }
 
-// ── Page ───────────────────────────────────────────────────────────────────────
+// ─── Page ──────────────────────────────────────────────────────────────────────
 
 export default function MedicationsPage() {
   const router = useRouter()
@@ -209,6 +360,19 @@ export default function MedicationsPage() {
   const [editing, setEditing] = React.useState<Medication | null>(null)
   const [deleteTarget, setDeleteTarget] = React.useState<Medication | null>(null)
   const [deleting, setDeleting] = React.useState(false)
+
+  // Local-only "đã uống" check-off. NOT persisted — resets on reload / route
+  // change. There is no adherence backend. TODO(backend): adherence API.
+  const [takenSet, setTakenSet] = React.useState<Set<string>>(new Set())
+
+  const toggleTaken = React.useCallback((id: string) => {
+    setTakenSet((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }, [])
 
   const load = React.useCallback(() => {
     if (!patientId) {
@@ -241,63 +405,146 @@ export default function MedicationsPage() {
     }
   }
 
+  // Group meds into visual time-of-day slots (presentation only).
+  const grouped = React.useMemo(() => {
+    const map: Record<SlotKey, Medication[]> = {
+      morning: [],
+      noon: [],
+      evening: [],
+      anytime: [],
+    }
+    for (const m of meds) map[inferSlot(m)].push(m)
+    return map
+  }, [meds])
+
+  const takenCount = meds.filter((m) => takenSet.has(m.id)).length
+  const todayStr = formatDate(new Date())
+
+  if (!user) return null
+
   if (!patientId) {
     return (
-      <div className="p-4 lg:p-6 max-w-2xl mx-auto">
-        <Alert variant="warning" title="Chưa có hồ sơ bệnh nhân">
-          Tài khoản của bạn chưa được liên kết với hồ sơ bệnh nhân. Vui lòng liên hệ hỗ trợ.
-        </Alert>
+      <div className="mx-auto mt-10 max-w-md p-4">
+        <GlassCard>
+          <h2 className="text-[18px] font-semibold text-text">Chưa có hồ sơ bệnh nhân</h2>
+          <p className="mt-1 text-[15px] text-text-muted">
+            Tài khoản của bạn chưa được liên kết với hồ sơ bệnh nhân. Vui lòng liên hệ hỗ trợ.
+          </p>
+        </GlassCard>
       </div>
     )
   }
 
+  if (loading) {
+    return (
+      <div className="mx-auto max-w-md space-y-5 p-4 pb-28 lg:max-w-2xl lg:p-6">
+        <SectionHeader title="Thuốc & Điều trị" subtitle={todayStr} />
+        <MedicationsSkeleton />
+      </div>
+    )
+  }
+
+  if (error && meds.length === 0) {
+    return <ErrorState title="Không tải được danh sách thuốc" message={error} onRetry={load} />
+  }
+
+  const addButton = (
+    <Button
+      size="md"
+      variant="mint"
+      onClick={() => {
+        setEditing(null)
+        setModalOpen(true)
+      }}
+    >
+      <Plus className="mr-1 size-4" aria-hidden="true" /> Thêm
+    </Button>
+  )
+
   return (
-    <div className="p-4 lg:p-6 space-y-4 max-w-2xl mx-auto pb-24">
-      <PageHeader
-        title="Thuốc & Điều trị"
-        actions={
-          <Button
-            size="sm"
-            variant="mint"
+    <div className="mx-auto max-w-md space-y-5 p-4 pb-28 lg:max-w-2xl lg:p-6">
+      {/* 1 — Header */}
+      <SectionHeader title="Thuốc & Điều trị" subtitle={todayStr} action={addButton} />
+
+      {/* Non-fatal error banner (e.g. delete failed) while list still shows */}
+      {error && meds.length > 0 && <Alert variant="danger" title={error} />}
+
+      {meds.length === 0 ? (
+        // Empty state — spec §9 (frosted glass, friendly, single primary action)
+        <GlassCard className="border border-dashed border-mint-300/80">
+          <PatientEmptyState
+            icon={<Pill aria-hidden="true" />}
+            title="Chưa có thuốc nào"
+            description="Thêm thuốc bạn đang dùng để theo dõi hằng ngày, hoặc bác sĩ sẽ kê đơn khi cần."
+            cta={{
+              label: 'Thêm thuốc đầu tiên',
+              onClick: () => {
+                setEditing(null)
+                setModalOpen(true)
+              },
+            }}
+          />
+        </GlassCard>
+      ) : (
+        <>
+          {/* 2 — Daily progress card (local-only check-off, clearly flagged) */}
+          <GlassCard className="relative overflow-hidden glow-mint-soft">
+            <div
+              className="absolute -right-10 -top-10 size-40 rounded-full bg-gradient-to-br from-mint-300 to-mint-500 opacity-20 blur-2xl"
+              aria-hidden="true"
+            />
+            <div className="relative flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <p className="text-[14px] font-medium text-text-muted">Đã đánh dấu hôm nay</p>
+                <p className="mt-1 flex items-baseline gap-1">
+                  <span className="text-[40px] font-bold leading-none tracking-tight text-brand-gradient">
+                    {takenCount}
+                  </span>
+                  <span className="text-[18px] font-medium text-text-muted">
+                    /{meds.length} thuốc
+                  </span>
+                </p>
+                <p className="mt-2 text-[13px] leading-relaxed text-text-subtle">
+                  Đánh dấu chỉ để nhắc bạn trong phiên này — chưa được lưu lại.
+                </p>
+              </div>
+              <span className="grid size-14 shrink-0 place-items-center rounded-full bg-mint-50 text-mint-600">
+                <Pill className="size-7" aria-hidden="true" />
+              </span>
+            </div>
+          </GlassCard>
+
+          {/* 3 — Schedule grouped by time of day */}
+          <div className="space-y-6">
+            {SLOTS.map((slot) => (
+              <SlotGroup
+                key={slot.key}
+                slot={SLOT_BY_KEY[slot.key]}
+                meds={grouped[slot.key]}
+                takenSet={takenSet}
+                onToggleTaken={toggleTaken}
+                onEdit={(med) => {
+                  setEditing(med)
+                  setModalOpen(true)
+                }}
+                onDelete={(med) => setDeleteTarget(med)}
+                onView={(id) => router.push(`/medications/${id}`)}
+              />
+            ))}
+          </div>
+
+          {/* 4 — Add another */}
+          <MintButton
+            variant="secondary"
+            fullWidth
             onClick={() => {
               setEditing(null)
               setModalOpen(true)
             }}
           >
-            <Plus className="size-4 mr-1" aria-hidden="true" /> Thêm thuốc
-          </Button>
-        }
-      />
-
-      {loading && <MedicationsSkeleton />}
-
-      {!loading && error && (
-        <ErrorState variant="inline" title="Không tải được danh sách thuốc" message={error} onRetry={load} />
-      )}
-
-      {!loading && !error && meds.length === 0 && (
-        <PatientEmptyState
-          icon={<Pill />}
-          title="Chưa có thuốc nào"
-          description="Thêm thuốc bạn đang dùng để theo dõi, hoặc bác sĩ sẽ kê đơn khi cần."
-        />
-      )}
-
-      {!loading && !error && meds.length > 0 && (
-        <div className="space-y-3">
-          {meds.map((med) => (
-            <MedRow
-              key={med.id}
-              med={med}
-              onView={() => router.push(`/medications/${med.id}`)}
-              onEdit={() => {
-                setEditing(med)
-                setModalOpen(true)
-              }}
-              onDelete={() => setDeleteTarget(med)}
-            />
-          ))}
-        </div>
+            <Plus className="mr-1.5 size-5" aria-hidden="true" /> Thêm thuốc khác
+          </MintButton>
+        </>
       )}
 
       <MedModal
@@ -315,17 +562,23 @@ export default function MedicationsPage() {
         title="Xoá thuốc?"
         footer={
           <>
-            <Button variant="outline" size="sm" onClick={() => setDeleteTarget(null)} disabled={deleting}>
+            <Button
+              variant="mint-soft"
+              size="lg"
+              onClick={() => setDeleteTarget(null)}
+              disabled={deleting}
+            >
               Hủy
             </Button>
-            <Button variant="danger" size="sm" onClick={confirmDelete} loading={deleting}>
+            <Button variant="danger" size="lg" onClick={confirmDelete} loading={deleting}>
               Xoá
             </Button>
           </>
         }
       >
-        <p className="text-[17px] text-text-muted">
-          Bạn có chắc muốn xoá <span className="font-medium text-text">{deleteTarget?.name}</span> khỏi danh sách thuốc?
+        <p className="text-[17px] leading-relaxed text-text-muted">
+          Bạn có chắc muốn xoá <span className="font-medium text-text">{deleteTarget?.name}</span>{' '}
+          khỏi danh sách thuốc?
         </p>
       </Modal>
     </div>

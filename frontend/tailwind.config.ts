@@ -136,6 +136,39 @@ const config: Config = {
           'low-risk-light': '#DCFCE7',
           'low-risk-border': '#86EFAC',
         },
+        // Brand từ mobile tokens.ts
+        brand: {
+          DEFAULT: '#0F9C6E',
+          dark: '#0B7F5B',
+          deep: '#0A3327',
+          tintGlass: 'rgba(15,156,110,0.08)',
+        },
+        // Tile màu đặc — nơi đặt số liệu (theo tokens.ts mobile)
+        tile: {
+          mint: '#E3F5EC',
+          blue: '#E8EFF5',
+          amber: '#FBEFD2',
+          rose: '#FCE7F1',
+        },
+        // Text trên tile (contrast AA)
+        'on-tile': {
+          mint: '#0A3327',
+          blue: '#2563EB',
+          amber: '#8A6A25',
+          rose: '#8A3B3B',
+        },
+        // Metric status
+        metric: {
+          ok: '#15915A',
+          watch: '#E0A92E',
+          alert: '#D92D20',
+          'ok-bg': '#E3F5EC',
+          'watch-bg': '#FBEFD2',
+          'alert-bg': '#FBE7E5',
+        },
+        // Surface alt
+        'surface-alt': '#F7FAF9',
+        'surface-sunk': '#EEF5F1',
         // Surface tokens
         background: '#F8FAFC',
         surface: '#FFFFFF',
@@ -249,6 +282,10 @@ const config: Config = {
         // Soft inset for glass inputs.
         'inset-mint': 'inset 0 2px 5px rgba(16,185,129,0.06)',
         'focus-mint': '0 0 0 3px rgba(16, 185, 129, 0.22)',
+        // Tile card — nền đặc, bóng soft
+        tile: '0 2px 8px -2px rgba(10,42,34,0.08), 0 1px 3px -1px rgba(10,42,34,0.06)',
+        // Soft card (không glass)
+        soft: '0 4px 16px -4px rgba(10,42,34,0.10), 0 1px 4px -1px rgba(10,42,34,0.06)',
         none: 'none',
       },
     },
