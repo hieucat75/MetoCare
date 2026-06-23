@@ -177,9 +177,9 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
           className={`flex items-center gap-2.5 p-4 ${sidebarCollapsed ? 'justify-center' : ''}`}
         >
           {sidebarCollapsed ? (
-            <BrandMark className="w-8 h-8 rounded-xl object-contain shrink-0" />
+            <BrandMark tone="white" className="w-8 h-8 object-contain shrink-0" />
           ) : (
-            <BrandLogo className="h-8 w-auto rounded-lg bg-white object-contain p-1" />
+            <BrandLogo tone="white" className="h-8 w-auto" />
           )}
         </div>
       }

@@ -147,10 +147,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               className={`flex items-center gap-2.5 p-4 ${sidebarCollapsed ? 'justify-center' : ''}`}
             >
               {sidebarCollapsed ? (
-                <BrandMark className="w-8 h-8 rounded-lg object-contain shrink-0" />
+                <BrandMark tone="white" className="w-8 h-8 object-contain shrink-0" />
               ) : (
                 <div className="min-w-0">
-                  <BrandLogo className="h-7 w-auto rounded bg-white object-contain p-0.5" />
+                  <BrandLogo tone="white" className="h-7 w-auto" />
                   <p className="text-secondary-400 text-body-xs truncate">{roleLabel}</p>
                 </div>
               )}
