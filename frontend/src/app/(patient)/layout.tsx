@@ -147,22 +147,23 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
   return (
     <>
       {/* ── Mobile (< lg): compact top bar + scrollable content + fixed bottom nav ── */}
-      <div className="patient-app flex flex-col min-h-screen lg:hidden">
-        {/* Mobile top bar — mint glass app bar */}
-        <header className="sticky top-0 z-30 bg-white/55 backdrop-blur-2xl backdrop-saturate-150 border-b border-white/50">
+      {/* neu-canvas = neumorphic Soft-UI backdrop the raised surfaces float above. */}
+      <div className="patient-app neu-canvas flex flex-col min-h-screen lg:hidden">
+        {/* Mobile top bar — raised neumorphic surface (dual shadow). */}
+        <header className="sticky top-0 z-30 neu-raised">
           <div className="flex items-center justify-between h-14 px-4">
             {/* Logo / brand */}
             <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-xl bg-gradient-to-br from-mint-400 to-mint-600 flex items-center justify-center shrink-0">
+              <div className="w-7 h-7 rounded-xl bg-gradient-to-br from-[#17AE7B] to-[#0B6B4D] flex items-center justify-center shrink-0">
                 <span className="text-white font-bold text-xs">M</span>
               </div>
-              <span className="font-semibold text-text text-[17px]">{pageTitle}</span>
+              <span className="font-semibold text-neu-text text-[17px]">{pageTitle}</span>
             </div>
-            {/* User avatar / logout shortcut */}
+            {/* User avatar / logout shortcut — neumorphic icon button */}
             <button
               type="button"
               onClick={handleLogout}
-              className="w-8 h-8 rounded-full bg-mint-100 flex items-center justify-center text-mint-700 hover:bg-mint-200 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mint-400/40"
+              className="neu-icon-btn !w-9 !h-9 !rounded-full text-neu-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mint-400/40"
               aria-label="Đăng xuất"
               title="Đăng xuất"
             >
@@ -171,7 +172,7 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
           </div>
         </header>
 
-        {/* Page content — pb-24 clears the floating glass 5-tab nav bar */}
+        {/* Page content — pb-24 clears the floating neu 5-tab nav bar */}
         <main className="flex-1 overflow-auto pb-24">{children}</main>
 
         <PatientBottomNav />

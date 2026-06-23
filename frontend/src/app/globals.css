@@ -344,3 +344,162 @@
     50% { opacity: 0.5; }
   }
 }
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * NEUMORPHIC "Soft UI Lab" layer (canonical patient design).
+ * Light neumorphism: a single surface color (#E7EEEC) lifted off a soft
+ * mint-tinted canvas with a DUAL shadow (light top-left + dark bottom-right).
+ * Pressed/inset states invert the shadow inward. These classes are the
+ * foundation for the patient dashboard + neu components.
+ * Tokens are global (not scoped) so the neu components compose anywhere.
+ * ──────────────────────────────────────────────────────────────────────── */
+@layer components {
+  /* App canvas — soft gradient backdrop the neu surfaces float above. */
+  .neu-canvas {
+    background-color: #dde4e1;
+    background-image:
+      radial-gradient(760px 520px at 12% 4%, rgba(27, 176, 130, 0.16), transparent 60%),
+      radial-gradient(720px 600px at 92% 30%, rgba(37, 99, 235, 0.08), transparent 60%),
+      linear-gradient(150deg, #e6ece9, #e1e8e5 60%, #dfe6e3);
+    background-attachment: fixed;
+  }
+
+  /* Raised card — default neumorphic surface (dual shadow), radius 24. */
+  .neu-card {
+    background-color: #e7eeec;
+    border-radius: 24px;
+    box-shadow: -6px -7px 14px #ffffff, 7px 9px 18px #c6d4cf;
+  }
+
+  /* Large raised card — deeper lift for hero / summary surfaces. */
+  .neu-card-lg {
+    background-color: #e7eeec;
+    border-radius: 24px;
+    box-shadow: -8px -9px 16px #ffffff, 9px 10px 20px #c2d1cc;
+  }
+
+  /* Generic raised tile (smaller radius default — override as needed). */
+  .neu-raised {
+    background-color: #e7eeec;
+    box-shadow: -6px -7px 14px #ffffff, 7px 9px 18px #c6d4cf;
+  }
+
+  /* Pressed / inset surface — carved into the canvas. */
+  .neu-pressed {
+    background-color: #e7eeec;
+    box-shadow: inset -5px -6px 11px #ffffff, inset 6px 7px 13px #bdccc7;
+  }
+
+  /* Square-ish icon button (52×52, radius 16, small raised shadow). */
+  .neu-icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 52px;
+    height: 52px;
+    border-radius: 16px;
+    background-color: #e7eeec;
+    color: #10241f;
+    box-shadow: -4px -5px 10px #ffffff, 5px 6px 12px #c4d2cd;
+    transition: transform 0.15s cubic-bezier(0.2, 0.9, 0.3, 1.35),
+      box-shadow 0.16s ease;
+  }
+  .neu-icon-btn:active {
+    transform: translateY(2px) scale(0.97);
+    box-shadow: inset -5px -6px 11px #ffffff, inset 6px 7px 13px #bdccc7;
+  }
+
+  /* Primary CTA — teal gradient pillow. */
+  .neu-btn-primary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 56px;
+    padding: 0 22px;
+    border-radius: 18px;
+    background: linear-gradient(160deg, #17ae7b, #0b6b4d);
+    color: #fff;
+    font-weight: 700;
+    font-size: 18px;
+    border: none;
+    box-shadow: 0 12px 24px -8px rgba(11, 107, 77, 0.75),
+      inset 0 1px 0 rgba(255, 255, 255, 0.4);
+    transition: transform 0.15s cubic-bezier(0.2, 0.9, 0.3, 1.35),
+      box-shadow 0.16s ease;
+  }
+  .neu-btn-primary:active {
+    transform: translateY(3px) scale(0.972);
+    box-shadow: 0 6px 14px -8px rgba(11, 107, 77, 0.7),
+      inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  }
+  .neu-btn-primary:disabled {
+    filter: grayscale(0.3) opacity(0.6);
+    box-shadow: none;
+  }
+
+  /* Secondary CTA — neumorphic surface, dark text. */
+  .neu-btn-secondary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 56px;
+    padding: 0 22px;
+    border-radius: 18px;
+    background-color: #e7eeec;
+    color: #10241f;
+    font-weight: 700;
+    font-size: 18px;
+    border: none;
+    box-shadow: -6px -7px 14px #ffffff, 7px 9px 18px #c6d4cf;
+    transition: transform 0.15s cubic-bezier(0.2, 0.9, 0.3, 1.35),
+      box-shadow 0.16s ease;
+  }
+  .neu-btn-secondary:active {
+    transform: translateY(3px) scale(0.972);
+    box-shadow: inset -5px -6px 11px #ffffff, inset 6px 7px 13px #bdccc7;
+  }
+
+  /* Status badge (pill) — ok / watch / alert tones via modifier classes. */
+  .neu-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border-radius: 999px;
+    padding: 6px 12px;
+    font-weight: 700;
+    font-size: 12px;
+    background: #d8e8df;
+    border: 1px solid rgba(11, 127, 91, 0.25);
+    color: #0b6b4d;
+  }
+  .neu-badge::before {
+    content: '';
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+    background: #0b7f5b;
+  }
+  .neu-badge-watch {
+    background: #f6ecd2;
+    border-color: rgba(138, 106, 37, 0.3);
+    color: #8a6a25;
+  }
+  .neu-badge-watch::before { background: #b5862b; }
+  .neu-badge-alert {
+    background: #f6dede;
+    border-color: rgba(153, 27, 27, 0.3);
+    color: #991b1b;
+  }
+  .neu-badge-alert::before { background: #c0392b; }
+
+  /* Mono caption label (JetBrains Mono, uppercase). */
+  .neu-caption {
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-size: 10.5px;
+    color: #566e66;
+  }
+}

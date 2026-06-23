@@ -140,6 +140,19 @@ const config: Config = {
         background: '#F8FAFC',
         surface: '#FFFFFF',
         border: '#E2E8F0',
+        // Neumorphic "Soft UI Lab" palette (patient canonical design).
+        // Additive: a single raised surface color + accent greens + text ramp
+        // used by the neu-* utility classes and components/patient/neu/*.
+        neu: {
+          surface: '#E7EEEC',
+          text: '#10241F',
+          secondary: '#365651',
+          muted: '#52706A',
+          subtle: '#566E66',
+          green: '#0B7F5B',
+          'green-bright': '#17AE7B',
+          'green-deep': '#0B6B4D',
+        },
         // Text tokens
         text: {
           DEFAULT: '#0F172A',
