@@ -317,8 +317,15 @@ def adherence_summary(
             and as_naive_utc(r.created_at) >= today_start
             and as_naive_utc(r.created_at) < today_end
         ]
-        taken_today = any(r.taken_at is not None for r in today_records)
-        skipped_today = any(r.skipped for r in today_records)
+        # Last action wins: derive state from the most-recent record only,
+        # so taken and skipped can never be simultaneously true.
+        if today_records:
+            latest = max(today_records, key=lambda r: as_naive_utc(r.created_at))
+            taken_today = latest.taken_at is not None
+            skipped_today = latest.skipped
+        else:
+            taken_today = False
+            skipped_today = False
         med_records = [r for r in all_records if r.medication_id == med.id and r.taken_at]
         last_taken = max((r.taken_at for r in med_records), default=None)
         today_medications.append(TodayMedicationOut(
