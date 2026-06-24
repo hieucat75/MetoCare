@@ -87,6 +87,22 @@ BIOMARKERS: tuple[BiomarkerSpec, ...] = (
                   "10^12/L", 4.2, 5.9, critical_low=2.5),
     BiomarkerSpec("hematocrit", ("hematocrit", "hct", "dung tích hồng cầu"),
                   "%", 36.0, 50.0, critical_low=20.0),
+    # ---- Additional required biomarkers ----
+    BiomarkerSpec(
+        "uric_acid",
+        # "đ" is a stroke letter, not a combining mark — keep accented forms so
+        # _strip_accents produces the same output as from scanned Vietnamese text.
+        ("uric acid", "axit uric", "axit uric máu", "acid uric", "uric"),
+        "mg/dL", 3.5, 7.0, critical_high=10.0,
+    ),
+    BiomarkerSpec(
+        "random_glucose",
+        # Accented Vietnamese aliases: "đường" keeps "đ" after NFD stripping,
+        # matching OCR output from scanned Vietnamese lab reports.
+        ("random glucose", "đường huyết ngẫu nhiên", "glucose ngẫu nhiên",
+         "đường huyết bất kỳ", "rbs", "random blood sugar"),
+        "mg/dL", 70, 139, critical_low=54, critical_high=300,
+    ),
 )
 
 _ALIAS_INDEX: dict[str, BiomarkerSpec] = {}

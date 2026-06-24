@@ -90,6 +90,89 @@ def test_parser_extended_biomarkers():
     assert {"egfr", "urea", "ggt", "ft4", "hemoglobin", "platelet"} <= names
 
 
+def test_parser_uric_acid_vn_alias():
+    values = lab_parser.parse_lab_text("Axit uric: 6.2 mg/dL")
+    assert values and values[0].test_name == "uric_acid"
+    assert values[0].value == pytest.approx(6.2)
+
+
+def test_parser_uric_acid_english_alias():
+    values = lab_parser.parse_lab_text("Uric Acid 8.5 mg/dL")
+    assert values and values[0].test_name == "uric_acid"
+    assert values[0].value == pytest.approx(8.5)
+
+
+def test_parser_random_glucose_vn_alias():
+    values = lab_parser.parse_lab_text("Đường huyết ngẫu nhiên: 145 mg/dL")
+    assert values and values[0].test_name == "random_glucose"
+    assert values[0].value == pytest.approx(145.0)
+
+
+def test_parser_random_glucose_english_alias():
+    values = lab_parser.parse_lab_text("Random Blood Sugar 180 mg/dL")
+    assert values and values[0].test_name == "random_glucose"
+    assert values[0].value == pytest.approx(180.0)
+
+
+def test_parser_uric_acid_and_random_glucose_in_panel():
+    """Both new biomarkers appear in a realistic mixed-language panel."""
+    text = (
+        "HbA1c 6.8 %\n"
+        "Đường huyết ngẫu nhiên: 165 mg/dL\n"
+        "Axit uric 7.4 mg/dL\n"
+        "Creatinine 1.0 mg/dL"
+    )
+    by_name = {v.test_name: v for v in lab_parser.parse_lab_text(text)}
+    assert "random_glucose" in by_name
+    assert by_name["random_glucose"].value == pytest.approx(165.0)
+    assert "uric_acid" in by_name
+    assert by_name["uric_acid"].value == pytest.approx(7.4)
+    assert "hba1c" in by_name
+    assert "creatinine" in by_name
+
+
+def test_uric_acid_critical_high_classified():
+    """Value above critical_high (10.0) should be CRITICAL."""
+    from app.domain.lab_interpreter import classify_value, LabStatus
+    assert classify_value("uric_acid", 11.0) == LabStatus.CRITICAL
+
+
+def test_uric_acid_normal_classified():
+    from app.domain.lab_interpreter import classify_value, LabStatus
+    assert classify_value("uric_acid", 5.5) == LabStatus.NORMAL
+
+
+def test_random_glucose_high_classified():
+    from app.domain.lab_interpreter import classify_value, LabStatus
+    assert classify_value("random_glucose", 200.0) == LabStatus.HIGH
+
+
+def test_new_biomarkers_promote_to_health_metric(client, patient, ocr_on):
+    """uric_acid and random_glucose saved via manual-entry are promoted to health_metrics."""
+    pid = patient["patient_id"]
+    save = client.post(
+        f"/api/v1/patients/{pid}/lab-results",
+        json={
+            "test_date": "2026-06-01",
+            "lab_name": "Test Lab",
+            "results": [
+                {"test_name": "uric_acid", "value": 6.2, "unit": "mg/dL"},
+                {"test_name": "random_glucose", "value": 145.0, "unit": "mg/dL"},
+            ],
+        },
+        headers=patient["headers"],
+    )
+    assert save.status_code == 201, save.text
+    metrics_resp = client.get(
+        f"/api/v1/patients/{pid}/metrics",
+        headers=patient["headers"],
+    )
+    assert metrics_resp.status_code == 200
+    metric_types = {m["metric_type"] for m in metrics_resp.json()}
+    assert "uric_acid" in metric_types
+    assert "random_glucose" in metric_types
+
+
 # --------------------------------------------------------------------------- #
 # MIME sniff + validation
 # --------------------------------------------------------------------------- #

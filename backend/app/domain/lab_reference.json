@@ -7,6 +7,7 @@
       "biomarkers": [
         "fasting_glucose",
         "postprandial_glucose",
+        "random_glucose",
         "hba1c"
       ]
     },
@@ -36,7 +37,8 @@
       "biomarkers": [
         "creatinine",
         "urea",
-        "egfr"
+        "egfr",
+        "uric_acid"
       ]
     },
     {
@@ -576,6 +578,62 @@
       ],
       "value_precision": 0,
       "notes": "",
+      "higher_is_better": false
+    },
+    "random_glucose": {
+      "name_vn": "Đường huyết ngẫu nhiên",
+      "name_en": "Random Glucose",
+      "category": "diabetes",
+      "units": [
+        {
+          "key": "mg_per_dl",
+          "label": "mg/dL",
+          "ref_range": {
+            "low": 70,
+            "high": 139
+          },
+          "is_primary": true
+        },
+        {
+          "key": "mmol_per_l",
+          "label": "mmol/L",
+          "ref_range": {
+            "low": 3.9,
+            "high": 7.7
+          },
+          "is_primary": false
+        }
+      ],
+      "value_precision": 1,
+      "notes": "Đo bất kỳ thời điểm trong ngày, không cần nhịn ăn",
+      "higher_is_better": false
+    },
+    "uric_acid": {
+      "name_vn": "Axit uric",
+      "name_en": "Uric Acid",
+      "category": "kidney",
+      "units": [
+        {
+          "key": "mg_per_dl",
+          "label": "mg/dL",
+          "ref_range": {
+            "low": 3.5,
+            "high": 7.0
+          },
+          "is_primary": true
+        },
+        {
+          "key": "umol_per_l",
+          "label": "µmol/L",
+          "ref_range": {
+            "low": 208,
+            "high": 416
+          },
+          "is_primary": false
+        }
+      ],
+      "value_precision": 1,
+      "notes": "Cao gặp trong gout, suy thận",
       "higher_is_better": false
     }
   }

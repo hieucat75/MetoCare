@@ -346,6 +346,32 @@ export default function LabUploadPage() {
             </div>
           )}
 
+          {/* Persistent review reminder — always shown on all review states */}
+          <div
+            role="note"
+            className="rounded-[14px] bg-[#FEF9EC] border border-[#E0A92E]/30 px-4 py-3"
+          >
+            <p className="text-[13px] font-semibold text-[#8B6400]">
+              Vui lòng kiểm tra lại trước khi lưu
+            </p>
+          </div>
+
+          {/* Backend warnings: no-date detected, cloud-fallback used, OCR issues */}
+          {draft.warnings.length > 0 && (
+            <div className="space-y-1.5">
+              {draft.warnings.map((w, i) => (
+                <div
+                  key={i}
+                  role="alert"
+                  className="flex items-start gap-2 rounded-[12px] bg-[#FEF9EC] border border-[#E0A92E]/30 px-3 py-2.5"
+                >
+                  <AlertTriangle className="size-4 mt-0.5 shrink-0 text-[#E0A92E]" />
+                  <p className="text-[13px] text-[#8B6400]">{w}</p>
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* Exam date — prominent, required, at the TOP of the review form. */}
           <NeuCard>
             <div className="mb-1.5 flex items-center justify-between">
