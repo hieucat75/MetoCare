@@ -12,7 +12,7 @@ The backend is substantially complete for doctor functionality. No greenfield AP
 
 ### Authentication
 - `POST /auth/login` — email-based login for doctors (phone-based for patients)
-- MFA mandatory for `DOCTOR` role (TOTP enroll + verify required before full access)
+- MFA mandatory for `DOCTOR` role: `POST /auth/login` returns a *partial token* that does not satisfy any dependency requiring the `DOCTOR` role. Only after `POST /auth/mfa/verify` completes does the backend issue a full DOCTOR-scoped token. Any doctor-role endpoint called with a partial (pre-MFA) token must return `403 Forbidden`. This enforcement must live in the auth dependency, not in the frontend redirect.
 - No public doctor registration — `POST /auth/register` hardcodes `PATIENT`; doctor accounts require admin promotion via `PATCH /admin/users/{id}/role`
 
 ### Patient Data (all consent-gated)
@@ -91,8 +91,7 @@ The backend is substantially complete for doctor functionality. No greenfield AP
 ### P1 — Required Before Pilot
 
 **Doctor Onboarding (Admin-Assisted)**
-- `POST /admin/doctors` — SUPER_ADMIN creates Doctor record + promotes user to DOCTOR role
-  - Creates `User` (email, password hash, role=DOCTOR) + `Doctor` row (specialty, license_no, clinic_id)
+- `POST /admin/doctors` — SUPER_ADMIN-only (INTERNAL_ADMIN must be rejected with 403). Creates `User` (email, password hash, role=DOCTOR) + `Doctor` row (specialty, license_no, clinic_id). Must require a valid MFA-complete SUPER_ADMIN token.
 
 **Patient Timeline**
 - `GET /patients/{id}/timeline` — chronological activity: encounters, care plans, lab uploads, AI recommendations, booking history
@@ -141,6 +140,7 @@ Patient opens "Privacy & Sharing" screen
 1. Patient-side consent grant UI (Privacy & Sharing screen — Add Doctor)
 2. Doctor public profile endpoint (for patient to search and find doctor)
 3. Doctor-side view of which patients have granted consent
+4. Backend: `POST /patients/{pid}/consents` must validate that `granted_to` (doctor_id) exists in the `doctors` table before insert. A non-existent doctor_id must return 400 or 404, never 201.
 
 ---
 
@@ -203,7 +203,7 @@ Patient opens "Privacy & Sharing" screen
 - Status lifecycle: DRAFT → PENDING_REVIEW → APPROVED → ACTIVE
 - Approve button (transitions to ACTIVE)
 - **API:** `POST /care_plans`, `PATCH /care_plans/{id}`, `POST /care_plans/{id}/approve`
-- **AC:** C2 safety: AI-generated DRAFT cannot be auto-approved; doctor must explicitly approve
+- **AC:** C2 safety: AI-generated DRAFT cannot be auto-approved; doctor must explicitly approve via `POST /care_plans/{id}/approve`. `PATCH /care_plans/{id}` must reject any body that attempts to set `status: "APPROVED"` directly (return 422). The only valid path to APPROVED is the `/approve` endpoint.
 
 ### Screen D7 — Doctor Profile
 - View/edit specialty, bio, consultation_fee, avatar
@@ -257,6 +257,10 @@ Patient opens "Privacy & Sharing" screen
 | AC-8 | After consent revocation, doctor gets 403 on patient data |
 | AC-9 | Doctor profile editable; changes persist |
 | AC-10 | All doctor routes return 403 for PATIENT tokens |
+| AC-11 | `POST /patients/{pid}/consents` with a non-existent `granted_to` doctor_id returns 400 or 404, not 201 |
+| AC-12 | `POST /admin/doctors` called by INTERNAL_ADMIN returns 403 |
+| AC-13 | DOCTOR login without completed MFA returns 403 on any doctor-role endpoint; partial token must not grant access |
+| AC-14 | `PATCH /care_plans/{id}` with `status: "APPROVED"` in body returns 422 |
 
 ---
 

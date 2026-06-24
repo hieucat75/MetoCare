@@ -303,11 +303,15 @@ class TestTransactionSafety:
     def test_patients_failed_entry_includes_name_and_error(self, db):
         """patients_failed list carries both name and error string."""
         phones = ["+84999999021"]
+        # Save originals BEFORE mutating
+        orig_pilot = _mod.PILOT_PATIENTS
+        orig_metric = _mod.METRIC_SPECS
+        orig_lab = _mod.LAB_SPECS
+        orig_med = _mod.MED_SPECS
         _mod.PILOT_PATIENTS = self._mini_patients(phones)
         _mod.METRIC_SPECS = {}
         _mod.LAB_SPECS = {}
         _mod.MED_SPECS = {}
-        orig = _mod.PILOT_PATIENTS
 
         def always_fail(inner_db, patient_id, phone, now):
             raise RuntimeError("quota exceeded")
@@ -316,7 +320,10 @@ class TestTransactionSafety:
             with patch.object(_mod, "_seed_labs", side_effect=always_fail):
                 result = seed(db)
         finally:
-            _mod.PILOT_PATIENTS = orig
+            _mod.PILOT_PATIENTS = orig_pilot
+            _mod.METRIC_SPECS = orig_metric
+            _mod.LAB_SPECS = orig_lab
+            _mod.MED_SPECS = orig_med
 
         assert any(e["name"] == "Test Patient 1" for e in result["patients_failed"])
         assert any("quota exceeded" in e["error"] for e in result["patients_failed"])
