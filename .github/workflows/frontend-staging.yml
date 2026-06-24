@@ -92,7 +92,7 @@ jobs:
             echo "::error::NEXT_PUBLIC_API_URL must end with /api/v1 (got: $API_URL)"; exit 1
           fi
 
-          HEALTH=$(curl -sf -o /dev/null -w "%{http_code}" --max-time 15 "https://${BACKEND_FQDN}/health" || echo 000)
+          HEALTH=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "https://${BACKEND_FQDN}/health")
           if [ "$HEALTH" != "200" ]; then
             echo "::error::Backend health check returned $HEALTH for https://${BACKEND_FQDN}/health — cannot build with a dead backend"; exit 1
           fi
