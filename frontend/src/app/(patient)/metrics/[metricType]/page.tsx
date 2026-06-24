@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { ArrowLeft, Plus, TrendingDown, TrendingUp, Minus } from 'lucide-react'
 import { PageLoading, ErrorState } from '@/design-system'
 import { NeuCard, NeuBadge } from '@/components/patient/neu'
-import { DangerAlertBanner } from '@/app/(patient)/metrics/log/[type]/page'
+import { DangerAlertBanner } from '@/components/patient/metrics/DangerAlertBanner'
 import { useAuth } from '@/lib/auth/context'
 import {
   getMetrics,
