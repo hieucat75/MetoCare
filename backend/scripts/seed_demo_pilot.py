@@ -2,9 +2,26 @@
 
 Creates demo patient accounts with mixed metabolic risk profiles, realistic
 health metrics (100+), lab results (50+), medication schedules (30+), and
-adherence records. Idempotent — re-running skips already-existing patients.
+adherence records.
 
-ALL data is synthetic — no real PHI. Do NOT run against production.
+TRANSACTION SAFETY MODEL
+------------------------
+``auth.register()`` issues a COMMIT internally, so user creation is
+immediately durable. All subsequent data for that patient (metrics, labs,
+medications, adherence) is written inside a per-patient SAVEPOINT. If data
+seeding fails for patient N the savepoint is rolled back — patient N's user
+persists but with no data — and seeding continues for remaining patients.
+
+On re-run the script skips user creation (``_get_or_create_patient`` returns
+``created=False``) but still seeds any missing data categories, enabling clean
+recovery from mid-seed crashes.
+
+PRODUCTION GUARD
+-----------------
+Refuses to run when ``ENV=production`` unless ``ALLOW_DEMO_SEED=true`` is also
+set. This prevents accidental seeding of a production database.
+
+ALL data is synthetic — no real PHI.
 
 Run from the backend directory:
     python scripts/seed_demo_pilot.py
@@ -13,6 +30,7 @@ Run from the backend directory:
 from __future__ import annotations
 
 import datetime as dt
+import os
 import sys
 from pathlib import Path
 
@@ -617,6 +635,23 @@ MED_SPECS: dict[str, list[tuple]] = {
 # ---------------------------------------------------------------------------
 
 
+def _check_not_production() -> None:
+    """Refuse to run against a production database unless explicitly overridden.
+
+    Raises RuntimeError when ENV=production and ALLOW_DEMO_SEED is not 'true'.
+    """
+    env = os.environ.get("ENV", "").strip().lower()
+    allow = os.environ.get("ALLOW_DEMO_SEED", "").strip().lower()
+    if env == "production" and allow != "true":
+        raise RuntimeError(
+            "SAFETY: seed_demo_pilot.py refused to run against production.\n"
+            "Environment ENV=production detected. This script seeds synthetic\n"
+            "demo data and must NOT be run against real patient databases.\n\n"
+            "If you genuinely need to seed a production-like environment, set:\n"
+            "    ALLOW_DEMO_SEED=true\n"
+        )
+
+
 def _get_or_create_patient(db, phone: str, password: str, full_name: str) -> tuple[User, bool]:
     existing = db.execute(select(User).where(User.phone == phone)).scalar_one_or_none()
     if existing is not None:
@@ -749,9 +784,29 @@ def _seed_adherence(
 
 
 def seed(db) -> dict:
+    """Seed all pilot patients.
+
+    Transaction safety
+    ------------------
+    auth.register() commits immediately (its own internal commit). After that
+    commit, a per-patient SAVEPOINT wraps all data seeding (metrics, labs,
+    medications, adherence). A failure inside the savepoint rolls back only
+    that patient's data; the user record and all other patients are unaffected.
+    Re-running the script recovers partial seeds because each _seed_* helper
+    checks for existing rows before inserting.
+
+    Idempotency
+    -----------
+    * Existing users → skipped by _get_or_create_patient (created=False)
+    * Existing data  → each _seed_* helper checks for existing rows first
+    * Safe to run multiple times; already-complete patients are always skipped
+    """
+    _check_not_production()
+
     summary: dict = {
         "patients_created": [],
         "patients_skipped": [],
+        "patients_failed": [],
         "metrics": 0,
         "lab_results": 0,
         "medications": 0,
@@ -766,31 +821,41 @@ def seed(db) -> dict:
             known_conditions, allergies, family_history, lifestyle_profile,
         ) = row
 
+        # User creation commits immediately — cannot be rolled back.
         user, created = _get_or_create_patient(db, phone, password, full_name)
-        if not created:
+        if created:
+            summary["patients_created"].append(full_name)
+        else:
             summary["patients_skipped"].append(full_name)
-            continue
 
-        profile = _profile(db, user)
-        profile.dob = dob
-        profile.gender = gender
-        profile.height_cm = height_cm
-        profile.weight_kg = weight_kg
-        profile.waist_cm = waist_cm
-        profile.risk_segment = risk_segment
-        profile.known_conditions = known_conditions
-        profile.allergies = allergies
-        profile.family_history = family_history
-        profile.lifestyle_profile = lifestyle_profile
-        db.flush()
+        # Per-patient SAVEPOINT: data failures roll back only this patient's
+        # data. The user record (committed above) is always preserved.
+        sp = db.begin_nested()
+        try:
+            profile = _profile(db, user)
+            if created:
+                profile.dob = dob
+                profile.gender = gender
+                profile.height_cm = height_cm
+                profile.weight_kg = weight_kg
+                profile.waist_cm = waist_cm
+                profile.risk_segment = risk_segment
+                profile.known_conditions = known_conditions
+                profile.allergies = allergies
+                profile.family_history = family_history
+                profile.lifestyle_profile = lifestyle_profile
+                db.flush()
 
-        patient_id = profile.id
-        summary["metrics"] += _seed_metrics(db, patient_id, phone, now)
-        summary["lab_results"] += _seed_labs(db, patient_id, phone, now)
-        meds = _seed_medications(db, patient_id, phone)
-        summary["medications"] += len(meds)
-        summary["adherence_records"] += _seed_adherence(db, patient_id, meds, now)
-        summary["patients_created"].append(full_name)
+            patient_id = profile.id
+            summary["metrics"] += _seed_metrics(db, patient_id, phone, now)
+            summary["lab_results"] += _seed_labs(db, patient_id, phone, now)
+            meds = _seed_medications(db, patient_id, phone)
+            summary["medications"] += len(meds)
+            summary["adherence_records"] += _seed_adherence(db, patient_id, meds, now)
+            sp.commit()
+        except Exception as exc:
+            sp.rollback()
+            summary["patients_failed"].append({"name": full_name, "error": str(exc)})
 
     db.commit()
     return summary
@@ -807,8 +872,14 @@ if __name__ == "__main__":
         print(f"              • {name}")
     if result["patients_skipped"]:
         print(f"  Skipped   : {result['patients_skipped']}")
+    if result["patients_failed"]:
+        print(f"  FAILED    : {len(result['patients_failed'])} patients")
+        for entry in result["patients_failed"]:
+            print(f"              ✗ {entry['name']}: {entry['error']}")
     print(f"  Metrics   : {result['metrics']}")
     print(f"  Lab results: {result['lab_results']}")
     print(f"  Medications: {result['medications']}")
     print(f"  Adherence  : {result['adherence_records']} records")
     print("─────────────────────────────────────────────────────\n")
+    if result["patients_failed"]:
+        sys.exit(1)
