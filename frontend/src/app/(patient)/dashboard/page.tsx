@@ -121,7 +121,13 @@ export default function PatientDashboardPage() {
     )
   }
 
-  if (loading || catalog === null) return <div className="p-4 max-w-md mx-auto space-y-3"><PatientSkeleton /><PatientSkeleton /></div>
+  if (loading || catalog === null)
+    return (
+      <div className="p-4 max-w-md mx-auto space-y-3">
+        <PatientSkeleton />
+        <PatientSkeleton />
+      </div>
+    )
 
   if (error || !data) {
     return (

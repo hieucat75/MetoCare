@@ -17,10 +17,7 @@ export default function PatientError({
 
   return (
     <div className="flex items-center justify-center min-h-[60vh] px-4">
-      <PatientErrorState
-        message="Đã xảy ra lỗi. Vui lòng thử lại."
-        onRetry={reset}
-      />
+      <PatientErrorState message="Đã xảy ra lỗi. Vui lòng thử lại." onRetry={reset} />
     </div>
   )
 }

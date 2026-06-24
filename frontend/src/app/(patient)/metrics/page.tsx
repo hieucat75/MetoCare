@@ -20,7 +20,8 @@ import {
 import { useLabReference } from '@/lib/api/labReference'
 import { groupMetricsByCategory } from '@/lib/metrics/kpi'
 
-const NEU_INPUT = 'w-full rounded-[12px] border border-[#C8D8D4] bg-white/60 px-3 py-2.5 text-[15px] text-neu-text placeholder:text-neu-subtle focus:border-[#0F9C6E] focus:outline-none focus:ring-2 focus:ring-[#0F9C6E]/20 transition-colors'
+const NEU_INPUT =
+  'w-full rounded-[12px] border border-[#C8D8D4] bg-white/60 px-3 py-2.5 text-[15px] text-neu-text placeholder:text-neu-subtle focus:border-[#0F9C6E] focus:outline-none focus:ring-2 focus:ring-[#0F9C6E]/20 transition-colors'
 
 const METRIC_OPTIONS: { value: MetricType; label: string }[] = (
   Object.keys(METRIC_LABELS) as MetricType[]
@@ -97,9 +98,15 @@ function LogMetricModal({ open, onClose, onSuccess, patientId }: LogModalProps) 
         )}
         <div className="space-y-1.5">
           <label className="block text-[13px] font-semibold text-neu-muted">Loại chỉ số</label>
-          <select className={NEU_INPUT} value={metricType} onChange={(e) => setMetricType(e.target.value as MetricType)}>
+          <select
+            className={NEU_INPUT}
+            value={metricType}
+            onChange={(e) => setMetricType(e.target.value as MetricType)}
+          >
             {METRIC_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
             ))}
           </select>
         </div>
@@ -179,7 +186,9 @@ export default function MetricsPage() {
       <div className="p-4 max-w-md mx-auto mt-10">
         <div role="alert" className="rounded-[14px] bg-[#FEF9EC] border border-[#E0A92E]/30 p-4">
           <p className="text-[14px] font-bold text-[#8B6400]">Chưa có hồ sơ bệnh nhân</p>
-          <p className="text-[13px] text-[#8B6400]/80 mt-1">Tài khoản của bạn chưa được liên kết với hồ sơ bệnh nhân.</p>
+          <p className="text-[13px] text-[#8B6400]/80 mt-1">
+            Tài khoản của bạn chưa được liên kết với hồ sơ bệnh nhân.
+          </p>
         </div>
       </div>
     )

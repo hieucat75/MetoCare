@@ -629,6 +629,62 @@ export async function deleteMedication(patientId: string, medId: string): Promis
   return api.del(`/patients/${patientId}/medications/${medId}`)
 }
 
+// ── Medication Adherence ───────────────────────────────────────────────────────
+
+export interface MedicationAdherence {
+  id: string
+  medication_id: string
+  patient_id: string
+  scheduled_time: string | null
+  taken_at: string | null
+  skipped: boolean
+  note: string | null
+  created_at: string
+}
+
+export interface TodayMedication {
+  medication_id: string
+  name: string
+  dose: string | null
+  frequency: string | null
+  taken_today: boolean
+  skipped_today: boolean
+  last_taken_at: string | null
+}
+
+export interface AdherenceSummary {
+  total_doses_logged: number
+  taken: number
+  skipped: number
+  adherence_rate: number
+  today_medications: TodayMedication[]
+}
+
+export async function logAdherence(
+  patientId: string,
+  medId: string,
+  data: { taken_at?: string; skipped?: boolean; note?: string; scheduled_time?: string },
+): Promise<MedicationAdherence> {
+  return api.post<MedicationAdherence>(
+    `/patients/${patientId}/medications/${medId}/adherence`,
+    data,
+  )
+}
+
+export async function getAdherenceHistory(
+  patientId: string,
+  medId: string,
+  limit = 30,
+): Promise<MedicationAdherence[]> {
+  return api.get<MedicationAdherence[]>(
+    `/patients/${patientId}/medications/${medId}/adherence?limit=${limit}`,
+  )
+}
+
+export async function getAdherenceSummary(patientId: string): Promise<AdherenceSummary> {
+  return api.get<AdherenceSummary>(`/patients/${patientId}/medications/adherence-summary`)
+}
+
 // ── Nutrition Log ─────────────────────────────────────────────────────────────
 
 export interface NutritionEntry {

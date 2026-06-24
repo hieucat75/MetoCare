@@ -47,7 +47,9 @@ function MintInput({
   return (
     <div className="relative">
       {leftIcon && (
-        <div className="absolute inset-y-0 left-0 flex items-center pl-3 text-neu-green">{leftIcon}</div>
+        <div className="absolute inset-y-0 left-0 flex items-center pl-3 text-neu-green">
+          {leftIcon}
+        </div>
       )}
       <input
         id={id}
@@ -69,7 +71,7 @@ function MintInput({
           rightElement && 'pr-10',
           error
             ? 'border-danger focus:border-danger focus:ring-danger/20'
-            : 'border-[rgba(16,48,44,0.12)] focus:border-neu-green focus:ring-neu-green/25',
+            : 'border-[rgba(16,48,44,0.12)] focus:border-neu-green focus:ring-neu-green/25'
         )}
       />
       {rightElement && (
@@ -109,7 +111,8 @@ export default function RegisterPage() {
     const errs: Record<string, string> = {}
     if (!fullName.trim()) errs.fullName = 'Vui lòng nhập họ tên'
     if (!phone.trim()) errs.phone = 'Số điện thoại là bắt buộc'
-    else if (!isValidVnPhone(phone)) errs.phone = 'Số điện thoại di động không hợp lệ (VD: 0901234567)'
+    else if (!isValidVnPhone(phone))
+      errs.phone = 'Số điện thoại di động không hợp lệ (VD: 0901234567)'
     if (!password) errs.password = 'Mật khẩu là bắt buộc'
     else if (password.length < 8) errs.password = 'Mật khẩu tối thiểu 8 ký tự'
     return errs
@@ -129,7 +132,7 @@ export default function RegisterPage() {
       await register(
         { phone: normalizeVnPhone(phone) ?? phone.trim() },
         password,
-        fullName.trim() || undefined,
+        fullName.trim() || undefined
       )
       setSuccess(true)
       // New patients go through onboarding to fill the clinical profile.
@@ -173,7 +176,10 @@ export default function RegisterPage() {
       </p>
 
       {error && (
-        <div role="alert" className="rounded-[14px] bg-[#FEF0F0] border border-[#D92D20]/20 p-3 text-[13px] text-[#D92D20] mb-4">
+        <div
+          role="alert"
+          className="rounded-[14px] bg-[#FEF0F0] border border-[#D92D20]/20 p-3 text-[13px] text-[#D92D20] mb-4"
+        >
           {error}
         </div>
       )}
@@ -261,15 +267,17 @@ export default function RegisterPage() {
 
       <p className="text-center text-[17px] text-text-muted mt-6">
         Đã có tài khoản?{' '}
-        <Link href="/login" className="text-neu-green font-semibold hover:underline underline-offset-2">
+        <Link
+          href="/login"
+          className="text-neu-green font-semibold hover:underline underline-offset-2"
+        >
           Đăng nhập
         </Link>
       </p>
 
       <p className="text-center text-[15px] text-text-subtle mt-4 leading-relaxed">
-        Bằng cách đăng ký, bạn đồng ý với{' '}
-        <span className="text-neu-green">Điều khoản sử dụng</span> và{' '}
-        <span className="text-neu-green">Chính sách bảo mật</span> của MetoCare.
+        Bằng cách đăng ký, bạn đồng ý với <span className="text-neu-green">Điều khoản sử dụng</span>{' '}
+        và <span className="text-neu-green">Chính sách bảo mật</span> của MetoCare.
       </p>
     </div>
   )

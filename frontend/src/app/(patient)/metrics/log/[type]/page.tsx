@@ -328,7 +328,10 @@ function BpScreen({ patientId, measuredAt, onSuccess, onChangeMeasuredAt }: BpSc
 
       <NotesSection value={notes} onChange={setNotes} />
 
-      <Link href="/labs/upload" className="block text-center text-[13px] font-semibold text-neu-green mt-3">
+      <Link
+        href="/labs/upload"
+        className="block text-center text-[13px] font-semibold text-neu-green mt-3"
+      >
         📋 Có phiếu xét nghiệm? Tải lên tại đây
       </Link>
 
@@ -472,7 +475,10 @@ function WeightScreen({ patientId, measuredAt, onSuccess, onChangeMeasuredAt }: 
 
       <NotesSection value={notes} onChange={setNotes} />
 
-      <Link href="/labs/upload" className="block text-center text-[13px] font-semibold text-neu-green mt-3">
+      <Link
+        href="/labs/upload"
+        className="block text-center text-[13px] font-semibold text-neu-green mt-3"
+      >
         📋 Có phiếu xét nghiệm? Tải lên tại đây
       </Link>
 
@@ -659,7 +665,10 @@ function GlucoseScreen({
 
       <NotesSection value={notes} onChange={setNotes} />
 
-      <Link href="/labs/upload" className="block text-center text-[13px] font-semibold text-neu-green mt-3">
+      <Link
+        href="/labs/upload"
+        className="block text-center text-[13px] font-semibold text-neu-green mt-3"
+      >
         📋 Có phiếu xét nghiệm? Tải lên tại đây
       </Link>
 
@@ -776,7 +785,10 @@ function GenericScreen({
 
       <NotesSection value={notes} onChange={setNotes} />
 
-      <Link href="/labs/upload" className="block text-center text-[13px] font-semibold text-neu-green mt-3">
+      <Link
+        href="/labs/upload"
+        className="block text-center text-[13px] font-semibold text-neu-green mt-3"
+      >
         📋 Có phiếu xét nghiệm? Tải lên tại đây
       </Link>
 

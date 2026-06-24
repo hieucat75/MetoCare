@@ -102,7 +102,9 @@ export default function LabsPage() {
       <div className="p-4 lg:p-6 max-w-md mx-auto mt-10">
         <div role="alert" className="rounded-[14px] bg-[#FEF9EC] border border-[#E0A92E]/30 p-4">
           <p className="text-[14px] font-bold text-[#8B6400]">Chưa có hồ sơ bệnh nhân</p>
-          <p className="text-[13px] text-[#8B6400]/80 mt-1">Tài khoản của bạn chưa được liên kết với hồ sơ bệnh nhân. Vui lòng liên hệ hỗ trợ.</p>
+          <p className="text-[13px] text-[#8B6400]/80 mt-1">
+            Tài khoản của bạn chưa được liên kết với hồ sơ bệnh nhân. Vui lòng liên hệ hỗ trợ.
+          </p>
         </div>
       </div>
     )

@@ -280,7 +280,11 @@ export default function SettingsPage() {
                   >
                     Hủy
                   </NeuButton>
-                  <NeuButton onClick={saveEmail} disabled={emailSaving} className="!text-[13px] !px-4 !py-2">
+                  <NeuButton
+                    onClick={saveEmail}
+                    disabled={emailSaving}
+                    className="!text-[13px] !px-4 !py-2"
+                  >
                     {emailSaving ? 'Đang lưu...' : 'Lưu'}
                   </NeuButton>
                 </div>
@@ -303,9 +307,7 @@ export default function SettingsPage() {
               className="flex w-full items-center gap-3 py-3.5 text-left"
             >
               <KeyRound className="size-5 text-[#2563EB]" aria-hidden="true" />
-              <span className="flex-1 text-[14.5px] font-semibold text-neu-text">
-                Đổi mật khẩu
-              </span>
+              <span className="flex-1 text-[14.5px] font-semibold text-neu-text">Đổi mật khẩu</span>
               <ChevronRight className="size-[18px] text-neu-subtle" aria-hidden="true" />
             </button>
           ) : (

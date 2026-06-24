@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
-import { Pill, Plus, Pencil, Trash2, X } from 'lucide-react'
+import { Pill, Plus, Pencil, Trash2, X, CheckCircle2, XCircle } from 'lucide-react'
 import { NeuCard, NeuButton } from '@/components/patient/neu'
 import { PatientEmptyState } from '@/components/patient'
 import { PatientErrorState, PatientSkeleton } from '@/components/patient/states'
@@ -12,6 +12,7 @@ import {
   addMedication,
   updateMedication,
   deleteMedication,
+  logAdherence,
   type Medication,
   type MedicationInput,
 } from '@/lib/api/patient'
@@ -33,9 +34,11 @@ type MedRowProps = {
   onEdit: () => void
   onDelete: () => void
   onView: () => void
+  onTaken: () => void
+  onSkipped: () => void
 }
 
-function MedRow({ med, onEdit, onDelete, onView }: MedRowProps) {
+function MedRow({ med, onEdit, onDelete, onView, onTaken, onSkipped }: MedRowProps) {
   const meta = [med.dose, med.frequency].filter(Boolean).join(' · ')
   return (
     <NeuCard className="p-4">
@@ -57,13 +60,9 @@ function MedRow({ med, onEdit, onDelete, onView }: MedRowProps) {
           </span>
           <span className="min-w-0">
             <span className="block truncate text-[16px] font-bold text-neu-text">{med.name}</span>
-            {meta && (
-              <span className="mt-0.5 block text-[13.5px] text-neu-muted">{meta}</span>
-            )}
+            {meta && <span className="mt-0.5 block text-[13.5px] text-neu-muted">{meta}</span>}
             {med.note && (
-              <span className="mt-0.5 block truncate text-[13px] text-neu-subtle">
-                {med.note}
-              </span>
+              <span className="mt-0.5 block truncate text-[13px] text-neu-subtle">{med.note}</span>
             )}
           </span>
         </button>
@@ -85,6 +84,27 @@ function MedRow({ med, onEdit, onDelete, onView }: MedRowProps) {
             <Trash2 className="size-4" />
           </button>
         </div>
+      </div>
+      {/* Adherence quick-log */}
+      <div className="mt-3 flex gap-2 border-t border-[#E8F0ED] pt-3">
+        <button
+          type="button"
+          onClick={onTaken}
+          aria-label="Đánh dấu đã uống"
+          className="flex flex-1 items-center justify-center gap-1.5 rounded-[12px] bg-[#E8F7F2] py-2 text-[13px] font-semibold text-[#0F9C6E] transition-transform active:scale-95"
+        >
+          <CheckCircle2 className="size-4" aria-hidden="true" />
+          Đã uống
+        </button>
+        <button
+          type="button"
+          onClick={onSkipped}
+          aria-label="Đánh dấu bỏ qua"
+          className="flex flex-1 items-center justify-center gap-1.5 rounded-[12px] bg-[#F4F4F4] py-2 text-[13px] font-semibold text-neu-muted transition-transform active:scale-95"
+        >
+          <XCircle className="size-4" aria-hidden="true" />
+          Bỏ qua
+        </button>
       </div>
     </NeuCard>
   )
@@ -169,14 +189,8 @@ function MedModal({ open, onClose, onSaved, patientId, editing }: MedModalProps)
   if (!open) return null
 
   return (
-    <div
-      className="fixed inset-0 z-40 flex items-end bg-black/30"
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-md mx-auto"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <div className="fixed inset-0 z-40 flex items-end bg-black/30" onClick={onClose}>
+      <div className="w-full max-w-md mx-auto" onClick={(e) => e.stopPropagation()}>
         <NeuCard className="!rounded-b-none">
           {/* Header */}
           <div className="flex items-center justify-between mb-5">
@@ -264,8 +278,8 @@ function MedModal({ open, onClose, onSaved, patientId, editing }: MedModalProps)
             >
               <p className="text-[14px] font-bold text-[#D92D20] mb-1">Xác nhận xoá?</p>
               <p className="text-[13px] text-[#D92D20]/80 mb-3">
-                Bạn có chắc muốn xoá{' '}
-                <span className="font-semibold">{editing.name}</span> khỏi danh sách thuốc?
+                Bạn có chắc muốn xoá <span className="font-semibold">{editing.name}</span> khỏi danh
+                sách thuốc?
               </p>
               <div className="flex gap-2">
                 <NeuButton
@@ -289,12 +303,7 @@ function MedModal({ open, onClose, onSaved, patientId, editing }: MedModalProps)
 
           {/* Footer actions */}
           <div className="mt-5 flex flex-col gap-2">
-            <NeuButton
-              type="submit"
-              form="med-form"
-              disabled={submitting}
-              className="w-full"
-            >
+            <NeuButton type="submit" form="med-form" disabled={submitting} className="w-full">
               {submitting ? 'Đang lưu…' : 'Lưu thuốc'}
             </NeuButton>
             <NeuButton
@@ -380,11 +389,7 @@ export default function MedicationsPage() {
       )}
 
       {!loading && error && (
-        <PatientErrorState
-          title="Không thể tải thuốc"
-          message={error}
-          onRetry={load}
-        />
+        <PatientErrorState title="Không thể tải thuốc" message={error} onRetry={load} />
       )}
 
       {!loading && !error && meds.length === 0 && (
@@ -412,6 +417,14 @@ export default function MedicationsPage() {
               onEdit={() => {
                 setEditing(med)
                 setModalOpen(true)
+              }}
+              onTaken={() => {
+                logAdherence(patientId, med.id, { taken_at: new Date().toISOString() }).catch(
+                  () => {},
+                )
+              }}
+              onSkipped={() => {
+                logAdherence(patientId, med.id, { skipped: true }).catch(() => {})
               }}
               onDelete={() => {
                 setEditing(med)

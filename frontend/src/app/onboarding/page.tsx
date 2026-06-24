@@ -477,8 +477,12 @@ function StepComplete({ form, onFinish, saving }: StepCompleteProps) {
 
       <NeuCard className="mt-4 text-center">
         <p className="text-[14px] font-semibold text-neu-text">Có kết quả xét nghiệm gần đây?</p>
-        <p className="text-[12px] text-neu-muted mt-1">Tải lên để MetoCare phân tích và theo dõi chỉ số của bạn.</p>
-        <a href="/labs/upload" className="mt-3 block text-[13px] font-bold text-neu-green">Tải kết quả xét nghiệm →</a>
+        <p className="text-[12px] text-neu-muted mt-1">
+          Tải lên để MetoCare phân tích và theo dõi chỉ số của bạn.
+        </p>
+        <a href="/labs/upload" className="mt-3 block text-[13px] font-bold text-neu-green">
+          Tải kết quả xét nghiệm →
+        </a>
       </NeuCard>
 
       <NeuButton variant="primary" onClick={onFinish} disabled={saving}>

@@ -31,9 +31,7 @@ export default function UnauthorizedPage() {
           </p>
         )}
         <div className="flex flex-col gap-3">
-          <NeuButton onClick={() => router.back()}>
-            Quay lại
-          </NeuButton>
+          <NeuButton onClick={() => router.back()}>Quay lại</NeuButton>
           <NeuButton variant="secondary" onClick={handleLogout}>
             Đăng xuất
           </NeuButton>

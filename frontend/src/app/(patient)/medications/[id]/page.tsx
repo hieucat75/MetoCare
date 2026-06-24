@@ -58,15 +58,25 @@ export default function MedicationDetailPage() {
   if (!patientId) {
     return (
       <div className="p-4 max-w-md mx-auto mt-10">
-        <div role="alert" className="rounded-[14px] bg-[#FEF9EC] border border-[#E0A92E]/30 p-4 text-[14px]">
+        <div
+          role="alert"
+          className="rounded-[14px] bg-[#FEF9EC] border border-[#E0A92E]/30 p-4 text-[14px]"
+        >
           <p className="font-bold text-[#8B6400] mb-0.5">Chưa có hồ sơ</p>
-          <p className="text-[#8B6400]/80 text-[13px]">Chưa có hồ sơ bệnh nhân. Vui lòng liên hệ hỗ trợ.</p>
+          <p className="text-[#8B6400]/80 text-[13px]">
+            Chưa có hồ sơ bệnh nhân. Vui lòng liên hệ hỗ trợ.
+          </p>
         </div>
       </div>
     )
   }
 
-  if (loading) return <div className="p-4 space-y-3 max-w-md mx-auto"><PatientSkeleton /></div>
+  if (loading)
+    return (
+      <div className="p-4 space-y-3 max-w-md mx-auto">
+        <PatientSkeleton />
+      </div>
+    )
   if (error) return <PatientErrorState message={error} onRetry={load} />
   if (!medication) return null
 

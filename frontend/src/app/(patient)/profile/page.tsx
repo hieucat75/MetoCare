@@ -9,7 +9,8 @@ import { useAuth } from '@/lib/auth/context'
 import { getPatientProfile, updatePatientProfile } from '@/lib/api/patient'
 import type { PatientProfile } from '@/lib/api/patient'
 
-const NEU_INPUT = 'w-full rounded-[12px] border border-[#C8D8D4] bg-white/60 px-3 py-2.5 text-[15px] text-neu-text placeholder:text-neu-subtle focus:border-[#0F9C6E] focus:outline-none focus:ring-2 focus:ring-[#0F9C6E]/20 transition-colors'
+const NEU_INPUT =
+  'w-full rounded-[12px] border border-[#C8D8D4] bg-white/60 px-3 py-2.5 text-[15px] text-neu-text placeholder:text-neu-subtle focus:border-[#0F9C6E] focus:outline-none focus:ring-2 focus:ring-[#0F9C6E]/20 transition-colors'
 const HERO_GRADIENT = 'linear-gradient(150deg,#1BB082,#0B7F5B)'
 
 const GENDER_OPTIONS = [
@@ -259,14 +260,27 @@ export default function ProfilePage() {
       <div className="p-4 max-w-md mx-auto mt-10">
         <div role="alert" className="rounded-[14px] bg-[#FEF9EC] border border-[#E0A92E]/30 p-4">
           <p className="text-[14px] font-bold text-[#8B6400]">Chưa có hồ sơ bệnh nhân</p>
-          <p className="text-[13px] text-[#8B6400]/80 mt-1">Tài khoản của bạn chưa được liên kết với hồ sơ bệnh nhân. Vui lòng liên hệ hỗ trợ.</p>
+          <p className="text-[13px] text-[#8B6400]/80 mt-1">
+            Tài khoản của bạn chưa được liên kết với hồ sơ bệnh nhân. Vui lòng liên hệ hỗ trợ.
+          </p>
         </div>
       </div>
     )
   }
 
-  if (loading) return <div className="p-4 max-w-md mx-auto space-y-3"><PatientSkeleton /><PatientSkeleton /></div>
-  if (error) return <div className="p-4 max-w-md mx-auto"><PatientErrorState title="Không thể tải hồ sơ" message={error} onRetry={load} /></div>
+  if (loading)
+    return (
+      <div className="p-4 max-w-md mx-auto space-y-3">
+        <PatientSkeleton />
+        <PatientSkeleton />
+      </div>
+    )
+  if (error)
+    return (
+      <div className="p-4 max-w-md mx-auto">
+        <PatientErrorState title="Không thể tải hồ sơ" message={error} onRetry={load} />
+      </div>
+    )
 
   const displayName = profile?.full_name ?? user.email ?? 'Bạn'
   const age = ageFromDob(profile?.dob)
@@ -316,9 +330,18 @@ export default function ProfilePage() {
       </div>
 
       {saveSuccess && (
-        <div role="alert" className="rounded-[14px] bg-[#E8F5EE] border border-[#0F9C6E]/25 p-4 flex items-center justify-between gap-3">
+        <div
+          role="alert"
+          className="rounded-[14px] bg-[#E8F5EE] border border-[#0F9C6E]/25 p-4 flex items-center justify-between gap-3"
+        >
           <p className="text-[13px] font-semibold text-[#0B5E40]">Cập nhật hồ sơ thành công</p>
-          <button type="button" onClick={() => setSaveSuccess(false)} className="text-[#0B5E40]/60 hover:text-[#0B5E40] text-[18px] leading-none">&times;</button>
+          <button
+            type="button"
+            onClick={() => setSaveSuccess(false)}
+            className="text-[#0B5E40]/60 hover:text-[#0B5E40] text-[18px] leading-none"
+          >
+            &times;
+          </button>
         </div>
       )}
       {saveError && (
@@ -506,58 +529,132 @@ function ProfileEditForm({
       <NeuCard className="!p-4 space-y-4">
         <div className="space-y-1.5">
           <label className="block text-[13px] font-semibold text-neu-muted">Họ tên</label>
-          <input className={NEU_INPUT} value={fields.fullName} onChange={(e) => set.setFullName(e.target.value)} placeholder="Nhập họ tên" />
+          <input
+            className={NEU_INPUT}
+            value={fields.fullName}
+            onChange={(e) => set.setFullName(e.target.value)}
+            placeholder="Nhập họ tên"
+          />
         </div>
         <div className="space-y-1.5">
           <label className="block text-[13px] font-semibold text-neu-muted">Ngày sinh</label>
-          <input type="date" className={NEU_INPUT} value={fields.dob} onChange={(e) => set.setDob(e.target.value)} />
+          <input
+            type="date"
+            className={NEU_INPUT}
+            value={fields.dob}
+            onChange={(e) => set.setDob(e.target.value)}
+          />
         </div>
         <div className="space-y-1.5">
           <label className="block text-[13px] font-semibold text-neu-muted">Số điện thoại</label>
-          <input type="tel" className={NEU_INPUT} value={fields.phone} onChange={(e) => set.setPhone(e.target.value)} placeholder="Nhập số điện thoại" />
+          <input
+            type="tel"
+            className={NEU_INPUT}
+            value={fields.phone}
+            onChange={(e) => set.setPhone(e.target.value)}
+            placeholder="Nhập số điện thoại"
+          />
         </div>
         <div className="space-y-1.5">
           <label className="block text-[13px] font-semibold text-neu-muted">Giới tính</label>
-          <select className={NEU_INPUT} value={fields.gender} onChange={(e) => set.setGender(e.target.value)}>
+          <select
+            className={NEU_INPUT}
+            value={fields.gender}
+            onChange={(e) => set.setGender(e.target.value)}
+          >
             <option value="">Chọn giới tính</option>
             {GENDER_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
             ))}
           </select>
         </div>
         <div className="grid grid-cols-3 gap-2">
           <div className="space-y-1.5">
             <label className="block text-[13px] font-semibold text-neu-muted">Cao (cm)</label>
-            <input type="number" step="0.1" className={NEU_INPUT} value={fields.heightCm} onChange={(e) => set.setHeightCm(e.target.value)} placeholder="cm" />
+            <input
+              type="number"
+              step="0.1"
+              className={NEU_INPUT}
+              value={fields.heightCm}
+              onChange={(e) => set.setHeightCm(e.target.value)}
+              placeholder="cm"
+            />
           </div>
           <div className="space-y-1.5">
             <label className="block text-[13px] font-semibold text-neu-muted">Nặng (kg)</label>
-            <input type="number" step="0.1" className={NEU_INPUT} value={fields.weightKg} onChange={(e) => set.setWeightKg(e.target.value)} placeholder="kg" />
+            <input
+              type="number"
+              step="0.1"
+              className={NEU_INPUT}
+              value={fields.weightKg}
+              onChange={(e) => set.setWeightKg(e.target.value)}
+              placeholder="kg"
+            />
           </div>
           <div className="space-y-1.5">
             <label className="block text-[13px] font-semibold text-neu-muted">Eo (cm)</label>
-            <input type="number" step="0.1" className={NEU_INPUT} value={fields.waistCm} onChange={(e) => set.setWaistCm(e.target.value)} placeholder="cm" />
+            <input
+              type="number"
+              step="0.1"
+              className={NEU_INPUT}
+              value={fields.waistCm}
+              onChange={(e) => set.setWaistCm(e.target.value)}
+              placeholder="cm"
+            />
           </div>
         </div>
         <div className="space-y-1.5">
           <label className="block text-[13px] font-semibold text-neu-muted">Địa chỉ</label>
-          <input className={NEU_INPUT} value={fields.address} onChange={(e) => set.setAddress(e.target.value)} placeholder="Nhập địa chỉ" />
+          <input
+            className={NEU_INPUT}
+            value={fields.address}
+            onChange={(e) => set.setAddress(e.target.value)}
+            placeholder="Nhập địa chỉ"
+          />
         </div>
         <div className="space-y-1.5">
           <label className="block text-[13px] font-semibold text-neu-muted">Bệnh lý hiện có</label>
-          <textarea className={`${NEU_INPUT} resize-none min-h-[72px]`} value={fields.knownConditions} onChange={(e) => set.setKnownConditions(e.target.value)} placeholder="VD: Tiền tiểu đường, tăng huyết áp…" rows={2} />
+          <textarea
+            className={`${NEU_INPUT} resize-none min-h-[72px]`}
+            value={fields.knownConditions}
+            onChange={(e) => set.setKnownConditions(e.target.value)}
+            placeholder="VD: Tiền tiểu đường, tăng huyết áp…"
+            rows={2}
+          />
         </div>
         <div className="space-y-1.5">
           <label className="block text-[13px] font-semibold text-neu-muted">Dị ứng</label>
-          <textarea className={`${NEU_INPUT} resize-none min-h-[72px]`} value={fields.allergies} onChange={(e) => set.setAllergies(e.target.value)} placeholder="VD: Penicillin, hải sản…" rows={2} />
+          <textarea
+            className={`${NEU_INPUT} resize-none min-h-[72px]`}
+            value={fields.allergies}
+            onChange={(e) => set.setAllergies(e.target.value)}
+            placeholder="VD: Penicillin, hải sản…"
+            rows={2}
+          />
         </div>
         <div className="space-y-1.5">
           <label className="block text-[13px] font-semibold text-neu-muted">Tiền sử gia đình</label>
-          <textarea className={`${NEU_INPUT} resize-none min-h-[72px]`} value={fields.familyHistory} onChange={(e) => set.setFamilyHistory(e.target.value)} placeholder="VD: Cha bị tiểu đường type 2…" rows={2} />
+          <textarea
+            className={`${NEU_INPUT} resize-none min-h-[72px]`}
+            value={fields.familyHistory}
+            onChange={(e) => set.setFamilyHistory(e.target.value)}
+            placeholder="VD: Cha bị tiểu đường type 2…"
+            rows={2}
+          />
         </div>
         <div className="space-y-1.5">
-          <label className="block text-[13px] font-semibold text-neu-muted">Mục tiêu & lối sống</label>
-          <textarea className={`${NEU_INPUT} resize-none min-h-[90px]`} value={fields.lifestyleProfile} onChange={(e) => set.setLifestyleProfile(e.target.value)} placeholder="VD: Giảm 5kg, đi bộ 30 phút/ngày…" rows={3} />
+          <label className="block text-[13px] font-semibold text-neu-muted">
+            Mục tiêu & lối sống
+          </label>
+          <textarea
+            className={`${NEU_INPUT} resize-none min-h-[90px]`}
+            value={fields.lifestyleProfile}
+            onChange={(e) => set.setLifestyleProfile(e.target.value)}
+            placeholder="VD: Giảm 5kg, đi bộ 30 phút/ngày…"
+            rows={3}
+          />
         </div>
       </NeuCard>
 

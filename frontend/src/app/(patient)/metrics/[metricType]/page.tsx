@@ -106,8 +106,19 @@ export default function MetricDetailPage() {
   }, [load, catalog])
 
   if (!user) return null
-  if (loading || catalog === null) return <div className="p-4 max-w-md mx-auto space-y-3"><PatientSkeleton /><PatientSkeleton /></div>
-  if (error) return <div className="p-4 max-w-md mx-auto"><PatientErrorState title="Không thể tải dữ liệu" message={error} onRetry={load} /></div>
+  if (loading || catalog === null)
+    return (
+      <div className="p-4 max-w-md mx-auto space-y-3">
+        <PatientSkeleton />
+        <PatientSkeleton />
+      </div>
+    )
+  if (error)
+    return (
+      <div className="p-4 max-w-md mx-auto">
+        <PatientErrorState title="Không thể tải dữ liệu" message={error} onRetry={load} />
+      </div>
+    )
 
   const label = series?.labelVn ?? metricLabel(metricType as MetricType)
   const accent = theme?.accent ?? '#0B7F5B'

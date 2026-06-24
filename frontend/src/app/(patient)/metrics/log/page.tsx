@@ -6,12 +6,7 @@ import { ArrowLeft, CheckCircle } from 'lucide-react'
 import { NeuCard, NeuButton, NeuIconButton } from '@/components/patient/neu'
 import { PatientErrorState, PatientSkeleton } from '@/components/patient/states'
 import { useAuth } from '@/lib/auth/context'
-import {
-  logMetric,
-  METRIC_LABELS,
-  METRIC_UNITS,
-  METRIC_NORMAL_RANGES,
-} from '@/lib/api/patient'
+import { logMetric, METRIC_LABELS, METRIC_UNITS, METRIC_NORMAL_RANGES } from '@/lib/api/patient'
 import type { MetricType } from '@/lib/api/patient'
 
 // ─── Metric type options (canonical taxonomy, see lib/api/patient.ts) ──────────
@@ -36,10 +31,14 @@ function toISOLocalDefault(): string {
   const pad = (n: number) => String(n).padStart(2, '0')
   return (
     now.getFullYear() +
-    '-' + pad(now.getMonth() + 1) +
-    '-' + pad(now.getDate()) +
-    'T' + pad(now.getHours()) +
-    ':' + pad(now.getMinutes())
+    '-' +
+    pad(now.getMonth() + 1) +
+    '-' +
+    pad(now.getDate()) +
+    'T' +
+    pad(now.getHours()) +
+    ':' +
+    pad(now.getMinutes())
   )
 }
 
@@ -178,18 +177,13 @@ export default function LogMetricPage() {
     <div className="min-h-screen bg-[#F0F7F4]">
       {/* Header */}
       <div className="flex items-center gap-3 px-4 pt-5 pb-3">
-        <NeuIconButton
-          aria-label="Quay lại"
-          onClick={() => router.back()}
-          disabled={submitting}
-        >
+        <NeuIconButton aria-label="Quay lại" onClick={() => router.back()} disabled={submitting}>
           <ArrowLeft className="w-5 h-5 text-neu-text" />
         </NeuIconButton>
         <h1 className="text-[18px] font-bold text-neu-text">Ghi chỉ số</h1>
       </div>
 
       <form onSubmit={handleSubmit} noValidate className="px-4 pb-8 max-w-lg mx-auto space-y-4">
-
         {/* Metric type selector */}
         <NeuCard>
           <div className="space-y-1.5">
@@ -246,7 +240,11 @@ export default function LogMetricPage() {
               </p>
             )}
             {validationError && (
-              <p id="value-error" className="text-[13px] text-red-500 text-center mt-1" role="alert">
+              <p
+                id="value-error"
+                className="text-[13px] text-red-500 text-center mt-1"
+                role="alert"
+              >
                 {validationError}
               </p>
             )}
@@ -346,16 +344,11 @@ export default function LogMetricPage() {
             >
               Hủy
             </NeuButton>
-            <NeuButton
-              type="submit"
-              variant="primary"
-              className="flex-1"
-            >
+            <NeuButton type="submit" variant="primary" className="flex-1">
               Ghi lại
             </NeuButton>
           </div>
         )}
-
       </form>
     </div>
   )

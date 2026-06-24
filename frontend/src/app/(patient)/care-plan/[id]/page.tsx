@@ -12,13 +12,13 @@ import { PatientSkeleton, PatientErrorState } from '@/components/patient/states'
 type NeuTone = 'ok' | 'watch' | 'alert'
 
 const STATUS_CONFIG: Record<string, { tone: NeuTone; label: string }> = {
-  ACTIVE:         { tone: 'ok',    label: 'Đang thực hiện' },
-  APPROVED:       { tone: 'ok',    label: 'Đã phê duyệt' },
+  ACTIVE: { tone: 'ok', label: 'Đang thực hiện' },
+  APPROVED: { tone: 'ok', label: 'Đã phê duyệt' },
   PENDING_REVIEW: { tone: 'watch', label: 'Chờ phê duyệt' },
-  DRAFT:          { tone: 'watch', label: 'Bản nháp' },
-  ARCHIVED:       { tone: 'watch', label: 'Lưu trữ' },
-  SUPERSEDED:     { tone: 'watch', label: 'Đã thay thế' },
-  REJECTED:       { tone: 'alert', label: 'Bị từ chối' },
+  DRAFT: { tone: 'watch', label: 'Bản nháp' },
+  ARCHIVED: { tone: 'watch', label: 'Lưu trữ' },
+  SUPERSEDED: { tone: 'watch', label: 'Đã thay thế' },
+  REJECTED: { tone: 'alert', label: 'Bị từ chối' },
 }
 
 function formatDate(iso: string): string {
@@ -119,13 +119,20 @@ export default function CarePlanDetailPage() {
 
       {plan.status === 'PENDING_REVIEW' && (
         <div role="alert" className="rounded-[14px] bg-[#FEF9EC] border border-[#E0A92E]/30 p-4">
-          <p className="text-[13px] text-[#8B6400]">Kế hoạch này đang chờ bác sĩ phê duyệt trước khi thực hiện.</p>
+          <p className="text-[13px] text-[#8B6400]">
+            Kế hoạch này đang chờ bác sĩ phê duyệt trước khi thực hiện.
+          </p>
         </div>
       )}
 
       <p className="text-[14px] text-neu-muted px-1">
         Tạo: {formatDate(plan.created_at)}
-        {plan.ai_generated && <> &middot; <span className="text-amber-600">AI hỗ trợ</span></>}
+        {plan.ai_generated && (
+          <>
+            {' '}
+            &middot; <span className="text-amber-600">AI hỗ trợ</span>
+          </>
+        )}
         {(plan.version ?? 1) > 1 && <> &middot; v{plan.version}</>}
       </p>
 
@@ -135,7 +142,9 @@ export default function CarePlanDetailPage() {
           <h2 className="text-[16px] font-semibold text-neu-text">Nội dung kế hoạch</h2>
         </div>
         {plan.content ? (
-          <p className="text-[15px] text-neu-text whitespace-pre-line leading-relaxed">{plan.content}</p>
+          <p className="text-[15px] text-neu-text whitespace-pre-line leading-relaxed">
+            {plan.content}
+          </p>
         ) : (
           <p className="text-[14px] text-neu-muted italic">Chưa có nội dung kế hoạch.</p>
         )}

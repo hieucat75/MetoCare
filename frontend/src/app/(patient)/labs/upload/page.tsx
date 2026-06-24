@@ -159,7 +159,16 @@ export default function LabUploadPage() {
       setRows(
         mapped.length
           ? mapped
-          : [{ test_name: '', value: '', unit: '', reference_range: '', confidence: null, status: null }]
+          : [
+              {
+                test_name: '',
+                value: '',
+                unit: '',
+                reference_range: '',
+                confidence: null,
+                status: null,
+              },
+            ]
       )
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Không xử lý được tệp. Vui lòng thử lại.')
@@ -214,7 +223,9 @@ export default function LabUploadPage() {
       <div className="p-4 max-w-md mx-auto mt-10">
         <div role="alert" className="rounded-[14px] bg-[#FEF9EC] border border-[#E0A92E]/30 p-4">
           <p className="text-[14px] font-bold text-[#8B6400]">Chưa có hồ sơ bệnh nhân</p>
-          <p className="text-[13px] text-[#8B6400]/80 mt-1">Tài khoản chưa được liên kết với hồ sơ bệnh nhân. Vui lòng liên hệ hỗ trợ.</p>
+          <p className="text-[13px] text-[#8B6400]/80 mt-1">
+            Tài khoản chưa được liên kết với hồ sơ bệnh nhân. Vui lòng liên hệ hỗ trợ.
+          </p>
         </div>
       </div>
     )
@@ -227,7 +238,10 @@ export default function LabUploadPage() {
         <PageHeaderNeu title="Tải lên kết quả" onBack={() => router.push('/labs')} />
         <div className="rounded-[14px] bg-[#EEF4FB] border border-[#2563EB]/20 p-4">
           <p className="text-[14px] font-bold text-[#1E4DA1]">Sắp ra mắt</p>
-          <p className="text-[13px] text-[#1E4DA1]/80 mt-1">Tính năng tự động đọc kết quả xét nghiệm đang được hoàn thiện. Bạn có thể nhập tay kết quả ở trang Xét nghiệm.</p>
+          <p className="text-[13px] text-[#1E4DA1]/80 mt-1">
+            Tính năng tự động đọc kết quả xét nghiệm đang được hoàn thiện. Bạn có thể nhập tay kết
+            quả ở trang Xét nghiệm.
+          </p>
         </div>
         <NeuButton variant="secondary" onClick={() => router.push('/labs')}>
           Về trang xét nghiệm
@@ -240,9 +254,7 @@ export default function LabUploadPage() {
     <div className="p-4 max-w-md mx-auto space-y-4 pb-28">
       <PageHeaderNeu
         title={step === 'input' ? 'Tải lên kết quả' : 'Kiểm tra & xác nhận'}
-        onBack={() =>
-          step === 'review' ? (setDraft(null), setError(null)) : router.push('/labs')
-        }
+        onBack={() => (step === 'review' ? (setDraft(null), setError(null)) : router.push('/labs'))}
       />
 
       {error && <PatientErrorState title="Lỗi" message={error} onRetry={() => setError(null)} />}
@@ -311,17 +323,26 @@ export default function LabUploadPage() {
           {draft.manual_fallback ? (
             <div className="rounded-[14px] bg-[#EEF4FB] border border-[#2563EB]/20 p-4">
               <p className="text-[14px] font-bold text-[#1E4DA1]">Chưa nhận diện được chỉ số</p>
-              <p className="text-[13px] text-[#1E4DA1]/80 mt-1">Bạn có thể nhập tay kết quả xét nghiệm bên dưới rồi lưu.</p>
+              <p className="text-[13px] text-[#1E4DA1]/80 mt-1">
+                Bạn có thể nhập tay kết quả xét nghiệm bên dưới rồi lưu.
+              </p>
             </div>
           ) : draft.low_confidence ? (
-            <div role="alert" className="rounded-[14px] bg-[#FEF9EC] border border-[#E0A92E]/30 p-4">
-              <p className="text-[14px] font-bold text-[#8B6400]">Một số chỉ số có độ tin cậy thấp</p>
-              <p className="text-[13px] text-[#8B6400]/80 mt-1">Vui lòng kiểm tra lại các giá trị được tô màu vàng/đỏ trước khi lưu.</p>
+            <div
+              role="alert"
+              className="rounded-[14px] bg-[#FEF9EC] border border-[#E0A92E]/30 p-4"
+            >
+              <p className="text-[14px] font-bold text-[#8B6400]">
+                Một số chỉ số có độ tin cậy thấp
+              </p>
+              <p className="text-[13px] text-[#8B6400]/80 mt-1">
+                Vui lòng kiểm tra lại các giá trị được tô màu vàng/đỏ trước khi lưu.
+              </p>
             </div>
           ) : (
             <div className="flex items-center gap-2 text-[15px] text-neu-green">
-              <CheckCircle2 className="size-5" /> Đã đọc {draft.parsed_values.length} chỉ số. Hãy kiểm
-              tra lại trước khi lưu.
+              <CheckCircle2 className="size-5" /> Đã đọc {draft.parsed_values.length} chỉ số. Hãy
+              kiểm tra lại trước khi lưu.
             </div>
           )}
 
@@ -371,12 +392,17 @@ export default function LabUploadPage() {
               return (
                 <NeuCard key={i}>
                   <div className="mb-2 flex items-start justify-between gap-2">
-                    <NeuBadge tone={badge.tone} className="!text-[11px] !px-2.5 !py-0.5 before:!hidden">
+                    <NeuBadge
+                      tone={badge.tone}
+                      className="!text-[11px] !px-2.5 !py-0.5 before:!hidden"
+                    >
                       {badge.label}
                     </NeuBadge>
                     <div className="flex items-center gap-2">
                       {row.status && STATUS_LABEL[row.status] && (
-                        <span className="text-[13px] text-neu-subtle">{STATUS_LABEL[row.status]}</span>
+                        <span className="text-[13px] text-neu-subtle">
+                          {STATUS_LABEL[row.status]}
+                        </span>
                       )}
                       <button
                         type="button"
@@ -433,7 +459,14 @@ export default function LabUploadPage() {
               onClick={() =>
                 setRows((rs) => [
                   ...rs,
-                  { test_name: '', value: '', unit: '', reference_range: '', confidence: null, status: null },
+                  {
+                    test_name: '',
+                    value: '',
+                    unit: '',
+                    reference_range: '',
+                    confidence: null,
+                    status: null,
+                  },
                 ])
               }
             >

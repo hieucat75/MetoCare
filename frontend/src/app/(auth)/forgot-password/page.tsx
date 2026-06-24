@@ -38,8 +38,8 @@ export default function ForgotPasswordPage() {
         </div>
         <h2 className="text-[24px] font-extrabold text-neu-text mb-2">Tính năng sắp ra mắt</h2>
         <p className="text-[17px] text-text-muted mb-6">
-          Đặt lại mật khẩu qua SMS sẽ có trong phiên bản tiếp theo. Vui lòng liên hệ
-          tổng đài hỗ trợ nếu bạn cần khôi phục tài khoản ngay.
+          Đặt lại mật khẩu qua SMS sẽ có trong phiên bản tiếp theo. Vui lòng liên hệ tổng đài hỗ trợ
+          nếu bạn cần khôi phục tài khoản ngay.
         </p>
         <Link
           href="/login"
@@ -59,7 +59,10 @@ export default function ForgotPasswordPage() {
       </p>
 
       <div className="rounded-[14px] bg-[#E8F5EE] border border-[#0F9C6E]/25 p-4 mb-6">
-        <p className="text-[13px] text-[#0B5E40]">Tính năng đặt lại mật khẩu đang được phát triển (Phase 2). Vui lòng liên hệ hỗ trợ nếu cần.</p>
+        <p className="text-[13px] text-[#0B5E40]">
+          Tính năng đặt lại mật khẩu đang được phát triển (Phase 2). Vui lòng liên hệ hỗ trợ nếu
+          cần.
+        </p>
       </div>
 
       <form onSubmit={handleSubmit} noValidate>
@@ -82,7 +85,7 @@ export default function ForgotPasswordPage() {
               className={cn(
                 'h-12 w-full rounded-xl border bg-white/80 pl-10 pr-3 py-2 text-[17px] text-text',
                 'placeholder:text-text-subtle focus:outline-none focus:ring-2 transition-colors',
-                'border-[rgba(16,48,44,0.12)] focus:border-neu-green focus:ring-neu-green/25',
+                'border-[rgba(16,48,44,0.12)] focus:border-neu-green focus:ring-neu-green/25'
               )}
             />
           </div>

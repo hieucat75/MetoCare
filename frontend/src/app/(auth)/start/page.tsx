@@ -7,11 +7,24 @@ export default function StartPage() {
     <div className="flex flex-col items-center justify-center min-h-screen bg-[#E8EEE8] px-6 max-w-md mx-auto">
       <div
         className="w-20 h-20 rounded-3xl flex items-center justify-center mb-8"
-        style={{ backgroundColor: 'rgba(15,156,110,0.12)', boxShadow: '0 0 0 1px rgba(15,156,110,0.2)' }}
+        style={{
+          backgroundColor: 'rgba(15,156,110,0.12)',
+          boxShadow: '0 0 0 1px rgba(15,156,110,0.2)',
+        }}
       >
         <svg width="44" height="44" viewBox="0 0 52 52" fill="none" aria-label="MetoCare">
-          <path d="M26 8C16.059 8 8 16.059 8 26s8.059 18 18 18 18-8.059 18-18S35.941 8 26 8zm0 4a14 14 0 1 1 0 28 14 14 0 0 1 0-28z" fill="#0F9C6E" fillOpacity="0.9" />
-          <path d="M18 26l5 5 11-11" stroke="#0F9C6E" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+          <path
+            d="M26 8C16.059 8 8 16.059 8 26s8.059 18 18 18 18-8.059 18-18S35.941 8 26 8zm0 4a14 14 0 1 1 0 28 14 14 0 0 1 0-28z"
+            fill="#0F9C6E"
+            fillOpacity="0.9"
+          />
+          <path
+            d="M18 26l5 5 11-11"
+            stroke="#0F9C6E"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
         </svg>
       </div>
 
@@ -26,7 +39,10 @@ export default function StartPage() {
         <Link
           href="/login"
           className="w-full flex items-center justify-center text-[16px] font-bold py-4 rounded-[16px] text-white no-underline"
-          style={{ background: 'linear-gradient(160deg,#17AE7B,#0B6B4D)', boxShadow: '0 8px 20px -6px rgba(11,107,77,0.45)' }}
+          style={{
+            background: 'linear-gradient(160deg,#17AE7B,#0B6B4D)',
+            boxShadow: '0 8px 20px -6px rgba(11,107,77,0.45)',
+          }}
         >
           Đăng nhập
         </Link>

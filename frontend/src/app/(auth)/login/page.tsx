@@ -174,7 +174,10 @@ export default function LoginPage() {
         </p>
 
         {error && (
-          <div role="alert" className="rounded-[14px] bg-[#FEF0F0] border border-[#D92D20]/20 p-3 text-[13px] text-[#D92D20] mb-4">
+          <div
+            role="alert"
+            className="rounded-[14px] bg-[#FEF0F0] border border-[#D92D20]/20 p-3 text-[13px] text-[#D92D20] mb-4"
+          >
             {error}
           </div>
         )}
@@ -230,7 +233,10 @@ export default function LoginPage() {
       </p>
 
       {error && (
-        <div role="alert" className="rounded-[14px] bg-[#FEF0F0] border border-[#D92D20]/20 p-3 text-[13px] text-[#D92D20] mb-4">
+        <div
+          role="alert"
+          className="rounded-[14px] bg-[#FEF0F0] border border-[#D92D20]/20 p-3 text-[13px] text-[#D92D20] mb-4"
+        >
           {error}
         </div>
       )}

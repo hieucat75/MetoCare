@@ -24,13 +24,13 @@ function formatDate(iso: string): string {
 type NeuBadgeTone = 'ok' | 'watch' | 'alert'
 
 const STATUS_CONFIG: Record<string, { tone: NeuBadgeTone; label: string }> = {
-  ACTIVE:         { tone: 'ok',    label: 'Đang thực hiện' },
-  APPROVED:       { tone: 'ok',    label: 'Đã phê duyệt' },
+  ACTIVE: { tone: 'ok', label: 'Đang thực hiện' },
+  APPROVED: { tone: 'ok', label: 'Đã phê duyệt' },
   PENDING_REVIEW: { tone: 'watch', label: 'Chờ phê duyệt' },
-  DRAFT:          { tone: 'watch', label: 'Bản nháp' },
-  ARCHIVED:       { tone: 'watch', label: 'Lưu trữ' },
-  SUPERSEDED:     { tone: 'watch', label: 'Đã thay thế' },
-  REJECTED:       { tone: 'alert', label: 'Bị từ chối' },
+  DRAFT: { tone: 'watch', label: 'Bản nháp' },
+  ARCHIVED: { tone: 'watch', label: 'Lưu trữ' },
+  SUPERSEDED: { tone: 'watch', label: 'Đã thay thế' },
+  REJECTED: { tone: 'alert', label: 'Bị từ chối' },
 }
 
 // ── Care plan card ─────────────────────────────────────────────────────────────
@@ -56,7 +56,12 @@ function CarePlanCard({ plan }: { plan: CarePlan }) {
       {/* Meta */}
       <p className="text-[13px] text-neu-muted">
         Tạo: {formatDate(plan.created_at)}
-        {plan.ai_generated && <> &middot; <span className="text-amber-600">AI hỗ trợ</span></>}
+        {plan.ai_generated && (
+          <>
+            {' '}
+            &middot; <span className="text-amber-600">AI hỗ trợ</span>
+          </>
+        )}
         {(plan.version ?? 0) > 1 && <> &middot; v{plan.version}</>}
       </p>
 
