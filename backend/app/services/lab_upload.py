@@ -23,7 +23,12 @@ from dataclasses import dataclass, field
 from app.core.config import get_settings
 from app.domain import lab_interpreter
 from app.services import lab_parser
-from app.services.ocr_engine import AzureDocIntelEngine, OcrEngineError, run_cloud_ocr_if_permitted, run_ocr
+from app.services.ocr_engine import (
+    AzureDocIntelEngine,
+    OcrEngineError,
+    run_cloud_ocr_if_permitted,
+    run_ocr,
+)
 
 logger = logging.getLogger("mcp.lab_upload")
 
