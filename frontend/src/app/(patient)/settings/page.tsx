@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, ChevronRight, Globe, Info, KeyRound, Lock, LogOut } from 'lucide-react'
+import { ArrowLeft, ChevronRight, Globe, Info, KeyRound, Lock, LogOut, Watch } from 'lucide-react'
 import { NeuCard, NeuButton } from '@/components/patient/neu'
 import { useAuth } from '@/lib/auth/context'
 import { changePassword, updateAccount } from '@/lib/api/auth'
@@ -397,6 +397,27 @@ export default function SettingsPage() {
               <NeuToggle checked={prefs[key]} onToggle={() => togglePref(key)} />
             </div>
           ))}
+        </NeuCard>
+      </section>
+
+      {/* ── Thiết bị ── */}
+      <section>
+        <SectionLabel>Thiết bị</SectionLabel>
+        <NeuCard className="!px-4 !py-1">
+          <button
+            type="button"
+            onClick={() => router.push('/devices')}
+            className="flex w-full items-center gap-3 py-3.5 text-left"
+          >
+            <Watch className="size-5 text-[#0F9C6E]" aria-hidden="true" />
+            <span className="flex-1 text-[14.5px] font-semibold text-neu-text">
+              Kết nối thiết bị
+            </span>
+            <span className="rounded-full bg-[#EFF6FF] px-2 py-0.5 text-[11px] font-bold text-[#2563EB] mr-1">
+              Sắp hỗ trợ
+            </span>
+            <ChevronRight className="size-[18px] text-neu-subtle" aria-hidden="true" />
+          </button>
         </NeuCard>
       </section>
 

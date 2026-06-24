@@ -16,7 +16,8 @@ from app.api.deps import CurrentUser, get_session, require_mfa, require_roles
 from app.core.ratelimit import get_lockout
 from app.models.governance import AuditLog
 from app.models.user import UserRole
-from app.schemas.admin import UnlockRequest, UserAdminOut, UserAuditLogOut, UserRoleUpdate
+from app.schemas.admin import DoctorAdminOut, DoctorCreateRequest, UnlockRequest, UserAdminOut, UserAuditLogOut, UserRoleUpdate
+from app.services.doctor import create_doctor_account
 from app.schemas.common import Message
 from app.services import admin_users, audit
 
@@ -88,6 +89,7 @@ def list_users(
     limit: int = Query(default=50, ge=1, le=500),
     role: str | None = Query(default=None),
     actor: CurrentUser = Depends(_admin_only),
+    _mfa: CurrentUser = Depends(require_mfa),
     db: Session = Depends(get_session),
 ) -> list[UserAdminOut]:
     """List all users (paginated). INTERNAL_ADMIN or SUPER_ADMIN."""
@@ -107,6 +109,7 @@ def list_users(
 def get_user(
     user_id: str,
     actor: CurrentUser = Depends(_admin_only),
+    _mfa: CurrentUser = Depends(require_mfa),
     db: Session = Depends(get_session),
 ) -> UserAdminOut:
     """Get user detail. INTERNAL_ADMIN or SUPER_ADMIN."""
@@ -130,6 +133,7 @@ def update_user_role(
     user_id: str,
     payload: UserRoleUpdate,
     actor: CurrentUser = Depends(_super_admin_only),
+    _mfa: CurrentUser = Depends(require_mfa),
     db: Session = Depends(get_session),
 ) -> UserAdminOut:
     """Change a user's role. SUPER_ADMIN only."""
@@ -155,6 +159,7 @@ def update_user_role(
 def deactivate_user(
     user_id: str,
     actor: CurrentUser = Depends(_admin_only),
+    _mfa: CurrentUser = Depends(require_mfa),
     db: Session = Depends(get_session),
 ) -> UserAdminOut:
     """Deactivate (soft-delete) a user. Cannot deactivate self or another SUPER_ADMIN."""
@@ -184,6 +189,7 @@ def get_user_audit_log(
     user_id: str,
     limit: int = Query(default=20, ge=1, le=100),
     actor: CurrentUser = Depends(_admin_only),
+    _mfa: CurrentUser = Depends(require_mfa),
     db: Session = Depends(get_session),
 ) -> list[UserAuditLogOut]:
     """Get last N audit log entries for a specific user. INTERNAL_ADMIN or SUPER_ADMIN."""
@@ -202,3 +208,47 @@ def get_user_audit_log(
     )
     db.commit()
     return entries
+
+
+# ---------------------------------------------------------------------------
+# POST /admin/doctors — SUPER_ADMIN + MFA only (AC-12, AC-13)
+# ---------------------------------------------------------------------------
+
+@router.post(
+    "/doctors",
+    response_model=DoctorAdminOut,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a doctor account (SUPER_ADMIN + MFA only)",
+)
+def create_doctor(
+    payload: DoctorCreateRequest,
+    actor: CurrentUser = Depends(_super_admin_only),
+    _mfa: CurrentUser = Depends(require_mfa),
+    db: Session = Depends(get_session),
+) -> DoctorAdminOut:
+    """Create a User(role=DOCTOR) + Doctor profile in one transaction.
+
+    SUPER_ADMIN + MFA-verified token required. INTERNAL_ADMIN → 403.
+    Audited as action=create_doctor_account at severity=warn.
+    """
+    user, doctor = create_doctor_account(
+        db,
+        email=payload.email,
+        password=payload.password,
+        full_name=payload.full_name,
+        specialty=payload.specialty,
+        license_no=payload.license_no,
+        bio=payload.bio,
+        clinic_id=payload.clinic_id,
+        requester_id=actor.id,
+    )
+    db.commit()
+    return DoctorAdminOut(
+        user_id=user.id,
+        doctor_id=doctor.id,
+        email=user.email,
+        full_name=user.full_name or doctor.full_name,
+        role=user.role,
+        is_active=user.is_active,
+        mfa_enabled=user.mfa_enabled,
+    )

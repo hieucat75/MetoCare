@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { CheckCircle2, ArrowRight, ArrowLeft, Ruler, Weight, Maximize2 } from 'lucide-react'
 import { NeuCard, NeuButton } from '@/components/patient/neu'
@@ -483,6 +484,17 @@ function StepComplete({ form, onFinish, saving }: StepCompleteProps) {
         <a href="/labs/upload" className="mt-3 block text-[13px] font-bold text-neu-green">
           Tải kết quả xét nghiệm →
         </a>
+      </NeuCard>
+
+      <NeuCard className="mt-4 text-center">
+        <p className="text-[14px] font-semibold text-neu-text">Kết nối thiết bị đo</p>
+        <p className="text-[12px] text-neu-muted mt-1">
+          Xem các thiết bị được hỗ trợ và cách nhập chỉ số thủ công trong khi chờ kết nối tự
+          động.
+        </p>
+        <Link href="/devices" className="mt-3 block text-[13px] font-bold text-neu-green">
+          Quản lý thiết bị →
+        </Link>
       </NeuCard>
 
       <NeuButton variant="primary" onClick={onFinish} disabled={saving}>

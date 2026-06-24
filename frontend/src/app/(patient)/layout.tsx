@@ -96,6 +96,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/notifications': 'Thông báo',
   '/profile': 'Hồ sơ cá nhân',
   '/settings': 'Cài đặt',
+  '/devices': 'Kết nối thiết bị',
   '/consents': 'Đồng ý chia sẻ',
   '/accessibility': 'Trợ năng',
   '/report': 'Báo cáo sức khoẻ',
@@ -160,6 +161,7 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
   // bar: the dashboard (avatar + greeting) and metric detail (back + metric name).
   const isMetricDetail = pathname.startsWith('/metrics/') && pathname !== '/metrics/log'
   const isMedicationDetail = pathname.startsWith('/medications/')
+  const isDeviceDetail = pathname.startsWith('/devices/')
   // All reskinned Soft-UI screens render their own in-page header, so the legacy
   // mobile top bar is suppressed across them for a consistent header treatment.
   const NEU_TOPBAR_HIDDEN = new Set([
@@ -171,13 +173,15 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
     '/labs/upload',
     '/medications',
     '/settings',
+    '/devices',
     '/ai-assistant',
     '/nutrition',
     '/consents',
     '/accessibility',
     '/report',
   ])
-  const hideMobileTopBar = NEU_TOPBAR_HIDDEN.has(pathname) || isMetricDetail || isMedicationDetail
+  const hideMobileTopBar =
+    NEU_TOPBAR_HIDDEN.has(pathname) || isMetricDetail || isMedicationDetail || isDeviceDetail
 
   const handleNavItem = (item: NavItem) => router.push(item.href)
 

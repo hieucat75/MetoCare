@@ -138,19 +138,30 @@ def test_metabolic_score_endpoint(client, patient):
     assert body["factors"]
 
 
-def test_consent_grant_and_revoke_via_api(client, patient, token_for):
+def test_consent_grant_and_revoke_via_api(client, patient, token_for, db):
+    # granted_to must be a real active Doctor user (AC-11).
+    from app.models.care import Doctor
+    from app.models.user import User, UserRole
+    dr_user = User(email="consent-test-dr@clinic.vn", password_hash="x",
+                   role=UserRole.DOCTOR, is_active=True)
+    db.add(dr_user)
+    db.flush()
+    db.add(Doctor(user_id=dr_user.id, full_name="Dr Consent Test", is_active=True))
+    db.commit()
+    doctor_id = dr_user.id
+
     r = client.post(
         f"/api/v1/patients/{patient['patient_id']}/consents",
         headers=_auth(patient),
-        json={"granted_to": "doctor-z", "data_scope": "health_metric"},
+        json={"granted_to": doctor_id, "data_scope": "health_metric"},
     )
     assert r.status_code == 201, r.text
     consent_id = r.json()["id"]
 
-    # doctor-z can now read
+    # doctor can now read
     r2 = client.get(
         f"/api/v1/patients/{patient['patient_id']}/metrics",
-        headers=token_for("doctor-z", "doctor"),
+        headers=token_for(doctor_id, "doctor"),
     )
     assert r2.status_code == 200
 
@@ -163,6 +174,6 @@ def test_consent_grant_and_revoke_via_api(client, patient, token_for):
 
     r4 = client.get(
         f"/api/v1/patients/{patient['patient_id']}/metrics",
-        headers=token_for("doctor-z", "doctor"),
+        headers=token_for(doctor_id, "doctor"),
     )
     assert r4.status_code == 403

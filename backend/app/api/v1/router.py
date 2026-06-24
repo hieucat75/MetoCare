@@ -12,6 +12,7 @@ from .routes import (
     booking,
     care_plans,
     consent,
+    doctor,
     doctor_review,
     encounters,
     health,
@@ -44,3 +45,5 @@ api_router.include_router(patients.router)
 api_router.include_router(booking.router)
 # T23: Notification scaffold
 api_router.include_router(notifications.router)
+# Phase 4A: Doctor self-service endpoints
+api_router.include_router(doctor.router)
