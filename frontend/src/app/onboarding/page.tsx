@@ -485,6 +485,17 @@ function StepComplete({ form, onFinish, saving }: StepCompleteProps) {
         </a>
       </NeuCard>
 
+      <NeuCard className="mt-4 text-center">
+        <p className="text-[14px] font-semibold text-neu-text">Kết nối thiết bị đo</p>
+        <p className="text-[12px] text-neu-muted mt-1">
+          Xem các thiết bị được hỗ trợ và cách nhập chỉ số thủ công trong khi chờ kết nối tự
+          động.
+        </p>
+        <a href="/devices" className="mt-3 block text-[13px] font-bold text-neu-green">
+          Quản lý thiết bị →
+        </a>
+      </NeuCard>
+
       <NeuButton variant="primary" onClick={onFinish} disabled={saving}>
         {saving ? 'Đang lưu…' : 'Đến Tổng quan'}
       </NeuButton>
