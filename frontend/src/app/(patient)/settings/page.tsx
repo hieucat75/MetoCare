@@ -3,8 +3,7 @@
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, ChevronRight, Globe, Info, KeyRound, Lock, LogOut } from 'lucide-react'
-import { Alert, Button, FormField, Input, Modal, Switch } from '@/design-system'
-import { NeuCard } from '@/components/patient/neu'
+import { NeuCard, NeuButton } from '@/components/patient/neu'
 import { useAuth } from '@/lib/auth/context'
 import { changePassword, updateAccount } from '@/lib/api/auth'
 
@@ -16,6 +15,9 @@ const NOTIF_FIELDS: { key: NotifKey; label: string }[] = [
   { key: 'notify_doctor_messages', label: 'Tin nhắn từ bác sĩ' },
 ]
 
+const INPUT_CLASS =
+  'w-full rounded-[14px] border-2 border-[#C8D8D4] bg-white/60 backdrop-blur px-4 py-3 text-[16px] text-neu-text focus:border-[#0F9C6E] focus:outline-none'
+
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
     <p className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.06em] text-neu-muted">
@@ -24,27 +26,57 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   )
 }
 
+function NeuToggle({
+  checked,
+  onToggle,
+  disabled,
+}: {
+  checked: boolean
+  onToggle: () => void
+  disabled?: boolean
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={onToggle}
+      disabled={disabled}
+      className="relative w-12 h-7 rounded-full shrink-0 transition-colors duration-200 focus:outline-none disabled:opacity-50"
+      style={{ backgroundColor: checked ? '#0F9C6E' : '#B0C4C0' }}
+    >
+      <span
+        className="absolute top-1 left-1 w-5 h-5 rounded-full bg-white shadow-sm transition-transform duration-200"
+        style={{ transform: checked ? 'translateX(20px)' : 'translateX(0)' }}
+      />
+    </button>
+  )
+}
+
+function loadNotifPrefs(): Record<NotifKey, boolean> {
+  if (typeof window === 'undefined') {
+    return { notify_medication: true, notify_lab_results: true, notify_doctor_messages: true }
+  }
+  return {
+    notify_medication: localStorage.getItem('notify_medication') !== 'false',
+    notify_lab_results: localStorage.getItem('notify_lab_results') !== 'false',
+    notify_doctor_messages: localStorage.getItem('notify_doctor_messages') !== 'false',
+  }
+}
+
 export default function SettingsPage() {
   const router = useRouter()
   const { user, logout, refresh } = useAuth()
 
   const [loggingOut, setLoggingOut] = React.useState(false)
 
-  // ── Notification preferences (persisted via PATCH /auth/account) ────────────
-  const [notifSaving, setNotifSaving] = React.useState<NotifKey | null>(null)
-  const [notifError, setNotifError] = React.useState<string | null>(null)
+  // ── Notification preferences (persisted via localStorage) ───────────────────
+  const [prefs, setPrefs] = React.useState<Record<NotifKey, boolean>>(() => loadNotifPrefs())
 
-  async function toggleNotif(key: NotifKey, value: boolean) {
-    setNotifSaving(key)
-    setNotifError(null)
-    try {
-      await updateAccount({ [key]: value })
-      await refresh()
-    } catch (err: unknown) {
-      setNotifError(err instanceof Error ? err.message : 'Không lưu được cài đặt.')
-    } finally {
-      setNotifSaving(null)
-    }
+  function togglePref(key: NotifKey) {
+    const next = !prefs[key]
+    localStorage.setItem(key, String(next))
+    setPrefs((prev) => ({ ...prev, [key]: next }))
   }
 
   // ── Email change ────────────────────────────────────────────────────────────
@@ -80,8 +112,8 @@ export default function SettingsPage() {
     }
   }
 
-  // ── Password change ─────────────────────────────────────────────────────────
-  const [pwModal, setPwModal] = React.useState(false)
+  // ── Password change (inline form) ───────────────────────────────────────────
+  const [showPwForm, setShowPwForm] = React.useState(false)
   const [currentPw, setCurrentPw] = React.useState('')
   const [newPw, setNewPw] = React.useState('')
   const [confirmPw, setConfirmPw] = React.useState('')
@@ -89,12 +121,17 @@ export default function SettingsPage() {
   const [pwError, setPwError] = React.useState<string | null>(null)
   const [pwSuccess, setPwSuccess] = React.useState(false)
 
-  function openPwModal() {
+  function openPwForm() {
     setCurrentPw('')
     setNewPw('')
     setConfirmPw('')
     setPwError(null)
-    setPwModal(true)
+    setShowPwForm(true)
+  }
+
+  function closePwForm() {
+    setShowPwForm(false)
+    setPwError(null)
   }
 
   async function savePassword(e: React.FormEvent) {
@@ -111,7 +148,7 @@ export default function SettingsPage() {
     setPwError(null)
     try {
       await changePassword(currentPw, newPw)
-      setPwModal(false)
+      setShowPwForm(false)
       setPwSuccess(true)
       setTimeout(() => setPwSuccess(false), 3000)
     } catch (err: unknown) {
@@ -139,7 +176,15 @@ export default function SettingsPage() {
   if (!user?.patient_profile_id) {
     return (
       <div className="p-4 max-w-md mx-auto mt-10">
-        <Alert variant="warning">Không tìm thấy hồ sơ bệnh nhân. Vui lòng liên hệ hỗ trợ.</Alert>
+        <div
+          role="alert"
+          className="rounded-[14px] bg-[#FEF9EC] border border-[#E0A92E]/30 p-4 text-[14px]"
+        >
+          <p className="font-bold text-[#8B6400] mb-0.5">Không tìm thấy hồ sơ</p>
+          <p className="text-[#8B6400]/80 text-[13px]">
+            Không tìm thấy hồ sơ bệnh nhân. Vui lòng liên hệ hỗ trợ.
+          </p>
+        </div>
       </div>
     )
   }
@@ -159,8 +204,23 @@ export default function SettingsPage() {
         <h1 className="text-[20px] font-extrabold tracking-[-0.02em] text-neu-text">Cài đặt</h1>
       </header>
 
-      {emailSuccess && <Alert variant="success" title="Đã cập nhật email" />}
-      {pwSuccess && <Alert variant="success" title="Đã đổi mật khẩu thành công" />}
+      {/* Success banners */}
+      {emailSuccess && (
+        <div
+          role="alert"
+          className="rounded-[14px] bg-[#E3F5EC] border border-[#0F9C6E]/30 p-4 text-[14px]"
+        >
+          <p className="font-bold text-neu-green mb-0.5">Đã cập nhật email</p>
+        </div>
+      )}
+      {pwSuccess && (
+        <div
+          role="alert"
+          className="rounded-[14px] bg-[#E3F5EC] border border-[#0F9C6E]/30 p-4 text-[14px]"
+        >
+          <p className="font-bold text-neu-green mb-0.5">Đã đổi mật khẩu thành công</p>
+        </div>
+      )}
 
       {/* ── Account ── */}
       <section>
@@ -203,25 +263,26 @@ export default function SettingsPage() {
             ) : (
               <div className="space-y-2">
                 <span className="text-[14px] text-neu-muted">Email</span>
-                <Input
+                <input
                   type="email"
                   value={emailValue}
                   onChange={(e) => setEmailValue(e.target.value)}
-                  fullWidth
+                  placeholder="email@example.com"
+                  className={INPUT_CLASS}
                 />
                 {emailError && <p className="text-[13px] text-danger">{emailError}</p>}
                 <div className="flex gap-2 pt-1">
-                  <Button
-                    variant="outline"
-                    size="sm"
+                  <NeuButton
+                    variant="secondary"
                     onClick={() => setEditingEmail(false)}
                     disabled={emailSaving}
+                    className="!text-[13px] !px-4 !py-2"
                   >
                     Hủy
-                  </Button>
-                  <Button variant="mint" size="sm" onClick={saveEmail} loading={emailSaving}>
-                    Lưu
-                  </Button>
+                  </NeuButton>
+                  <NeuButton onClick={saveEmail} disabled={emailSaving} className="!text-[13px] !px-4 !py-2">
+                    {emailSaving ? 'Đang lưu...' : 'Lưu'}
+                  </NeuButton>
                 </div>
               </div>
             )}
@@ -234,40 +295,106 @@ export default function SettingsPage() {
             </span>
           </div>
 
-          <button
-            type="button"
-            onClick={openPwModal}
-            className="flex w-full items-center gap-3 py-3.5 text-left"
-          >
-            <KeyRound className="size-5 text-[#2563EB]" aria-hidden="true" />
-            <span className="flex-1 text-[14.5px] font-semibold text-neu-text">Đổi mật khẩu</span>
-            <ChevronRight className="size-[18px] text-neu-subtle" aria-hidden="true" />
-          </button>
+          {/* Change password row */}
+          {!showPwForm ? (
+            <button
+              type="button"
+              onClick={openPwForm}
+              className="flex w-full items-center gap-3 py-3.5 text-left"
+            >
+              <KeyRound className="size-5 text-[#2563EB]" aria-hidden="true" />
+              <span className="flex-1 text-[14.5px] font-semibold text-neu-text">
+                Đổi mật khẩu
+              </span>
+              <ChevronRight className="size-[18px] text-neu-subtle" aria-hidden="true" />
+            </button>
+          ) : (
+            <div className="py-3.5 space-y-3">
+              <div className="flex items-center gap-3 mb-1">
+                <KeyRound className="size-5 text-[#2563EB]" aria-hidden="true" />
+                <span className="flex-1 text-[14.5px] font-bold text-neu-text">Đổi mật khẩu</span>
+              </div>
+              <form id="pw-form" onSubmit={savePassword} className="space-y-3">
+                {pwError && (
+                  <div
+                    role="alert"
+                    className="rounded-[14px] bg-[#FEF9EC] border border-[#E0A92E]/30 p-3 text-[13px]"
+                  >
+                    <p className="font-bold text-[#8B6400]">{pwError}</p>
+                  </div>
+                )}
+                <div className="space-y-1.5">
+                  <label className="block text-[13px] font-semibold text-neu-muted uppercase tracking-wide">
+                    Mật khẩu hiện tại
+                  </label>
+                  <input
+                    type="password"
+                    value={currentPw}
+                    onChange={(e) => setCurrentPw(e.target.value)}
+                    required
+                    className={INPUT_CLASS}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="block text-[13px] font-semibold text-neu-muted uppercase tracking-wide">
+                    Mật khẩu mới
+                  </label>
+                  <input
+                    type="password"
+                    value={newPw}
+                    onChange={(e) => setNewPw(e.target.value)}
+                    placeholder="Tối thiểu 8 ký tự"
+                    required
+                    className={INPUT_CLASS}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="block text-[13px] font-semibold text-neu-muted uppercase tracking-wide">
+                    Xác nhận mật khẩu mới
+                  </label>
+                  <input
+                    type="password"
+                    value={confirmPw}
+                    onChange={(e) => setConfirmPw(e.target.value)}
+                    required
+                    className={INPUT_CLASS}
+                  />
+                </div>
+                <div className="flex gap-2 pt-1">
+                  <NeuButton
+                    variant="secondary"
+                    type="button"
+                    onClick={closePwForm}
+                    disabled={pwSaving}
+                    className="!text-[13px] !px-4 !py-2"
+                  >
+                    Hủy
+                  </NeuButton>
+                  <NeuButton type="submit" disabled={pwSaving} className="!text-[13px] !px-4 !py-2">
+                    {pwSaving ? 'Đang lưu...' : 'Lưu'}
+                  </NeuButton>
+                </div>
+              </form>
+            </div>
+          )}
         </NeuCard>
       </section>
 
-      {/* ── Notifications (real, persisted toggles) ── */}
+      {/* ── Notifications (localStorage toggles) ── */}
       <section>
         <SectionLabel>Thông báo</SectionLabel>
-        <NeuCard className="!px-4 !py-2">
-          <div className="space-y-1">
-            {NOTIF_FIELDS.map(({ key, label }) => (
-              <div key={key} className="py-1.5">
-                <Switch
-                  label={label}
-                  tone="mint"
-                  checked={user[key]}
-                  disabled={notifSaving === key}
-                  onCheckedChange={(v) => toggleNotif(key, v)}
-                />
-              </div>
-            ))}
-          </div>
-          {notifError && (
-            <div className="mt-2">
-              <Alert variant="danger">{notifError}</Alert>
+        <NeuCard className="!px-4 !py-1">
+          {NOTIF_FIELDS.map(({ key, label }, idx) => (
+            <div
+              key={key}
+              className={`flex items-center justify-between gap-3 py-3.5 ${
+                idx < NOTIF_FIELDS.length - 1 ? 'border-b border-[rgba(16,48,44,0.06)]' : ''
+              }`}
+            >
+              <span className="text-[14px] font-medium text-neu-text">{label}</span>
+              <NeuToggle checked={prefs[key]} onToggle={() => togglePref(key)} />
             </div>
-          )}
+          ))}
         </NeuCard>
       </section>
 
@@ -302,69 +429,14 @@ export default function SettingsPage() {
       </section>
 
       {/* ── Logout ── */}
-      <button
-        type="button"
+      <NeuButton
         onClick={handleLogout}
         disabled={loggingOut}
-        className="flex h-12 w-full items-center justify-center gap-2 rounded-[13px] border border-[rgba(217,45,32,0.2)] bg-[rgba(251,231,229,0.93)] text-[14px] font-bold text-[#D92D20] transition-transform active:scale-[0.99] disabled:opacity-60"
+        className="!bg-[#FEF0F0] !text-[#D92D20] !shadow-none border border-[#D92D20]/20 w-full"
       >
         <LogOut className="size-[18px]" />
         {loggingOut ? 'Đang đăng xuất...' : 'Đăng xuất'}
-      </button>
-
-      {/* Password change modal */}
-      <Modal
-        open={pwModal}
-        onOpenChange={(o) => !o && setPwModal(false)}
-        title="Đổi mật khẩu"
-        footer={
-          <>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setPwModal(false)}
-              disabled={pwSaving}
-            >
-              Hủy
-            </Button>
-            <Button variant="mint" size="sm" type="submit" form="pw-form" loading={pwSaving}>
-              Lưu
-            </Button>
-          </>
-        }
-      >
-        <form id="pw-form" onSubmit={savePassword} className="space-y-4">
-          {pwError && <Alert variant="danger" title={pwError} />}
-          <FormField label="Mật khẩu hiện tại" required>
-            <Input
-              type="password"
-              value={currentPw}
-              onChange={(e) => setCurrentPw(e.target.value)}
-              fullWidth
-              required
-            />
-          </FormField>
-          <FormField label="Mật khẩu mới" required>
-            <Input
-              type="password"
-              value={newPw}
-              onChange={(e) => setNewPw(e.target.value)}
-              placeholder="Tối thiểu 8 ký tự"
-              fullWidth
-              required
-            />
-          </FormField>
-          <FormField label="Xác nhận mật khẩu mới" required>
-            <Input
-              type="password"
-              value={confirmPw}
-              onChange={(e) => setConfirmPw(e.target.value)}
-              fullWidth
-              required
-            />
-          </FormField>
-        </form>
-      </Modal>
+      </NeuButton>
     </div>
   )
 }

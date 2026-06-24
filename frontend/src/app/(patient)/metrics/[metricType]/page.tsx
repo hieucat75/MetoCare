@@ -137,10 +137,11 @@ export default function MetricDetailPage() {
         </h1>
       </header>
 
-      {series && (() => {
-        const dangerMsg = metricDangerMessage(metricType, series.latest.value)
-        return dangerMsg ? <DangerAlertBanner message={dangerMsg} /> : null
-      })()}
+      {series &&
+        (() => {
+          const dangerMsg = metricDangerMessage(metricType, series.latest.value)
+          return dangerMsg ? <DangerAlertBanner message={dangerMsg} /> : null
+        })()}
 
       {series ? (
         <MetricDetailBody series={series} accent={accent} period={period} onPeriod={setPeriod} />

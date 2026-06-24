@@ -5,9 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { ArrowLeft, Pill, Layers, Clock, FileText } from 'lucide-react'
 import { useAuth } from '@/lib/auth/context'
 import { getMedications, type Medication } from '@/lib/api/patient'
-import { PageLoading } from '@/design-system/components/core/LoadingState'
-import { ErrorState } from '@/design-system/components/core/ErrorState'
-import { Alert } from '@/design-system/components/core/Alert'
+import { PatientErrorState, PatientSkeleton } from '@/components/patient/states'
 import { NeuCard, NeuButton } from '@/components/patient/neu'
 
 const PILL_GRADIENT = 'linear-gradient(160deg,#5B8DEF,#2563EB)'
@@ -60,13 +58,16 @@ export default function MedicationDetailPage() {
   if (!patientId) {
     return (
       <div className="p-4 max-w-md mx-auto mt-10">
-        <Alert variant="warning">Chưa có hồ sơ bệnh nhân. Vui lòng liên hệ hỗ trợ.</Alert>
+        <div role="alert" className="rounded-[14px] bg-[#FEF9EC] border border-[#E0A92E]/30 p-4 text-[14px]">
+          <p className="font-bold text-[#8B6400] mb-0.5">Chưa có hồ sơ</p>
+          <p className="text-[#8B6400]/80 text-[13px]">Chưa có hồ sơ bệnh nhân. Vui lòng liên hệ hỗ trợ.</p>
+        </div>
       </div>
     )
   }
 
-  if (loading) return <PageLoading label="Đang tải..." />
-  if (error) return <ErrorState message={error} onRetry={load} />
+  if (loading) return <div className="p-4 space-y-3 max-w-md mx-auto"><PatientSkeleton /></div>
+  if (error) return <PatientErrorState message={error} onRetry={load} />
   if (!medication) return null
 
   const subtitle = [medication.dose, medication.frequency].filter(Boolean).join(' · ')

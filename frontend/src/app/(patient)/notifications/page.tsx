@@ -11,7 +11,6 @@ import {
   MessageCircle,
   type LucideIcon,
 } from 'lucide-react'
-import { Alert } from '@/design-system'
 import { PatientEmptyState } from '@/components/patient'
 import { PatientErrorState, PatientSkeleton } from '@/components/patient/states'
 import { useAuth } from '@/lib/auth/context'
@@ -133,9 +132,10 @@ export default function NotificationsPage() {
   if (!patientId) {
     return (
       <div className="p-4 max-w-md mx-auto mt-10">
-        <Alert variant="warning" title="Chưa có hồ sơ bệnh nhân">
-          Tài khoản của bạn chưa được liên kết với hồ sơ bệnh nhân.
-        </Alert>
+        <div role="alert" className="rounded-[14px] bg-[#FEF9EC] border border-[#E0A92E]/30 p-4">
+          <p className="text-[14px] font-bold text-[#8B6400]">Chưa có hồ sơ bệnh nhân</p>
+          <p className="text-[13px] text-[#8B6400]/80 mt-1">Tài khoản của bạn chưa được liên kết với hồ sơ bệnh nhân.</p>
+        </div>
       </div>
     )
   }

@@ -126,8 +126,8 @@ export default function ConsentsPage() {
           Quyền riêng tư &amp; Đồng ý
         </h1>
         <p className="mt-1 text-[14px] text-neu-muted">
-          Các bác sĩ dưới đây có quyền xem hồ sơ sức khỏe của bạn. Bạn có thể thu hồi quyền bất
-          kỳ lúc nào.
+          Các bác sĩ dưới đây có quyền xem hồ sơ sức khỏe của bạn. Bạn có thể thu hồi quyền bất kỳ
+          lúc nào.
         </p>
       </header>
 

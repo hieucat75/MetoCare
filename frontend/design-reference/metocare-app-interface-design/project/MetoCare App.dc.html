@@ -1,0 +1,880 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Be+Vietnam+Pro:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet" />
+<script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;background:#dfeef0;font-family:'Inter','Be Vietnam Pro',Arial,sans-serif;-webkit-font-smoothing:antialiased;color:#0E2A33}
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-thumb{background:rgba(16,48,44,0.22);border-radius:6px;border:3px solid transparent;background-clip:padding-box}
+  meto-icon{display:inline-flex;align-items:center;justify-content:center}
+  @keyframes mc-pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+  @keyframes mc-float{0%,100%{transform:translateY(0)}50%{transform:translateY(-18px)}}
+  .mc-pulse{animation:mc-pulse 1.4s ease-in-out infinite}
+</style>
+<script src="meto-components.js"></script>
+</helmet>
+<div style="min-width:100%;display:inline-block;min-height:100vh;box-sizing:border-box;padding:54px 60px 110px;font-family:'Inter','Be Vietnam Pro',sans-serif;background-color:#eef3f1;background-image:radial-gradient(820px 560px at 8% 2%, rgba(27,176,130,0.30), transparent 60%), radial-gradient(900px 680px at 92% 14%, rgba(37,99,235,0.12), transparent 60%), radial-gradient(760px 620px at 62% 104%, rgba(16,140,99,0.18), transparent 60%), radial-gradient(680px 520px at 30% 72%, rgba(252,222,140,0.20), transparent 62%), linear-gradient(140deg,#e9f6f0 0%,#eef5f1 44%,#f3f7f6 100%);">
+
+  <!-- ===================== INTRO ===================== -->
+  <header style="max-width:1200px;margin-bottom:6px;">
+    <div style="display:inline-flex;align-items:center;gap:11px;background:rgba(255,255,255,0.55);backdrop-filter:blur(20px) saturate(180%);border:1px solid rgba(255,255,255,0.7);border-radius:999px;padding:9px 18px 9px 12px;box-shadow:0 8px 24px -10px rgba(16,48,44,0.30), inset 0 1px 0 rgba(255,255,255,0.9);">
+      <meto-mark size="32"></meto-mark>
+      <span style="color:#0F9C6E;font-weight:700;font-size:21px;letter-spacing:-0.02em;">metocare</span>
+      <span style="margin-left:6px;font-family:'JetBrains Mono',monospace;font-weight:600;font-size:10.5px;color:#365651;background:rgba(16,48,44,0.06);border-radius:999px;padding:5px 11px;">LIQUID GLASS · 5 VAI TRÒ</span>
+    </div>
+    <h1 style="font-size:46px;font-weight:800;color:#0E2A33;letter-spacing:-0.03em;margin:26px 0 0;line-height:1.0;">Nền tảng quản lý<br/>sức khoẻ chuyển hoá</h1>
+    <p style="font-size:17px;color:#244744;margin:18px 0 0;max-width:780px;line-height:1.55;">Bộ giao diện hoàn chỉnh theo phong cách <b style="color:#0E2A33;">Liquid Glass</b> — kính mờ trong suốt, chiều sâu phân lớp. Cho bệnh nhân (mobile), bác sĩ &amp; quản trị (desktop), với nguyên tắc <b style="color:#0E2A33;">phân biệt rạch ròi nội dung AI với nội dung bác sĩ đã duyệt</b>.</p>
+    <div style="display:flex;flex-wrap:wrap;gap:11px;margin-top:24px;">
+      <span style="display:inline-flex;align-items:center;gap:8px;background:rgba(243,238,251,0.7);backdrop-filter:blur(14px);border:1px solid rgba(255,255,255,0.6);color:#6D3FBE;font-weight:600;font-size:12.5px;border-radius:999px;padding:8px 14px;box-shadow:0 6px 16px -8px rgba(109,63,190,0.4);"><meto-icon name="sparkles" size="14" color="#6D3FBE"></meto-icon>AI tạo · chờ bác sĩ duyệt</span>
+      <span style="display:inline-flex;align-items:center;gap:8px;background:rgba(227,244,234,0.7);backdrop-filter:blur(14px);border:1px solid rgba(255,255,255,0.6);color:#15915A;font-weight:600;font-size:12.5px;border-radius:999px;padding:8px 14px;box-shadow:0 6px 16px -8px rgba(21,145,90,0.4);"><meto-icon name="shield" size="14" color="#15915A"></meto-icon>Bác sĩ đã duyệt</span>
+      <span style="display:inline-flex;align-items:center;gap:8px;background:rgba(255,255,255,0.55);backdrop-filter:blur(14px);border:1px solid rgba(255,255,255,0.6);color:#365651;font-weight:600;font-size:12.5px;border-radius:999px;padding:8px 14px;"><meto-icon name="user" size="14" color="#365651"></meto-icon>Dữ liệu bệnh nhân nhập</span>
+    </div>
+  </header>
+
+  <!-- ===================== 01 · FOUNDATIONS ===================== -->
+  <div style="display:flex;align-items:flex-end;gap:13px;margin:56px 0 18px;">
+    <span style="font-family:'JetBrains Mono',monospace;font-weight:600;font-size:13px;color:#fff;background:#0F9C6E;border-radius:8px;padding:4px 10px;box-shadow:0 6px 16px -6px rgba(16,140,99,0.6);">01</span>
+    <h2 style="font-size:24px;font-weight:700;color:#0E2A33;letter-spacing:-0.02em;margin:0;">Nền tảng thiết kế</h2>
+    <p style="font-size:14px;color:#365651;margin:0 0 2px;">Glass tokens · màu · chữ · component · trạng thái lâm sàng</p>
+  </div>
+  <div style="width:1200px;background:rgba(255,255,255,0.5);backdrop-filter:blur(28px) saturate(180%);border:1px solid rgba(255,255,255,0.65);border-radius:20px;box-shadow:0 22px 60px -24px rgba(16,48,44,0.4), inset 0 1px 0 rgba(255,255,255,0.85);padding:30px 32px;display:flex;gap:44px;">
+    <div>
+      <p style="font-family:'JetBrains Mono',monospace;font-weight:600;font-size:11px;letter-spacing:0.08em;color:#5A736D;text-transform:uppercase;margin:0 0 14px;">Bảng màu thương hiệu</p>
+      <div style="display:flex;flex-wrap:wrap;gap:12px;">
+        <div style="display:flex;flex-direction:column;gap:7px;"><div style="width:64px;height:52px;border-radius:11px;background:linear-gradient(150deg,#1BB082,#0B7F5B);box-shadow:inset 0 1px 0 rgba(255,255,255,0.3), 0 6px 14px -8px rgba(16,140,99,0.7);"></div><span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#365651;">mint</span></div>
+        <div style="display:flex;flex-direction:column;gap:7px;"><div style="width:64px;height:52px;border-radius:11px;background:#64748B;box-shadow:inset 0 1px 0 rgba(255,255,255,0.3);"></div><span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#365651;">gray</span></div>
+        <div style="display:flex;flex-direction:column;gap:7px;"><div style="width:64px;height:52px;border-radius:11px;background:#15915A;box-shadow:inset 0 1px 0 rgba(255,255,255,0.3);"></div><span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#365651;">success</span></div>
+        <div style="display:flex;flex-direction:column;gap:7px;"><div style="width:64px;height:52px;border-radius:11px;background:#C77A06;box-shadow:inset 0 1px 0 rgba(255,255,255,0.3);"></div><span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#365651;">warning</span></div>
+        <div style="display:flex;flex-direction:column;gap:7px;"><div style="width:64px;height:52px;border-radius:11px;background:#D92D20;box-shadow:inset 0 1px 0 rgba(255,255,255,0.3);"></div><span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#365651;">danger</span></div>
+        <div style="display:flex;flex-direction:column;gap:7px;"><div style="width:64px;height:52px;border-radius:11px;background:#2563EB;box-shadow:inset 0 1px 0 rgba(255,255,255,0.3);"></div><span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#365651;">info</span></div>
+        <div style="display:flex;flex-direction:column;gap:7px;"><div style="width:64px;height:52px;border-radius:11px;background:#6D3FBE;box-shadow:inset 0 1px 0 rgba(255,255,255,0.3);"></div><span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#365651;">ai</span></div>
+      </div>
+      <p style="font-family:'JetBrains Mono',monospace;font-weight:600;font-size:11px;letter-spacing:0.08em;color:#5A736D;text-transform:uppercase;margin:22px 0 12px;">Vật liệu kính</p>
+      <div style="display:flex;gap:12px;">
+        <div style="flex:1;height:64px;border-radius:12px;background:rgba(255,255,255,0.55);backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,0.7);box-shadow:inset 0 1px 0 rgba(255,255,255,0.9), 0 8px 20px -12px rgba(16,48,44,0.5);display:grid;place-items:center;font-size:11.5px;font-weight:600;color:#244744;">Glass · sáng</div>
+        <div style="flex:1;height:64px;border-radius:12px;background:rgba(16,140,99,0.82);backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,0.2);box-shadow:inset 0 1px 0 rgba(255,255,255,0.25);display:grid;place-items:center;font-size:11.5px;font-weight:600;color:#fff;">Glass · mint</div>
+        <div style="flex:1;height:64px;border-radius:12px;background:rgba(16,40,40,0.55);backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,0.14);box-shadow:inset 0 1px 0 rgba(255,255,255,0.18);display:grid;place-items:center;font-size:11.5px;font-weight:600;color:#fff;">Glass · tối</div>
+      </div>
+    </div>
+    <div>
+      <p style="font-family:'JetBrains Mono',monospace;font-weight:600;font-size:11px;letter-spacing:0.08em;color:#5A736D;text-transform:uppercase;margin:0 0 14px;">Hệ chữ — Inter / Be Vietnam Pro</p>
+      <div style="display:flex;flex-direction:column;gap:5px;margin-bottom:22px;">
+        <span style="font-size:30px;font-weight:800;letter-spacing:-0.025em;color:#0E2A33;line-height:1.1;">Sức khoẻ chuyển hoá</span>
+        <span style="font-size:18px;font-weight:700;color:#0E2A33;">Heading · Đường huyết 7 ngày</span>
+        <span style="font-size:15px;color:#244744;">Body · Chỉ số của bạn đang ổn định trong ngưỡng mục tiêu.</span>
+        <span style="font-family:'JetBrains Mono',monospace;font-weight:600;font-size:13px;color:#0F9C6E;">Mono · HbA1c 6.4% · 5.6 mmol/L</span>
+      </div>
+      <p style="font-family:'JetBrains Mono',monospace;font-weight:600;font-size:11px;letter-spacing:0.08em;color:#5A736D;text-transform:uppercase;margin:0 0 12px;">Nút &amp; trạng thái lâm sàng</p>
+      <div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:14px;">
+        <button style="height:42px;padding:0 18px;border:none;border-radius:10px;background:#0F9C6E;color:#fff;font-weight:600;font-size:14px;box-shadow:0 8px 18px -8px rgba(16,140,99,0.8), inset 0 1px 0 rgba(255,255,255,0.25);cursor:pointer;">Nút chính</button>
+        <button style="height:42px;padding:0 18px;border:1px solid rgba(255,255,255,0.7);border-radius:10px;background:rgba(255,255,255,0.6);backdrop-filter:blur(12px);color:#0F9C6E;font-weight:600;font-size:14px;box-shadow:inset 0 1px 0 rgba(255,255,255,0.9);cursor:pointer;">Glass</button>
+        <button style="height:42px;padding:0 18px;border:none;border-radius:10px;background:#D92D20;color:#fff;font-weight:600;font-size:14px;box-shadow:0 8px 18px -8px rgba(217,45,32,0.6);cursor:pointer;">Nguy hiểm</button>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;">
+        <span style="display:inline-flex;align-items:center;gap:6px;background:rgba(251,239,214,0.8);border:1px solid rgba(255,255,255,0.5);color:#C77A06;font-weight:600;font-size:12px;border-radius:999px;padding:5px 11px;"><span style="width:6px;height:6px;border-radius:50%;background:#C77A06;"></span>Chờ duyệt</span>
+        <span style="display:inline-flex;align-items:center;gap:6px;background:rgba(227,244,234,0.8);border:1px solid rgba(255,255,255,0.5);color:#15915A;font-weight:600;font-size:12px;border-radius:999px;padding:5px 11px;"><span style="width:6px;height:6px;border-radius:50%;background:#15915A;"></span>Đã duyệt</span>
+        <span style="display:inline-flex;align-items:center;gap:6px;background:rgba(251,231,229,0.8);border:1px solid rgba(255,255,255,0.5);color:#D92D20;font-weight:600;font-size:12px;border-radius:999px;padding:5px 11px;"><span style="width:6px;height:6px;border-radius:50%;background:#D92D20;"></span>Từ chối</span>
+        <span style="display:inline-flex;align-items:center;gap:6px;background:rgba(229,237,251,0.8);border:1px solid rgba(255,255,255,0.5);color:#2563EB;font-weight:600;font-size:12px;border-radius:999px;padding:5px 11px;"><span style="width:6px;height:6px;border-radius:50%;background:#2563EB;"></span>Yêu cầu bổ sung</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== 02 · AUTH ===================== -->
+  <div style="display:flex;align-items:flex-end;gap:13px;margin:60px 0 18px;">
+    <span style="font-family:'JetBrains Mono',monospace;font-weight:600;font-size:13px;color:#fff;background:#0F9C6E;border-radius:8px;padding:4px 10px;box-shadow:0 6px 16px -6px rgba(16,140,99,0.6);">02</span>
+    <h2 style="font-size:24px;font-weight:700;color:#0E2A33;letter-spacing:-0.02em;margin:0;">Đăng nhập &amp; định danh</h2>
+    <p style="font-size:14px;color:#365651;margin:0 0 2px;">Đăng nhập web · OTP · chọn vai trò · giới thiệu</p>
+  </div>
+  <div style="display:flex;gap:44px;align-items:flex-start;flex-wrap:wrap;">
+
+    <!-- Desktop glass login -->
+    <div style="display:flex;flex-direction:column;gap:13px;flex:none;">
+      <div style="font-family:'JetBrains Mono',monospace;font-weight:600;font-size:12px;color:#365651;padding-left:4px;">A · Đăng nhập web (bác sĩ / quản trị)</div>
+      <div style="width:1060px;height:650px;border-radius:20px;overflow:hidden;position:relative;box-shadow:0 40px 90px -30px rgba(16,48,44,0.5);background-image:radial-gradient(700px 500px at 18% 10%, rgba(16,140,99,0.55), transparent 60%), radial-gradient(800px 600px at 95% 80%, rgba(37,99,235,0.4), transparent 60%), linear-gradient(150deg,#0F9C6E,#0B7F5B 60%,#14916B);">
+        <div style="position:absolute;width:280px;height:280px;border-radius:50%;background:rgba(120,240,196,0.45);filter:blur(40px);left:30px;top:60px;"></div>
+        <div style="position:relative;height:100%;display:flex;">
+          <div style="width:470px;color:#fff;padding:50px 46px;display:flex;flex-direction:column;">
+            <div style="display:flex;align-items:center;gap:11px;"><meto-mark size="36" ring="#fff" leaf="#7FE0BD"></meto-mark><span style="font-weight:700;font-size:23px;">metocare</span></div>
+            <div style="margin-top:auto;">
+              <h3 style="font-size:33px;font-weight:800;letter-spacing:-0.025em;line-height:1.12;margin:0;">Cổng lâm sàng<br/>an toàn &amp; tuân thủ</h3>
+              <p style="font-size:15px;color:rgba(255,255,255,0.85);margin:18px 0 0;line-height:1.55;max-width:330px;">Duyệt khuyến nghị AI, theo dõi nguy cơ bệnh nhân và quản lý phác đồ — trong một không gian kính trong suốt.</p>
+              <div style="display:inline-flex;align-items:center;gap:9px;margin-top:28px;background:rgba(255,255,255,0.16);backdrop-filter:blur(14px);border:1px solid rgba(255,255,255,0.25);border-radius:999px;padding:9px 15px;font-size:12.5px;font-weight:600;"><meto-icon name="shield-check" size="15" color="#7FE0BD"></meto-icon>Đạt chuẩn bảo mật dữ liệu y tế</div>
+            </div>
+          </div>
+          <div style="flex:1;padding:24px;">
+            <div style="height:100%;background:rgba(255,255,255,0.62);backdrop-filter:blur(34px) saturate(180%);border:1px solid rgba(255,255,255,0.7);border-radius:16px;box-shadow:inset 0 1px 0 rgba(255,255,255,0.9), 0 20px 50px -20px rgba(16,48,44,0.4);padding:46px 44px;display:flex;flex-direction:column;justify-content:center;">
+              <h2 style="font-size:27px;font-weight:800;color:#0E2A33;letter-spacing:-0.02em;margin:0;">Đăng nhập</h2>
+              <p style="font-size:14px;color:#365651;margin:8px 0 26px;">Dùng tài khoản được phòng khám cấp.</p>
+              <label style="font-size:12.5px;font-weight:600;color:#244744;">Email công việc</label>
+              <div style="height:48px;border:1px solid rgba(16,48,44,0.12);border-radius:11px;background:rgba(255,255,255,0.7);display:flex;align-items:center;gap:10px;padding:0 14px;margin:7px 0 18px;"><meto-icon name="mail" size="18" color="#5A736D"></meto-icon><span style="color:#0E2A33;font-size:14.5px;">hung.tran@metocare.vn</span></div>
+              <label style="font-size:12.5px;font-weight:600;color:#244744;">Mật khẩu</label>
+              <div style="height:48px;border:1.5px solid #0F9C6E;border-radius:11px;background:rgba(255,255,255,0.85);display:flex;align-items:center;gap:10px;padding:0 14px;margin:7px 0 8px;box-shadow:0 0 0 4px rgba(16,140,99,0.12);"><meto-icon name="lock" size="18" color="#0F9C6E"></meto-icon><span style="color:#0E2A33;font-size:14.5px;letter-spacing:2px;flex:1;">••••••••••</span><meto-icon name="eye" size="18" color="#5A736D"></meto-icon></div>
+              <div style="display:flex;align-items:center;justify-content:space-between;margin:14px 0 22px;">
+                <span style="display:inline-flex;align-items:center;gap:8px;font-size:13px;color:#244744;"><span style="width:18px;height:18px;border-radius:6px;background:#0F9C6E;display:grid;place-items:center;"><meto-icon name="check" size="13" color="#fff"></meto-icon></span>Ghi nhớ thiết bị này</span>
+                <span style="font-size:13px;font-weight:600;color:#0F9C6E;">Quên mật khẩu?</span>
+              </div>
+              <button style="height:50px;border:none;border-radius:11px;background:#0F9C6E;color:#fff;font-weight:700;font-size:15.5px;box-shadow:0 12px 24px -10px rgba(16,140,99,0.9), inset 0 1px 0 rgba(255,255,255,0.25);cursor:pointer;">Tiếp tục</button>
+              <button style="height:46px;margin-top:14px;border:1px solid rgba(16,48,44,0.12);border-radius:11px;background:rgba(255,255,255,0.5);color:#0E2A33;font-weight:600;font-size:13.5px;display:flex;align-items:center;justify-content:center;gap:9px;cursor:pointer;"><meto-icon name="building" size="17" color="#0F9C6E"></meto-icon>Đăng nhập SSO bệnh viện</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Mobile OTP -->
+    <div style="display:flex;flex-direction:column;gap:13px;flex:none;">
+      <div style="font-family:'JetBrains Mono',monospace;font-weight:600;font-size:12px;color:#365651;padding-left:4px;">B · Xác thực OTP (bệnh nhân)</div>
+      <div style="border-radius:48px;background:linear-gradient(160deg,#0c1b1a,#08110f);padding:11px;box-shadow:0 60px 100px -40px rgba(16,48,44,0.6);width:412px;">
+        <div style="position:relative;border-radius:38px;overflow:hidden;width:390px;height:844px;background-image:radial-gradient(420px 340px at 18% 2%, rgba(16,140,99,0.14), transparent 58%), radial-gradient(460px 440px at 100% 22%, rgba(16,140,99,0.12), transparent 56%), linear-gradient(180deg,#ffffff,#ffffff 60%,#f7faf9);">
+          <div style="position:absolute;top:0;left:121px;width:148px;height:30px;background:#08110f;border-radius:0 0 20px 20px;z-index:30;"></div>
+          <div style="position:absolute;inset:0;display:flex;flex-direction:column;">
+            <div style="height:46px;padding:0 26px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;"><span style="font-weight:600;font-size:14px;">9:41</span><div style="display:flex;gap:6px;"><meto-icon name="signal" size="15" color="#0E2A33"></meto-icon><meto-icon name="wifi" size="15" color="#0E2A33"></meto-icon><meto-icon name="battery-full" size="17" color="#0E2A33"></meto-icon></div></div>
+            <div style="flex:1;padding:26px 28px;display:flex;flex-direction:column;">
+              <button style="width:42px;height:42px;border-radius:50%;border:1px solid rgba(255,255,255,0.6);background:rgba(255,255,255,0.55);backdrop-filter:blur(14px);display:grid;place-items:center;cursor:pointer;"><meto-icon name="arrow-left" size="20" color="#0E2A33"></meto-icon></button>
+              <div style="background:rgba(255,255,255,0.55);backdrop-filter:blur(30px) saturate(180%);border:1px solid rgba(255,255,255,0.7);border-radius:20px;box-shadow:inset 0 1px 0 rgba(255,255,255,0.9), 0 18px 40px -18px rgba(16,48,44,0.4);padding:28px 24px;margin-top:30px;">
+                <div style="width:60px;height:60px;border-radius:14px;background:#0F9C6E;display:grid;place-items:center;box-shadow:0 10px 22px -10px rgba(16,140,99,0.9);"><meto-icon name="message-square" size="28" color="#fff"></meto-icon></div>
+                <h2 style="font-size:25px;font-weight:800;color:#0E2A33;letter-spacing:-0.02em;margin:20px 0 0;">Nhập mã xác thực</h2>
+                <p style="font-size:14.5px;color:#365651;margin:10px 0 0;line-height:1.5;">Mã gồm 6 số đã gửi tới<br/><b style="color:#0E2A33;">+84 •••• ••• 482</b></p>
+                <div style="display:flex;gap:9px;margin:26px 0 0;">
+                  <div style="flex:1;height:56px;border:1.5px solid #0F9C6E;border-radius:12px;background:rgba(255,255,255,0.8);display:grid;place-items:center;font-size:23px;font-weight:700;color:#0E2A33;">4</div>
+                  <div style="flex:1;height:56px;border:1.5px solid #0F9C6E;border-radius:12px;background:rgba(255,255,255,0.8);display:grid;place-items:center;font-size:23px;font-weight:700;color:#0E2A33;">8</div>
+                  <div style="flex:1;height:56px;border:1.5px solid #0F9C6E;border-radius:12px;background:rgba(255,255,255,0.8);display:grid;place-items:center;font-size:23px;font-weight:700;color:#0E2A33;">2</div>
+                  <div style="flex:1;height:56px;border:1.5px solid #0F9C6E;border-radius:12px;background:rgba(255,255,255,0.95);display:grid;place-items:center;"><span style="width:2px;height:24px;background:#0F9C6E;" class="mc-pulse"></span></div>
+                  <div style="flex:1;height:56px;border:1.5px solid rgba(16,48,44,0.14);border-radius:12px;background:rgba(255,255,255,0.5);"></div>
+                  <div style="flex:1;height:56px;border:1.5px solid rgba(16,48,44,0.14);border-radius:12px;background:rgba(255,255,255,0.5);"></div>
+                </div>
+                <p style="font-size:13.5px;color:#365651;margin:20px 0 0;text-align:center;">Gửi lại mã sau <b style="color:#0F9C6E;">00:42</b></p>
+              </div>
+              <button style="height:54px;border:none;border-radius:12px;background:#0F9C6E;color:#fff;font-weight:700;font-size:16px;margin-top:auto;box-shadow:0 16px 30px -12px rgba(16,140,99,0.9);cursor:pointer;">Xác nhận</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Role select glass -->
+    <div style="display:flex;flex-direction:column;gap:13px;flex:none;">
+      <div style="font-family:'JetBrains Mono',monospace;font-weight:600;font-size:12px;color:#365651;padding-left:4px;">C · Chọn vai trò</div>
+      <div style="width:440px;height:650px;border-radius:20px;overflow:hidden;position:relative;box-shadow:0 40px 90px -30px rgba(16,48,44,0.45);background-image:radial-gradient(420px 360px at 100% 0%, rgba(16,140,99,0.4), transparent 62%), linear-gradient(160deg,#eafaf3,#e9f1fb);padding:24px;">
+        <div style="height:100%;background:rgba(255,255,255,0.55);backdrop-filter:blur(32px) saturate(180%);border:1px solid rgba(255,255,255,0.7);border-radius:16px;box-shadow:inset 0 1px 0 rgba(255,255,255,0.9), 0 18px 44px -20px rgba(16,48,44,0.4);padding:34px 30px;display:flex;flex-direction:column;">
+          <div style="display:flex;align-items:center;gap:10px;"><meto-mark size="32"></meto-mark><span style="font-weight:700;font-size:20px;color:#0F9C6E;">metocare</span></div>
+          <h2 style="font-size:23px;font-weight:800;color:#0E2A33;letter-spacing:-0.02em;margin:26px 0 6px;">Bạn đăng nhập<br/>với vai trò?</h2>
+          <p style="font-size:14px;color:#365651;margin:0 0 22px;">Chọn để vào đúng không gian làm việc.</p>
+          <div style="display:flex;flex-direction:column;gap:12px;">
+            <div style="border:1.5px solid #0F9C6E;border-radius:14px;background:rgba(232,243,241,0.7);padding:15px;display:flex;align-items:center;gap:13px;box-shadow:0 0 0 4px rgba(16,140,99,0.1);">
+              <span style="width:46px;height:46px;border-radius:10px;background:#0F9C6E;display:grid;place-items:center;box-shadow:0 8px 16px -8px rgba(16,140,99,0.9);"><meto-icon name="user" size="22" color="#fff"></meto-icon></span>
+              <div style="flex:1;"><p style="font-size:15.5px;font-weight:700;color:#0E2A33;margin:0;">Bệnh nhân</p><p style="font-size:12.5px;color:#365651;margin:2px 0 0;">Theo dõi chỉ số, kế hoạch &amp; thuốc</p></div>
+              <span style="width:22px;height:22px;border-radius:50%;background:#0F9C6E;display:grid;place-items:center;"><meto-icon name="check" size="15" color="#fff"></meto-icon></span>
+            </div>
+            <div style="border:1px solid rgba(255,255,255,0.7);border-radius:14px;background:rgba(255,255,255,0.5);padding:15px;display:flex;align-items:center;gap:13px;">
+              <span style="width:46px;height:46px;border-radius:10px;background:rgba(232,243,241,0.9);display:grid;place-items:center;"><meto-icon name="stethoscope" size="22" color="#0F9C6E"></meto-icon></span>
+              <div style="flex:1;"><p style="font-size:15.5px;font-weight:700;color:#0E2A33;margin:0;">Bác sĩ</p><p style="font-size:12.5px;color:#365651;margin:2px 0 0;">Duyệt khuyến nghị &amp; quản lý bệnh nhân</p></div>
+              <meto-icon name="chevron-right" size="20" color="#94A29F"></meto-icon>
+            </div>
+            <div style="border:1px solid rgba(255,255,255,0.7);border-radius:14px;background:rgba(255,255,255,0.5);padding:15px;display:flex;align-items:center;gap:13px;">
+              <span style="width:46px;height:46px;border-radius:10px;background:rgba(227,245,236,0.9);display:grid;place-items:center;"><meto-icon name="building" size="22" color="#0B7F5B"></meto-icon></span>
+              <div style="flex:1;"><p style="font-size:15.5px;font-weight:700;color:#0E2A33;margin:0;">Quản trị phòng khám</p><p style="font-size:12.5px;color:#365651;margin:2px 0 0;">Người dùng, đồng thuận &amp; báo cáo</p></div>
+              <meto-icon name="chevron-right" size="20" color="#94A29F"></meto-icon>
+            </div>
+          </div>
+          <button style="height:50px;border:none;border-radius:12px;background:#0F9C6E;color:#fff;font-weight:700;font-size:15px;margin-top:auto;box-shadow:0 12px 24px -10px rgba(16,140,99,0.9);cursor:pointer;">Tiếp tục</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Onboarding -->
+    <div style="display:flex;flex-direction:column;gap:13px;flex:none;">
+      <div style="font-family:'JetBrains Mono',monospace;font-weight:600;font-size:12px;color:#365651;padding-left:4px;">D · Giới thiệu (bệnh nhân)</div>
+      <div style="border-radius:48px;background:linear-gradient(160deg,#0c1b1a,#08110f);padding:11px;box-shadow:0 60px 100px -40px rgba(16,48,44,0.6);width:412px;">
+        <div style="position:relative;border-radius:38px;overflow:hidden;width:390px;height:844px;background-image:radial-gradient(440px 380px at 20% 4%, rgba(120,240,196,0.5), transparent 60%), linear-gradient(160deg,#0F9C6E,#0B7F5B 60%,#14916B);">
+          <div style="position:absolute;top:0;left:121px;width:148px;height:30px;background:#08110f;border-radius:0 0 20px 20px;z-index:30;"></div>
+          <div style="position:absolute;inset:0;display:flex;flex-direction:column;color:#fff;">
+            <div style="height:46px;padding:0 26px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;"><span style="font-weight:600;font-size:14px;">9:41</span><div style="display:flex;gap:6px;"><meto-icon name="signal" size="15" color="#fff"></meto-icon><meto-icon name="wifi" size="15" color="#fff"></meto-icon><meto-icon name="battery-full" size="17" color="#fff"></meto-icon></div></div>
+            <div style="padding:16px 28px 0;display:flex;justify-content:flex-end;"><span style="font-size:14px;font-weight:600;color:rgba(255,255,255,0.8);">Bỏ qua</span></div>
+            <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 34px;">
+              <div style="width:210px;height:210px;border-radius:50%;background:rgba(255,255,255,0.12);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,0.25);display:grid;place-items:center;box-shadow:inset 0 2px 12px rgba(255,255,255,0.2);">
+                <div style="width:140px;height:140px;border-radius:36px;background:rgba(255,255,255,0.16);display:grid;place-items:center;"><meto-icon name="activity" size="72" color="#fff"></meto-icon></div>
+              </div>
+              <h2 style="font-size:27px;font-weight:800;letter-spacing:-0.02em;text-align:center;margin:40px 0 0;line-height:1.2;">Theo dõi chỉ số<br/>chuyển hoá mỗi ngày</h2>
+              <p style="font-size:15px;color:rgba(255,255,255,0.85);text-align:center;margin:16px 0 0;line-height:1.55;">Đường huyết, huyết áp, cân nặng — trực quan, dễ hiểu, có ngưỡng mục tiêu rõ ràng.</p>
+            </div>
+            <div style="padding:0 28px 42px;">
+              <div style="display:flex;justify-content:center;gap:8px;margin-bottom:24px;"><span style="width:26px;height:8px;border-radius:999px;background:#fff;"></span><span style="width:8px;height:8px;border-radius:999px;background:rgba(255,255,255,0.4);"></span><span style="width:8px;height:8px;border-radius:999px;background:rgba(255,255,255,0.4);"></span></div>
+              <button style="width:100%;height:54px;border:none;border-radius:17px;background:rgba(255,255,255,0.92);backdrop-filter:blur(10px);color:#0F9C6E;font-weight:700;font-size:16.5px;box-shadow:0 16px 30px -12px rgba(0,0,0,0.3);cursor:pointer;">Tiếp tục</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ===================== 03 · PATIENT MOBILE ===================== -->
+  <div style="display:flex;align-items:flex-end;gap:13px;margin:60px 0 18px;">
+    <span style="font-family:'JetBrains Mono',monospace;font-weight:600;font-size:13px;color:#fff;background:#0F9C6E;border-radius:8px;padding:4px 10px;box-shadow:0 6px 16px -6px rgba(16,140,99,0.6);">03</span>
+    <h2 style="font-size:24px;font-weight:700;color:#0E2A33;letter-spacing:-0.02em;margin:0;">Ứng dụng bệnh nhân</h2>
+    <p style="font-size:14px;color:#365651;margin:0 0 2px;">Thẻ kính nổi · tile mint &amp; hồng · thanh tab trong suốt</p>
+  </div>
+  <div style="display:flex;gap:44px;align-items:flex-start;flex-wrap:wrap;">
+
+    <!-- HOME -->
+    <div style="display:flex;flex-direction:column;gap:13px;flex:none;">
+      <div style="font-family:'JetBrains Mono',monospace;font-weight:600;font-size:12px;color:#365651;padding-left:4px;">01 · Trang chủ</div>
+      <div style="border-radius:48px;background:linear-gradient(160deg,#0d211f,#08140f);padding:11px;box-shadow:0 60px 100px -40px rgba(16,48,44,0.55);width:412px;">
+        <div style="position:relative;border-radius:38px;overflow:hidden;width:390px;height:844px;background-image:radial-gradient(420px 340px at 14% 0%, rgba(27,176,130,0.15), transparent 56%), radial-gradient(440px 420px at 100% 16%, rgba(37,99,235,0.10), transparent 55%), linear-gradient(180deg,#ffffff,#ffffff 62%,#f7faf9);">
+          <div style="position:absolute;top:0;left:121px;width:148px;height:30px;background:#08140f;border-radius:0 0 20px 20px;z-index:30;"></div>
+          <div style="position:absolute;inset:0;display:flex;flex-direction:column;">
+            <div style="height:46px;padding:0 26px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;"><span style="font-weight:600;font-size:14px;">9:41</span><div style="display:flex;gap:6px;"><meto-icon name="signal" size="15" color="#0E2A33"></meto-icon><meto-icon name="wifi" size="15" color="#0E2A33"></meto-icon><meto-icon name="battery-full" size="17" color="#0E2A33"></meto-icon></div></div>
+            <div style="flex:1;overflow:hidden;padding:6px 18px 0;display:flex;flex-direction:column;gap:14px;">
+              <div style="display:flex;align-items:center;gap:12px;padding:0 2px;">
+                <div style="width:46px;height:46px;border-radius:50%;background:rgba(255,255,255,0.65);backdrop-filter:blur(14px);border:1px solid rgba(255,255,255,0.8);display:grid;place-items:center;font-weight:700;color:#0F9C6E;font-size:16px;">MA</div>
+                <div style="flex:1;"><p style="font-size:12.5px;color:#365651;margin:0;">Chào buổi sáng,</p><p style="font-size:17px;font-weight:700;color:#0E2A33;margin:0;">Nguyễn Minh Anh</p></div>
+                <div style="position:relative;width:44px;height:44px;border-radius:50%;background:rgba(255,255,255,0.65);backdrop-filter:blur(14px);border:1px solid rgba(255,255,255,0.8);display:grid;place-items:center;"><meto-icon name="bell" size="20" color="#0E2A33"></meto-icon><span style="position:absolute;top:9px;right:11px;width:8px;height:8px;border-radius:50%;background:#D92D20;border:2px solid #eef8f3;"></span></div>
+              </div>
+              <!-- hero mint -->
+              <div style="border-radius:18px;padding:20px;position:relative;overflow:hidden;background:linear-gradient(150deg,#1BB082,#0B7F5B);border:1px solid rgba(255,255,255,0.25);box-shadow:0 22px 44px -18px rgba(16,140,99,0.95), inset 0 1px 0 rgba(255,255,255,0.35);color:#fff;">
+                <meto-mark size="130" ring="rgba(255,255,255,0.14)" leaf="rgba(255,255,255,0.16)" style="position:absolute;right:0;top:0;"></meto-mark>
+                <div style="position:relative;">
+                  <div style="display:flex;align-items:center;justify-content:space-between;"><span style="font-size:12.5px;color:rgba(255,255,255,0.85);">Tóm tắt hôm nay · T4, 19 Thg 6</span><span style="display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,0.22);border-radius:999px;padding:5px 10px;font-size:11.5px;font-weight:600;"><span style="width:6px;height:6px;border-radius:50%;background:#eafff5;"></span>Nguy cơ thấp</span></div>
+                  <p style="font-size:20px;font-weight:700;margin:12px 0 0;line-height:1.3;">Các chỉ số chuyển hoá<br/>đang ổn định 👌</p>
+                  <div style="display:flex;gap:10px;margin-top:16px;padding-top:14px;border-top:1px solid rgba(255,255,255,0.22);">
+                    <div style="flex:1;"><p style="font-size:11px;color:rgba(255,255,255,0.75);margin:0;">Đường huyết</p><p style="font-size:17px;font-weight:700;margin:2px 0 0;">5.6</p><p style="font-size:10px;color:rgba(255,255,255,0.6);margin:0;">mmol/L</p></div>
+                    <div style="flex:1;"><p style="font-size:11px;color:rgba(255,255,255,0.75);margin:0;">Huyết áp</p><p style="font-size:17px;font-weight:700;margin:2px 0 0;">118/76</p><p style="font-size:10px;color:rgba(255,255,255,0.6);margin:0;">mmHg</p></div>
+                    <div style="flex:1;"><p style="font-size:11px;color:rgba(255,255,255,0.75);margin:0;">Bước chân</p><p style="font-size:17px;font-weight:700;margin:2px 0 0;">6.240</p><p style="font-size:10px;color:rgba(255,255,255,0.6);margin:0;">bước</p></div>
+                  </div>
+                </div>
+              </div>
+              <!-- med reminder -->
+              <div style="display:flex;align-items:center;gap:12px;border-radius:14px;padding:14px;background:rgba(255,255,255,0.66);backdrop-filter:blur(18px);border:1px solid rgba(255,255,255,0.8);box-shadow:inset 0 1px 0 rgba(255,255,255,0.9);">
+                <span style="width:44px;height:44px;border-radius:10px;background:#E8EFF5;display:grid;place-items:center;"><meto-icon name="pill" size="22" color="#2563EB"></meto-icon></span>
+                <div style="flex:1;"><p style="font-size:14px;font-weight:700;color:#0E2A33;margin:0;">Nhắc uống thuốc · 08:00</p><p style="font-size:12px;color:#365651;margin:2px 0 0;">Metformin 500mg · sau ăn sáng</p></div>
+                <button style="height:34px;padding:0 14px;border:none;border-radius:9px;background:#0B7F5B;color:#fff;font-weight:600;font-size:12.5px;cursor:pointer;">Đã uống</button>
+              </div>
+              <!-- metric grid: mint, pink, mint, yellow -->
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                <div style="border-radius:14px;padding:14px;background:rgba(227,245,236,0.8);backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,0.85);box-shadow:inset 0 1px 0 rgba(255,255,255,0.9), 0 10px 24px -16px rgba(16,48,44,0.45);">
+                  <div style="display:flex;align-items:center;justify-content:space-between;"><span style="width:34px;height:34px;border-radius:9px;background:#0F9C6E;display:grid;place-items:center;"><meto-icon name="droplet" size="18" color="#fff"></meto-icon></span><span style="font-size:10.5px;font-weight:600;color:#15915A;background:rgba(255,255,255,0.7);border-radius:999px;padding:3px 8px;">thấp</span></div>
+                  <p style="font-size:12px;color:#365651;margin:10px 0 0;">Đường huyết</p>
+                  <p style="margin:2px 0 0;"><span style="font-size:24px;font-weight:700;color:#0E2A33;">5.6</span><span style="font-size:12px;color:#365651;font-weight:600;margin-left:3px;">mmol/L</span></p>
+                  <meto-spark data="6.1,5.8,6.4,5.9,7.2,5.6,6.0,5.7" color="#0B7F5B" width="150" height="30" style="margin-top:6px;"></meto-spark>
+                </div>
+                <div style="border-radius:14px;padding:14px;background:rgba(232,238,247,0.85);backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,0.85);box-shadow:inset 0 1px 0 rgba(255,255,255,0.9), 0 10px 24px -16px rgba(16,48,44,0.45);">
+                  <div style="display:flex;align-items:center;justify-content:space-between;"><span style="width:34px;height:34px;border-radius:9px;background:#2563EB;display:grid;place-items:center;"><meto-icon name="heart" size="18" color="#fff"></meto-icon></span><span style="font-size:10.5px;font-weight:600;color:#15915A;background:rgba(255,255,255,0.7);border-radius:999px;padding:3px 8px;">tốt</span></div>
+                  <p style="font-size:12px;color:#365651;margin:10px 0 0;">Huyết áp</p>
+                  <p style="margin:2px 0 0;"><span style="font-size:22px;font-weight:700;color:#0E2A33;">118/76</span></p>
+                  <meto-spark data="124,120,122,118,119,117,118" color="#2563EB" fill="rgba(37,99,235,0.16)" width="150" height="30" style="margin-top:6px;"></meto-spark>
+                </div>
+                <div style="border-radius:14px;padding:14px;background:rgba(227,245,236,0.8);backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,0.85);box-shadow:inset 0 1px 0 rgba(255,255,255,0.9), 0 10px 24px -16px rgba(16,48,44,0.45);">
+                  <div style="display:flex;align-items:center;justify-content:space-between;"><span style="width:34px;height:34px;border-radius:9px;background:#0F9C6E;display:grid;place-items:center;"><meto-icon name="scale" size="18" color="#fff"></meto-icon></span><span style="font-size:10.5px;font-weight:600;color:#15915A;background:rgba(255,255,255,0.7);border-radius:999px;padding:3px 8px;">-2.5kg</span></div>
+                  <p style="font-size:12px;color:#365651;margin:10px 0 0;">Cân nặng</p>
+                  <p style="margin:2px 0 0;"><span style="font-size:24px;font-weight:700;color:#0E2A33;">75.9</span><span style="font-size:12px;color:#365651;font-weight:600;margin-left:3px;">kg</span></p>
+                  <meto-spark data="78.4,78,77.6,77.1,76.8,76.5,76.2,75.9" color="#0B7F5B" width="150" height="30" style="margin-top:6px;"></meto-spark>
+                </div>
+                <div style="border-radius:14px;padding:14px;background:rgba(252,239,201,0.82);backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,0.85);box-shadow:inset 0 1px 0 rgba(255,255,255,0.9), 0 10px 24px -16px rgba(16,48,44,0.45);">
+                  <div style="display:flex;align-items:center;justify-content:space-between;"><span style="width:34px;height:34px;border-radius:9px;background:#E0A92E;display:grid;place-items:center;"><meto-icon name="activity" size="18" color="#fff"></meto-icon></span><span style="font-size:10.5px;font-weight:600;color:#C77A06;background:rgba(255,255,255,0.7);border-radius:999px;padding:3px 8px;">t.bình</span></div>
+                  <p style="font-size:12px;color:#365651;margin:10px 0 0;">BMI</p>
+                  <p style="margin:2px 0 0;"><span style="font-size:24px;font-weight:700;color:#0E2A33;">24.1</span><span style="font-size:12px;color:#365651;font-weight:600;margin-left:3px;">kg/m²</span></p>
+                  <meto-spark data="25.2,25,24.7,24.5,24.3,24.2,24.1" color="#E0A92E" fill="rgba(224,169,46,0.2)" width="150" height="30" style="margin-top:6px;"></meto-spark>
+                </div>
+              </div>
+              <!-- doctor note -->
+              <div style="border-radius:16px;padding:16px;background:rgba(255,255,255,0.62);backdrop-filter:blur(22px) saturate(180%);border:1px solid rgba(255,255,255,0.85);box-shadow:inset 0 1px 0 rgba(255,255,255,0.9), 0 10px 24px -16px rgba(16,48,44,0.45);margin-bottom:90px;">
+                <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;"><div style="width:34px;height:34px;border-radius:50%;background:#E3F5EC;display:grid;place-items:center;font-weight:700;color:#0F9C6E;font-size:12px;">BS</div><div style="flex:1;"><p style="font-size:13px;font-weight:700;color:#0E2A33;margin:0;">BS. Trần Quốc Hùng</p><p style="font-size:11px;color:#365651;margin:0;">Nội tiết</p></div><span style="display:inline-flex;align-items:center;gap:5px;background:rgba(227,244,234,0.95);border:1px solid rgba(21,145,90,0.3);color:#15915A;font-weight:600;font-size:10.5px;border-radius:7px;padding:4px 8px;"><meto-icon name="shield" size="12" color="#15915A"></meto-icon>Đã duyệt</span></div>
+                <p style="font-size:13.5px;color:#244744;line-height:1.5;margin:0;">Chỉ số đường huyết cải thiện tốt. Hãy duy trì chế độ ăn và đi bộ 30 phút mỗi ngày nhé.</p>
+              </div>
+            </div>
+            <!-- floating glass tab bar -->
+            <div style="position:absolute;left:16px;right:16px;bottom:14px;height:72px;background:rgba(255,255,255,0.68);backdrop-filter:blur(30px) saturate(180%);border:1px solid rgba(255,255,255,0.85);border-radius:18px;box-shadow:0 18px 44px -16px rgba(16,48,44,0.45), inset 0 1px 0 rgba(255,255,255,0.95);display:flex;align-items:center;justify-content:space-around;padding:0 10px;z-index:20;">
+              <div style="display:flex;flex-direction:column;align-items:center;gap:3px;"><meto-icon name="home" size="22" color="#0F9C6E" stroke="2.4"></meto-icon><span style="font-size:10px;font-weight:600;color:#0F9C6E;">Trang chủ</span></div>
+              <div style="display:flex;flex-direction:column;align-items:center;gap:3px;"><meto-icon name="activity" size="22" color="#566E66"></meto-icon><span style="font-size:10px;font-weight:600;color:#566E66;">Chỉ số</span></div>
+              <div style="display:flex;flex-direction:column;align-items:center;gap:4px;"><span style="width:54px;height:54px;border-radius:14px;background:linear-gradient(150deg,#1BB082,#0B7F5B);display:grid;place-items:center;box-shadow:0 14px 28px -10px rgba(16,140,99,0.95), inset 0 1px 0 rgba(255,255,255,0.35);"><meto-icon name="sparkles" size="24" color="#fff"></meto-icon></span><span style="font-size:10px;font-weight:600;color:#0F9C6E;">Trợ lý AI</span></div>
+              <div style="display:flex;flex-direction:column;align-items:center;gap:3px;"><meto-icon name="clipboard-list" size="22" color="#566E66"></meto-icon><span style="font-size:10px;font-weight:600;color:#566E66;">Kế hoạch</span></div>
+              <div style="display:flex;flex-direction:column;align-items:center;gap:3px;"><meto-icon name="user" size="22" color="#566E66"></meto-icon><span style="font-size:10px;font-weight:600;color:#566E66;">Cá nhân</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- AI CHAT -->
+    <div style="display:flex;flex-direction:column;gap:13px;flex:none;">
+      <div style="font-family:'JetBrains Mono',monospace;font-weight:600;font-size:12px;color:#365651;padding-left:4px;">02 · Trợ lý AI</div>
+      <div style="border-radius:48px;background:linear-gradient(160deg,#0d211f,#08140f);padding:11px;box-shadow:0 60px 100px -40px rgba(16,48,44,0.55);width:412px;">
+        <div style="position:relative;border-radius:38px;overflow:hidden;width:390px;height:844px;background-image:radial-gradient(440px 360px at 82% 0%, rgba(109,63,190,0.12), transparent 58%), radial-gradient(420px 400px at 0% 26%, rgba(27,176,130,0.13), transparent 56%), linear-gradient(180deg,#ffffff,#ffffff 60%,#f7f9fb);">
+          <div style="position:absolute;top:0;left:121px;width:148px;height:30px;background:#08140f;border-radius:0 0 20px 20px;z-index:30;"></div>
+          <div style="position:absolute;inset:0;display:flex;flex-direction:column;">
+            <div style="height:46px;padding:0 26px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;"><span style="font-weight:600;font-size:14px;">9:41</span><div style="display:flex;gap:6px;"><meto-icon name="signal" size="15" color="#0E2A33"></meto-icon><meto-icon name="wifi" size="15" color="#0E2A33"></meto-icon><meto-icon name="battery-full" size="17" color="#0E2A33"></meto-icon></div></div>
+            <div style="padding:6px 16px 12px;display:flex;align-items:center;gap:11px;">
+              <button style="width:40px;height:40px;border-radius:50%;border:1px solid rgba(255,255,255,0.8);background:rgba(255,255,255,0.6);backdrop-filter:blur(14px);display:grid;place-items:center;cursor:pointer;"><meto-icon name="arrow-left" size="20" color="#0E2A33"></meto-icon></button>
+              <span style="width:38px;height:38px;border-radius:10px;background:linear-gradient(150deg,#1BB082,#0B7F5B);display:grid;place-items:center;box-shadow:0 8px 16px -8px rgba(16,140,99,0.9);"><meto-icon name="sparkles" size="19" color="#fff"></meto-icon></span>
+              <div style="flex:1;"><p style="font-size:15px;font-weight:700;color:#0E2A33;margin:0;">Trợ lý AI MetoCare</p><p style="font-size:11.5px;color:#15915A;margin:0;display:flex;align-items:center;gap:5px;"><span style="width:6px;height:6px;border-radius:50%;background:#15915A;"></span>Trực tuyến</p></div>
+            </div>
+            <div style="flex:1;overflow:hidden;padding:6px 18px 0;display:flex;flex-direction:column;gap:12px;">
+              <div style="align-self:center;background:rgba(252,239,201,0.9);color:#C77A06;font-size:11px;font-weight:600;border-radius:999px;padding:6px 13px;display:inline-flex;align-items:center;gap:6px;"><meto-icon name="alert-triangle" size="13" color="#C77A06"></meto-icon>Không dùng cho tình huống cấp cứu</div>
+              <div style="align-self:flex-end;max-width:80%;background:linear-gradient(150deg,#1BB082,#0B7F5B);color:#fff;border-radius:13px 13px 4px 13px;padding:11px 14px;font-size:14px;line-height:1.4;box-shadow:0 10px 20px -12px rgba(16,140,99,0.9);">Đường huyết sáng nay của tôi là 5.6, vậy có ổn không ạ?</div>
+              <div style="align-self:flex-start;max-width:86%;">
+                <div style="background:rgba(255,255,255,0.66);backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,0.85);color:#244744;border-radius:13px 13px 13px 4px;border-left:3px solid rgba(109,63,190,0.5);padding:12px 14px;font-size:14px;line-height:1.45;box-shadow:inset 0 1px 0 rgba(255,255,255,0.9);">Chỉ số 5.6 mmol/L lúc đói nằm trong ngưỡng mục tiêu (3.9–7.8) — kết quả tốt. Hãy duy trì chế độ ăn ít tinh bột và vận động đều đặn nhé.</div>
+                <span style="display:inline-flex;align-items:center;gap:6px;margin-top:6px;background:rgba(243,238,251,0.92);border:1px solid rgba(109,63,190,0.25);color:#6D3FBE;font-weight:600;font-size:10.5px;border-radius:7px;padding:4px 9px;"><meto-icon name="sparkles" size="12" color="#6D3FBE"></meto-icon>AI tạo · chờ bác sĩ duyệt</span>
+              </div>
+              <div style="align-self:flex-end;max-width:80%;background:linear-gradient(150deg,#1BB082,#0B7F5B);color:#fff;border-radius:13px 13px 4px 13px;padding:11px 14px;font-size:14px;line-height:1.4;box-shadow:0 10px 20px -12px rgba(16,140,99,0.9);">Tôi nên ăn sáng thế nào để giữ ổn định?</div>
+              <div style="align-self:flex-start;max-width:88%;">
+                <div style="background:rgba(255,255,255,0.66);backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,0.85);border-radius:13px 13px 13px 4px;border-left:3px solid rgba(109,63,190,0.5);padding:13px 14px;box-shadow:inset 0 1px 0 rgba(255,255,255,0.9);">
+                  <p style="font-size:14px;color:#244744;line-height:1.45;margin:0 0 8px;">Gợi ý bữa sáng cân bằng cho bạn:</p>
+                  <div style="display:flex;align-items:center;gap:8px;padding:3px 0;"><meto-icon name="check-circle" size="15" color="#0F9C6E"></meto-icon><span style="font-size:13px;color:#244744;">Yến mạch + hạt chia + ít trái cây ít ngọt</span></div>
+                  <div style="display:flex;align-items:center;gap:8px;padding:3px 0;"><meto-icon name="check-circle" size="15" color="#0F9C6E"></meto-icon><span style="font-size:13px;color:#244744;">Trứng luộc + rau xanh</span></div>
+                  <div style="display:flex;align-items:center;gap:8px;padding:3px 0;"><meto-icon name="check-circle" size="15" color="#0F9C6E"></meto-icon><span style="font-size:13px;color:#244744;">Sữa hạt không đường</span></div>
+                  <div style="margin-top:10px;border-radius:10px;background:rgba(243,238,251,0.85);padding:9px 11px;display:flex;align-items:flex-start;gap:8px;"><meto-icon name="info" size="14" color="#6D3FBE"></meto-icon><p style="font-size:11.5px;color:#6D3FBE;line-height:1.4;margin:0;">Nội dung do AI tạo, mang tính tham khảo và <b>đang chờ bác sĩ duyệt</b>. Không thay thế tư vấn y tế.</p></div>
+                </div>
+              </div>
+            </div>
+            <div style="padding:12px 16px 28px;display:flex;align-items:center;gap:9px;">
+              <button style="width:42px;height:42px;border-radius:50%;background:rgba(255,255,255,0.6);backdrop-filter:blur(14px);border:1px solid rgba(255,255,255,0.85);display:grid;place-items:center;cursor:pointer;"><meto-icon name="plus" size="20" color="#0E2A33"></meto-icon></button>
+              <div style="flex:1;height:46px;border-radius:23px;background:rgba(255,255,255,0.65);backdrop-filter:blur(14px);border:1px solid rgba(255,255,255,0.85);display:flex;align-items:center;padding:0 16px;color:#566E66;font-size:14px;">Nhập câu hỏi…</div>
+              <button style="width:46px;height:46px;border-radius:50%;background:linear-gradient(150deg,#1BB082,#0B7F5B);display:grid;place-items:center;box-shadow:0 10px 20px -10px rgba(16,140,99,0.9);cursor:pointer;"><meto-icon name="arrow-up" size="20" color="#fff"></meto-icon></button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CARE PLAN -->
+    <div style="display:flex;flex-direction:column;gap:13px;flex:none;">
+      <div style="font-family:'JetBrains Mono',monospace;font-weight:600;font-size:12px;color:#365651;padding-left:4px;">03 · Kế hoạch chăm sóc</div>
+      <div style="border-radius:48px;background:linear-gradient(160deg,#0d211f,#08140f);padding:11px;box-shadow:0 60px 100px -40px rgba(16,48,44,0.55);width:412px;">
+        <div style="position:relative;border-radius:38px;overflow:hidden;width:390px;height:844px;background-image:radial-gradient(420px 340px at 16% 0%, rgba(27,176,130,0.15), transparent 56%), radial-gradient(420px 400px at 100% 22%, rgba(252,222,140,0.16), transparent 56%), linear-gradient(180deg,#ffffff,#ffffff 60%,#f9fbf8);">
+          <div style="position:absolute;top:0;left:121px;width:148px;height:30px;background:#08140f;border-radius:0 0 20px 20px;z-index:30;"></div>
+          <div style="position:absolute;inset:0;display:flex;flex-direction:column;">
+            <div style="height:46px;padding:0 26px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;"><span style="font-weight:600;font-size:14px;">9:41</span><div style="display:flex;gap:6px;"><meto-icon name="signal" size="15" color="#0E2A33"></meto-icon><meto-icon name="wifi" size="15" color="#0E2A33"></meto-icon><meto-icon name="battery-full" size="17" color="#0E2A33"></meto-icon></div></div>
+            <div style="padding:6px 18px 10px;display:flex;align-items:center;gap:11px;">
+              <div style="flex:1;"><p style="font-size:19px;font-weight:700;color:#0E2A33;margin:0;">Kế hoạch chăm sóc</p><p style="font-size:12px;color:#365651;margin:0;">Tiểu đường type 2 · 12 tuần</p></div>
+              <button style="width:42px;height:42px;border-radius:50%;background:#E3F5EC;display:grid;place-items:center;cursor:pointer;"><meto-icon name="calendar" size="20" color="#0F9C6E"></meto-icon></button>
+            </div>
+            <div style="flex:1;overflow:hidden;padding:0 18px;display:flex;flex-direction:column;gap:13px;">
+              <div style="border-radius:16px;padding:18px;background:linear-gradient(150deg,#1BB082,#0B7F5B);color:#fff;box-shadow:0 20px 40px -18px rgba(16,140,99,0.95), inset 0 1px 0 rgba(255,255,255,0.3);">
+                <div style="display:flex;align-items:center;justify-content:space-between;"><span style="font-size:12.5px;color:rgba(255,255,255,0.85);">Tiến độ tuần 5/12</span><span style="display:inline-flex;align-items:center;gap:5px;background:rgba(255,255,255,0.2);border-radius:7px;padding:4px 8px;font-size:10.5px;font-weight:600;"><meto-icon name="shield" size="12" color="#fff"></meto-icon>Bác sĩ đã duyệt</span></div>
+                <div style="display:flex;align-items:center;gap:16px;margin-top:14px;">
+                  <meto-ring value="68" size="66" stroke="7" color="#fff" track="rgba(255,255,255,0.25)" label="68%" labelcolor="#fff"></meto-ring>
+                  <div style="flex:1;"><p style="font-size:15px;font-weight:700;margin:0;">Bạn đang đi đúng hướng</p><p style="font-size:12.5px;color:rgba(255,255,255,0.85);margin:4px 0 0;">Hoàn thành 34/50 mục tiêu tuần này</p></div>
+                </div>
+              </div>
+              <div style="border-radius:12px;background:rgba(252,239,201,0.85);border:1px solid rgba(255,255,255,0.8);padding:12px 14px;display:flex;gap:10px;align-items:flex-start;"><meto-icon name="alert-triangle" size="18" color="#C77A06" style="margin-top:1px;"></meto-icon><div><p style="font-size:13px;font-weight:700;color:#C77A06;margin:0;">1 mục tiêu quá hạn</p><p style="font-size:12px;color:#8a6a25;line-height:1.4;margin:3px 0 0;">"Ngủ trước 23:00" chưa đạt 2 ngày liên tiếp. Hãy thử đặt nhắc nhở buổi tối.</p></div></div>
+              <div style="border-radius:16px;padding:6px 16px;background:rgba(255,255,255,0.62);backdrop-filter:blur(22px);border:1px solid rgba(255,255,255,0.85);box-shadow:inset 0 1px 0 rgba(255,255,255,0.9);">
+                <div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid rgba(16,48,44,0.07);"><span style="width:40px;height:40px;border-radius:10px;background:#E3F5EC;display:grid;place-items:center;"><meto-icon name="utensils" size="19" color="#0F9C6E"></meto-icon></span><div style="flex:1;"><p style="font-size:14px;font-weight:600;color:#566E66;text-decoration:line-through;margin:0;">Ăn theo thực đơn ít tinh bột</p><p style="font-size:12px;color:#566E66;margin:0;">Hằng ngày</p></div><meto-icon name="check-circle" size="20" color="#15915A"></meto-icon></div>
+                <div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid rgba(16,48,44,0.07);"><span style="width:40px;height:40px;border-radius:10px;background:rgba(229,237,251,0.9);display:grid;place-items:center;"><meto-icon name="footprints" size="19" color="#2563EB"></meto-icon></span><div style="flex:1;"><p style="font-size:14px;font-weight:600;color:#0E2A33;margin:0;">Đi bộ 30 phút</p><p style="font-size:12px;color:#365651;margin:0;">6.240/8.000 bước</p></div><span style="font-size:11px;font-weight:600;color:#2563EB;background:rgba(229,237,251,0.9);border-radius:7px;padding:4px 8px;">Đang làm</span></div>
+                <div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid rgba(16,48,44,0.07);"><span style="width:40px;height:40px;border-radius:10px;background:rgba(236,239,242,0.9);display:grid;place-items:center;"><meto-icon name="pill" size="19" color="#64748B"></meto-icon></span><div style="flex:1;"><p style="font-size:14px;font-weight:600;color:#566E66;text-decoration:line-through;margin:0;">Uống Metformin 500mg</p><p style="font-size:12px;color:#566E66;margin:0;">2 lần/ngày</p></div><meto-icon name="check-circle" size="20" color="#15915A"></meto-icon></div>
+                <div style="display:flex;align-items:center;gap:12px;padding:12px 0;"><span style="width:40px;height:40px;border-radius:10px;background:rgba(251,231,229,0.9);display:grid;place-items:center;"><meto-icon name="moon" size="19" color="#D92D20"></meto-icon></span><div style="flex:1;"><p style="font-size:14px;font-weight:600;color:#0E2A33;margin:0;">Ngủ trước 23:00</p><p style="font-size:12px;color:#D92D20;margin:0;">Quá hạn</p></div><meto-icon name="alert-triangle" size="20" color="#D92D20"></meto-icon></div>
+              </div>
+              <div style="border-radius:16px;padding:16px;background:rgba(255,255,255,0.62);backdrop-filter:blur(22px);border:1px solid rgba(255,255,255,0.85);box-shadow:inset 0 1px 0 rgba(255,255,255,0.9);">
+                <div style="display:flex;align-items:center;gap:10px;margin-bottom:9px;"><div style="width:32px;height:32px;border-radius:50%;background:#E3F5EC;display:grid;place-items:center;font-weight:700;color:#0F9C6E;font-size:11px;">BS</div><div style="flex:1;"><p style="font-size:12.5px;font-weight:700;color:#0E2A33;margin:0;">BS. Trần Quốc Hùng</p><p style="font-size:10.5px;color:#365651;margin:0;">Cập nhật · 2 ngày trước</p></div><span style="display:inline-flex;align-items:center;gap:5px;background:rgba(227,244,234,0.95);border:1px solid rgba(21,145,90,0.3);color:#15915A;font-weight:600;font-size:10px;border-radius:7px;padding:4px 8px;"><meto-icon name="shield" size="11" color="#15915A"></meto-icon>Đã duyệt</span></div>
+                <p style="font-size:13px;color:#244744;line-height:1.5;margin:0;">Giảm liều Metformin còn 1 lần/ngày nếu đường huyết ổn định 2 tuần liên tiếp. Theo dõi thêm chỉ số lipid.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ===================== 04 · DOCTOR DESKTOP ===================== -->
+  <div style="display:flex;align-items:flex-end;gap:13px;margin:60px 0 18px;">
+    <span style="font-family:'JetBrains Mono',monospace;font-weight:600;font-size:13px;color:#fff;background:#0F9C6E;border-radius:8px;padding:4px 10px;box-shadow:0 6px 16px -6px rgba(16,140,99,0.6);">04</span>
+    <h2 style="font-size:24px;font-weight:700;color:#0E2A33;letter-spacing:-0.02em;margin:0;">Bàn làm việc bác sĩ</h2>
+    <p style="font-size:14px;color:#365651;margin:0 0 2px;">Sidebar kính · phân tầng nguy cơ · 2 biến thể biểu đồ · duyệt khuyến nghị (tương tác)</p>
+  </div>
+  <div style="display:flex;gap:44px;align-items:flex-start;flex-wrap:wrap;">
+
+    <!-- DASHBOARD HOME -->
+    <div style="display:flex;flex-direction:column;gap:13px;flex:none;">
+      <div style="font-family:'JetBrains Mono',monospace;font-weight:600;font-size:12px;color:#365651;padding-left:4px;">Tổng quan · 2 biến thể biểu đồ (bấm để đổi)</div>
+      <div style="width:1360px;height:858px;border-radius:18px;overflow:hidden;position:relative;border:1px solid rgba(255,255,255,0.6);box-shadow:0 50px 100px -40px rgba(16,48,44,0.5);background-image:radial-gradient(700px 500px at 8% 0%, rgba(27,176,130,0.2), transparent 60%), radial-gradient(720px 600px at 100% 26%, rgba(37,99,235,0.14), transparent 60%), linear-gradient(150deg,#eef6f2,#f3f6f5 60%,#f4f8f7);display:flex;">
+        <!-- sidebar -->
+        <aside style="width:248px;flex-shrink:0;background:rgba(255,255,255,0.55);backdrop-filter:blur(28px) saturate(180%);border-right:1px solid rgba(255,255,255,0.7);display:flex;flex-direction:column;padding:22px 16px;">
+          <div style="display:flex;align-items:center;gap:10px;padding:0 8px 6px;"><meto-mark size="30"></meto-mark><span style="font-weight:700;font-size:19px;color:#0F9C6E;">metocare</span></div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#566E66;letter-spacing:0.1em;padding:18px 10px 8px;">ĐIỀU TRỊ</div>
+          <div style="display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:10px;background:linear-gradient(150deg,#1BB082,#0B7F5B);color:#fff;font-weight:600;font-size:14px;box-shadow:0 10px 22px -10px rgba(16,140,99,0.8);"><meto-icon name="layout-grid" size="19" color="#fff"></meto-icon>Tổng quan</div>
+          <div style="display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:10px;color:#244744;font-weight:500;font-size:14px;"><meto-icon name="inbox" size="19" color="#365651"></meto-icon>Hàng chờ duyệt<span style="margin-left:auto;background:#2563EB;color:#fff;font-size:11px;font-weight:700;border-radius:999px;padding:2px 8px;">5</span></div>
+          <div style="display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:10px;color:#244744;font-weight:500;font-size:14px;"><meto-icon name="users" size="19" color="#365651"></meto-icon>Bệnh nhân</div>
+          <div style="display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:10px;color:#244744;font-weight:500;font-size:14px;"><meto-icon name="calendar" size="19" color="#365651"></meto-icon>Lịch hẹn</div>
+          <div style="display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:10px;color:#244744;font-weight:500;font-size:14px;"><meto-icon name="message-square" size="19" color="#365651"></meto-icon>Tin nhắn</div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#566E66;letter-spacing:0.1em;padding:18px 10px 8px;">PHÂN TÍCH</div>
+          <div style="display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:10px;color:#244744;font-weight:500;font-size:14px;"><meto-icon name="bar-chart" size="19" color="#365651"></meto-icon>Báo cáo</div>
+          <div style="display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:10px;color:#244744;font-weight:500;font-size:14px;"><meto-icon name="settings" size="19" color="#365651"></meto-icon>Cài đặt</div>
+          <div style="margin-top:auto;display:flex;align-items:center;gap:11px;padding:10px;border-radius:11px;background:rgba(255,255,255,0.6);border:1px solid rgba(255,255,255,0.7);">
+            <div style="width:38px;height:38px;border-radius:50%;background:#E3F5EC;display:grid;place-items:center;font-weight:700;color:#0F9C6E;font-size:13px;">TH</div>
+            <div style="flex:1;min-width:0;"><p style="font-size:13px;font-weight:700;color:#0E2A33;margin:0;">BS. Trần Q. Hùng</p><p style="font-size:11px;color:#365651;margin:0;">Nội tiết</p></div>
+            <meto-icon name="log-out" size="17" color="#566E66"></meto-icon>
+          </div>
+        </aside>
+        <!-- main -->
+        <div style="flex:1;min-width:0;display:flex;flex-direction:column;">
+          <!-- topbar -->
+          <div style="height:70px;flex-shrink:0;background:rgba(255,255,255,0.5);backdrop-filter:blur(24px) saturate(180%);border-bottom:1px solid rgba(255,255,255,0.7);display:flex;align-items:center;gap:16px;padding:0 26px;">
+            <div><p style="font-size:18px;font-weight:700;color:#0E2A33;margin:0;">Tổng quan</p><p style="font-size:12px;color:#365651;margin:0;">Thứ Tư, 19 Thg 6 · 5 mục chờ duyệt</p></div>
+            <div style="margin-left:auto;width:300px;height:42px;border-radius:10px;background:rgba(255,255,255,0.65);border:1px solid rgba(255,255,255,0.8);display:flex;align-items:center;gap:9px;padding:0 14px;color:#566E66;font-size:13.5px;"><meto-icon name="search" size="17" color="#566E66"></meto-icon>Tìm bệnh nhân, mã hồ sơ…</div>
+            <div style="position:relative;width:42px;height:42px;border-radius:10px;background:rgba(255,255,255,0.65);border:1px solid rgba(255,255,255,0.8);display:grid;place-items:center;"><meto-icon name="bell" size="19" color="#0E2A33"></meto-icon><span style="position:absolute;top:9px;right:11px;width:8px;height:8px;border-radius:50%;background:#D92D20;border:2px solid #f3f6f5;"></span></div>
+            <div style="width:42px;height:42px;border-radius:50%;background:#E3F5EC;display:grid;place-items:center;font-weight:700;color:#0F9C6E;font-size:14px;">TH</div>
+          </div>
+          <!-- content -->
+          <div style="flex:1;overflow:hidden;padding:24px 26px;display:flex;flex-direction:column;gap:18px;">
+            <!-- KPI row -->
+            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;">
+              <div style="border-radius:14px;padding:18px;background:rgba(255,255,255,0.6);backdrop-filter:blur(22px);border:1px solid rgba(255,255,255,0.8);box-shadow:inset 0 1px 0 rgba(255,255,255,0.9), 0 12px 28px -18px rgba(16,48,44,0.5);">
+                <div style="display:flex;align-items:center;justify-content:space-between;"><span style="width:40px;height:40px;border-radius:10px;background:rgba(252,239,201,0.95);display:grid;place-items:center;"><meto-icon name="clock" size="20" color="#C77A06"></meto-icon></span><span style="font-size:11px;font-weight:600;color:#C77A06;">cần xử lý</span></div>
+                <p style="font-size:32px;font-weight:800;color:#0E2A33;margin:14px 0 0;letter-spacing:-0.02em;">5</p>
+                <p style="font-size:13px;color:#365651;margin:2px 0 0;">Khuyến nghị chờ duyệt</p>
+              </div>
+              <div style="border-radius:14px;padding:18px;background:rgba(255,255,255,0.6);backdrop-filter:blur(22px);border:1px solid rgba(255,255,255,0.8);box-shadow:inset 0 1px 0 rgba(255,255,255,0.9), 0 12px 28px -18px rgba(16,48,44,0.5);">
+                <div style="display:flex;align-items:center;justify-content:space-between;"><span style="width:40px;height:40px;border-radius:10px;background:rgba(251,231,229,0.95);display:grid;place-items:center;"><meto-icon name="alert-triangle" size="20" color="#D92D20"></meto-icon></span><span style="font-size:11px;font-weight:600;color:#D92D20;">ưu tiên</span></div>
+                <p style="font-size:32px;font-weight:800;color:#0E2A33;margin:14px 0 0;letter-spacing:-0.02em;">8</p>
+                <p style="font-size:13px;color:#365651;margin:2px 0 0;">Bệnh nhân nguy cơ cao</p>
+              </div>
+              <div style="border-radius:14px;padding:18px;background:rgba(255,255,255,0.6);backdrop-filter:blur(22px);border:1px solid rgba(255,255,255,0.8);box-shadow:inset 0 1px 0 rgba(255,255,255,0.9), 0 12px 28px -18px rgba(16,48,44,0.5);">
+                <div style="display:flex;align-items:center;justify-content:space-between;"><span style="width:40px;height:40px;border-radius:10px;background:rgba(227,245,236,0.95);display:grid;place-items:center;"><meto-icon name="check-circle" size="20" color="#15915A"></meto-icon></span><span style="font-size:11px;font-weight:600;color:#15915A;">hôm nay</span></div>
+                <p style="font-size:32px;font-weight:800;color:#0E2A33;margin:14px 0 0;letter-spacing:-0.02em;">23</p>
+                <p style="font-size:13px;color:#365651;margin:2px 0 0;">Đã duyệt hôm nay</p>
+              </div>
+              <div style="border-radius:14px;padding:18px;background:rgba(255,255,255,0.6);backdrop-filter:blur(22px);border:1px solid rgba(255,255,255,0.8);box-shadow:inset 0 1px 0 rgba(255,255,255,0.9), 0 12px 28px -18px rgba(16,48,44,0.5);">
+                <div style="display:flex;align-items:center;justify-content:space-between;"><span style="width:40px;height:40px;border-radius:10px;background:rgba(243,238,251,0.95);display:grid;place-items:center;"><meto-icon name="sparkles" size="20" color="#6D3FBE"></meto-icon></span><span style="font-size:11px;font-weight:600;color:#6D3FBE;">7 ngày</span></div>
+                <p style="font-size:32px;font-weight:800;color:#0E2A33;margin:14px 0 0;letter-spacing:-0.02em;">41</p>
+                <p style="font-size:13px;color:#365651;margin:2px 0 0;">Phiên tư vấn AI</p>
+              </div>
+            </div>
+            <!-- chart + triage row -->
+            <div style="display:grid;grid-template-columns:1.7fr 1fr;gap:18px;flex:1;min-height:0;">
+              <div style="border-radius:16px;padding:22px;background:rgba(255,255,255,0.62);backdrop-filter:blur(22px);border:1px solid rgba(255,255,255,0.8);box-shadow:inset 0 1px 0 rgba(255,255,255,0.9), 0 12px 28px -18px rgba(16,48,44,0.5);display:flex;flex-direction:column;">
+                <div style="display:flex;align-items:center;justify-content:space-between;">
+                  <div><p style="font-size:16px;font-weight:700;color:#0E2A33;margin:0;">Đường huyết trung bình nhóm</p><p style="font-size:12.5px;color:#365651;margin:3px 0 0;">128 bệnh nhân tiểu đường type 2 · 7 ngày</p></div>
+                  <div style="display:flex;background:rgba(255,255,255,0.7);border:1px solid rgba(255,255,255,0.8);border-radius:10px;padding:4px;gap:2px;">
+                    <button onClick="{{ setVizA }}" style="height:34px;padding:0 16px;border:none;border-radius:9px;font-weight:600;font-size:12.5px;cursor:pointer;background:{{ vizABg }};color:{{ vizAColor }}">Xu hướng</button>
+                    <button onClick="{{ setVizB }}" style="height:34px;padding:0 16px;border:none;border-radius:9px;font-weight:600;font-size:12.5px;cursor:pointer;background:{{ vizBBg }};color:{{ vizBColor }}">Phân bố ngày</button>
+                  </div>
+                </div>
+                <div style="flex:1;display:flex;align-items:center;justify-content:center;margin-top:10px;">
+                  <sc-if value="{{ vizIsA }}" hint-placeholder-val="{{ true }}">
+                    <meto-line data="7.4,7.1,6.9,7.0,6.6,6.4,6.3" band="3.9,7.8" ymin="3" ymax="9" yticks="4,6,8" xlabels="T2,T3,T4,T5,T6,T7,CN" width="640" height="300" color="#0F9C6E"></meto-line>
+                  </sc-if>
+                  <sc-if value="{{ vizIsB }}" hint-placeholder-val="{{ false }}">
+                    <meto-bars data="22,34,41,52,38,29,18" xlabels="4,5,6,7,8,9,10" width="640" height="300" color="#0F9C6E"></meto-bars>
+                  </sc-if>
+                </div>
+                <div style="display:flex;gap:18px;padding-top:12px;border-top:1px solid rgba(16,48,44,0.08);">
+                  <div><p style="font-size:11px;color:#365651;margin:0;">Trung bình nhóm</p><p style="font-size:17px;font-weight:700;color:#0E2A33;margin:2px 0 0;">6.8 <span style="font-size:11px;color:#365651;">mmol/L</span></p></div>
+                  <div><p style="font-size:11px;color:#365651;margin:0;">Trong ngưỡng</p><p style="font-size:17px;font-weight:700;color:#15915A;margin:2px 0 0;">71%</p></div>
+                  <div><p style="font-size:11px;color:#365651;margin:0;">Cải thiện 30 ngày</p><p style="font-size:17px;font-weight:700;color:#15915A;margin:2px 0 0;">↓ 0.6</p></div>
+                </div>
+              </div>
+              <div style="border-radius:16px;padding:22px;background:rgba(255,255,255,0.62);backdrop-filter:blur(22px);border:1px solid rgba(255,255,255,0.8);box-shadow:inset 0 1px 0 rgba(255,255,255,0.9), 0 12px 28px -18px rgba(16,48,44,0.5);display:flex;flex-direction:column;">
+                <p style="font-size:16px;font-weight:700;color:#0E2A33;margin:0;">Phân tầng nguy cơ</p>
+                <p style="font-size:12.5px;color:#365651;margin:3px 0 14px;">128 bệnh nhân đang theo dõi</p>
+                <div style="display:flex;justify-content:center;margin:6px 0 16px;"><meto-ring value="74" size="150" stroke="16" color="#0F9C6E" track="rgba(100,116,139,0.22)" label="74%" labelcolor="#0E2A33"></meto-ring></div>
+                <div style="display:flex;flex-direction:column;gap:10px;">
+                  <div style="display:flex;align-items:center;gap:10px;"><span style="width:10px;height:10px;border-radius:3px;background:#15915A;"></span><span style="font-size:13px;color:#244744;flex:1;">Nguy cơ thấp</span><span style="font-size:13px;font-weight:700;color:#0E2A33;">95</span></div>
+                  <div style="display:flex;align-items:center;gap:10px;"><span style="width:10px;height:10px;border-radius:3px;background:#E0A92E;"></span><span style="font-size:13px;color:#244744;flex:1;">Nguy cơ trung bình</span><span style="font-size:13px;font-weight:700;color:#0E2A33;">25</span></div>
+                  <div style="display:flex;align-items:center;gap:10px;"><span style="width:10px;height:10px;border-radius:3px;background:#D92D20;"></span><span style="font-size:13px;color:#244744;flex:1;">Nguy cơ cao</span><span style="font-size:13px;font-weight:700;color:#0E2A33;">8</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- REVIEW WORKFLOW (interactive) -->
+    <div style="display:flex;flex-direction:column;gap:13px;flex:none;">
+      <div style="font-family:'JetBrains Mono',monospace;font-weight:600;font-size:12px;color:#365651;padding-left:4px;">Duyệt khuyến nghị AI · bấm chọn bệnh nhân, rồi Duyệt / Từ chối / Yêu cầu bổ sung</div>
+      <div style="width:1360px;height:858px;border-radius:18px;overflow:hidden;position:relative;border:1px solid rgba(255,255,255,0.6);box-shadow:0 50px 100px -40px rgba(16,48,44,0.5);background-image:radial-gradient(700px 500px at 8% 0%, rgba(27,176,130,0.18), transparent 60%), radial-gradient(720px 600px at 100% 26%, rgba(37,99,235,0.14), transparent 60%), linear-gradient(150deg,#eef6f2,#f3f6f5 60%,#f4f8f7);display:flex;">
+        <aside style="width:248px;flex-shrink:0;background:rgba(255,255,255,0.55);backdrop-filter:blur(28px) saturate(180%);border-right:1px solid rgba(255,255,255,0.7);display:flex;flex-direction:column;padding:22px 16px;">
+          <div style="display:flex;align-items:center;gap:10px;padding:0 8px 6px;"><meto-mark size="30"></meto-mark><span style="font-weight:700;font-size:19px;color:#0F9C6E;">metocare</span></div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#566E66;letter-spacing:0.1em;padding:18px 10px 8px;">ĐIỀU TRỊ</div>
+          <div style="display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:10px;color:#244744;font-weight:500;font-size:14px;"><meto-icon name="layout-grid" size="19" color="#365651"></meto-icon>Tổng quan</div>
+          <div style="display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:10px;background:linear-gradient(150deg,#1BB082,#0B7F5B);color:#fff;font-weight:600;font-size:14px;box-shadow:0 10px 22px -10px rgba(16,140,99,0.8);"><meto-icon name="inbox" size="19" color="#fff"></meto-icon>Hàng chờ duyệt<span style="margin-left:auto;background:rgba(255,255,255,0.25);color:#fff;font-size:11px;font-weight:700;border-radius:999px;padding:2px 8px;">5</span></div>
+          <div style="display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:10px;color:#244744;font-weight:500;font-size:14px;"><meto-icon name="users" size="19" color="#365651"></meto-icon>Bệnh nhân</div>
+          <div style="display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:10px;color:#244744;font-weight:500;font-size:14px;"><meto-icon name="calendar" size="19" color="#365651"></meto-icon>Lịch hẹn</div>
+          <div style="display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:10px;color:#244744;font-weight:500;font-size:14px;"><meto-icon name="message-square" size="19" color="#365651"></meto-icon>Tin nhắn</div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#566E66;letter-spacing:0.1em;padding:18px 10px 8px;">PHÂN TÍCH</div>
+          <div style="display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:10px;color:#244744;font-weight:500;font-size:14px;"><meto-icon name="bar-chart" size="19" color="#365651"></meto-icon>Báo cáo</div>
+          <div style="margin-top:auto;display:flex;align-items:center;gap:11px;padding:10px;border-radius:11px;background:rgba(255,255,255,0.6);border:1px solid rgba(255,255,255,0.7);">
+            <div style="width:38px;height:38px;border-radius:50%;background:#E3F5EC;display:grid;place-items:center;font-weight:700;color:#0F9C6E;font-size:13px;">TH</div>
+            <div style="flex:1;min-width:0;"><p style="font-size:13px;font-weight:700;color:#0E2A33;margin:0;">BS. Trần Q. Hùng</p><p style="font-size:11px;color:#365651;margin:0;">Nội tiết</p></div>
+            <meto-icon name="log-out" size="17" color="#566E66"></meto-icon>
+          </div>
+        </aside>
+        <div style="flex:1;min-width:0;display:flex;flex-direction:column;">
+          <div style="height:70px;flex-shrink:0;background:rgba(255,255,255,0.5);backdrop-filter:blur(24px) saturate(180%);border-bottom:1px solid rgba(255,255,255,0.7);display:flex;align-items:center;gap:16px;padding:0 26px;">
+            <div><p style="font-size:18px;font-weight:700;color:#0E2A33;margin:0;">Hàng chờ duyệt khuyến nghị</p><p style="font-size:12px;color:#365651;margin:0;">5 khuyến nghị do AI tạo đang chờ bác sĩ phê duyệt</p></div>
+            <div style="margin-left:auto;height:42px;border-radius:10px;background:rgba(255,255,255,0.65);border:1px solid rgba(255,255,255,0.8);display:flex;align-items:center;gap:8px;padding:0 14px;color:#244744;font-size:13px;font-weight:500;"><meto-icon name="filter" size="16" color="#365651"></meto-icon>Lọc: Tất cả</div>
+          </div>
+          <div style="flex:1;overflow:hidden;display:flex;">
+            <!-- queue list -->
+            <div style="width:372px;flex-shrink:0;border-right:1px solid rgba(255,255,255,0.6);padding:18px;display:flex;flex-direction:column;gap:11px;overflow:hidden;">
+              <sc-for list="{{ queue }}" as="item" hint-placeholder-count="5">
+                <div onClick="{{ item.onSelect }}" style="border-radius:12px;padding:14px;cursor:pointer;background:{{ item.cardBg }};border:1.5px solid {{ item.cardBord }};box-shadow:{{ item.cardShadow }};backdrop-filter:blur(14px);">
+                  <div style="display:flex;align-items:flex-start;gap:11px;">
+                    <div style="width:40px;height:40px;border-radius:10px;background:{{ item.riskBg }};display:grid;place-items:center;flex-shrink:0;"><span style="width:9px;height:9px;border-radius:50%;background:{{ item.dot }};"></span></div>
+                    <div style="flex:1;min-width:0;">
+                      <p style="font-size:14px;font-weight:700;color:#0E2A33;margin:0;">{{ item.name }}</p>
+                      <p style="font-size:11.5px;color:#365651;margin:1px 0 0;">{{ item.meta }}</p>
+                    </div>
+                    <span style="font-size:10.5px;font-weight:700;border-radius:999px;padding:3px 9px;background:{{ item.riskBg }};color:{{ item.riskC }};white-space:nowrap;">{{ item.riskL }}</span>
+                  </div>
+                  <div style="display:flex;align-items:center;gap:8px;margin-top:11px;">
+                    <span style="display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;color:#6D3FBE;background:rgba(243,238,251,0.9);border-radius:7px;padding:4px 8px;"><meto-icon name="sparkles" size="12" color="#6D3FBE"></meto-icon>{{ item.type }}</span>
+                    <span style="margin-left:auto;font-size:11px;color:#566E66;">{{ item.age }}</span>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+            <!-- detail -->
+            <div style="flex:1;min-width:0;overflow:hidden;padding:20px 24px;display:flex;flex-direction:column;gap:16px;">
+              <!-- patient summary -->
+              <div style="display:flex;align-items:center;gap:14px;border-radius:14px;padding:16px 18px;background:rgba(255,255,255,0.62);backdrop-filter:blur(22px);border:1px solid rgba(255,255,255,0.8);box-shadow:inset 0 1px 0 rgba(255,255,255,0.9);">
+                <div style="width:52px;height:52px;border-radius:12px;background:{{ cur.riskBg }};display:grid;place-items:center;"><meto-icon name="user" size="26" color="#0F9C6E"></meto-icon></div>
+                <div style="flex:1;"><p style="font-size:18px;font-weight:700;color:#0E2A33;margin:0;">{{ cur.name }}</p><p style="font-size:12.5px;color:#365651;margin:2px 0 0;">{{ cur.meta }}</p></div>
+                <span style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;border-radius:999px;padding:6px 13px;background:{{ cur.riskBg }};color:{{ cur.riskC }};"><span style="width:7px;height:7px;border-radius:50%;background:{{ cur.dot }};"></span>Nguy cơ {{ cur.riskL }}</span>
+              </div>
+              <!-- metrics -->
+              <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;">
+                <div style="border-radius:11px;padding:13px;background:rgba(255,255,255,0.55);border:1px solid rgba(255,255,255,0.75);"><p style="font-size:11px;color:#365651;margin:0;">HbA1c</p><p style="font-size:21px;font-weight:700;color:#0E2A33;margin:3px 0 0;">{{ cur.hba1c }}<span style="font-size:11px;color:#566E66;">%</span></p></div>
+                <div style="border-radius:11px;padding:13px;background:rgba(255,255,255,0.55);border:1px solid rgba(255,255,255,0.75);"><p style="font-size:11px;color:#365651;margin:0;">Đường huyết</p><p style="font-size:21px;font-weight:700;color:#0E2A33;margin:3px 0 0;">{{ cur.glu }}<span style="font-size:11px;color:#566E66;"> mmol/L</span></p></div>
+                <div style="border-radius:11px;padding:13px;background:rgba(255,255,255,0.55);border:1px solid rgba(255,255,255,0.75);"><p style="font-size:11px;color:#365651;margin:0;">BMI</p><p style="font-size:21px;font-weight:700;color:#0E2A33;margin:3px 0 0;">{{ cur.bmi }}</p></div>
+                <div style="border-radius:11px;padding:13px;background:rgba(255,255,255,0.55);border:1px solid rgba(255,255,255,0.75);"><p style="font-size:11px;color:#365651;margin:0;">Huyết áp</p><p style="font-size:21px;font-weight:700;color:#0E2A33;margin:3px 0 0;">{{ cur.bp }}</p></div>
+              </div>
+              <!-- AI recommendation -->
+              <div style="border-radius:14px;padding:20px;background:linear-gradient(150deg,rgba(243,238,251,0.85),rgba(250,247,254,0.8));border:1px solid rgba(216,201,246,0.7);box-shadow:inset 0 1px 0 rgba(255,255,255,0.9);flex:1;min-height:0;display:flex;flex-direction:column;">
+                <div style="display:flex;align-items:center;gap:11px;">
+                  <span style="width:38px;height:38px;border-radius:10px;background:linear-gradient(150deg,#8456D6,#6D3FBE);display:grid;place-items:center;box-shadow:0 8px 18px -8px rgba(109,63,190,0.8);"><meto-icon name="sparkles" size="20" color="#fff"></meto-icon></span>
+                  <div style="flex:1;"><p style="font-size:15px;font-weight:700;color:#0E2A33;margin:0;">Khuyến nghị do Trợ lý AI tạo</p><p style="font-size:11.5px;color:#6D3FBE;margin:1px 0 0;">{{ cur.type }} · độ tin cậy mô hình {{ cur.conf }}</p></div>
+                  <span style="display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;color:#6D3FBE;background:rgba(255,255,255,0.7);border:1px solid rgba(216,201,246,0.8);border-radius:8px;padding:5px 10px;"><meto-icon name="clock" size="13" color="#6D3FBE"></meto-icon>Chờ bác sĩ duyệt</span>
+                </div>
+                <p style="font-size:15px;color:#244744;line-height:1.6;margin:16px 0 0;">{{ cur.ai }}</p>
+                <div style="margin-top:auto;display:flex;align-items:center;gap:8px;padding-top:14px;"><meto-icon name="shield" size="15" color="#566E66"></meto-icon><p style="font-size:11.5px;color:#566E66;margin:0;">Nội dung AI chỉ hiển thị cho bệnh nhân sau khi được bác sĩ phê duyệt. Bác sĩ chịu trách nhiệm cuối cùng.</p></div>
+              </div>
+              <!-- decision -->
+              <div style="border-radius:14px;padding:18px;background:{{ decBg }};border:1px solid rgba(255,255,255,0.8);box-shadow:inset 0 1px 0 rgba(255,255,255,0.9);">
+                <sc-if value="{{ noDecision }}" hint-placeholder-val="{{ true }}">
+                  <div style="display:flex;align-items:center;gap:12px;">
+                    <p style="font-size:13.5px;font-weight:600;color:#244744;margin:0;flex:1;">Quyết định của bác sĩ cho khuyến nghị này:</p>
+                    <button onClick="{{ reject }}" style="height:46px;padding:0 18px;border:1px solid rgba(217,45,32,0.3);border-radius:10px;background:rgba(255,255,255,0.7);color:#D92D20;font-weight:600;font-size:14px;display:inline-flex;align-items:center;gap:8px;cursor:pointer;"><meto-icon name="x" size="17" color="#D92D20"></meto-icon>Từ chối</button>
+                    <button onClick="{{ request }}" style="height:46px;padding:0 18px;border:1px solid rgba(37,99,235,0.3);border-radius:10px;background:rgba(255,255,255,0.7);color:#2563EB;font-weight:600;font-size:14px;display:inline-flex;align-items:center;gap:8px;cursor:pointer;"><meto-icon name="message-square" size="17" color="#2563EB"></meto-icon>Yêu cầu bổ sung</button>
+                    <button onClick="{{ approve }}" style="height:46px;padding:0 22px;border:none;border-radius:10px;background:linear-gradient(150deg,#1BB082,#0B7F5B);color:#fff;font-weight:700;font-size:14px;display:inline-flex;align-items:center;gap:8px;box-shadow:0 12px 24px -10px rgba(16,140,99,0.9);cursor:pointer;"><meto-icon name="check" size="17" color="#fff"></meto-icon>Duyệt &amp; gửi bệnh nhân</button>
+                  </div>
+                </sc-if>
+                <sc-if value="{{ curDecision }}" hint-placeholder-val="{{ false }}">
+                  <div style="display:flex;align-items:center;gap:12px;">
+                    <span style="width:42px;height:42px;border-radius:10px;background:rgba(255,255,255,0.8);display:grid;place-items:center;"><sc-if value="{{ isApproved }}" hint-placeholder-val="{{ false }}"><meto-icon name="check-circle" size="22" color="#15915A"></meto-icon></sc-if><sc-if value="{{ isRejected }}" hint-placeholder-val="{{ false }}"><meto-icon name="x" size="22" color="#D92D20"></meto-icon></sc-if><sc-if value="{{ isRequest }}" hint-placeholder-val="{{ false }}"><meto-icon name="info" size="22" color="#2563EB"></meto-icon></sc-if></span>
+                    <div style="flex:1;"><p style="font-size:15px;font-weight:700;color:{{ decColor }};margin:0;">{{ decLabelText }}</p><p style="font-size:12px;color:#365651;margin:1px 0 0;">Đã ghi vào hồ sơ · {{ cur.name }} · vừa xong</p></div>
+                    <button onClick="{{ reset }}" style="height:40px;padding:0 16px;border:1px solid rgba(16,48,44,0.14);border-radius:10px;background:rgba(255,255,255,0.7);color:#244744;font-weight:600;font-size:13px;display:inline-flex;align-items:center;gap:7px;cursor:pointer;"><meto-icon name="rotate-ccw" size="15" color="#365651"></meto-icon>Hoàn tác</button>
+                  </div>
+                </sc-if>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ===================== 05 · CLINIC ADMIN ===================== -->
+  <div style="display:flex;align-items:flex-end;gap:13px;margin:60px 0 18px;">
+    <span style="font-family:'JetBrains Mono',monospace;font-weight:600;font-size:13px;color:#fff;background:#0F9C6E;border-radius:8px;padding:4px 10px;box-shadow:0 6px 16px -6px rgba(16,140,99,0.6);">05</span>
+    <h2 style="font-size:24px;font-weight:700;color:#0E2A33;letter-spacing:-0.02em;margin:0;">Quản trị phòng khám</h2>
+    <p style="font-size:14px;color:#365651;margin:0 0 2px;">Người dùng · đồng thuận dữ liệu · phân tích</p>
+  </div>
+  <div style="display:flex;gap:44px;align-items:flex-start;flex-wrap:wrap;">
+    <div style="display:flex;flex-direction:column;gap:13px;flex:none;">
+      <div style="font-family:'JetBrains Mono',monospace;font-weight:600;font-size:12px;color:#365651;padding-left:4px;">Bảng điều khiển quản trị</div>
+      <div style="width:1360px;height:858px;border-radius:18px;overflow:hidden;position:relative;border:1px solid rgba(255,255,255,0.6);box-shadow:0 50px 100px -40px rgba(16,48,44,0.5);background-image:radial-gradient(700px 500px at 8% 0%, rgba(27,176,130,0.18), transparent 60%), radial-gradient(720px 600px at 100% 26%, rgba(37,99,235,0.12), transparent 60%), linear-gradient(150deg,#eef6f2,#f3f6f5 60%,#f4f8f7);display:flex;">
+        <aside style="width:248px;flex-shrink:0;background:rgba(255,255,255,0.55);backdrop-filter:blur(28px) saturate(180%);border-right:1px solid rgba(255,255,255,0.7);display:flex;flex-direction:column;padding:22px 16px;">
+          <div style="display:flex;align-items:center;gap:10px;padding:0 8px 6px;"><meto-mark size="30"></meto-mark><span style="font-weight:700;font-size:19px;color:#0F9C6E;">metocare</span></div>
+          <div style="margin:8px 8px 0;display:inline-flex;align-items:center;gap:7px;background:rgba(236,246,224,0.9);border-radius:8px;padding:5px 10px;align-self:flex-start;"><meto-icon name="building" size="13" color="#0B7F5B"></meto-icon><span style="font-size:11px;font-weight:600;color:#0B7F5B;">Phòng khám Q1</span></div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#566E66;letter-spacing:0.1em;padding:18px 10px 8px;">QUẢN TRỊ</div>
+          <div style="display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:10px;background:linear-gradient(150deg,#1BB082,#0B7F5B);color:#fff;font-weight:600;font-size:14px;box-shadow:0 10px 22px -10px rgba(16,140,99,0.8);"><meto-icon name="layout-grid" size="19" color="#fff"></meto-icon>Tổng quan</div>
+          <div style="display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:10px;color:#244744;font-weight:500;font-size:14px;"><meto-icon name="users" size="19" color="#365651"></meto-icon>Người dùng</div>
+          <div style="display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:10px;color:#244744;font-weight:500;font-size:14px;"><meto-icon name="shield-check" size="19" color="#365651"></meto-icon>Đồng thuận dữ liệu</div>
+          <div style="display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:10px;color:#244744;font-weight:500;font-size:14px;"><meto-icon name="stethoscope" size="19" color="#365651"></meto-icon>Bác sĩ</div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#566E66;letter-spacing:0.1em;padding:18px 10px 8px;">PHÂN TÍCH</div>
+          <div style="display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:10px;color:#244744;font-weight:500;font-size:14px;"><meto-icon name="bar-chart" size="19" color="#365651"></meto-icon>Báo cáo</div>
+          <div style="display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:10px;color:#244744;font-weight:500;font-size:14px;"><meto-icon name="settings" size="19" color="#365651"></meto-icon>Cấu hình</div>
+          <div style="margin-top:auto;display:flex;align-items:center;gap:11px;padding:10px;border-radius:11px;background:rgba(255,255,255,0.6);border:1px solid rgba(255,255,255,0.7);">
+            <div style="width:38px;height:38px;border-radius:50%;background:#E3F5EC;display:grid;place-items:center;font-weight:700;color:#0F9C6E;font-size:13px;">PA</div>
+            <div style="flex:1;min-width:0;"><p style="font-size:13px;font-weight:700;color:#0E2A33;margin:0;">Phạm Vân Anh</p><p style="font-size:11px;color:#365651;margin:0;">Quản trị viên</p></div>
+            <meto-icon name="log-out" size="17" color="#566E66"></meto-icon>
+          </div>
+        </aside>
+        <div style="flex:1;min-width:0;display:flex;flex-direction:column;">
+          <div style="height:70px;flex-shrink:0;background:rgba(255,255,255,0.5);backdrop-filter:blur(24px) saturate(180%);border-bottom:1px solid rgba(255,255,255,0.7);display:flex;align-items:center;gap:16px;padding:0 26px;">
+            <div><p style="font-size:18px;font-weight:700;color:#0E2A33;margin:0;">Tổng quan phòng khám</p><p style="font-size:12px;color:#365651;margin:0;">Cập nhật 19 Thg 6 · 08:30</p></div>
+            <button style="margin-left:auto;height:42px;padding:0 18px;border:none;border-radius:10px;background:linear-gradient(150deg,#1BB082,#0B7F5B);color:#fff;font-weight:600;font-size:13.5px;display:inline-flex;align-items:center;gap:8px;box-shadow:0 10px 22px -10px rgba(16,140,99,0.8);cursor:pointer;"><meto-icon name="plus" size="17" color="#fff"></meto-icon>Mời người dùng</button>
+            <div style="width:42px;height:42px;border-radius:50%;background:#E3F5EC;display:grid;place-items:center;font-weight:700;color:#0F9C6E;font-size:14px;">PA</div>
+          </div>
+          <div style="flex:1;overflow:hidden;padding:24px 26px;display:flex;flex-direction:column;gap:18px;">
+            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;">
+              <div style="border-radius:14px;padding:18px;background:rgba(255,255,255,0.62);backdrop-filter:blur(22px);border:1px solid rgba(255,255,255,0.8);box-shadow:inset 0 1px 0 rgba(255,255,255,0.9), 0 12px 28px -18px rgba(16,48,44,0.5);">
+                <div style="display:flex;align-items:center;justify-content:space-between;"><span style="width:40px;height:40px;border-radius:10px;background:rgba(227,245,236,0.95);display:grid;place-items:center;"><meto-icon name="users" size="20" color="#0B7F5B"></meto-icon></span><span style="font-size:11px;font-weight:700;color:#15915A;">+6.4%</span></div>
+                <p style="font-size:30px;font-weight:800;color:#0E2A33;margin:14px 0 0;letter-spacing:-0.02em;">1.284</p>
+                <p style="font-size:13px;color:#365651;margin:2px 0 0;">Bệnh nhân đăng ký</p>
+              </div>
+              <div style="border-radius:14px;padding:18px;background:rgba(255,255,255,0.62);backdrop-filter:blur(22px);border:1px solid rgba(255,255,255,0.8);box-shadow:inset 0 1px 0 rgba(255,255,255,0.9), 0 12px 28px -18px rgba(16,48,44,0.5);">
+                <div style="display:flex;align-items:center;justify-content:space-between;"><span style="width:40px;height:40px;border-radius:10px;background:rgba(227,245,236,0.95);display:grid;place-items:center;"><meto-icon name="stethoscope" size="20" color="#0B7F5B"></meto-icon></span><span style="font-size:11px;font-weight:700;color:#15915A;">42 hoạt động</span></div>
+                <p style="font-size:30px;font-weight:800;color:#0E2A33;margin:14px 0 0;letter-spacing:-0.02em;">48</p>
+                <p style="font-size:13px;color:#365651;margin:2px 0 0;">Bác sĩ &amp; nhân viên</p>
+              </div>
+              <div style="border-radius:14px;padding:18px;background:rgba(255,255,255,0.62);backdrop-filter:blur(22px);border:1px solid rgba(255,255,255,0.8);box-shadow:inset 0 1px 0 rgba(255,255,255,0.9), 0 12px 28px -18px rgba(16,48,44,0.5);">
+                <div style="display:flex;align-items:center;justify-content:space-between;"><span style="width:40px;height:40px;border-radius:10px;background:rgba(227,245,236,0.95);display:grid;place-items:center;"><meto-icon name="shield-check" size="20" color="#0B7F5B"></meto-icon></span><span style="font-size:11px;font-weight:700;color:#15915A;">tốt</span></div>
+                <p style="font-size:30px;font-weight:800;color:#0E2A33;margin:14px 0 0;letter-spacing:-0.02em;">96%</p>
+                <p style="font-size:13px;color:#365651;margin:2px 0 0;">Đồng thuận còn hiệu lực</p>
+              </div>
+              <div style="border-radius:14px;padding:18px;background:rgba(255,255,255,0.62);backdrop-filter:blur(22px);border:1px solid rgba(255,255,255,0.8);box-shadow:inset 0 1px 0 rgba(255,255,255,0.9), 0 12px 28px -18px rgba(16,48,44,0.5);">
+                <div style="display:flex;align-items:center;justify-content:space-between;"><span style="width:40px;height:40px;border-radius:10px;background:rgba(243,238,251,0.95);display:grid;place-items:center;"><meto-icon name="sparkles" size="20" color="#6D3FBE"></meto-icon></span><span style="font-size:11px;font-weight:700;color:#15915A;">tháng này</span></div>
+                <p style="font-size:30px;font-weight:800;color:#0E2A33;margin:14px 0 0;letter-spacing:-0.02em;">3.420</p>
+                <p style="font-size:13px;color:#365651;margin:2px 0 0;">Phiên tư vấn AI</p>
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1.55fr 1fr;gap:18px;flex:1;min-height:0;">
+              <!-- users table -->
+              <div style="border-radius:16px;background:rgba(255,255,255,0.62);backdrop-filter:blur(22px);border:1px solid rgba(255,255,255,0.8);box-shadow:inset 0 1px 0 rgba(255,255,255,0.9), 0 12px 28px -18px rgba(16,48,44,0.5);display:flex;flex-direction:column;overflow:hidden;">
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:18px 20px 12px;"><p style="font-size:16px;font-weight:700;color:#0E2A33;margin:0;">Người dùng gần đây</p><span style="font-size:13px;font-weight:600;color:#0B7F5B;">Xem tất cả</span></div>
+                <div style="display:grid;grid-template-columns:1.6fr 1fr 1fr 0.9fr;gap:10px;padding:8px 20px;background:rgba(255,255,255,0.4);border-top:1px solid rgba(16,48,44,0.06);border-bottom:1px solid rgba(16,48,44,0.06);">
+                  <span style="font-size:11px;font-weight:700;color:#566E66;text-transform:uppercase;letter-spacing:0.04em;">Người dùng</span><span style="font-size:11px;font-weight:700;color:#566E66;text-transform:uppercase;letter-spacing:0.04em;">Vai trò</span><span style="font-size:11px;font-weight:700;color:#566E66;text-transform:uppercase;letter-spacing:0.04em;">Trạng thái</span><span style="font-size:11px;font-weight:700;color:#566E66;text-transform:uppercase;letter-spacing:0.04em;">Hoạt động</span>
+                </div>
+                <div style="flex:1;overflow:hidden;">
+                  <div style="display:grid;grid-template-columns:1.6fr 1fr 1fr 0.9fr;gap:10px;align-items:center;padding:13px 20px;border-bottom:1px solid rgba(16,48,44,0.05);"><div style="display:flex;align-items:center;gap:10px;"><div style="width:34px;height:34px;border-radius:50%;background:#E3F5EC;display:grid;place-items:center;font-weight:700;color:#0F9C6E;font-size:11px;">TH</div><div><p style="font-size:13.5px;font-weight:600;color:#0E2A33;margin:0;">BS. Trần Q. Hùng</p><p style="font-size:11px;color:#365651;margin:0;">hung.tran@…</p></div></div><span style="font-size:12.5px;color:#244744;">Bác sĩ</span><span style="font-size:11px;font-weight:600;color:#15915A;background:rgba(227,244,234,0.9);border-radius:999px;padding:3px 10px;align-self:flex-start;">Hoạt động</span><span style="font-size:12px;color:#365651;">2 phút</span></div>
+                  <div style="display:grid;grid-template-columns:1.6fr 1fr 1fr 0.9fr;gap:10px;align-items:center;padding:13px 20px;border-bottom:1px solid rgba(16,48,44,0.05);"><div style="display:flex;align-items:center;gap:10px;"><div style="width:34px;height:34px;border-radius:50%;background:rgba(227,245,236,0.9);display:grid;place-items:center;font-weight:700;color:#0B7F5B;font-size:11px;">LH</div><div><p style="font-size:13.5px;font-weight:600;color:#0E2A33;margin:0;">BS. Lê Thu Hà</p><p style="font-size:11px;color:#365651;margin:0;">ha.le@…</p></div></div><span style="font-size:12.5px;color:#244744;">Dinh dưỡng</span><span style="font-size:11px;font-weight:600;color:#15915A;background:rgba(227,244,234,0.9);border-radius:999px;padding:3px 10px;align-self:flex-start;">Hoạt động</span><span style="font-size:12px;color:#365651;">18 phút</span></div>
+                  <div style="display:grid;grid-template-columns:1.6fr 1fr 1fr 0.9fr;gap:10px;align-items:center;padding:13px 20px;border-bottom:1px solid rgba(16,48,44,0.05);"><div style="display:flex;align-items:center;gap:10px;"><div style="width:34px;height:34px;border-radius:50%;background:rgba(252,239,201,0.9);display:grid;place-items:center;font-weight:700;color:#C77A06;font-size:11px;">NV</div><div><p style="font-size:13.5px;font-weight:600;color:#0E2A33;margin:0;">Ngô Thanh Vy</p><p style="font-size:11px;color:#365651;margin:0;">vy.ngo@…</p></div></div><span style="font-size:12.5px;color:#244744;">Điều dưỡng</span><span style="font-size:11px;font-weight:600;color:#C77A06;background:rgba(252,239,201,0.9);border-radius:999px;padding:3px 10px;align-self:flex-start;">Chờ kích hoạt</span><span style="font-size:12px;color:#365651;">3 giờ</span></div>
+                  <div style="display:grid;grid-template-columns:1.6fr 1fr 1fr 0.9fr;gap:10px;align-items:center;padding:13px 20px;border-bottom:1px solid rgba(16,48,44,0.05);"><div style="display:flex;align-items:center;gap:10px;"><div style="width:34px;height:34px;border-radius:50%;background:#E3F5EC;display:grid;place-items:center;font-weight:700;color:#0F9C6E;font-size:11px;">ĐM</div><div><p style="font-size:13.5px;font-weight:600;color:#0E2A33;margin:0;">BS. Đỗ Minh</p><p style="font-size:11px;color:#365651;margin:0;">minh.do@…</p></div></div><span style="font-size:12.5px;color:#244744;">Tim mạch</span><span style="font-size:11px;font-weight:600;color:#15915A;background:rgba(227,244,234,0.9);border-radius:999px;padding:3px 10px;align-self:flex-start;">Hoạt động</span><span style="font-size:12px;color:#365651;">Hôm qua</span></div>
+                  <div style="display:grid;grid-template-columns:1.6fr 1fr 1fr 0.9fr;gap:10px;align-items:center;padding:13px 20px;"><div style="display:flex;align-items:center;gap:10px;"><div style="width:34px;height:34px;border-radius:50%;background:rgba(238,238,238,0.9);display:grid;place-items:center;font-weight:700;color:#566E66;font-size:11px;">TT</div><div><p style="font-size:13.5px;font-weight:600;color:#0E2A33;margin:0;">Vũ Thị Trang</p><p style="font-size:11px;color:#365651;margin:0;">trang.vu@…</p></div></div><span style="font-size:12.5px;color:#244744;">Lễ tân</span><span style="font-size:11px;font-weight:600;color:#566E66;background:rgba(238,238,238,0.9);border-radius:999px;padding:3px 10px;align-self:flex-start;">Vô hiệu</span><span style="font-size:12px;color:#365651;">5 ngày</span></div>
+                </div>
+              </div>
+              <!-- consent panel -->
+              <div style="border-radius:16px;padding:20px;background:rgba(255,255,255,0.62);backdrop-filter:blur(22px);border:1px solid rgba(255,255,255,0.8);box-shadow:inset 0 1px 0 rgba(255,255,255,0.9), 0 12px 28px -18px rgba(16,48,44,0.5);display:flex;flex-direction:column;">
+                <p style="font-size:16px;font-weight:700;color:#0E2A33;margin:0;">Đồng thuận chia sẻ dữ liệu</p>
+                <p style="font-size:12.5px;color:#365651;margin:3px 0 14px;">Theo Nghị định bảo vệ dữ liệu cá nhân</p>
+                <div style="display:flex;flex-direction:column;gap:11px;flex:1;">
+                  <div style="border-radius:12px;padding:13px;background:rgba(227,244,234,0.55);border:1px solid rgba(134,242,204,0.6);"><div style="display:flex;align-items:center;justify-content:space-between;"><span style="font-size:13px;font-weight:600;color:#0E2A33;">Hồ sơ chuyển hoá</span><span style="font-size:10.5px;font-weight:700;color:#15915A;background:rgba(255,255,255,0.7);border-radius:999px;padding:3px 9px;">Hiệu lực</span></div><p style="font-size:11.5px;color:#244744;margin:6px 0 0;">1.232 / 1.284 bệnh nhân đã đồng ý</p></div>
+                  <div style="border-radius:12px;padding:13px;background:rgba(229,237,251,0.55);border:1px solid rgba(147,197,253,0.6);"><div style="display:flex;align-items:center;justify-content:space-between;"><span style="font-size:13px;font-weight:600;color:#0E2A33;">Chia sẻ với bác sĩ ngoài</span><span style="font-size:10.5px;font-weight:700;color:#2563EB;background:rgba(255,255,255,0.7);border-radius:999px;padding:3px 9px;">Tùy chọn</span></div><p style="font-size:11.5px;color:#244744;margin:6px 0 0;">847 bệnh nhân bật · có thể thu hồi</p></div>
+                  <div style="border-radius:12px;padding:13px;background:rgba(252,239,201,0.55);border:1px solid rgba(252,211,77,0.6);"><div style="display:flex;align-items:center;justify-content:space-between;"><span style="font-size:13px;font-weight:600;color:#0E2A33;">Huấn luyện mô hình AI</span><span style="font-size:10.5px;font-weight:700;color:#C77A06;background:rgba(255,255,255,0.7);border-radius:999px;padding:3px 9px;">Cần xem lại</span></div><p style="font-size:11.5px;color:#244744;margin:6px 0 0;">52 đồng thuận sắp hết hạn trong 30 ngày</p></div>
+                </div>
+                <button style="height:44px;margin-top:14px;border:1px solid rgba(16,48,44,0.12);border-radius:10px;background:rgba(255,255,255,0.7);color:#0E2A33;font-weight:600;font-size:13.5px;display:inline-flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;"><meto-icon name="file-text" size="16" color="#0B7F5B"></meto-icon>Xuất báo cáo đồng thuận</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== 06 · SUPER ADMIN ===================== -->
+  <div style="display:flex;align-items:flex-end;gap:13px;margin:60px 0 18px;">
+    <span style="font-family:'JetBrains Mono',monospace;font-weight:600;font-size:13px;color:#fff;background:#0F9C6E;border-radius:8px;padding:4px 10px;box-shadow:0 6px 16px -6px rgba(16,140,99,0.6);">06</span>
+    <h2 style="font-size:24px;font-weight:700;color:#0E2A33;letter-spacing:-0.02em;margin:0;">Quản trị nền tảng</h2>
+    <p style="font-size:14px;color:#365651;margin:0 0 2px;">Tổ chức · sức khỏe hệ thống · nhật ký kiểm toán</p>
+  </div>
+  <div style="display:flex;gap:44px;align-items:flex-start;flex-wrap:wrap;">
+    <div style="display:flex;flex-direction:column;gap:13px;flex:none;">
+      <div style="font-family:'JetBrains Mono',monospace;font-weight:600;font-size:12px;color:#365651;padding-left:4px;">Vận hành nền tảng (super admin)</div>
+      <div style="width:1360px;height:858px;border-radius:18px;overflow:hidden;position:relative;border:1px solid rgba(255,255,255,0.6);box-shadow:0 50px 100px -40px rgba(16,48,44,0.5);background-image:radial-gradient(700px 500px at 8% 0%, rgba(27,176,130,0.16), transparent 60%), radial-gradient(720px 600px at 100% 26%, rgba(109,63,190,0.12), transparent 60%), linear-gradient(150deg,#eef6f2,#f3f6f5 60%,#f1f4f9);display:flex;">
+        <aside style="width:248px;flex-shrink:0;background:rgba(16,42,42,0.86);backdrop-filter:blur(28px) saturate(180%);border-right:1px solid rgba(255,255,255,0.1);display:flex;flex-direction:column;padding:22px 16px;">
+          <div style="display:flex;align-items:center;gap:10px;padding:0 8px 6px;"><meto-mark size="30" ring="#1BB082" leaf="#7FE0BD"></meto-mark><span style="font-weight:700;font-size:19px;color:#fff;">metocare</span></div>
+          <div style="margin:8px 8px 0;display:inline-flex;align-items:center;gap:7px;background:rgba(27,176,130,0.18);border-radius:8px;padding:5px 10px;align-self:flex-start;"><meto-icon name="server" size="13" color="#1BB082"></meto-icon><span style="font-size:11px;font-weight:600;color:#7FE0BD;">Nền tảng · Super</span></div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:rgba(255,255,255,0.4);letter-spacing:0.1em;padding:18px 10px 8px;">NỀN TẢNG</div>
+          <div style="display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:10px;background:linear-gradient(150deg,#1BB082,#0B7F5B);color:#fff;font-weight:600;font-size:14px;box-shadow:0 10px 22px -10px rgba(16,140,99,0.8);"><meto-icon name="layout-grid" size="19" color="#fff"></meto-icon>Tổng quan</div>
+          <div style="display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:10px;color:rgba(255,255,255,0.78);font-weight:500;font-size:14px;"><meto-icon name="building" size="19" color="rgba(255,255,255,0.6)"></meto-icon>Tổ chức</div>
+          <div style="display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:10px;color:rgba(255,255,255,0.78);font-weight:500;font-size:14px;"><meto-icon name="activity" size="19" color="rgba(255,255,255,0.6)"></meto-icon>Sức khỏe hệ thống</div>
+          <div style="display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:10px;color:rgba(255,255,255,0.78);font-weight:500;font-size:14px;"><meto-icon name="sparkles" size="19" color="rgba(255,255,255,0.6)"></meto-icon>Cấu hình AI</div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:rgba(255,255,255,0.4);letter-spacing:0.1em;padding:18px 10px 8px;">BẢO MẬT</div>
+          <div style="display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:10px;color:rgba(255,255,255,0.78);font-weight:500;font-size:14px;"><meto-icon name="file-text" size="19" color="rgba(255,255,255,0.6)"></meto-icon>Nhật ký kiểm toán</div>
+          <div style="margin-top:auto;display:flex;align-items:center;gap:11px;padding:10px;border-radius:11px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.12);">
+            <div style="width:38px;height:38px;border-radius:50%;background:rgba(27,176,130,0.2);display:grid;place-items:center;font-weight:700;color:#7FE0BD;font-size:13px;">SA</div>
+            <div style="flex:1;min-width:0;"><p style="font-size:13px;font-weight:700;color:#fff;margin:0;">Lê Hoàng Sơn</p><p style="font-size:11px;color:rgba(255,255,255,0.6);margin:0;">Super Admin</p></div>
+            <meto-icon name="log-out" size="17" color="rgba(255,255,255,0.5)"></meto-icon>
+          </div>
+        </aside>
+        <div style="flex:1;min-width:0;display:flex;flex-direction:column;">
+          <div style="height:70px;flex-shrink:0;background:rgba(255,255,255,0.5);backdrop-filter:blur(24px) saturate(180%);border-bottom:1px solid rgba(255,255,255,0.7);display:flex;align-items:center;gap:16px;padding:0 26px;">
+            <div><p style="font-size:18px;font-weight:700;color:#0E2A33;margin:0;">Tổng quan nền tảng</p><p style="font-size:12px;color:#365651;margin:0;">28 tổ chức · tất cả dịch vụ bình thường</p></div>
+            <span style="margin-left:auto;display:inline-flex;align-items:center;gap:8px;height:38px;padding:0 14px;border-radius:9px;background:rgba(227,244,234,0.8);border:1px solid rgba(134,242,204,0.7);color:#15915A;font-weight:600;font-size:13px;"><span style="width:8px;height:8px;border-radius:50%;background:#15915A;"></span>Tất cả hệ thống hoạt động</span>
+            <div style="width:42px;height:42px;border-radius:50%;background:rgba(16,42,42,0.9);display:grid;place-items:center;font-weight:700;color:#7FE0BD;font-size:14px;">SA</div>
+          </div>
+          <div style="flex:1;overflow:hidden;padding:24px 26px;display:flex;flex-direction:column;gap:18px;">
+            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;">
+              <div style="border-radius:14px;padding:18px;background:rgba(255,255,255,0.62);backdrop-filter:blur(22px);border:1px solid rgba(255,255,255,0.8);box-shadow:inset 0 1px 0 rgba(255,255,255,0.9), 0 12px 28px -18px rgba(16,48,44,0.5);">
+                <div style="display:flex;align-items:center;justify-content:space-between;"><span style="width:40px;height:40px;border-radius:10px;background:rgba(227,245,236,0.95);display:grid;place-items:center;"><meto-icon name="building" size="20" color="#0B7F5B"></meto-icon></span><span style="font-size:11px;font-weight:700;color:#15915A;">+3</span></div>
+                <p style="font-size:30px;font-weight:800;color:#0E2A33;margin:14px 0 0;letter-spacing:-0.02em;">28</p>
+                <p style="font-size:13px;color:#365651;margin:2px 0 0;">Tổ chức / phòng khám</p>
+              </div>
+              <div style="border-radius:14px;padding:18px;background:rgba(255,255,255,0.62);backdrop-filter:blur(22px);border:1px solid rgba(255,255,255,0.8);box-shadow:inset 0 1px 0 rgba(255,255,255,0.9), 0 12px 28px -18px rgba(16,48,44,0.5);">
+                <div style="display:flex;align-items:center;justify-content:space-between;"><span style="width:40px;height:40px;border-radius:10px;background:rgba(229,237,251,0.95);display:grid;place-items:center;"><meto-icon name="users" size="20" color="#2563EB"></meto-icon></span><span style="font-size:11px;font-weight:700;color:#15915A;">+8.1%</span></div>
+                <p style="font-size:30px;font-weight:800;color:#0E2A33;margin:14px 0 0;letter-spacing:-0.02em;">42.8K</p>
+                <p style="font-size:13px;color:#365651;margin:2px 0 0;">Bệnh nhân toàn nền tảng</p>
+              </div>
+              <div style="border-radius:14px;padding:18px;background:rgba(255,255,255,0.62);backdrop-filter:blur(22px);border:1px solid rgba(255,255,255,0.8);box-shadow:inset 0 1px 0 rgba(255,255,255,0.9), 0 12px 28px -18px rgba(16,48,44,0.5);">
+                <div style="display:flex;align-items:center;justify-content:space-between;"><span style="width:40px;height:40px;border-radius:10px;background:rgba(227,245,236,0.95);display:grid;place-items:center;"><meto-icon name="activity" size="20" color="#0B7F5B"></meto-icon></span><span style="font-size:11px;font-weight:700;color:#15915A;">30 ngày</span></div>
+                <p style="font-size:30px;font-weight:800;color:#0E2A33;margin:14px 0 0;letter-spacing:-0.02em;">99.98%</p>
+                <p style="font-size:13px;color:#365651;margin:2px 0 0;">Uptime hệ thống</p>
+              </div>
+              <div style="border-radius:14px;padding:18px;background:rgba(255,255,255,0.62);backdrop-filter:blur(22px);border:1px solid rgba(255,255,255,0.8);box-shadow:inset 0 1px 0 rgba(255,255,255,0.9), 0 12px 28px -18px rgba(16,48,44,0.5);">
+                <div style="display:flex;align-items:center;justify-content:space-between;"><span style="width:40px;height:40px;border-radius:10px;background:rgba(243,238,251,0.95);display:grid;place-items:center;"><meto-icon name="sparkles" size="20" color="#6D3FBE"></meto-icon></span><span style="font-size:11px;font-weight:700;color:#15915A;">/ ngày</span></div>
+                <p style="font-size:30px;font-weight:800;color:#0E2A33;margin:14px 0 0;letter-spacing:-0.02em;">128K</p>
+                <p style="font-size:13px;color:#365651;margin:2px 0 0;">Lệnh gọi mô hình AI</p>
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1.5fr 1fr;gap:18px;flex:1;min-height:0;">
+              <!-- orgs table -->
+              <div style="border-radius:16px;background:rgba(255,255,255,0.62);backdrop-filter:blur(22px);border:1px solid rgba(255,255,255,0.8);box-shadow:inset 0 1px 0 rgba(255,255,255,0.9), 0 12px 28px -18px rgba(16,48,44,0.5);display:flex;flex-direction:column;overflow:hidden;">
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:18px 20px 12px;"><p style="font-size:16px;font-weight:700;color:#0E2A33;margin:0;">Tổ chức</p><span style="font-size:13px;font-weight:600;color:#0B7F5B;">Quản lý</span></div>
+                <div style="display:grid;grid-template-columns:1.7fr 1fr 1fr 1fr;gap:10px;padding:8px 20px;background:rgba(255,255,255,0.4);border-top:1px solid rgba(16,48,44,0.06);border-bottom:1px solid rgba(16,48,44,0.06);">
+                  <span style="font-size:11px;font-weight:700;color:#566E66;text-transform:uppercase;letter-spacing:0.04em;">Tổ chức</span><span style="font-size:11px;font-weight:700;color:#566E66;text-transform:uppercase;letter-spacing:0.04em;">Gói</span><span style="font-size:11px;font-weight:700;color:#566E66;text-transform:uppercase;letter-spacing:0.04em;">Bệnh nhân</span><span style="font-size:11px;font-weight:700;color:#566E66;text-transform:uppercase;letter-spacing:0.04em;">Trạng thái</span>
+                </div>
+                <div style="flex:1;overflow:hidden;">
+                  <div style="display:grid;grid-template-columns:1.7fr 1fr 1fr 1fr;gap:10px;align-items:center;padding:14px 20px;border-bottom:1px solid rgba(16,48,44,0.05);"><div style="display:flex;align-items:center;gap:10px;"><span style="width:32px;height:32px;border-radius:9px;background:#E3F5EC;display:grid;place-items:center;"><meto-icon name="building" size="16" color="#0B7F5B"></meto-icon></span><span style="font-size:13.5px;font-weight:600;color:#0E2A33;">Phòng khám Q1</span></div><span style="font-size:12.5px;color:#244744;">Enterprise</span><span style="font-size:12.5px;font-weight:600;color:#0E2A33;">1.284</span><span style="font-size:11px;font-weight:600;color:#15915A;background:rgba(227,244,234,0.9);border-radius:999px;padding:3px 10px;align-self:flex-start;">Hoạt động</span></div>
+                  <div style="display:grid;grid-template-columns:1.7fr 1fr 1fr 1fr;gap:10px;align-items:center;padding:14px 20px;border-bottom:1px solid rgba(16,48,44,0.05);"><div style="display:flex;align-items:center;gap:10px;"><span style="width:32px;height:32px;border-radius:9px;background:rgba(227,245,236,0.9);display:grid;place-items:center;"><meto-icon name="building" size="16" color="#0B7F5B"></meto-icon></span><span style="font-size:13.5px;font-weight:600;color:#0E2A33;">BV Đại học Y</span></div><span style="font-size:12.5px;color:#244744;">Enterprise</span><span style="font-size:12.5px;font-weight:600;color:#0E2A33;">8.412</span><span style="font-size:11px;font-weight:600;color:#15915A;background:rgba(227,244,234,0.9);border-radius:999px;padding:3px 10px;align-self:flex-start;">Hoạt động</span></div>
+                  <div style="display:grid;grid-template-columns:1.7fr 1fr 1fr 1fr;gap:10px;align-items:center;padding:14px 20px;border-bottom:1px solid rgba(16,48,44,0.05);"><div style="display:flex;align-items:center;gap:10px;"><span style="width:32px;height:32px;border-radius:9px;background:rgba(252,239,201,0.9);display:grid;place-items:center;"><meto-icon name="building" size="16" color="#C77A06"></meto-icon></span><span style="font-size:13.5px;font-weight:600;color:#0E2A33;">Clinic Đà Nẵng</span></div><span style="font-size:12.5px;color:#244744;">Pro</span><span style="font-size:12.5px;font-weight:600;color:#0E2A33;">642</span><span style="font-size:11px;font-weight:600;color:#C77A06;background:rgba(252,239,201,0.9);border-radius:999px;padding:3px 10px;align-self:flex-start;">Dùng thử</span></div>
+                  <div style="display:grid;grid-template-columns:1.7fr 1fr 1fr 1fr;gap:10px;align-items:center;padding:14px 20px;border-bottom:1px solid rgba(16,48,44,0.05);"><div style="display:flex;align-items:center;gap:10px;"><span style="width:32px;height:32px;border-radius:9px;background:#E3F5EC;display:grid;place-items:center;"><meto-icon name="building" size="16" color="#0B7F5B"></meto-icon></span><span style="font-size:13.5px;font-weight:600;color:#0E2A33;">MedCare Bình Dương</span></div><span style="font-size:12.5px;color:#244744;">Pro</span><span style="font-size:12.5px;font-weight:600;color:#0E2A33;">1.038</span><span style="font-size:11px;font-weight:600;color:#15915A;background:rgba(227,244,234,0.9);border-radius:999px;padding:3px 10px;align-self:flex-start;">Hoạt động</span></div>
+                  <div style="display:grid;grid-template-columns:1.7fr 1fr 1fr 1fr;gap:10px;align-items:center;padding:14px 20px;"><div style="display:flex;align-items:center;gap:10px;"><span style="width:32px;height:32px;border-radius:9px;background:rgba(238,238,238,0.9);display:grid;place-items:center;"><meto-icon name="building" size="16" color="#566E66"></meto-icon></span><span style="font-size:13.5px;font-weight:600;color:#0E2A33;">Health Hub Cần Thơ</span></div><span style="font-size:12.5px;color:#244744;">Pro</span><span style="font-size:12.5px;font-weight:600;color:#0E2A33;">489</span><span style="font-size:11px;font-weight:600;color:#566E66;background:rgba(238,238,238,0.9);border-radius:999px;padding:3px 10px;align-self:flex-start;">Tạm dừng</span></div>
+                </div>
+              </div>
+              <!-- right: health + audit -->
+              <div style="display:flex;flex-direction:column;gap:16px;min-height:0;">
+                <div style="border-radius:16px;padding:18px 20px;background:rgba(255,255,255,0.62);backdrop-filter:blur(22px);border:1px solid rgba(255,255,255,0.8);box-shadow:inset 0 1px 0 rgba(255,255,255,0.9), 0 12px 28px -18px rgba(16,48,44,0.5);">
+                  <p style="font-size:15px;font-weight:700;color:#0E2A33;margin:0 0 12px;">Sức khỏe dịch vụ</p>
+                  <div style="display:flex;align-items:center;gap:10px;padding:7px 0;"><span style="width:8px;height:8px;border-radius:50%;background:#15915A;"></span><span style="font-size:13px;color:#244744;flex:1;">API Gateway</span><span style="font-size:12px;font-weight:600;color:#15915A;">99.99%</span></div>
+                  <div style="display:flex;align-items:center;gap:10px;padding:7px 0;"><span style="width:8px;height:8px;border-radius:50%;background:#15915A;"></span><span style="font-size:13px;color:#244744;flex:1;">Mô hình AI</span><span style="font-size:12px;font-weight:600;color:#15915A;">99.94%</span></div>
+                  <div style="display:flex;align-items:center;gap:10px;padding:7px 0;"><span style="width:8px;height:8px;border-radius:50%;background:#C77A06;"></span><span style="font-size:13px;color:#244744;flex:1;">Cơ sở dữ liệu</span><span style="font-size:12px;font-weight:600;color:#C77A06;">độ trễ cao</span></div>
+                  <div style="display:flex;align-items:center;gap:10px;padding:7px 0;"><span style="width:8px;height:8px;border-radius:50%;background:#15915A;"></span><span style="font-size:13px;color:#244744;flex:1;">Thông báo</span><span style="font-size:12px;font-weight:600;color:#15915A;">100%</span></div>
+                </div>
+                <div style="border-radius:16px;padding:18px 20px;background:rgba(255,255,255,0.62);backdrop-filter:blur(22px);border:1px solid rgba(255,255,255,0.8);box-shadow:inset 0 1px 0 rgba(255,255,255,0.9), 0 12px 28px -18px rgba(16,48,44,0.5);flex:1;min-height:0;overflow:hidden;">
+                  <p style="font-size:15px;font-weight:700;color:#0E2A33;margin:0 0 12px;">Nhật ký kiểm toán</p>
+                  <div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid rgba(16,48,44,0.05);"><meto-icon name="shield-check" size="16" color="#0B7F5B" style="margin-top:1px;"></meto-icon><div style="flex:1;"><p style="font-size:12.5px;color:#0E2A33;margin:0;">Cập nhật cấu hình AI · ngưỡng nguy cơ</p><p style="font-size:11px;color:#566E66;margin:1px 0 0;">Lê Hoàng Sơn · 12 phút trước</p></div></div>
+                  <div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid rgba(16,48,44,0.05);"><meto-icon name="building" size="16" color="#2563EB" style="margin-top:1px;"></meto-icon><div style="flex:1;"><p style="font-size:12.5px;color:#0E2A33;margin:0;">Thêm tổ chức mới · Clinic Đà Nẵng</p><p style="font-size:11px;color:#566E66;margin:1px 0 0;">Hệ thống · 2 giờ trước</p></div></div>
+                  <div style="display:flex;gap:10px;padding:8px 0;"><meto-icon name="lock" size="16" color="#C77A06" style="margin-top:1px;"></meto-icon><div style="flex:1;"><p style="font-size:12.5px;color:#0E2A33;margin:0;">Truy cập dữ liệu nhạy cảm được duyệt</p><p style="font-size:11px;color:#566E66;margin:1px 0 0;">Phạm Vân Anh · 4 giờ trước</p></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== 07 · WORKFLOW & STATES ===================== -->
+  <div style="display:flex;align-items:flex-end;gap:13px;margin:60px 0 18px;">
+    <span style="font-family:'JetBrains Mono',monospace;font-weight:600;font-size:13px;color:#fff;background:#0F9C6E;border-radius:8px;padding:4px 10px;box-shadow:0 6px 16px -6px rgba(16,140,99,0.6);">07</span>
+    <h2 style="font-size:24px;font-weight:700;color:#0E2A33;letter-spacing:-0.02em;margin:0;">Quy trình &amp; trạng thái giao diện</h2>
+    <p style="font-size:14px;color:#365651;margin:0 0 2px;">Luồng duyệt lâm sàng · loading · empty · offline · AI chờ duyệt</p>
+  </div>
+
+  <!-- clinical lifecycle flow -->
+  <div style="width:1180px;border-radius:16px;padding:26px 28px;background:rgba(255,255,255,0.6);backdrop-filter:blur(28px) saturate(180%);border:1px solid rgba(255,255,255,0.75);box-shadow:inset 0 1px 0 rgba(255,255,255,0.9), 0 22px 60px -24px rgba(16,48,44,0.4);margin-bottom:26px;">
+    <p style="font-size:16px;font-weight:700;color:#0E2A33;margin:0 0 4px;">Vòng đời khuyến nghị — từ AI đến bệnh nhân</p>
+    <p style="font-size:13px;color:#365651;margin:0 0 22px;">Mọi nội dung do AI tạo đều phải qua bác sĩ phê duyệt trước khi hiển thị cho bệnh nhân.</p>
+    <div style="display:flex;align-items:center;gap:12px;">
+      <div style="flex:1;border-radius:14px;padding:16px;background:rgba(243,238,251,0.6);border:1px solid rgba(216,201,246,0.7);">
+        <span style="width:38px;height:38px;border-radius:9px;background:linear-gradient(150deg,#8456D6,#6D3FBE);display:grid;place-items:center;box-shadow:0 8px 16px -8px rgba(109,63,190,0.8);"><meto-icon name="sparkles" size="19" color="#fff"></meto-icon></span>
+        <p style="font-size:13.5px;font-weight:700;color:#0E2A33;margin:11px 0 0;">AI tạo khuyến nghị</p>
+        <p style="font-size:11.5px;color:#244744;margin:3px 0 0;line-height:1.4;">Dựa trên chỉ số &amp; lịch sử bệnh nhân</p>
+      </div>
+      <meto-icon name="chevron-right" size="22" color="#566E66"></meto-icon>
+      <div style="flex:1;border-radius:14px;padding:16px;background:rgba(252,239,201,0.6);border:1px solid rgba(252,211,77,0.7);">
+        <span style="width:38px;height:38px;border-radius:9px;background:#C77A06;display:grid;place-items:center;box-shadow:0 8px 16px -8px rgba(199,122,6,0.8);"><meto-icon name="clock" size="19" color="#fff"></meto-icon></span>
+        <p style="font-size:13.5px;font-weight:700;color:#0E2A33;margin:11px 0 0;">Chờ bác sĩ duyệt</p>
+        <p style="font-size:11.5px;color:#244744;margin:3px 0 0;line-height:1.4;">Ẩn với bệnh nhân ở bước này</p>
+      </div>
+      <meto-icon name="chevron-right" size="22" color="#566E66"></meto-icon>
+      <div style="flex:1.4;display:flex;flex-direction:column;gap:8px;">
+        <div style="border-radius:11px;padding:11px 13px;background:rgba(227,244,234,0.7);border:1px solid rgba(134,242,204,0.7);display:flex;align-items:center;gap:9px;"><meto-icon name="check-circle" size="17" color="#15915A"></meto-icon><div style="flex:1;"><p style="font-size:12.5px;font-weight:700;color:#15915A;margin:0;">Duyệt → gửi bệnh nhân</p></div></div>
+        <div style="border-radius:11px;padding:11px 13px;background:rgba(229,237,251,0.7);border:1px solid rgba(147,197,253,0.7);display:flex;align-items:center;gap:9px;"><meto-icon name="message-square" size="17" color="#2563EB"></meto-icon><div style="flex:1;"><p style="font-size:12.5px;font-weight:700;color:#2563EB;margin:0;">Yêu cầu bổ sung thông tin</p></div></div>
+        <div style="border-radius:11px;padding:11px 13px;background:rgba(236,240,244,0.7);border:1px solid rgba(247,180,190,0.7);display:flex;align-items:center;gap:9px;"><meto-icon name="x" size="17" color="#D92D20"></meto-icon><div style="flex:1;"><p style="font-size:12.5px;font-weight:700;color:#D92D20;margin:0;">Từ chối · lưu lý do</p></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- interface states -->
+  <div style="display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap;">
+    <!-- loading -->
+    <div style="width:362px;border-radius:16px;padding:20px;background:rgba(255,255,255,0.62);backdrop-filter:blur(22px);border:1px solid rgba(255,255,255,0.8);box-shadow:inset 0 1px 0 rgba(255,255,255,0.9), 0 16px 36px -22px rgba(16,48,44,0.5);">
+      <p style="font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:600;color:#566E66;letter-spacing:0.06em;text-transform:uppercase;margin:0 0 14px;">Đang tải</p>
+      <div style="display:flex;align-items:center;gap:12px;"><div style="width:44px;height:44px;border-radius:10px;background:rgba(16,48,44,0.08);" class="mc-pulse"></div><div style="flex:1;display:flex;flex-direction:column;gap:8px;"><div style="height:11px;width:70%;border-radius:6px;background:rgba(16,48,44,0.08);" class="mc-pulse"></div><div style="height:11px;width:40%;border-radius:6px;background:rgba(16,48,44,0.08);" class="mc-pulse"></div></div></div>
+      <div style="height:88px;border-radius:11px;background:rgba(16,48,44,0.06);margin-top:14px;" class="mc-pulse"></div>
+    </div>
+    <!-- empty -->
+    <div style="width:362px;border-radius:16px;padding:30px 20px;background:rgba(255,255,255,0.62);backdrop-filter:blur(22px);border:1px solid rgba(255,255,255,0.8);box-shadow:inset 0 1px 0 rgba(255,255,255,0.9), 0 16px 36px -22px rgba(16,48,44,0.5);text-align:center;">
+      <div style="width:60px;height:60px;border-radius:14px;background:rgba(227,245,236,0.9);display:grid;place-items:center;margin:0 auto 14px;"><meto-icon name="droplet" size="28" color="#0B7F5B"></meto-icon></div>
+      <p style="font-size:15.5px;font-weight:700;color:#0E2A33;margin:0;">Chưa có dữ liệu đo</p>
+      <p style="font-size:12.5px;color:#365651;margin:7px 0 16px;line-height:1.45;">Ghi chỉ số đầu tiên để bắt đầu theo dõi sức khoẻ.</p>
+      <button style="height:42px;padding:0 20px;border:none;border-radius:10px;background:linear-gradient(150deg,#1BB082,#0B7F5B);color:#fff;font-weight:600;font-size:13.5px;display:inline-flex;align-items:center;gap:8px;box-shadow:0 10px 22px -10px rgba(16,140,99,0.8);cursor:pointer;"><meto-icon name="plus" size="16" color="#fff"></meto-icon>Ghi chỉ số</button>
+    </div>
+    <!-- offline -->
+    <div style="width:362px;border-radius:16px;padding:20px;background:rgba(236,240,244,0.62);backdrop-filter:blur(22px);border:1px solid rgba(247,180,190,0.7);box-shadow:inset 0 1px 0 rgba(255,255,255,0.7), 0 16px 36px -22px rgba(16,48,44,0.5);">
+      <p style="font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:600;color:#0B815C;letter-spacing:0.06em;text-transform:uppercase;margin:0 0 14px;">Lỗi · ngoại tuyến</p>
+      <div style="display:flex;align-items:flex-start;gap:12px;"><div style="width:44px;height:44px;border-radius:10px;background:rgba(217,45,32,0.12);display:grid;place-items:center;flex-shrink:0;"><meto-icon name="wifi-off" size="22" color="#D92D20"></meto-icon></div><div style="flex:1;"><p style="font-size:14.5px;font-weight:700;color:#D92D20;margin:0;">Mất kết nối mạng</p><p style="font-size:12.5px;color:#8a3b3b;margin:5px 0 0;line-height:1.45;">Dữ liệu sẽ tự đồng bộ khi có mạng trở lại.</p><button style="margin-top:11px;border:none;background:none;padding:0;color:#D92D20;font-weight:700;font-size:13px;display:inline-flex;align-items:center;gap:6px;cursor:pointer;"><meto-icon name="refresh-cw" size="15" color="#D92D20"></meto-icon>Thử lại</button></div></div>
+    </div>
+    <!-- AI pending -->
+    <div style="width:362px;border-radius:16px;padding:20px;background:rgba(243,238,251,0.62);backdrop-filter:blur(22px);border:1px solid rgba(216,201,246,0.7);box-shadow:inset 0 1px 0 rgba(255,255,255,0.7), 0 16px 36px -22px rgba(16,48,44,0.5);">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;"><span style="width:34px;height:34px;border-radius:10px;background:linear-gradient(150deg,#8456D6,#6D3FBE);display:grid;place-items:center;"><meto-icon name="sparkles" size="17" color="#fff"></meto-icon></span><p style="font-size:13.5px;font-weight:700;color:#0E2A33;margin:0;flex:1;">Phản hồi AI chờ duyệt</p><span style="display:inline-flex;align-items:center;gap:5px;background:rgba(255,255,255,0.7);color:#6D3FBE;font-weight:600;font-size:10px;border-radius:7px;padding:4px 8px;"><meto-icon name="clock" size="11" color="#6D3FBE"></meto-icon>Chờ duyệt</span></div>
+      <p style="font-size:13px;color:#244744;line-height:1.5;margin:0;">Gợi ý này sẽ hiển thị đầy đủ sau khi bác sĩ của bạn xem xét và phê duyệt.</p>
+    </div>
+    <!-- consent -->
+    <div style="width:362px;border-radius:16px;padding:20px;background:rgba(255,255,255,0.62);backdrop-filter:blur(22px);border:1px solid rgba(255,255,255,0.8);box-shadow:inset 0 1px 0 rgba(255,255,255,0.9), 0 16px 36px -22px rgba(16,48,44,0.5);">
+      <div style="display:flex;align-items:flex-start;gap:12px;"><div style="width:44px;height:44px;border-radius:10px;background:rgba(229,237,251,0.9);display:grid;place-items:center;flex-shrink:0;"><meto-icon name="shield" size="22" color="#2563EB"></meto-icon></div><div style="flex:1;"><p style="font-size:14.5px;font-weight:700;color:#0E2A33;margin:0;">Yêu cầu chia sẻ dữ liệu</p><p style="font-size:12.5px;color:#365651;margin:5px 0 0;line-height:1.45;">Phòng khám MetoCare Q1 muốn xem hồ sơ chuyển hoá của bạn.</p></div></div>
+      <div style="display:flex;gap:9px;margin-top:14px;"><button style="flex:1;height:40px;border:1px solid rgba(16,48,44,0.14);border-radius:10px;background:rgba(255,255,255,0.7);color:#244744;font-weight:600;font-size:13px;cursor:pointer;">Từ chối</button><button style="flex:1;height:40px;border:none;border-radius:10px;background:linear-gradient(150deg,#1BB082,#0B7F5B);color:#fff;font-weight:700;font-size:13px;box-shadow:0 10px 20px -10px rgba(16,140,99,0.8);cursor:pointer;">Đồng ý</button></div>
+    </div>
+  </div>
+
+  <!-- footer note -->
+  <div style="margin-top:46px;display:flex;align-items:center;gap:10px;color:#365651;font-size:13px;">
+    <meto-mark size="22"></meto-mark>
+    <span>MetoCare · Hệ thống giao diện Liquid Glass · 5 vai trò · tiếng Việt</span>
+  </div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { review: 0, decided: {}, docNav: 'review', adminNav: 'overview', platNav: 'orgs', viz: 'A' };
+  renderVals(){
+    const RAW = [
+      { name:'Phạm Thị Hồng', meta:'Nữ · 58 · MC-10291', risk:'high', type:'Kế hoạch dinh dưỡng', age:'4 phút', sla:'Gấp', ai:'Giảm tinh bột tinh chế xuống dưới 40% khẩu phần; bổ sung chất xơ hoà tan 25g/ngày để hỗ trợ kiểm soát đường huyết sau ăn.', hba1c:'8.9', glu:'9.4', bmi:'31.2', bp:'148/94', conf:'72%' },
+      { name:'Nguyễn Minh Anh', meta:'Nam · 54 · MC-10293', risk:'low', type:'Khuyến nghị vận động', age:'18 phút', sla:'Hôm nay', ai:'Duy trì đi bộ 30 phút mỗi ngày; cân nhắc tăng lên 40 phút khi đường huyết ổn định 2 tuần liên tiếp.', hba1c:'6.4', glu:'5.6', bmi:'24.1', bp:'118/76', conf:'94%' },
+      { name:'Trần Văn Dũng', meta:'Nam · 61 · MC-10288', risk:'medium', type:'Điều chỉnh liều thuốc', age:'42 phút', sla:'Hôm nay', ai:'Cân nhắc tăng Metformin lên 1000mg mỗi ngày chia 2 lần do HbA1c chưa đạt mục tiêu; theo dõi chức năng thận.', hba1c:'7.6', glu:'7.9', bmi:'27.4', bp:'132/85', conf:'81%' },
+      { name:'Lê Thị Mai', meta:'Nữ · 47 · MC-10301', risk:'medium', type:'Yêu cầu xét nghiệm', age:'1 giờ', sla:'24 giờ', ai:'Đề xuất bộ xét nghiệm lipid máu và HbA1c định kỳ 3 tháng; triglyceride có xu hướng tăng.', hba1c:'7.1', glu:'6.8', bmi:'26.0', bp:'125/82', conf:'88%' },
+      { name:'Vũ Quốc Bảo', meta:'Nam · 52 · MC-10277', risk:'high', type:'Cảnh báo chỉ số', age:'2 giờ', sla:'Gấp', ai:'Đường huyết đói liên tục trên 9 mmol/L trong 5 ngày; đề xuất tái khám sớm và đánh giá phác đồ insulin.', hba1c:'9.3', glu:'10.1', bmi:'29.8', bp:'151/96', conf:'69%' },
+    ];
+    const riskMap={low:{l:'Thấp',c:'#15915A',bg:'rgba(227,244,234,0.9)',dot:'#15915A'},medium:{l:'Trung bình',c:'#C77A06',bg:'rgba(252,239,201,0.92)',dot:'#E0A92E'},high:{l:'Cao',c:'#D92D20',bg:'rgba(236,240,244,0.95)',dot:'#2563EB'}};
+    const queue = RAW.map((q,i)=>{ const r=riskMap[q.risk]; const active=i===this.state.review; const dec=this.state.decided[i]||null; return { ...q, idx:i, active, onSelect:()=>this.setState({review:i}), riskL:r.l, riskC:r.c, riskBg:r.bg, dot:r.dot, cardBg: active?'rgba(255,255,255,0.92)':'rgba(255,255,255,0.5)', cardBord: active?'#0F9C6E':'rgba(255,255,255,0.7)', cardShadow: active?'0 14px 30px rgba(16,140,99,0.45)':'0 1px 0 rgba(255,255,255,0.6)', decDot: dec==='approved'?'#15915A':dec==='rejected'?'#D92D20':dec==='request_info'?'#2563EB':'rgba(0,0,0,0)' }; });
+    const cur = queue[this.state.review];
+    const d = this.state.decided[this.state.review]||null;
+    const decMap={approved:{l:'Đã duyệt khuyến nghị',c:'#15915A',bg:'rgba(227,244,234,0.95)',ic:'check-circle'},rejected:{l:'Đã từ chối khuyến nghị',c:'#D92D20',bg:'rgba(236,240,244,0.95)',ic:'x-circle'},request_info:{l:'Đã yêu cầu bổ sung thông tin',c:'#2563EB',bg:'rgba(229,237,251,0.95)',ic:'info'}};
+    const dd = d?decMap[d]:null;
+    return {
+      queue, cur,
+      curDecision: d, noDecision: !d,
+      isApproved: d==='approved', isRejected: d==='rejected', isRequest: d==='request_info',
+      decLabelText: dd?dd.l:'', decColor: dd?dd.c:'#41615C', decBg: dd?dd.bg:'rgba(255,255,255,0.5)',
+      approve: ()=>this.setState(s=>({decided:{...s.decided,[s.review]:'approved'}})),
+      reject:  ()=>this.setState(s=>({decided:{...s.decided,[s.review]:'rejected'}})),
+      request: ()=>this.setState(s=>({decided:{...s.decided,[s.review]:'request_info'}})),
+      reset:   ()=>this.setState(s=>({decided:{...s.decided,[s.review]:null}})),
+      vizIsA: this.state.viz==='A', vizIsB: this.state.viz==='B',
+      setVizA: ()=>this.setState({viz:'A'}), setVizB: ()=>this.setState({viz:'B'}),
+      vizABg: this.state.viz==='A'?'#0F9C6E':'rgba(0,0,0,0)', vizAColor: this.state.viz==='A'?'#ffffff':'#365651',
+      vizBBg: this.state.viz==='B'?'#0F9C6E':'rgba(0,0,0,0)', vizBColor: this.state.viz==='B'?'#ffffff':'#365651',
+      decLabel: (d)=> d==='approved'?'Đã duyệt':d==='rejected'?'Từ chối':d==='request_info'?'Yêu cầu bổ sung':'Chờ duyệt',
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -44,9 +44,7 @@ function isSameDay(a: Date, b: Date): boolean {
   )
 }
 
-function groupByDate(
-  entries: NutritionEntry[]
-): Array<{ label: string; items: NutritionEntry[] }> {
+function groupByDate(entries: NutritionEntry[]): Array<{ label: string; items: NutritionEntry[] }> {
   const today = new Date()
   const yesterday = new Date(today)
   yesterday.setDate(today.getDate() - 1)
@@ -136,7 +134,9 @@ function EntryItem({ entry }: { entry: NutritionEntry }) {
             <Bot className="size-4 text-[#C77A06] shrink-0 mt-0.5" aria-hidden="true" />
             <p className="text-[13px] text-[#7a4f06]">
               <span className="font-semibold">Gợi ý AI:</span> {entry.ai_coaching}
-              <span className="block text-[#a0680a] mt-0.5">(AI - không thay thế tư vấn dinh dưỡng)</span>
+              <span className="block text-[#a0680a] mt-0.5">
+                (AI - không thay thế tư vấn dinh dưỡng)
+              </span>
             </p>
           </div>
         </div>
@@ -252,7 +252,9 @@ function AddMealForm({ patientId, onAdd, onClose }: AddMealFormProps) {
             />
           </div>
           <div>
-            <label className="block text-[13px] font-semibold text-neu-muted mb-1.5">Carbs (g)</label>
+            <label className="block text-[13px] font-semibold text-neu-muted mb-1.5">
+              Carbs (g)
+            </label>
             <input
               type="number"
               min={0}
@@ -263,7 +265,9 @@ function AddMealForm({ patientId, onAdd, onClose }: AddMealFormProps) {
             />
           </div>
           <div>
-            <label className="block text-[13px] font-semibold text-neu-muted mb-1.5">Đạm / Protein (g)</label>
+            <label className="block text-[13px] font-semibold text-neu-muted mb-1.5">
+              Đạm / Protein (g)
+            </label>
             <input
               type="number"
               min={0}
@@ -274,7 +278,9 @@ function AddMealForm({ patientId, onAdd, onClose }: AddMealFormProps) {
             />
           </div>
           <div>
-            <label className="block text-[13px] font-semibold text-neu-muted mb-1.5">Chất béo / Fat (g)</label>
+            <label className="block text-[13px] font-semibold text-neu-muted mb-1.5">
+              Chất béo / Fat (g)
+            </label>
             <input
               type="number"
               min={0}
@@ -295,20 +301,10 @@ function AddMealForm({ patientId, onAdd, onClose }: AddMealFormProps) {
 
         {/* Actions */}
         <div className="flex gap-3 pt-1">
-          <NeuButton
-            variant="secondary"
-            className="flex-1"
-            onClick={onClose}
-            disabled={submitting}
-          >
+          <NeuButton variant="secondary" className="flex-1" onClick={onClose} disabled={submitting}>
             Huỷ
           </NeuButton>
-          <NeuButton
-            type="submit"
-            variant="primary"
-            className="flex-1"
-            disabled={submitting}
-          >
+          <NeuButton type="submit" variant="primary" className="flex-1" disabled={submitting}>
             {submitting ? 'Đang lưu...' : 'Lưu'}
           </NeuButton>
         </div>
@@ -381,8 +377,12 @@ export default function NutritionPage() {
       {/* Today calorie hero card */}
       <NeuCard>
         <div className="flex items-center gap-3">
-          <div className="shrink-0 size-12 rounded-full bg-[rgba(254,215,170,0.7)] flex items-center justify-center"
-            style={{ boxShadow: 'inset 2px 2px 5px rgba(180,90,20,0.12), inset -1px -1px 3px rgba(255,255,255,0.9)' }}
+          <div
+            className="shrink-0 size-12 rounded-full bg-[rgba(254,215,170,0.7)] flex items-center justify-center"
+            style={{
+              boxShadow:
+                'inset 2px 2px 5px rgba(180,90,20,0.12), inset -1px -1px 3px rgba(255,255,255,0.9)',
+            }}
           >
             <Flame className="size-6 text-[#EA580C]" aria-hidden="true" />
           </div>
@@ -415,11 +415,7 @@ export default function NutritionPage() {
 
       {/* Error */}
       {!loading && error && (
-        <PatientErrorState
-          title="Không tải được nhật ký"
-          message={error}
-          onRetry={loadLog}
-        />
+        <PatientErrorState title="Không tải được nhật ký" message={error} onRetry={loadLog} />
       )}
 
       {/* Empty today */}

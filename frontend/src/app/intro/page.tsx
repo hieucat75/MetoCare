@@ -76,9 +76,7 @@ function SplashScreen() {
 
         <div className="text-center">
           <h1 className="text-4xl font-bold text-white tracking-tight">MetoCare</h1>
-          <p className="mt-3 text-lg text-white/80 font-medium">
-            Quản lý chuyển hoá của bạn
-          </p>
+          <p className="mt-3 text-lg text-white/80 font-medium">Quản lý chuyển hoá của bạn</p>
         </div>
       </div>
 
@@ -146,7 +144,10 @@ function CarouselScreen({ step, onNext, onSkip }: CarouselScreenProps) {
           <div className="flex items-center justify-center mb-6">
             <div
               className="w-24 h-24 rounded-2xl flex items-center justify-center"
-              style={{ backgroundColor: '#E8EEE8', boxShadow: '6px 6px 12px #c8d4c8,-6px -6px 12px #ffffff' }}
+              style={{
+                backgroundColor: '#E8EEE8',
+                boxShadow: '6px 6px 12px #c8d4c8,-6px -6px 12px #ffffff',
+              }}
             >
               {icon}
             </div>
@@ -169,7 +170,12 @@ function CarouselScreen({ step, onNext, onSkip }: CarouselScreenProps) {
   )
 }
 
-const PERMISSION_ITEMS: Array<{ key: PermissionKey; icon: React.ReactNode; label: string; description: string }> = [
+const PERMISSION_ITEMS: Array<{
+  key: PermissionKey
+  icon: React.ReactNode
+  label: string
+  description: string
+}> = [
   {
     key: 'notifications',
     icon: <Bell size={22} color="#0F9C6E" strokeWidth={1.5} />,
@@ -203,7 +209,10 @@ function PermissionRow({ icon, label, description, enabled, onToggle }: Permissi
     <div className="flex items-center gap-4 py-3">
       <div
         className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0"
-        style={{ backgroundColor: '#E8EEE8', boxShadow: '3px 3px 8px #c8d4c8,-3px -3px 8px #ffffff' }}
+        style={{
+          backgroundColor: '#E8EEE8',
+          boxShadow: '3px 3px 8px #c8d4c8,-3px -3px 8px #ffffff',
+        }}
       >
         {icon}
       </div>
@@ -247,9 +256,7 @@ function PermissionScreen({ onContinue }: PermissionScreenProps) {
     <div className="flex flex-col min-h-screen bg-[#E8EEE8] max-w-md mx-auto">
       <div className="flex-1 flex flex-col justify-center px-6 pb-8 pt-16">
         <div className="mb-8">
-          <h2 className="text-2xl font-bold text-[#2B4040]">
-            Để ứng dụng hoạt động tốt hơn
-          </h2>
+          <h2 className="text-2xl font-bold text-[#2B4040]">Để ứng dụng hoạt động tốt hơn</h2>
           <p className="text-[#2B4040]/60 mt-2 text-sm leading-relaxed">
             Chọn quyền bạn muốn cho phép. Bạn có thể thay đổi trong Cài đặt bất kỳ lúc nào.
           </p>
@@ -296,24 +303,18 @@ export default function IntroPage() {
 
   const handleSkip = () => {
     localStorage.setItem('intro_seen', '1')
-    router.replace('/login')
+    router.replace('/start')
   }
 
   const handleContinue = () => {
     localStorage.setItem('intro_seen', '1')
-    router.replace('/login')
+    router.replace('/start')
   }
 
   if (step === 'splash') return <SplashScreen />
 
   if (step === 'carousel1' || step === 'carousel2' || step === 'carousel3') {
-    return (
-      <CarouselScreen
-        step={step}
-        onNext={handleNext}
-        onSkip={handleSkip}
-      />
-    )
+    return <CarouselScreen step={step} onNext={handleNext} onSkip={handleSkip} />
   }
 
   return <PermissionScreen onContinue={handleContinue} />

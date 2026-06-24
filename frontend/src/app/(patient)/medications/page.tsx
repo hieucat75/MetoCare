@@ -1,10 +1,11 @@
 'use client'
-import { PatientEmptyState } from '@/components/patient'
 
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
-import { Pill, Plus, Pencil, Trash2 } from 'lucide-react'
-import { Alert, Button, ErrorState, FormField, Input, Modal, Textarea } from '@/design-system'
+import { Pill, Plus, Pencil, Trash2, X } from 'lucide-react'
+import { NeuCard, NeuButton } from '@/components/patient/neu'
+import { PatientEmptyState } from '@/components/patient'
+import { PatientErrorState, PatientSkeleton } from '@/components/patient/states'
 import { useAuth } from '@/lib/auth/context'
 import {
   getMedications,
@@ -17,42 +18,27 @@ import {
 
 const PILL_GRADIENT = 'linear-gradient(160deg,#5B8DEF,#2563EB)'
 
-// ── Loading skeleton ───────────────────────────────────────────────────────────
+// ── Soft-UI input class helpers ────────────────────────────────────────────────
 
-function MedicationsSkeleton() {
-  return (
-    <div className="space-y-3">
-      {[1, 2, 3].map((n) => (
-        <div key={n} className="neu-card mc-pulse p-4">
-          <div className="flex gap-3">
-            <div className="size-11 rounded-[13px] bg-black/5" />
-            <div className="flex-1 space-y-2 pt-1">
-              <div className="h-3.5 w-1/2 rounded-full bg-black/5" />
-              <div className="h-3 w-1/3 rounded-full bg-black/5" />
-            </div>
-          </div>
-        </div>
-      ))}
-    </div>
-  )
-}
+const inputClass =
+  'w-full rounded-[14px] border-2 border-[#C8D8D4] bg-white/60 backdrop-blur px-4 py-3 text-[16px] text-neu-text focus:border-[#0F9C6E] focus:outline-none'
 
-// ── Honest medication card — real fields only (no faked adherence/schedule) ─────
+const textareaClass =
+  'w-full rounded-[14px] border-2 border-[#C8D8D4] bg-white/60 backdrop-blur px-4 py-3 text-[16px] text-neu-text focus:border-[#0F9C6E] focus:outline-none min-h-[96px] resize-none'
 
-function MedRow({
-  med,
-  onEdit,
-  onDelete,
-  onView,
-}: {
+// ── Medication card row ────────────────────────────────────────────────────────
+
+type MedRowProps = {
   med: Medication
   onEdit: () => void
   onDelete: () => void
   onView: () => void
-}) {
+}
+
+function MedRow({ med, onEdit, onDelete, onView }: MedRowProps) {
   const meta = [med.dose, med.frequency].filter(Boolean).join(' · ')
   return (
-    <div className="neu-card p-4">
+    <NeuCard className="p-4">
       <div className="flex items-start gap-3">
         <button
           type="button"
@@ -61,16 +47,23 @@ function MedRow({
         >
           <span
             className="grid size-11 shrink-0 place-items-center rounded-[13px] text-white"
-            style={{ background: PILL_GRADIENT, boxShadow: '0 8px 16px -8px rgba(37,99,235,0.5)' }}
+            style={{
+              background: PILL_GRADIENT,
+              boxShadow: '0 8px 16px -8px rgba(37,99,235,0.5)',
+            }}
             aria-hidden="true"
           >
             <Pill className="size-5" />
           </span>
           <span className="min-w-0">
             <span className="block truncate text-[16px] font-bold text-neu-text">{med.name}</span>
-            {meta && <span className="mt-0.5 block text-[13.5px] text-neu-muted">{meta}</span>}
+            {meta && (
+              <span className="mt-0.5 block text-[13.5px] text-neu-muted">{meta}</span>
+            )}
             {med.note && (
-              <span className="mt-0.5 block truncate text-[13px] text-neu-subtle">{med.note}</span>
+              <span className="mt-0.5 block truncate text-[13px] text-neu-subtle">
+                {med.note}
+              </span>
             )}
           </span>
         </button>
@@ -93,13 +86,13 @@ function MedRow({
           </button>
         </div>
       </div>
-    </div>
+    </NeuCard>
   )
 }
 
-// ── Add / edit modal ───────────────────────────────────────────────────────────
+// ── Add / edit bottom-sheet modal ──────────────────────────────────────────────
 
-interface MedModalProps {
+type MedModalProps = {
   open: boolean
   onClose: () => void
   onSaved: () => void
@@ -113,27 +106,30 @@ function MedModal({ open, onClose, onSaved, patientId, editing }: MedModalProps)
   const [frequency, setFrequency] = React.useState('')
   const [note, setNote] = React.useState('')
   const [submitting, setSubmitting] = React.useState(false)
-  const [error, setError] = React.useState<string | null>(null)
+  const [formError, setFormError] = React.useState<string | null>(null)
+  const [confirmDelete, setConfirmDelete] = React.useState(false)
+  const [deleting, setDeleting] = React.useState(false)
 
-  // Sync form when the target medication changes / modal opens.
+  // Sync form when target medication changes / modal opens.
   React.useEffect(() => {
     if (open) {
       setName(editing?.name ?? '')
       setDose(editing?.dose ?? '')
       setFrequency(editing?.frequency ?? '')
       setNote(editing?.note ?? '')
-      setError(null)
+      setFormError(null)
+      setConfirmDelete(false)
     }
   }, [open, editing])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!name.trim()) {
-      setError('Vui lòng nhập tên thuốc.')
+      setFormError('Vui lòng nhập tên thuốc.')
       return
     }
     setSubmitting(true)
-    setError(null)
+    setFormError(null)
     const payload: MedicationInput = {
       name: name.trim(),
       dose: dose.trim() || null,
@@ -149,65 +145,179 @@ function MedModal({ open, onClose, onSaved, patientId, editing }: MedModalProps)
       onSaved()
       onClose()
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Lưu thất bại. Vui lòng thử lại.')
+      setFormError(err instanceof Error ? err.message : 'Lưu thất bại. Vui lòng thử lại.')
     } finally {
       setSubmitting(false)
     }
   }
 
+  async function handleDeleteConfirm() {
+    if (!editing) return
+    setDeleting(true)
+    try {
+      await deleteMedication(patientId, editing.id)
+      onSaved()
+      onClose()
+    } catch (err: unknown) {
+      setFormError(err instanceof Error ? err.message : 'Xoá thất bại. Vui lòng thử lại.')
+      setConfirmDelete(false)
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  if (!open) return null
+
   return (
-    <Modal
-      open={open}
-      onOpenChange={(o) => !o && onClose()}
-      title={editing ? 'Sửa thông tin thuốc' : 'Thêm thuốc'}
-      footer={
-        <>
-          <Button variant="outline" size="sm" onClick={onClose} disabled={submitting}>
-            Hủy
-          </Button>
-          <Button variant="mint" size="sm" type="submit" form="med-form" loading={submitting}>
-            {editing ? 'Lưu' : 'Thêm'}
-          </Button>
-        </>
-      }
+    <div
+      className="fixed inset-0 z-40 flex items-end bg-black/30"
+      onClick={onClose}
     >
-      <form id="med-form" onSubmit={handleSubmit} className="space-y-4">
-        {error && <Alert variant="danger" title={error} />}
-        <FormField label="Tên thuốc" required>
-          <Input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="VD: Metformin"
-            fullWidth
-            required
-          />
-        </FormField>
-        <FormField label="Liều dùng">
-          <Input
-            value={dose}
-            onChange={(e) => setDose(e.target.value)}
-            placeholder="VD: 500mg"
-            fullWidth
-          />
-        </FormField>
-        <FormField label="Tần suất">
-          <Input
-            value={frequency}
-            onChange={(e) => setFrequency(e.target.value)}
-            placeholder="VD: 2 lần/ngày, sáng & tối"
-            fullWidth
-          />
-        </FormField>
-        <FormField label="Ghi chú">
-          <Textarea
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            placeholder="VD: Uống sau ăn"
-            rows={2}
-          />
-        </FormField>
-      </form>
-    </Modal>
+      <div
+        className="w-full max-w-md mx-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <NeuCard className="!rounded-b-none">
+          {/* Header */}
+          <div className="flex items-center justify-between mb-5">
+            <h2 className="text-[18px] font-extrabold text-neu-text">
+              {editing ? 'Sửa thuốc' : 'Thêm thuốc'}
+            </h2>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Đóng"
+              className="rounded-[10px] p-1.5 text-neu-muted transition-transform active:scale-90"
+            >
+              <X className="size-5" />
+            </button>
+          </div>
+
+          {/* Form error */}
+          {formError && (
+            <div
+              role="alert"
+              className="mb-4 rounded-[14px] bg-[#FEF2F2] border border-[#D92D20]/30 p-4 text-[14px]"
+            >
+              <p className="font-bold text-[#D92D20] mb-0.5">Lỗi</p>
+              <p className="text-[#D92D20]/80 text-[13px]">{formError}</p>
+            </div>
+          )}
+
+          {/* Form */}
+          <form id="med-form" onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-1.5">
+              <label className="block text-[13px] font-semibold text-neu-muted uppercase tracking-wide">
+                Tên thuốc <span className="text-[#D92D20]">*</span>
+              </label>
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="VD: Metformin"
+                className={inputClass}
+                required
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-[13px] font-semibold text-neu-muted uppercase tracking-wide">
+                Liều dùng
+              </label>
+              <input
+                value={dose}
+                onChange={(e) => setDose(e.target.value)}
+                placeholder="VD: 500mg"
+                className={inputClass}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-[13px] font-semibold text-neu-muted uppercase tracking-wide">
+                Tần suất
+              </label>
+              <input
+                value={frequency}
+                onChange={(e) => setFrequency(e.target.value)}
+                placeholder="VD: 2 lần/ngày, sáng & tối"
+                className={inputClass}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-[13px] font-semibold text-neu-muted uppercase tracking-wide">
+                Ghi chú
+              </label>
+              <textarea
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder="VD: Uống sau ăn"
+                className={textareaClass}
+              />
+            </div>
+          </form>
+
+          {/* Delete confirmation inline */}
+          {confirmDelete && editing && (
+            <div
+              role="alert"
+              className="mt-4 rounded-[14px] bg-[#FEF2F2] border border-[#D92D20]/30 p-4"
+            >
+              <p className="text-[14px] font-bold text-[#D92D20] mb-1">Xác nhận xoá?</p>
+              <p className="text-[13px] text-[#D92D20]/80 mb-3">
+                Bạn có chắc muốn xoá{' '}
+                <span className="font-semibold">{editing.name}</span> khỏi danh sách thuốc?
+              </p>
+              <div className="flex gap-2">
+                <NeuButton
+                  variant="secondary"
+                  onClick={() => setConfirmDelete(false)}
+                  disabled={deleting}
+                  className="flex-1"
+                >
+                  Không
+                </NeuButton>
+                <NeuButton
+                  onClick={handleDeleteConfirm}
+                  disabled={deleting}
+                  className="flex-1 !bg-[#D92D20] !text-white"
+                >
+                  {deleting ? 'Đang xoá…' : 'Xoá'}
+                </NeuButton>
+              </div>
+            </div>
+          )}
+
+          {/* Footer actions */}
+          <div className="mt-5 flex flex-col gap-2">
+            <NeuButton
+              type="submit"
+              form="med-form"
+              disabled={submitting}
+              className="w-full"
+            >
+              {submitting ? 'Đang lưu…' : 'Lưu thuốc'}
+            </NeuButton>
+            <NeuButton
+              variant="secondary"
+              onClick={onClose}
+              disabled={submitting}
+              className="w-full"
+            >
+              Huỷ
+            </NeuButton>
+            {editing && !confirmDelete && (
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(true)}
+                className="mt-1 text-center text-[14px] font-semibold text-[#D92D20] py-2 transition-opacity active:opacity-70"
+              >
+                Xoá thuốc
+              </button>
+            )}
+          </div>
+        </NeuCard>
+      </div>
+    </div>
   )
 }
 
@@ -224,8 +334,6 @@ export default function MedicationsPage() {
 
   const [modalOpen, setModalOpen] = React.useState(false)
   const [editing, setEditing] = React.useState<Medication | null>(null)
-  const [deleteTarget, setDeleteTarget] = React.useState<Medication | null>(null)
-  const [deleting, setDeleting] = React.useState(false)
 
   const load = React.useCallback(() => {
     if (!patientId) {
@@ -244,26 +352,18 @@ export default function MedicationsPage() {
     load()
   }, [load])
 
-  async function confirmDelete() {
-    if (!patientId || !deleteTarget) return
-    setDeleting(true)
-    try {
-      await deleteMedication(patientId, deleteTarget.id)
-      setDeleteTarget(null)
-      load()
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Xoá thất bại.')
-    } finally {
-      setDeleting(false)
-    }
-  }
-
   if (!patientId) {
     return (
       <div className="p-4 max-w-md mx-auto mt-10">
-        <Alert variant="warning" title="Chưa có hồ sơ bệnh nhân">
-          Tài khoản của bạn chưa được liên kết với hồ sơ bệnh nhân. Vui lòng liên hệ hỗ trợ.
-        </Alert>
+        <div
+          role="alert"
+          className="rounded-[14px] bg-[#FEF9EC] border border-[#E0A92E]/30 p-4 text-[14px]"
+        >
+          <p className="font-bold text-[#8B6400] mb-0.5">Chưa có hồ sơ bệnh nhân</p>
+          <p className="text-[#8B6400]/80 text-[13px]">
+            Tài khoản của bạn chưa được liên kết với hồ sơ bệnh nhân. Vui lòng liên hệ hỗ trợ.
+          </p>
+        </div>
       </div>
     )
   }
@@ -272,12 +372,16 @@ export default function MedicationsPage() {
     <div className="p-4 space-y-4 max-w-md mx-auto pb-28">
       <h1 className="px-1 text-[21px] font-extrabold tracking-[-0.02em] text-neu-text">Thuốc</h1>
 
-      {loading && <MedicationsSkeleton />}
+      {loading && (
+        <div className="p-4 space-y-3">
+          <PatientSkeleton />
+          <PatientSkeleton />
+        </div>
+      )}
 
       {!loading && error && (
-        <ErrorState
-          variant="inline"
-          title="Không tải được danh sách thuốc"
+        <PatientErrorState
+          title="Không thể tải thuốc"
           message={error}
           onRetry={load}
         />
@@ -286,8 +390,8 @@ export default function MedicationsPage() {
       {!loading && !error && meds.length === 0 && (
         <PatientEmptyState
           icon={<Pill />}
-          title="Chưa có thuốc nào"
-          description="Thêm thuốc bạn đang dùng để theo dõi, hoặc bác sĩ sẽ kê đơn khi cần."
+          title="Chưa có thuốc"
+          description="Thêm thuốc để theo dõi lịch uống."
           cta={{
             label: 'Thêm thuốc',
             onClick: () => {
@@ -309,13 +413,16 @@ export default function MedicationsPage() {
                 setEditing(med)
                 setModalOpen(true)
               }}
-              onDelete={() => setDeleteTarget(med)}
+              onDelete={() => {
+                setEditing(med)
+                setModalOpen(true)
+              }}
             />
           ))}
         </div>
       )}
 
-      {/* Add medication — neu FAB */}
+      {/* FAB — add medication */}
       <button
         type="button"
         aria-label="Thêm thuốc"
@@ -323,46 +430,25 @@ export default function MedicationsPage() {
           setEditing(null)
           setModalOpen(true)
         }}
-        className="fixed bottom-28 right-5 z-30 flex size-14 items-center justify-center rounded-full text-white neu-btn-primary !min-h-0 !p-0"
+        className="fixed bottom-28 right-5 z-30 flex size-14 items-center justify-center rounded-full text-white"
+        style={{
+          background: 'linear-gradient(160deg,#0F9C6E,#0a7a57)',
+          boxShadow: '0 8px 20px -6px rgba(15,156,110,0.55)',
+        }}
       >
         <Plus className="size-7" aria-hidden="true" />
       </button>
 
       <MedModal
         open={modalOpen}
-        onClose={() => setModalOpen(false)}
+        onClose={() => {
+          setModalOpen(false)
+          setEditing(null)
+        }}
         onSaved={load}
         patientId={patientId}
         editing={editing}
       />
-
-      {/* Delete confirm */}
-      <Modal
-        open={!!deleteTarget}
-        onOpenChange={(o) => !o && setDeleteTarget(null)}
-        title="Xoá thuốc?"
-        footer={
-          <>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setDeleteTarget(null)}
-              disabled={deleting}
-            >
-              Hủy
-            </Button>
-            <Button variant="danger" size="sm" onClick={confirmDelete} loading={deleting}>
-              Xoá
-            </Button>
-          </>
-        }
-      >
-        <p className="text-[16px] text-neu-muted">
-          Bạn có chắc muốn xoá{' '}
-          <span className="font-semibold text-neu-text">{deleteTarget?.name}</span> khỏi danh sách
-          thuốc?
-        </p>
-      </Modal>
     </div>
   )
 }

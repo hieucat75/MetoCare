@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Be+Vietnam+Pro:wght@400;500;600;700&family=JetBrains+Mono:wght@600&display=swap" rel="stylesheet" />
+<script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+<script src="meto-components.js"></script>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;background:#dde4e1;font-family:'Inter','Be Vietnam Pro',Arial,sans-serif;-webkit-font-smoothing:antialiased;color:#10241F;touch-action:manipulation}
+  @keyframes hpop{0%{transform:scale(1);opacity:.5}30%{transform:scale(1.18);opacity:1}100%{transform:scale(1);opacity:.5}}
+  .lab-btn:active{}
+</style>
+</helmet>
+<div style="min-width:100%;display:inline-block;min-height:100vh;box-sizing:border-box;padding:52px 56px 90px;background-color:#dde4e1;background-image:radial-gradient(760px 520px at 12% 4%, rgba(27,176,130,0.16), transparent 60%), radial-gradient(720px 600px at 92% 30%, rgba(37,99,235,0.08), transparent 60%), linear-gradient(150deg,#e6ece9,#e1e8e5 60%,#dfe6e3);">
+
+  <header style="max-width:920px;margin-bottom:30px;">
+    <div style="display:inline-flex;align-items:center;gap:10px;background:#E7EEEC;border-radius:14px;padding:9px 15px;box-shadow:-5px -6px 12px #ffffff, 6px 7px 14px #c4d2cd;">
+      <meto-mark size="26" ring="#0B7F5B" leaf="#17AE7B"></meto-mark>
+      <span style="font-weight:700;font-size:18px;color:#0B7F5B;letter-spacing:-0.02em;">metocare</span>
+      <span style="font-family:'JetBrains Mono',monospace;font-weight:600;font-size:10px;color:#3C534D;background:rgba(16,36,31,0.06);border-radius:999px;padding:4px 10px;">SOFT-UI LAB · LIVE</span>
+    </div>
+    <h1 style="font-size:34px;font-weight:800;color:#10241F;letter-spacing:-0.025em;margin:20px 0 0;">Soft-UI · Spring physics · Haptics</h1>
+    <p style="font-size:15.5px;color:#365651;margin:12px 0 0;max-width:620px;line-height:1.55;">Bấm các nút để cảm nhận hiệu ứng "lún xuống". Kéo thẻ chỉ số, kéo cạnh trái để mở menu — tất cả dùng <b style="color:#10241F;">spring physics</b> (không phải easing) và rung phản hồi. Mirror chính xác mã React Native trong thư mục <span style="font-family:'JetBrains Mono',monospace;font-size:13px;">/rn</span>.</p>
+  </header>
+
+  <div style="display:flex;gap:48px;align-items:flex-start;flex-wrap:wrap;">
+
+    <!-- PHONE -->
+    <div style="display:flex;flex-direction:column;gap:13px;flex:none;">
+      <div style="font-family:'JetBrains Mono',monospace;font-weight:600;font-size:12px;color:#3C534D;padding-left:4px;">Bản demo tương tác (chạm &amp; kéo)</div>
+      <div style="border-radius:48px;background:linear-gradient(160deg,#11201c,#0a1612);padding:11px;box-shadow:0 60px 100px -40px rgba(16,40,36,0.6);width:412px;">
+        <div ref="{{ rootRef }}" data-r="screen" style="position:relative;border-radius:38px;overflow:hidden;width:390px;height:844px;background:#C9D6D1;">
+
+          <!-- DRAWER (behind) -->
+          <div data-r="drawer" style="position:absolute;left:0;top:0;bottom:0;width:264px;padding:64px 18px 28px;display:flex;flex-direction:column;gap:8px;">
+            <div style="display:flex;align-items:center;gap:11px;padding:0 8px 8px;"><meto-mark size="30" ring="#0B7F5B" leaf="#17AE7B"></meto-mark><span style="font-weight:700;font-size:19px;color:#0B7F5B;">metocare</span></div>
+            <div style="display:flex;align-items:center;gap:13px;padding:14px 14px;border-radius:16px;background:linear-gradient(160deg,#17AE7B,#0B6B4D);color:#fff;font-weight:700;font-size:15.5px;box-shadow:0 10px 20px -8px rgba(11,107,77,0.7);"><meto-icon name="home" size="21" color="#fff"></meto-icon>Trang chủ</div>
+            <div style="display:flex;align-items:center;gap:13px;padding:14px 14px;border-radius:16px;color:#1d322c;font-weight:600;font-size:15.5px;"><meto-icon name="activity" size="21" color="#365651"></meto-icon>Chỉ số sức khoẻ</div>
+            <div style="display:flex;align-items:center;gap:13px;padding:14px 14px;border-radius:16px;color:#1d322c;font-weight:600;font-size:15.5px;"><meto-icon name="pill" size="21" color="#365651"></meto-icon>Thuốc của tôi</div>
+            <div style="display:flex;align-items:center;gap:13px;padding:14px 14px;border-radius:16px;color:#1d322c;font-weight:600;font-size:15.5px;"><meto-icon name="clipboard-list" size="21" color="#365651"></meto-icon>Kế hoạch chăm sóc</div>
+            <div style="display:flex;align-items:center;gap:13px;padding:14px 14px;border-radius:16px;color:#1d322c;font-weight:600;font-size:15.5px;"><meto-icon name="user" size="21" color="#365651"></meto-icon>Hồ sơ cá nhân</div>
+          </div>
+
+          <!-- PAGE (in front, transforms to reveal drawer) -->
+          <div data-r="page" style="position:absolute;inset:0;background:#E7EEEC;overflow:hidden;will-change:transform;box-shadow:0 0 0 1px rgba(16,40,36,0.04);">
+            <!-- left edge grab strip -->
+            <div data-r="edge" style="position:absolute;left:0;top:0;bottom:0;width:24px;z-index:8;"></div>
+
+            <!-- status bar -->
+            <div style="height:46px;padding:0 26px;display:flex;align-items:center;justify-content:space-between;"><span style="font-weight:600;font-size:14px;">9:41</span><div style="display:flex;gap:6px;"><meto-icon name="signal" size="15" color="#10241F"></meto-icon><meto-icon name="wifi" size="15" color="#10241F"></meto-icon><meto-icon name="battery-full" size="17" color="#10241F"></meto-icon></div></div>
+
+            <!-- header -->
+            <div style="display:flex;align-items:center;gap:14px;padding:6px 22px 4px;">
+              <button data-r="open" data-hap style="border:none;cursor:pointer;width:52px;height:52px;border-radius:16px;background:#E7EEEC;display:grid;place-items:center;box-shadow:-6px -7px 13px #ffffff, 7px 8px 16px #c4d2cd;transition:box-shadow 0.16s ease, transform 0.14s cubic-bezier(.2,.9,.3,1.3);" style-active="transform:translateY(1px);box-shadow:inset -5px -6px 11px #ffffff, inset 6px 7px 13px #bdccc7;"><meto-icon name="menu" size="24" color="#10241F"></meto-icon></button>
+              <div style="flex:1;"><p style="font-size:13px;color:#365651;margin:0;">Chào buổi sáng,</p><p style="font-size:20px;font-weight:800;color:#10241F;margin:0;letter-spacing:-0.02em;">Nguyễn Minh Anh</p></div>
+              <div data-r="haptic" style="display:flex;flex-direction:column;align-items:center;gap:3px;opacity:0.5;"><div style="width:40px;height:40px;border-radius:50%;background:#E7EEEC;display:grid;place-items:center;box-shadow:-4px -5px 10px #ffffff, 5px 6px 12px #c4d2cd;"><meto-icon name="zap" size="19" color="#0B7F5B"></meto-icon></div><span style="font-family:'JetBrains Mono',monospace;font-size:8px;font-weight:600;color:#3C534D;">HAPTIC</span></div>
+            </div>
+
+            <!-- draggable card -->
+            <div style="padding:14px 22px 0;">
+              <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:600;color:#566E66;letter-spacing:0.06em;padding-left:2px;margin-bottom:8px;">KÉO THẺ XUỐNG ĐỂ BỎ QUA →</div>
+              <div data-r="card" style="position:relative;border-radius:24px;padding:20px;background:#E7EEEC;box-shadow:-8px -9px 16px #ffffff, 9px 10px 20px #c2d1cc;cursor:grab;will-change:transform;touch-action:none;">
+                <div style="display:flex;align-items:center;gap:14px;">
+                  <div style="width:54px;height:54px;border-radius:17px;background:linear-gradient(160deg,#17AE7B,#0B6B4D);display:grid;place-items:center;box-shadow:0 8px 16px -8px rgba(11,107,77,0.7);"><meto-icon name="droplet" size="26" color="#fff"></meto-icon></div>
+                  <div style="flex:1;"><p style="font-size:13.5px;color:#365651;margin:0;font-weight:600;">Đường huyết lúc đói</p><p style="margin:3px 0 0;"><span style="font-size:30px;font-weight:800;color:#10241F;letter-spacing:-0.02em;">5.6</span><span style="font-size:14px;color:#365651;font-weight:600;margin-left:5px;">mmol/L</span></p></div>
+                  <span style="display:inline-flex;align-items:center;gap:6px;background:#d8e8df;border:1px solid rgba(11,127,91,0.25);color:#0B6B4D;font-weight:700;font-size:12px;border-radius:999px;padding:6px 12px;"><span style="width:7px;height:7px;border-radius:50%;background:#0B7F5B;"></span>Bình thường</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- buttons -->
+            <div style="padding:22px 22px 0;">
+              <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:600;color:#566E66;letter-spacing:0.06em;padding-left:2px;margin-bottom:10px;">NÚT PHỒNG · BẤM ĐỂ LÚN XUỐNG</div>
+              <button data-hap class="lab-btn" style="width:100%;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:11px;min-height:58px;padding:0 24px;border-radius:18px;background:linear-gradient(160deg,#17AE7B,#0B6B4D);color:#ffffff;font-size:18px;font-weight:700;letter-spacing:0.2px;box-shadow:0 12px 24px -8px rgba(11,107,77,0.75), inset 0 1px 0 rgba(255,255,255,0.4);transition:transform 0.15s cubic-bezier(.2,.9,.3,1.35), box-shadow 0.15s ease;" style-active="transform:translateY(3px) scale(0.972);box-shadow:0 4px 9px -6px rgba(11,107,77,0.6), inset 0 1px 0 rgba(255,255,255,0.18);">
+                <meto-icon name="check" size="22" color="#ffffff"></meto-icon>Đã uống thuốc
+              </button>
+              <button data-hap class="lab-btn" style="width:100%;margin-top:14px;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:11px;min-height:58px;padding:0 24px;border-radius:18px;background:#E7EEEC;color:#10241F;font-size:18px;font-weight:700;box-shadow:-7px -8px 15px #ffffff, 8px 9px 18px #c3d2cd;transition:transform 0.15s cubic-bezier(.2,.9,.3,1.35), box-shadow 0.17s ease;" style-active="transform:translateY(1px);box-shadow:inset -5px -6px 12px #ffffff, inset 6px 7px 14px #bbcbc5;">
+                <meto-icon name="bell" size="21" color="#10241F"></meto-icon>Nhắc tôi sau
+              </button>
+            </div>
+
+            <!-- bottom nav -->
+            <div style="position:absolute;left:14px;right:14px;bottom:16px;border-radius:26px;background:#E7EEEC;padding:9px 10px;box-shadow:-7px -8px 16px #ffffff, 8px 10px 22px #c0cfca;display:flex;align-items:center;justify-content:space-around;">
+              <div data-hap style="cursor:pointer;min-width:56px;min-height:52px;border-radius:17px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;background:linear-gradient(160deg,#17AE7B,#0B6B4D);box-shadow:0 9px 18px -8px rgba(11,107,77,0.7);padding:0 12px;transition:transform 0.14s cubic-bezier(.2,.9,.3,1.3);" style-active="transform:translateY(2px) scale(0.96);"><meto-icon name="home" size="22" color="#ffffff"></meto-icon><span style="font-size:10.5px;font-weight:700;color:#ffffff;">Trang chủ</span></div>
+              <div data-hap style="cursor:pointer;min-width:52px;min-height:52px;border-radius:16px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;transition:transform 0.14s ease;" style-active="transform:translateY(2px) scale(0.94);"><meto-icon name="activity" size="22" color="#52706A"></meto-icon><span style="font-size:10.5px;font-weight:600;color:#52706A;">Chỉ số</span></div>
+              <div data-hap style="cursor:pointer;min-width:52px;min-height:52px;border-radius:16px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;transition:transform 0.14s ease;" style-active="transform:translateY(2px) scale(0.94);"><meto-icon name="pill" size="22" color="#52706A"></meto-icon><span style="font-size:10.5px;font-weight:600;color:#52706A;">Thuốc</span></div>
+              <div data-hap style="cursor:pointer;min-width:52px;min-height:52px;border-radius:16px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;transition:transform 0.14s ease;" style-active="transform:translateY(2px) scale(0.94);"><meto-icon name="user" size="22" color="#52706A"></meto-icon><span style="font-size:10.5px;font-weight:600;color:#52706A;">Cá nhân</span></div>
+            </div>
+
+            <!-- scrim -->
+            <div data-r="scrim" style="position:absolute;inset:0;background:#0A1F1A;opacity:0;pointer-events:none;z-index:9;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- NOTES -->
+    <div style="flex:none;width:360px;display:flex;flex-direction:column;gap:16px;">
+      <div style="background:#E7EEEC;border-radius:20px;padding:20px 22px;box-shadow:-6px -7px 14px #ffffff, 7px 9px 18px #c6d4cf;">
+        <p style="font-size:15px;font-weight:800;color:#10241F;margin:0 0 12px;">Trạng thái nút</p>
+        <div style="display:flex;flex-direction:column;gap:11px;">
+          <div style="display:flex;align-items:center;gap:11px;"><span style="width:11px;height:11px;border-radius:50%;background:#0B7F5B;flex:none;"></span><span style="font-size:13.5px;color:#1d322c;"><b>Normal</b> — phồng lên, sáng top-left, đổ bóng bottom-right.</span></div>
+          <div style="display:flex;align-items:center;gap:11px;"><span style="width:11px;height:11px;border-radius:50%;background:#2563EB;flex:none;"></span><span style="font-size:13.5px;color:#1d322c;"><b>Hover</b> (desktop) — bóng nở nhẹ, nhấc lên 1px.</span></div>
+          <div style="display:flex;align-items:center;gap:11px;"><span style="width:11px;height:11px;border-radius:50%;background:#B8740A;flex:none;"></span><span style="font-size:13.5px;color:#1d322c;"><b>Pressed</b> — lún xuống, bóng đảo thành <i>inset</i> (chìm vào nền).</span></div>
+        </div>
+      </div>
+      <div style="background:#E7EEEC;border-radius:20px;padding:20px 22px;box-shadow:-6px -7px 14px #ffffff, 7px 9px 18px #c6d4cf;">
+        <p style="font-size:15px;font-weight:800;color:#10241F;margin:0 0 12px;">Khả năng tiếp cận</p>
+        <div style="display:flex;flex-direction:column;gap:10px;font-size:13.5px;color:#1d322c;line-height:1.45;">
+          <div style="display:flex;gap:10px;"><meto-icon name="check-circle" size="18" color="#0B7F5B" style="flex:none;margin-top:1px;"></meto-icon><span>Vùng chạm ≥ <b>44×44pt</b> trên mọi nút &amp; tab.</span></div>
+          <div style="display:flex;gap:10px;"><meto-icon name="check-circle" size="18" color="#0B7F5B" style="flex:none;margin-top:1px;"></meto-icon><span>Tương phản chữ/icon đạt <b>WCAG AA</b> (text ≈13:1, trắng/teal ≈5:1).</span></div>
+          <div style="display:flex;gap:10px;"><meto-icon name="check-circle" size="18" color="#0B7F5B" style="flex:none;margin-top:1px;"></meto-icon><span>Hành động chính = nút teal <b>tô đặc</b>, không chỉ dựa vào bóng để tách khỏi nền.</span></div>
+        </div>
+      </div>
+      <div style="background:#E7EEEC;border-radius:20px;padding:20px 22px;box-shadow:-6px -7px 14px #ffffff, 7px 9px 18px #c6d4cf;">
+        <p style="font-size:15px;font-weight:800;color:#10241F;margin:0 0 10px;">Spring (khớp với /rn)</p>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#1d322c;line-height:1.7;">
+          <div>press&nbsp;&nbsp;· m0.7 d16 s320</div>
+          <div>card&nbsp;&nbsp;&nbsp;· m1.0 d18 s220</div>
+          <div>drawer&nbsp;· m1.0 d26 s240</div>
+          <div>snap&nbsp;&nbsp;&nbsp;· m1.0 d30 s260</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals(){ return { rootRef: (el)=>{ this._root = el; } }; }
+
+  componentDidMount(){
+    const tries = [];
+    const boot = ()=>{ if(this._root){ this.wire(this._root); } else { setTimeout(boot, 30); } };
+    boot();
+  }
+
+  haptic(ms){
+    try { if(navigator.vibrate) navigator.vibrate(ms); } catch(e){}
+    const h = this._root && this._root.querySelector('[data-r="haptic"]');
+    if(h){ h.style.animation='none'; void h.offsetWidth; h.style.animation='hpop 0.32s ease'; }
+  }
+
+  // semi-implicit Euler spring integrator (mass / damping / stiffness)
+  makeSpring(cfg, onUpdate){
+    const s = { x:0, v:0, target:0, raf:0, cfg, onUpdate };
+    const step = (t)=>{
+      let dt = (t - s.last)/1000; s.last = t; if(dt>0.032) dt=0.032;
+      const F = -s.cfg.stiffness*(s.x - s.target) - s.cfg.damping*s.v;
+      s.v += (F/s.cfg.mass)*dt; s.x += s.v*dt; s.onUpdate(s.x);
+      if(Math.abs(s.v)<0.06 && Math.abs(s.x-s.target)<0.15){ s.x=s.target; s.onUpdate(s.x); s.raf=0; return; }
+      s.raf = requestAnimationFrame(step);
+    };
+    s.to = (target, vel)=>{ s.target=target; if(vel!=null) s.v=vel; if(!s.raf){ s.last=performance.now(); s.raf=requestAnimationFrame(step); } };
+    s.set = (x)=>{ s.x=x; s.v=0; if(s.raf){cancelAnimationFrame(s.raf); s.raf=0;} s.onUpdate(x); };
+    return s;
+  }
+
+  clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
+
+  wire(root){
+    const q = (s)=> root.querySelector(s);
+    const page = q('[data-r="page"]'), drawer = q('[data-r="drawer"]'),
+          scrim = q('[data-r="scrim"]'), edge = q('[data-r="edge"]'),
+          openBtn = q('[data-r="open"]'), card = q('[data-r="card"]');
+    const W = 264, THRESH = W*0.45;
+
+    // ---------- DRAWER ----------
+    const renderDrawer = (x)=>{
+      const p = this.clamp(x/W, 0, 1);
+      page.style.transform = `translateX(${x*0.84}px) scale(${1 - 0.12*p})`;
+      page.style.borderRadius = `${28*p}px`;
+      drawer.style.opacity = String(this.clamp(x/(W*0.55), 0, 1));
+      drawer.style.transform = `translateX(${(-W*0.28)*(1-p)}px)`;
+      scrim.style.opacity = String(0.5*p);
+      scrim.style.pointerEvents = x>4 ? 'auto' : 'none';
+    };
+    const dsp = this.makeSpring({mass:1, damping:26, stiffness:240}, renderDrawer);
+    const snapBack = {mass:1, damping:30, stiffness:260};
+    renderDrawer(0);
+
+    const openDrawer = (vel)=>{ this.haptic(12); dsp.cfg={mass:1,damping:26,stiffness:240}; dsp.to(W, vel); };
+    const closeDrawer = (vel)=>{ this.haptic(10); dsp.cfg=snapBack; dsp.to(0, vel); };
+
+    let dd=null;
+    const beginDrag = (e, opening)=>{
+      dd = { startX:e.clientX, startVal:dsp.x, last:e.clientX, lastT:performance.now(), vel:0, crossed:dsp.x>THRESH, edged:false };
+      if(dsp.raf){ cancelAnimationFrame(dsp.raf); dsp.raf=0; }
+      window.addEventListener('pointermove', moveDrag);
+      window.addEventListener('pointerup', endDrag, {once:true});
+      e.preventDefault();
+    };
+    const moveDrag = (e)=>{
+      if(!dd) return;
+      const now=performance.now(); const dx=e.clientX-dd.last;
+      dd.vel = dx/Math.max(1, now-dd.lastT)*1000; dd.last=e.clientX; dd.lastT=now;
+      let next = dd.startVal + (e.clientX - dd.startX);
+      if(next > W){ const over=next-W; next = W + (1-1/(over*0.02+1))*40; if(!dd.edged){ dd.edged=true; this.haptic(8); } }
+      else dd.edged=false;
+      next = Math.max(0, next);
+      dsp.x = next; renderDrawer(next);
+      const past = next>THRESH; if(past!==dd.crossed){ dd.crossed=past; this.haptic(6); }
+    };
+    const endDrag = ()=>{
+      window.removeEventListener('pointermove', moveDrag);
+      if(!dd) return;
+      const open = dsp.x>THRESH || dd.vel>500;
+      const forceClose = dd.vel<-500;
+      if(forceClose) closeDrawer(dd.vel); else if(open) openDrawer(dd.vel); else closeDrawer(dd.vel);
+      dd=null;
+    };
+
+    openBtn.addEventListener('click', ()=> dsp.x<4 ? openDrawer() : closeDrawer());
+    edge.addEventListener('pointerdown', (e)=>{ if(dsp.x<4) beginDrag(e, true); });
+    scrim.addEventListener('pointerdown', (e)=> beginDrag(e, false));
+
+    // ---------- DRAGGABLE CARD ----------
+    const csp = this.makeSpring({mass:1, damping:18, stiffness:220}, (y)=>{
+      const p = this.clamp(y/120, 0, 1);
+      card.style.transform = `translateY(${y}px) scale(${1-0.04*p})`;
+      card.style.opacity = String(this.clamp(1 - y/360, 0.35, 1));
+    });
+    csp.to = csp.to; // keep
+    const DISMISS = 120;
+    let cd=null;
+    const cardDown = (e)=>{
+      cd = { startY:e.clientY, startVal:csp.x, last:e.clientY, lastT:performance.now(), vel:0, crossed:false };
+      if(csp.raf){ cancelAnimationFrame(csp.raf); csp.raf=0; }
+      card.style.cursor='grabbing';
+      window.addEventListener('pointermove', cardMove);
+      window.addEventListener('pointerup', cardUp, {once:true});
+      e.preventDefault();
+    };
+    const cardMove = (e)=>{
+      if(!cd) return;
+      const now=performance.now(), dy=e.clientY-cd.last;
+      cd.vel = dy/Math.max(1, now-cd.lastT)*1000; cd.last=e.clientY; cd.lastT=now;
+      let t = cd.startVal + (e.clientY - cd.startY);
+      if(t<0){ const over=-t; t = -((1-1/(over*0.03+1))*30); } // rubber-band upward
+      csp.x=t; csp.onUpdate(t);
+      const past = t>DISMISS; if(past!==cd.crossed){ cd.crossed=past; this.haptic(6); }
+    };
+    const cardUp = ()=>{
+      window.removeEventListener('pointermove', cardMove);
+      card.style.cursor='grab';
+      if(!cd) return;
+      if(csp.x>DISMISS || cd.vel>900){
+        this.haptic(14);
+        csp.cfg={mass:1,damping:20,stiffness:200}; csp.to(420, cd.vel);
+        setTimeout(()=>{ csp.cfg={mass:1,damping:18,stiffness:220}; csp.set(-30); csp.to(0); }, 650); // auto-restore for the demo
+      } else { csp.cfg={mass:1,damping:30,stiffness:260}; csp.to(0, cd.vel); }
+      cd=null;
+    };
+    card.addEventListener('pointerdown', cardDown);
+
+    // ---------- BUTTON / TAB HAPTICS ----------
+    root.querySelectorAll('[data-hap]').forEach((el)=>{
+      el.addEventListener('pointerdown', ()=> this.haptic(8));
+    });
+  }
+}
+</script>
+</body>
+</html>

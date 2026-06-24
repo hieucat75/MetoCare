@@ -8,12 +8,11 @@ import { useAuth } from '@/lib/auth/context'
 import { ApiError } from '@/lib/api/client'
 import { getRoleHomePath, type AuthIdentifier } from '@/lib/api/auth'
 import { normalizeVnPhone } from '@/lib/phone'
+import { NeuButton } from '@/components/patient/neu'
+import { cn } from '@/lib/utils'
 
 // Tied to backend auth.py — detail returned when MFA is required but not supplied.
 const MFA_REQUIRED_DETAIL = 'MFA code required or invalid'
-import Button from '@/design-system/components/core/Button'
-import { Alert } from '@/design-system/components/core/Alert'
-import { cn } from '@/lib/utils'
 
 type Step = 'credentials' | 'mfa'
 
@@ -175,9 +174,9 @@ export default function LoginPage() {
         </p>
 
         {error && (
-          <Alert variant="danger" className="mb-4">
+          <div role="alert" className="rounded-[14px] bg-[#FEF0F0] border border-[#D92D20]/20 p-3 text-[13px] text-[#D92D20] mb-4">
             {error}
-          </Alert>
+          </div>
         )}
 
         <form onSubmit={handleMfaSubmit} noValidate>
@@ -196,15 +195,14 @@ export default function LoginPage() {
             />
           </div>
 
-          <Button
+          <NeuButton
             type="submit"
-            fullWidth
-            loading={isLoading}
-            disabled={!totpCode.trim()}
-            className="h-12 rounded-[14px] bg-gradient-to-b from-[#17AE7B] to-[#0B6B4D] text-white shadow-[0_12px_24px_-8px_rgba(11,107,77,0.6)] hover:opacity-95"
+            variant="primary"
+            disabled={!totpCode.trim() || isLoading}
+            className="w-full h-12 rounded-[14px] bg-gradient-to-b from-[#17AE7B] to-[#0B6B4D] text-white shadow-[0_12px_24px_-8px_rgba(11,107,77,0.6)] hover:opacity-95"
           >
-            Xác nhận
-          </Button>
+            {isLoading ? 'Đang xác nhận…' : 'Xác nhận'}
+          </NeuButton>
         </form>
 
         <button
@@ -232,9 +230,9 @@ export default function LoginPage() {
       </p>
 
       {error && (
-        <Alert variant="danger" className="mb-4">
+        <div role="alert" className="rounded-[14px] bg-[#FEF0F0] border border-[#D92D20]/20 p-3 text-[13px] text-[#D92D20] mb-4">
           {error}
-        </Alert>
+        </div>
       )}
 
       <form onSubmit={handleCredentialsSubmit} noValidate>
@@ -289,15 +287,14 @@ export default function LoginPage() {
           />
         </div>
 
-        <Button
+        <NeuButton
           type="submit"
-          fullWidth
-          loading={isLoading}
-          disabled={!identifier.trim() || !password}
-          className="h-12 rounded-[14px] bg-gradient-to-b from-[#17AE7B] to-[#0B6B4D] text-white shadow-[0_12px_24px_-8px_rgba(11,107,77,0.6)] hover:opacity-95"
+          variant="primary"
+          disabled={!identifier.trim() || !password || isLoading}
+          className="w-full h-12 rounded-[14px] bg-gradient-to-b from-[#17AE7B] to-[#0B6B4D] text-white shadow-[0_12px_24px_-8px_rgba(11,107,77,0.6)] hover:opacity-95"
         >
-          Đăng nhập
-        </Button>
+          {isLoading ? 'Đang đăng nhập…' : 'Đăng nhập'}
+        </NeuButton>
       </form>
 
       <p className="text-center text-[17px] text-text-muted mt-6">

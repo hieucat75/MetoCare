@@ -25,12 +25,9 @@ export default function ReportPage() {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? ''
       const token = localStorage.getItem('access_token') ?? ''
 
-      const response = await fetch(
-        `${apiUrl}/api/v1/patients/${patientId}/summary.pdf`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      )
+      const response = await fetch(`${apiUrl}/api/v1/patients/${patientId}/summary.pdf`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
 
       if (!response.ok) {
         const text = await response.text().catch(() => '')
@@ -99,7 +96,10 @@ export default function ReportPage() {
           {/* Report icon */}
           <div
             className="size-20 rounded-[22px] flex items-center justify-center bg-gradient-to-br from-[rgba(15,156,110,0.15)] to-[rgba(15,156,110,0.05)]"
-            style={{ boxShadow: 'inset 3px 3px 8px rgba(15,156,110,0.1), inset -2px -2px 5px rgba(255,255,255,0.95)' }}
+            style={{
+              boxShadow:
+                'inset 3px 3px 8px rgba(15,156,110,0.1), inset -2px -2px 5px rgba(255,255,255,0.95)',
+            }}
           >
             <FileText className="size-9 text-neu-green" aria-hidden="true" />
           </div>

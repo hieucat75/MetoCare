@@ -1,19 +1,23 @@
 'use client'
 
 import * as React from 'react'
+import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { ArrowLeft, ChevronDown, CheckCircle } from 'lucide-react'
 import { NeuCard, NeuButton } from '@/components/patient/neu'
 import { DangerAlertBanner } from '@/components/patient/metrics/DangerAlertBanner'
 import { useAuth } from '@/lib/auth/context'
+import { formatRelativeTime } from '@/lib/utils'
 import {
   logMetric,
+  getMetrics,
   METRIC_LABELS,
   METRIC_UNITS,
   METRIC_NORMAL_RANGES,
   getPatientProfile,
   type MetricType,
   type PatientProfile,
+  type HealthMetric,
 } from '@/lib/api/patient'
 
 // ─── Danger threshold helpers ────────────────────────────────────────────────
@@ -27,7 +31,8 @@ function bpDangerMessage(systolic: number, diastolic: number): string | null {
 }
 
 function glucoseDangerMessage(valueMmol: number): string | null {
-  if (valueMmol < 2.8) return 'Đường huyết quá thấp (hạ đường huyết)! Hãy ăn ngay và liên hệ bác sĩ.'
+  if (valueMmol < 2.8)
+    return 'Đường huyết quá thấp (hạ đường huyết)! Hãy ăn ngay và liên hệ bác sĩ.'
   if (valueMmol > 13.9) return 'Đường huyết rất cao! Hãy liên hệ bác sĩ ngay.'
   return null
 }
@@ -39,10 +44,14 @@ function toISOLocalDefault(): string {
   const pad = (n: number) => String(n).padStart(2, '0')
   return (
     now.getFullYear() +
-    '-' + pad(now.getMonth() + 1) +
-    '-' + pad(now.getDate()) +
-    'T' + pad(now.getHours()) +
-    ':' + pad(now.getMinutes())
+    '-' +
+    pad(now.getMonth() + 1) +
+    '-' +
+    pad(now.getDate()) +
+    'T' +
+    pad(now.getHours()) +
+    ':' +
+    pad(now.getMinutes())
   )
 }
 
@@ -153,9 +162,7 @@ function SuccessScreen({ label, onBack, onAnother }: SuccessScreenProps) {
     <div className="min-h-screen bg-[#E8EEE8] flex flex-col items-center justify-center px-6 text-center">
       <CheckCircle className="size-20 text-neu-green mb-5" aria-hidden="true" />
       <h2 className="text-[22px] font-extrabold text-neu-text">Đã lưu!</h2>
-      <p className="mt-2 text-[15px] text-neu-muted">
-        {label} đã được ghi thành công.
-      </p>
+      <p className="mt-2 text-[15px] text-neu-muted">{label} đã được ghi thành công.</p>
       <div className="mt-8 w-full max-w-sm space-y-3">
         <NeuButton onClick={onBack}>Xem chỉ số</NeuButton>
         <NeuButton variant="secondary" onClick={onAnother}>
@@ -185,8 +192,7 @@ function BpScreen({ patientId, measuredAt, onSuccess, onChangeMeasuredAt }: BpSc
 
   const sysNum = parseFloat(systolic)
   const diaNum = parseFloat(diastolic)
-  const dangerMsg =
-    !isNaN(sysNum) && !isNaN(diaNum) ? bpDangerMessage(sysNum, diaNum) : null
+  const dangerMsg = !isNaN(sysNum) && !isNaN(diaNum) ? bpDangerMessage(sysNum, diaNum) : null
 
   function validate(): boolean {
     if (!systolic || isNaN(sysNum) || sysNum <= 0) {
@@ -257,7 +263,10 @@ function BpScreen({ patientId, measuredAt, onSuccess, onChangeMeasuredAt }: BpSc
               aria-label="Huyết áp tâm thu (mmHg)"
               placeholder="120"
               value={systolic}
-              onChange={(e) => { setSystolic(e.target.value); setValidationError(null) }}
+              onChange={(e) => {
+                setSystolic(e.target.value)
+                setValidationError(null)
+              }}
               className="w-full border-b-2 border-[#B0C4C0] bg-transparent text-center text-[52px] font-extrabold text-neu-text leading-none pb-1 outline-none focus:border-neu-green"
             />
             <p className="mt-1.5 text-[13px] text-neu-muted">mmHg</p>
@@ -272,7 +281,10 @@ function BpScreen({ patientId, measuredAt, onSuccess, onChangeMeasuredAt }: BpSc
               aria-label="Huyết áp tâm trương (mmHg)"
               placeholder="80"
               value={diastolic}
-              onChange={(e) => { setDiastolic(e.target.value); setValidationError(null) }}
+              onChange={(e) => {
+                setDiastolic(e.target.value)
+                setValidationError(null)
+              }}
               className="w-full border-b-2 border-[#B0C4C0] bg-transparent text-center text-[52px] font-extrabold text-neu-text leading-none pb-1 outline-none focus:border-neu-green"
             />
             <p className="mt-1.5 text-[13px] text-neu-muted">mmHg</p>
@@ -316,6 +328,10 @@ function BpScreen({ patientId, measuredAt, onSuccess, onChangeMeasuredAt }: BpSc
 
       <NotesSection value={notes} onChange={setNotes} />
 
+      <Link href="/labs/upload" className="block text-center text-[13px] font-semibold text-neu-green mt-3">
+        📋 Có phiếu xét nghiệm? Tải lên tại đây
+      </Link>
+
       {validationError && (
         <p role="alert" className="text-[13px] font-semibold text-[#D92D20] px-1">
           {validationError}
@@ -354,7 +370,9 @@ function WeightScreen({ patientId, measuredAt, onSuccess, onChangeMeasuredAt }: 
   React.useEffect(() => {
     getPatientProfile(patientId)
       .then(setProfile)
-      .catch(() => { /* height preview is optional */ })
+      .catch(() => {
+        /* height preview is optional */
+      })
   }, [patientId])
 
   const weightNum = parseFloat(value)
@@ -405,7 +423,10 @@ function WeightScreen({ patientId, measuredAt, onSuccess, onChangeMeasuredAt }: 
         unit="kg"
         placeholder="70"
         ariaLabel="Cân nặng (kg)"
-        onChange={(v) => { setValue(v); setValidationError(null) }}
+        onChange={(v) => {
+          setValue(v)
+          setValidationError(null)
+        }}
       />
 
       {bmiPreview !== null && (
@@ -420,18 +441,19 @@ function WeightScreen({ patientId, measuredAt, onSuccess, onChangeMeasuredAt }: 
               className="ml-auto text-[13px] font-bold"
               style={{
                 color:
-                  bmiPreview < 18.5 ? '#2563EB'
-                    : bmiPreview < 23 ? '#15915A'
-                    : bmiPreview < 27.5 ? '#E0A92E'
-                    : '#D92D20',
+                  bmiPreview < 18.5
+                    ? '#2563EB'
+                    : bmiPreview < 23
+                      ? '#15915A'
+                      : bmiPreview < 27.5
+                        ? '#E0A92E'
+                        : '#D92D20',
               }}
             >
               {bmiCategory(bmiPreview)}
             </span>
           </div>
-          <p className="mt-1 text-[11px] text-neu-muted">
-            Chiều cao: {profile!.height_cm} cm
-          </p>
+          <p className="mt-1 text-[11px] text-neu-muted">Chiều cao: {profile!.height_cm} cm</p>
         </NeuCard>
       )}
 
@@ -449,6 +471,10 @@ function WeightScreen({ patientId, measuredAt, onSuccess, onChangeMeasuredAt }: 
       </div>
 
       <NotesSection value={notes} onChange={setNotes} />
+
+      <Link href="/labs/upload" className="block text-center text-[13px] font-semibold text-neu-green mt-3">
+        📋 Có phiếu xét nghiệm? Tải lên tại đây
+      </Link>
 
       {validationError && (
         <p role="alert" className="text-[13px] font-semibold text-[#D92D20] px-1">
@@ -493,6 +519,17 @@ function GlucoseScreen({
   const [submitting, setSubmitting] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
   const [validationError, setValidationError] = React.useState<string | null>(null)
+  const [lastGlucose, setLastGlucose] = React.useState<HealthMetric | null>(null)
+
+  React.useEffect(() => {
+    getMetrics(patientId, { metric_type: metricType, limit: 1 })
+      .then((res) => {
+        if (res.items.length > 0) setLastGlucose(res.items[0])
+      })
+      .catch(() => {
+        /* last-value preview is optional */
+      })
+  }, [patientId, metricType])
 
   const numericValue = parseFloat(value)
   const valueMmol =
@@ -570,8 +607,21 @@ function GlucoseScreen({
         unit={displayUnit}
         placeholder={glucoseUnit === 'mmol' ? '5.5' : '100'}
         ariaLabel={`Đường huyết (${displayUnit})`}
-        onChange={(v) => { setValue(v); setValidationError(null) }}
+        onChange={(v) => {
+          setValue(v)
+          setValidationError(null)
+        }}
       />
+
+      {lastGlucose && (
+        <p className="text-[12px] text-neu-muted text-center mt-2">
+          Lần trước:{' '}
+          {glucoseUnit === 'mmol'
+            ? Math.round((lastGlucose.value / MG_DL_PER_MMOL) * 100) / 100
+            : lastGlucose.value}{' '}
+          {displayUnit} ({formatRelativeTime(lastGlucose.measured_at)})
+        </p>
+      )}
 
       {/* Reference card */}
       <NeuCard size="lg" className="!p-4">
@@ -587,9 +637,7 @@ function GlucoseScreen({
           </div>
           <div className="flex items-center gap-2">
             <span className="size-2 rounded-full bg-[#D92D20] shrink-0" aria-hidden="true" />
-            <span className="text-[12px] text-neu-muted">
-              Nguy hiểm: &lt; 2.8 hoặc &gt; 13.9
-            </span>
+            <span className="text-[12px] text-neu-muted">Nguy hiểm: &lt; 2.8 hoặc &gt; 13.9</span>
           </div>
         </div>
       </NeuCard>
@@ -610,6 +658,10 @@ function GlucoseScreen({
       </div>
 
       <NotesSection value={notes} onChange={setNotes} />
+
+      <Link href="/labs/upload" className="block text-center text-[13px] font-semibold text-neu-green mt-3">
+        📋 Có phiếu xét nghiệm? Tải lên tại đây
+      </Link>
 
       {validationError && (
         <p role="alert" className="text-[13px] font-semibold text-[#D92D20] px-1">
@@ -694,7 +746,10 @@ function GenericScreen({
         value={value}
         unit={unit}
         ariaLabel={`${METRIC_LABELS[metricType] ?? metricType} (${unit})`}
-        onChange={(v) => { setValue(v); setValidationError(null) }}
+        onChange={(v) => {
+          setValue(v)
+          setValidationError(null)
+        }}
       />
 
       {range && (
@@ -720,6 +775,10 @@ function GenericScreen({
       </div>
 
       <NotesSection value={notes} onChange={setNotes} />
+
+      <Link href="/labs/upload" className="block text-center text-[13px] font-semibold text-neu-green mt-3">
+        📋 Có phiếu xét nghiệm? Tải lên tại đây
+      </Link>
 
       {validationError && (
         <p role="alert" className="text-[13px] font-semibold text-[#D92D20] px-1">

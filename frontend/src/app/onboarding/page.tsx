@@ -245,7 +245,8 @@ interface StepConditionsProps {
 
 function StepConditions({ form, onSet }: StepConditionsProps) {
   const selected = React.useMemo(
-    () => new Set(form.known_conditions ? form.known_conditions.split(',').map((s) => s.trim()) : []),
+    () =>
+      new Set(form.known_conditions ? form.known_conditions.split(',').map((s) => s.trim()) : []),
     [form.known_conditions]
   )
 
@@ -362,7 +363,9 @@ function StepBaseline({ form, onNext }: StepBaselineProps) {
             <div className="flex items-center gap-3 p-3 rounded-[14px] bg-white/60 border border-[#C8D8D4]">
               <Ruler className="size-5 text-[#0F9C6E] shrink-0" aria-hidden />
               <div>
-                <p className="text-[12px] text-neu-muted uppercase tracking-wide font-semibold">Chiều cao</p>
+                <p className="text-[12px] text-neu-muted uppercase tracking-wide font-semibold">
+                  Chiều cao
+                </p>
                 <p className="text-[18px] font-bold text-neu-text">{form.height_cm} cm</p>
               </div>
             </div>
@@ -371,7 +374,9 @@ function StepBaseline({ form, onNext }: StepBaselineProps) {
             <div className="flex items-center gap-3 p-3 rounded-[14px] bg-white/60 border border-[#C8D8D4]">
               <Weight className="size-5 text-[#0F9C6E] shrink-0" aria-hidden />
               <div>
-                <p className="text-[12px] text-neu-muted uppercase tracking-wide font-semibold">Cân nặng</p>
+                <p className="text-[12px] text-neu-muted uppercase tracking-wide font-semibold">
+                  Cân nặng
+                </p>
                 <p className="text-[18px] font-bold text-neu-text">{form.weight_kg} kg</p>
               </div>
             </div>
@@ -380,7 +385,9 @@ function StepBaseline({ form, onNext }: StepBaselineProps) {
             <div className="flex items-center gap-3 p-3 rounded-[14px] bg-white/60 border border-[#C8D8D4]">
               <Maximize2 className="size-5 text-[#0F9C6E] shrink-0" aria-hidden />
               <div>
-                <p className="text-[12px] text-neu-muted uppercase tracking-wide font-semibold">Vòng eo</p>
+                <p className="text-[12px] text-neu-muted uppercase tracking-wide font-semibold">
+                  Vòng eo
+                </p>
                 <p className="text-[18px] font-bold text-neu-text">{form.waist_cm} cm</p>
               </div>
             </div>
@@ -438,9 +445,7 @@ function StepComplete({ form, onFinish, saving }: StepCompleteProps) {
 
       {/* Summary */}
       <div className="text-left space-y-2.5 bg-white/50 rounded-[16px] border border-[#C8D8D4] p-4">
-        {form.full_name && (
-          <SummaryRow label="Họ tên" value={form.full_name} />
-        )}
+        {form.full_name && <SummaryRow label="Họ tên" value={form.full_name} />}
         {form.dob && <SummaryRow label="Ngày sinh" value={form.dob} />}
         {form.gender && (
           <SummaryRow
@@ -460,9 +465,7 @@ function StepComplete({ form, onFinish, saving }: StepCompleteProps) {
               .join(' · ')}
           />
         )}
-        {conditions.length > 0 && (
-          <SummaryRow label="Bệnh lý" value={conditions.join(', ')} />
-        )}
+        {conditions.length > 0 && <SummaryRow label="Bệnh lý" value={conditions.join(', ')} />}
       </div>
 
       {/* B3-05 placeholder */}
@@ -471,6 +474,12 @@ function StepComplete({ form, onFinish, saving }: StepCompleteProps) {
           Kết nối bác sĩ qua mã mời từ phòng khám — tính năng sắp ra mắt.
         </p>
       </div>
+
+      <NeuCard className="mt-4 text-center">
+        <p className="text-[14px] font-semibold text-neu-text">Có kết quả xét nghiệm gần đây?</p>
+        <p className="text-[12px] text-neu-muted mt-1">Tải lên để MetoCare phân tích và theo dõi chỉ số của bạn.</p>
+        <a href="/labs/upload" className="mt-3 block text-[13px] font-bold text-neu-green">Tải kết quả xét nghiệm →</a>
+      </NeuCard>
 
       <NeuButton variant="primary" onClick={onFinish} disabled={saving}>
         {saving ? 'Đang lưu…' : 'Đến Tổng quan'}

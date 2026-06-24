@@ -3,7 +3,7 @@
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
 import { Activity, Bell, Droplet, Heart, Pill, Plus, Scale } from 'lucide-react'
-import { PageLoading, ErrorState } from '@/design-system'
+import { PatientErrorState, PatientSkeleton } from '@/components/patient/states'
 import { NeuCard, NeuButton, NeuIconButton, NeuBadge } from '@/components/patient/neu'
 import { useAuth } from '@/lib/auth/context'
 import {
@@ -121,11 +121,11 @@ export default function PatientDashboardPage() {
     )
   }
 
-  if (loading || catalog === null) return <PageLoading label="Đang tải..." />
+  if (loading || catalog === null) return <div className="p-4 max-w-md mx-auto space-y-3"><PatientSkeleton /><PatientSkeleton /></div>
 
   if (error || !data) {
     return (
-      <ErrorState
+      <PatientErrorState
         title="Không thể tải dữ liệu"
         message={error ?? 'Đã xảy ra lỗi không xác định'}
         onRetry={load}

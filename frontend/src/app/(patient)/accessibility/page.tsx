@@ -83,10 +83,7 @@ function SettingRow({
       </div>
 
       {/* Text */}
-      <label
-        htmlFor={toggleId}
-        className="flex-1 min-w-0 cursor-pointer"
-      >
+      <label htmlFor={toggleId} className="flex-1 min-w-0 cursor-pointer">
         <p className="text-[15px] font-semibold text-neu-text">{title}</p>
         <p className="text-[13px] text-neu-muted mt-0.5 leading-snug">{description}</p>
       </label>

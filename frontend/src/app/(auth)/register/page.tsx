@@ -8,8 +8,7 @@ import { useAuth } from '@/lib/auth/context'
 import { ApiError } from '@/lib/api/client'
 import { getRoleHomePath } from '@/lib/api/auth'
 import { normalizeVnPhone, isValidVnPhone } from '@/lib/phone'
-import Button from '@/design-system/components/core/Button'
-import { Alert } from '@/design-system/components/core/Alert'
+import { NeuButton } from '@/components/patient/neu'
 import { cn } from '@/lib/utils'
 
 function FieldLabel({ htmlFor, children }: { htmlFor: string; children: React.ReactNode }) {
@@ -174,9 +173,9 @@ export default function RegisterPage() {
       </p>
 
       {error && (
-        <Alert variant="danger" className="mb-4">
+        <div role="alert" className="rounded-[14px] bg-[#FEF0F0] border border-[#D92D20]/20 p-3 text-[13px] text-[#D92D20] mb-4">
           {error}
-        </Alert>
+        </div>
       )}
 
       <form onSubmit={handleSubmit} noValidate>
@@ -251,15 +250,13 @@ export default function RegisterPage() {
           {fieldErrors.password && <FieldError message={fieldErrors.password} />}
         </div>
 
-        <Button
+        <NeuButton
           type="submit"
-          fullWidth
-          loading={isLoading}
-          disabled={!phone.trim() || !password || !fullName.trim()}
+          disabled={isLoading || !phone.trim() || !password || !fullName.trim()}
           className="h-12 rounded-xl bg-gradient-to-b from-[#17AE7B] to-[#0B6B4D] text-white shadow-[0_12px_24px_-8px_rgba(11,107,77,0.6)] hover:opacity-95"
         >
-          Đăng ký
-        </Button>
+          {isLoading ? 'Đang đăng ký…' : 'Đăng ký'}
+        </NeuButton>
       </form>
 
       <p className="text-center text-[17px] text-text-muted mt-6">

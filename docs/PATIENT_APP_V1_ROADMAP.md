@@ -63,6 +63,19 @@
 | B9-06 | Hoàn thành phiên | same | same |
 | B9-07 | Lịch tập tuần | same | same |
 
+### Deploy (2026-06-24)
+
+- **Revision:** `ca-metocare-frontend--fe-92b36715` (image SHA `92b3671557708b0c6d9b7e454a54c016a1e00c84`)
+- **Backend:** `ca-metocare-backend--0000021` (unchanged)
+- **Status:** LIVE on Azure Container Apps Southeast Asia
+- **Smoke verification:**
+  - `/login` → 200 ✅
+  - `/intro` → 200, carousel "Theo dõi chỉ số" renders after splash ✅
+  - `/accessibility` → 200 ✅
+  - `/report` → 200 ✅
+  - `/metrics/log/blood_pressure_systolic` → 200 ✅
+- **Screenshots:** `docs/agent/batch09_shots/staging_intro_splash.png`, `staging_intro_carousel1.png`
+
 ### Updated summary counts (post Phase 1)
 
 | | Before Phase 1 | After Phase 1 | of 57 |

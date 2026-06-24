@@ -2,13 +2,9 @@
 
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
-import { CheckCircle } from 'lucide-react'
-import Button from '@/design-system/components/core/Button'
-import { Card, CardContent } from '@/design-system/components/core/Card'
-import { FormField } from '@/design-system/components/core/FormField'
-import { Input } from '@/design-system/components/core/Input'
-
-import { Alert } from '@/design-system/components/core/Alert'
+import { ArrowLeft, CheckCircle } from 'lucide-react'
+import { NeuCard, NeuButton, NeuIconButton } from '@/components/patient/neu'
+import { PatientErrorState, PatientSkeleton } from '@/components/patient/states'
 import { useAuth } from '@/lib/auth/context'
 import {
   logMetric,
@@ -32,10 +28,10 @@ interface FormState {
   unit: string
   measured_at: string
   source: string
+  notes: string
 }
 
 function toISOLocalDefault(): string {
-  // Returns current datetime in local ISO format for datetime-local input
   const now = new Date()
   const pad = (n: number) => String(n).padStart(2, '0')
   return (
@@ -46,6 +42,14 @@ function toISOLocalDefault(): string {
     ':' + pad(now.getMinutes())
   )
 }
+
+// ─── Soft-UI select class ─────────────────────────────────────────────────────
+
+const NEU_SELECT_CLASS =
+  'w-full rounded-[14px] border-2 border-[#C8D8D4] bg-white/60 backdrop-blur px-4 py-3 text-[16px] text-neu-text focus:border-[#0F9C6E] focus:outline-none appearance-none'
+
+const NEU_INPUT_CLASS =
+  'w-full rounded-[14px] border-2 border-[#C8D8D4] bg-white/60 backdrop-blur px-4 py-3 text-[16px] text-neu-text focus:border-[#0F9C6E] focus:outline-none'
 
 // ─── Log Metric page ──────────────────────────────────────────────────────────
 
@@ -60,11 +64,13 @@ export default function LogMetricPage() {
     unit: METRIC_UNITS['fasting_glucose'] ?? '',
     measured_at: toISOLocalDefault(),
     source: 'manual',
+    notes: '',
   })
   const [submitting, setSubmitting] = React.useState(false)
   const [success, setSuccess] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
   const [validationError, setValidationError] = React.useState<string | null>(null)
+  const [notesOpen, setNotesOpen] = React.useState(false)
 
   // Update unit when metric type changes
   function handleTypeChange(e: React.ChangeEvent<HTMLSelectElement>) {
@@ -128,133 +134,229 @@ export default function LogMetricPage() {
   // ── Success state ──
   if (success) {
     return (
-      <div className="p-4 lg:p-6 flex flex-col items-center justify-center min-h-[60vh] text-center">
-        <CheckCircle className="size-16 text-green-500 mb-4" aria-hidden="true" />
-        <h1 className="text-[18px] font-bold text-text mb-2">Đã lưu!</h1>
-        <p className="text-[17px] text-text-muted mb-6">
-          Chỉ số {METRIC_LABELS[form.metric_type] ?? form.metric_type} đã được ghi thành công.
-        </p>
-        <div className="flex gap-3">
-          <Button
-            variant="outline"
-            onClick={() => {
-              setSuccess(false)
-              setForm((f) => ({ ...f, value: '', measured_at: toISOLocalDefault() }))
-            }}
-          >
-            Ghi tiếp
-          </Button>
-          <Button variant="mint" onClick={() => router.push('/metrics')}>
-            Xem chỉ số
-          </Button>
-        </div>
+      <div className="min-h-screen bg-[#F0F7F4] flex flex-col items-center justify-center px-4">
+        <NeuCard className="w-full max-w-md text-center py-10 px-6">
+          <div className="flex flex-col items-center gap-4">
+            <div className="w-16 h-16 rounded-full bg-[#E3F5EC] flex items-center justify-center">
+              <CheckCircle className="w-9 h-9 text-[#0F9C6E]" aria-hidden="true" />
+            </div>
+            <h1 className="text-[20px] font-bold text-neu-text">Đã lưu!</h1>
+            <p className="text-[15px] text-neu-muted">
+              Chỉ số{' '}
+              <span className="font-semibold text-neu-text">
+                {METRIC_LABELS[form.metric_type] ?? form.metric_type}
+              </span>{' '}
+              đã được ghi thành công.
+            </p>
+            <div className="flex gap-3 mt-2 w-full">
+              <NeuButton
+                variant="secondary"
+                className="flex-1"
+                onClick={() => {
+                  setSuccess(false)
+                  setForm((f) => ({ ...f, value: '', measured_at: toISOLocalDefault() }))
+                }}
+              >
+                Ghi tiếp
+              </NeuButton>
+              <NeuButton
+                variant="primary"
+                className="flex-1"
+                onClick={() => router.push('/metrics')}
+              >
+                Xem chỉ số
+              </NeuButton>
+            </div>
+          </div>
+        </NeuCard>
       </div>
     )
   }
 
   // ── Form ──
   return (
-    <div className="p-4 lg:p-6 max-w-lg mx-auto">
-      <div className="mb-6">
-        <h1 className="text-[24px] font-bold text-text">Ghi chỉ số</h1>
-        <p className="text-[17px] text-text-muted mt-1">
-          Nhập chỉ số sức khỏe để theo dõi xu hướng
-        </p>
+    <div className="min-h-screen bg-[#F0F7F4]">
+      {/* Header */}
+      <div className="flex items-center gap-3 px-4 pt-5 pb-3">
+        <NeuIconButton
+          aria-label="Quay lại"
+          onClick={() => router.back()}
+          disabled={submitting}
+        >
+          <ArrowLeft className="w-5 h-5 text-neu-text" />
+        </NeuIconButton>
+        <h1 className="text-[18px] font-bold text-neu-text">Ghi chỉ số</h1>
       </div>
 
-      <Card variant="glass" padding="lg">
-        <form onSubmit={handleSubmit} noValidate>
-          <CardContent className="space-y-5">
+      <form onSubmit={handleSubmit} noValidate className="px-4 pb-8 max-w-lg mx-auto space-y-4">
 
-            {/* Metric type */}
-            <FormField label="Loại chỉ số" required>
+        {/* Metric type selector */}
+        <NeuCard>
+          <div className="space-y-1.5">
+            <label className="block text-[13px] font-semibold text-neu-muted uppercase tracking-wide">
+              Loại chỉ số
+            </label>
+            <div className="relative">
               <select
-                className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-[17px] text-text focus:outline-none focus:ring-2 focus:ring-mint-400/30 focus:border-mint-400"
+                className={NEU_SELECT_CLASS}
                 value={form.metric_type}
                 onChange={handleTypeChange}
+                aria-label="Loại chỉ số"
               >
                 {METRIC_TYPE_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
                 ))}
               </select>
-            </FormField>
+              {/* Chevron indicator */}
+              <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-neu-muted">
+                ▾
+              </span>
+            </div>
+          </div>
+        </NeuCard>
 
-            {/* Value */}
-            <FormField
-              label={`Giá trị${form.unit ? ` (${form.unit})` : ''}`}
+        {/* Value input — big number */}
+        <NeuCard>
+          <div className="space-y-1.5">
+            <label className="block text-[13px] font-semibold text-neu-muted uppercase tracking-wide">
+              Giá trị
+            </label>
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              inputMode="decimal"
+              placeholder="0"
+              value={form.value}
+              onChange={(e) => {
+                setForm((f) => ({ ...f, value: e.target.value }))
+                if (validationError) setValidationError(null)
+              }}
+              aria-label={`Giá trị${form.unit ? ` (${form.unit})` : ''}`}
+              aria-invalid={validationError != null}
+              aria-describedby={validationError ? 'value-error' : undefined}
               required
-              error={validationError ?? undefined}
-            >
-              <Input
-                type="number"
-                step="0.01"
-                min="0"
-                placeholder={`Nhập giá trị ${form.unit ? `(${form.unit})` : ''}`}
-                value={form.value}
-                onChange={(e) => {
-                  setForm((f) => ({ ...f, value: e.target.value }))
-                  if (validationError) setValidationError(null)
-                }}
-                error={validationError ?? undefined}
-                required
-              />
-            </FormField>
+              className="w-full text-[52px] font-extrabold text-neu-text bg-transparent border-none outline-none text-center"
+            />
+            {form.unit && (
+              <p className="text-center text-[15px] font-semibold text-neu-muted -mt-1">
+                {form.unit}
+              </p>
+            )}
+            {validationError && (
+              <p id="value-error" className="text-[13px] text-red-500 text-center mt-1" role="alert">
+                {validationError}
+              </p>
+            )}
+          </div>
+        </NeuCard>
 
-            {/* Measured at */}
-            <FormField label="Thời điểm đo" required>
-              <Input
-                type="datetime-local"
-                value={form.measured_at}
-                onChange={(e) => setForm((f) => ({ ...f, measured_at: e.target.value }))}
-                max={toISOLocalDefault()}
-                required
-              />
-            </FormField>
+        {/* Datetime */}
+        <NeuCard>
+          <div className="space-y-1.5">
+            <label className="block text-[13px] font-semibold text-neu-muted uppercase tracking-wide">
+              Thời điểm đo
+            </label>
+            <input
+              type="datetime-local"
+              value={form.measured_at}
+              max={toISOLocalDefault()}
+              onChange={(e) => setForm((f) => ({ ...f, measured_at: e.target.value }))}
+              required
+              className={NEU_INPUT_CLASS}
+              aria-label="Thời điểm đo"
+            />
+          </div>
+        </NeuCard>
 
-            {/* Source */}
-            <FormField label="Nguồn đo">
+        {/* Source */}
+        <NeuCard>
+          <div className="space-y-1.5">
+            <label className="block text-[13px] font-semibold text-neu-muted uppercase tracking-wide">
+              Nguồn đo
+            </label>
+            <div className="relative">
               <select
-                className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-[17px] text-text focus:outline-none focus:ring-2 focus:ring-mint-400/30 focus:border-mint-400"
+                className={NEU_SELECT_CLASS}
                 value={form.source}
                 onChange={(e) => setForm((f) => ({ ...f, source: e.target.value }))}
+                aria-label="Nguồn đo"
               >
                 <option value="manual">Thủ công</option>
                 <option value="device">Thiết bị</option>
                 <option value="lab">Xét nghiệm</option>
               </select>
-            </FormField>
-
-            {/* Error alert */}
-            {error && (
-              <Alert variant="danger" title="Lỗi ghi chỉ số">
-                {error}
-              </Alert>
-            )}
-
-            {/* Actions */}
-            <div className="flex gap-3 pt-1">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => router.back()}
-                disabled={submitting}
-                className="flex-1"
-              >
-                Hủy
-              </Button>
-              <Button
-                type="submit"
-                variant="mint"
-                loading={submitting}
-                className="flex-1"
-              >
-                Lưu chỉ số
-              </Button>
+              <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-neu-muted">
+                ▾
+              </span>
             </div>
+          </div>
+        </NeuCard>
 
-          </CardContent>
-        </form>
-      </Card>
+        {/* Notes — collapsed */}
+        <NeuCard>
+          <button
+            type="button"
+            className="w-full flex items-center justify-between text-[14px] font-semibold text-neu-muted"
+            onClick={() => setNotesOpen((o) => !o)}
+            aria-expanded={notesOpen}
+          >
+            <span>Ghi chú (tuỳ chọn)</span>
+            <span className="text-[12px]">{notesOpen ? '▲' : '▼'}</span>
+          </button>
+          {notesOpen && (
+            <div className="mt-3">
+              <textarea
+                value={form.notes}
+                onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
+                placeholder="Nhập ghi chú thêm..."
+                aria-label="Ghi chú"
+                className="w-full rounded-[14px] border-2 border-[#C8D8D4] bg-white/60 backdrop-blur px-4 py-3 text-[16px] text-neu-text focus:border-[#0F9C6E] focus:outline-none min-h-[96px] resize-none"
+              />
+            </div>
+          )}
+        </NeuCard>
+
+        {/* Error state */}
+        {error && (
+          <PatientErrorState
+            title="Lỗi ghi chỉ số"
+            message={error}
+            onRetry={() => setError(null)}
+          />
+        )}
+
+        {/* Submitting skeleton hint */}
+        {submitting && (
+          <div className="space-y-3">
+            <PatientSkeleton />
+          </div>
+        )}
+
+        {/* Actions */}
+        {!submitting && (
+          <div className="flex gap-3 pt-1">
+            <NeuButton
+              type="button"
+              variant="secondary"
+              onClick={() => router.back()}
+              className="flex-1"
+            >
+              Hủy
+            </NeuButton>
+            <NeuButton
+              type="submit"
+              variant="primary"
+              className="flex-1"
+            >
+              Ghi lại
+            </NeuButton>
+          </div>
+        )}
+
+      </form>
     </div>
   )
 }
