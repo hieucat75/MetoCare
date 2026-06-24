@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 import datetime as dt
 
-from app.core.clock import utcnow
+from app.core.clock import as_naive_utc, utcnow
 from app.models.clinical import Medication, MedicationAdherence
 
 
@@ -237,8 +237,8 @@ def adherence_summary(
         today_records = [
             r for r in all_records
             if r.medication_id == med.id
-            and r.created_at >= today_start
-            and r.created_at < today_end
+            and as_naive_utc(r.created_at) >= today_start
+            and as_naive_utc(r.created_at) < today_end
         ]
         taken_today = any(r.taken_at is not None for r in today_records)
         skipped_today = any(r.skipped for r in today_records)
