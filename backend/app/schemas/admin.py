@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.models.user import UserRole
 
@@ -84,6 +84,28 @@ class AuditLogFilter(BaseModel):
 
 class UnlockRequest(BaseModel):
     email: str
+
+
+class DoctorCreateRequest(BaseModel):
+    email: str
+    password: str = Field(min_length=12)
+    full_name: str = Field(min_length=1, max_length=255)
+    specialty: str | None = None
+    license_no: str | None = None
+    bio: str | None = None
+    clinic_id: str | None = None
+
+
+class DoctorAdminOut(BaseModel):
+    user_id: str
+    doctor_id: str
+    email: str | None
+    full_name: str
+    role: str
+    is_active: bool
+    mfa_enabled: bool
+
+    model_config = {"from_attributes": True}
 
 # ---------------------------------------------------------------------------
 # System stats (lightweight, no PHI)

@@ -103,6 +103,24 @@ def list_consents(
 # POST /patients/{patient_id}/consents (grant)
 # ---------------------------------------------------------------------------
 
+def _validate_granted_to(granted_to: str, db: Session) -> None:
+    """granted_to must be the user_id of an active DOCTOR. AC-11."""
+    from sqlalchemy import select as _select
+    from app.models.user import User as _User, UserRole as _UserRole
+    target = db.execute(
+        _select(_User).where(
+            _User.id == granted_to,
+            _User.role == _UserRole.DOCTOR,
+            _User.is_active.is_(True),
+        )
+    ).scalar_one_or_none()
+    if target is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="granted_to must be the user_id of an active doctor.",
+        )
+
+
 @router.post("", response_model=ConsentOut, status_code=201)
 def grant_consent(
     patient_id: str,
@@ -111,6 +129,7 @@ def grant_consent(
     db: Session = Depends(get_session),
 ) -> ConsentOut:
     _enforce_consent_ownership(patient_id, user, db)
+    _validate_granted_to(payload.granted_to, db)
     c = consent.grant(
         db,
         patient_id=patient_id,
