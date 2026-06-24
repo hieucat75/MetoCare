@@ -713,3 +713,52 @@ def test_lab_results_sorted_by_test_date_desc(client, patient):
     dates = [it["test_date"] for it in items]
     assert dates == sorted(dates, reverse=True), f"not test_date DESC: {dates}"
     assert dates[0] == "2025-12-01"
+
+
+# --------------------------------------------------------------------------- #
+# Boundary classification — uric_acid and random_glucose critical thresholds
+# --------------------------------------------------------------------------- #
+
+from app.domain.lab_interpreter import classify_value, LabStatus
+
+
+def test_uric_acid_critical_at_exact_threshold():
+    assert classify_value("uric_acid", 10.0) == LabStatus.CRITICAL
+
+
+def test_uric_acid_high_just_below_critical():
+    assert classify_value("uric_acid", 9.9) == LabStatus.HIGH
+
+
+def test_uric_acid_normal_within_range():
+    assert classify_value("uric_acid", 5.0) == LabStatus.NORMAL
+
+
+def test_uric_acid_high_at_ref_boundary():
+    # 7.0 is the ref_high — a value of exactly 7.0 is still within range
+    assert classify_value("uric_acid", 7.0) == LabStatus.NORMAL
+    # 7.01 is above ref_high
+    assert classify_value("uric_acid", 7.01) == LabStatus.HIGH
+
+
+def test_random_glucose_critical_low_at_exact_threshold():
+    assert classify_value("random_glucose", 54.0) == LabStatus.CRITICAL
+
+
+def test_random_glucose_low_just_above_critical_low():
+    assert classify_value("random_glucose", 55.0) == LabStatus.LOW
+
+
+def test_random_glucose_normal_at_upper_ref_boundary():
+    # ref_high=139 — exactly 139 is still normal
+    assert classify_value("random_glucose", 139.0) == LabStatus.NORMAL
+    assert classify_value("random_glucose", 139.1) == LabStatus.HIGH
+
+
+def test_random_glucose_critical_high_at_exact_threshold():
+    assert classify_value("random_glucose", 300.0) == LabStatus.CRITICAL
+
+
+def test_rbs_alias_resolves_to_random_glucose():
+    values = lab_parser.parse_lab_text("RBS 160 mg/dL")
+    assert values and values[0].test_name == "random_glucose"
