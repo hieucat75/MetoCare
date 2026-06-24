@@ -658,6 +658,10 @@ export interface AdherenceSummary {
   skipped: number
   adherence_rate: number
   today_medications: TodayMedication[]
+  current_streak: number
+  longest_streak: number
+  weekly_rate: number
+  last_taken_at: string | null
 }
 
 export async function logAdherence(

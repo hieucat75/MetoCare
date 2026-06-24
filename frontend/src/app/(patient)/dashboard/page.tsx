@@ -13,12 +13,16 @@ import {
   getLabs,
   getPatientProfile,
   getHealthSummary,
+  getAdherenceSummary,
+  logAdherence,
   type HealthMetric,
   type HealthSummary,
   type LiveMetabolicScore,
   type Medication,
   type LabResult,
   type PatientProfile,
+  type AdherenceSummary,
+  type TodayMedication,
 } from '@/lib/api/patient'
 import {
   buildDashboardSummary,
@@ -39,6 +43,7 @@ interface DashboardData {
   labs: LabResult[]
   profile: PatientProfile | null
   healthSummary: HealthSummary | null
+  adherenceSummary: AdherenceSummary | null
 }
 
 type BadgeTone = 'ok' | 'watch' | 'alert'
@@ -82,8 +87,9 @@ export default function PatientDashboardPage() {
       })),
       getPatientProfile(patientId).catch(() => null),
       getHealthSummary(patientId),
+      getAdherenceSummary(patientId).catch(() => null),
     ])
-      .then(([metricsResp, liveScore, medsResp, labsResp, profile, healthSummary]) => {
+      .then(([metricsResp, liveScore, medsResp, labsResp, profile, healthSummary, adherenceSummary]) => {
         const metricItems = metricsResp.items ?? []
         setData({
           summary: buildDashboardSummary(metricItems, catalog),
@@ -95,6 +101,7 @@ export default function PatientDashboardPage() {
           labs: labsResp.items ?? [],
           profile,
           healthSummary,
+          adherenceSummary,
         })
       })
       .catch((err: Error) => setError(err.message))
@@ -139,10 +146,9 @@ export default function PatientDashboardPage() {
     )
   }
 
-  const { summary, series, medications, healthSummary } = data
+  const { summary, series, healthSummary, adherenceSummary } = data
   const hasAnyData = summary.totalTracked > 0
   const displayName = user.full_name ?? user.email ?? 'Bạn'
-  const nextMed = medications[0] ?? null
 
   return (
     <div className="relative p-4 space-y-5 max-w-md mx-auto pb-28">
@@ -176,8 +182,14 @@ export default function PatientDashboardPage() {
           {/* ── Daily summary (green hero) ── */}
           <HeroSummaryCard summary={summary} healthSummary={healthSummary} />
 
-          {/* ── Medication reminder ── */}
-          {nextMed && <MedicationReminderCard med={nextMed} />}
+          {/* ── Medication adherence reminder ── */}
+          {adherenceSummary && adherenceSummary.today_medications.length > 0 && (
+            <AdherenceReminderSection
+              adherenceSummary={adherenceSummary}
+              patientId={patientId}
+              onRefresh={load}
+            />
+          )}
 
           {/* ── 2×2 metric tiles ── */}
           <MetricTileGrid
@@ -256,17 +268,44 @@ function HeroSummaryCard({
   )
 }
 
-// ─── Medication reminder (local-only "Đã uống") ──────────────────────────────
+// ─── Adherence reminder (real backend data) ───────────────────────────────────
 
 const PINK_GRADIENT = 'linear-gradient(160deg,#F0608E,#D6336C)'
 
-function MedicationReminderCard({ med }: { med: Medication }) {
-  // Local-only adherence toggle until a backend endpoint exists.
-  const [taken, setTaken] = React.useState(false) // TODO(backend): adherence
+function MedicationCard({
+  med,
+  patientId,
+  onRefresh,
+}: {
+  med: TodayMedication
+  patientId: string
+  onRefresh: () => void
+}) {
+  const [logging, setLogging] = React.useState(false)
 
   const subtitle = [[med.name, med.dose].filter(Boolean).join(' '), med.frequency]
     .filter(Boolean)
     .join(' · ')
+
+  const handleTaken = async () => {
+    setLogging(true)
+    try {
+      await logAdherence(patientId, med.medication_id, { taken_at: new Date().toISOString() })
+      onRefresh()
+    } finally {
+      setLogging(false)
+    }
+  }
+
+  const handleSkip = async () => {
+    setLogging(true)
+    try {
+      await logAdherence(patientId, med.medication_id, { skipped: true })
+      onRefresh()
+    } finally {
+      setLogging(false)
+    }
+  }
 
   return (
     <NeuCard className="!p-4">
@@ -282,25 +321,104 @@ function MedicationReminderCard({ med }: { med: Medication }) {
           <p className="text-[15px] font-bold text-neu-text">Nhắc uống thuốc</p>
           {subtitle && <p className="text-[13.5px] text-neu-muted truncate">{subtitle}</p>}
         </div>
-        <button
-          type="button"
-          onClick={() => setTaken((v) => !v)}
-          aria-pressed={taken}
-          className={cn(
-            'shrink-0 rounded-full px-4 text-[13px] font-bold transition-transform active:scale-95',
-            'min-h-[40px]',
-            taken ? 'text-neu-secondary' : 'text-white'
-          )}
-          style={
-            taken
-              ? { boxShadow: 'inset -4px -5px 10px #ffffff, inset 5px 6px 12px #bdccc7' }
-              : { background: PINK_GRADIENT, boxShadow: '0 8px 16px -8px rgba(229,84,126,0.6)' }
-          }
-        >
-          {taken ? 'Đã uống ✓' : 'Đã uống'}
-        </button>
+        <div className="flex flex-col gap-1.5 shrink-0">
+          <button
+            type="button"
+            onClick={handleTaken}
+            disabled={logging}
+            className={cn(
+              'rounded-full px-3 text-[12px] font-bold transition-transform active:scale-95',
+              'min-h-[34px] text-white disabled:opacity-50'
+            )}
+            style={{ background: PINK_GRADIENT, boxShadow: '0 8px 16px -8px rgba(229,84,126,0.6)' }}
+          >
+            Đã uống
+          </button>
+          <button
+            type="button"
+            onClick={handleSkip}
+            disabled={logging}
+            className={cn(
+              'rounded-full px-3 text-[12px] font-bold transition-transform active:scale-95',
+              'min-h-[34px] text-neu-secondary disabled:opacity-50'
+            )}
+            style={{ boxShadow: 'inset -4px -5px 10px #ffffff, inset 5px 6px 12px #bdccc7' }}
+          >
+            Bỏ qua
+          </button>
+        </div>
       </div>
     </NeuCard>
+  )
+}
+
+function AdherenceReminderSection({
+  adherenceSummary,
+  patientId,
+  onRefresh,
+}: {
+  adherenceSummary: AdherenceSummary
+  patientId: string
+  onRefresh: () => void
+}) {
+  const unTaken = adherenceSummary.today_medications.filter(
+    (m) => !m.taken_today && !m.skipped_today
+  )
+  const allTakenToday = unTaken.length === 0
+
+  return (
+    <section aria-label="Nhắc uống thuốc hôm nay" className="space-y-2">
+      {allTakenToday ? (
+        <NeuCard className="!p-4">
+          <div className="flex items-center gap-3">
+            <span
+              className="grid size-[52px] shrink-0 place-items-center rounded-[16px] text-white"
+              style={{ background: PINK_GRADIENT, boxShadow: '0 8px 16px -8px rgba(229,84,126,0.6)' }}
+              aria-hidden="true"
+            >
+              <Pill className="size-6" />
+            </span>
+            <p className="text-[15px] font-bold text-neu-green">Đã uống hôm nay ✓</p>
+          </div>
+        </NeuCard>
+      ) : (
+        unTaken.map((med) => (
+          <MedicationCard
+            key={med.medication_id}
+            med={med}
+            patientId={patientId}
+            onRefresh={onRefresh}
+          />
+        ))
+      )}
+
+      {/* ── Mini adherence stats ── */}
+      <div className="flex items-center justify-around rounded-[16px] px-4 py-3 neu-card !shadow-none">
+        <AdherenceStat
+          label="Tuần này"
+          value={`${Math.round(adherenceSummary.weekly_rate * 100)}%`}
+        />
+        <div className="h-8 w-px bg-neu-border" aria-hidden="true" />
+        <AdherenceStat
+          label="Chuỗi"
+          value={`${adherenceSummary.current_streak} ngày`}
+        />
+        <div className="h-8 w-px bg-neu-border" aria-hidden="true" />
+        <AdherenceStat
+          label="Tổng thể"
+          value={`${Math.round(adherenceSummary.adherence_rate * 100)}%`}
+        />
+      </div>
+    </section>
+  )
+}
+
+function AdherenceStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex flex-col items-center gap-0.5">
+      <p className="text-[16px] font-extrabold text-neu-text">{value}</p>
+      <p className="text-[11px] text-neu-muted">{label}</p>
+    </div>
   )
 }
 

@@ -2,13 +2,32 @@
 
 import * as React from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { ArrowLeft, Pill, Layers, Clock, FileText } from 'lucide-react'
+import {
+  ArrowLeft,
+  Pill,
+  Layers,
+  Clock,
+  FileText,
+  Activity,
+  CheckCircle2,
+  XCircle,
+} from 'lucide-react'
 import { useAuth } from '@/lib/auth/context'
-import { getMedications, type Medication } from '@/lib/api/patient'
+import {
+  getMedications,
+  getAdherenceHistory,
+  getAdherenceSummary,
+  logAdherence,
+  type Medication,
+  type MedicationAdherence,
+  type TodayMedication,
+} from '@/lib/api/patient'
 import { PatientErrorState, PatientSkeleton } from '@/components/patient/states'
 import { NeuCard, NeuButton } from '@/components/patient/neu'
 
 const PILL_GRADIENT = 'linear-gradient(160deg,#5B8DEF,#2563EB)'
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function formatDate(dateStr: string): string {
   try {
@@ -22,6 +41,152 @@ function formatDate(dateStr: string): string {
   }
 }
 
+function formatTime(dateStr: string): string {
+  try {
+    return new Date(dateStr).toLocaleTimeString('vi-VN', {
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+  } catch {
+    return dateStr
+  }
+}
+
+/** Returns a short Vietnamese date header for a given ISO date string. */
+function dateHeader(isoDate: string): string {
+  try {
+    const d = new Date(isoDate)
+    const today = new Date()
+    const yesterday = new Date(today)
+    yesterday.setDate(yesterday.getDate() - 1)
+
+    const sameDay = (a: Date, b: Date) =>
+      a.getFullYear() === b.getFullYear() &&
+      a.getMonth() === b.getMonth() &&
+      a.getDate() === b.getDate()
+
+    if (sameDay(d, today)) return 'Hôm nay'
+    if (sameDay(d, yesterday)) return 'Hôm qua'
+
+    return d.toLocaleDateString('vi-VN', { weekday: 'short', day: '2-digit', month: 'numeric' })
+  } catch {
+    return isoDate.slice(0, 10)
+  }
+}
+
+/** ISO date string (YYYY-MM-DD) for a record, using taken_at or created_at. */
+function recordDate(r: MedicationAdherence): string {
+  const ts = r.taken_at ?? r.created_at
+  try {
+    return new Date(ts).toISOString().slice(0, 10)
+  } catch {
+    return ts.slice(0, 10)
+  }
+}
+
+// ── StatChip ──────────────────────────────────────────────────────────────────
+
+type StatChipProps = {
+  label: string
+  value: string
+  color: string
+}
+
+function StatChip({ label, value, color }: StatChipProps) {
+  return (
+    <div className="neu-raised rounded-[14px] p-3.5" style={{ backgroundColor: `${color}18` }}>
+      <p className="text-[11.5px] font-semibold" style={{ color }}>
+        {label}
+      </p>
+      <p className="mt-1.5 text-[15px] font-extrabold text-neu-text leading-tight">{value}</p>
+    </div>
+  )
+}
+
+// ── AdherenceHistoryList ──────────────────────────────────────────────────────
+
+type AdherenceHistoryListProps = {
+  records: MedicationAdherence[]
+}
+
+function AdherenceHistoryList({ records }: AdherenceHistoryListProps) {
+  const visible = records.slice(0, 14)
+
+  // Group by calendar date
+  const groups: { date: string; items: MedicationAdherence[] }[] = []
+  for (const r of visible) {
+    const d = recordDate(r)
+    const last = groups[groups.length - 1]
+    if (last && last.date === d) {
+      last.items.push(r)
+    } else {
+      groups.push({ date: d, items: [r] })
+    }
+  }
+
+  return (
+    <NeuCard className="!p-4">
+      <div className="mb-3 flex items-center gap-2">
+        <Clock className="size-4 text-neu-green" aria-hidden="true" />
+        <p className="text-[13px] font-bold text-neu-text">Lịch sử ({records.length} lần)</p>
+      </div>
+
+      {groups.length === 0 ? (
+        <p className="text-[13px] text-neu-secondary">Chưa có dữ liệu ghi nhận.</p>
+      ) : (
+        <div className="space-y-3">
+          {groups.map((group) => (
+            <div key={group.date}>
+              <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-neu-muted">
+                {dateHeader(group.date)}
+              </p>
+              <div className="space-y-1.5">
+                {group.items.map((r) => {
+                  const ts = r.taken_at ?? r.created_at
+                  if (r.taken_at !== null) {
+                    return (
+                      <div key={r.id} className="flex items-center gap-2.5">
+                        <CheckCircle2 className="size-4 shrink-0 text-[#0F9C6E]" aria-hidden="true" />
+                        <span className="text-[13px] text-neu-text">
+                          {formatTime(ts)}
+                        </span>
+                        {r.note && (
+                          <span className="text-[12px] text-neu-secondary">· {r.note}</span>
+                        )}
+                      </div>
+                    )
+                  }
+                  if (r.skipped) {
+                    return (
+                      <div key={r.id} className="flex items-center gap-2.5">
+                        <XCircle className="size-4 shrink-0 text-neu-muted" aria-hidden="true" />
+                        <span className="text-[13px] text-neu-secondary">Bỏ qua</span>
+                        {r.note && (
+                          <span className="text-[12px] text-neu-subtle">· {r.note}</span>
+                        )}
+                      </div>
+                    )
+                  }
+                  return (
+                    <div key={r.id} className="flex items-center gap-2.5">
+                      <span className="size-4 shrink-0 flex items-center justify-center">
+                        <span className="size-2 rounded-full bg-neu-muted/50" />
+                      </span>
+                      <span className="text-[13px] text-neu-subtle">Không rõ</span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </NeuCard>
+  )
+}
+
+// ── Page ──────────────────────────────────────────────────────────────────────
+
 export default function MedicationDetailPage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
@@ -29,21 +194,40 @@ export default function MedicationDetailPage() {
   const patientId = user?.patient_profile_id
 
   const [medication, setMedication] = React.useState<Medication | null>(null)
+  const [history, setHistory] = React.useState<MedicationAdherence[]>([])
+  const [todayStatus, setTodayStatus] = React.useState<TodayMedication | null>(null)
+  const [adherenceRate, setAdherenceRate] = React.useState<number>(0)
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
+  const [logging, setLogging] = React.useState(false)
 
   const load = React.useCallback(async () => {
     if (!patientId) return
     setLoading(true)
     setError(null)
     try {
-      const res = await getMedications(patientId, { limit: 100 })
-      const found = res.items.find((m) => m.id === id)
+      const [medsRes, historyRes, summaryRes] = await Promise.all([
+        getMedications(patientId, { limit: 100 }),
+        getAdherenceHistory(patientId, id, 30),
+        getAdherenceSummary(patientId),
+      ])
+
+      const found = medsRes.items.find((m) => m.id === id)
       if (!found) {
         setError('Không tìm thấy thông tin thuốc.')
-      } else {
-        setMedication(found)
+        return
       }
+      setMedication(found)
+
+      const safeHistory = Array.isArray(historyRes) ? historyRes : []
+      setHistory(safeHistory)
+
+      const takenCount = safeHistory.filter((r) => r.taken_at !== null).length
+      const rate = safeHistory.length > 0 ? takenCount / safeHistory.length : 0
+      setAdherenceRate(rate)
+
+      const today = summaryRes.today_medications.find((m) => m.medication_id === id) ?? null
+      setTodayStatus(today)
     } catch {
       setError('Không thể tải thông tin thuốc. Vui lòng thử lại.')
     } finally {
@@ -54,6 +238,32 @@ export default function MedicationDetailPage() {
   React.useEffect(() => {
     load()
   }, [load])
+
+  const handleTaken = React.useCallback(async () => {
+    if (!patientId || logging) return
+    setLogging(true)
+    try {
+      await logAdherence(patientId, id, { taken_at: new Date().toISOString() })
+      await load()
+    } catch {
+      // fail silently — user can retry
+    } finally {
+      setLogging(false)
+    }
+  }, [patientId, id, logging, load])
+
+  const handleSkipped = React.useCallback(async () => {
+    if (!patientId || logging) return
+    setLogging(true)
+    try {
+      await logAdherence(patientId, id, { skipped: true })
+      await load()
+    } catch {
+      // fail silently — user can retry
+    } finally {
+      setLogging(false)
+    }
+  }, [patientId, id, logging, load])
 
   if (!patientId) {
     return (
@@ -81,6 +291,16 @@ export default function MedicationDetailPage() {
   if (!medication) return null
 
   const subtitle = [medication.dose, medication.frequency].filter(Boolean).join(' · ')
+
+  const takenToday = todayStatus?.taken_today ?? false
+  const skippedToday = todayStatus?.skipped_today ?? false
+  const lastTakenAt = todayStatus?.last_taken_at ?? (history.find((r) => r.taken_at !== null)?.taken_at ?? null)
+  const lastTakenStr = lastTakenAt
+    ? new Date(lastTakenAt).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })
+    : '—'
+
+  const todayChipValue = takenToday ? 'Đã uống' : skippedToday ? 'Đã bỏ qua' : 'Chưa uống'
+  const todayChipColor = takenToday ? '#0F9C6E' : skippedToday ? '#6B7280' : '#C77A06'
 
   return (
     <div className="p-4 max-w-md mx-auto pb-28 space-y-4">
@@ -118,7 +338,7 @@ export default function MedicationDetailPage() {
         </div>
       </NeuCard>
 
-      {/* Dose / timing chips — only what real data provides */}
+      {/* Dose / timing chips */}
       {(medication.dose || medication.frequency) && (
         <div className="grid grid-cols-2 gap-2.5">
           {medication.dose && (
@@ -144,7 +364,69 @@ export default function MedicationDetailPage() {
         </div>
       )}
 
-      {/* Notes — patient/clinician-entered only (no fabricated guidance) */}
+      {/* Adherence stats — 2×2 grid */}
+      <div>
+        <div className="mb-2 flex items-center gap-2">
+          <Activity className="size-4 text-neu-green" aria-hidden="true" />
+          <p className="text-[13px] font-bold text-neu-text">Tuân thủ điều trị</p>
+        </div>
+        <div className="grid grid-cols-2 gap-2.5">
+          <StatChip
+            label="Tuân thủ (30 ngày)"
+            value={`${Math.round(adherenceRate * 100)}%`}
+            color="#0F9C6E"
+          />
+          <StatChip
+            label="Hôm nay"
+            value={todayChipValue}
+            color={todayChipColor}
+          />
+          <StatChip
+            label="Lần cuối uống"
+            value={lastTakenStr}
+            color="#2563EB"
+          />
+          <StatChip
+            label="Số lần đã ghi"
+            value={String(history.length)}
+            color="#8B6400"
+          />
+        </div>
+      </div>
+
+      {/* Quick-log section */}
+      {takenToday ? (
+        <NeuCard className="!p-4">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="size-5 text-[#0F9C6E]" aria-hidden="true" />
+            <p className="text-[14px] font-bold text-[#0F9C6E]">Đã uống hôm nay</p>
+          </div>
+        </NeuCard>
+      ) : (
+        <NeuCard className="!p-4">
+          <p className="mb-3 text-[13px] font-bold text-neu-text">Ghi hôm nay</p>
+          <div className="flex gap-2.5">
+            <NeuButton
+              variant="primary"
+              className="flex-1 !text-[13px]"
+              onClick={handleTaken}
+              disabled={logging}
+            >
+              {logging ? 'Đang lưu…' : 'Đã uống'}
+            </NeuButton>
+            <NeuButton
+              variant="secondary"
+              className="flex-1 !text-[13px]"
+              onClick={handleSkipped}
+              disabled={logging}
+            >
+              Bỏ qua
+            </NeuButton>
+          </div>
+        </NeuCard>
+      )}
+
+      {/* Notes */}
       {medication.note && (
         <NeuCard className="!p-4">
           <div className="mb-2 flex items-center gap-2">
@@ -154,6 +436,9 @@ export default function MedicationDetailPage() {
           <p className="text-[14px] leading-relaxed text-neu-secondary">{medication.note}</p>
         </NeuCard>
       )}
+
+      {/* Adherence history list */}
+      {history.length > 0 && <AdherenceHistoryList records={history} />}
 
       <p className="px-1 text-[12.5px] text-neu-subtle">
         Thêm ngày {formatDate(medication.created_at)}

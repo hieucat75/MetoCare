@@ -78,3 +78,7 @@ class AdherenceSummaryOut(BaseModel):
     skipped: int
     adherence_rate: float
     today_medications: list[TodayMedicationOut]
+    current_streak: int  # consecutive calendar days with at least 1 taken dose, ending today or yesterday
+    longest_streak: int  # max consecutive days streak ever
+    weekly_rate: float   # adherence rate over last 7 days (0.0-1.0), 0.0 if no records
+    last_taken_at: dt.datetime | None  # most recent taken_at across all medications

@@ -13,8 +13,10 @@ import {
   updateMedication,
   deleteMedication,
   logAdherence,
+  getAdherenceSummary,
   type Medication,
   type MedicationInput,
+  type TodayMedication,
 } from '@/lib/api/patient'
 
 const PILL_GRADIENT = 'linear-gradient(160deg,#5B8DEF,#2563EB)'
@@ -31,15 +33,47 @@ const textareaClass =
 
 type MedRowProps = {
   med: Medication
+  todayStatus: TodayMedication | undefined
   onEdit: () => void
   onDelete: () => void
   onView: () => void
-  onTaken: () => void
-  onSkipped: () => void
+  onLogged: () => void
+  patientId: string
 }
 
-function MedRow({ med, onEdit, onDelete, onView, onTaken, onSkipped }: MedRowProps) {
+function MedRow({ med, todayStatus, onEdit, onDelete, onView, onLogged, patientId }: MedRowProps) {
+  const [logging, setLogging] = React.useState(false)
   const meta = [med.dose, med.frequency].filter(Boolean).join(' · ')
+
+  async function handleTaken() {
+    if (logging) return
+    setLogging(true)
+    try {
+      await logAdherence(patientId, med.id, { taken_at: new Date().toISOString() })
+      onLogged()
+    } catch {
+      // silent — best-effort adherence log
+    } finally {
+      setLogging(false)
+    }
+  }
+
+  async function handleSkipped() {
+    if (logging) return
+    setLogging(true)
+    try {
+      await logAdherence(patientId, med.id, { skipped: true })
+      onLogged()
+    } catch {
+      // silent — best-effort adherence log
+    } finally {
+      setLogging(false)
+    }
+  }
+
+  const isTaken = todayStatus?.taken_today === true
+  const isSkipped = todayStatus?.skipped_today === true
+
   return (
     <NeuCard className="p-4">
       <div className="flex items-start gap-3">
@@ -85,26 +119,73 @@ function MedRow({ med, onEdit, onDelete, onView, onTaken, onSkipped }: MedRowPro
           </button>
         </div>
       </div>
+
       {/* Adherence quick-log */}
-      <div className="mt-3 flex gap-2 border-t border-[#E8F0ED] pt-3">
-        <button
-          type="button"
-          onClick={onTaken}
-          aria-label="Đánh dấu đã uống"
-          className="flex flex-1 items-center justify-center gap-1.5 rounded-[12px] bg-[#E8F7F2] py-2 text-[13px] font-semibold text-[#0F9C6E] transition-transform active:scale-95"
-        >
-          <CheckCircle2 className="size-4" aria-hidden="true" />
-          Đã uống
-        </button>
-        <button
-          type="button"
-          onClick={onSkipped}
-          aria-label="Đánh dấu bỏ qua"
-          className="flex flex-1 items-center justify-center gap-1.5 rounded-[12px] bg-[#F4F4F4] py-2 text-[13px] font-semibold text-neu-muted transition-transform active:scale-95"
-        >
-          <XCircle className="size-4" aria-hidden="true" />
-          Bỏ qua
-        </button>
+      <div className="mt-3 border-t border-[#E8F0ED] pt-3">
+        {isTaken ? (
+          // Taken state: green badge + allow correcting to skipped
+          <div className="flex items-center gap-2">
+            <span
+              className="flex flex-1 items-center gap-1.5 rounded-[12px] px-3 py-2 text-[13px] font-semibold"
+              style={{ background: '#E8F7F2', color: '#0F9C6E' }}
+            >
+              <CheckCircle2 className="size-4 shrink-0" aria-hidden="true" />
+              Đã uống hôm nay
+            </span>
+            <button
+              type="button"
+              onClick={handleSkipped}
+              disabled={logging}
+              aria-label="Đánh dấu bỏ qua"
+              className="flex items-center justify-center gap-1.5 rounded-[12px] bg-[#F4F4F4] px-3 py-2 text-[13px] font-semibold text-neu-muted transition-transform active:scale-95 disabled:opacity-50"
+            >
+              <XCircle className="size-4" aria-hidden="true" />
+              Bỏ qua
+            </button>
+          </div>
+        ) : isSkipped ? (
+          // Skipped state: gray badge + allow marking as taken
+          <div className="flex items-center gap-2">
+            <span className="flex flex-1 items-center gap-1.5 rounded-[12px] bg-[#F4F4F4] px-3 py-2 text-[13px] font-semibold text-neu-muted">
+              <XCircle className="size-4 shrink-0" aria-hidden="true" />
+              Đã bỏ qua hôm nay
+            </span>
+            <button
+              type="button"
+              onClick={handleTaken}
+              disabled={logging}
+              aria-label="Đánh dấu đã uống"
+              className="flex items-center justify-center gap-1.5 rounded-[12px] bg-[#E8F7F2] px-3 py-2 text-[13px] font-semibold text-[#0F9C6E] transition-transform active:scale-95 disabled:opacity-50"
+            >
+              <CheckCircle2 className="size-4" aria-hidden="true" />
+              Đã uống
+            </button>
+          </div>
+        ) : (
+          // Default state: two action buttons
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={handleTaken}
+              disabled={logging}
+              aria-label="Đánh dấu đã uống"
+              className="flex flex-1 items-center justify-center gap-1.5 rounded-[12px] bg-[#E8F7F2] py-2 text-[13px] font-semibold text-[#0F9C6E] transition-transform active:scale-95 disabled:opacity-50"
+            >
+              <CheckCircle2 className="size-4" aria-hidden="true" />
+              {logging ? 'Đang lưu…' : 'Đã uống'}
+            </button>
+            <button
+              type="button"
+              onClick={handleSkipped}
+              disabled={logging}
+              aria-label="Đánh dấu bỏ qua"
+              className="flex flex-1 items-center justify-center gap-1.5 rounded-[12px] bg-[#F4F4F4] py-2 text-[13px] font-semibold text-neu-muted transition-transform active:scale-95 disabled:opacity-50"
+            >
+              <XCircle className="size-4" aria-hidden="true" />
+              {logging ? 'Đang lưu…' : 'Bỏ qua'}
+            </button>
+          </div>
+        )}
       </div>
     </NeuCard>
   )
@@ -338,6 +419,7 @@ export default function MedicationsPage() {
   const patientId = user?.patient_profile_id
 
   const [meds, setMeds] = React.useState<Medication[]>([])
+  const [adherence, setAdherence] = React.useState<Record<string, TodayMedication>>({})
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
 
@@ -351,8 +433,20 @@ export default function MedicationsPage() {
     }
     setLoading(true)
     setError(null)
-    getMedications(patientId, { limit: 50 })
-      .then((res) => setMeds(res.items))
+    Promise.all([
+      getMedications(patientId, { limit: 50 }),
+      getAdherenceSummary(patientId).catch(() => null),
+    ])
+      .then(([medsRes, summaryRes]) => {
+        setMeds(medsRes.items)
+        if (summaryRes) {
+          const map: Record<string, TodayMedication> = {}
+          for (const m of summaryRes.today_medications) {
+            map[m.medication_id] = m
+          }
+          setAdherence(map)
+        }
+      })
       .catch((err: Error) => setError(err.message))
       .finally(() => setLoading(false))
   }, [patientId])
@@ -413,23 +507,18 @@ export default function MedicationsPage() {
             <MedRow
               key={med.id}
               med={med}
+              todayStatus={adherence[med.id]}
+              patientId={patientId}
               onView={() => router.push(`/medications/${med.id}`)}
               onEdit={() => {
                 setEditing(med)
                 setModalOpen(true)
               }}
-              onTaken={() => {
-                logAdherence(patientId, med.id, { taken_at: new Date().toISOString() }).catch(
-                  () => {},
-                )
-              }}
-              onSkipped={() => {
-                logAdherence(patientId, med.id, { skipped: true }).catch(() => {})
-              }}
               onDelete={() => {
                 setEditing(med)
                 setModalOpen(true)
               }}
+              onLogged={load}
             />
           ))}
         </div>

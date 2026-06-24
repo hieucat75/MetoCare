@@ -2,12 +2,12 @@
 
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
-import { Bell, ChevronRight, Lock, LogOut, Pencil, Settings as SettingsIcon } from 'lucide-react'
+import { Activity, Bell, ChevronRight, Lock, LogOut, Pencil, Settings as SettingsIcon } from 'lucide-react'
 import { PatientErrorState, PatientSkeleton } from '@/components/patient/states'
 import { NeuCard, NeuButton } from '@/components/patient/neu'
 import { useAuth } from '@/lib/auth/context'
-import { getPatientProfile, updatePatientProfile } from '@/lib/api/patient'
-import type { PatientProfile } from '@/lib/api/patient'
+import { getAdherenceSummary, getPatientProfile, updatePatientProfile } from '@/lib/api/patient'
+import type { AdherenceSummary, PatientProfile } from '@/lib/api/patient'
 
 const NEU_INPUT =
   'w-full rounded-[12px] border border-[#C8D8D4] bg-white/60 px-3 py-2.5 text-[15px] text-neu-text placeholder:text-neu-subtle focus:border-[#0F9C6E] focus:outline-none focus:ring-2 focus:ring-[#0F9C6E]/20 transition-colors'
@@ -125,6 +125,7 @@ export default function ProfilePage() {
   const patientId = user?.patient_profile_id
 
   const [profile, setProfile] = React.useState<PatientProfile | null>(null)
+  const [adherenceSummary, setAdherenceSummary] = React.useState<AdherenceSummary | null>(null)
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
 
@@ -181,6 +182,7 @@ export default function ProfilePage() {
       .then((p) => setProfile(p))
       .catch((err: Error) => setError(err.message))
       .finally(() => setLoading(false))
+    getAdherenceSummary(patientId).then(setAdherenceSummary).catch(() => {})
   }, [patientId])
 
   React.useEffect(() => {
@@ -438,6 +440,43 @@ export default function ProfilePage() {
                   <p className="mt-0.5 text-[14px] leading-relaxed text-neu-text">{d.value}</p>
                 </div>
               ))}
+            </NeuCard>
+          )}
+
+          {/* Adherence summary */}
+          {adherenceSummary && adherenceSummary.total_doses_logged > 0 && (
+            <NeuCard className="!p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <Activity className="size-4 text-neu-green" aria-hidden="true" />
+                <p className="text-[13px] font-bold text-neu-text">Tuân thủ điều trị</p>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-[12px] bg-[#E8F7F2] p-3">
+                  <p className="text-[11px] font-semibold text-[#0F9C6E] uppercase tracking-wide">Tổng thể</p>
+                  <p className="mt-1 text-[22px] font-extrabold text-neu-text">{Math.round(adherenceSummary.adherence_rate * 100)}%</p>
+                </div>
+                <div className="rounded-[12px] bg-[#F0F4FF] p-3">
+                  <p className="text-[11px] font-semibold text-[#2563EB] uppercase tracking-wide">7 ngày qua</p>
+                  <p className="mt-1 text-[22px] font-extrabold text-neu-text">{Math.round(adherenceSummary.weekly_rate * 100)}%</p>
+                </div>
+                <div className="rounded-[12px] bg-[#FFF4E5] p-3">
+                  <p className="text-[11px] font-semibold text-[#C77A06] uppercase tracking-wide">Chuỗi hiện tại</p>
+                  <p className="mt-1 text-[22px] font-extrabold text-neu-text">
+                    {adherenceSummary.current_streak}
+                    <span className="text-[13px] font-semibold text-neu-muted ml-1">ngày</span>
+                  </p>
+                </div>
+                <div className="rounded-[12px] bg-[#F5F0FF] p-3">
+                  <p className="text-[11px] font-semibold text-[#6D3FBE] uppercase tracking-wide">Kỷ lục</p>
+                  <p className="mt-1 text-[22px] font-extrabold text-neu-text">
+                    {adherenceSummary.longest_streak}
+                    <span className="text-[13px] font-semibold text-neu-muted ml-1">ngày</span>
+                  </p>
+                </div>
+              </div>
+              <p className="mt-3 text-[12px] text-neu-subtle">
+                Đã ghi {adherenceSummary.taken} lần uống · {adherenceSummary.skipped} lần bỏ qua
+              </p>
             </NeuCard>
           )}
 

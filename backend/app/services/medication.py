@@ -204,6 +204,59 @@ def get_adherence(
     return rows
 
 
+def _compute_streaks(taken_dates: list[dt.date]) -> tuple[int, int]:
+    """Return *(current_streak, longest_streak)* from a list of unique UTC dates.
+
+    Args:
+        taken_dates: Sorted list of unique calendar dates where patient took at
+            least one dose.  May be unsorted — this function sorts internally.
+
+    Returns:
+        A tuple ``(current_streak, longest_streak)`` where:
+        - *current_streak* counts consecutive days ending at today or yesterday
+          (UTC).  If the most recent taken date is before yesterday the streak
+          is 0.
+        - *longest_streak* is the maximum run of consecutive calendar days
+          anywhere in the history.
+    """
+    if not taken_dates:
+        return 0, 0
+
+    unique_sorted = sorted(set(taken_dates))
+    today = utcnow().date()
+    yesterday = today - dt.timedelta(days=1)
+
+    # Longest streak: scan forward through sorted unique dates
+    longest = 1
+    run = 1
+    for i in range(1, len(unique_sorted)):
+        gap = (unique_sorted[i] - unique_sorted[i - 1]).days
+        if gap == 1:
+            run += 1
+            if run > longest:
+                longest = run
+        else:
+            run = 1
+
+    # Current streak: walk backwards from today / yesterday
+    most_recent = unique_sorted[-1]
+    if most_recent < yesterday:
+        return 0, longest
+
+    # Walk backwards counting consecutive days from the anchor
+    anchor = most_recent
+    current = 1
+    for i in range(len(unique_sorted) - 2, -1, -1):
+        gap = (anchor - unique_sorted[i]).days
+        if gap == 1:
+            current += 1
+            anchor = unique_sorted[i]
+        else:
+            break
+
+    return current, longest
+
+
 def adherence_summary(
     db: Session,
     *,
@@ -217,6 +270,7 @@ def adherence_summary(
 
     today_start = utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     today_end = today_start + dt.timedelta(days=1)
+    week_start = today_start - dt.timedelta(days=7)
 
     all_records = list(
         db.execute(
@@ -229,6 +283,29 @@ def adherence_summary(
     taken = sum(1 for r in all_records if r.taken_at is not None)
     skipped = sum(1 for r in all_records if r.skipped)
     adherence_rate = round(taken / total, 4) if total > 0 else 0.0
+
+    # last_taken_at: most recent taken_at across all records
+    last_taken_at = max(
+        (r.taken_at for r in all_records if r.taken_at is not None),
+        default=None,
+    )
+
+    # weekly_rate: taken / total in last 7 days
+    week_records = [
+        r for r in all_records
+        if as_naive_utc(r.created_at) >= week_start
+    ]
+    total_in_week = len(week_records)
+    taken_in_week = sum(1 for r in week_records if r.taken_at is not None)
+    weekly_rate = round(taken_in_week / total_in_week, 4) if total_in_week > 0 else 0.0
+
+    # streaks: unique UTC calendar dates where a dose was taken
+    taken_dates = [
+        as_naive_utc(r.taken_at).date()
+        for r in all_records
+        if r.taken_at is not None
+    ]
+    current_streak, longest_streak = _compute_streaks(taken_dates)
 
     _, active_meds = list_medications(db, patient_id=patient_id, limit=100)
 
@@ -260,4 +337,8 @@ def adherence_summary(
         "skipped": skipped,
         "adherence_rate": adherence_rate,
         "today_medications": today_medications,
+        "current_streak": current_streak,
+        "longest_streak": longest_streak,
+        "weekly_rate": weekly_rate,
+        "last_taken_at": last_taken_at,
     }
