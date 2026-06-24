@@ -1,6 +1,19 @@
-import { redirect } from 'next/navigation'
+'use client'
 
-// Root "/" → patient dashboard; patient layout handles auth redirect to /login
+import { useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+
 export default function Home() {
-  redirect('/dashboard')
+  const router = useRouter()
+
+  useEffect(() => {
+    const seen = localStorage.getItem('intro_seen')
+    if (seen) {
+      router.replace('/dashboard')
+    } else {
+      router.replace('/intro')
+    }
+  }, [router])
+
+  return null
 }

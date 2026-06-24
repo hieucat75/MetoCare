@@ -14,6 +14,8 @@ import {
   ClipboardList,
   Utensils,
   LogOut,
+  FileText,
+  Accessibility,
 } from 'lucide-react'
 import { AppShell, Sidebar, TopNav, PageLoading } from '@/design-system'
 import type { NavItem } from '@/design-system'
@@ -64,6 +66,18 @@ const NAV_ITEMS: NavItem[] = [
     icon: <Bell className="w-5 h-5" />,
     href: '/notifications',
   },
+  {
+    id: 'report',
+    label: 'Báo cáo',
+    icon: <FileText className="w-5 h-5" />,
+    href: '/report',
+  },
+  {
+    id: 'accessibility',
+    label: 'Trợ năng',
+    icon: <Accessibility className="w-5 h-5" />,
+    href: '/accessibility',
+  },
   { id: 'profile', label: 'Hồ sơ', icon: <User className="w-5 h-5" />, href: '/profile' },
   { id: 'settings', label: 'Cài đặt', icon: <Settings className="w-5 h-5" />, href: '/settings' },
 ]
@@ -83,6 +97,8 @@ const PAGE_TITLES: Record<string, string> = {
   '/profile': 'Hồ sơ cá nhân',
   '/settings': 'Cài đặt',
   '/consents': 'Đồng ý chia sẻ',
+  '/accessibility': 'Trợ năng',
+  '/report': 'Báo cáo sức khoẻ',
 }
 
 function getPageTitle(pathname: string): string {
@@ -156,6 +172,10 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
     '/medications',
     '/settings',
     '/ai-assistant',
+    '/nutrition',
+    '/consents',
+    '/accessibility',
+    '/report',
   ])
   const hideMobileTopBar = NEU_TOPBAR_HIDDEN.has(pathname) || isMetricDetail || isMedicationDetail
 

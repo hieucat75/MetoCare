@@ -2,31 +2,45 @@
 
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
-import { CheckCircle2, ArrowRight, ArrowLeft } from 'lucide-react'
-import {
-  Button,
-  Card,
-  CardContent,
-  FormField,
-  Input,
-  Select,
-  Textarea,
-  Alert,
-} from '@/design-system'
+import { CheckCircle2, ArrowRight, ArrowLeft, Ruler, Weight, Maximize2 } from 'lucide-react'
+import { NeuCard, NeuButton } from '@/components/patient/neu'
 import { useAuth } from '@/lib/auth/context'
 import { getPatientProfile, updatePatientProfile } from '@/lib/api/patient'
+
+// ─── Constants ────────────────────────────────────────────────────────────────
 
 const GENDER_OPTIONS = [
   { value: 'male', label: 'Nam' },
   { value: 'female', label: 'Nữ' },
   { value: 'other', label: 'Khác' },
-]
+] as const
 
-const STEPS = ['Thông tin cơ bản', 'Bệnh sử', 'Mục tiêu sức khỏe'] as const
+const CONDITION_OPTIONS = [
+  'Đái tháo đường type 2',
+  'Tăng huyết áp',
+  'Rối loạn mỡ máu',
+  'Béo phì',
+  'Bệnh tim mạch',
+  'Gan nhiễm mỡ',
+  'Suy thận',
+  'Khác',
+] as const
+
+const STEPS = [
+  'Thông tin cơ bản',
+  'Bệnh lý hiện tại',
+  'Tiền sử & thuốc',
+  'Chỉ số nền',
+  'Hoàn tất',
+] as const
+
+const TOTAL_STEPS = STEPS.length
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface OnboardingForm {
   full_name: string
-  dob: string // display format DD/MM/YYYY
+  dob: string
   gender: string
   height_cm: string
   weight_kg: string
@@ -50,18 +64,20 @@ const EMPTY: OnboardingForm = {
   lifestyle_profile: '',
 }
 
+// ─── Date helpers ─────────────────────────────────────────────────────────────
+
 function todayISO(): string {
   const now = new Date()
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
 }
 
-// ── DOB: short DD/MM/YYYY display <-> ISO YYYY-MM-DD (no native long format) ──
 function isoToDisplay(iso: string | null | undefined): string {
   if (!iso) return ''
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso)
   return m ? `${m[3]}/${m[2]}/${m[1]}` : ''
 }
+
 function displayToIso(disp: string): string | null {
   const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(disp.trim())
   if (!m) return null
@@ -70,10 +86,411 @@ function displayToIso(disp: string): string | null {
   if (isNaN(d.getTime()) || d.getDate() !== +dd || d.getMonth() + 1 !== +mm) return null
   return `${yyyy}-${mm}-${dd}`
 }
+
 function formatDobInput(raw: string): string {
   const digits = raw.replace(/\D/g, '').slice(0, 8)
   return [digits.slice(0, 2), digits.slice(2, 4), digits.slice(4, 8)].filter(Boolean).join('/')
 }
+
+// ─── Shared input styles ──────────────────────────────────────────────────────
+
+const INPUT_CLS =
+  'w-full border-2 border-[#C8D8D4] rounded-[14px] px-4 py-3 bg-white/60 backdrop-blur text-neu-text placeholder:text-neu-muted focus:outline-none focus:border-[#0F9C6E] transition-colors'
+
+const LABEL_CLS = 'block text-[13px] font-semibold text-neu-muted uppercase tracking-wide mb-1.5'
+
+// ─── Sub-components ───────────────────────────────────────────────────────────
+
+function FieldLabel({ children }: { children: React.ReactNode }) {
+  return <span className={LABEL_CLS}>{children}</span>
+}
+
+function FieldError({ message }: { message: string }) {
+  return <p className="text-[13px] text-red-500 mt-1">{message}</p>
+}
+
+function ProgressBar({ step }: { step: number }) {
+  const pct = ((step + 1) / TOTAL_STEPS) * 100
+  return (
+    <div
+      className="h-[3px] bg-[#C8D8D4] rounded-full overflow-hidden"
+      role="progressbar"
+      aria-valuenow={step + 1}
+      aria-valuemax={TOTAL_STEPS}
+      aria-label={`Bước ${step + 1} trên ${TOTAL_STEPS}`}
+    >
+      <div
+        className="h-full bg-[#0F9C6E] rounded-full transition-all duration-500"
+        style={{ width: `${pct}%` }}
+      />
+    </div>
+  )
+}
+
+// ─── Step screens ─────────────────────────────────────────────────────────────
+
+interface StepBasicsProps {
+  form: OnboardingForm
+  onSet: <K extends keyof OnboardingForm>(key: K, value: string) => void
+  fieldError: string | null
+}
+
+function StepBasics({ form, onSet, fieldError }: StepBasicsProps) {
+  return (
+    <div className="space-y-4">
+      <div>
+        <label htmlFor="full_name">
+          <FieldLabel>Họ và tên</FieldLabel>
+        </label>
+        <input
+          id="full_name"
+          className={INPUT_CLS}
+          value={form.full_name}
+          onChange={(e) => onSet('full_name', e.target.value)}
+          placeholder="Nguyễn Văn An"
+          autoComplete="name"
+        />
+      </div>
+
+      <div>
+        <label htmlFor="dob">
+          <FieldLabel>Ngày sinh</FieldLabel>
+        </label>
+        <input
+          id="dob"
+          className={INPUT_CLS}
+          type="text"
+          inputMode="numeric"
+          value={form.dob}
+          onChange={(e) => onSet('dob', formatDobInput(e.target.value))}
+          placeholder="DD/MM/YYYY"
+          maxLength={10}
+        />
+        <p className="text-[12px] text-neu-muted mt-1">Định dạng: ngày/tháng/năm</p>
+      </div>
+
+      <div>
+        <label htmlFor="gender">
+          <FieldLabel>Giới tính</FieldLabel>
+        </label>
+        <select
+          id="gender"
+          className={INPUT_CLS}
+          value={form.gender}
+          onChange={(e) => onSet('gender', e.target.value)}
+        >
+          <option value="">Chọn giới tính</option>
+          {GENDER_OPTIONS.map((g) => (
+            <option key={g.value} value={g.value}>
+              {g.label}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="grid grid-cols-3 gap-3">
+        <div>
+          <label htmlFor="height_cm">
+            <FieldLabel>Chiều cao</FieldLabel>
+          </label>
+          <input
+            id="height_cm"
+            className={INPUT_CLS}
+            type="number"
+            step="0.1"
+            value={form.height_cm}
+            onChange={(e) => onSet('height_cm', e.target.value)}
+            placeholder="cm"
+          />
+        </div>
+        <div>
+          <label htmlFor="weight_kg">
+            <FieldLabel>Cân nặng</FieldLabel>
+          </label>
+          <input
+            id="weight_kg"
+            className={INPUT_CLS}
+            type="number"
+            step="0.1"
+            value={form.weight_kg}
+            onChange={(e) => onSet('weight_kg', e.target.value)}
+            placeholder="kg"
+          />
+        </div>
+        <div>
+          <label htmlFor="waist_cm">
+            <FieldLabel>Vòng eo</FieldLabel>
+          </label>
+          <input
+            id="waist_cm"
+            className={INPUT_CLS}
+            type="number"
+            step="0.1"
+            value={form.waist_cm}
+            onChange={(e) => onSet('waist_cm', e.target.value)}
+            placeholder="cm"
+          />
+        </div>
+      </div>
+
+      {fieldError && <FieldError message={fieldError} />}
+    </div>
+  )
+}
+
+interface StepConditionsProps {
+  form: OnboardingForm
+  onSet: <K extends keyof OnboardingForm>(key: K, value: string) => void
+}
+
+function StepConditions({ form, onSet }: StepConditionsProps) {
+  const selected = React.useMemo(
+    () => new Set(form.known_conditions ? form.known_conditions.split(',').map((s) => s.trim()) : []),
+    [form.known_conditions]
+  )
+
+  function toggle(condition: string) {
+    const next = new Set(selected)
+    if (next.has(condition)) {
+      next.delete(condition)
+    } else {
+      next.add(condition)
+    }
+    onSet('known_conditions', Array.from(next).join(', '))
+  }
+
+  return (
+    <div className="space-y-3">
+      <p className="text-[14px] text-neu-muted leading-relaxed">
+        Chọn tất cả các bệnh lý bạn đang mắc hoặc đã được chẩn đoán.
+      </p>
+      <div className="grid grid-cols-2 gap-2">
+        {CONDITION_OPTIONS.map((cond) => {
+          const isChecked = selected.has(cond)
+          return (
+            <button
+              key={cond}
+              type="button"
+              onClick={() => toggle(cond)}
+              className={[
+                'text-left px-3 py-2.5 rounded-[12px] border-2 text-[14px] font-medium transition-all duration-150',
+                isChecked
+                  ? 'border-[#0F9C6E] bg-[#0F9C6E]/10 text-[#0F9C6E]'
+                  : 'border-[#C8D8D4] bg-white/50 text-neu-text hover:border-[#0F9C6E]/50',
+              ].join(' ')}
+              aria-pressed={isChecked}
+            >
+              {cond}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+interface StepHistoryProps {
+  form: OnboardingForm
+  onSet: <K extends keyof OnboardingForm>(key: K, value: string) => void
+}
+
+function StepHistory({ form, onSet }: StepHistoryProps) {
+  return (
+    <div className="space-y-4">
+      <div>
+        <label htmlFor="allergies">
+          <FieldLabel>Dị ứng</FieldLabel>
+        </label>
+        <textarea
+          id="allergies"
+          className={`${INPUT_CLS} resize-none`}
+          rows={2}
+          value={form.allergies}
+          onChange={(e) => onSet('allergies', e.target.value)}
+          placeholder="VD: Penicillin, hải sản… (ghi 'Không' nếu không có)"
+        />
+      </div>
+
+      <div>
+        <label htmlFor="family_history">
+          <FieldLabel>Tiền sử gia đình</FieldLabel>
+        </label>
+        <textarea
+          id="family_history"
+          className={`${INPUT_CLS} resize-none`}
+          rows={2}
+          value={form.family_history}
+          onChange={(e) => onSet('family_history', e.target.value)}
+          placeholder="VD: Cha bị tiểu đường type 2…"
+        />
+      </div>
+
+      <div>
+        <label htmlFor="lifestyle_profile">
+          <FieldLabel>Lối sống</FieldLabel>
+        </label>
+        <textarea
+          id="lifestyle_profile"
+          className={`${INPUT_CLS} resize-none`}
+          rows={3}
+          value={form.lifestyle_profile}
+          onChange={(e) => onSet('lifestyle_profile', e.target.value)}
+          placeholder="VD: Giảm 5kg trong 3 tháng, đi bộ 30 phút mỗi ngày…"
+        />
+      </div>
+    </div>
+  )
+}
+
+interface StepBaselineProps {
+  form: OnboardingForm
+  onNext: () => void
+}
+
+function StepBaseline({ form, onNext }: StepBaselineProps) {
+  const hasMetrics = form.height_cm || form.weight_kg || form.waist_cm
+
+  return (
+    <div className="space-y-5">
+      <p className="text-[14px] text-neu-muted leading-relaxed">
+        Các chỉ số này sẽ là nền tảng theo dõi tiến trình của bạn.
+      </p>
+
+      {hasMetrics ? (
+        <div className="space-y-3">
+          {form.height_cm && (
+            <div className="flex items-center gap-3 p-3 rounded-[14px] bg-white/60 border border-[#C8D8D4]">
+              <Ruler className="size-5 text-[#0F9C6E] shrink-0" aria-hidden />
+              <div>
+                <p className="text-[12px] text-neu-muted uppercase tracking-wide font-semibold">Chiều cao</p>
+                <p className="text-[18px] font-bold text-neu-text">{form.height_cm} cm</p>
+              </div>
+            </div>
+          )}
+          {form.weight_kg && (
+            <div className="flex items-center gap-3 p-3 rounded-[14px] bg-white/60 border border-[#C8D8D4]">
+              <Weight className="size-5 text-[#0F9C6E] shrink-0" aria-hidden />
+              <div>
+                <p className="text-[12px] text-neu-muted uppercase tracking-wide font-semibold">Cân nặng</p>
+                <p className="text-[18px] font-bold text-neu-text">{form.weight_kg} kg</p>
+              </div>
+            </div>
+          )}
+          {form.waist_cm && (
+            <div className="flex items-center gap-3 p-3 rounded-[14px] bg-white/60 border border-[#C8D8D4]">
+              <Maximize2 className="size-5 text-[#0F9C6E] shrink-0" aria-hidden />
+              <div>
+                <p className="text-[12px] text-neu-muted uppercase tracking-wide font-semibold">Vòng eo</p>
+                <p className="text-[18px] font-bold text-neu-text">{form.waist_cm} cm</p>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : (
+        <p className="text-[14px] text-neu-muted italic">
+          Chưa có chỉ số nào. Bạn có thể ghi nhận chỉ số đầu tiên bên dưới.
+        </p>
+      )}
+
+      {/* B3-04 placeholder */}
+      <div className="rounded-[12px] bg-[#0F9C6E]/8 border border-[#0F9C6E]/20 px-4 py-3">
+        <p className="text-[13px] text-[#0F9C6E] font-medium">
+          Ngưỡng mục tiêu sẽ được bác sĩ cài đặt sau khi kết nối với phòng khám.
+        </p>
+      </div>
+
+      <button
+        type="button"
+        onClick={onNext}
+        className="w-full text-[14px] font-semibold text-[#0F9C6E] underline underline-offset-2 text-center py-2"
+      >
+        Ghi nhận chỉ số đầu tiên →
+      </button>
+    </div>
+  )
+}
+
+interface StepCompleteProps {
+  form: OnboardingForm
+  onFinish: () => void
+  saving: boolean
+}
+
+function StepComplete({ form, onFinish, saving }: StepCompleteProps) {
+  const conditions = form.known_conditions
+    ? form.known_conditions
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
+    : []
+
+  return (
+    <div className="space-y-5 text-center">
+      <div className="flex flex-col items-center gap-3">
+        <div className="size-16 rounded-full bg-[#0F9C6E]/15 flex items-center justify-center">
+          <CheckCircle2 className="size-9 text-[#0F9C6E]" aria-hidden />
+        </div>
+        <h2 className="text-[22px] font-bold text-neu-text">Chào mừng bạn đến MetoCare!</h2>
+        <p className="text-[14px] text-neu-muted leading-relaxed">
+          Hồ sơ sức khỏe của bạn đã sẵn sàng. Cùng bắt đầu hành trình chăm sóc sức khỏe nhé!
+        </p>
+      </div>
+
+      {/* Summary */}
+      <div className="text-left space-y-2.5 bg-white/50 rounded-[16px] border border-[#C8D8D4] p-4">
+        {form.full_name && (
+          <SummaryRow label="Họ tên" value={form.full_name} />
+        )}
+        {form.dob && <SummaryRow label="Ngày sinh" value={form.dob} />}
+        {form.gender && (
+          <SummaryRow
+            label="Giới tính"
+            value={GENDER_OPTIONS.find((g) => g.value === form.gender)?.label ?? form.gender}
+          />
+        )}
+        {(form.height_cm || form.weight_kg) && (
+          <SummaryRow
+            label="Chỉ số"
+            value={[
+              form.height_cm ? `${form.height_cm} cm` : '',
+              form.weight_kg ? `${form.weight_kg} kg` : '',
+              form.waist_cm ? `eo ${form.waist_cm} cm` : '',
+            ]
+              .filter(Boolean)
+              .join(' · ')}
+          />
+        )}
+        {conditions.length > 0 && (
+          <SummaryRow label="Bệnh lý" value={conditions.join(', ')} />
+        )}
+      </div>
+
+      {/* B3-05 placeholder */}
+      <div className="rounded-[12px] bg-[#C8D8D4]/40 border border-[#C8D8D4] px-4 py-3 text-left">
+        <p className="text-[13px] text-neu-muted">
+          Kết nối bác sĩ qua mã mời từ phòng khám — tính năng sắp ra mắt.
+        </p>
+      </div>
+
+      <NeuButton variant="primary" onClick={onFinish} disabled={saving}>
+        {saving ? 'Đang lưu…' : 'Đến Tổng quan'}
+      </NeuButton>
+    </div>
+  )
+}
+
+function SummaryRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start gap-2">
+      <span className="text-[12px] font-semibold text-neu-muted uppercase tracking-wide w-20 shrink-0 pt-0.5">
+        {label}
+      </span>
+      <span className="text-[14px] text-neu-text flex-1">{value}</span>
+    </div>
+  )
+}
+
+// ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function OnboardingPage() {
   const router = useRouter()
@@ -84,11 +501,10 @@ export default function OnboardingPage() {
   const [form, setForm] = React.useState<OnboardingForm>(EMPTY)
   const [loadingProfile, setLoadingProfile] = React.useState(true)
   const [saving, setSaving] = React.useState(false)
-  const [error, setError] = React.useState<string | null>(null)
-  const [stepError, setStepError] = React.useState<string | null>(null)
-  const [done, setDone] = React.useState(false)
+  const [globalError, setGlobalError] = React.useState<string | null>(null)
+  const [fieldError, setFieldError] = React.useState<string | null>(null)
 
-  // Auth guard + prefill from any existing profile data (e.g. full_name from register).
+  // Auth guard + prefill from existing profile
   React.useEffect(() => {
     if (isLoading) return
     if (!user) {
@@ -103,7 +519,6 @@ export default function OnboardingPage() {
       .then((p) => {
         setForm((f) => ({
           ...f,
-          // Prefill name from profile, fall back to the registered account name.
           full_name: p.full_name ?? user?.full_name ?? f.full_name,
           dob: isoToDisplay(p.dob),
           gender: p.gender ?? '',
@@ -117,14 +532,14 @@ export default function OnboardingPage() {
         }))
       })
       .catch(() => {
-        /* non-fatal — start from a blank form */
+        // non-fatal — start from a blank form
       })
       .finally(() => setLoadingProfile(false))
   }, [isLoading, user, patientId, router])
 
   const set = <K extends keyof OnboardingForm>(key: K, value: string) => {
     setForm((f) => ({ ...f, [key]: value }))
-    setStepError(null)
+    setFieldError(null)
   }
 
   function validateBasics(): string | null {
@@ -148,53 +563,63 @@ export default function OnboardingPage() {
     return null
   }
 
-  function next() {
+  function goNext() {
     if (step === 0) {
       const err = validateBasics()
       if (err) {
-        setStepError(err)
+        setFieldError(err)
         return
       }
     }
-    setStep((s) => Math.min(s + 1, STEPS.length - 1))
+    setFieldError(null)
+    setStep((s) => Math.min(s + 1, TOTAL_STEPS - 1))
   }
 
-  function back() {
+  function goBack() {
+    setFieldError(null)
     setStep((s) => Math.max(s - 1, 0))
+  }
+
+  // Step 4 CTA: navigate to log metrics (save first)
+  async function goToMetrics() {
+    await saveProfile()
+    router.push('/metrics/log')
+  }
+
+  async function saveProfile() {
+    if (!patientId) return
+    await updatePatientProfile(patientId, {
+      full_name: form.full_name.trim() || null,
+      dob: displayToIso(form.dob),
+      gender: (form.gender as 'male' | 'female' | 'other') || null,
+      height_cm: form.height_cm ? parseFloat(form.height_cm) : null,
+      weight_kg: form.weight_kg ? parseFloat(form.weight_kg) : null,
+      waist_cm: form.waist_cm ? parseFloat(form.waist_cm) : null,
+      known_conditions: form.known_conditions.trim() || null,
+      allergies: form.allergies.trim() || null,
+      family_history: form.family_history.trim() || null,
+      lifestyle_profile: form.lifestyle_profile.trim() || null,
+    })
   }
 
   async function finish() {
     const err = validateBasics()
     if (err) {
       setStep(0)
-      setStepError(err)
+      setFieldError(err)
       return
     }
     if (!patientId) {
-      // No profile to write to — just move on; profile guard will show elsewhere.
       router.replace('/dashboard')
       return
     }
     setSaving(true)
-    setError(null)
+    setGlobalError(null)
     try {
-      await updatePatientProfile(patientId, {
-        full_name: form.full_name.trim() || null,
-        dob: displayToIso(form.dob),
-        gender: (form.gender as 'male' | 'female' | 'other') || null,
-        // phone intentionally omitted — already set at registration (no redundant ask).
-        height_cm: form.height_cm ? parseFloat(form.height_cm) : null,
-        weight_kg: form.weight_kg ? parseFloat(form.weight_kg) : null,
-        waist_cm: form.waist_cm ? parseFloat(form.waist_cm) : null,
-        known_conditions: form.known_conditions.trim() || null,
-        allergies: form.allergies.trim() || null,
-        family_history: form.family_history.trim() || null,
-        lifestyle_profile: form.lifestyle_profile.trim() || null,
-      })
-      setDone(true)
-      setTimeout(() => router.replace('/dashboard'), 1200)
+      await saveProfile()
+      router.replace('/dashboard')
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Lưu hồ sơ thất bại. Vui lòng thử lại.')
+      setGlobalError(e instanceof Error ? e.message : 'Lưu hồ sơ thất bại. Vui lòng thử lại.')
     } finally {
       setSaving(false)
     }
@@ -204,144 +629,84 @@ export default function OnboardingPage() {
     router.replace('/dashboard')
   }
 
+  // ── Loading ──────────────────────────────────────────────────────────────────
   if (isLoading || loadingProfile) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background text-text-muted">
-        Đang tải…
+      <div className="min-h-screen flex items-center justify-center bg-[#E8EEE8]">
+        <p className="text-neu-muted text-[15px]">Đang tải…</p>
       </div>
     )
   }
 
-  if (done) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-background text-center p-6">
-        <CheckCircle2 className="size-16 text-success mb-4" aria-hidden="true" />
-        <h1 className="text-[24px] font-bold text-text mb-1">Hoàn tất hồ sơ!</h1>
-        <p className="text-[17px] text-text-muted">Đang chuyển đến trang tổng quan…</p>
-      </div>
-    )
-  }
-
+  // ── Render ───────────────────────────────────────────────────────────────────
   return (
-    <div className="patient-app min-h-screen flex flex-col">
-      <div className="w-full max-w-lg mx-auto px-4 py-8 flex-1 flex flex-col">
-        {/* Header + progress */}
-        <div className="mb-6">
-          <div className="flex items-center justify-between mb-2">
-            <h1 className="text-[24px] font-bold text-text">Thiết lập hồ sơ</h1>
-            <button
-              type="button"
-              onClick={skip}
-              className="text-[17px] text-text-muted hover:text-text underline underline-offset-2"
+    <div className="min-h-screen bg-[#E8EEE8] flex flex-col">
+      {/* Mint progress bar — fixed at top */}
+      <div className="w-full px-4 pt-5 pb-2 max-w-md mx-auto">
+        <ProgressBar step={step} />
+      </div>
+
+      <div className="flex-1 flex flex-col w-full max-w-md mx-auto px-4 pb-8">
+        {/* Header */}
+        <div className="flex items-center justify-between py-4">
+          <div>
+            <h1 className="text-[20px] font-bold text-neu-text leading-tight">Thiết lập hồ sơ</h1>
+            <p className="text-[13px] text-neu-muted mt-0.5">
+              Bước {step + 1}/{TOTAL_STEPS} · {STEPS[step]}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={skip}
+            className="text-[13px] text-neu-muted hover:text-neu-text underline underline-offset-2 shrink-0"
+          >
+            Bỏ qua
+          </button>
+        </div>
+
+        {/* Global error */}
+        {globalError && (
+          <div className="mb-3 px-4 py-3 rounded-[12px] bg-red-50 border border-red-200">
+            <p className="text-[13px] text-red-600 font-medium">{globalError}</p>
+          </div>
+        )}
+
+        {/* Step card */}
+        <NeuCard className="flex-1">
+          {step === 0 && <StepBasics form={form} onSet={set} fieldError={fieldError} />}
+          {step === 1 && <StepConditions form={form} onSet={set} />}
+          {step === 2 && <StepHistory form={form} onSet={set} />}
+          {step === 3 && <StepBaseline form={form} onNext={goToMetrics} />}
+          {step === 4 && <StepComplete form={form} onFinish={finish} saving={saving} />}
+        </NeuCard>
+
+        {/* Navigation footer */}
+        {step < TOTAL_STEPS - 1 && (
+          <div className="flex items-center gap-3 mt-4">
+            {step > 0 ? (
+              <NeuButton
+                variant="secondary"
+                onClick={goBack}
+                disabled={saving}
+                className="flex items-center justify-center gap-1.5 flex-1"
+              >
+                <ArrowLeft className="size-4" aria-hidden />
+                Quay lại
+              </NeuButton>
+            ) : (
+              <span className="flex-1" />
+            )}
+            <NeuButton
+              variant="primary"
+              onClick={goNext}
+              disabled={saving}
+              className="flex items-center justify-center gap-1.5 flex-1"
             >
-              Bỏ qua
-            </button>
+              Tiếp tục
+              <ArrowRight className="size-4" aria-hidden />
+            </NeuButton>
           </div>
-          <p className="text-[17px] text-text-muted mb-4">
-            Bước {step + 1}/{STEPS.length} · {STEPS[step]}
-          </p>
-          <div className="flex gap-1.5" role="progressbar" aria-valuenow={step + 1} aria-valuemax={STEPS.length}>
-            {STEPS.map((_, i) => (
-              <div
-                key={i}
-                className={`h-1.5 flex-1 rounded-full ${i <= step ? 'bg-mint-500' : 'bg-secondary-100'}`}
-              />
-            ))}
-          </div>
-        </div>
-
-        <Card variant="default" padding="lg" className="flex-1">
-          <CardContent className="space-y-4">
-            {error && <Alert variant="danger" title="Lỗi" >{error}</Alert>}
-            {stepError && <Alert variant="warning" title={stepError} />}
-
-            {/* Step 1 — Basics */}
-            {step === 0 && (
-              <>
-                <FormField label="Họ và tên">
-                  <Input value={form.full_name} onChange={(e) => set('full_name', e.target.value)} placeholder="Nguyễn Văn An" fullWidth />
-                </FormField>
-                <FormField label="Ngày sinh" hint="Định dạng: ngày/tháng/năm">
-                  <Input
-                    type="text"
-                    inputMode="numeric"
-                    value={form.dob}
-                    onChange={(e) => set('dob', formatDobInput(e.target.value))}
-                    placeholder="DD/MM/YYYY"
-                    maxLength={10}
-                    fullWidth
-                  />
-                </FormField>
-                <FormField label="Giới tính">
-                  <Select value={form.gender} onValueChange={(v) => set('gender', v)} options={GENDER_OPTIONS} placeholder="Chọn giới tính" fullWidth />
-                </FormField>
-                <div className="grid grid-cols-2 gap-3">
-                  <FormField label="Chiều cao (cm)">
-                    <Input type="number" step="0.1" value={form.height_cm} onChange={(e) => set('height_cm', e.target.value)} placeholder="cm" fullWidth />
-                  </FormField>
-                  <FormField label="Cân nặng (kg)">
-                    <Input type="number" step="0.1" value={form.weight_kg} onChange={(e) => set('weight_kg', e.target.value)} placeholder="kg" fullWidth />
-                  </FormField>
-                </div>
-              </>
-            )}
-
-            {/* Step 2 — Medical history */}
-            {step === 1 && (
-              <>
-                <FormField label="Vòng eo (cm)">
-                  <Input type="number" step="0.1" value={form.waist_cm} onChange={(e) => set('waist_cm', e.target.value)} placeholder="cm" fullWidth />
-                </FormField>
-                <FormField label="Bệnh lý hiện có">
-                  <Textarea value={form.known_conditions} onChange={(e) => set('known_conditions', e.target.value)} placeholder="VD: Tiền tiểu đường, tăng huyết áp…" rows={2} />
-                </FormField>
-                <FormField label="Dị ứng">
-                  <Textarea value={form.allergies} onChange={(e) => set('allergies', e.target.value)} placeholder="VD: Penicillin, hải sản… (ghi 'Không' nếu không có)" rows={2} />
-                </FormField>
-                <FormField label="Tiền sử gia đình">
-                  <Textarea value={form.family_history} onChange={(e) => set('family_history', e.target.value)} placeholder="VD: Cha bị tiểu đường type 2…" rows={2} />
-                </FormField>
-              </>
-            )}
-
-            {/* Step 3 — Goals / lifestyle */}
-            {step === 2 && (
-              <>
-                <FormField label="Mục tiêu & lối sống">
-                  <Textarea
-                    value={form.lifestyle_profile}
-                    onChange={(e) => set('lifestyle_profile', e.target.value)}
-                    placeholder="VD: Giảm 5kg trong 3 tháng, đi bộ 30 phút mỗi ngày, giảm tinh bột…"
-                    rows={4}
-                  />
-                </FormField>
-                <p className="text-[15px] text-text-muted">
-                  Thông tin này giúp cá nhân hoá kế hoạch theo dõi của bạn. Bạn có thể cập nhật bất cứ lúc nào trong mục Hồ sơ.
-                </p>
-              </>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Actions */}
-        <div className="flex items-center justify-between gap-3 mt-5">
-          {step > 0 ? (
-            <Button variant="outline" onClick={back} disabled={saving}>
-              <ArrowLeft className="size-4 mr-1" aria-hidden="true" /> Quay lại
-            </Button>
-          ) : (
-            <span />
-          )}
-          {step < STEPS.length - 1 ? (
-            <Button variant="mint" onClick={next}>
-              Tiếp tục <ArrowRight className="size-4 ml-1" aria-hidden="true" />
-            </Button>
-          ) : (
-            <Button variant="mint" onClick={finish} loading={saving}>
-              Hoàn tất
-            </Button>
-          )}
-        </div>
+        )}
       </div>
     </div>
   )
