@@ -1,0 +1,125 @@
+# =============================================================================
+# MetoCare — FRONTEND-ONLY Azure Container Apps STAGING deploy
+#
+# Deploys ONLY the patient/web frontend (ca-metocare-frontend). It does NOT:
+#   - build or deploy the backend
+#   - run Alembic / the migration Container Apps Job
+#   - create, delete, or modify any other Azure resource (DB, registry, secrets, RG)
+#
+# The backend revision is left exactly as-is; the workflow verifies it is
+# unchanged after deploy. ACA keeps the previous frontend revision, so rollback
+# is `az containerapp update -n ca-metocare-frontend --image <previous-tag>`
+# (or shift 100% traffic back to the previous revision).
+#
+# Manual only (workflow_dispatch). DigitalOcean production is NOT touched.
+# The full backend+frontend pipeline remains in azure-staging.yml (untouched).
+# =============================================================================
+name: Frontend-only Staging Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Frontend image tag (default: commit SHA)"
+        required: false
+
+permissions:
+  id-token: write # OIDC -> Azure
+  contents: read
+  packages: write # push frontend image to GHCR
+
+env:
+  REGISTRY: ghcr.io
+  RG: rg-metocare-staging
+  ENV_NAME: cae-metocare-staging
+  BACKEND_APP: ca-metocare-backend
+  FRONTEND_APP: ca-metocare-frontend
+
+jobs:
+  deploy-frontend:
+    runs-on: ubuntu-latest
+    environment: azure-staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve image tag
+        id: tag
+        run: echo "tag=${{ github.event.inputs.image_tag || github.sha }}" >> "$GITHUB_OUTPUT"
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Ensure containerapp CLI extension
+        run: az extension add --name containerapp --upgrade --only-show-errors
+
+      - name: Record current state (rollback baseline) + compute FQDNs
+        run: |
+          # Backend FQDN is needed at BUILD time: NEXT_PUBLIC_* is baked into the
+          # bundle. We only READ backend config here — never modify it.
+          DOMAIN=$(az containerapp env show -g "$RG" -n "$ENV_NAME" --query 'properties.defaultDomain' -o tsv)
+          [ -z "$DOMAIN" ] && { echo "::error::cannot resolve ACA env domain"; exit 1; }
+          echo "BACKEND_FQDN=${BACKEND_APP}.${DOMAIN}" >> "$GITHUB_ENV"
+          echo "FRONTEND_FQDN=${FRONTEND_APP}.${DOMAIN}" >> "$GITHUB_ENV"
+
+          BE_REV=$(az containerapp show -g "$RG" -n "$BACKEND_APP" --query properties.latestReadyRevisionName -o tsv)
+          FE_REV=$(az containerapp show -g "$RG" -n "$FRONTEND_APP" --query properties.latestReadyRevisionName -o tsv)
+          FE_IMG=$(az containerapp show -g "$RG" -n "$FRONTEND_APP" --query 'properties.template.containers[0].image' -o tsv)
+          echo "BACKEND_REV_BEFORE=$BE_REV" >> "$GITHUB_ENV"
+          echo "FRONTEND_REV_BEFORE=$FE_REV" >> "$GITHUB_ENV"
+          echo "::notice::Baseline — backend revision: $BE_REV | frontend revision: $FE_REV | frontend image: $FE_IMG"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & push FRONTEND image (frontend only)
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: true
+          build-args: |
+            NEXT_PUBLIC_API_URL=https://${{ env.BACKEND_FQDN }}/api/v1
+          tags: ${{ env.REGISTRY }}/${{ github.repository_owner }}/metocare-frontend:${{ steps.tag.outputs.tag }}
+
+      - name: Update FRONTEND Container App only
+        run: |
+          IMG="${REGISTRY}/${{ github.repository_owner }}/metocare-frontend:${{ steps.tag.outputs.tag }}"
+          API_URL="https://${BACKEND_FQDN}/api/v1"
+          # Update ONLY the frontend app. Backend/jobs/secrets/DB are not referenced.
+          az containerapp update -g "$RG" -n "$FRONTEND_APP" --image "$IMG" \
+            --set-env-vars "NEXT_PUBLIC_API_URL=$API_URL" -o none
+          echo "Deployed frontend image: $IMG"
+
+      - name: Verify — new frontend revision, backend unchanged
+        run: |
+          FE_REV_AFTER=$(az containerapp show -g "$RG" -n "$FRONTEND_APP" --query properties.latestReadyRevisionName -o tsv)
+          BE_REV_AFTER=$(az containerapp show -g "$RG" -n "$BACKEND_APP" --query properties.latestReadyRevisionName -o tsv)
+          echo "Frontend revision: $FRONTEND_REV_BEFORE -> $FE_REV_AFTER"
+          echo "Backend revision:  $BACKEND_REV_BEFORE -> $BE_REV_AFTER"
+          if [ "$FE_REV_AFTER" = "$FRONTEND_REV_BEFORE" ]; then
+            echo "::error::frontend revision did not change — deploy did not take effect"; exit 1
+          fi
+          if [ "$BE_REV_AFTER" != "$BACKEND_REV_BEFORE" ]; then
+            echo "::error::backend revision changed ($BACKEND_REV_BEFORE -> $BE_REV_AFTER) — frontend-only invariant violated"; exit 1
+          fi
+          echo "::notice::OK — new frontend revision $FE_REV_AFTER; backend unchanged ($BE_REV_AFTER)"
+
+      - name: Smoke — /login 200 + dashboard reachable
+        run: |
+          ok=0
+          for i in $(seq 1 30); do
+            L=$(curl -s -o /dev/null -w "%{http_code}" --max-time 20 "https://${FRONTEND_FQDN}/login" || echo 000)
+            D=$(curl -s -o /dev/null -w "%{http_code}" --max-time 20 "https://${FRONTEND_FQDN}/dashboard" || echo 000)
+            echo "  $i: /login -> $L  /dashboard -> $D"
+            if [ "$L" = "200" ] && [ "$D" = "200" ]; then ok=1; break; fi
+            sleep 10
+          done
+          [ "$ok" = "1" ] && echo "✅ frontend healthy" || { echo "::error::frontend smoke failed (P0) — rollback: az containerapp update -n $FRONTEND_APP -g $RG --image <previous tag>"; exit 1; }
