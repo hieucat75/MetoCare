@@ -28,7 +28,14 @@ from app.models.patient import PatientProfile as _PatientProfile
 from app.models.user import User as _UserModel
 from app.models.user import UserRole
 from app.schemas.insight import HealthSummaryOut, MetricInsightOut
-from app.schemas.medication import MedicationCreate, MedicationOut, MedicationUpdate
+from app.schemas.medication import (
+    AdherenceSummaryOut,
+    MedicationAdherenceCreate,
+    MedicationAdherenceOut,
+    MedicationCreate,
+    MedicationOut,
+    MedicationUpdate,
+)
 from app.schemas.nutrition import NutritionLogCreate, NutritionLogOut
 from app.schemas.patient import PatientProfileOut, PatientProfileUpdate, PatientSummaryOut
 from app.schemas.risk_score import (
@@ -647,6 +654,80 @@ def update_medication(
         severity="info",
     )
     db.commit()
+
+# ---------------------------------------------------------------------------
+# Phase 2 — Medication Adherence endpoints
+# ---------------------------------------------------------------------------
+
+@router.get(
+    "/{patient_id}/medications/adherence-summary",
+    response_model=AdherenceSummaryOut,
+    summary="Adherence summary across all active medications",
+)
+def get_adherence_summary(
+    patient_id: str,
+    user: CurrentUser = Depends(current_user),
+    db: Session = Depends(get_session),
+) -> AdherenceSummaryOut:
+    """Return aggregate adherence stats + today's medication list for *patient_id*.
+
+    Access: PATIENT (own), DOCTOR (consent-gated), INTERNAL_ADMIN, SUPER_ADMIN.
+    """
+    _check_read_access(db, patient_id=patient_id, requester=user)
+    summary = medication_svc.adherence_summary(db, patient_id=patient_id)
+    return AdherenceSummaryOut.model_validate(summary)
+
+
+@router.post(
+    "/{patient_id}/medications/{med_id}/adherence",
+    response_model=MedicationAdherenceOut,
+    status_code=status.HTTP_201_CREATED,
+    summary="Log a dose event (taken or skipped) for a medication",
+)
+def log_adherence(
+    patient_id: str,
+    med_id: str,
+    payload: MedicationAdherenceCreate,
+    user: CurrentUser = Depends(current_user),
+    db: Session = Depends(get_session),
+) -> MedicationAdherenceOut:
+    """Record one dose event for *med_id* belonging to *patient_id*.
+
+    Set ``taken_at`` (ISO datetime) when the dose was taken, or
+    ``skipped=true`` when intentionally skipped.  Both fields are optional —
+    a bare POST creates a free-form event with a server-side timestamp.
+
+    Access: PATIENT (own record only). DOCTOR and AI_SERVICE are blocked.
+    """
+    _check_write_access(db, patient_id=patient_id, requester=user)
+    record = medication_svc.log_adherence(
+        db,
+        medication_id=med_id,
+        patient_id=patient_id,
+        data=payload.model_dump(),
+    )
+    return MedicationAdherenceOut.model_validate(record)
+
+
+@router.get(
+    "/{patient_id}/medications/{med_id}/adherence",
+    response_model=list[MedicationAdherenceOut],
+    summary="Adherence history for a single medication",
+)
+def get_medication_adherence(
+    patient_id: str,
+    med_id: str,
+    limit: int = Query(30, ge=1, le=100),
+    user: CurrentUser = Depends(current_user),
+    db: Session = Depends(get_session),
+) -> list[MedicationAdherenceOut]:
+    """Return the *limit* most recent adherence records for *med_id*, newest first."""
+    _check_read_access(db, patient_id=patient_id, requester=user)
+    records = medication_svc.get_adherence(
+        db, medication_id=med_id, patient_id=patient_id, limit=limit
+    )
+    return [MedicationAdherenceOut.model_validate(r) for r in records]
+
 
 # ---------------------------------------------------------------------------
 # T18 — Nutrition Log endpoints

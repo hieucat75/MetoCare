@@ -40,3 +40,41 @@ class MedicationOut(BaseModel):
     created_at: dt.datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class MedicationAdherenceCreate(BaseModel):
+    scheduled_time: dt.datetime | None = None
+    taken_at: dt.datetime | None = None
+    skipped: bool = False
+    note: str | None = Field(None, max_length=1024)
+
+
+class MedicationAdherenceOut(BaseModel):
+    id: str
+    medication_id: str
+    patient_id: str
+    scheduled_time: dt.datetime | None
+    taken_at: dt.datetime | None
+    skipped: bool
+    note: str | None
+    created_at: dt.datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class TodayMedicationOut(BaseModel):
+    medication_id: str
+    name: str
+    dose: str | None
+    frequency: str | None
+    taken_today: bool
+    skipped_today: bool
+    last_taken_at: dt.datetime | None
+
+
+class AdherenceSummaryOut(BaseModel):
+    total_doses_logged: int
+    taken: int
+    skipped: int
+    adherence_rate: float
+    today_medications: list[TodayMedicationOut]

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from sqlalchemy import Boolean, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.crypto import EncryptedString
@@ -99,6 +99,32 @@ class Medication(UUIDPrimaryKey, TimestampMixin, SoftDeleteMixin, Base):
     dose: Mapped[str | None] = mapped_column(String(128))
     # PR-D: human-readable schedule, e.g. "2 lần/ngày", "sáng & tối".
     frequency: Mapped[str | None] = mapped_column(String(128))
+    note: Mapped[str | None] = mapped_column(Text)
+
+
+class MedicationAdherence(UUIDPrimaryKey, TimestampMixin, Base):
+    """One adherence record per dose event.
+
+    A record is created when the patient marks a dose taken or skipped.
+    ``scheduled_time`` is optional (patients without a fixed schedule can still
+    log doses as free-form events). ``taken_at`` is null for skipped records.
+    """
+
+    __tablename__ = "medication_adherence"
+
+    medication_id: Mapped[str] = mapped_column(
+        ForeignKey("medications.id"), index=True, nullable=False
+    )
+    patient_id: Mapped[str] = mapped_column(
+        ForeignKey("patient_profiles.id"), index=True, nullable=False
+    )
+    scheduled_time: Mapped[dt.datetime | None] = mapped_column(
+        DateTime(timezone=True), index=True, nullable=True
+    )
+    taken_at: Mapped[dt.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    skipped: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     note: Mapped[str | None] = mapped_column(Text)
 
 
