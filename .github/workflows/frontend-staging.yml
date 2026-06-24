@@ -93,10 +93,13 @@ jobs:
         run: |
           IMG="${REGISTRY}/${{ github.repository_owner }}/metocare-frontend:${{ steps.tag.outputs.tag }}"
           API_URL="https://${BACKEND_FQDN}/api/v1"
-          # Update ONLY the frontend app. Backend/jobs/secrets/DB are not referenced.
+          # --revision-suffix forces ACA to create a new revision even when the image tag
+          # is already active (single-revision mode deduplicates by image+config hash).
+          SUFFIX="fe-$(echo '${{ steps.tag.outputs.tag }}' | cut -c1-8)"
           az containerapp update -g "$RG" -n "$FRONTEND_APP" --image "$IMG" \
+            --revision-suffix "$SUFFIX" \
             --set-env-vars "NEXT_PUBLIC_API_URL=$API_URL" -o none
-          echo "Deployed frontend image: $IMG"
+          echo "Deployed frontend image: $IMG (revision suffix: $SUFFIX)"
 
       - name: Verify — new frontend revision, backend unchanged
         run: |
