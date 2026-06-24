@@ -72,6 +72,33 @@ jobs:
           echo "FRONTEND_REV_BEFORE=$FE_REV" >> "$GITHUB_ENV"
           echo "::notice::Baseline — backend revision: $BE_REV | frontend revision: $FE_REV | frontend image: $FE_IMG"
 
+      - name: Validate API URL before build
+        run: |
+          API_URL="https://${BACKEND_FQDN}/api/v1"
+
+          if [ -z "$API_URL" ] || [ "$API_URL" = "https:///api/v1" ]; then
+            echo "::error::NEXT_PUBLIC_API_URL is empty — backend FQDN resolution failed"; exit 1
+          fi
+
+          if echo "$API_URL" | grep -qi "api\.metocare\.com"; then
+            echo "::error::NEXT_PUBLIC_API_URL contains dead placeholder domain 'api.metocare.com' (got: $API_URL)"; exit 1
+          fi
+
+          if echo "$API_URL" | grep -qi "localhost"; then
+            echo "::error::NEXT_PUBLIC_API_URL points to localhost — staging must use the live ACA backend (got: $API_URL)"; exit 1
+          fi
+
+          if ! echo "$API_URL" | grep -q "/api/v1$"; then
+            echo "::error::NEXT_PUBLIC_API_URL must end with /api/v1 (got: $API_URL)"; exit 1
+          fi
+
+          HEALTH=$(curl -sf -o /dev/null -w "%{http_code}" --max-time 15 "https://${BACKEND_FQDN}/health" || echo 000)
+          if [ "$HEALTH" != "200" ]; then
+            echo "::error::Backend health check returned $HEALTH for https://${BACKEND_FQDN}/health — cannot build with a dead backend"; exit 1
+          fi
+
+          echo "::notice::Pre-build validation PASSED — API_URL=$API_URL backend /health=$HEALTH"
+
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
@@ -88,6 +115,50 @@ jobs:
           build-args: |
             NEXT_PUBLIC_API_URL=https://${{ env.BACKEND_FQDN }}/api/v1
           tags: ${{ env.REGISTRY }}/${{ github.repository_owner }}/metocare-frontend:${{ steps.tag.outputs.tag }}
+
+      - name: Post-build bundle URL audit
+        run: |
+          IMG="${REGISTRY}/${{ github.repository_owner }}/metocare-frontend:${{ steps.tag.outputs.tag }}"
+          TMPDIR=$(mktemp -d)
+
+          # Extract Next.js static chunks from the runner image
+          docker pull "$IMG" --quiet
+          CID=$(docker create "$IMG")
+          docker cp "$CID:/app/.next/static/chunks" "$TMPDIR/chunks"
+          docker rm "$CID"
+
+          FAIL=0
+
+          # Must NOT contain dead placeholder domain
+          HITS=$(grep -rl "api\.metocare\.com" "$TMPDIR/chunks" 2>/dev/null || true)
+          if [ -n "$HITS" ]; then
+            echo "::error::BUNDLE AUDIT FAILED: 'api.metocare.com' found in built chunks:"
+            echo "$HITS"
+            FAIL=1
+          fi
+
+          # Must NOT contain localhost:8000
+          HITS=$(grep -rl "localhost:8000" "$TMPDIR/chunks" 2>/dev/null || true)
+          if [ -n "$HITS" ]; then
+            echo "::error::BUNDLE AUDIT FAILED: 'localhost:8000' found in built chunks:"
+            echo "$HITS"
+            FAIL=1
+          fi
+
+          # Must contain the correct ACA backend FQDN
+          HITS=$(grep -rl "$BACKEND_FQDN" "$TMPDIR/chunks" 2>/dev/null || true)
+          if [ -z "$HITS" ]; then
+            echo "::error::BUNDLE AUDIT FAILED: '$BACKEND_FQDN' NOT found in built chunks — URL not baked in correctly"
+            FAIL=1
+          fi
+
+          rm -rf "$TMPDIR"
+
+          if [ "$FAIL" = "0" ]; then
+            echo "::notice::Post-build bundle audit PASSED — correct backend FQDN confirmed in JS bundle"
+          else
+            exit 1
+          fi
 
       - name: Update FRONTEND Container App only
         run: |

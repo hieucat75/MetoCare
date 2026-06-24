@@ -61,13 +61,65 @@ Remaining `@/design-system` usage is in: `(patient)/layout.tsx` (shell/nav — o
 
 ---
 
+## P0 Post-Mortem — auth/register "Không thể kết nối máy chủ"
+
+**Date:** 2026-06-24  
+**Severity:** P0 — registration completely broken on staging  
+**Status:** FIXED + guarded
+
+### Root Cause
+
+Manual Docker builds during this session passed `--build-arg NEXT_PUBLIC_API_URL=https://api.metocare.com`. That domain does not exist (DNS NXDOMAIN). `client.ts:1` uses `process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000/api/v1'` — since the env var was set (non-empty) but to a dead hostname, the fallback never triggered. Every fetch from the browser failed at the network layer before reaching the backend, producing the "Không thể kết nối máy chủ" error.
+
+The backend was healthy throughout (`POST /api/v1/auth/register` → 201 when curled directly). No code, schema, or infrastructure change was needed.
+
+### Fix
+
+Rebuilt image with correct arg:
+```
+NEXT_PUBLIC_API_URL=https://ca-metocare-backend.wittyflower-55a3afa4.southeastasia.azurecontainerapps.io/api/v1
+```
+Deployed as revision `ca-metocare-frontend--fe-99bb2274-fix`.
+
+**No source files were changed.** Fix was build-argument only.
+
+### Verification
+
+- JS chunk `7756-d054e54277674906.js` confirmed correct URL, 0 occurrences of `api.metocare.com`
+- `POST /api/v1/auth/register` → **201**, valid JWT returned
+- `GET /api/v1/auth/me` → **200**
+- `GET /onboarding?_rsc` → **200** (new patient redirected correctly)
+- Screenshots: `docs/agent/v1_closure_shots/p0_fix_register_success.png`, `p0_fix_onboarding_redirect.png`
+
+### Prevention Guard
+
+`.github/workflows/frontend-staging.yml` now contains two new steps between "Record current state" and "Build & push":
+
+**Step: Validate API URL before build**
+- Fails if `BACKEND_FQDN` is empty or resolves to `https:///api/v1`
+- Fails if URL contains `api.metocare.com` (dead placeholder)
+- Fails if URL contains `localhost`
+- Fails if URL does not end with `/api/v1`
+- Fails if `GET https://{BACKEND_FQDN}/health` does not return HTTP 200
+
+**Step: Post-build bundle URL audit** (runs after image push, before ACA deploy)
+- Pulls the built image, extracts `/app/.next/static/chunks/`
+- Fails if `api.metocare.com` appears in any JS chunk
+- Fails if `localhost:8000` appears in any JS chunk
+- Fails if the correct ACA backend FQDN does NOT appear in any JS chunk
+
+These guards would have caught the P0 before the image reached ACA. The workflow already derived `BACKEND_FQDN` from Azure at runtime (so the value is always live) — the validation makes that derivation auditable and non-bypassable.
+
+---
+
 ## Staging Deployment
 
 | Field | Value |
 |-------|-------|
-| **Revision** | `ca-metocare-frontend--fe-c18cf7e6` |
-| **Git SHA** | `c18cf7e62a8c6c68cbc23fb8720c350d6cf4a8ec` |
-| **Image** | `ghcr.io/hieucat75/metocare-frontend:c18cf7e62a8c6c68cbc23fb8720c350d6cf4a8ec` |
+| **V1 Baseline revision** | `ca-metocare-frontend--fe-c18cf7e6` |
+| **V1 Baseline SHA** | `c18cf7e62a8c6c68cbc23fb8720c350d6cf4a8ec` |
+| **P0 fix revision** | `ca-metocare-frontend--fe-99bb2274-fix` |
+| **P0 fix image** | `ghcr.io/hieucat75/metocare-frontend:99bb227451255174d163a19c77cf943ecdb9811e-fix` |
 | **Container App** | `ca-metocare-frontend` |
 | **Resource Group** | `rg-metocare-staging` |
 | **Region** | Southeast Asia |
