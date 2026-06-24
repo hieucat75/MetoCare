@@ -32,7 +32,11 @@ export function BrandLogo({ className = 'h-12 w-auto', alt = 'MetoCare', tone = 
 }
 
 /** Icon-only MetoCare mark. Exact image; aspect preserved. */
-export function BrandMark({ className = 'h-9 w-9 object-contain', alt = 'MetoCare', tone = 'color' }: Props) {
+export function BrandMark({
+  className = 'h-9 w-9 object-contain',
+  alt = 'MetoCare',
+  tone = 'color',
+}: Props) {
   const src = tone === 'white' ? '/brand/metocare-mark-white.png' : '/brand/metocare-mark.png'
   // eslint-disable-next-line @next/next/no-img-element
   return <img src={src} alt={alt} className={className} />

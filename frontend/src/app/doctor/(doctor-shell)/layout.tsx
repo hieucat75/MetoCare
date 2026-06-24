@@ -3,14 +3,7 @@
 import * as React from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { BrandLogo, BrandMark } from '@/components/brand'
-import {
-  LayoutDashboard,
-  ClipboardList,
-  Users,
-  Calendar,
-  FileText,
-  LogOut,
-} from 'lucide-react'
+import { LayoutDashboard, ClipboardList, Users, Calendar, FileText, LogOut } from 'lucide-react'
 import { AppShell, Sidebar, TopNav, PageLoading } from '@/design-system'
 import type { NavItem } from '@/design-system'
 import { useAuth } from '@/lib/auth/context'

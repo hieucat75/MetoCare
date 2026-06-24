@@ -60,7 +60,9 @@ function MintInput({
   return (
     <div className="relative">
       {leftIcon && (
-        <div className="absolute inset-y-0 left-0 flex items-center pl-3 text-neu-green">{leftIcon}</div>
+        <div className="absolute inset-y-0 left-0 flex items-center pl-3 text-neu-green">
+          {leftIcon}
+        </div>
       )}
       <input
         id={id}
@@ -80,7 +82,7 @@ function MintInput({
           rightElement && 'pr-10',
           error
             ? 'border-[#D92D20] focus:border-[#D92D20] focus:ring-[#D92D20]/20'
-            : 'border-[rgba(16,48,44,0.12)] focus:border-neu-green focus:ring-neu-green/25',
+            : 'border-[rgba(16,48,44,0.12)] focus:border-neu-green focus:ring-neu-green/25'
         )}
       />
       {rightElement && (
@@ -148,7 +150,8 @@ export default function LoginPage() {
       router.replace(getRoleHomePath(res.role))
     } catch (err) {
       if (err instanceof ApiError) {
-        if (err.status === 401) setError('Mã xác thực không đúng hoặc đã hết hạn. Vui lòng kiểm tra lại.')
+        if (err.status === 401)
+          setError('Mã xác thực không đúng hoặc đã hết hạn. Vui lòng kiểm tra lại.')
         else if (err.status === 423) setError('Tài khoản tạm khóa. Liên hệ admin để mở khóa.')
         else if (err.status === 429) setError('Quá nhiều yêu cầu. Vui lòng thử lại sau ít phút.')
         else setError('Có lỗi xảy ra. Vui lòng thử lại.')
@@ -164,12 +167,18 @@ export default function LoginPage() {
   if (step === 'mfa') {
     return (
       <div>
-        <h1 className="text-[24px] font-extrabold tracking-[-0.02em] text-neu-text mb-1">Xác thực 2 bước</h1>
+        <h1 className="text-[24px] font-extrabold tracking-[-0.02em] text-neu-text mb-1">
+          Xác thực 2 bước
+        </h1>
         <p className="text-[15px] text-neu-muted mb-6">
           Nhập mã 6 số từ ứng dụng xác thực của bạn.
         </p>
 
-        {error && <Alert variant="danger" className="mb-4">{error}</Alert>}
+        {error && (
+          <Alert variant="danger" className="mb-4">
+            {error}
+          </Alert>
+        )}
 
         <form onSubmit={handleMfaSubmit} noValidate>
           <div className="mb-5">
@@ -215,12 +224,18 @@ export default function LoginPage() {
 
   return (
     <div>
-      <h1 className="text-[24px] font-extrabold tracking-[-0.02em] text-neu-text mb-1">Đăng nhập</h1>
+      <h1 className="text-[24px] font-extrabold tracking-[-0.02em] text-neu-text mb-1">
+        Đăng nhập
+      </h1>
       <p className="text-[15px] text-neu-muted mb-6">
         Chào mừng trở lại. Đăng nhập để tiếp tục chăm sóc sức khỏe.
       </p>
 
-      {error && <Alert variant="danger" className="mb-4">{error}</Alert>}
+      {error && (
+        <Alert variant="danger" className="mb-4">
+          {error}
+        </Alert>
+      )}
 
       <form onSubmit={handleCredentialsSubmit} noValidate>
         <div className="mb-4">
@@ -287,7 +302,10 @@ export default function LoginPage() {
 
       <p className="text-center text-[17px] text-text-muted mt-6">
         Chưa có tài khoản?{' '}
-        <Link href="/register" className="text-neu-green font-semibold hover:underline underline-offset-2">
+        <Link
+          href="/register"
+          className="text-neu-green font-semibold hover:underline underline-offset-2"
+        >
           Đăng ký ngay
         </Link>
       </p>
