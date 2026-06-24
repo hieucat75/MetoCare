@@ -1,24 +1,24 @@
 'use client'
 
 import * as React from 'react'
+import { useRouter } from 'next/navigation'
+import { Bell, ChevronRight, Lock, LogOut, Pencil, Settings as SettingsIcon } from 'lucide-react'
 import {
-  PageHeader,
   PageLoading,
   ErrorState,
   Alert,
   Button,
-  Card,
-  CardContent,
   FormField,
   Input,
   Select,
   Textarea,
 } from '@/design-system'
+import { NeuCard, NeuButton } from '@/components/patient/neu'
 import { useAuth } from '@/lib/auth/context'
 import { getPatientProfile, updatePatientProfile } from '@/lib/api/patient'
 import type { PatientProfile } from '@/lib/api/patient'
 
-// ─── Gender options ───────────────────────────────────────────────────────────
+const HERO_GRADIENT = 'linear-gradient(150deg,#1BB082,#0B7F5B)'
 
 const GENDER_OPTIONS = [
   { value: 'male', label: 'Nam' },
@@ -33,8 +33,6 @@ function genderLabel(g: PatientProfile['gender']): string {
   return '—'
 }
 
-// ─── Read-only field row ──────────────────────────────────────────────────────
-
 // ISO YYYY-MM-DD → DD/MM/YYYY (vi-VN). Pass-through for already-short/other values.
 function formatDateVN(v: string | null | undefined): string | null {
   if (!v) return null
@@ -42,37 +40,106 @@ function formatDateVN(v: string | null | undefined): string | null {
   return m ? `${m[3]}/${m[2]}/${m[1]}` : v
 }
 
-function ProfileField({ label, value }: { label: string; value: string | null | undefined }) {
+function ageFromDob(dob: string | null | undefined): number | null {
+  if (!dob) return null
+  const d = new Date(dob)
+  if (Number.isNaN(d.getTime())) return null
+  const now = new Date()
+  let a = now.getFullYear() - d.getFullYear()
+  const m = now.getMonth() - d.getMonth()
+  if (m < 0 || (m === 0 && now.getDate() < d.getDate())) a--
+  return a >= 0 && a < 150 ? a : null
+}
+
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean)
+  if (parts.length === 0) return '?'
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+}
+
+// ─── Compact label → value row (Apple-Health style) ───────────────────────────
+
+function InfoRow({
+  label,
+  value,
+  last,
+}: {
+  label: string
+  value: string | null | undefined
+  last?: boolean
+}) {
   const empty = value == null || value.trim() === ''
   return (
-    <div className="flex flex-col gap-2 py-4 border-b border-mint-100/60 last:border-0">
-      <p className="text-[16px] font-medium text-mint-700">{label}</p>
-      {empty ? (
-        <p className="text-[16px] italic text-text-subtle">Chưa cập nhật</p>
-      ) : (
-        <p className="text-[21px] font-semibold text-text leading-snug">{value}</p>
-      )}
+    <div
+      className={
+        'flex items-start justify-between gap-4 py-3' +
+        (last ? '' : ' border-b border-[rgba(16,48,44,0.06)]')
+      }
+    >
+      <span className="shrink-0 text-[14px] text-neu-muted">{label}</span>
+      <span
+        className={
+          empty
+            ? 'text-right text-[14px] italic text-neu-subtle'
+            : 'text-right text-[14px] font-semibold text-neu-text'
+        }
+      >
+        {empty ? 'Chưa cập nhật' : value}
+      </span>
     </div>
+  )
+}
+
+// ─── Quick-link row → existing route ──────────────────────────────────────────
+
+function LinkRow({
+  icon,
+  color,
+  label,
+  onClick,
+  last,
+}: {
+  icon: React.ReactNode
+  color: string
+  label: string
+  onClick: () => void
+  last?: boolean
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={
+        'flex w-full items-center gap-3 py-3.5 text-left' +
+        (last ? '' : ' border-b border-[rgba(16,48,44,0.06)]')
+      }
+    >
+      <span style={{ color }} aria-hidden="true">
+        {icon}
+      </span>
+      <span className="flex-1 text-[14.5px] font-semibold text-neu-text">{label}</span>
+      <ChevronRight className="size-[18px] text-neu-subtle" aria-hidden="true" />
+    </button>
   )
 }
 
 // ─── Profile page ─────────────────────────────────────────────────────────────
 
 export default function ProfilePage() {
-  const { user } = useAuth()
+  const router = useRouter()
+  const { user, logout } = useAuth()
   const patientId = user?.patient_profile_id
 
   const [profile, setProfile] = React.useState<PatientProfile | null>(null)
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
 
-  // Edit mode state
   const [editing, setEditing] = React.useState(false)
   const [saving, setSaving] = React.useState(false)
   const [saveError, setSaveError] = React.useState<string | null>(null)
   const [saveSuccess, setSaveSuccess] = React.useState(false)
 
-  // Form fields
   const [fullName, setFullName] = React.useState('')
   const [dob, setDob] = React.useState('')
   const [phone, setPhone] = React.useState('')
@@ -163,7 +230,6 @@ export default function ProfilePage() {
     setSaving(true)
     setSaveError(null)
     setSaveSuccess(false)
-
     try {
       const updated = await updatePatientProfile(patientId, {
         full_name: fullName.trim() || null,
@@ -189,6 +255,11 @@ export default function ProfilePage() {
     }
   }
 
+  const handleLogout = async () => {
+    await logout()
+    router.replace('/login')
+  }
+
   if (!user) return null
 
   if (!patientId) {
@@ -202,204 +273,354 @@ export default function ProfilePage() {
   }
 
   if (loading) return <PageLoading label="Đang tải..." />
+  if (error) return <ErrorState title="Không thể tải hồ sơ" message={error} onRetry={load} />
 
-  if (error) {
-    return (
-      <ErrorState
-        title="Không thể tải hồ sơ"
-        message={error}
-        onRetry={load}
-      />
-    )
-  }
+  const displayName = profile?.full_name ?? user.email ?? 'Bạn'
+  const age = ageFromDob(profile?.dob)
+  const heroMeta = [genderLabel(profile?.gender ?? null), age != null ? `${age} tuổi` : null]
+    .filter((x) => x && x !== '—')
+    .join(' · ')
+  const conditions = (profile?.known_conditions ?? '')
+    .split(/[,;\n]/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+
+  // Longer free-text health fields — shown only when present (reduce clutter).
+  const healthDetails: { label: string; value: string | null | undefined }[] = [
+    { label: 'Dị ứng', value: profile?.allergies },
+    { label: 'Tiền sử gia đình', value: profile?.family_history },
+    { label: 'Mục tiêu & lối sống', value: profile?.lifestyle_profile },
+  ].filter((d) => d.value && d.value.trim())
 
   return (
-    <div className="p-4 lg:p-6 max-w-md mx-auto lg:max-w-2xl space-y-5">
-      <PageHeader
-        title="Hồ sơ cá nhân"
-        actions={
-          !editing ? (
-            <Button variant="outline" size="sm" onClick={enterEditMode}>
-              Chỉnh sửa
-            </Button>
-          ) : (
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={cancelEdit} disabled={saving}>
-                Hủy
-              </Button>
-              <Button variant="mint" size="sm" onClick={handleSave} loading={saving}>
-                Lưu
-              </Button>
-            </div>
-          )
-        }
-      />
+    <div className="p-4 max-w-md mx-auto pb-28 space-y-4">
+      <h1 className="px-1 text-[21px] font-extrabold tracking-[-0.02em] text-neu-text">Cá nhân</h1>
+
+      {/* Identity hero */}
+      <div
+        className="relative overflow-hidden rounded-[20px] p-5 text-white"
+        style={{ background: HERO_GRADIENT, boxShadow: '0 18px 32px -16px rgba(11,107,77,0.6)' }}
+      >
+        <div className="flex items-center gap-4">
+          <span className="grid size-[60px] shrink-0 place-items-center rounded-full bg-white/20 text-[20px] font-extrabold">
+            {initials(displayName)}
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-[18px] font-extrabold">{displayName}</p>
+            <p className="mt-1 truncate text-[12.5px] text-white/85">{heroMeta || user.email}</p>
+          </div>
+          {!editing && (
+            <button
+              type="button"
+              onClick={enterEditMode}
+              aria-label="Chỉnh sửa hồ sơ"
+              className="grid size-9 shrink-0 place-items-center rounded-full bg-white/20 transition-transform active:scale-90"
+            >
+              <Pencil className="size-[18px]" />
+            </button>
+          )}
+        </div>
+      </div>
 
       {saveSuccess && (
-        <Alert variant="success" title="Cập nhật hồ sơ thành công" dismissible onDismiss={() => setSaveSuccess(false)} />
+        <Alert
+          variant="success"
+          title="Cập nhật hồ sơ thành công"
+          dismissible
+          onDismiss={() => setSaveSuccess(false)}
+        />
       )}
-      {saveError && (
-        <Alert variant="danger" title={saveError} />
-      )}
-      {validationError && (
-        <Alert variant="warning" title={validationError} />
-      )}
+      {saveError && <Alert variant="danger" title={saveError} />}
+      {validationError && <Alert variant="warning" title={validationError} />}
 
-      {/* Email — always read-only */}
-      <Card variant="glass" padding="none">
-        <CardContent className="px-4 py-2">
-          <ProfileField label="Email" value={user.email} />
-        </CardContent>
-      </Card>
-
-      {/* Profile fields */}
-      <Card variant="glass" padding="none">
-        <CardContent className="px-4 py-2">
-          {!editing ? (
-            <>
-              <ProfileField label="Họ tên" value={profile?.full_name} />
-              <ProfileField label="Ngày sinh" value={formatDateVN(profile?.dob)} />
-              <ProfileField label="Số điện thoại" value={profile?.phone} />
-              <ProfileField label="Giới tính" value={genderLabel(profile?.gender ?? null)} />
-              <ProfileField
-                label="Chiều cao (cm)"
-                value={profile?.height_cm != null ? `${profile.height_cm} cm` : null}
-              />
-              <ProfileField
-                label="Cân nặng (kg)"
-                value={profile?.weight_kg != null ? `${profile.weight_kg} kg` : null}
-              />
-              <ProfileField
-                label="Vòng eo (cm)"
-                value={profile?.waist_cm != null ? `${profile.waist_cm} cm` : null}
-              />
-              <ProfileField label="Địa chỉ" value={profile?.address} />
-              <ProfileField label="Bệnh lý hiện có" value={profile?.known_conditions} />
-              <ProfileField label="Dị ứng" value={profile?.allergies} />
-              <ProfileField label="Tiền sử gia đình" value={profile?.family_history} />
-              <ProfileField label="Mục tiêu & lối sống" value={profile?.lifestyle_profile} />
-            </>
-          ) : (
-            <div className="space-y-4 py-3">
-              <FormField label="Họ tên">
-                <Input
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  placeholder="Nhập họ tên"
-                  fullWidth
-                />
-              </FormField>
-
-              <FormField label="Ngày sinh">
-                <Input
-                  type="date"
-                  value={dob}
-                  onChange={(e) => setDob(e.target.value)}
-                  fullWidth
-                />
-              </FormField>
-
-              <FormField label="Số điện thoại">
-                <Input
-                  type="tel"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder="Nhập số điện thoại"
-                  fullWidth
-                />
-              </FormField>
-
-              <FormField label="Giới tính">
-                <Select
-                  value={gender}
-                  onValueChange={setGender}
-                  options={GENDER_OPTIONS}
-                  placeholder="Chọn giới tính"
-                  fullWidth
-                />
-              </FormField>
-
-              <FormField label="Chiều cao (cm)">
-                <Input
-                  type="number"
-                  step="0.1"
-                  value={heightCm}
-                  onChange={(e) => setHeightCm(e.target.value)}
-                  placeholder="cm"
-                  fullWidth
-                />
-              </FormField>
-
-              <FormField label="Cân nặng (kg)">
-                <Input
-                  type="number"
-                  step="0.1"
-                  value={weightKg}
-                  onChange={(e) => setWeightKg(e.target.value)}
-                  placeholder="kg"
-                  fullWidth
-                />
-              </FormField>
-
-              <FormField label="Vòng eo (cm)">
-                <Input
-                  type="number"
-                  step="0.1"
-                  value={waistCm}
-                  onChange={(e) => setWaistCm(e.target.value)}
-                  placeholder="cm"
-                  fullWidth
-                />
-              </FormField>
-
-              <FormField label="Địa chỉ">
-                <Input
-                  value={address}
-                  onChange={(e) => setAddress(e.target.value)}
-                  placeholder="Nhập địa chỉ"
-                  fullWidth
-                />
-              </FormField>
-
-              <FormField label="Bệnh lý hiện có">
-                <Textarea
-                  value={knownConditions}
-                  onChange={(e) => setKnownConditions(e.target.value)}
-                  placeholder="VD: Tiền tiểu đường, tăng huyết áp…"
-                  rows={2}
-                />
-              </FormField>
-
-              <FormField label="Dị ứng">
-                <Textarea
-                  value={allergies}
-                  onChange={(e) => setAllergies(e.target.value)}
-                  placeholder="VD: Penicillin, hải sản…"
-                  rows={2}
-                />
-              </FormField>
-
-              <FormField label="Tiền sử gia đình">
-                <Textarea
-                  value={familyHistory}
-                  onChange={(e) => setFamilyHistory(e.target.value)}
-                  placeholder="VD: Cha bị tiểu đường type 2…"
-                  rows={2}
-                />
-              </FormField>
-
-              <FormField label="Mục tiêu & lối sống">
-                <Textarea
-                  value={lifestyleProfile}
-                  onChange={(e) => setLifestyleProfile(e.target.value)}
-                  placeholder="VD: Giảm 5kg, đi bộ 30 phút/ngày…"
-                  rows={3}
-                />
-              </FormField>
+      {editing ? (
+        <ProfileEditForm
+          fields={{
+            fullName,
+            dob,
+            phone,
+            gender,
+            heightCm,
+            weightKg,
+            waistCm,
+            address,
+            knownConditions,
+            allergies,
+            familyHistory,
+            lifestyleProfile,
+          }}
+          set={{
+            setFullName,
+            setDob,
+            setPhone,
+            setGender,
+            setHeightCm,
+            setWeightKg,
+            setWaistCm,
+            setAddress,
+            setKnownConditions,
+            setAllergies,
+            setFamilyHistory,
+            setLifestyleProfile,
+          }}
+          saving={saving}
+          onCancel={cancelEdit}
+          onSave={handleSave}
+        />
+      ) : (
+        <>
+          {/* Condition chips */}
+          {conditions.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {conditions.map((c) => (
+                <span
+                  key={c}
+                  className="rounded-full bg-[#E3F5EC] px-3 py-1.5 text-[12px] font-semibold text-neu-green"
+                >
+                  {c}
+                </span>
+              ))}
             </div>
           )}
-        </CardContent>
-      </Card>
+
+          {/* Personal info — compact rows */}
+          <NeuCard className="!px-4 !py-1">
+            <InfoRow label="Email" value={user.email} />
+            <InfoRow label="Ngày sinh" value={formatDateVN(profile?.dob)} />
+            <InfoRow label="Số điện thoại" value={profile?.phone} />
+            <InfoRow
+              label="Giới tính"
+              value={profile?.gender ? genderLabel(profile.gender) : null}
+            />
+            <InfoRow
+              label="Chiều cao"
+              value={profile?.height_cm != null ? `${profile.height_cm} cm` : null}
+            />
+            <InfoRow
+              label="Cân nặng"
+              value={profile?.weight_kg != null ? `${profile.weight_kg} kg` : null}
+            />
+            <InfoRow
+              label="Vòng eo"
+              value={profile?.waist_cm != null ? `${profile.waist_cm} cm` : null}
+            />
+            <InfoRow label="Địa chỉ" value={profile?.address} last />
+          </NeuCard>
+
+          {/* Health detail free-text — only if present */}
+          {healthDetails.length > 0 && (
+            <NeuCard className="!p-4 space-y-3">
+              {healthDetails.map((d) => (
+                <div key={d.label}>
+                  <p className="text-[12.5px] font-semibold text-neu-muted">{d.label}</p>
+                  <p className="mt-0.5 text-[14px] leading-relaxed text-neu-text">{d.value}</p>
+                </div>
+              ))}
+            </NeuCard>
+          )}
+
+          {/* Quick links — existing routes only */}
+          <NeuCard className="!px-4 !py-1">
+            <LinkRow
+              icon={<Bell className="size-5" />}
+              color="#C77A06"
+              label="Thông báo"
+              onClick={() => router.push('/notifications')}
+            />
+            <LinkRow
+              icon={<Lock className="size-5" />}
+              color="#566E66"
+              label="Quyền riêng tư & chia sẻ"
+              onClick={() => router.push('/consents')}
+            />
+            <LinkRow
+              icon={<SettingsIcon className="size-5" />}
+              color="#2563EB"
+              label="Cài đặt"
+              onClick={() => router.push('/settings')}
+              last
+            />
+          </NeuCard>
+
+          {/* Logout */}
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="flex h-12 w-full items-center justify-center gap-2 rounded-[13px] border border-[rgba(217,45,32,0.2)] bg-[rgba(251,231,229,0.93)] text-[14px] font-bold text-[#D92D20] transition-transform active:scale-[0.99]"
+          >
+            <LogOut className="size-[18px]" />
+            Đăng xuất
+          </button>
+        </>
+      )}
     </div>
+  )
+}
+
+// ─── Edit form (Soft-UI card) ─────────────────────────────────────────────────
+
+interface EditFields {
+  fullName: string
+  dob: string
+  phone: string
+  gender: string
+  heightCm: string
+  weightKg: string
+  waistCm: string
+  address: string
+  knownConditions: string
+  allergies: string
+  familyHistory: string
+  lifestyleProfile: string
+}
+
+interface EditSetters {
+  setFullName: (v: string) => void
+  setDob: (v: string) => void
+  setPhone: (v: string) => void
+  setGender: (v: string) => void
+  setHeightCm: (v: string) => void
+  setWeightKg: (v: string) => void
+  setWaistCm: (v: string) => void
+  setAddress: (v: string) => void
+  setKnownConditions: (v: string) => void
+  setAllergies: (v: string) => void
+  setFamilyHistory: (v: string) => void
+  setLifestyleProfile: (v: string) => void
+}
+
+function ProfileEditForm({
+  fields,
+  set,
+  saving,
+  onCancel,
+  onSave,
+}: {
+  fields: EditFields
+  set: EditSetters
+  saving: boolean
+  onCancel: () => void
+  onSave: () => void
+}) {
+  return (
+    <>
+      <NeuCard className="!p-4 space-y-4">
+        <FormField label="Họ tên">
+          <Input
+            value={fields.fullName}
+            onChange={(e) => set.setFullName(e.target.value)}
+            placeholder="Nhập họ tên"
+            fullWidth
+          />
+        </FormField>
+        <FormField label="Ngày sinh">
+          <Input
+            type="date"
+            value={fields.dob}
+            onChange={(e) => set.setDob(e.target.value)}
+            fullWidth
+          />
+        </FormField>
+        <FormField label="Số điện thoại">
+          <Input
+            type="tel"
+            value={fields.phone}
+            onChange={(e) => set.setPhone(e.target.value)}
+            placeholder="Nhập số điện thoại"
+            fullWidth
+          />
+        </FormField>
+        <FormField label="Giới tính">
+          <Select
+            value={fields.gender}
+            onValueChange={set.setGender}
+            options={GENDER_OPTIONS}
+            placeholder="Chọn giới tính"
+            fullWidth
+          />
+        </FormField>
+        <div className="grid grid-cols-3 gap-2">
+          <FormField label="Cao (cm)">
+            <Input
+              type="number"
+              step="0.1"
+              value={fields.heightCm}
+              onChange={(e) => set.setHeightCm(e.target.value)}
+              placeholder="cm"
+              fullWidth
+            />
+          </FormField>
+          <FormField label="Nặng (kg)">
+            <Input
+              type="number"
+              step="0.1"
+              value={fields.weightKg}
+              onChange={(e) => set.setWeightKg(e.target.value)}
+              placeholder="kg"
+              fullWidth
+            />
+          </FormField>
+          <FormField label="Eo (cm)">
+            <Input
+              type="number"
+              step="0.1"
+              value={fields.waistCm}
+              onChange={(e) => set.setWaistCm(e.target.value)}
+              placeholder="cm"
+              fullWidth
+            />
+          </FormField>
+        </div>
+        <FormField label="Địa chỉ">
+          <Input
+            value={fields.address}
+            onChange={(e) => set.setAddress(e.target.value)}
+            placeholder="Nhập địa chỉ"
+            fullWidth
+          />
+        </FormField>
+        <FormField label="Bệnh lý hiện có">
+          <Textarea
+            value={fields.knownConditions}
+            onChange={(e) => set.setKnownConditions(e.target.value)}
+            placeholder="VD: Tiền tiểu đường, tăng huyết áp…"
+            rows={2}
+          />
+        </FormField>
+        <FormField label="Dị ứng">
+          <Textarea
+            value={fields.allergies}
+            onChange={(e) => set.setAllergies(e.target.value)}
+            placeholder="VD: Penicillin, hải sản…"
+            rows={2}
+          />
+        </FormField>
+        <FormField label="Tiền sử gia đình">
+          <Textarea
+            value={fields.familyHistory}
+            onChange={(e) => set.setFamilyHistory(e.target.value)}
+            placeholder="VD: Cha bị tiểu đường type 2…"
+            rows={2}
+          />
+        </FormField>
+        <FormField label="Mục tiêu & lối sống">
+          <Textarea
+            value={fields.lifestyleProfile}
+            onChange={(e) => set.setLifestyleProfile(e.target.value)}
+            placeholder="VD: Giảm 5kg, đi bộ 30 phút/ngày…"
+            rows={3}
+          />
+        </FormField>
+      </NeuCard>
+
+      <div className="flex gap-3">
+        <Button variant="outline" onClick={onCancel} disabled={saving} className="flex-1">
+          Hủy
+        </Button>
+        <NeuButton onClick={onSave} disabled={saving}>
+          {saving ? 'Đang lưu...' : 'Lưu thay đổi'}
+        </NeuButton>
+      </div>
+    </>
   )
 }

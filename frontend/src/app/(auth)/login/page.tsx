@@ -60,7 +60,9 @@ function MintInput({
   return (
     <div className="relative">
       {leftIcon && (
-        <div className="absolute inset-y-0 left-0 flex items-center pl-3 text-mint-600">{leftIcon}</div>
+        <div className="absolute inset-y-0 left-0 flex items-center pl-3 text-neu-green">
+          {leftIcon}
+        </div>
       )}
       <input
         id={id}
@@ -73,14 +75,14 @@ function MintInput({
         disabled={disabled}
         aria-invalid={error}
         className={cn(
-          'h-12 w-full rounded-xl border bg-white/80 px-3 py-2 text-[17px] text-text',
-          'placeholder:text-text-subtle focus:outline-none focus:ring-2 transition-colors',
-          'disabled:bg-secondary-50 disabled:text-text-muted disabled:cursor-not-allowed',
+          'h-12 w-full rounded-[14px] border bg-white px-3 py-2 text-[15px] text-neu-text',
+          'placeholder:text-neu-subtle focus:outline-none focus:ring-2 transition-colors',
+          'disabled:opacity-60 disabled:cursor-not-allowed',
           leftIcon && 'pl-10',
           rightElement && 'pr-10',
           error
-            ? 'border-danger focus:border-danger focus:ring-danger/20'
-            : 'border-mint-200 focus:border-mint-400 focus:ring-mint-400/25',
+            ? 'border-[#D92D20] focus:border-[#D92D20] focus:ring-[#D92D20]/20'
+            : 'border-[rgba(16,48,44,0.12)] focus:border-neu-green focus:ring-neu-green/25'
         )}
       />
       {rightElement && (
@@ -148,7 +150,8 @@ export default function LoginPage() {
       router.replace(getRoleHomePath(res.role))
     } catch (err) {
       if (err instanceof ApiError) {
-        if (err.status === 401) setError('Mã xác thực không đúng hoặc đã hết hạn. Vui lòng kiểm tra lại.')
+        if (err.status === 401)
+          setError('Mã xác thực không đúng hoặc đã hết hạn. Vui lòng kiểm tra lại.')
         else if (err.status === 423) setError('Tài khoản tạm khóa. Liên hệ admin để mở khóa.')
         else if (err.status === 429) setError('Quá nhiều yêu cầu. Vui lòng thử lại sau ít phút.')
         else setError('Có lỗi xảy ra. Vui lòng thử lại.')
@@ -164,12 +167,18 @@ export default function LoginPage() {
   if (step === 'mfa') {
     return (
       <div>
-        <h1 className="text-[24px] font-bold text-text mb-1">Xác thực 2 bước</h1>
-        <p className="text-[17px] text-text-muted mb-6">
+        <h1 className="text-[24px] font-extrabold tracking-[-0.02em] text-neu-text mb-1">
+          Xác thực 2 bước
+        </h1>
+        <p className="text-[15px] text-neu-muted mb-6">
           Nhập mã 6 số từ ứng dụng xác thực của bạn.
         </p>
 
-        {error && <Alert variant="danger" className="mb-4">{error}</Alert>}
+        {error && (
+          <Alert variant="danger" className="mb-4">
+            {error}
+          </Alert>
+        )}
 
         <form onSubmit={handleMfaSubmit} noValidate>
           <div className="mb-5">
@@ -192,7 +201,7 @@ export default function LoginPage() {
             fullWidth
             loading={isLoading}
             disabled={!totpCode.trim()}
-            className="h-12 rounded-xl bg-mint-500 hover:bg-mint-600 shadow-glass"
+            className="h-12 rounded-[14px] bg-gradient-to-b from-[#17AE7B] to-[#0B6B4D] text-white shadow-[0_12px_24px_-8px_rgba(11,107,77,0.6)] hover:opacity-95"
           >
             Xác nhận
           </Button>
@@ -205,7 +214,7 @@ export default function LoginPage() {
             setTotpCode('')
             setError(null)
           }}
-          className="mt-4 w-full text-center text-[17px] text-mint-700 hover:underline"
+          className="mt-4 w-full text-center text-[17px] text-neu-green hover:underline"
         >
           ← Quay lại đăng nhập
         </button>
@@ -215,12 +224,18 @@ export default function LoginPage() {
 
   return (
     <div>
-      <h1 className="text-[24px] font-bold text-text mb-1">Đăng nhập</h1>
-      <p className="text-[17px] text-text-muted mb-6">
+      <h1 className="text-[24px] font-extrabold tracking-[-0.02em] text-neu-text mb-1">
+        Đăng nhập
+      </h1>
+      <p className="text-[15px] text-neu-muted mb-6">
         Chào mừng trở lại. Đăng nhập để tiếp tục chăm sóc sức khỏe.
       </p>
 
-      {error && <Alert variant="danger" className="mb-4">{error}</Alert>}
+      {error && (
+        <Alert variant="danger" className="mb-4">
+          {error}
+        </Alert>
+      )}
 
       <form onSubmit={handleCredentialsSubmit} noValidate>
         <div className="mb-4">
@@ -243,7 +258,7 @@ export default function LoginPage() {
             <FieldLabel htmlFor="password">Mật khẩu</FieldLabel>
             <Link
               href="/forgot-password"
-              className="text-[17px] text-mint-700 hover:underline underline-offset-2"
+              className="text-[17px] text-neu-green hover:underline underline-offset-2"
               tabIndex={0}
             >
               Quên mật khẩu?
@@ -279,7 +294,7 @@ export default function LoginPage() {
           fullWidth
           loading={isLoading}
           disabled={!identifier.trim() || !password}
-          className="h-12 rounded-xl bg-mint-500 hover:bg-mint-600 shadow-glass"
+          className="h-12 rounded-[14px] bg-gradient-to-b from-[#17AE7B] to-[#0B6B4D] text-white shadow-[0_12px_24px_-8px_rgba(11,107,77,0.6)] hover:opacity-95"
         >
           Đăng nhập
         </Button>
@@ -287,7 +302,10 @@ export default function LoginPage() {
 
       <p className="text-center text-[17px] text-text-muted mt-6">
         Chưa có tài khoản?{' '}
-        <Link href="/register" className="text-mint-700 font-semibold hover:underline underline-offset-2">
+        <Link
+          href="/register"
+          className="text-neu-green font-semibold hover:underline underline-offset-2"
+        >
           Đăng ký ngay
         </Link>
       </p>

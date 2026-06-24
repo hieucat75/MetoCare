@@ -1,90 +1,80 @@
-import * as React from 'react'
-import {
-  Activity,
-  Droplet,
-  Droplets,
-  Filter,
-  FlaskConical,
-  Gauge,
-  Heart,
-  HeartPulse,
-  Ruler,
-  Thermometer,
-  Weight,
-  type LucideIcon,
-} from 'lucide-react'
 import { metricLabel, metricUnit, type MetricType } from '@/lib/api/patient'
-import { computeTrend, type CategoryTheme, type MetricSeries } from '@/lib/metrics/kpi'
-import { TrendArrow } from './TrendArrow'
-import { RefRangeBar } from './RefRangeBar'
-
-const ICONS: Record<string, LucideIcon> = {
-  fasting_glucose: Droplet,
-  postprandial_glucose: Droplet,
-  hba1c: Activity,
-  total_cholesterol: Droplets,
-  ldl: Droplets,
-  hdl: Heart,
-  triglyceride: Droplets,
-  ast: FlaskConical,
-  alt: FlaskConical,
-  ggt: FlaskConical,
-  bilirubin_total: FlaskConical,
-  creatinine: Filter,
-  urea: Filter,
-  egfr: Filter,
-  tsh: Thermometer,
-  ft4: Thermometer,
-  ft3: Thermometer,
-  wbc: Droplets,
-  rbc: Droplets,
-  hemoglobin: Droplets,
-  hematocrit: Droplets,
-  platelet: Droplets,
-  blood_pressure_systolic: HeartPulse,
-  blood_pressure_diastolic: HeartPulse,
-  heart_rate: HeartPulse,
-  spo2: Gauge,
-  weight: Weight,
-  waist_cm: Ruler,
-}
+import { classifyLabValue } from '@/lib/api/labReference'
+import type { CategoryTheme, MetricSeries } from '@/lib/metrics/kpi'
+import { NeuBadge } from '@/components/patient/neu'
+import { Sparkline } from './Sparkline'
+import { metricIcon, labToneToNeu, healthMetricStatus, type NeuTone } from './metricVisuals'
 
 type Props = {
   series: MetricSeries
   theme: CategoryTheme
+  /** Tap → open the metric detail. Omit for a static (non-tappable) card. */
+  onOpen?: (metricType: string) => void
 }
 
-export function MetricKpiCard({ series, theme }: Props) {
+/** Soft-UI metric tile: accent icon · status badge · value · smooth sparkline. */
+export function MetricKpiCard({ series, theme, onOpen }: Props) {
   const { latest, unit, higherIsBetter, labelVn, metricType, history } = series
-  const Icon = ICONS[metricType] ?? Activity
+  const Icon = metricIcon(metricType)
   const label = labelVn ?? metricLabel(metricType as MetricType)
   const unitLabel = latest.unit || metricUnit(metricType as MetricType)
-  const trend = computeTrend(history, higherIsBetter)
 
-  return (
-    <div className="rounded-3xl p-4 shadow-frost-up ring-1 ring-black/5" style={{ backgroundColor: theme.bg }}>
-      <div className="flex items-center gap-2">
+  let status: { tone: NeuTone; label: string } | null
+  if (unit) {
+    const s = classifyLabValue(latest.value, unit, higherIsBetter)
+    status = { tone: labToneToNeu(s.tone), label: s.label }
+  } else {
+    status = healthMetricStatus(latest)
+  }
+
+  const spark = history.slice(0, 8).map((m) => m.value)
+
+  const content = (
+    <>
+      <div className="flex items-start justify-between gap-2">
         <span
-          className="flex size-9 items-center justify-center rounded-xl"
-          style={{ backgroundColor: '#FFFFFFAA', color: theme.accent }}
+          className="grid size-10 shrink-0 place-items-center rounded-[14px] text-white"
+          style={{ background: theme.accent, boxShadow: '0 6px 14px -8px rgba(16,40,36,0.5)' }}
+          aria-hidden="true"
         >
-          <Icon className="size-5" aria-hidden="true" />
+          <Icon className="size-5" />
         </span>
-        <span className="text-[15px] font-medium text-text leading-tight">{label}</span>
+        {status && (
+          <NeuBadge tone={status.tone} className="!text-[11px] !px-2.5 !py-1 before:!hidden">
+            {status.label}
+          </NeuBadge>
+        )}
       </div>
 
-      <div className="mt-3 flex items-baseline gap-1">
-        <span className="text-[34px] font-bold tracking-tight text-text leading-none">{latest.value}</span>
-        <span className="text-[15px] font-medium text-text-muted">{unitLabel}</span>
-      </div>
+      <p className="mt-3 text-[13px] text-neu-muted">{label}</p>
+      <p className="mt-0.5 flex items-baseline gap-1">
+        <span className="text-[26px] font-extrabold leading-none tracking-[-0.02em] text-neu-text">
+          {latest.value}
+        </span>
+        <span className="text-[13px] font-medium text-neu-muted">{unitLabel}</span>
+      </p>
 
-      <div className="mt-1.5">
-        <TrendArrow trend={trend} unit={unitLabel} />
+      <div className="mt-3">
+        <Sparkline values={spark} color={theme.accent} />
       </div>
+    </>
+  )
 
-      {unit && (
-        <RefRangeBar value={latest.value} unit={unit} higherIsBetter={higherIsBetter} accent={theme.accent} />
-      )}
+  if (onOpen) {
+    return (
+      <button
+        type="button"
+        onClick={() => onOpen(metricType)}
+        className="neu-card p-4 text-left transition-transform active:scale-[0.98]"
+        style={{ backgroundColor: theme.bg }}
+      >
+        {content}
+      </button>
+    )
+  }
+  return (
+    <div className="neu-card p-4" style={{ backgroundColor: theme.bg }}>
+      {content}
     </div>
   )
 }

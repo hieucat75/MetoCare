@@ -2,26 +2,9 @@
 
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
-import {
-  Activity,
-  AlertTriangle,
-  ArrowDownRight,
-  ArrowUpRight,
-  CheckCircle2,
-  ChevronRight,
-  ClipboardList,
-  FlaskConical,
-  Minus,
-  Pill,
-  TrendingUp,
-} from 'lucide-react'
+import { Activity, Bell, Droplet, Heart, Pill, Plus, Scale } from 'lucide-react'
 import { PageLoading, ErrorState } from '@/design-system'
-import {
-  GlassCard,
-  MintButton,
-  PatientEmptyState,
-  SectionHeader,
-} from '@/components/patient'
+import { NeuCard, NeuButton, NeuIconButton, NeuBadge } from '@/components/patient/neu'
 import { useAuth } from '@/lib/auth/context'
 import {
   getLiveMetabolicScore,
@@ -30,13 +13,10 @@ import {
   getLabs,
   getPatientProfile,
   getHealthSummary,
-  getInsights,
-  isProfileComplete,
   type HealthMetric,
   type HealthSummary,
   type LiveMetabolicScore,
   type Medication,
-  type MetricInsight,
   type LabResult,
   type PatientProfile,
 } from '@/lib/api/patient'
@@ -44,66 +24,26 @@ import {
   buildDashboardSummary,
   type DashboardSummary,
   type IndicatorConcern,
-  type OverallStatus,
-  type TrendMover,
 } from '@/lib/dashboard/summary'
+import { groupMetricsByCategory, type MetricSeries } from '@/lib/metrics/kpi'
 import { useLabReference } from '@/lib/api/labReference'
-import { cn, formatDate } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 
-// ─── Status presentation ──────────────────────────────────────────────────────
-
-interface StatusPresentation {
-  title: string
-  ring: string
-  chip: string
-  text: string
-}
-
-const STATUS_PRESENTATION: Record<Exclude<OverallStatus, 'no_data'>, StatusPresentation> = {
-  stable: {
-    title: 'Ổn định',
-    ring: 'from-mint-300 to-mint-500',
-    chip: 'bg-mint-100 text-mint-700',
-    text: 'text-mint-700',
-  },
-  attention: {
-    title: 'Cần chú ý',
-    ring: 'from-amber-300 to-amber-500',
-    chip: 'bg-amber-100 text-amber-700',
-    text: 'text-amber-700',
-  },
-  at_risk: {
-    title: 'Nguy cơ chuyển hóa',
-    ring: 'from-rose-300 to-rose-500',
-    chip: 'bg-rose-100 text-rose-700',
-    text: 'text-rose-700',
-  },
-}
-
-// ─── Task model (Section 2) ─────────────────────────────────────────────────────
-
-interface TodayTask {
-  id: string
-  label: string
-  hint?: string
-  icon: React.ReactNode
-  onClick: () => void
-  urgent?: boolean
-}
-
-// ─── Dashboard data ─────────────────────────────────────────────────────────────
+// ─── Data model ───────────────────────────────────────────────────────────────
 
 interface DashboardData {
   summary: DashboardSummary
+  series: MetricSeries[]
   liveScore: LiveMetabolicScore | null
   medications: Medication[]
   labs: LabResult[]
   profile: PatientProfile | null
   healthSummary: HealthSummary | null
-  insights: MetricInsight[] | null
 }
 
-// ─── Page ───────────────────────────────────────────────────────────────────────
+type BadgeTone = 'ok' | 'watch' | 'alert'
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function PatientDashboardPage() {
   const router = useRouter()
@@ -142,17 +82,19 @@ export default function PatientDashboardPage() {
       })),
       getPatientProfile(patientId).catch(() => null),
       getHealthSummary(patientId),
-      getInsights(patientId),
     ])
-      .then(([metricsResp, liveScore, medsResp, labsResp, profile, healthSummary, insights]) => {
+      .then(([metricsResp, liveScore, medsResp, labsResp, profile, healthSummary]) => {
+        const metricItems = metricsResp.items ?? []
         setData({
-          summary: buildDashboardSummary(metricsResp.items, catalog),
+          summary: buildDashboardSummary(metricItems, catalog),
+          series: catalog
+            ? groupMetricsByCategory(metricItems, catalog).flatMap((b) => b.series)
+            : [],
           liveScore,
           medications: medsResp.items ?? [],
           labs: labsResp.items ?? [],
           profile,
           healthSummary,
-          insights,
         })
       })
       .catch((err: Error) => setError(err.message))
@@ -169,12 +111,12 @@ export default function PatientDashboardPage() {
   if (!patientId) {
     return (
       <div className="p-4 max-w-md mx-auto mt-10">
-        <GlassCard>
-          <h2 className="text-[18px] font-semibold text-text">Chưa có hồ sơ bệnh nhân</h2>
-          <p className="text-[15px] text-text-muted mt-1">
+        <NeuCard>
+          <h2 className="text-[18px] font-bold text-neu-text">Chưa có hồ sơ bệnh nhân</h2>
+          <p className="text-[15px] text-neu-muted mt-1">
             Tài khoản của bạn chưa được liên kết với hồ sơ bệnh nhân. Vui lòng liên hệ hỗ trợ.
           </p>
-        </GlassCard>
+        </NeuCard>
       </div>
     )
   }
@@ -191,585 +133,520 @@ export default function PatientDashboardPage() {
     )
   }
 
-  const { summary, liveScore, medications, labs, profile, healthSummary, insights } = data
-  // /insights already returns only noteworthy (abnormal) metrics, worst-first.
-  const insightCards = insights ?? []
-  const todayStr = formatDate(new Date())
+  const { summary, series, medications, healthSummary } = data
   const hasAnyData = summary.totalTracked > 0
-  const profileComplete = isProfileComplete(profile)
-
-  // ── Section 2 tasks ──────────────────────────────────────────────────────────
-  const tasks: TodayTask[] = []
-  if (!profileComplete) {
-    tasks.push({
-      id: 'profile',
-      label: 'Hoàn thiện hồ sơ sức khỏe',
-      hint: 'Ngày sinh, giới tính, chiều cao, cân nặng',
-      icon: <ClipboardList className="size-5" aria-hidden="true" />,
-      onClick: () => router.push('/onboarding'),
-      urgent: true,
-    })
-  }
-  const pendingLab = labs.find((l) => l.status === 'pending_review')
-  if (pendingLab) {
-    tasks.push({
-      id: 'lab-review',
-      label: 'Xét nghiệm đang chờ bác sĩ duyệt',
-      hint: 'Xem trạng thái xét nghiệm của bạn',
-      icon: <FlaskConical className="size-5" aria-hidden="true" />,
-      onClick: () => router.push('/labs'),
-    })
-  }
-  if (medications.length > 0) {
-    tasks.push({
-      id: 'meds',
-      label: `Uống thuốc hôm nay (${medications.length})`,
-      hint: 'Đừng quên liều thuốc theo đơn',
-      icon: <Pill className="size-5" aria-hidden="true" />,
-      onClick: () => router.push('/medications'),
-    })
-  }
-  tasks.push({
-    id: 'log-metric',
-    label: 'Ghi chỉ số sức khỏe hôm nay',
-    hint: 'Cân nặng, huyết áp, đường huyết…',
-    icon: <Activity className="size-5" aria-hidden="true" />,
-    onClick: () => router.push('/metrics/log'),
-  })
-
-  const topConcerns = summary.concerns.slice(0, 3)
-  const topMovers = summary.movers.slice(0, 3)
-  const latestLab = labs[0] ?? null
-  const todayMeds = medications // all active meds are the patient's current regimen
+  const displayName = user.full_name ?? user.email ?? 'Bạn'
+  const nextMed = medications[0] ?? null
 
   return (
-    <div className="p-4 lg:p-6 space-y-6 max-w-md mx-auto lg:max-w-2xl pb-28">
-      {/* Greeting */}
-      <div>
-        <h1 className="text-[24px] font-bold text-text">
-          Xin chào, {user.full_name ?? user.email}!
-        </h1>
-        <p className="text-[15px] text-text-muted mt-0.5">{todayStr}</p>
-      </div>
-
-      {/* SECTION 1 — Health Summary Hero */}
-      <HealthSummaryHero
-        summary={summary}
-        liveScore={liveScore}
-        hasAnyData={hasAnyData}
-        onStart={() => router.push('/metrics/log')}
-      />
-
-      {/* PA-11 — Tóm tắt sức khỏe lần này */}
-      {healthSummary && <HealthSummaryBlock summary={healthSummary} />}
-
-      {/* SECTION 2 — Việc cần làm hôm nay */}
-      <section aria-label="Việc cần làm hôm nay">
-        <SectionHeader title="Việc cần làm hôm nay" />
-        <div className="space-y-2.5">
-          {tasks.map((t) => (
-            <TaskRow key={t.id} task={t} />
-          ))}
+    <div className="relative p-4 space-y-5 max-w-md mx-auto pb-28">
+      {/* ── Header ── */}
+      <header className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <span
+            className="neu-icon-btn !w-12 !h-12 !rounded-full text-[16px] font-extrabold text-neu-green"
+            aria-hidden="true"
+          >
+            {initials(displayName)}
+          </span>
+          <div className="min-w-0">
+            <p className="text-[13px] text-neu-secondary">Chào buổi {timeOfDay()},</p>
+            <h1 className="text-[20px] font-extrabold tracking-[-0.02em] text-neu-text truncate">
+              {displayName}
+            </h1>
+          </div>
         </div>
-      </section>
+        <NeuIconButton
+          aria-label="Thông báo"
+          className="!w-12 !h-12 !rounded-full"
+          onClick={() => router.push('/notifications')}
+        >
+          <Bell className="size-5" />
+        </NeuIconButton>
+      </header>
 
-      {/* SECTION 3 — Chỉ số cần chú ý (clinical insights: meaning / trend / risk / advice) */}
-      {insightCards.length > 0 ? (
-        <section aria-label="Chỉ số cần chú ý">
-          <SectionHeader
-            title="Chỉ số cần chú ý"
-            action={
-              <button
-                type="button"
-                onClick={() => router.push('/metrics')}
-                className="text-[15px] text-mint-600 hover:underline"
-              >
-                Tất cả
-              </button>
-            }
+      {hasAnyData ? (
+        <>
+          {/* ── Daily summary (green hero) ── */}
+          <HeroSummaryCard summary={summary} healthSummary={healthSummary} />
+
+          {/* ── Medication reminder ── */}
+          {nextMed && <MedicationReminderCard med={nextMed} />}
+
+          {/* ── 2×2 metric tiles ── */}
+          <MetricTileGrid
+            series={series}
+            summary={summary}
+            profile={data.profile}
+            onOpen={(metricType) => router.push(`/metrics/${metricType}`)}
           />
-          <div className="space-y-2.5">
-            {insightCards.map((it) => (
-              <InsightCard key={it.metric_type} insight={it} />
-            ))}
-          </div>
-        </section>
-      ) : topConcerns.length > 0 ? (
-        // Fallback when the insight API is unavailable (flag off / error).
-        <section aria-label="Chỉ số cần chú ý">
-          <SectionHeader
-            title="Chỉ số cần chú ý"
-            action={
-              <button
-                type="button"
-                onClick={() => router.push('/metrics')}
-                className="text-[15px] text-mint-600 hover:underline"
-              >
-                Tất cả
-              </button>
-            }
-          />
-          <div className="space-y-2.5">
-            {topConcerns.map((c) => (
-              <ConcernRow
-                key={c.metricType}
-                concern={c}
-                onClick={() => router.push(`/metrics?type=${c.metricType}`)}
-              />
-            ))}
-          </div>
-        </section>
-      ) : hasAnyData ? (
-        <section aria-label="Chỉ số cần chú ý">
-          <GlassCard>
-            <PatientEmptyState
-              icon={<CheckCircle2 aria-hidden="true" />}
-              title="Các chỉ số đang trong tầm kiểm soát"
-              description="Hiện chưa có chỉ số nào cần đặc biệt chú ý. Hãy tiếp tục duy trì thói quen lành mạnh và đo lại định kỳ."
-            />
-          </GlassCard>
-        </section>
-      ) : null}
-
-      {/* PA-11 — Điều gì thay đổi từ lần trước? */}
-      {healthSummary && <WhatChangedSection summary={healthSummary} />}
-
-      {/* SECTION 4 — Health Trend */}
-      {topMovers.length > 0 && (
-        <section aria-label="Xu hướng sức khỏe">
-          <SectionHeader title="Xu hướng sức khỏe" subtitle="So với lần đo trước" />
-          <GlassCard padded={false} className="divide-y divide-mint-100/70">
-            {topMovers.map((m) => (
-              <TrendRow key={m.metricType} mover={m} />
-            ))}
-          </GlassCard>
-        </section>
+        </>
+      ) : (
+        <EmptyDashboard onLog={() => router.push('/metrics/log')} />
       )}
 
-      {/* SECTION 5 — Latest Lab Results */}
-      <section aria-label="Kết quả xét nghiệm mới nhất">
-        <SectionHeader
-          title="Xét nghiệm gần đây"
-          action={
-            <button
-              type="button"
-              onClick={() => router.push('/labs')}
-              className="text-[15px] text-mint-600 hover:underline"
-            >
-              Tất cả
-            </button>
-          }
-        />
-        {latestLab ? (
-          <LatestLabCard lab={latestLab} onClick={() => router.push('/labs')} />
-        ) : (
-          <GlassCard>
-            <p className="text-[15px] text-text-muted">
-              Chưa có kết quả xét nghiệm. Tải kết quả để theo dõi chỉ số chuyên sâu.
-            </p>
-            <MintButton size="sm" className="mt-3" onClick={() => router.push('/labs/upload')}>
-              Tải xét nghiệm
-            </MintButton>
-          </GlassCard>
-        )}
-      </section>
-
-      {/* SECTION 6 — Today's Medication */}
-      <section aria-label="Thuốc hôm nay">
-        <SectionHeader
-          title="Thuốc hôm nay"
-          action={
-            todayMeds.length > 0 ? (
-              <button
-                type="button"
-                onClick={() => router.push('/medications')}
-                className="text-[15px] text-mint-600 hover:underline"
-              >
-                Tất cả
-              </button>
-            ) : undefined
-          }
-        />
-        {todayMeds.length === 0 ? (
-          <GlassCard>
-            <p className="text-[15px] text-text-muted">Không có thuốc đang dùng.</p>
-          </GlassCard>
-        ) : (
-          <div className="space-y-2.5">
-            {todayMeds.slice(0, 4).map((med) => (
-              <MedicationRow key={med.id} med={med} />
-            ))}
-          </div>
-        )}
-      </section>
+      {/* ── FAB ── */}
+      <button
+        type="button"
+        aria-label="Ghi chỉ số"
+        onClick={() => router.push('/metrics/log')}
+        className="fixed bottom-28 right-5 z-30 flex size-14 items-center justify-center rounded-full text-white neu-btn-primary !min-h-0 !p-0"
+      >
+        <Plus className="size-7" aria-hidden="true" />
+      </button>
     </div>
   )
 }
 
-// ─── PA-11 — Clinical insight presentation ────────────────────────────────────
+// ─── Daily summary (green gradient hero) ──────────────────────────────────────
 
-const RISK_BADGE: Record<HealthSummary['overall_risk'], { label: string; cls: string; dot: string }> = {
-  low: { label: 'Thấp', cls: 'bg-mint-100 text-mint-700', dot: '🟢' },
-  medium: { label: 'Trung bình', cls: 'bg-amber-100 text-amber-700', dot: '🟠' },
-  high: { label: 'Cao', cls: 'bg-rose-100 text-rose-700', dot: '🔴' },
+const RISK_LABEL: Record<HealthSummary['overall_risk'], string> = {
+  low: 'Nguy cơ thấp',
+  medium: 'Nguy cơ trung bình',
+  high: 'Nguy cơ cao',
 }
 
-const PRIORITY_DOT: Record<MetricInsight['priority'], string> = {
-  see_doctor: 'bg-rose-500',
-  watch: 'bg-amber-500',
-  monitor: 'bg-mint-500',
-}
+const HERO_GRADIENT = 'linear-gradient(160deg,#17AE7B,#0B6B4D)'
 
-/** "Tóm tắt sức khỏe lần này" — count, positives, focus, overall risk, top action. */
-function HealthSummaryBlock({ summary }: { summary: HealthSummary }) {
-  const risk = RISK_BADGE[summary.overall_risk]
-  return (
-    <section aria-label="Tóm tắt sức khỏe lần này">
-      <SectionHeader title="Tóm tắt sức khỏe lần này" />
-      <GlassCard>
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-[15px] text-text">
-            Bạn hiện có <span className="font-bold">{summary.abnormal_count}</span> chỉ số cần chú ý.
-          </p>
-          <span
-            className={cn(
-              'inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[13px] font-semibold',
-              risk.cls,
-            )}
-          >
-            {risk.dot} Rủi ro {risk.label}
-          </span>
-        </div>
-
-        {summary.positives.length > 0 && (
-          <div className="mt-3">
-            <p className="text-[13px] font-semibold text-mint-700">Điểm tích cực</p>
-            <ul className="mt-1 space-y-0.5">
-              {summary.positives.map((p) => (
-                <li key={p} className="text-[14px] text-text-muted">
-                  • {p}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        {summary.focus.length > 0 && (
-          <div className="mt-3">
-            <p className="text-[13px] font-semibold text-amber-700">Điểm cần tập trung</p>
-            <ul className="mt-1 space-y-0.5">
-              {summary.focus.map((f) => (
-                <li key={f} className="text-[14px] text-text-muted">
-                  • {f}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        {summary.top_action && (
-          <div className="mt-3 rounded-xl bg-mint-50 p-3">
-            <p className="text-[13px] font-semibold text-mint-800">Việc quan trọng nhất</p>
-            <p className="mt-0.5 text-[14px] text-text">{summary.top_action}</p>
-          </div>
-        )}
-
-        <p className="mt-3 text-[12px] text-text-subtle">{summary.disclaimer}</p>
-      </GlassCard>
-    </section>
-  )
-}
-
-/** "Điều gì thay đổi từ lần trước?" — 📈 improved / 📉 worsened / ⚪ stable. */
-function WhatChangedSection({ summary }: { summary: HealthSummary }) {
-  const groups = [
-    { key: 'up', title: '📈 Cải thiện', items: summary.improved, cls: 'text-mint-700' },
-    { key: 'down', title: '📉 Xấu đi', items: summary.worsened, cls: 'text-rose-700' },
-    { key: 'flat', title: '⚪ Ổn định', items: summary.stable, cls: 'text-text-muted' },
-  ].filter((g) => g.items.length > 0)
-  if (groups.length === 0) return null
-  return (
-    <section aria-label="Điều gì thay đổi từ lần trước?">
-      <SectionHeader title="Điều gì thay đổi từ lần trước?" subtitle="So với lần đo trước" />
-      <GlassCard className="space-y-3">
-        {groups.map((g) => (
-          <div key={g.key}>
-            <p className={cn('text-[14px] font-semibold', g.cls)}>{g.title}</p>
-            <ul className="mt-1 space-y-0.5">
-              {g.items.map((it) => (
-                <li key={it} className="text-[14px] text-text-muted">
-                  • {it}
-                </li>
-              ))}
-            </ul>
-          </div>
-        ))}
-      </GlassCard>
-    </section>
-  )
-}
-
-/** Abnormal-metric insight card: meaning + trend + main risk + main advice. */
-function InsightCard({ insight }: { insight: MetricInsight }) {
-  const { trend } = insight
-  const TrendIcon =
-    trend.direction === 'up' ? ArrowUpRight : trend.direction === 'down' ? ArrowDownRight : Minus
-  const trendColor =
-    trend.improved === true
-      ? 'text-mint-600'
-      : trend.improved === false
-        ? 'text-rose-600'
-        : 'text-text-muted'
-  return (
-    <GlassCard>
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <span
-              className={cn('size-2 shrink-0 rounded-full', PRIORITY_DOT[insight.priority])}
-              aria-hidden="true"
-            />
-            <h3 className="truncate text-[16px] font-bold text-text">{insight.label}</h3>
-          </div>
-          <p className="mt-0.5 text-[18px] font-bold text-text">
-            {insight.value}
-            {insight.unit ? (
-              <span className="text-[14px] font-medium text-text-muted"> {insight.unit}</span>
-            ) : null}
-          </p>
-        </div>
-        <span className="shrink-0 rounded-full bg-white/70 px-2.5 py-1 text-[12px] font-semibold text-text-muted">
-          {insight.priority_label}
-        </span>
-      </div>
-
-      {/* ý nghĩa ngắn */}
-      <p className="mt-2 text-[14px] leading-relaxed text-text-muted">{insight.meaning}</p>
-
-      {/* xu hướng so với lần trước */}
-      <p className={cn('mt-2 inline-flex items-center gap-1 text-[13px] font-medium', trendColor)}>
-        <TrendIcon className="size-4" aria-hidden="true" />
-        {trend.label}
-      </p>
-
-      {/* nguy cơ chính */}
-      {insight.risks.length > 0 && (
-        <div className="mt-2 flex items-start gap-1.5">
-          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-500" aria-hidden="true" />
-          <p className="text-[14px] text-text-muted">{insight.risks[0]}</p>
-        </div>
-      )}
-
-      {/* lời khuyên chính */}
-      {insight.lifestyle.length > 0 && (
-        <div className="mt-1.5 flex items-start gap-1.5">
-          <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-mint-600" aria-hidden="true" />
-          <p className="text-[14px] text-text-muted">{insight.lifestyle[0]}</p>
-        </div>
-      )}
-    </GlassCard>
-  )
-}
-
-// ─── Section 1 — Hero ────────────────────────────────────────────────────────────
-
-function HealthSummaryHero({
+function HeroSummaryCard({
   summary,
-  liveScore,
-  hasAnyData,
-  onStart,
+  healthSummary,
 }: {
   summary: DashboardSummary
-  liveScore: LiveMetabolicScore | null
-  hasAnyData: boolean
-  onStart: () => void
+  healthSummary: HealthSummary | null
 }) {
-  if (!hasAnyData) {
-    return (
-      <GlassCard>
-        <PatientEmptyState
-          icon={<Activity />}
-          title="Bắt đầu theo dõi sức khỏe"
-          description="Ghi chỉ số đầu tiên hoặc tải kết quả xét nghiệm để xem tổng quan sức khỏe của bạn."
-          cta={{ label: 'Bắt đầu', onClick: onStart }}
-        />
-      </GlassCard>
-    )
+  // Prefer the clinical health-summary risk; fall back to the dashboard status.
+  const riskLevel: HealthSummary['overall_risk'] = healthSummary
+    ? healthSummary.overall_risk
+    : summary.overallStatus === 'at_risk'
+      ? 'high'
+      : summary.overallStatus === 'attention'
+        ? 'medium'
+        : 'low'
+  const abnormal = healthSummary?.abnormal_count ?? summary.abnormalCount
+  const dateStr = formatVnDate(summary.lastUpdated ? new Date(summary.lastUpdated) : new Date())
+  const subtitle =
+    abnormal > 0
+      ? `${abnormal} chỉ số cần chú ý trên ${summary.totalTracked} chỉ số`
+      : `Tất cả ${summary.totalTracked} chỉ số trong ngưỡng bình thường`
+
+  return (
+    <div
+      className="relative overflow-hidden rounded-[24px] px-6 pb-7 pt-6 text-white"
+      style={{ background: HERO_GRADIENT, boxShadow: '0 18px 32px -16px rgba(11,107,77,0.6)' }}
+    >
+      <div className="relative flex items-start justify-between gap-3">
+        <p className="text-[13px] font-medium text-white/85">Tóm tắt hôm nay · {dateStr}</p>
+        <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-white/20 px-3 py-1 text-[12px] font-bold text-white backdrop-blur">
+          <span className="size-1.5 rounded-full bg-white" aria-hidden="true" />
+          {RISK_LABEL[riskLevel]}
+        </span>
+      </div>
+      <h2 className="relative mt-4 text-[26px] font-extrabold leading-[1.15] tracking-[-0.02em]">
+        Các chỉ số chuyển hoá
+      </h2>
+      <p className="relative mt-1.5 text-[14px] text-white/85">{subtitle}</p>
+    </div>
+  )
+}
+
+// ─── Medication reminder (local-only "Đã uống") ──────────────────────────────
+
+const PINK_GRADIENT = 'linear-gradient(160deg,#F0608E,#D6336C)'
+
+function MedicationReminderCard({ med }: { med: Medication }) {
+  // Local-only adherence toggle until a backend endpoint exists.
+  const [taken, setTaken] = React.useState(false) // TODO(backend): adherence
+
+  const subtitle = [[med.name, med.dose].filter(Boolean).join(' '), med.frequency]
+    .filter(Boolean)
+    .join(' · ')
+
+  return (
+    <NeuCard className="!p-4">
+      <div className="flex items-center gap-3.5">
+        <span
+          className="grid size-[52px] shrink-0 place-items-center rounded-[16px] text-white"
+          style={{ background: PINK_GRADIENT, boxShadow: '0 8px 16px -8px rgba(229,84,126,0.6)' }}
+          aria-hidden="true"
+        >
+          <Pill className="size-6" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-[15px] font-bold text-neu-text">Nhắc uống thuốc</p>
+          {subtitle && <p className="text-[13.5px] text-neu-muted truncate">{subtitle}</p>}
+        </div>
+        <button
+          type="button"
+          onClick={() => setTaken((v) => !v)}
+          aria-pressed={taken}
+          className={cn(
+            'shrink-0 rounded-full px-4 text-[13px] font-bold transition-transform active:scale-95',
+            'min-h-[40px]',
+            taken ? 'text-neu-secondary' : 'text-white'
+          )}
+          style={
+            taken
+              ? { boxShadow: 'inset -4px -5px 10px #ffffff, inset 5px 6px 12px #bdccc7' }
+              : { background: PINK_GRADIENT, boxShadow: '0 8px 16px -8px rgba(229,84,126,0.6)' }
+          }
+        >
+          {taken ? 'Đã uống ✓' : 'Đã uống'}
+        </button>
+      </div>
+    </NeuCard>
+  )
+}
+
+// ─── Metric tiles (2×2) ──────────────────────────────────────────────────────
+
+interface TileTheme {
+  Icon: React.ComponentType<{ className?: string }>
+  iconBg: string
+  tint: string
+  spark: string
+}
+
+const TILE_THEME: Record<string, TileTheme> = {
+  glucose: { Icon: Droplet, iconBg: HERO_GRADIENT, tint: '#E9F2ED', spark: '#0B7F5B' },
+  bp: { Icon: Heart, iconBg: PINK_GRADIENT, tint: '#F8EAF0', spark: '#E5547E' },
+  weight: { Icon: Scale, iconBg: HERO_GRADIENT, tint: '#E9F2ED', spark: '#0B7F5B' },
+  bmi: {
+    Icon: Activity,
+    iconBg: 'linear-gradient(160deg,#F5B547,#E08A1E)',
+    tint: '#F7EFDF',
+    spark: '#B8740A',
+  },
+}
+
+interface TileModel {
+  key: string
+  metricType: string | null // null = not tappable (BMI)
+  label: string
+  value: string | null
+  unit: string | null
+  tone: BadgeTone
+  statusLabel: string | null
+  history: number[] // newest-first values for the sparkline
+}
+
+function severityToTone(severity: IndicatorConcern['severity']): BadgeTone {
+  return severity === 'danger' ? 'alert' : severity === 'warning' ? 'watch' : 'ok'
+}
+
+function findSeries(series: MetricSeries[], metricType: string): MetricSeries | undefined {
+  return series.find((s) => s.metricType === metricType)
+}
+
+function MetricTileGrid({
+  series,
+  summary,
+  profile,
+  onOpen,
+}: {
+  series: MetricSeries[]
+  summary: DashboardSummary
+  profile: PatientProfile | null
+  onOpen: (metricType: string) => void
+}) {
+  const concernByType = new Map(summary.concerns.map((c) => [c.metricType, c]))
+
+  const toneFor = (metricType: string): { tone: BadgeTone; statusLabel: string | null } => {
+    const c = concernByType.get(metricType)
+    if (c) return { tone: severityToTone(c.severity), statusLabel: c.statusLabel }
+    return { tone: 'ok', statusLabel: 'Bình thường' }
   }
 
-  const key = summary.overallStatus === 'no_data' ? 'stable' : summary.overallStatus
-  const p = STATUS_PRESENTATION[key]
-  const score = liveScore?.available ? liveScore.score : null
+  const tiles: TileModel[] = []
+
+  // Glucose — fasting_glucose
+  const glucose = findSeries(series, 'fasting_glucose')
+  tiles.push(
+    glucose
+      ? {
+          key: 'glucose',
+          metricType: 'fasting_glucose',
+          label: 'Đường huyết',
+          value: fmt(glucose.latest.value),
+          unit: glucose.unit?.label ?? glucose.latest.unit ?? 'mg/dL',
+          ...toneFor('fasting_glucose'),
+          history: histValues(glucose),
+        }
+      : emptyTile('glucose', 'fasting_glucose', 'Đường huyết')
+  )
+
+  // Blood pressure — systolic/diastolic
+  const sys = findSeries(series, 'blood_pressure_systolic')
+  const dia = findSeries(series, 'blood_pressure_diastolic')
+  tiles.push(
+    sys
+      ? {
+          key: 'bp',
+          metricType: 'blood_pressure_systolic',
+          label: 'Huyết áp',
+          value: dia ? `${fmt(sys.latest.value)}/${fmt(dia.latest.value)}` : fmt(sys.latest.value),
+          unit: 'mmHg',
+          ...mergeTone(toneFor('blood_pressure_systolic'), toneFor('blood_pressure_diastolic')),
+          history: histValues(sys),
+        }
+      : emptyTile('bp', 'blood_pressure_systolic', 'Huyết áp')
+  )
+
+  // Weight
+  const weight = findSeries(series, 'weight')
+  tiles.push(
+    weight
+      ? {
+          key: 'weight',
+          metricType: 'weight',
+          label: 'Cân nặng',
+          value: fmt(weight.latest.value),
+          unit: weight.unit?.label ?? weight.latest.unit ?? 'kg',
+          ...toneFor('weight'),
+          history: histValues(weight),
+        }
+      : emptyTile('weight', 'weight', 'Cân nặng')
+  )
+
+  // BMI — derived (weight ÷ (height_cm/100)²), NOT tappable
+  const bmi = computeBmi(weight?.latest.value ?? null, profile?.height_cm ?? null)
+  tiles.push({
+    key: 'bmi',
+    metricType: null,
+    label: 'BMI',
+    value: bmi != null ? fmt(bmi) : null,
+    unit: bmi != null ? 'kg/m²' : null,
+    ...bmiTone(bmi),
+    history: [],
+  })
 
   return (
-    <GlassCard className="relative overflow-hidden">
-      {/* ambient halo */}
-      <div
-        className={`absolute -right-10 -top-10 w-40 h-40 rounded-full bg-gradient-to-br ${p.ring} opacity-20 blur-2xl`}
-        aria-hidden="true"
-      />
-      <div className="relative">
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <span
-              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[14px] font-semibold ${p.chip}`}
-            >
-              {summary.overallStatus === 'stable' ? (
-                <CheckCircle2 className="size-4" aria-hidden="true" />
-              ) : (
-                <AlertTriangle className="size-4" aria-hidden="true" />
-              )}
-              Tình trạng tổng quát
-            </span>
-            <h2 className={`text-[28px] font-bold mt-2 leading-tight ${p.text}`}>{p.title}</h2>
-            <p className="text-[15px] text-text-muted mt-1">
-              {summary.abnormalCount > 0
-                ? `${summary.abnormalCount} chỉ số cần chú ý trên ${summary.totalTracked} chỉ số`
-                : `Tất cả ${summary.totalTracked} chỉ số trong ngưỡng bình thường`}
-            </p>
-            {summary.lastUpdated && (
-              <p className="text-[13px] text-text-subtle mt-1">
-                Cập nhật gần nhất: {formatDate(new Date(summary.lastUpdated))}
-              </p>
-            )}
-          </div>
-
-          {score != null && (
-            <div className="shrink-0 text-right">
-              <p className="text-[13px] font-medium text-text-muted">Điểm chuyển hóa</p>
-              <p className="flex items-baseline gap-0.5 justify-end">
-                <span className={`text-[40px] font-bold leading-none tracking-tight ${p.text}`}>
-                  {score}
-                </span>
-                <span className="text-[16px] font-medium text-text-muted">/100</span>
-              </p>
-            </div>
-          )}
-        </div>
+    <section aria-label="Chỉ số nổi bật">
+      <div className="grid grid-cols-2 gap-3">
+        {tiles.map((t) => (
+          <MetricTile key={t.key} tile={t} onOpen={onOpen} />
+        ))}
       </div>
-    </GlassCard>
+    </section>
   )
 }
 
-// ─── Rows ────────────────────────────────────────────────────────────────────────
+function MetricTile({ tile, onOpen }: { tile: TileModel; onOpen: (metricType: string) => void }) {
+  const theme = TILE_THEME[tile.key] ?? TILE_THEME.glucose
+  const tappable = tile.metricType != null && tile.value != null
+  const Icon = theme.Icon
 
-function TaskRow({ task }: { task: TodayTask }) {
-  return (
-    <button
-      type="button"
-      onClick={task.onClick}
-      className="w-full flex items-center gap-3 rounded-2xl border border-white/70 ring-1 ring-mint-100/50 bg-white/85 backdrop-blur-xl shadow-glass px-4 py-3.5 text-left transition-transform active:scale-[0.99]"
-    >
-      <span
-        className={`flex items-center justify-center w-11 h-11 rounded-xl shrink-0 ${
-          task.urgent ? 'bg-amber-100 text-amber-700' : 'bg-mint-50 text-mint-600'
-        }`}
-      >
-        {task.icon}
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block text-[17px] font-medium text-text truncate">{task.label}</span>
-        {task.hint && <span className="block text-[14px] text-text-muted truncate">{task.hint}</span>}
-      </span>
-      <ChevronRight className="size-5 text-text-subtle shrink-0" aria-hidden="true" />
-    </button>
-  )
-}
-
-function ConcernRow({ concern, onClick }: { concern: IndicatorConcern; onClick: () => void }) {
-  const tone =
-    concern.severity === 'danger' ? 'border-rose-200 bg-rose-50/70' : 'border-amber-200 bg-amber-50/70'
-  const dot = concern.severity === 'danger' ? 'bg-rose-500' : 'bg-amber-500'
-  const label = concern.severity === 'danger' ? 'text-rose-700' : 'text-amber-700'
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`w-full flex items-center gap-3 rounded-2xl border ${tone} px-4 py-3.5 text-left transition-transform active:scale-[0.99]`}
-    >
-      <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${dot}`} aria-hidden="true" />
-      <span className="min-w-0 flex-1">
-        <span className="block text-[17px] font-medium text-text truncate">{concern.label}</span>
-        <span className={`block text-[14px] ${label}`}>{concern.statusLabel}</span>
-      </span>
-      <span className="text-right shrink-0">
-        <span className="block text-[18px] font-bold text-text leading-none">{concern.value}</span>
-        <span className="block text-[13px] text-text-muted mt-0.5">{concern.unit}</span>
-      </span>
-    </button>
-  )
-}
-
-function TrendRow({ mover }: { mover: TrendMover }) {
-  const { direction, pct, good } = mover.trend
-  const Icon = direction === 'up' ? ArrowUpRight : direction === 'down' ? ArrowDownRight : Minus
-  const color = good === true ? 'text-mint-600' : good === false ? 'text-rose-600' : 'text-text-muted'
-  const pctText = pct != null ? `${pct > 0 ? '+' : ''}${pct}%` : '—'
-  return (
-    <div className="flex items-center gap-3 px-4 py-3">
-      <TrendingUp className="size-4 text-mint-500 shrink-0" aria-hidden="true" />
-      <span className="min-w-0 flex-1 text-[16px] font-medium text-text truncate">{mover.label}</span>
-      <span className="text-[15px] text-text-muted">
-        {mover.value} {mover.unit}
-      </span>
-      <span
-        className={`inline-flex items-center gap-0.5 text-[15px] font-semibold ${color} w-[72px] justify-end`}
-      >
-        <Icon className="size-4" aria-hidden="true" />
-        {pctText}
-      </span>
-    </div>
-  )
-}
-
-function LatestLabCard({ lab, onClick }: { lab: LabResult; onClick: () => void }) {
-  const date = lab.uploaded_at ?? lab.created_at ?? null
-  const statusLabel =
-    lab.status === 'pending_review'
-      ? 'Đang chờ bác sĩ duyệt'
-      : lab.status === 'approved'
-        ? 'Đã duyệt'
-        : lab.ocr_status === 'done'
-          ? 'Đã xử lý'
-          : 'Đang xử lý'
-  const statusTone =
-    lab.status === 'pending_review' ? 'text-amber-700 bg-amber-100' : 'text-mint-700 bg-mint-100'
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="w-full flex items-center gap-3 rounded-2xl border border-white/70 ring-1 ring-mint-100/50 bg-white/85 backdrop-blur-xl shadow-glass px-4 py-3.5 text-left transition-transform active:scale-[0.99]"
-    >
-      <span className="flex items-center justify-center w-11 h-11 rounded-xl bg-mint-50 text-mint-600 shrink-0">
-        <FlaskConical className="size-5" aria-hidden="true" />
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block text-[17px] font-medium text-text truncate">
-          {lab.file_name ?? 'Kết quả xét nghiệm'}
+  const content = (
+    <>
+      <div className="flex items-start justify-between gap-2">
+        <span
+          className="grid size-10 shrink-0 place-items-center rounded-[14px] text-white"
+          style={{ background: theme.iconBg, boxShadow: '0 6px 14px -8px rgba(16,40,36,0.5)' }}
+          aria-hidden="true"
+        >
+          <Icon className="size-5" />
         </span>
-        {date && <span className="block text-[14px] text-text-muted">{formatDate(new Date(date))}</span>}
-      </span>
-      <span className={`text-[13px] font-medium px-2.5 py-1 rounded-full shrink-0 ${statusTone}`}>
-        {statusLabel}
-      </span>
-    </button>
+        {tile.value != null && tile.statusLabel && (
+          <NeuBadge tone={tile.tone} className="!text-[11px] !px-2.5 !py-1 before:!hidden">
+            {tile.statusLabel}
+          </NeuBadge>
+        )}
+      </div>
+
+      <p className="mt-3 text-[13px] text-neu-muted">{tile.label}</p>
+
+      {tile.value == null ? (
+        <p className="mt-0.5 text-[13px] text-neu-muted">Chưa có dữ liệu</p>
+      ) : (
+        <>
+          <p className="mt-0.5 flex items-baseline gap-1">
+            <span className="text-[28px] font-extrabold leading-none tracking-[-0.02em] text-neu-text">
+              {tile.value}
+            </span>
+            {tile.unit && (
+              <span className="text-[13px] font-medium text-neu-muted">{tile.unit}</span>
+            )}
+          </p>
+          <div className="mt-3">
+            <Sparkline values={tile.history} color={theme.spark} />
+          </div>
+        </>
+      )}
+    </>
+  )
+
+  if (tappable && tile.metricType) {
+    return (
+      <button
+        type="button"
+        onClick={() => onOpen(tile.metricType as string)}
+        className="neu-card p-4 text-left transition-transform active:scale-[0.98]"
+        style={{ backgroundColor: theme.tint }}
+      >
+        {content}
+      </button>
+    )
+  }
+  return (
+    <div className="neu-card p-4" style={{ backgroundColor: theme.tint }}>
+      {content}
+    </div>
   )
 }
 
-function MedicationRow({ med }: { med: Medication }) {
+// ─── Sparkline (inline SVG, no deps) ─────────────────────────────────────────
+
+interface Pt {
+  x: number
+  y: number
+}
+
+/** Catmull-Rom → cubic-bezier smoothing for a soft, curved sparkline. */
+function smoothPath(pts: Pt[]): string {
+  let d = `M${pts[0].x.toFixed(1)},${pts[0].y.toFixed(1)}`
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[i - 1] ?? pts[i]
+    const p1 = pts[i]
+    const p2 = pts[i + 1]
+    const p3 = pts[i + 2] ?? p2
+    const cp1x = p1.x + (p2.x - p0.x) / 6
+    const cp1y = p1.y + (p2.y - p0.y) / 6
+    const cp2x = p2.x - (p3.x - p1.x) / 6
+    const cp2y = p2.y - (p3.y - p1.y) / 6
+    d += ` C${cp1x.toFixed(1)},${cp1y.toFixed(1)} ${cp2x.toFixed(1)},${cp2y.toFixed(1)} ${p2.x.toFixed(1)},${p2.y.toFixed(1)}`
+  }
+  return d
+}
+
+function Sparkline({ values, color }: { values: number[]; color: string }) {
+  const gid = `spark${React.useId().replace(/:/g, '')}`
+  // values are newest-first; draw oldest→newest left→right.
+  const points = [...values].reverse()
+  if (points.length < 2) return <div className="h-8" aria-hidden="true" />
+  const w = 100
+  const h = 32
+  const pad = 4
+  const min = Math.min(...points)
+  const max = Math.max(...points)
+  const span = max - min || 1
+  const step = w / (points.length - 1)
+  const pts: Pt[] = points.map((v, i) => ({
+    x: i * step,
+    y: h - ((v - min) / span) * (h - pad * 2) - pad,
+  }))
+  const line = smoothPath(pts)
+  const area = `${line} L${w},${h} L0,${h} Z`
   return (
-    <div className="flex items-center gap-3 rounded-2xl border border-white/70 ring-1 ring-mint-100/50 bg-white/85 backdrop-blur-xl shadow-glass px-4 py-3.5">
-      <span className="flex items-center justify-center w-11 h-11 rounded-xl bg-mint-50 text-mint-600 shrink-0">
-        <Pill className="size-5" aria-hidden="true" />
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block text-[17px] font-medium text-text truncate">{med.name}</span>
-        {(med.dose || med.frequency) && (
-          <span className="block text-[14px] text-text-muted truncate">
-            {[med.dose, med.frequency].filter(Boolean).join(' · ')}
-          </span>
-        )}
-      </span>
-    </div>
+    <svg
+      viewBox={`0 0 ${w} ${h}`}
+      preserveAspectRatio="none"
+      className="h-8 w-full"
+      aria-hidden="true"
+    >
+      <defs>
+        <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.22" />
+          <stop offset="100%" stopColor={color} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <path d={area} fill={`url(#${gid})`} stroke="none" />
+      <path
+        d={line}
+        fill="none"
+        stroke={color}
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        vectorEffect="non-scaling-stroke"
+      />
+    </svg>
   )
+}
+
+// ─── Empty dashboard ─────────────────────────────────────────────────────────
+
+function EmptyDashboard({ onLog }: { onLog: () => void }) {
+  return (
+    <NeuCard size="lg" className="text-center">
+      <span
+        className="neu-pressed mx-auto flex size-16 items-center justify-center rounded-full"
+        aria-hidden="true"
+      >
+        <Activity className="size-7 text-neu-green" />
+      </span>
+      <h2 className="mt-4 text-[20px] font-bold text-neu-text">Chưa có dữ liệu hôm nay</h2>
+      <p className="mt-1 text-[15px] text-neu-muted">
+        Hãy ghi chỉ số đầu tiên để bắt đầu theo dõi sức khoẻ của bạn.
+      </p>
+      <NeuButton className="mt-5" onClick={onLog}>
+        Ghi chỉ số đầu tiên
+      </NeuButton>
+    </NeuCard>
+  )
+}
+
+// ─── Pure helpers ────────────────────────────────────────────────────────────
+
+function timeOfDay(): string {
+  const h = new Date().getHours()
+  if (h < 11) return 'sáng'
+  if (h < 18) return 'chiều'
+  return 'tối'
+}
+
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean)
+  if (parts.length === 0) return '?'
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+}
+
+const VN_WEEKDAY = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7']
+
+function formatVnDate(d: Date): string {
+  return `${VN_WEEKDAY[d.getDay()]}, ${d.getDate()} Thg ${d.getMonth() + 1}`
+}
+
+function fmt(n: number): string {
+  return Number.isInteger(n) ? String(n) : n.toFixed(1)
+}
+
+function histValues(s: MetricSeries): number[] {
+  // newest-first; take up to 8 points for a compact sparkline.
+  return s.history.slice(0, 8).map((m) => m.value)
+}
+
+function emptyTile(key: string, metricType: string, label: string): TileModel {
+  return {
+    key,
+    metricType,
+    label,
+    value: null,
+    unit: null,
+    tone: 'ok',
+    statusLabel: null,
+    history: [],
+  }
+}
+
+function mergeTone(
+  a: { tone: BadgeTone; statusLabel: string | null },
+  b: { tone: BadgeTone; statusLabel: string | null }
+): { tone: BadgeTone; statusLabel: string | null } {
+  const rank: Record<BadgeTone, number> = { ok: 0, watch: 1, alert: 2 }
+  return rank[a.tone] >= rank[b.tone] ? a : b
+}
+
+function computeBmi(weightKg: number | null, heightCm: number | null): number | null {
+  if (weightKg == null || heightCm == null || heightCm <= 0) return null
+  const m = heightCm / 100
+  return Math.round((weightKg / (m * m)) * 10) / 10
+}
+
+function bmiTone(bmi: number | null): { tone: BadgeTone; statusLabel: string | null } {
+  if (bmi == null) return { tone: 'ok', statusLabel: null }
+  if (bmi < 18.5) return { tone: 'watch', statusLabel: 'Thiếu cân' }
+  if (bmi < 23) return { tone: 'ok', statusLabel: 'Bình thường' }
+  if (bmi < 25) return { tone: 'watch', statusLabel: 'Thừa cân' }
+  return { tone: 'alert', statusLabel: 'Béo phì' }
 }

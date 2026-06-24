@@ -6,15 +6,17 @@ import {
   AlertTriangle,
   ArrowLeft,
   Camera,
+  CalendarDays,
   CheckCircle2,
   Link2,
   Plus,
   Trash2,
   Upload,
 } from 'lucide-react'
-import { CalendarDays } from 'lucide-react'
-import { Alert, Badge, Button, PageHeader } from '@/design-system'
-import { GlassCard, MintButton, PatientInput } from '@/components/patient'
+import { Alert } from '@/design-system'
+import { PatientInput } from '@/components/patient'
+import { NeuCard, NeuButton, NeuBadge } from '@/components/patient/neu'
+import type { NeuTone } from '@/components/patient/metrics/metricVisuals'
 import { useAuth } from '@/lib/auth/context'
 import { useFeatureFlags } from '@/lib/api/features'
 import {
@@ -27,6 +29,7 @@ import { displayDateToIso, formatDateInput, isoToDisplayDate, validateExamDate }
 
 const MAX_MB = 10
 const ACCEPT = ['image/jpeg', 'image/png', 'application/pdf']
+const HERO_GRADIENT = 'linear-gradient(160deg,#17AE7B,#0B6B4D)'
 
 type Mode = 'camera' | 'file' | 'url'
 
@@ -35,7 +38,7 @@ interface EditRow {
   value: string
   unit: string
   reference_range: string
-  confidence: number | null   // null = manually added row
+  confidence: number | null // null = manually added row
   status: string | null
 }
 
@@ -46,11 +49,11 @@ const STATUS_LABEL: Record<string, string> = {
   critical: 'Cần lưu ý',
 }
 
-function confidenceBadge(c: number | null): { label: string; variant: 'mint' | 'warning' | 'danger' } {
-  if (c == null) return { label: 'Tự nhập', variant: 'mint' }
-  if (c >= 0.85) return { label: `Độ tin cậy cao`, variant: 'mint' }
-  if (c >= 0.6) return { label: `Cần kiểm tra`, variant: 'warning' }
-  return { label: `Tin cậy thấp`, variant: 'danger' }
+function confidenceBadge(c: number | null): { label: string; tone: NeuTone } {
+  if (c == null) return { label: 'Tự nhập', tone: 'ok' }
+  if (c >= 0.85) return { label: 'Độ tin cậy cao', tone: 'ok' }
+  if (c >= 0.6) return { label: 'Cần kiểm tra', tone: 'watch' }
+  return { label: 'Tin cậy thấp', tone: 'alert' }
 }
 
 // ── Mode picker ────────────────────────────────────────────────────────────────
@@ -62,7 +65,7 @@ function ModeTabs({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => void 
     { key: 'url', label: 'Dán link', icon: <Link2 className="size-5" /> },
   ]
   return (
-    <div role="tablist" aria-label="Cách tải kết quả" className="grid grid-cols-3 gap-2">
+    <div role="tablist" aria-label="Cách tải kết quả" className="grid grid-cols-3 gap-2.5">
       {tabs.map((t) => {
         const active = mode === t.key
         return (
@@ -71,15 +74,19 @@ function ModeTabs({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => void 
             role="tab"
             aria-selected={active}
             onClick={() => onChange(t.key)}
-            className={[
-              'flex flex-col items-center gap-1.5 rounded-2xl py-4 transition-all',
+            className={
               active
-                ? 'bg-mint-500 text-white shadow-glow-mint scale-[1.02]'
-                : 'bg-white/70 text-text-muted ring-1 ring-mint-100 hover:bg-white',
-            ].join(' ')}
+                ? 'flex flex-col items-center gap-1.5 rounded-[16px] py-4 text-white'
+                : 'neu-raised flex flex-col items-center gap-1.5 rounded-[16px] py-4 text-neu-muted'
+            }
+            style={
+              active
+                ? { background: HERO_GRADIENT, boxShadow: '0 10px 20px -10px rgba(11,107,77,0.6)' }
+                : undefined
+            }
           >
             {t.icon}
-            <span className="text-[15px] font-medium">{t.label}</span>
+            <span className="text-[14px] font-semibold">{t.label}</span>
           </button>
         )
       })}
@@ -104,8 +111,8 @@ export default function LabUploadPage() {
   const [draft, setDraft] = React.useState<LabUploadDraft | null>(null)
   const [rows, setRows] = React.useState<EditRow[]>([])
   const [labName, setLabName] = React.useState('')
-  const [testDate, setTestDate] = React.useState('')       // display DD/MM/YYYY
-  const [testDateAuto, setTestDateAuto] = React.useState(false)  // detected by OCR
+  const [testDate, setTestDate] = React.useState('') // display DD/MM/YYYY
+  const [testDateAuto, setTestDateAuto] = React.useState(false) // detected by OCR
   const [saving, setSaving] = React.useState(false)
 
   const step: 'input' | 'review' = draft ? 'review' : 'input'
@@ -128,8 +135,7 @@ export default function LabUploadPage() {
     setError(null)
     setSubmitting(true)
     try {
-      const input =
-        mode === 'url' ? { url: url.trim() } : file ? { file } : null
+      const input = mode === 'url' ? { url: url.trim() } : file ? { file } : null
       if (!input || (mode === 'url' && !url.trim())) {
         setError(mode === 'url' ? 'Vui lòng dán đường link.' : 'Vui lòng chọn tệp.')
         setSubmitting(false)
@@ -150,7 +156,11 @@ export default function LabUploadPage() {
         status: v.status,
       }))
       // Always give the patient at least one editable row (manual fallback).
-      setRows(mapped.length ? mapped : [{ test_name: '', value: '', unit: '', reference_range: '', confidence: null, status: null }])
+      setRows(
+        mapped.length
+          ? mapped
+          : [{ test_name: '', value: '', unit: '', reference_range: '', confidence: null, status: null }]
+      )
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Không xử lý được tệp. Vui lòng thử lại.')
     } finally {
@@ -201,7 +211,7 @@ export default function LabUploadPage() {
 
   if (!patientId) {
     return (
-      <div className="p-4 lg:p-6 max-w-2xl mx-auto">
+      <div className="p-4 max-w-md mx-auto mt-10">
         <Alert variant="warning" title="Chưa có hồ sơ bệnh nhân">
           Tài khoản chưa được liên kết với hồ sơ bệnh nhân. Vui lòng liên hệ hỗ trợ.
         </Alert>
@@ -212,41 +222,41 @@ export default function LabUploadPage() {
   // Feature flag off → tell the patient it is coming soon (route may be opened directly).
   if (flags && !flags.ocr) {
     return (
-      <div className="p-4 lg:p-6 max-w-2xl mx-auto space-y-4">
-        <PageHeader title="Tải lên kết quả" />
+      <div className="p-4 max-w-md mx-auto space-y-4">
+        <PageHeaderNeu title="Tải lên kết quả" onBack={() => router.push('/labs')} />
         <Alert variant="info" title="Sắp ra mắt">
           Tính năng tự động đọc kết quả xét nghiệm đang được hoàn thiện. Bạn có thể nhập tay kết quả ở
           trang Xét nghiệm.
         </Alert>
-        <Button variant="outline" onClick={() => router.push('/labs')}>
-          <ArrowLeft className="size-4 mr-1" /> Về trang xét nghiệm
-        </Button>
+        <NeuButton variant="secondary" onClick={() => router.push('/labs')}>
+          Về trang xét nghiệm
+        </NeuButton>
       </div>
     )
   }
 
   return (
-    <div className="p-4 lg:p-6 max-w-2xl mx-auto space-y-5 pb-28">
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={() => (step === 'review' ? (setDraft(null), setError(null)) : router.push('/labs'))}
-          className="flex items-center gap-1.5 text-[16px] text-mint-600"
-          aria-label="Quay lại"
-        >
-          <ArrowLeft className="size-5" /> Quay lại
-        </button>
-      </div>
-
-      <PageHeader title={step === 'input' ? 'Tải lên kết quả xét nghiệm' : 'Kiểm tra & xác nhận'} />
+    <div className="p-4 max-w-md mx-auto space-y-4 pb-28">
+      <PageHeaderNeu
+        title={step === 'input' ? 'Tải lên kết quả' : 'Kiểm tra & xác nhận'}
+        onBack={() =>
+          step === 'review' ? (setDraft(null), setError(null)) : router.push('/labs')
+        }
+      />
 
       {error && <Alert variant="danger" title={error} />}
 
       {step === 'input' && (
         <>
-          <ModeTabs mode={mode} onChange={(m) => { setMode(m); setError(null) }} />
+          <ModeTabs
+            mode={mode}
+            onChange={(m) => {
+              setMode(m)
+              setError(null)
+            }}
+          />
 
-          <GlassCard>
+          <NeuCard>
             {mode === 'camera' && (
               <FilePicker
                 accept="image/*"
@@ -254,7 +264,7 @@ export default function LabUploadPage() {
                 file={file}
                 onPick={pickFile}
                 hint="Chụp ảnh phiếu kết quả xét nghiệm bằng camera."
-                icon={<Camera className="size-7 text-mint-500" />}
+                icon={<Camera className="size-7 text-neu-green" />}
               />
             )}
             {mode === 'file' && (
@@ -263,12 +273,14 @@ export default function LabUploadPage() {
                 file={file}
                 onPick={pickFile}
                 hint="Chọn ảnh JPG/PNG hoặc tệp PDF (tối đa 10MB)."
-                icon={<Upload className="size-7 text-mint-500" />}
+                icon={<Upload className="size-7 text-neu-green" />}
               />
             )}
             {mode === 'url' && (
               <div className="space-y-3">
-                <p className="text-[16px] text-text-muted">Dán đường link tới ảnh/PDF kết quả xét nghiệm.</p>
+                <p className="text-[15px] text-neu-muted">
+                  Dán đường link tới ảnh/PDF kết quả xét nghiệm.
+                </p>
                 <PatientInput
                   type="url"
                   inputMode="url"
@@ -277,21 +289,19 @@ export default function LabUploadPage() {
                   onChange={(e) => setUrl(e.target.value)}
                   leftIcon={<Link2 className="size-5" />}
                 />
-                <p className="text-[14px] text-text-subtle">
+                <p className="text-[13px] text-neu-subtle">
                   Chỉ chấp nhận đường link công khai (http/https).
                 </p>
               </div>
             )}
-          </GlassCard>
+          </NeuCard>
 
-          <MintButton
-            fullWidth
-            loading={submitting}
-            disabled={mode === 'url' ? !url.trim() : !file}
+          <NeuButton
+            disabled={submitting || (mode === 'url' ? !url.trim() : !file)}
             onClick={submitForDraft}
           >
-            Tải lên & đọc kết quả
-          </MintButton>
+            {submitting ? 'Đang xử lý...' : 'Tải lên & đọc kết quả'}
+          </NeuButton>
         </>
       )}
 
@@ -306,19 +316,22 @@ export default function LabUploadPage() {
               Vui lòng kiểm tra lại các giá trị được tô màu vàng/đỏ trước khi lưu.
             </Alert>
           ) : (
-            <div className="flex items-center gap-2 text-[15px] text-mint-700">
-              <CheckCircle2 className="size-5" /> Đã đọc {draft.parsed_values.length} chỉ số. Hãy kiểm tra lại trước khi lưu.
+            <div className="flex items-center gap-2 text-[15px] text-neu-green">
+              <CheckCircle2 className="size-5" /> Đã đọc {draft.parsed_values.length} chỉ số. Hãy kiểm
+              tra lại trước khi lưu.
             </div>
           )}
 
           {/* Exam date — prominent, required, at the TOP of the review form. */}
-          <GlassCard>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="flex items-center gap-1.5 text-[16px] font-semibold text-mint-700">
+          <NeuCard>
+            <div className="mb-1.5 flex items-center justify-between">
+              <label className="flex items-center gap-1.5 text-[15px] font-semibold text-neu-green">
                 <CalendarDays className="size-5" /> Ngày xét nghiệm
               </label>
               {testDateAuto && (
-                <Badge variant="mint" size="sm">Tự động phát hiện</Badge>
+                <NeuBadge tone="ok" className="!text-[11px] !px-2.5 !py-0.5 before:!hidden">
+                  Tự động phát hiện
+                </NeuBadge>
               )}
             </div>
             <PatientInput
@@ -327,39 +340,46 @@ export default function LabUploadPage() {
               placeholder="DD/MM/YYYY"
               value={testDate}
               invalid={Boolean(testDate) && validateExamDate(testDate) !== null}
-              onChange={(e) => { setTestDate(formatDateInput(e.target.value)); setTestDateAuto(false) }}
+              onChange={(e) => {
+                setTestDate(formatDateInput(e.target.value))
+                setTestDateAuto(false)
+              }}
             />
-            <p className="mt-1.5 text-[14px] text-text-subtle">
+            <p className="mt-1.5 text-[13px] text-neu-subtle">
               Ngày khám/lấy mẫu thật trên phiếu — không phải ngày tải lên.
             </p>
-          </GlassCard>
+          </NeuCard>
 
-          <GlassCard>
-            <label className="block text-[15px] font-medium text-mint-700 mb-1.5">Tên phòng khám / xét nghiệm (tuỳ chọn)</label>
+          <NeuCard>
+            <label className="mb-1.5 block text-[14px] font-semibold text-neu-green">
+              Tên phòng khám / xét nghiệm (tuỳ chọn)
+            </label>
             <PatientInput
               placeholder="VD: Phòng khám Đa khoa..."
               value={labName}
               onChange={(e) => setLabName(e.target.value)}
             />
-          </GlassCard>
+          </NeuCard>
 
           <div className="space-y-3">
             {rows.map((row, i) => {
               const badge = confidenceBadge(row.confidence)
               const lowConf = row.confidence != null && row.confidence < 0.6
               return (
-                <GlassCard key={i}>
-                  <div className="flex items-start justify-between gap-2 mb-2">
-                    <Badge variant={badge.variant} size="sm">{badge.label}</Badge>
+                <NeuCard key={i}>
+                  <div className="mb-2 flex items-start justify-between gap-2">
+                    <NeuBadge tone={badge.tone} className="!text-[11px] !px-2.5 !py-0.5 before:!hidden">
+                      {badge.label}
+                    </NeuBadge>
                     <div className="flex items-center gap-2">
                       {row.status && STATUS_LABEL[row.status] && (
-                        <span className="text-[14px] text-text-subtle">{STATUS_LABEL[row.status]}</span>
+                        <span className="text-[13px] text-neu-subtle">{STATUS_LABEL[row.status]}</span>
                       )}
                       <button
                         type="button"
                         onClick={() => setRows((rs) => rs.filter((_, idx) => idx !== i))}
                         aria-label="Xoá chỉ số"
-                        className="p-1.5 text-danger hover:bg-danger-light rounded-md"
+                        className="rounded-md p-1.5 text-[#D92D20] hover:bg-[#f6dede]"
                       >
                         <Trash2 className="size-4" />
                       </button>
@@ -372,38 +392,79 @@ export default function LabUploadPage() {
                     invalid={lowConf}
                     onChange={(e) => setRow(i, { test_name: e.target.value })}
                   />
-                  <div className="grid grid-cols-3 gap-2 mt-2">
-                    <PatientInput aria-label="Giá trị" type="number" step="any" inputMode="decimal" placeholder="Giá trị" value={row.value} invalid={lowConf} onChange={(e) => setRow(i, { value: e.target.value })} />
-                    <PatientInput aria-label="Đơn vị" placeholder="Đơn vị" value={row.unit} onChange={(e) => setRow(i, { unit: e.target.value })} />
-                    <PatientInput aria-label="Tham chiếu" placeholder="Tham chiếu" value={row.reference_range} onChange={(e) => setRow(i, { reference_range: e.target.value })} />
+                  <div className="mt-2 grid grid-cols-3 gap-2">
+                    <PatientInput
+                      aria-label="Giá trị"
+                      type="number"
+                      step="any"
+                      inputMode="decimal"
+                      placeholder="Giá trị"
+                      value={row.value}
+                      invalid={lowConf}
+                      onChange={(e) => setRow(i, { value: e.target.value })}
+                    />
+                    <PatientInput
+                      aria-label="Đơn vị"
+                      placeholder="Đơn vị"
+                      value={row.unit}
+                      onChange={(e) => setRow(i, { unit: e.target.value })}
+                    />
+                    <PatientInput
+                      aria-label="Tham chiếu"
+                      placeholder="Tham chiếu"
+                      value={row.reference_range}
+                      onChange={(e) => setRow(i, { reference_range: e.target.value })}
+                    />
                   </div>
                   {lowConf && (
-                    <p className="mt-2 flex items-center gap-1 text-[14px] text-danger">
+                    <p className="mt-2 flex items-center gap-1 text-[13px] text-[#D92D20]">
                       <AlertTriangle className="size-4" /> Cần kiểm tra lại số liệu này.
                     </p>
                   )}
-                </GlassCard>
+                </NeuCard>
               )
             })}
 
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setRows((rs) => [...rs, { test_name: '', value: '', unit: '', reference_range: '', confidence: null, status: null }])}
+            <NeuButton
+              variant="secondary"
+              onClick={() =>
+                setRows((rs) => [
+                  ...rs,
+                  { test_name: '', value: '', unit: '', reference_range: '', confidence: null, status: null },
+                ])
+              }
             >
-              <Plus className="size-4 mr-1" /> Thêm chỉ số
-            </Button>
+              <Plus className="size-4" /> Thêm chỉ số
+            </NeuButton>
           </div>
 
-          <MintButton fullWidth loading={saving} onClick={confirmSave}>
-            Xác nhận & lưu vào hồ sơ
-          </MintButton>
-          <p className="text-center text-[14px] text-text-subtle">
+          <NeuButton disabled={saving} onClick={confirmSave}>
+            {saving ? 'Đang lưu...' : 'Xác nhận & lưu vào hồ sơ'}
+          </NeuButton>
+          <p className="text-center text-[13px] text-neu-subtle">
             Kết quả chỉ được lưu sau khi bạn xác nhận.
           </p>
         </>
       )}
     </div>
+  )
+}
+
+// ── Neu header (back + title) ────────────────────────────────────────────────────
+
+function PageHeaderNeu({ title, onBack }: { title: string; onBack: () => void }) {
+  return (
+    <header className="flex items-center gap-3">
+      <button
+        type="button"
+        aria-label="Quay lại"
+        onClick={onBack}
+        className="neu-icon-btn !h-11 !w-11 !rounded-full text-neu-text"
+      >
+        <ArrowLeft className="size-5" />
+      </button>
+      <h1 className="text-[20px] font-extrabold tracking-[-0.02em] text-neu-text">{title}</h1>
+    </header>
   )
 }
 
@@ -430,13 +491,15 @@ function FilePicker({
       <button
         type="button"
         onClick={() => inputRef.current?.click()}
-        className="w-full flex flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-mint-200 bg-white/50 py-8 hover:bg-white/80 transition-colors"
+        className="flex w-full flex-col items-center gap-3 rounded-[18px] border-2 border-dashed border-[#bcd2cb] bg-[#eef3f1] py-8 transition-colors hover:bg-[#e6ece9]"
       >
-        <span className="flex items-center justify-center size-16 rounded-full bg-mint-50">{icon}</span>
-        <span className="text-[16px] font-medium text-text">
+        <span className="neu-pressed flex size-16 items-center justify-center rounded-full">
+          {icon}
+        </span>
+        <span className="text-[15px] font-semibold text-neu-text">
           {file ? file.name : 'Chạm để chọn'}
         </span>
-        <span className="text-[14px] text-text-subtle px-6 text-center">{hint}</span>
+        <span className="px-6 text-center text-[13px] text-neu-subtle">{hint}</span>
       </button>
       <input
         ref={inputRef}

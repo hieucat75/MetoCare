@@ -4,56 +4,53 @@ import { PatientEmptyState, LabEntryModal } from '@/components/patient'
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
 import { CalendarDays, FlaskConical, Plus, Upload } from 'lucide-react'
-import {
-  Alert,
-  Badge,
-  Button,
-  Card,
-  CardContent,
-  ErrorState,
-  PageHeader,
-  Skeleton,
-  SkeletonText,
-} from '@/design-system'
+import { Alert, ErrorState } from '@/design-system'
+import { NeuCard, NeuBadge } from '@/components/patient/neu'
 import { useAuth } from '@/lib/auth/context'
 import { getLabResults, type LabResultEntry } from '@/lib/api/patient'
 import { useFeatureFlags } from '@/lib/api/features'
 import { formatDate } from '@/lib/utils'
 
+const HERO_GRADIENT = 'linear-gradient(160deg,#17AE7B,#0B6B4D)'
+
 // ── Result card ────────────────────────────────────────────────────────────────
 
 function ResultCard({ r }: { r: LabResultEntry }) {
-  const valueStr =
-    r.value != null ? `${r.value}${r.unit ? ` ${r.unit}` : ''}` : '—'
+  const valueStr = r.value != null ? `${r.value}${r.unit ? ` ${r.unit}` : ''}` : '—'
   return (
-    <Card variant="glass" padding="none">
-      <CardContent className="p-4">
-        {/* Exam date — prominent (the real test date, not the upload date). */}
-        <div className="flex items-center gap-1.5 text-[15px] font-semibold text-mint-700 mb-1.5">
-          <CalendarDays className="size-4 shrink-0" aria-hidden="true" />
-          {r.test_date ? formatDate(r.test_date) : 'Chưa có ngày xét nghiệm'}
-        </div>
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex items-center gap-2 min-w-0">
-            <FlaskConical className="size-4 shrink-0 text-text-muted" aria-hidden="true" />
-            <span className="text-[17px] font-medium text-text truncate">{r.test_name}</span>
-          </div>
-          <span className="text-[18px] font-bold text-text shrink-0">{valueStr}</span>
-        </div>
-        <div className="flex items-center justify-between mt-1 pl-6">
-          <span className="text-[15px] text-text-muted">
-            {r.reference_range ? `Tham chiếu: ${r.reference_range}` : ''}
+    <NeuCard className="!p-4">
+      {/* Exam date — prominent (the real test date, not the upload date). */}
+      <div className="mb-2 flex items-center gap-1.5 text-[13.5px] font-semibold text-neu-green">
+        <CalendarDays className="size-4 shrink-0" aria-hidden="true" />
+        {r.test_date ? formatDate(r.test_date) : 'Chưa có ngày xét nghiệm'}
+      </div>
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <span
+            className="grid size-9 shrink-0 place-items-center rounded-[12px] text-white"
+            style={{ background: HERO_GRADIENT }}
+            aria-hidden="true"
+          >
+            <FlaskConical className="size-[18px]" />
           </span>
-          {/* Upload date — muted, clearly distinct from the exam date. */}
-          <span className="text-[13px] text-text-subtle">Tải lên {formatDate(r.created_at)}</span>
+          <span className="truncate text-[16px] font-semibold text-neu-text">{r.test_name}</span>
         </div>
-        {r.verified_by_user && (
-          <div className="mt-2 pl-6">
-            <Badge variant="default" size="sm">Tự nhập</Badge>
-          </div>
-        )}
-      </CardContent>
-    </Card>
+        <span className="shrink-0 text-[18px] font-extrabold text-neu-text">{valueStr}</span>
+      </div>
+      <div className="mt-1.5 flex items-center justify-between pl-11">
+        <span className="text-[13px] text-neu-muted">
+          {r.reference_range ? `Tham chiếu: ${r.reference_range}` : ''}
+        </span>
+        <span className="text-[12px] text-neu-subtle">Tải lên {formatDate(r.created_at)}</span>
+      </div>
+      {r.verified_by_user && (
+        <div className="mt-2 pl-11">
+          <NeuBadge tone="ok" className="!text-[11px] !px-2.5 !py-0.5 before:!hidden">
+            Tự nhập
+          </NeuBadge>
+        </div>
+      )}
+    </NeuCard>
   )
 }
 
@@ -61,17 +58,14 @@ function LabsSkeleton() {
   return (
     <div className="space-y-3">
       {[1, 2, 3].map((n) => (
-        <Card key={n} variant="glass" padding="none">
-          <CardContent className="p-4 space-y-3">
-            <Skeleton width="50%" height="1rem" />
-            <SkeletonText lines={1} />
-          </CardContent>
-        </Card>
+        <div key={n} className="neu-card mc-pulse p-4">
+          <div className="h-3.5 w-2/5 rounded-full bg-black/5" />
+          <div className="mt-3 h-4 w-3/5 rounded-full bg-black/5" />
+        </div>
       ))}
     </div>
   )
 }
-
 
 // ── Page ───────────────────────────────────────────────────────────────────────
 
@@ -105,7 +99,7 @@ export default function LabsPage() {
 
   if (!patientId) {
     return (
-      <div className="p-4 lg:p-6 max-w-2xl mx-auto">
+      <div className="p-4 lg:p-6 max-w-md mx-auto mt-10">
         <Alert variant="warning" title="Chưa có hồ sơ bệnh nhân">
           Tài khoản của bạn chưa được liên kết với hồ sơ bệnh nhân. Vui lòng liên hệ hỗ trợ.
         </Alert>
@@ -114,45 +108,47 @@ export default function LabsPage() {
   }
 
   return (
-    <div className="p-4 lg:p-6 space-y-4 max-w-2xl mx-auto pb-24">
-      <PageHeader
-        title="Kết quả xét nghiệm"
-        actions={
-          <Button variant="mint" size="sm" onClick={() => setModalOpen(true)}>
-            <Plus className="size-4 mr-1" aria-hidden="true" /> Nhập kết quả
-          </Button>
-        }
-      />
+    <div className="p-4 space-y-4 max-w-md mx-auto pb-28">
+      <h1 className="px-1 text-[21px] font-extrabold tracking-[-0.02em] text-neu-text">
+        Xét nghiệm
+      </h1>
 
       {/* OCR upload — real CTA when the OCR flag is on; otherwise a "coming soon" hint. */}
       {flags && flags.ocr && (
         <button
           type="button"
           onClick={() => router.push('/labs/upload')}
-          className="w-full text-left rounded-2xl bg-mint-500 text-white px-4 py-4 shadow-glow-mint hover:bg-mint-600 transition-colors flex items-center justify-between gap-3"
+          className="flex w-full items-center justify-between gap-3 rounded-[20px] px-5 py-4 text-left text-white"
+          style={{ background: HERO_GRADIENT, boxShadow: '0 14px 26px -12px rgba(11,107,77,0.6)' }}
         >
-          <div className="flex items-center gap-3 min-w-0">
-            <span className="flex items-center justify-center size-11 rounded-xl bg-white/20 shrink-0">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="grid size-11 shrink-0 place-items-center rounded-[14px] bg-white/20">
               <Upload className="size-5" aria-hidden="true" />
             </span>
             <div className="min-w-0">
-              <span className="block text-[17px] font-semibold">Tải lên kết quả xét nghiệm</span>
-              <span className="block text-[14px] text-white/85">Chụp ảnh, tải tệp hoặc dán link — tự động đọc</span>
+              <span className="block text-[16px] font-bold">Tải lên kết quả xét nghiệm</span>
+              <span className="block text-[13px] text-white/85">
+                Chụp ảnh, tải tệp hoặc dán link — tự động đọc
+              </span>
             </div>
           </div>
-          <span aria-hidden="true" className="text-[20px]">→</span>
+          <span aria-hidden="true" className="text-[20px]">
+            →
+          </span>
         </button>
       )}
       {flags && !flags.ocr && (
-        <Card variant="glass" padding="md">
-          <CardContent className="flex items-center justify-between gap-3 py-1">
-            <div className="flex items-center gap-2 text-text-muted">
+        <NeuCard className="!p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-neu-muted">
               <Upload className="size-4" aria-hidden="true" />
-              <span className="text-[17px]">Tải ảnh/PDF và tự động đọc kết quả</span>
+              <span className="text-[15px]">Tải ảnh/PDF và tự động đọc kết quả</span>
             </div>
-            <Badge variant="default" size="sm">Sắp ra mắt</Badge>
-          </CardContent>
-        </Card>
+            <NeuBadge tone="watch" className="!text-[11px] !px-2.5 !py-0.5 before:!hidden">
+              Sắp ra mắt
+            </NeuBadge>
+          </div>
+        </NeuCard>
       )}
 
       {error && !loading && (
@@ -177,6 +173,16 @@ export default function LabsPage() {
           ))}
         </div>
       )}
+
+      {/* Manual entry — neu FAB (OCR card above is the primary upload path). */}
+      <button
+        type="button"
+        aria-label="Nhập kết quả thủ công"
+        onClick={() => setModalOpen(true)}
+        className="fixed bottom-28 right-5 z-30 flex size-14 items-center justify-center rounded-full text-white neu-btn-primary !min-h-0 !p-0"
+      >
+        <Plus className="size-7" aria-hidden="true" />
+      </button>
 
       <LabEntryModal
         open={modalOpen}

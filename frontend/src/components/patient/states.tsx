@@ -60,37 +60,27 @@ export function PatientErrorState({
   title = 'Đã có sự cố nhỏ',
   message = 'Đừng lo, dữ liệu của bạn vẫn an toàn. Hãy thử lại nhé.',
   onRetry,
-  offline = false,
   className,
 }: {
   title?: string
   message?: string
   onRetry?: () => void
-  offline?: boolean
   className?: string
 }) {
   return (
-    <div
-      className={cn(
-        'rounded-2xl border p-5',
-        offline ? 'border-[rgba(247,180,190,0.7)] bg-[rgba(236,240,244,0.66)]' : 'mc-glass',
-        className,
-      )}
-      style={{ backdropFilter: 'blur(22px)' }}
-      role="alert"
-    >
+    <div className={cn('neu-card p-5', className)} role="alert">
       <div className="flex items-start gap-3">
-        <div className="grid size-11 shrink-0 place-items-center rounded-xl bg-[rgba(217,45,32,0.12)]">
-          <WifiOff className="size-[22px] text-[#d92d20]" aria-hidden="true" />
+        <div className="grid size-11 shrink-0 place-items-center rounded-[13px] bg-[#f6dede] text-[#D92D20]">
+          <WifiOff className="size-[22px]" aria-hidden="true" />
         </div>
         <div className="flex-1">
-          <p className="text-[15px] font-bold text-[#d92d20]">{title}</p>
-          <p className="mt-1 text-[14px] leading-relaxed text-[#8a3b3b]">{message}</p>
+          <p className="text-[15px] font-bold text-neu-text">{title}</p>
+          <p className="mt-1 text-[14px] leading-relaxed text-neu-muted">{message}</p>
           {onRetry && (
             <button
               type="button"
               onClick={onRetry}
-              className="mt-3 inline-flex items-center gap-1.5 text-[14px] font-bold text-[#d92d20]"
+              className="mt-3 inline-flex items-center gap-1.5 text-[14px] font-bold text-neu-green"
             >
               <RefreshCw className="size-4" aria-hidden="true" />
               Thử lại
@@ -106,15 +96,15 @@ export function PatientErrorState({
 
 export function PatientSkeleton({ className }: { className?: string }) {
   return (
-    <div className={cn('mc-glass rounded-2xl p-5', className)}>
+    <div className={cn('neu-card mc-pulse p-5', className)}>
       <div className="flex items-center gap-3">
-        <div className="mc-pulse size-11 rounded-xl bg-[rgba(16,48,44,0.08)]" />
+        <div className="size-11 rounded-[13px] bg-black/5" />
         <div className="flex flex-1 flex-col gap-2">
-          <div className="mc-pulse h-3 w-[70%] rounded-md bg-[rgba(16,48,44,0.08)]" />
-          <div className="mc-pulse h-3 w-[40%] rounded-md bg-[rgba(16,48,44,0.08)]" />
+          <div className="h-3 w-[70%] rounded-md bg-black/5" />
+          <div className="h-3 w-[40%] rounded-md bg-black/5" />
         </div>
       </div>
-      <div className="mc-pulse mt-3.5 h-[88px] rounded-xl bg-[rgba(16,48,44,0.06)]" />
+      <div className="mt-3.5 h-[80px] rounded-[14px] bg-black/5" />
     </div>
   )
 }
@@ -126,7 +116,7 @@ export function AiPendingBadge({ className }: { className?: string }) {
     <span
       className={cn(
         'inline-flex items-center gap-1.5 rounded-md border border-[rgba(109,63,190,0.25)] bg-[rgba(243,238,251,0.92)] px-2 py-1 text-[11px] font-semibold text-[#6d3fbe]',
-        className,
+        className
       )}
     >
       <Sparkles className="size-3" aria-hidden="true" />
@@ -140,7 +130,7 @@ export function DoctorApprovedBadge({ className }: { className?: string }) {
     <span
       className={cn(
         'inline-flex items-center gap-1.5 rounded-md border border-[rgba(21,145,90,0.3)] bg-[rgba(227,244,234,0.95)] px-2 py-1 text-[11px] font-semibold text-[#15915a]',
-        className,
+        className
       )}
     >
       <ShieldCheck className="size-3" aria-hidden="true" />
@@ -154,7 +144,7 @@ export function AiPendingCard({ text, className }: { text: string; className?: s
     <div
       className={cn(
         'rounded-2xl border border-[rgba(216,201,246,0.7)] bg-[rgba(243,238,251,0.62)] p-5',
-        className,
+        className
       )}
       style={{ backdropFilter: 'blur(22px)' }}
     >

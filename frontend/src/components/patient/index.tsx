@@ -11,6 +11,7 @@
 import * as React from 'react'
 import Link from 'next/link'
 import Button from '@/design-system/components/core/Button'
+import { NeuButton } from './neu'
 import { cn } from '@/lib/utils'
 
 // ── GlassCard — translucent surface with backdrop blur + soft shadow ──────────
@@ -27,7 +28,7 @@ export function GlassCard({
         'rounded-3xl border border-white/70 ring-1 ring-mint-100/50 bg-white/85',
         'backdrop-blur-xl shadow-glass',
         padded && 'p-5',
-        className,
+        className
       )}
       {...rest}
     >
@@ -67,7 +68,9 @@ export const PatientInput = React.forwardRef<
   return (
     <div className="relative">
       {leftIcon && (
-        <div className="absolute inset-y-0 left-0 flex items-center pl-3 text-mint-600">{leftIcon}</div>
+        <div className="absolute inset-y-0 left-0 flex items-center pl-3 text-mint-600">
+          {leftIcon}
+        </div>
       )}
       <input
         ref={ref}
@@ -79,7 +82,7 @@ export const PatientInput = React.forwardRef<
           invalid
             ? 'border-danger focus:border-danger focus:ring-danger/20'
             : 'border-mint-200 focus:border-mint-400 focus:ring-mint-400/25',
-          className,
+          className
         )}
         {...rest}
       />
@@ -131,7 +134,11 @@ export function MetricCard({
   className?: string
 }) {
   const trendColor =
-    trend?.dir === 'down' ? 'text-mint-600' : trend?.dir === 'up' ? 'text-amber-600' : 'text-text-muted'
+    trend?.dir === 'down'
+      ? 'text-mint-600'
+      : trend?.dir === 'up'
+        ? 'text-amber-600'
+        : 'text-text-muted'
   const Comp: React.ElementType = onClick ? 'button' : 'div'
   return (
     <Comp
@@ -140,7 +147,7 @@ export function MetricCard({
         'relative text-left rounded-3xl border border-white/70 ring-1 ring-mint-100/50 bg-white/85 backdrop-blur-xl shadow-glass px-5 py-6 w-full overflow-hidden',
         'before:absolute before:left-0 before:top-3 before:bottom-3 before:w-1 before:rounded-full before:bg-gradient-to-b before:from-mint-300 before:to-mint-500',
         onClick && 'transition-transform active:scale-[0.98]',
-        className,
+        className
       )}
     >
       <div className="flex items-center justify-between mb-1.5">
@@ -181,24 +188,21 @@ export function PatientEmptyState({
   const resolvedCta = cta ?? action
   return (
     <div className="flex flex-col items-center justify-center text-center py-10 px-4">
-      <div className="relative mb-4">
-        {/* soft mint glow halo */}
-        <div className="absolute inset-0 rounded-full bg-mint-300/30 blur-xl" aria-hidden="true" />
-        <div className="relative w-20 h-20 rounded-full bg-gradient-to-br from-mint-100 to-mint-50/50 ring-1 ring-mint-200/60 shadow-glow-mint flex items-center justify-center text-mint-600 [&>svg]:size-9">
-          {icon ?? <span className="w-3 h-3 rounded-full bg-mint-400" />}
-        </div>
+      {/* Carved neumorphic icon well (Soft-UI), not the old mint glow halo. */}
+      <div className="neu-pressed mb-4 flex size-20 items-center justify-center rounded-full text-neu-green [&>svg]:size-8">
+        {icon ?? <span className="size-3 rounded-full bg-neu-green" />}
       </div>
-      <h3 className="text-[24px] font-semibold text-text">{title}</h3>
-      {description && <p className="text-[17px] text-text-muted mt-1 max-w-xs">{description}</p>}
+      <h3 className="text-[22px] font-bold text-neu-text">{title}</h3>
+      {description && <p className="mt-1.5 max-w-xs text-[15px] text-neu-muted">{description}</p>}
       {resolvedCta &&
         (resolvedCta.href ? (
-          <Link href={resolvedCta.href} className="mt-4">
-            <MintButton size="sm">{resolvedCta.label}</MintButton>
+          <Link href={resolvedCta.href} className="mt-5">
+            <NeuButton className="!w-auto !px-7">{resolvedCta.label}</NeuButton>
           </Link>
         ) : (
-          <MintButton size="sm" className="mt-4" onClick={resolvedCta.onClick}>
+          <NeuButton className="mt-5 !w-auto !px-7" onClick={resolvedCta.onClick}>
             {resolvedCta.label}
-          </MintButton>
+          </NeuButton>
         ))}
     </div>
   )

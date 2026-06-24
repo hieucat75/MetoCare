@@ -2,14 +2,8 @@
 
 import * as React from 'react'
 import { useRouter, usePathname } from 'next/navigation'
-import {
-  LayoutDashboard,
-  ClipboardList,
-  Users,
-  Calendar,
-  FileText,
-  LogOut,
-} from 'lucide-react'
+import { BrandLogo, BrandMark } from '@/components/brand'
+import { LayoutDashboard, ClipboardList, Users, Calendar, FileText, LogOut } from 'lucide-react'
 import { AppShell, Sidebar, TopNav, PageLoading } from '@/design-system'
 import type { NavItem } from '@/design-system'
 import { useAuth } from '@/lib/auth/context'
@@ -110,12 +104,11 @@ export default function DoctorLayout({ children }: { children: React.ReactNode }
             <div
               className={`flex items-center gap-2.5 p-4 ${sidebarCollapsed ? 'justify-center' : ''}`}
             >
-              <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center shrink-0">
-                <span className="text-white font-bold text-sm">M</span>
-              </div>
-              {!sidebarCollapsed && (
+              {sidebarCollapsed ? (
+                <BrandMark tone="white" className="w-8 h-8 object-contain shrink-0" />
+              ) : (
                 <div className="min-w-0">
-                  <p className="font-semibold text-white text-body-sm tracking-tight">MetoCare</p>
+                  <BrandLogo tone="white" className="h-7 w-auto" />
                   <p className="text-secondary-400 text-body-xs">Bác sĩ</p>
                 </div>
               )}

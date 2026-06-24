@@ -4,21 +4,7 @@ import { PatientEmptyState } from '@/components/patient'
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
 import { Pill, Plus, Pencil, Trash2 } from 'lucide-react'
-import {
-  Alert,
-  Button,
-  Card,
-  CardContent,
-  EmptyState,
-  ErrorState,
-  FormField,
-  Input,
-  Modal,
-  PageHeader,
-  Skeleton,
-  SkeletonText,
-  Textarea,
-} from '@/design-system'
+import { Alert, Button, ErrorState, FormField, Input, Modal, Textarea } from '@/design-system'
 import { useAuth } from '@/lib/auth/context'
 import {
   getMedications,
@@ -28,7 +14,8 @@ import {
   type Medication,
   type MedicationInput,
 } from '@/lib/api/patient'
-import { formatDate } from '@/lib/utils'
+
+const PILL_GRADIENT = 'linear-gradient(160deg,#5B8DEF,#2563EB)'
 
 // ── Loading skeleton ───────────────────────────────────────────────────────────
 
@@ -36,19 +23,21 @@ function MedicationsSkeleton() {
   return (
     <div className="space-y-3">
       {[1, 2, 3].map((n) => (
-        <Card key={n} variant="glass" padding="none">
-          <CardContent className="p-4 space-y-3">
-            <Skeleton width="55%" height="1rem" />
-            <Skeleton width="40%" height="0.75rem" />
-            <SkeletonText lines={1} />
-          </CardContent>
-        </Card>
+        <div key={n} className="neu-card mc-pulse p-4">
+          <div className="flex gap-3">
+            <div className="size-11 rounded-[13px] bg-black/5" />
+            <div className="flex-1 space-y-2 pt-1">
+              <div className="h-3.5 w-1/2 rounded-full bg-black/5" />
+              <div className="h-3 w-1/3 rounded-full bg-black/5" />
+            </div>
+          </div>
+        </div>
       ))}
     </div>
   )
 }
 
-// ── Honest medication card — real fields only ──────────────────────────────────
+// ── Honest medication card — real fields only (no faked adherence/schedule) ─────
 
 function MedRow({
   med,
@@ -63,41 +52,48 @@ function MedRow({
 }) {
   const meta = [med.dose, med.frequency].filter(Boolean).join(' · ')
   return (
-    <Card variant="glass" padding="none">
-      <CardContent className="p-4">
-        <div className="flex items-start justify-between gap-3">
-          <button type="button" onClick={onView} className="min-w-0 text-left flex items-start gap-3 flex-1">
-            <span className="flex items-center justify-center w-9 h-9 rounded-lg bg-mint-50 shrink-0">
-              <Pill className="size-4 text-mint-600" aria-hidden="true" />
-            </span>
-            <span className="min-w-0">
-              <span className="block text-[17px] font-medium text-text truncate">{med.name}</span>
-              {meta && <span className="block text-[15px] text-text-muted mt-0.5">{meta}</span>}
-              {med.note && <span className="block text-[15px] text-text-muted mt-0.5 truncate">{med.note}</span>}
-              <span className="block text-[15px] text-text-subtle mt-0.5">Thêm ngày {formatDate(med.created_at)}</span>
-            </span>
+    <div className="neu-card p-4">
+      <div className="flex items-start gap-3">
+        <button
+          type="button"
+          onClick={onView}
+          className="flex min-w-0 flex-1 items-start gap-3 text-left"
+        >
+          <span
+            className="grid size-11 shrink-0 place-items-center rounded-[13px] text-white"
+            style={{ background: PILL_GRADIENT, boxShadow: '0 8px 16px -8px rgba(37,99,235,0.5)' }}
+            aria-hidden="true"
+          >
+            <Pill className="size-5" />
+          </span>
+          <span className="min-w-0">
+            <span className="block truncate text-[16px] font-bold text-neu-text">{med.name}</span>
+            {meta && <span className="mt-0.5 block text-[13.5px] text-neu-muted">{meta}</span>}
+            {med.note && (
+              <span className="mt-0.5 block truncate text-[13px] text-neu-subtle">{med.note}</span>
+            )}
+          </span>
+        </button>
+        <div className="flex shrink-0 items-center gap-1">
+          <button
+            type="button"
+            onClick={onEdit}
+            aria-label="Sửa thuốc"
+            className="rounded-[10px] p-2 text-neu-muted transition-transform active:scale-90"
+          >
+            <Pencil className="size-4" />
           </button>
-          <div className="flex items-center gap-1 shrink-0">
-            <button
-              type="button"
-              onClick={onEdit}
-              aria-label="Sửa thuốc"
-              className="p-2 rounded-md text-text-muted hover:text-text hover:bg-secondary-50 transition-colors"
-            >
-              <Pencil className="size-4" />
-            </button>
-            <button
-              type="button"
-              onClick={onDelete}
-              aria-label="Xoá thuốc"
-              className="p-2 rounded-md text-danger hover:bg-danger-light transition-colors"
-            >
-              <Trash2 className="size-4" />
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={onDelete}
+            aria-label="Xoá thuốc"
+            className="rounded-[10px] p-2 text-[#D92D20] transition-transform active:scale-90"
+          >
+            <Trash2 className="size-4" />
+          </button>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   )
 }
 
@@ -178,16 +174,37 @@ function MedModal({ open, onClose, onSaved, patientId, editing }: MedModalProps)
       <form id="med-form" onSubmit={handleSubmit} className="space-y-4">
         {error && <Alert variant="danger" title={error} />}
         <FormField label="Tên thuốc" required>
-          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="VD: Metformin" fullWidth required />
+          <Input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="VD: Metformin"
+            fullWidth
+            required
+          />
         </FormField>
         <FormField label="Liều dùng">
-          <Input value={dose} onChange={(e) => setDose(e.target.value)} placeholder="VD: 500mg" fullWidth />
+          <Input
+            value={dose}
+            onChange={(e) => setDose(e.target.value)}
+            placeholder="VD: 500mg"
+            fullWidth
+          />
         </FormField>
         <FormField label="Tần suất">
-          <Input value={frequency} onChange={(e) => setFrequency(e.target.value)} placeholder="VD: 2 lần/ngày, sáng & tối" fullWidth />
+          <Input
+            value={frequency}
+            onChange={(e) => setFrequency(e.target.value)}
+            placeholder="VD: 2 lần/ngày, sáng & tối"
+            fullWidth
+          />
         </FormField>
         <FormField label="Ghi chú">
-          <Textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="VD: Uống sau ăn" rows={2} />
+          <Textarea
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="VD: Uống sau ăn"
+            rows={2}
+          />
         </FormField>
       </form>
     </Modal>
@@ -243,7 +260,7 @@ export default function MedicationsPage() {
 
   if (!patientId) {
     return (
-      <div className="p-4 lg:p-6 max-w-2xl mx-auto">
+      <div className="p-4 max-w-md mx-auto mt-10">
         <Alert variant="warning" title="Chưa có hồ sơ bệnh nhân">
           Tài khoản của bạn chưa được liên kết với hồ sơ bệnh nhân. Vui lòng liên hệ hỗ trợ.
         </Alert>
@@ -252,27 +269,18 @@ export default function MedicationsPage() {
   }
 
   return (
-    <div className="p-4 lg:p-6 space-y-4 max-w-2xl mx-auto pb-24">
-      <PageHeader
-        title="Thuốc & Điều trị"
-        actions={
-          <Button
-            size="sm"
-            variant="mint"
-            onClick={() => {
-              setEditing(null)
-              setModalOpen(true)
-            }}
-          >
-            <Plus className="size-4 mr-1" aria-hidden="true" /> Thêm thuốc
-          </Button>
-        }
-      />
+    <div className="p-4 space-y-4 max-w-md mx-auto pb-28">
+      <h1 className="px-1 text-[21px] font-extrabold tracking-[-0.02em] text-neu-text">Thuốc</h1>
 
       {loading && <MedicationsSkeleton />}
 
       {!loading && error && (
-        <ErrorState variant="inline" title="Không tải được danh sách thuốc" message={error} onRetry={load} />
+        <ErrorState
+          variant="inline"
+          title="Không tải được danh sách thuốc"
+          message={error}
+          onRetry={load}
+        />
       )}
 
       {!loading && !error && meds.length === 0 && (
@@ -280,6 +288,13 @@ export default function MedicationsPage() {
           icon={<Pill />}
           title="Chưa có thuốc nào"
           description="Thêm thuốc bạn đang dùng để theo dõi, hoặc bác sĩ sẽ kê đơn khi cần."
+          cta={{
+            label: 'Thêm thuốc',
+            onClick: () => {
+              setEditing(null)
+              setModalOpen(true)
+            },
+          }}
         />
       )}
 
@@ -300,6 +315,19 @@ export default function MedicationsPage() {
         </div>
       )}
 
+      {/* Add medication — neu FAB */}
+      <button
+        type="button"
+        aria-label="Thêm thuốc"
+        onClick={() => {
+          setEditing(null)
+          setModalOpen(true)
+        }}
+        className="fixed bottom-28 right-5 z-30 flex size-14 items-center justify-center rounded-full text-white neu-btn-primary !min-h-0 !p-0"
+      >
+        <Plus className="size-7" aria-hidden="true" />
+      </button>
+
       <MedModal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
@@ -315,7 +343,12 @@ export default function MedicationsPage() {
         title="Xoá thuốc?"
         footer={
           <>
-            <Button variant="outline" size="sm" onClick={() => setDeleteTarget(null)} disabled={deleting}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setDeleteTarget(null)}
+              disabled={deleting}
+            >
               Hủy
             </Button>
             <Button variant="danger" size="sm" onClick={confirmDelete} loading={deleting}>
@@ -324,8 +357,10 @@ export default function MedicationsPage() {
           </>
         }
       >
-        <p className="text-[17px] text-text-muted">
-          Bạn có chắc muốn xoá <span className="font-medium text-text">{deleteTarget?.name}</span> khỏi danh sách thuốc?
+        <p className="text-[16px] text-neu-muted">
+          Bạn có chắc muốn xoá{' '}
+          <span className="font-semibold text-neu-text">{deleteTarget?.name}</span> khỏi danh sách
+          thuốc?
         </p>
       </Modal>
     </div>

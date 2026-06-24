@@ -93,19 +93,31 @@ jobs:
         run: |
           IMG="${REGISTRY}/${{ github.repository_owner }}/metocare-frontend:${{ steps.tag.outputs.tag }}"
           API_URL="https://${BACKEND_FQDN}/api/v1"
-          # Update ONLY the frontend app. Backend/jobs/secrets/DB are not referenced.
+          # --revision-suffix forces ACA to create a new revision even when the image tag
+          # is already active (single-revision mode deduplicates by image+config hash).
+          SUFFIX="fe-$(echo '${{ steps.tag.outputs.tag }}' | cut -c1-8)"
           az containerapp update -g "$RG" -n "$FRONTEND_APP" --image "$IMG" \
+            --revision-suffix "$SUFFIX" \
             --set-env-vars "NEXT_PUBLIC_API_URL=$API_URL" -o none
-          echo "Deployed frontend image: $IMG"
+          echo "Deployed frontend image: $IMG (revision suffix: $SUFFIX)"
 
       - name: Verify — new frontend revision, backend unchanged
         run: |
-          FE_REV_AFTER=$(az containerapp show -g "$RG" -n "$FRONTEND_APP" --query properties.latestReadyRevisionName -o tsv)
+          # ACA provisions new revisions asynchronously — poll until latestReadyRevisionName
+          # changes (up to 3 min). The update step returns before the revision is "ready".
+          echo "Waiting for new frontend revision to become ready..."
+          FE_REV_AFTER=""
+          for i in $(seq 1 18); do
+            FE_REV_AFTER=$(az containerapp show -g "$RG" -n "$FRONTEND_APP" --query properties.latestReadyRevisionName -o tsv)
+            [ "$FE_REV_AFTER" != "$FRONTEND_REV_BEFORE" ] && break
+            echo "  $i: still $FE_REV_AFTER — waiting 10s"
+            sleep 10
+          done
           BE_REV_AFTER=$(az containerapp show -g "$RG" -n "$BACKEND_APP" --query properties.latestReadyRevisionName -o tsv)
           echo "Frontend revision: $FRONTEND_REV_BEFORE -> $FE_REV_AFTER"
           echo "Backend revision:  $BACKEND_REV_BEFORE -> $BE_REV_AFTER"
           if [ "$FE_REV_AFTER" = "$FRONTEND_REV_BEFORE" ]; then
-            echo "::error::frontend revision did not change — deploy did not take effect"; exit 1
+            echo "::error::frontend revision did not change after 3 min — deploy did not take effect"; exit 1
           fi
           if [ "$BE_REV_AFTER" != "$BACKEND_REV_BEFORE" ]; then
             echo "::error::backend revision changed ($BACKEND_REV_BEFORE -> $BE_REV_AFTER) — frontend-only invariant violated"; exit 1
