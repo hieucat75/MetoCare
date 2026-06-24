@@ -89,13 +89,7 @@ const DEVICE_INFO: Record<DeviceSlug, DeviceInfo> = {
   },
 }
 
-const VALID_SLUGS = new Set<string>([
-  'smartwatch',
-  'steps',
-  'heart-rate',
-  'blood-pressure',
-  'glucose',
-])
+const VALID_SLUGS = new Set(Object.keys(DEVICE_INFO))
 
 export default function DeviceDetailPage() {
   const router = useRouter()

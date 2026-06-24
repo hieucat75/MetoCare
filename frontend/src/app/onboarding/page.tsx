@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { CheckCircle2, ArrowRight, ArrowLeft, Ruler, Weight, Maximize2 } from 'lucide-react'
 import { NeuCard, NeuButton } from '@/components/patient/neu'
@@ -491,9 +492,9 @@ function StepComplete({ form, onFinish, saving }: StepCompleteProps) {
           Xem các thiết bị được hỗ trợ và cách nhập chỉ số thủ công trong khi chờ kết nối tự
           động.
         </p>
-        <a href="/devices" className="mt-3 block text-[13px] font-bold text-neu-green">
+        <Link href="/devices" className="mt-3 block text-[13px] font-bold text-neu-green">
           Quản lý thiết bị →
-        </a>
+        </Link>
       </NeuCard>
 
       <NeuButton variant="primary" onClick={onFinish} disabled={saving}>
