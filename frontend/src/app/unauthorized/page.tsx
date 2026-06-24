@@ -4,7 +4,7 @@ import * as React from 'react'
 import { useRouter } from 'next/navigation'
 import { ShieldOff } from 'lucide-react'
 import { useAuth } from '@/lib/auth/context'
-import Button from '@/design-system/components/core/Button'
+import { NeuButton } from '@/components/patient/neu'
 
 export default function UnauthorizedPage() {
   const { user, logout } = useAuth()
@@ -31,20 +31,12 @@ export default function UnauthorizedPage() {
           </p>
         )}
         <div className="flex flex-col gap-3">
-          <Button
-            variant="primary"
-            fullWidth
-            onClick={() => router.back()}
-          >
+          <NeuButton onClick={() => router.back()}>
             Quay lại
-          </Button>
-          <Button
-            variant="ghost"
-            fullWidth
-            onClick={handleLogout}
-          >
+          </NeuButton>
+          <NeuButton variant="secondary" onClick={handleLogout}>
             Đăng xuất
-          </Button>
+          </NeuButton>
         </div>
       </div>
     </div>
