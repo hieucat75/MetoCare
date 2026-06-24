@@ -225,22 +225,20 @@ def test_cloud_not_called_when_flag_off(monkeypatch):
     assert any("tin cậy" in w.lower() for w in res.warnings)
 
 
-def test_cloud_called_when_flag_on_low_conf_key_set(monkeypatch):
-    monkeypatch.setenv("MCP_FEATURE_OCR_CLOUD_FALLBACK", "true")
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+def test_tesseract_no_cloud_escalation_on_low_confidence(monkeypatch):
+    """run_ocr never escalates to cloud on low confidence — removed from this layer.
+    Zero-biomarker escalation still exists in build_draft(), not in run_ocr()."""
+    monkeypatch.delenv("AZURE_DOC_INTEL_KEY", raising=False)
+    monkeypatch.delenv("AZURE_DOC_INTEL_ENDPOINT", raising=False)
     ocr_engine = _force_local(monkeypatch, confidence=0.3)
-    monkeypatch.setattr(
-        ocr_engine, "get_settings",
-        lambda: SimpleNamespace(ocr_cloud_provider="anthropic", ocr_lang="vie+eng"),
-    )
-    monkeypatch.setattr(
-        ocr_engine.AnthropicVisionEngine, "run",
-        lambda self, data, mime: OcrTextResult(
-            text="Glucose 99 mg/dL", confidence=0.95, provider="anthropic"
-        ),
-    )
+
+    def _boom(self, data, mime):
+        raise AssertionError("cloud must NOT be called from run_ocr()")
+
+    monkeypatch.setattr(ocr_engine.AnthropicVisionEngine, "run", _boom)
     res = ocr_engine.run_ocr(b"x", "image/png")
-    assert res.provider == "anthropic"
+    assert res.provider == "tesseract"
+    assert any("tin cậy" in w.lower() for w in res.warnings)
 
 
 def test_cloud_flag_on_but_no_key_falls_through(monkeypatch):
@@ -347,15 +345,11 @@ def test_azure_provider_raises_on_failed_status(monkeypatch):
         AzureDocIntelEngine().run(b"\xff\xd8\xff", "image/jpeg")
 
 
-def test_azure_fallback_used_on_low_confidence(monkeypatch):
-    monkeypatch.setenv("MCP_FEATURE_OCR_CLOUD_FALLBACK", "true")
+def test_run_ocr_uses_azure_primary_ignoring_local_confidence(monkeypatch):
+    """Azure runs first regardless of what Tesseract would have returned."""
     monkeypatch.setenv("AZURE_DOC_INTEL_KEY", "k")
     monkeypatch.setenv("AZURE_DOC_INTEL_ENDPOINT", "https://docintel.example.com")
-    ocr_engine = _force_local(monkeypatch, confidence=0.3)  # low -> escalate
-    monkeypatch.setattr(
-        ocr_engine, "get_settings",
-        lambda: SimpleNamespace(ocr_cloud_provider="azure", ocr_lang="vie+eng"),
-    )
+    ocr_engine = _force_local(monkeypatch, confidence=0.3)
     monkeypatch.setattr(
         ocr_engine.AzureDocIntelEngine, "run",
         lambda self, data, mime: OcrTextResult(
@@ -366,22 +360,19 @@ def test_azure_fallback_used_on_low_confidence(monkeypatch):
     assert res.provider == "azure"
 
 
-def test_azure_fallback_skipped_when_no_key(monkeypatch):
-    monkeypatch.setenv("MCP_FEATURE_OCR_CLOUD_FALLBACK", "true")
+def test_run_ocr_falls_back_to_tesseract_when_azure_not_configured(monkeypatch):
+    """Without Azure credentials, run_ocr uses Tesseract — Azure is never called."""
     monkeypatch.delenv("AZURE_DOC_INTEL_KEY", raising=False)
     monkeypatch.delenv("AZURE_DOC_INTEL_ENDPOINT", raising=False)
     ocr_engine = _force_local(monkeypatch, confidence=0.3)
-    monkeypatch.setattr(
-        ocr_engine, "get_settings",
-        lambda: SimpleNamespace(ocr_cloud_provider="azure", ocr_lang="vie+eng"),
-    )
 
     def _boom(self, data, mime):
-        raise AssertionError("Azure must NOT be called without a key")
+        raise AssertionError("Azure must NOT be called when not configured")
 
     monkeypatch.setattr(ocr_engine.AzureDocIntelEngine, "run", _boom)
-    res = ocr_engine.run_ocr(b"x", "image/png")  # must NOT crash
+    res = ocr_engine.run_ocr(b"x", "image/png")
     assert res.provider == "tesseract"
+    assert any("tin cậy" in w.lower() for w in res.warnings)
 
 
 def test_zero_biomarker_escalation_uses_cloud(monkeypatch):
@@ -562,6 +553,49 @@ def test_manual_entry_requires_test_date(client, patient):
         headers=patient["headers"],
     )
     assert r.status_code == 422, r.text
+
+
+# --------------------------------------------------------------------------- #
+# Azure DI as primary (Phase 1 OCR policy)
+# --------------------------------------------------------------------------- #
+
+def test_run_ocr_azure_primary_bypasses_tesseract(monkeypatch):
+    """When Azure credentials are present, run_ocr goes to Azure without touching Tesseract."""
+    monkeypatch.setenv("AZURE_DOC_INTEL_KEY", "k")
+    monkeypatch.setenv("AZURE_DOC_INTEL_ENDPOINT", "https://docintel.example.com")
+    from app.services import ocr_engine
+
+    def _boom(self, data):
+        raise AssertionError("Tesseract must NOT be called when Azure is configured")
+
+    monkeypatch.setattr(ocr_engine.TesseractEngine, "available", staticmethod(lambda: True))
+    monkeypatch.setattr(ocr_engine.TesseractEngine, "run", _boom)
+    monkeypatch.setattr(
+        ocr_engine.AzureDocIntelEngine, "run",
+        lambda self, data, mime: OcrTextResult(
+            text="Glucose 99 mg/dL", confidence=0.97, provider="azure"
+        ),
+    )
+    res = ocr_engine.run_ocr(b"\xff\xd8\xff", "image/jpeg")
+    assert res.provider == "azure"
+    assert res.confidence == pytest.approx(0.97)
+
+
+def test_pdf_routes_directly_to_azure_when_configured(monkeypatch):
+    """PDF bytes go to Azure DI natively — no rasterization, no pypdf text-layer first."""
+    monkeypatch.setenv("AZURE_DOC_INTEL_KEY", "k")
+    monkeypatch.setenv("AZURE_DOC_INTEL_ENDPOINT", "https://docintel.example.com")
+    from app.services import ocr_engine as _ocr
+    monkeypatch.setattr(
+        _ocr.AzureDocIntelEngine, "run",
+        lambda self, data, mime: OcrTextResult(
+            text="HbA1c 6.8 %\nGlucose 99 mg/dL", confidence=0.97, provider="azure"
+        ),
+    )
+    pdf_bytes = b"%PDF-1.7 " + b"x" * 32
+    draft = lab_upload.process_bytes(pdf_bytes)
+    assert draft.provider_used == "azure"
+    assert any(i.canonical == "hba1c" for i in draft.parsed_values)
 
 
 def test_manual_entry_rejects_future_date(client, patient):

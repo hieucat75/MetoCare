@@ -342,38 +342,26 @@ def run_cloud_ocr_if_permitted(image_bytes: bytes, mime: str) -> OcrTextResult |
 # --------------------------------------------------------------------------- #
 
 def run_ocr(image_bytes: bytes, mime: str) -> OcrTextResult:
-    """Run local Tesseract; escalate to cloud only when permitted AND low-confidence.
+    """Azure DI is primary when credentials present; Tesseract is local-only fallback.
 
-    Never raises for the cloud path — a cloud failure logs + falls back to the
-    local result with a warning, so the draft endpoint stays available.
+    When Azure is configured, its result is returned directly — no silent degradation
+    to Tesseract so misconfiguration surfaces immediately rather than being masked by
+    a lower-quality result.
+
+    Without Azure credentials (local dev / CI without keys), Tesseract runs and a
+    low-confidence warning is appended when confidence is below threshold.
     """
-    warnings: list[str] = []
+    if AzureDocIntelEngine.configured():
+        return AzureDocIntelEngine().run(image_bytes, mime)
+
     if not TesseractEngine.available():
         raise OcrEngineError(
-            "Tesseract chưa được cài đặt trong môi trường này."
+            "OCR không khả dụng: cần cấu hình Azure Document Intelligence "
+            "(AZURE_DOC_INTEL_KEY + AZURE_DOC_INTEL_ENDPOINT) hoặc cài Tesseract."
         )
     local = TesseractEngine().run(image_bytes)
-
-    if local.confidence >= OCR_CONFIDENCE_THRESHOLD:
-        return local
-
-    cloud = _cloud_engine()
-    if cloud is None:
-        # Low confidence and no permitted fallback — surface it for manual review.
+    if local.confidence < OCR_CONFIDENCE_THRESHOLD:
         local.warnings.append(
             "Độ tin cậy OCR thấp — vui lòng kiểm tra lại các chỉ số trước khi lưu."
         )
-        return local
-
-    try:
-        result = cloud.run(image_bytes, mime)
-        result.warnings.extend(warnings)
-        result.warnings.append("Đã dùng OCR đám mây (fallback) do độ tin cậy cục bộ thấp.")
-        # Keep whichever transcription is more confident.
-        return result if result.confidence >= local.confidence else local
-    except OcrEngineError:
-        logger.warning("cloud_ocr_fallback_failed provider=%s", cloud.name)
-        local.warnings.append(
-            "OCR đám mây không khả dụng — dùng kết quả cục bộ, vui lòng kiểm tra lại."
-        )
-        return local
+    return local

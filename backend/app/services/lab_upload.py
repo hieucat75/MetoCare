@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from app.core.config import get_settings
 from app.domain import lab_interpreter
 from app.services import lab_parser
-from app.services.ocr_engine import OcrEngineError, run_cloud_ocr_if_permitted, run_ocr
+from app.services.ocr_engine import AzureDocIntelEngine, OcrEngineError, run_cloud_ocr_if_permitted, run_ocr
 
 logger = logging.getLogger("mcp.lab_upload")
 
@@ -112,11 +112,21 @@ def validate_upload(data: bytes, *, declared_mime: str | None = None) -> str:
 # --------------------------------------------------------------------------- #
 
 def _extract_pdf_text(data: bytes) -> tuple[str, float, str, list[str]]:
-    """PDF: prefer the embedded text layer (digital lab PDFs); if empty, try to
-    rasterize the first N pages and OCR them. Either way, never raise — fall back
-    to empty text + a manual-review warning so upload always succeeds."""
+    """PDF: Azure DI primary (table-aware, handles scanned printouts); text layer
+    second (zero-cost for digital PDFs); rasterize+Tesseract last resort. Never
+    raises — falls back to empty text so upload always succeeds."""
     warnings: list[str] = []
     settings = get_settings()
+
+    # 0) Azure Document Intelligence handles PDFs natively — submit raw bytes so the
+    #    service reconstructs lab tables without rasterization cost or quality loss.
+    if AzureDocIntelEngine.configured():
+        try:
+            res = AzureDocIntelEngine().run(data, PDF)
+            return res.text, res.confidence, res.provider, list(res.warnings)
+        except OcrEngineError as exc:
+            warnings.append(str(exc))
+            # Fall through to text-layer extraction.
 
     # 1) Text layer (pypdf) — works for digital lab reports, no OCR needed.
     try:
