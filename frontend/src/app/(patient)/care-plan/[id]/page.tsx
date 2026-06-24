@@ -6,25 +6,19 @@ import { ArrowLeft, CheckCircle2, ClipboardList } from 'lucide-react'
 import { useAuth } from '@/lib/auth/context'
 import { getCarePlans } from '@/lib/api/patient'
 import type { CarePlan } from '@/lib/api/patient'
-import { Card, CardContent, CardHeader, CardTitle } from '@/design-system/components/core/Card'
-import Badge from '@/design-system/components/core/Badge'
-import Button from '@/design-system/components/core/Button'
-import { PageLoading } from '@/design-system/components/core/LoadingState'
-import { ErrorState } from '@/design-system/components/core/ErrorState'
-import { Alert } from '@/design-system/components/core/Alert'
+import { NeuCard, NeuBadge, NeuButton } from '@/components/patient/neu'
+import { PatientSkeleton, PatientErrorState } from '@/components/patient/states'
 
-// Backend uses UPPERCASE statuses
-const STATUS_CONFIG: Record<
-  string,
-  { label: string; variant: 'active' | 'approved' | 'pending_review' | 'default' }
-> = {
-  ACTIVE:         { label: 'Đang thực hiện',   variant: 'active' },
-  APPROVED:       { label: 'Đã phê duyệt',     variant: 'approved' },
-  PENDING_REVIEW: { label: 'Chờ phê duyệt',    variant: 'pending_review' },
-  DRAFT:          { label: 'Bản nháp',         variant: 'default' },
-  ARCHIVED:       { label: 'Lưu trữ',          variant: 'default' },
-  SUPERSEDED:     { label: 'Đã thay thế',      variant: 'default' },
-  REJECTED:       { label: 'Bị từ chối',       variant: 'default' },
+type NeuTone = 'ok' | 'watch' | 'alert'
+
+const STATUS_CONFIG: Record<string, { tone: NeuTone; label: string }> = {
+  ACTIVE:         { tone: 'ok',    label: 'Đang thực hiện' },
+  APPROVED:       { tone: 'ok',    label: 'Đã phê duyệt' },
+  PENDING_REVIEW: { tone: 'watch', label: 'Chờ phê duyệt' },
+  DRAFT:          { tone: 'watch', label: 'Bản nháp' },
+  ARCHIVED:       { tone: 'watch', label: 'Lưu trữ' },
+  SUPERSEDED:     { tone: 'watch', label: 'Đã thay thế' },
+  REJECTED:       { tone: 'alert', label: 'Bị từ chối' },
 }
 
 function formatDate(iso: string): string {
@@ -70,86 +64,86 @@ export default function CarePlanDetailPage() {
 
   if (!patientId) {
     return (
-      <div className="p-4">
-        <Alert variant="warning">Chưa có hồ sơ bệnh nhân. Vui lòng liên hệ hỗ trợ.</Alert>
+      <div className="p-4 max-w-lg mx-auto">
+        <div role="alert" className="rounded-[14px] bg-[#FEF9EC] border border-[#E0A92E]/30 p-4">
+          <p className="text-[14px] font-bold text-[#8B6400]">Chưa có hồ sơ bệnh nhân</p>
+          <p className="text-[13px] text-[#8B6400]/80 mt-1">Vui lòng liên hệ hỗ trợ.</p>
+        </div>
       </div>
     )
   }
 
-  if (loading) return <PageLoading label="Đang tải..." />
-  if (error) return <ErrorState message={error} onRetry={load} />
+  if (loading) {
+    return (
+      <div className="p-4 max-w-lg mx-auto space-y-3">
+        <PatientSkeleton />
+        <PatientSkeleton />
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="p-4 max-w-lg mx-auto">
+        <PatientErrorState title="Không thể tải kế hoạch" message={error} onRetry={load} />
+      </div>
+    )
+  }
+
   if (!plan) return null
 
-  const statusCfg = STATUS_CONFIG[plan.status] ?? { label: plan.status, variant: 'default' as const }
+  const statusCfg = STATUS_CONFIG[plan.status] ?? { tone: 'watch' as NeuTone, label: plan.status }
 
   return (
-    <div className="max-w-lg mx-auto px-4 pb-8">
-      {/* Back */}
-      <div className="flex items-center gap-3 py-4">
+    <div className="max-w-lg mx-auto px-4 pb-8 space-y-4">
+      {/* Header */}
+      <div className="flex items-center gap-3 pt-4">
         <button
           type="button"
           onClick={() => router.back()}
-          className="flex items-center gap-1.5 text-[17px] text-mint-600"
+          className="size-9 flex items-center justify-center rounded-full bg-white/70 backdrop-blur border border-[#C8D8D4] text-neu-text hover:bg-white transition-colors"
           aria-label="Quay lại"
         >
           <ArrowLeft className="size-4" />
-          Quay lại
         </button>
+        <h1 className="text-[20px] font-bold text-neu-text flex-1 truncate">{plan.title}</h1>
+        <NeuBadge tone={statusCfg.tone}>{statusCfg.label}</NeuBadge>
       </div>
 
-      {/* Title + status */}
-      <div className="flex items-start justify-between mb-2">
-        <h1 className="text-[24px] font-bold text-text flex-1 mr-3">{plan.title}</h1>
-        <Badge variant={statusCfg.variant}>{statusCfg.label}</Badge>
-      </div>
-
-      {/* Approval notice */}
       {plan.approved_at && (
-        <div className="flex items-center gap-1.5 mb-4">
-          <CheckCircle2 className="size-4 text-success shrink-0" aria-hidden="true" />
-          <p className="text-[17px] text-success">
-            Đã phê duyệt {formatDate(plan.approved_at)}
-          </p>
+        <div className="flex items-center gap-1.5 text-[14px] text-[#0F9C6E]">
+          <CheckCircle2 className="size-4 shrink-0" aria-hidden="true" />
+          <span>Đã phê duyệt {formatDate(plan.approved_at)}</span>
         </div>
       )}
 
       {plan.status === 'PENDING_REVIEW' && (
-        <Alert variant="warning" className="mb-4">
-          Kế hoạch này đang chờ bác sĩ phê duyệt trước khi thực hiện.
-        </Alert>
+        <div role="alert" className="rounded-[14px] bg-[#FEF9EC] border border-[#E0A92E]/30 p-4">
+          <p className="text-[13px] text-[#8B6400]">Kế hoạch này đang chờ bác sĩ phê duyệt trước khi thực hiện.</p>
+        </div>
       )}
 
-      {/* Meta */}
-      <p className="text-[17px] text-text-muted mb-4">
+      <p className="text-[14px] text-neu-muted px-1">
         Tạo: {formatDate(plan.created_at)}
         {plan.ai_generated && <> &middot; <span className="text-amber-600">AI hỗ trợ</span></>}
         {(plan.version ?? 1) > 1 && <> &middot; v{plan.version}</>}
       </p>
 
-      {/* Content */}
-      <Card variant="glass" padding="none">
-        <CardHeader className="px-4 pt-4 pb-2">
-          <div className="flex items-center gap-2">
-            <ClipboardList className="size-4 text-text-muted" aria-hidden="true" />
-            <CardTitle className="text-[17px] font-semibold">Nội dung kế hoạch</CardTitle>
-          </div>
-        </CardHeader>
-        <CardContent className="px-4 pb-4">
-          {plan.content ? (
-            <p className="text-[17px] text-text-muted whitespace-pre-line">{plan.content}</p>
-          ) : (
-            <p className="text-[17px] text-text-subtle italic">Chưa có nội dung kế hoạch.</p>
-          )}
-        </CardContent>
-      </Card>
+      <NeuCard size="lg">
+        <div className="flex items-center gap-2 mb-3">
+          <ClipboardList className="size-4 text-neu-muted" aria-hidden="true" />
+          <h2 className="text-[16px] font-semibold text-neu-text">Nội dung kế hoạch</h2>
+        </div>
+        {plan.content ? (
+          <p className="text-[15px] text-neu-text whitespace-pre-line leading-relaxed">{plan.content}</p>
+        ) : (
+          <p className="text-[14px] text-neu-muted italic">Chưa có nội dung kế hoạch.</p>
+        )}
+      </NeuCard>
 
-      <Button
-        variant="outline"
-        onClick={() => router.push('/care-plan')}
-        className="w-full mt-4"
-      >
+      <NeuButton variant="secondary" onClick={() => router.push('/care-plan')}>
         Xem tất cả kế hoạch
-      </Button>
+      </NeuButton>
     </div>
   )
 }

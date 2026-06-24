@@ -4,7 +4,7 @@ import { PatientEmptyState, LabEntryModal } from '@/components/patient'
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
 import { CalendarDays, FlaskConical, Plus, Upload } from 'lucide-react'
-import { Alert, ErrorState } from '@/design-system'
+import { PatientErrorState } from '@/components/patient/states'
 import { NeuCard, NeuBadge } from '@/components/patient/neu'
 import { useAuth } from '@/lib/auth/context'
 import { getLabResults, type LabResultEntry } from '@/lib/api/patient'
@@ -100,9 +100,10 @@ export default function LabsPage() {
   if (!patientId) {
     return (
       <div className="p-4 lg:p-6 max-w-md mx-auto mt-10">
-        <Alert variant="warning" title="Chưa có hồ sơ bệnh nhân">
-          Tài khoản của bạn chưa được liên kết với hồ sơ bệnh nhân. Vui lòng liên hệ hỗ trợ.
-        </Alert>
+        <div role="alert" className="rounded-[14px] bg-[#FEF9EC] border border-[#E0A92E]/30 p-4">
+          <p className="text-[14px] font-bold text-[#8B6400]">Chưa có hồ sơ bệnh nhân</p>
+          <p className="text-[13px] text-[#8B6400]/80 mt-1">Tài khoản của bạn chưa được liên kết với hồ sơ bệnh nhân. Vui lòng liên hệ hỗ trợ.</p>
+        </div>
       </div>
     )
   }
@@ -152,7 +153,7 @@ export default function LabsPage() {
       )}
 
       {error && !loading && (
-        <ErrorState variant="inline" title="Lỗi" message={error} onRetry={load} />
+        <PatientErrorState title="Lỗi tải xét nghiệm" message={error} onRetry={load} />
       )}
 
       {loading && <LabsSkeleton />}

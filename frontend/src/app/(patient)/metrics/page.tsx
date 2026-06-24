@@ -3,7 +3,9 @@
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
 import { Plus, LineChart } from 'lucide-react'
-import { Alert, Button, FormField, Input, Modal, Select, Skeleton } from '@/design-system'
+import { GlassModal } from '@/components/patient/modal'
+import { NeuButton } from '@/components/patient/neu'
+import { PatientErrorState } from '@/components/patient/states'
 import { PatientEmptyState } from '@/components/patient'
 import { MetricCategoryGroup } from '@/components/patient/metrics/MetricCategoryGroup'
 import { useAuth } from '@/lib/auth/context'
@@ -17,6 +19,8 @@ import {
 } from '@/lib/api/patient'
 import { useLabReference } from '@/lib/api/labReference'
 import { groupMetricsByCategory } from '@/lib/metrics/kpi'
+
+const NEU_INPUT = 'w-full rounded-[12px] border border-[#C8D8D4] bg-white/60 px-3 py-2.5 text-[15px] text-neu-text placeholder:text-neu-subtle focus:border-[#0F9C6E] focus:outline-none focus:ring-2 focus:ring-[#0F9C6E]/20 transition-colors'
 
 const METRIC_OPTIONS: { value: MetricType; label: string }[] = (
   Object.keys(METRIC_LABELS) as MetricType[]
@@ -70,50 +74,51 @@ function LogMetricModal({ open, onClose, onSuccess, patientId }: LogModalProps) 
   }
 
   return (
-    <Modal
+    <GlassModal
       open={open}
       onOpenChange={(o) => !o && onClose()}
       title="Ghi chỉ số mới"
       footer={
         <>
-          <Button variant="outline" size="sm" onClick={onClose} disabled={submitting}>
+          <NeuButton variant="secondary" onClick={onClose} disabled={submitting} className="flex-1">
             Hủy
-          </Button>
-          <Button
-            variant="mint"
-            size="sm"
-            type="submit"
-            form="log-metric-form"
-            loading={submitting}
-          >
-            Lưu
-          </Button>
+          </NeuButton>
+          <NeuButton type="submit" form="log-metric-form" disabled={submitting} className="flex-1">
+            {submitting ? 'Đang lưu...' : 'Lưu'}
+          </NeuButton>
         </>
       }
     >
       <form id="log-metric-form" onSubmit={handleSubmit} className="space-y-4">
-        {submitError && <Alert variant="danger" title={submitError} />}
-        <FormField label="Loại chỉ số" required>
-          <Select
-            value={metricType}
-            onValueChange={(v) => setMetricType(v as MetricType)}
-            options={METRIC_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
-            fullWidth
-          />
-        </FormField>
-        <FormField label={selectedUnit ? `Giá trị (${selectedUnit})` : 'Giá trị'} required>
-          <Input
+        {submitError && (
+          <div role="alert" className="rounded-[14px] bg-[#FEF2F2] border border-[#DC2626]/20 p-3">
+            <p className="text-[13px] font-semibold text-[#991B1B]">{submitError}</p>
+          </div>
+        )}
+        <div className="space-y-1.5">
+          <label className="block text-[13px] font-semibold text-neu-muted">Loại chỉ số</label>
+          <select className={NEU_INPUT} value={metricType} onChange={(e) => setMetricType(e.target.value as MetricType)}>
+            {METRIC_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+        </div>
+        <div className="space-y-1.5">
+          <label className="block text-[13px] font-semibold text-neu-muted">
+            {selectedUnit ? `Giá trị (${selectedUnit})` : 'Giá trị'}
+          </label>
+          <input
             type="number"
             step="any"
+            className={NEU_INPUT}
             value={value}
             onChange={(e) => setValue(e.target.value)}
             placeholder={selectedUnit ? `Nhập giá trị (${selectedUnit})` : 'Nhập giá trị'}
-            fullWidth
             required
           />
-        </FormField>
+        </div>
       </form>
-    </Modal>
+    </GlassModal>
   )
 }
 
@@ -124,10 +129,10 @@ function KpiSkeleton() {
     <div className="space-y-5">
       {[1, 2].map((g) => (
         <div key={g} className="space-y-3">
-          <Skeleton width="40%" height="1.1rem" />
+          <div className="h-4 w-2/5 rounded-full bg-black/8 mc-pulse" />
           <div className="grid grid-cols-2 gap-3">
             {[1, 2].map((c) => (
-              <Skeleton key={c} height="9rem" className="rounded-3xl" />
+              <div key={c} className="h-36 rounded-3xl bg-black/8 mc-pulse" />
             ))}
           </div>
         </div>
@@ -172,9 +177,10 @@ export default function MetricsPage() {
   if (!patientId) {
     return (
       <div className="p-4 max-w-md mx-auto mt-10">
-        <Alert variant="warning" title="Chưa có hồ sơ bệnh nhân">
-          Tài khoản của bạn chưa được liên kết với hồ sơ bệnh nhân.
-        </Alert>
+        <div role="alert" className="rounded-[14px] bg-[#FEF9EC] border border-[#E0A92E]/30 p-4">
+          <p className="text-[14px] font-bold text-[#8B6400]">Chưa có hồ sơ bệnh nhân</p>
+          <p className="text-[13px] text-[#8B6400]/80 mt-1">Tài khoản của bạn chưa được liên kết với hồ sơ bệnh nhân.</p>
+        </div>
       </div>
     )
   }
@@ -189,9 +195,7 @@ export default function MetricsPage() {
         {isLoading && <KpiSkeleton />}
 
         {!isLoading && error && (
-          <Alert variant="danger" title="Lỗi">
-            {error}
-          </Alert>
+          <PatientErrorState title="Lỗi tải chỉ số" message={error} onRetry={fetchMetrics} />
         )}
 
         {!isLoading && !error && buckets.length === 0 && (

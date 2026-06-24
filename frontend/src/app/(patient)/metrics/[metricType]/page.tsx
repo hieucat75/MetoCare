@@ -3,7 +3,7 @@
 import * as React from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { ArrowLeft, Plus, TrendingDown, TrendingUp, Minus } from 'lucide-react'
-import { PageLoading, ErrorState } from '@/design-system'
+import { PatientErrorState, PatientSkeleton } from '@/components/patient/states'
 import { NeuCard, NeuBadge } from '@/components/patient/neu'
 import { DangerAlertBanner } from '@/components/patient/metrics/DangerAlertBanner'
 import { useAuth } from '@/lib/auth/context'
@@ -106,8 +106,8 @@ export default function MetricDetailPage() {
   }, [load, catalog])
 
   if (!user) return null
-  if (loading || catalog === null) return <PageLoading label="Đang tải..." />
-  if (error) return <ErrorState title="Không thể tải dữ liệu" message={error} onRetry={load} />
+  if (loading || catalog === null) return <div className="p-4 max-w-md mx-auto space-y-3"><PatientSkeleton /><PatientSkeleton /></div>
+  if (error) return <div className="p-4 max-w-md mx-auto"><PatientErrorState title="Không thể tải dữ liệu" message={error} onRetry={load} /></div>
 
   const label = series?.labelVn ?? metricLabel(metricType as MetricType)
   const accent = theme?.accent ?? '#0B7F5B'

@@ -4,8 +4,7 @@ import * as React from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Phone, Clock } from 'lucide-react'
-import { Alert } from '@/design-system/components/core/Alert'
-import Button from '@/design-system/components/core/Button'
+import { NeuButton } from '@/components/patient/neu'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/lib/auth/context'
 import { getRoleHomePath } from '@/lib/api/auth'
@@ -59,9 +58,9 @@ export default function ForgotPasswordPage() {
         Nhập số điện thoại đăng ký. Chúng tôi sẽ gửi hướng dẫn đặt lại mật khẩu qua SMS.
       </p>
 
-      <Alert variant="mint" className="mb-6">
-        Tính năng đặt lại mật khẩu đang được phát triển (Phase 2). Vui lòng liên hệ hỗ trợ nếu cần.
-      </Alert>
+      <div className="rounded-[14px] bg-[#E8F5EE] border border-[#0F9C6E]/25 p-4 mb-6">
+        <p className="text-[13px] text-[#0B5E40]">Tính năng đặt lại mật khẩu đang được phát triển (Phase 2). Vui lòng liên hệ hỗ trợ nếu cần.</p>
+      </div>
 
       <form onSubmit={handleSubmit} noValidate>
         <div className="mb-5">
@@ -89,14 +88,13 @@ export default function ForgotPasswordPage() {
           </div>
         </div>
 
-        <Button
+        <NeuButton
           type="submit"
-          fullWidth
           disabled={!phone.trim()}
           className="h-12 rounded-xl bg-gradient-to-b from-[#17AE7B] to-[#0B6B4D] text-white shadow-[0_12px_24px_-8px_rgba(11,107,77,0.6)] hover:opacity-95"
         >
           Gửi hướng dẫn đặt lại
-        </Button>
+        </NeuButton>
       </form>
 
       <p className="text-center text-[17px] text-text-muted mt-6">
