@@ -14,6 +14,7 @@ from types import SimpleNamespace
 
 import pytest
 from app.core import ssrf
+from app.domain.lab_interpreter import LabStatus, classify_value
 from app.services import lab_parser, lab_upload
 from app.services.ocr_engine import OcrTextResult
 
@@ -133,17 +134,17 @@ def test_parser_uric_acid_and_random_glucose_in_panel():
 
 def test_uric_acid_critical_high_classified():
     """Value above critical_high (10.0) should be CRITICAL."""
-    from app.domain.lab_interpreter import classify_value, LabStatus
+    from app.domain.lab_interpreter import LabStatus, classify_value
     assert classify_value("uric_acid", 11.0) == LabStatus.CRITICAL
 
 
 def test_uric_acid_normal_classified():
-    from app.domain.lab_interpreter import classify_value, LabStatus
+    from app.domain.lab_interpreter import LabStatus, classify_value
     assert classify_value("uric_acid", 5.5) == LabStatus.NORMAL
 
 
 def test_random_glucose_high_classified():
-    from app.domain.lab_interpreter import classify_value, LabStatus
+    from app.domain.lab_interpreter import LabStatus, classify_value
     assert classify_value("random_glucose", 200.0) == LabStatus.HIGH
 
 
@@ -718,8 +719,6 @@ def test_lab_results_sorted_by_test_date_desc(client, patient):
 # --------------------------------------------------------------------------- #
 # Boundary classification — uric_acid and random_glucose critical thresholds
 # --------------------------------------------------------------------------- #
-
-from app.domain.lab_interpreter import classify_value, LabStatus
 
 
 def test_uric_acid_critical_at_exact_threshold():

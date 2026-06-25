@@ -14,11 +14,10 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-from sqlalchemy import select
-
 from app.models.clinical import HealthMetric, LabResult, Medication
 from app.models.patient import PatientProfile
 from app.models.user import User
+from sqlalchemy import select
 
 # ---------------------------------------------------------------------------
 # Load the script module without executing __main__
@@ -184,7 +183,7 @@ class TestTransactionSafety:
                 170.0, 70.0, 80.0, "low",
                 "Không có", "Không có", "Không có", "Không có",
             )
-            for phone, name in zip(phones, names)
+            for phone, name in zip(phones, names, strict=False)
         ]
 
     def _seed_mini(self, db, phones: list[str], patch_fn=None):

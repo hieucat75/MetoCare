@@ -213,10 +213,6 @@ def test_adherence_summary_weekly_rate_only_counts_last_7_days(client, patient):
     import datetime
 
     med_id = _add_medication(client, patient, name="Streak Med C")
-    # Old record (10 days ago) — outside the 7-day window; should not count
-    old_date = (datetime.datetime.utcnow() - datetime.timedelta(days=10)).strftime(
-        "%Y-%m-%dT%H:%M:%SZ"
-    )
     client.post(
         f"/api/v1/patients/{patient['patient_id']}/medications/{med_id}/adherence",
         json={"skipped": True},
@@ -242,7 +238,6 @@ def test_adherence_summary_weekly_rate_only_counts_last_7_days(client, patient):
 
 def test_adherence_summary_last_taken_at_matches_latest(client, patient):
     """last_taken_at = datetime of the most recent taken dose."""
-    import datetime
 
     med_id = _add_medication(client, patient, name="Streak Med D")
     earlier = "2026-06-20T06:00:00Z"
