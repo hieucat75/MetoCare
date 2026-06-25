@@ -31,7 +31,7 @@ class LabStatus(StrEnum):
     UNKNOWN = "unknown"  # biomarker not recognized / no reference range
 
 
-# Canonical biomarker -> (aliases, unit, ref_low, ref_high, critical_low, critical_high)
+# Canonical biomarker -> (aliases, unit, ref_low, ref_high, critical_low, critical_high, ...)
 @dataclass(frozen=True)
 class BiomarkerSpec:
     canonical: str
@@ -41,27 +41,46 @@ class BiomarkerSpec:
     ref_high: float | None
     critical_low: float | None = None
     critical_high: float | None = None
+    # SI-equivalent unit: multiply extracted value by si_factor to reach canonical unit.
+    # Example: glucose in mmol/L × 18.018 → mg/dL.
+    si_unit: str | None = None
+    si_factor: float = 1.0
+    # Units that are clinically impossible for this biomarker — trigger confidence=0.
+    incompatible_units: tuple[str, ...] = ()
 
 
 # Adult, fasting where relevant. Screening reference ranges only.
 BIOMARKERS: tuple[BiomarkerSpec, ...] = (
     BiomarkerSpec("fasting_glucose", ("glucose", "đường huyết đói", "glucose máu", "duong huyet"),
-                  "mg/dL", 70, 99, critical_low=54, critical_high=300),
+                  "mg/dL", 70, 99, critical_low=54, critical_high=300,
+                  si_unit="mmol/L", si_factor=18.018,
+                  incompatible_units=("IU/mL", "mIU/L", "mIU/mL", "µIU/mL", "pmol/L", "nmol/L")),
     BiomarkerSpec("hba1c", ("hba1c", "a1c", "đường huyết trung bình"),
                   "%", 4.0, 5.6, critical_high=10.0),
     BiomarkerSpec("ldl", ("ldl", "ldl-c", "ldl cholesterol", "cholesterol xấu"),
-                  "mg/dL", 0, 99, critical_high=190),
+                  "mg/dL", 0, 99, critical_high=190,
+                  si_unit="mmol/L", si_factor=38.67,
+                  incompatible_units=("IU/mL", "mIU/L", "mIU/mL", "µIU/mL", "pmol/L", "nmol/L")),
     BiomarkerSpec("hdl", ("hdl", "hdl-c", "cholesterol tốt"),
-                  "mg/dL", 40, 200, critical_low=20),
-    BiomarkerSpec("triglyceride", ("triglyceride", "triglycerides", "tg", "mỡ máu"),
-                  "mg/dL", 0, 149, critical_high=500),
+                  "mg/dL", 40, 200, critical_low=20,
+                  si_unit="mmol/L", si_factor=38.67,
+                  incompatible_units=("IU/mL", "mIU/L", "mIU/mL", "µIU/mL", "pmol/L", "nmol/L")),
+    BiomarkerSpec("triglyceride",
+                  ("triglyceride", "triglycerides", "triglycerid", "tg", "mỡ máu"),
+                  "mg/dL", 0, 149, critical_high=500,
+                  si_unit="mmol/L", si_factor=88.57,
+                  incompatible_units=("IU/mL", "mIU/L", "mIU/mL", "µIU/mL", "pmol/L", "nmol/L")),
     BiomarkerSpec("total_cholesterol",
                   ("cholesterol toàn phần", "total cholesterol", "cholesterol"),
-                  "mg/dL", 0, 199, critical_high=300),
+                  "mg/dL", 0, 199, critical_high=300,
+                  si_unit="mmol/L", si_factor=38.67,
+                  incompatible_units=("IU/mL", "mIU/L", "mIU/mL", "µIU/mL", "pmol/L", "nmol/L")),
     BiomarkerSpec("alt", ("alt", "sgpt", "men gan alt"),
-                  "U/L", 7, 56, critical_high=300),
+                  "U/L", 7, 56, critical_high=300,
+                  incompatible_units=("mg/dL", "mmol/L", "mIU/L", "µIU/mL", "pmol/L", "nmol/L")),
     BiomarkerSpec("ast", ("ast", "sgot", "men gan ast"),
-                  "U/L", 10, 40, critical_high=300),
+                  "U/L", 10, 40, critical_high=300,
+                  incompatible_units=("mg/dL", "mmol/L", "mIU/L", "µIU/mL", "pmol/L", "nmol/L")),
     BiomarkerSpec("creatinine", ("creatinine", "creatinin"),
                   "mg/dL", 0.6, 1.3, critical_high=4.0),
     BiomarkerSpec("egfr", ("egfr", "gfr", "mức lọc cầu thận", "muc loc cau than"),
@@ -71,11 +90,15 @@ BIOMARKERS: tuple[BiomarkerSpec, ...] = (
     BiomarkerSpec("ggt", ("ggt", "gamma gt", "gamma-glutamyl", "men gan ggt"),
                   "U/L", 9, 48, critical_high=300),
     BiomarkerSpec("tsh", ("tsh",),
-                  "mIU/L", 0.4, 4.0, critical_low=0.01, critical_high=20.0),
+                  "mIU/L", 0.4, 4.0, critical_low=0.01, critical_high=20.0,
+                  si_unit="µIU/mL", si_factor=1.0,
+                  incompatible_units=("mg/dL", "mmol/L", "g/dL", "U/L", "ng/mL", "pmol/L")),
     BiomarkerSpec("ft4", ("ft4", "free t4", "ft 4", "free thyroxine"),
-                  "pmol/L", 12.0, 22.0, critical_low=3.0, critical_high=50.0),
+                  "pmol/L", 12.0, 22.0, critical_low=3.0, critical_high=50.0,
+                  incompatible_units=("mg/dL", "mmol/L", "g/dL", "mIU/L", "µIU/mL", "U/L")),
     BiomarkerSpec("ft3", ("ft3", "free t3", "ft 3", "free triiodothyronine"),
-                  "pmol/L", 3.1, 6.8, critical_low=1.0, critical_high=20.0),
+                  "pmol/L", 3.1, 6.8, critical_low=1.0, critical_high=20.0,
+                  incompatible_units=("mg/dL", "mmol/L", "g/dL", "mIU/L", "µIU/mL", "U/L")),
     # ---- Basic CBC (detected when present) ----
     BiomarkerSpec("hemoglobin", ("hemoglobin", "hgb", "hb", "huyết sắc tố", "huyet sac to"),
                   "g/dL", 12.0, 17.5, critical_low=7.0, critical_high=20.0),
@@ -102,6 +125,8 @@ BIOMARKERS: tuple[BiomarkerSpec, ...] = (
         ("random glucose", "đường huyết ngẫu nhiên", "glucose ngẫu nhiên",
          "đường huyết bất kỳ", "rbs", "random blood sugar"),
         "mg/dL", 70, 139, critical_low=54, critical_high=300,
+        si_unit="mmol/L", si_factor=18.018,
+        incompatible_units=("IU/mL", "mIU/L", "mIU/mL", "µIU/mL", "pmol/L", "nmol/L"),
     ),
 )
 

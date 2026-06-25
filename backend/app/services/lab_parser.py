@@ -92,6 +92,25 @@ def _match_biomarker(line_noacc_lc: str) -> tuple[BiomarkerSpec, int] | None:
     return best[1], best[2]
 
 
+def _norm_unit(u: str) -> str:
+    """Lowercase + normalize µ/μ unicode variants so unit comparisons are stable."""
+    return u.replace("µ", "u").replace("μ", "u").strip().lower()
+
+
+def _is_incompatible(unit: str, spec: BiomarkerSpec) -> bool:
+    n = _norm_unit(unit)
+    return any(_norm_unit(bad) == n for bad in spec.incompatible_units)
+
+
+def _try_si_convert(unit: str, value: float, spec: BiomarkerSpec) -> float | None:
+    """Return value converted to canonical units if unit matches spec.si_unit, else None."""
+    if spec.si_unit is None:
+        return None
+    if _norm_unit(unit) == _norm_unit(spec.si_unit):
+        return round(value * spec.si_factor, 4)
+    return None
+
+
 def parse_lab_text(text: str) -> list[RawLabValue]:
     """Parse OCR/plain text into recognised ``RawLabValue`` rows (first per canonical)."""
     if not text:
@@ -126,14 +145,25 @@ def parse_lab_text(text: str) -> list[RawLabValue]:
         # reliable than a noisy scanned one.
 
         parse_conf = 1.0
-        if unit and spec.unit:
-            # crude unit agreement: share an alphabetic root?
-            u_root = re.sub(r"[^a-z]", "", unit.lower())[:3]
-            s_root = re.sub(r"[^a-z]", "", spec.unit.lower())[:3]
-            if u_root and s_root and u_root != s_root:
-                parse_conf = 0.6
-        elif not unit:
+        if not unit:
             parse_conf = 0.8
+        elif _is_incompatible(unit, spec):
+            # Clinically nonsensical unit (e.g. glucose in mIU/mL) — zero confidence,
+            # forces needs_verification=True downstream.
+            parse_conf = 0.0
+        else:
+            converted = _try_si_convert(unit, value, spec)
+            if converted is not None:
+                # Known SI equivalent (e.g. mmol/L for mg/dL biomarker) — convert to
+                # canonical units so classification and DB storage are correct.
+                value = converted
+                unit = spec.unit
+            elif spec.unit:
+                # Unrecognised unit — crude alphabetic root fallback.
+                u_root = re.sub(r"[^a-z]", "", unit.lower())[:3]
+                s_root = re.sub(r"[^a-z]", "", spec.unit.lower())[:3]
+                if u_root and s_root and u_root != s_root:
+                    parse_conf = 0.6
 
         seen[spec.canonical] = RawLabValue(
             test_name=spec.canonical,

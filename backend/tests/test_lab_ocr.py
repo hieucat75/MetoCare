@@ -14,7 +14,7 @@ from types import SimpleNamespace
 
 import pytest
 from app.core import ssrf
-from app.domain.lab_interpreter import LabStatus, classify_value
+from app.domain.lab_interpreter import LabStatus, classify_value, interpret_value
 from app.services import lab_parser, lab_upload
 from app.services.ocr_engine import OcrTextResult
 
@@ -761,3 +761,141 @@ def test_random_glucose_critical_high_at_exact_threshold():
 def test_rbs_alias_resolves_to_random_glucose():
     values = lab_parser.parse_lab_text("RBS 160 mg/dL")
     assert values and values[0].test_name == "random_glucose"
+
+
+# --------------------------------------------------------------------------- #
+# Vinmec ground-truth regression — SI unit conversion + incompatible unit guard
+#
+# Source: Vinmec lab report (Vietnamese hospital, SI units).
+# Glucose/lipids are reported in mmol/L; the mapping layer converts to canonical
+# mg/dL so classification remains clinically correct.
+# TSH: µIU/mL is numerically identical to mIU/L (factor=1.0).
+# --------------------------------------------------------------------------- #
+
+_VINMEC_TEXT = """\
+GLUCOSE 4.78 mmol/L 3.9 - 6.1
+ALT (SGPT) 58.4 U/L 7 - 56
+CHOLESTEROL TOAN PHAN 5.99 mmol/L 0 - 5.2
+TRIGLYCERID 2.7 mmol/L 0 - 1.7
+HDL-C 1.08 mmol/L 0.9 - 1.6
+LDL-C 4.24 mmol/L 0 - 3.4
+TSH 1.26 uIU/mL 0.4 - 4.0
+FT3 4.64 pmol/L 3.1 - 6.8
+FT4 18 pmol/L 12.0 - 22.0
+"""
+
+
+def _vinmec(canonical: str):
+    return next(
+        (v for v in lab_parser.parse_lab_text(_VINMEC_TEXT) if v.test_name == canonical),
+        None,
+    )
+
+
+class TestVinmecGroundTruth:
+    def test_all_nine_biomarkers_extracted(self):
+        values = lab_parser.parse_lab_text(_VINMEC_TEXT)
+        found = {v.test_name for v in values}
+        expected = {
+            "fasting_glucose", "alt", "total_cholesterol", "triglyceride",
+            "hdl", "ldl", "tsh", "ft3", "ft4",
+        }
+        assert expected.issubset(found), f"Missing: {expected - found}"
+
+    def test_glucose_converted_to_mg_dl_and_classified_normal(self):
+        v = _vinmec("fasting_glucose")
+        assert v is not None
+        assert v.unit == "mg/dL"
+        assert v.value == pytest.approx(4.78 * 18.018, rel=1e-3)
+        assert v.ocr_confidence == 1.0
+        assert interpret_value(v).status == LabStatus.NORMAL
+
+    def test_alt_recognized_unit_l_classified_high(self):
+        v = _vinmec("alt")
+        assert v is not None
+        assert v.value == pytest.approx(58.4, rel=1e-3)
+        assert v.unit == "U/L"
+        assert v.ocr_confidence == 1.0
+        assert interpret_value(v).status == LabStatus.HIGH
+
+    def test_cholesterol_converted_to_mg_dl(self):
+        v = _vinmec("total_cholesterol")
+        assert v is not None
+        assert v.unit == "mg/dL"
+        assert v.value == pytest.approx(5.99 * 38.67, rel=1e-3)
+        assert v.ocr_confidence == 1.0
+
+    def test_triglycerid_alias_recognized_and_converted(self):
+        v = _vinmec("triglyceride")
+        assert v is not None, "triglyceride (alias: triglycerid) not recognized"
+        assert v.unit == "mg/dL"
+        assert v.value == pytest.approx(2.7 * 88.57, rel=1e-3)
+        assert v.ocr_confidence == 1.0
+
+    def test_hdl_converted_to_mg_dl(self):
+        v = _vinmec("hdl")
+        assert v is not None
+        assert v.unit == "mg/dL"
+        assert v.value == pytest.approx(1.08 * 38.67, rel=1e-3)
+        assert v.ocr_confidence == 1.0
+
+    def test_ldl_converted_to_mg_dl(self):
+        v = _vinmec("ldl")
+        assert v is not None
+        assert v.unit == "mg/dL"
+        assert v.value == pytest.approx(4.24 * 38.67, rel=1e-3)
+        assert v.ocr_confidence == 1.0
+
+    def test_tsh_uiu_ml_accepted_no_conversion_full_confidence(self):
+        v = _vinmec("tsh")
+        assert v is not None
+        assert v.value == pytest.approx(1.26, rel=1e-3)
+        assert v.unit == "mIU/L"
+        assert v.ocr_confidence == 1.0
+        assert interpret_value(v).status == LabStatus.NORMAL
+
+    def test_ft3_pmol_l_recognized(self):
+        v = _vinmec("ft3")
+        assert v is not None
+        assert v.value == pytest.approx(4.64, rel=1e-3)
+        assert v.unit == "pmol/L"
+        assert v.ocr_confidence == 1.0
+
+    def test_ft4_pmol_l_recognized(self):
+        v = _vinmec("ft4")
+        assert v is not None
+        assert v.value == pytest.approx(18.0, rel=1e-3)
+        assert v.unit == "pmol/L"
+        assert v.ocr_confidence == 1.0
+
+    def test_no_clinically_incorrect_unit_value_combinations(self):
+        """Success criterion: no incompatible unit survives with confidence > 0."""
+        values = lab_parser.parse_lab_text(_VINMEC_TEXT)
+        for v in values:
+            assert v.ocr_confidence > 0.0, (
+                f"{v.test_name}: incompatible unit '{v.unit}' leaked through"
+            )
+
+
+class TestIncompatibleUnitRejection:
+    """Clinically nonsensical units must produce ocr_confidence=0.0."""
+
+    def test_glucose_in_miu_ml_rejected(self):
+        values = lab_parser.parse_lab_text("Glucose 4.78 mIU/mL")
+        assert values and values[0].ocr_confidence == 0.0
+
+    def test_triglyceride_in_iu_ml_rejected(self):
+        values = lab_parser.parse_lab_text("Triglyceride 150 IU/mL")
+        assert values and values[0].ocr_confidence == 0.0
+
+    def test_tsh_in_mmol_l_rejected(self):
+        values = lab_parser.parse_lab_text("TSH 1.26 mmol/L")
+        assert values and values[0].ocr_confidence == 0.0
+
+    def test_ft3_in_mg_dl_rejected(self):
+        values = lab_parser.parse_lab_text("FT3 4.64 mg/dL")
+        assert values and values[0].ocr_confidence == 0.0
+
+    def test_alt_in_pmol_l_rejected(self):
+        values = lab_parser.parse_lab_text("ALT 58 pmol/L")
+        assert values and values[0].ocr_confidence == 0.0
