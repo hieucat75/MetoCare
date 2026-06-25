@@ -209,7 +209,13 @@ class AzureDocIntelEngine:
     def configured() -> bool:
         return bool(os.getenv("AZURE_DOC_INTEL_KEY") and os.getenv("AZURE_DOC_INTEL_ENDPOINT"))
 
-    def run(self, image_bytes: bytes, mime: str) -> OcrTextResult:
+    def analyze_raw(self, image_bytes: bytes, mime: str) -> dict:
+        """Submit to Azure DI and poll to completion; return raw analyzeResult dict.
+
+        Raises OcrEngineError on any failure. Callers that only need text can call
+        run() instead; callers that want table-first extraction call this directly
+        and pass the result to lab_table_extractor.extract_and_map().
+        """
         key = os.getenv("AZURE_DOC_INTEL_KEY")
         endpoint = os.getenv("AZURE_DOC_INTEL_ENDPOINT")
         if not (key and endpoint):
@@ -232,8 +238,6 @@ class AzureDocIntelEngine:
             op_url = submit.headers.get("operation-location")
             if not op_url:
                 raise OcrEngineError("Azure Doc Intel không trả operation-location.")
-            # Validate that the poll URL belongs to the configured endpoint to prevent
-            # a crafted operation-location from reaching internal hosts.
             from urllib.parse import urlparse
             if urlparse(op_url).netloc != urlparse(endpoint).netloc:
                 raise OcrEngineError(
@@ -242,8 +246,10 @@ class AzureDocIntelEngine:
             body = self._poll(httpx, op_url, key)
         except httpx.HTTPError as exc:
             raise OcrEngineError("Cloud OCR (Azure) thất bại.") from exc
+        return body.get("analyzeResult", {}) or {}
 
-        analyze_result = body.get("analyzeResult", {}) or {}
+    def run(self, image_bytes: bytes, mime: str) -> OcrTextResult:
+        analyze_result = self.analyze_raw(image_bytes, mime)
         text = self._build_text(analyze_result)
         confidence = self._avg_word_confidence(analyze_result)
         return OcrTextResult(text=text, confidence=confidence, provider=self.name)

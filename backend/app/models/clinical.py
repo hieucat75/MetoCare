@@ -75,6 +75,11 @@ class LabResult(UUIDPrimaryKey, TimestampMixin, SoftDeleteMixin, Base):
     ocr_confidence: Mapped[float | None] = mapped_column(Float)
     verified_by_user: Mapped[bool] = mapped_column(Boolean, default=False)
     verified_by_doctor: Mapped[bool] = mapped_column(Boolean, default=False)
+    # OCR originals — as printed on the patient's lab report.
+    original_value: Mapped[float | None] = mapped_column(Float)
+    original_unit: Mapped[str | None] = mapped_column(String(24))
+    original_reference_range: Mapped[str | None] = mapped_column(String(64))
+    original_test_name: Mapped[str | None] = mapped_column(String(128))
 
 
 class SymptomLog(UUIDPrimaryKey, TimestampMixin, Base):

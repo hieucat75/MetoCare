@@ -24,6 +24,7 @@ from app.core.config import get_settings
 from app.domain import lab_interpreter
 from app.domain.lab_interpreter import ConfidenceDetail
 from app.services import lab_parser
+from app.domain.lab_table_extractor import extract_and_map as _extract_table_and_map
 from app.services.ocr_engine import (
     AzureDocIntelEngine,
     OcrEngineError,
@@ -77,6 +78,7 @@ class DraftItem:
     display_name_vi: str = ""      # Vietnamese label from catalog
     canonical_value: float = 0.0   # canonical SI value (for save/metrics)
     canonical_unit: str = ""       # canonical SI unit  (for save/metrics)
+    display_reference_range: str | None = None  # ref range in display unit (same unit as result)
 
 
 @dataclass
@@ -206,14 +208,37 @@ def _extract_text(data: bytes, mime: str) -> tuple[str, float, str, list[str]]:
 # --------------------------------------------------------------------------- #
 
 def build_draft(data: bytes, mime: str) -> LabUploadDraft:
-    text, ocr_conf, provider, warnings = _extract_text(data, mime)
-    raw_values = lab_parser.parse_lab_text(text)
+    warnings: list[str] = []
+    raw_values: list = []
+    text = ""
+    ocr_conf = 0.0
+    provider = "unknown"
+    azure_succeeded = False
 
-    # Zero-biomarker escalation: the local engine may report acceptable confidence
-    # yet parse nothing on a tricky layout (the confidence trigger inside run_ocr
-    # would not have fired). When cloud OCR is permitted (flag + provider + key),
-    # try it once and adopt the result only if it actually recognizes biomarkers.
-    # Skipped when the transcription already came from a cloud provider.
+    # Table-first path: Azure DI → extract_table_rows → map_table_rows_to_raw_values.
+    # Falls through to text+regex when Azure is not configured or tables are empty.
+    if AzureDocIntelEngine.configured():
+        try:
+            engine = AzureDocIntelEngine()
+            analyze_result = engine.analyze_raw(data, mime)
+            ocr_conf = AzureDocIntelEngine._avg_word_confidence(analyze_result)
+            text = AzureDocIntelEngine._build_text(analyze_result)
+            provider = engine.name
+            azure_succeeded = True
+            raw_values = _extract_table_and_map(analyze_result, ocr_conf=ocr_conf)
+            if not raw_values:
+                # Tables empty or no recognizable biomarkers — fall back to text+regex
+                # on the same already-extracted text (no second network call).
+                raw_values = lab_parser.parse_lab_text(text)
+        except OcrEngineError as exc:
+            warnings.append(str(exc))
+
+    if not azure_succeeded:
+        text, ocr_conf, provider, text_warnings = _extract_text(data, mime)
+        warnings.extend(text_warnings)
+        raw_values = lab_parser.parse_lab_text(text)
+
+    # Zero-biomarker escalation for non-Azure providers only.
     if not raw_values and provider in ("tesseract", "pdf_text"):
         cloud_res = run_cloud_ocr_if_permitted(data, mime)
         if cloud_res is not None:
@@ -277,6 +302,7 @@ def build_draft(data: bytes, mime: str) -> LabUploadDraft:
                 display_name_vi=b.display_name_vi,
                 canonical_value=b.value,
                 canonical_unit=b.unit,
+                display_reference_range=b.display_reference_range,
             )
         )
 

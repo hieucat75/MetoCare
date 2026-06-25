@@ -22,6 +22,7 @@ class LabUploadDraftItemOut(BaseModel):
     display_name_vi: str = ""             # Vietnamese label from catalog
     canonical_value: float = 0.0          # canonical SI value (for save path)
     canonical_unit: str = ""              # canonical SI unit  (for save path)
+    display_reference_range: str | None = None  # ref range in display unit
 
 
 class LabUploadDraftOut(BaseModel):

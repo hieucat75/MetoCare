@@ -107,6 +107,7 @@ async def create_lab_upload_draft(
                 display_name_vi=i.display_name_vi,
                 canonical_value=i.canonical_value,
                 canonical_unit=i.canonical_unit,
+                display_reference_range=i.display_reference_range,
             )
             for i in draft.parsed_values
         ],

@@ -468,6 +468,10 @@ export interface ManualLabItem {
   value?: number | null
   unit?: string | null
   reference_range?: string | null
+  original_value?: number | null
+  original_unit?: string | null
+  original_reference_range?: string | null
+  original_test_name?: string | null
 }
 
 export async function createManualLabResults(
@@ -498,6 +502,8 @@ export interface LabUploadDraftItem {
   // Canonical SI values — used by the save path (health metrics)
   canonical_value?: number
   canonical_unit?: string
+  // Reference range in the same display unit as value/unit (for review screen)
+  display_reference_range?: string | null
 }
 
 export interface LabUploadDraft {

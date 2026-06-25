@@ -25,7 +25,13 @@ import {
   type LabUploadDraft,
   type ManualLabItem,
 } from '@/lib/api/patient'
-import { displayDateToIso, formatDateInput, isoToDisplayDate, validateExamDate } from '@/lib/utils'
+import {
+  displayDateToIso,
+  formatDateInput,
+  isOldLabDate,
+  isoToDisplayDate,
+  validateExamDate,
+} from '@/lib/utils'
 
 const MAX_MB = 10
 const ACCEPT = ['image/jpeg', 'image/png', 'application/pdf']
@@ -51,6 +57,8 @@ interface EditRow {
   // Canonical SI values — for the save path (health metrics).
   canonical_value: number | null
   canonical_unit: string | null
+  // Reference range in the same display unit as value/unit.
+  display_reference_range: string | null
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -215,7 +223,7 @@ export default function LabUploadPage() {
         test_name: v.test_name,
         value: String(v.value),
         unit: v.unit ?? '',
-        reference_range: v.reference_range ?? '',
+        reference_range: v.display_reference_range ?? v.reference_range ?? '',
         confidence: v.confidence,
         needs_verification: v.needs_verification,
         status: v.status,
@@ -226,6 +234,7 @@ export default function LabUploadPage() {
         original_test_name: v.original_test_name ?? '',
         canonical_value: v.canonical_value ?? null,
         canonical_unit: v.canonical_unit ?? null,
+        display_reference_range: v.display_reference_range ?? null,
       }))
       // Always give the patient at least one editable row (manual fallback).
       setRows(
@@ -247,6 +256,7 @@ export default function LabUploadPage() {
                 original_test_name: '',
                 canonical_value: null,
                 canonical_unit: null,
+                display_reference_range: null,
               },
             ]
       )
@@ -278,7 +288,11 @@ export default function LabUploadPage() {
       value:
         r.canonical_value != null ? r.canonical_value : r.value.trim() ? parseFloat(r.value) : null,
       unit: r.canonical_unit || r.unit.trim() || null,
-      reference_range: r.reference_range.trim() || null,
+      reference_range: r.display_reference_range ?? (r.reference_range.trim() || null),
+      original_value: r.original_value,
+      original_unit: r.original_unit,
+      original_reference_range: r.display_reference_range,
+      original_test_name: r.original_test_name || null,
     }))
     if (results.some((r) => r.value != null && Number.isNaN(r.value))) {
       setError('Giá trị phải là số.')
@@ -481,6 +495,17 @@ export default function LabUploadPage() {
             </p>
           </NeuCard>
 
+          {testDate && isOldLabDate(testDate) && (
+            <div
+              role="note"
+              className="rounded-[14px] bg-[#EEF4FB] border border-[#2563EB]/20 px-4 py-3"
+            >
+              <p className="text-[13px] text-[#1E4DA1]">
+                Kết quả này đã cũ hơn 12 tháng — chỉ dùng để tham khảo lịch sử. Bạn vẫn có thể lưu.
+              </p>
+            </div>
+          )}
+
           <NeuCard>
             <label className="mb-1.5 block text-[14px] font-semibold text-neu-green">
               Tên phòng khám / xét nghiệm (tuỳ chọn)
@@ -597,6 +622,7 @@ export default function LabUploadPage() {
                     original_test_name: '',
                     canonical_value: null,
                     canonical_unit: null,
+                    display_reference_range: null,
                   },
                 ])
               }

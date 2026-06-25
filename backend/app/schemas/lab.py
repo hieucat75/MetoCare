@@ -21,6 +21,10 @@ class LabResultItemIn(BaseModel):
     value: float | None = None
     unit: str | None = Field(None, max_length=24)
     reference_range: str | None = Field(None, max_length=64)
+    original_value: float | None = None
+    original_unit: str | None = Field(None, max_length=24)
+    original_reference_range: str | None = Field(None, max_length=64)
+    original_test_name: str | None = Field(None, max_length=128)
 
 
 class LabManualEntryCreate(BaseModel):

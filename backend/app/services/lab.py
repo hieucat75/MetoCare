@@ -87,13 +87,29 @@ def backfill_lab_metrics(db: Session, *, commit: bool = True) -> int:
     Fixes labs created before lab→metric sync existed (and via the interpret/
     pipeline paths). Idempotent — rows already promoted (a health_metric points at
     them via source_ref) are skipped, so re-running is safe. Returns count written."""
+    from sqlalchemy.orm import load_only as _load_only
+
     promoted_refs = select(HealthMetric.source_ref).where(HealthMetric.source_ref.is_not(None))
+    # load_only avoids selecting columns added after this backfill migration ran
+    # (e.g. original_value/unit/reference_range/test_name) so this function is safe
+    # to call from the hmbk_backfill migration even on DBs that don't have them yet.
     orphans = db.execute(
-        select(LabResult).where(
+        select(LabResult)
+        .where(
             LabResult.deleted_at.is_(None),
             LabResult.value.is_not(None),
             LabResult.id.not_in(promoted_refs),
         )
+        .options(_load_only(
+            LabResult.id,
+            LabResult.patient_id,
+            LabResult.canonical_name,
+            LabResult.test_name,
+            LabResult.value,
+            LabResult.unit,
+            LabResult.test_date,
+            LabResult.created_at,
+        ))
     ).scalars().all()
     written = sum(_promote_row(db, row, _measured_at_for(row, None)) for row in orphans)
     if commit:
@@ -246,6 +262,10 @@ def create_manual_entry(
             reference_range=item.get("reference_range"),
             test_date=test_date,
             verified_by_user=True,
+            original_value=item.get("original_value"),
+            original_unit=item.get("original_unit"),
+            original_reference_range=item.get("original_reference_range"),
+            original_test_name=item.get("original_test_name"),
         )
         db.add(row)
         rows.append(row)

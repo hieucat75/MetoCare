@@ -56,6 +56,16 @@ export function validateExamDate(disp: string): string | null {
   return null
 }
 
+/** Returns true when a display `DD/MM/YYYY` date is older than 12 months. */
+export function isOldLabDate(disp: string): boolean {
+  const iso = displayDateToIso(disp)
+  if (!iso) return false
+  const d = new Date(`${iso}T00:00:00`)
+  const cutoff = new Date()
+  cutoff.setFullYear(cutoff.getFullYear() - 1)
+  return d < cutoff
+}
+
 export function formatRelativeTime(date: string | Date): string {
   const now = new Date()
   const then = typeof date === 'string' ? new Date(date) : date

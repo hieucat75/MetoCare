@@ -214,9 +214,28 @@ def parse_lab_text(
             continue
         unit = (vm.group("unit") or "").strip(" :.-") or None
 
-        # NOTE: any OCR'd reference range is intentionally ignored — the canonical
-        # range from the biomarker taxonomy (applied by lab_interpreter) is more
-        # reliable than a noisy scanned one.
+        # Extract reference range from the remainder of the line (after value+unit).
+        # Supports: "3.9–6.1", "44 - 80", "< 55", "> 60".
+        after_unit = after[vm.end():].strip()
+        ocr_ref: str | None = None
+        rm = _RANGE_RE.search(after_unit)
+        if rm:
+            lo = _to_float(rm.group("lo"))
+            hi = _to_float(rm.group("hi"))
+            if lo is not None and hi is not None and 0 < lo < hi < 10000:
+                ocr_ref = f"{lo}–{hi}"
+        elif after_unit:
+            lt_m = re.match(r"<\s*(\d[0-9.,]*)", after_unit)
+            if lt_m:
+                v = _to_float(lt_m.group(1))
+                if v is not None:
+                    ocr_ref = f"<{v}"
+            else:
+                gt_m = re.match(r">\s*(\d[0-9.,]*)", after_unit)
+                if gt_m:
+                    v = _to_float(gt_m.group(1))
+                    if v is not None:
+                        ocr_ref = f">{v}"
 
         # ── Multi-dimensional confidence ─────────────────────────────────────
         # mapping_confidence: always 1.0 here — we only emit rows with an exact
@@ -331,6 +350,7 @@ def parse_lab_text(
             original_unit=orig_unit,
             raw_test_name=raw_test_name,
             display_name_vi=display_name_vi,
+            ocr_reference_range=ocr_ref,
         )
     # Preserve biomarker declaration order for a stable, readable draft.
     order = {spec.canonical: i for i, spec in enumerate(BIOMARKERS)}

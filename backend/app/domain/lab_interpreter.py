@@ -303,6 +303,7 @@ class RawLabValue:
     # Display fields: exact printed label and Vietnamese catalog name.
     raw_test_name: str = ""       # as OCR'd: "CHOLESTEROL TOAN PHAN", "Ure", etc.
     display_name_vi: str = ""     # Vietnamese label from catalog: "Cholesterol toàn phần"
+    ocr_reference_range: str | None = None  # as-printed from same OCR row/cell
 
 
 @dataclass
@@ -321,6 +322,42 @@ class InterpretedBiomarker:
     original_unit: str | None = None
     raw_test_name: str = ""
     display_name_vi: str = ""
+    display_reference_range: str | None = None  # ref range in display unit (for review UI)
+
+
+def _norm_unit_interp(u: str) -> str:
+    """Normalize unit for comparison (avoids circular import with lab_parser)."""
+    return u.replace("µ", "u").replace("μ", "u").replace("mc", "u").strip().lower()
+
+
+def _compute_display_ref(
+    ocr_reference_range: str | None,
+    original_unit: str | None,
+    spec: BiomarkerSpec,
+) -> str | None:
+    """Compute reference range string in the display unit shown on the patient's report.
+
+    Priority:
+    1. OCR-extracted range from same row/cell — already in display unit.
+    2. Catalog range converted to display unit when display_unit == spec.si_unit.
+    3. Catalog range in canonical unit with (MetoCare) label as fallback.
+    """
+    display_unit = original_unit
+    if ocr_reference_range:
+        return f"{ocr_reference_range} {display_unit}" if display_unit else ocr_reference_range
+    if spec.ref_low is None or spec.ref_high is None:
+        return None
+    label = " (MetoCare)"
+    if display_unit is None:
+        return f"{spec.ref_low}–{spec.ref_high} {spec.unit}{label}"
+    norm_disp = _norm_unit_interp(display_unit)
+    if spec.si_unit and _norm_unit_interp(spec.si_unit) == norm_disp and spec.si_factor:
+        lo = round(spec.ref_low / spec.si_factor, 3)
+        hi = round(spec.ref_high / spec.si_factor, 3)
+        return f"{lo}–{hi} {display_unit}{label}"
+    if _norm_unit_interp(spec.unit) == norm_disp:
+        return f"{spec.ref_low}–{spec.ref_high} {spec.unit}{label}"
+    return f"{spec.ref_low}–{spec.ref_high} {spec.unit}{label}"
 
 
 def classify_value(canonical: str, value: float) -> LabStatus:
@@ -386,10 +423,12 @@ def interpret_value(raw: RawLabValue) -> InterpretedBiomarker:
             original_unit=raw.original_unit,
             raw_test_name=raw.raw_test_name,
             display_name_vi=raw.display_name_vi,
+            display_reference_range=None,
         )
     status = classify_value(canonical, raw.value)
     needs_verification = raw.ocr_confidence < OCR_CONFIDENCE_THRESHOLD
     ref = f"{spec.ref_low}–{spec.ref_high} {spec.unit}"
+    display_ref = _compute_display_ref(raw.ocr_reference_range, raw.original_unit, spec)
     note = f"{spec.canonical} = {raw.value} {spec.unit}: {_PATIENT_NOTE[status]}"
     if needs_verification:
         note += " (Độ tin cậy OCR thấp — cần xác nhận lại số liệu.)"
@@ -408,6 +447,7 @@ def interpret_value(raw: RawLabValue) -> InterpretedBiomarker:
         original_unit=raw.original_unit,
         raw_test_name=raw.raw_test_name,
         display_name_vi=raw.display_name_vi,
+        display_reference_range=display_ref,
     )
 
 
