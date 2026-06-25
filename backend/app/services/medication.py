@@ -271,11 +271,14 @@ def adherence_summary(
     today_start = utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     today_end = today_start + dt.timedelta(days=1)
     week_start = today_start - dt.timedelta(days=7)
+    year_start = today_start - dt.timedelta(days=365)
 
     all_records = list(
         db.execute(
             select(MedicationAdherence)
             .where(MedicationAdherence.patient_id == patient_id)
+            .where(MedicationAdherence.created_at >= year_start)
+            .order_by(MedicationAdherence.created_at)
         ).scalars()
     )
 
