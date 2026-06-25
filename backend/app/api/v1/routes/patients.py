@@ -598,6 +598,18 @@ def delete_medication(
 
     medication_svc.delete_medication(db, patient_id=patient_id, med_id=med_id)
 
+    audit.record(
+        db,
+        actor_type=user.role,
+        actor_id=user.id,
+        action="delete_medication",
+        resource_type="medication",
+        resource_id=med_id,
+        outcome="success",
+        severity="info",
+    )
+    db.commit()
+
 
 @router.patch(
     "/{patient_id}/medications/{med_id}",
@@ -642,18 +654,6 @@ def update_medication(
     db.commit()
 
     return MedicationOut.model_validate(record)
-
-    audit.record(
-        db,
-        actor_type=user.role,
-        actor_id=user.id,
-        action="delete_medication",
-        resource_type="medication",
-        resource_id=med_id,
-        outcome="success",
-        severity="info",
-    )
-    db.commit()
 
 # ---------------------------------------------------------------------------
 # Phase 2 — Medication Adherence endpoints

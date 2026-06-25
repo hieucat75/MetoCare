@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class MedicationCreate(BaseModel):
@@ -47,6 +47,12 @@ class MedicationAdherenceCreate(BaseModel):
     taken_at: dt.datetime | None = None
     skipped: bool = False
     note: str | None = Field(None, max_length=1024)
+
+    @model_validator(mode="after")
+    def taken_and_skipped_are_exclusive(self) -> MedicationAdherenceCreate:
+        if self.taken_at is not None and self.skipped:
+            raise ValueError("A dose cannot be both taken and skipped.")
+        return self
 
 
 class MedicationAdherenceOut(BaseModel):
