@@ -1,0 +1,13 @@
+{
+  "hospital_id": "hospital_108",
+  "expected_biomarkers": {
+    "fasting_glucose": {"value_mg_dl": 108.0, "unit": "mg/dL", "status": "high"},
+    "alt": {"value_mg_dl": 75.0, "unit": "U/L", "status": "high"},
+    "total_cholesterol": {"value_mg_dl": 210.0, "unit": "mg/dL", "status": "high"},
+    "triglyceride": {"value_mg_dl": 165.0, "unit": "mg/dL", "status": "high"},
+    "hdl": {"value_mg_dl": 38.0, "unit": "mg/dL", "status": "low"},
+    "ldl": {"value_mg_dl": 138.0, "unit": "mg/dL", "status": "high"},
+    "hba1c": {"value_mg_dl": 6.8, "unit": "%", "status": "high"},
+    "creatinine": {"value_mg_dl": 1.1, "unit": "mg/dL", "status": "normal"}
+  }
+}

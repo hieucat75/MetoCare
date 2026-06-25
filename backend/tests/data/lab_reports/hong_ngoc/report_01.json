@@ -1,0 +1,13 @@
+{
+  "hospital_id": "hong_ngoc",
+  "expected_biomarkers": {
+    "fasting_glucose": {"value_mg_dl": 95.1350, "unit": "mg/dL", "status": "normal"},
+    "alt": {"value_mg_dl": 42.0, "unit": "U/L", "status": "normal"},
+    "total_cholesterol": {"value_mg_dl": 197.217, "unit": "mg/dL", "status": "normal"},
+    "triglyceride": {"value_mg_dl": 159.426, "unit": "mg/dL", "status": "high"},
+    "hdl": {"value_mg_dl": 48.3375, "unit": "mg/dL", "status": "normal"},
+    "ldl": {"value_mg_dl": 96.675, "unit": "mg/dL", "status": "normal"},
+    "hba1c": {"value_mg_dl": 5.1, "unit": "%", "status": "normal"},
+    "creatinine": {"value_mg_dl": 0.9, "unit": "mg/dL", "status": "normal"}
+  }
+}

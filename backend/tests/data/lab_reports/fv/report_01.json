@@ -1,0 +1,13 @@
+{
+  "hospital_id": "fv",
+  "expected_biomarkers": {
+    "fasting_glucose": {"value_mg_dl": 86.126, "unit": "mg/dL", "status": "normal"},
+    "alt": {"value_mg_dl": 31.0, "unit": "U/L", "status": "normal"},
+    "total_cholesterol": {"value_mg_dl": 174.015, "unit": "mg/dL", "status": "normal"},
+    "triglyceride": {"value_mg_dl": 106.284, "unit": "mg/dL", "status": "normal"},
+    "hdl": {"value_mg_dl": 59.9385, "unit": "mg/dL", "status": "normal"},
+    "ldl": {"value_mg_dl": 92.808, "unit": "mg/dL", "status": "normal"},
+    "tsh": {"value_mg_dl": 1.85, "unit": "mIU/L", "status": "normal"},
+    "hba1c": {"value_mg_dl": 5.3, "unit": "%", "status": "normal"}
+  }
+}

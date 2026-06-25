@@ -59,6 +59,7 @@ export default function PatientDashboardPage() {
   const [data, setData] = React.useState<DashboardData | null>(null)
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
+  const lastFetchTime = React.useRef<number>(0)
 
   const load = React.useCallback(() => {
     if (!patientId) {
@@ -115,13 +116,29 @@ export default function PatientDashboardPage() {
         }
       )
       .catch((err: Error) => setError(err.message))
-      .finally(() => setLoading(false))
+      .finally(() => {
+        setLoading(false)
+        lastFetchTime.current = Date.now()
+      })
   }, [patientId, catalog])
 
   React.useEffect(() => {
     // Wait for the catalog so status classification matches the metrics page.
     if (catalog !== null) load()
   }, [load, catalog])
+
+  // Re-fetch when the tab/window regains focus (e.g. patient logs a metric and returns).
+  // Throttled to once per 30 seconds so a simple Alt-Tab doesn't hammer the API.
+  React.useEffect(() => {
+    const STALE_MS = 30_000
+    const handleFocus = () => {
+      if (patientId && catalog !== null && Date.now() - lastFetchTime.current > STALE_MS) {
+        load()
+      }
+    }
+    window.addEventListener('focus', handleFocus)
+    return () => window.removeEventListener('focus', handleFocus)
+  }, [load, patientId, catalog])
 
   if (!user) return null
 

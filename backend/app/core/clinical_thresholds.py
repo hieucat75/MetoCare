@@ -50,6 +50,51 @@ _DEFAULT_VITAL_THRESHOLDS = {
         board_approved=False,
         proposed=True
     ),
+    "temperature": VitalThreshold(
+        metric_type="temperature",
+        critical_high=39.0,
+        critical_low=35.0,
+        unit="°C",
+        source="WHO 2023",
+        board_approved=False,
+        proposed=True
+    ),
+    "bmi": VitalThreshold(
+        metric_type="bmi",
+        critical_high=40.0,
+        critical_low=15.0,
+        unit="kg/m²",
+        source="WHO 2023",
+        board_approved=False,
+        proposed=True
+    ),
+    "sleep_hours": VitalThreshold(
+        metric_type="sleep_hours",
+        critical_high=None,
+        critical_low=None,
+        unit="h",
+        source="NSF 2023",
+        board_approved=False,
+        proposed=True
+    ),
+    "steps": VitalThreshold(
+        metric_type="steps",
+        critical_high=None,
+        critical_low=None,
+        unit="steps",
+        source="WHO 2023",
+        board_approved=False,
+        proposed=True
+    ),
+    "activity_minutes": VitalThreshold(
+        metric_type="activity_minutes",
+        critical_high=None,
+        critical_low=None,
+        unit="min",
+        source="WHO 2023",
+        board_approved=False,
+        proposed=True
+    ),
 }
 
 _DEFAULT_SYMPTOMS = {

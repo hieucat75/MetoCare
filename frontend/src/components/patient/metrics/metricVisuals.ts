@@ -4,11 +4,14 @@ import {
   Droplets,
   Filter,
   FlaskConical,
+  Footprints,
   Gauge,
   Heart,
   HeartPulse,
+  Moon,
   Ruler,
   Thermometer,
+  Timer,
   Weight,
   type LucideIcon,
 } from 'lucide-react'
@@ -44,6 +47,11 @@ export const METRIC_ICONS: Record<string, LucideIcon> = {
   spo2: Gauge,
   weight: Weight,
   waist_cm: Ruler,
+  temperature: Thermometer,
+  sleep_hours: Moon,
+  steps: Footprints,
+  activity_minutes: Timer,
+  bmi: Gauge,
 }
 
 export function metricIcon(metricType: string): LucideIcon {

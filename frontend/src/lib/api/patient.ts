@@ -72,6 +72,11 @@ export type MetricType =
   | 'waist_cm'
   | 'heart_rate'
   | 'spo2'
+  | 'temperature'
+  | 'sleep_hours'
+  | 'steps'
+  | 'activity_minutes'
+  | 'bmi'
 
 /** Canonical display labels (vi-VN). Keyed by {@link MetricType}. */
 export const METRIC_LABELS: Record<MetricType, string> = {
@@ -85,6 +90,11 @@ export const METRIC_LABELS: Record<MetricType, string> = {
   waist_cm: 'Vòng eo',
   heart_rate: 'Nhịp tim',
   spo2: 'SpO₂',
+  temperature: 'Nhiệt độ cơ thể',
+  sleep_hours: 'Giấc ngủ',
+  steps: 'Số bước chân',
+  activity_minutes: 'Vận động',
+  bmi: 'BMI',
 }
 
 /** Canonical default units. Keyed by {@link MetricType}. */
@@ -99,6 +109,11 @@ export const METRIC_UNITS: Record<MetricType, string> = {
   waist_cm: 'cm',
   heart_rate: 'bpm',
   spo2: '%',
+  temperature: '°C',
+  sleep_hours: 'giờ',
+  steps: 'bước',
+  activity_minutes: 'phút',
+  bmi: 'kg/m²',
 }
 
 /** Reference normal ranges (used to attach normal_range_min/max on log). */
@@ -111,6 +126,11 @@ export const METRIC_NORMAL_RANGES: Partial<Record<MetricType, { min: number; max
   hdl: { min: 40, max: 100 },
   heart_rate: { min: 60, max: 100 },
   spo2: { min: 95, max: 100 },
+  temperature: { min: 36.1, max: 37.2 },
+  sleep_hours: { min: 7, max: 9 },
+  steps: { min: 7000, max: 20000 },
+  activity_minutes: { min: 30, max: 120 },
+  bmi: { min: 18.5, max: 24.9 },
 }
 
 export function metricLabel(type: MetricType | string): string {

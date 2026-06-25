@@ -19,6 +19,13 @@ import {
   type PatientProfile,
   type HealthMetric,
 } from '@/lib/api/patient'
+import {
+  TemperatureScreen,
+  SleepHoursScreen,
+  StepsScreen,
+  ActivityMinutesScreen,
+  BmiScreen,
+} from './extra-screens'
 
 // ─── Danger threshold helpers ────────────────────────────────────────────────
 
@@ -812,12 +819,26 @@ function GenericScreen({
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-type ScreenVariant = 'bp' | 'weight' | 'glucose' | 'generic'
+type ScreenVariant =
+  | 'bp'
+  | 'weight'
+  | 'glucose'
+  | 'temperature'
+  | 'sleep_hours'
+  | 'steps'
+  | 'activity_minutes'
+  | 'bmi'
+  | 'generic'
 
 function resolveVariant(type: string): ScreenVariant {
   if (type === 'blood_pressure_systolic') return 'bp'
   if (type === 'weight') return 'weight'
   if (type === 'fasting_glucose' || type === 'postprandial_glucose') return 'glucose'
+  if (type === 'temperature') return 'temperature'
+  if (type === 'sleep_hours') return 'sleep_hours'
+  if (type === 'steps') return 'steps'
+  if (type === 'activity_minutes') return 'activity_minutes'
+  if (type === 'bmi') return 'bmi'
   return 'generic'
 }
 
@@ -901,6 +922,46 @@ export default function MetricLogTypePage() {
           <GlucoseScreen
             patientId={patientId}
             metricType={metricType as MetricType}
+            measuredAt={measuredAt}
+            onSuccess={() => setSuccess(true)}
+            onChangeMeasuredAt={setMeasuredAt}
+          />
+        )}
+        {variant === 'temperature' && (
+          <TemperatureScreen
+            patientId={patientId}
+            measuredAt={measuredAt}
+            onSuccess={() => setSuccess(true)}
+            onChangeMeasuredAt={setMeasuredAt}
+          />
+        )}
+        {variant === 'sleep_hours' && (
+          <SleepHoursScreen
+            patientId={patientId}
+            measuredAt={measuredAt}
+            onSuccess={() => setSuccess(true)}
+            onChangeMeasuredAt={setMeasuredAt}
+          />
+        )}
+        {variant === 'steps' && (
+          <StepsScreen
+            patientId={patientId}
+            measuredAt={measuredAt}
+            onSuccess={() => setSuccess(true)}
+            onChangeMeasuredAt={setMeasuredAt}
+          />
+        )}
+        {variant === 'activity_minutes' && (
+          <ActivityMinutesScreen
+            patientId={patientId}
+            measuredAt={measuredAt}
+            onSuccess={() => setSuccess(true)}
+            onChangeMeasuredAt={setMeasuredAt}
+          />
+        )}
+        {variant === 'bmi' && (
+          <BmiScreen
+            patientId={patientId}
             measuredAt={measuredAt}
             onSuccess={() => setSuccess(true)}
             onChangeMeasuredAt={setMeasuredAt}

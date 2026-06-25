@@ -16,8 +16,14 @@ import {
   getAdherenceSummary,
   type Medication,
   type MedicationInput,
+  type AdherenceSummary,
   type TodayMedication,
 } from '@/lib/api/patient'
+import {
+  AdherenceSummaryCard,
+  AdherenceSummarySkeleton,
+  WeeklyAdherenceSection,
+} from './adherence-widgets'
 
 const PILL_GRADIENT = 'linear-gradient(160deg,#5B8DEF,#2563EB)'
 
@@ -199,9 +205,11 @@ type MedModalProps = {
   onSaved: () => void
   patientId: string
   editing: Medication | null
+  /** When true, modal opens directly in delete-confirmation mode. */
+  deleteMode?: boolean
 }
 
-function MedModal({ open, onClose, onSaved, patientId, editing }: MedModalProps) {
+function MedModal({ open, onClose, onSaved, patientId, editing, deleteMode = false }: MedModalProps) {
   const [name, setName] = React.useState('')
   const [dose, setDose] = React.useState('')
   const [frequency, setFrequency] = React.useState('')
@@ -219,9 +227,9 @@ function MedModal({ open, onClose, onSaved, patientId, editing }: MedModalProps)
       setFrequency(editing?.frequency ?? '')
       setNote(editing?.note ?? '')
       setFormError(null)
-      setConfirmDelete(false)
+      setConfirmDelete(deleteMode)
     }
-  }, [open, editing])
+  }, [open, editing, deleteMode])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -420,11 +428,13 @@ export default function MedicationsPage() {
 
   const [meds, setMeds] = React.useState<Medication[]>([])
   const [adherence, setAdherence] = React.useState<Record<string, TodayMedication>>({})
+  const [summary, setSummary] = React.useState<AdherenceSummary | null>(null)
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
 
   const [modalOpen, setModalOpen] = React.useState(false)
   const [editing, setEditing] = React.useState<Medication | null>(null)
+  const [deleteMode, setDeleteMode] = React.useState(false)
 
   const load = React.useCallback(() => {
     if (!patientId) {
@@ -440,6 +450,7 @@ export default function MedicationsPage() {
       .then(([medsRes, summaryRes]) => {
         setMeds(medsRes.items)
         if (summaryRes) {
+          setSummary(summaryRes)
           const map: Record<string, TodayMedication> = {}
           for (const m of summaryRes.today_medications) {
             map[m.medication_id] = m
@@ -475,6 +486,12 @@ export default function MedicationsPage() {
     <div className="p-4 space-y-4 max-w-md mx-auto pb-28">
       <h1 className="px-1 text-[21px] font-extrabold tracking-[-0.02em] text-neu-text">Thuốc</h1>
 
+      {/* Adherence Summary Card */}
+      {loading && <AdherenceSummarySkeleton />}
+      {!loading && summary && summary.total_doses_logged > 0 && (
+        <AdherenceSummaryCard summary={summary} />
+      )}
+
       {loading && (
         <div className="p-4 space-y-3">
           <PatientSkeleton />
@@ -494,6 +511,7 @@ export default function MedicationsPage() {
           cta={{
             label: 'Thêm thuốc',
             onClick: () => {
+              setDeleteMode(false)
               setEditing(null)
               setModalOpen(true)
             },
@@ -511,10 +529,12 @@ export default function MedicationsPage() {
               patientId={patientId}
               onView={() => router.push(`/medications/${med.id}`)}
               onEdit={() => {
+                setDeleteMode(false)
                 setEditing(med)
                 setModalOpen(true)
               }}
               onDelete={() => {
+                setDeleteMode(true)
                 setEditing(med)
                 setModalOpen(true)
               }}
@@ -524,11 +544,17 @@ export default function MedicationsPage() {
         </div>
       )}
 
+      {/* Adherence History Section */}
+      {!loading && !error && summary && summary.total_doses_logged > 0 && (
+        <WeeklyAdherenceSection summary={summary} />
+      )}
+
       {/* FAB — add medication */}
       <button
         type="button"
         aria-label="Thêm thuốc"
         onClick={() => {
+          setDeleteMode(false)
           setEditing(null)
           setModalOpen(true)
         }}
@@ -546,10 +572,12 @@ export default function MedicationsPage() {
         onClose={() => {
           setModalOpen(false)
           setEditing(null)
+          setDeleteMode(false)
         }}
         onSaved={load}
         patientId={patientId}
         editing={editing}
+        deleteMode={deleteMode}
       />
     </div>
   )
