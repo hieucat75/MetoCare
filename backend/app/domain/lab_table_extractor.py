@@ -55,12 +55,16 @@ class OcrTableRow:
     row_confidence: float = 0.95   # Azure table cells don't report per-row confidence
     page_number: int = 0
     source: str = "azure_table"
+    # P0 safety flag: True when value_str looks like a machine model number
+    # (e.g. "502" from "Cobas C502").  Rows with this flag must NOT be auto-saved.
+    suspect_machine_id: bool = False
 
 
 # ──────────────────────────────────────────────────── Column vocabulary ────────
 
 # Header keywords that identify each column role.
 # Accent-stripped lowercase match.
+# NOTE: "method" columns are detected and explicitly EXCLUDED from value_col.
 _COL_ROLE_KEYWORDS: dict[str, frozenset[str]] = {
     "stt": frozenset({
         "stt", "no", "no.", "tt", "so thu tu", "order", "#", "sn",
@@ -84,7 +88,53 @@ _COL_ROLE_KEYWORDS: dict[str, frozenset[str]] = {
         "khoang binh thuong", "khoang chuan", "giai han binh thuong",
         "reference interval",
     }),
+    # Columns typed as "method" or "instrument" must NEVER be used as value_col.
+    "method": frozenset({
+        "phuong phap", "may xet nghiem", "may", "method", "instrument",
+        "analyzer", "thiet bi", "thiet bi do", "machine", "he thong",
+        "cobas", "may do", "phuong phap may", "phuong phap / may",
+        "pp/may", "pp / may",
+    }),
 }
+
+# ──────────────────────────────────────────── Instrument name blocklist ─────
+
+# Machine/instrument identifiers that appear in hospital lab report columns
+# (e.g. Medlatec "Phương pháp / Máy" column).  These strings must NEVER be
+# parsed as numeric result values.  Case-insensitive match after accent strip.
+_INSTRUMENT_NAME_BLOCKLIST: frozenset[str] = frozenset({
+    "cobas", "cobas c502", "cobas c702", "cobas e601", "cobas 8000",
+    "architect", "sysmex", "beckman", "coulter", "siemens",
+    "roche", "abbott", "olympus", "hitachi",
+    "c502", "c702", "e601", "au480", "au680",
+})
+
+# Regex to detect a 3-4 digit numeric suffix that is part of a model name,
+# e.g. the "502" in "Cobas C502" or "8000" in "Cobas 8000".
+_MODEL_SUFFIX_RE = re.compile(r"[A-Za-z]\s*(\d{3,4})")
+
+
+def _is_instrument_cell(text: str) -> bool:
+    """Return True when *text* contains a known instrument/machine name.
+
+    Strips accents and lowercases before matching so Vietnamese-accented variants
+    (if any) are also caught.
+    """
+    norm = _strip_accents_lower(text)
+    for name in _INSTRUMENT_NAME_BLOCKLIST:
+        if name in norm:
+            return True
+    # Generic pattern: letter immediately followed by 3-4 digit model number
+    # e.g. "C502", "E601", "AU480"
+    if _MODEL_SUFFIX_RE.search(text):
+        return True
+    return False
+
+
+def _row_contains_instrument(raw_cells: list[str]) -> bool:
+    """Return True when any cell in the row contains an instrument name."""
+    return any(_is_instrument_cell(c) for c in raw_cells)
+
 
 _NUMBER_RE = re.compile(r"\d{1,3}(?:[.,]\d{3})*(?:[.,]\d+)?|\d+(?:[.,]\d+)?")
 _UNIT_RE = re.compile(r"[%a-zA-Zµμ][a-zA-Z0-9µμ/^.²]*(?:/[a-zA-Z0-9.²]+)*")
@@ -165,7 +215,7 @@ def _detect_column_roles(
 ) -> dict[str, int | None]:
     roles: dict[str, int | None] = {
         "stt": None, "test_name": None, "value": None,
-        "unit": None, "reference": None,
+        "unit": None, "reference": None, "method": None,
     }
     for cell in cells_raw:
         ri = cell.get("rowIndex", 0)
@@ -177,13 +227,55 @@ def _detect_column_roles(
             continue
         for role, keywords in _COL_ROLE_KEYWORDS.items():
             if any(kw in txt_norm or txt_norm in kw for kw in keywords):
-                if roles[role] is None:
+                if roles.get(role) is None:
                     roles[role] = ci
                 break
+
+    # Also detect method/instrument columns from cell *content* (not just header text).
+    # Some hospitals omit a proper header but fill the column with "Cobas C502" etc.
+    method_col_candidate: int | None = None
+    for cell in cells_raw:
+        ri = cell.get("rowIndex", 0)
+        if ri in header_row_indices:
+            continue
+        ci = cell.get("columnIndex", 0)
+        content = (cell.get("content") or "").strip()
+        if content and _is_instrument_cell(content):
+            method_col_candidate = ci
+            break  # first hit is enough
+
+    if method_col_candidate is not None and roles.get("method") is None:
+        roles["method"] = method_col_candidate
+        _logger.debug(
+            "table_extractor_method_col_detected col=%d (content scan)",
+            method_col_candidate,
+        )
+
     if roles["test_name"] is None or roles["value"] is None:
         for role, col in _infer_column_roles_positional(max_col).items():
             if roles.get(role) is None:
                 roles[role] = col
+
+    # Safety: if value_col ended up on the method/instrument column, fall back
+    # to positional heuristics for value_col excluding the method column.
+    if roles.get("method") is not None and roles["value"] == roles["method"]:
+        _logger.warning(
+            "table_extractor_value_col_was_method col=%d — falling back to positional",
+            roles["method"],
+        )
+        positional = _infer_column_roles_positional(max_col)
+        fallback_value = positional.get("value")
+        # The fallback must not land on the method column either.
+        if fallback_value != roles["method"]:
+            roles["value"] = fallback_value
+        else:
+            # Last resort: pick the first column that is not stt, test_name, or method.
+            excluded = {roles.get("stt"), roles.get("test_name"), roles.get("method")}
+            for ci in range(max_col + 1):
+                if ci not in excluded:
+                    roles["value"] = ci
+                    break
+
     return roles
 
 
@@ -262,13 +354,56 @@ def extract_table_rows(analyze_result: dict) -> list[OcrTableRow]:
                     ref_str = _parse_reference_cell(ref_raw)
 
             raw_cells = [cell_map.get((ri, ci), "") for ci in range(max_col + 1)]
+
+            # ── Sanity check: instrument/machine-model number detection ──────
+            # After we have value_str, verify it is not a machine model number
+            # that leaked from a non-value column or from test_name cell itself.
+            suspect_machine_id = False
+
+            # 1) If ANY cell in this row (other than the value cell) is an
+            #    instrument cell AND value_str appears to be a 3-4 digit integer
+            #    that matches a model number suffix, flag it.
+            try:
+                value_float = float(value_str.replace(",", "."))
+                is_bare_integer = value_float == int(value_float)
+                if is_bare_integer and 100 <= value_float <= 9999:
+                    for col_idx, cell_text in enumerate(raw_cells):
+                        if col_idx == value_col:
+                            continue
+                        if _is_instrument_cell(cell_text):
+                            # Check if value_str appears as a suffix in that cell.
+                            m = _MODEL_SUFFIX_RE.search(cell_text)
+                            if m and m.group(1) == str(int(value_float)):
+                                suspect_machine_id = True
+                                _logger.warning(
+                                    "table_extractor_suspect_machine_id "
+                                    "row=%d value=%s matched model suffix in cell %r",
+                                    ri, value_str, cell_text,
+                                )
+                                break
+            except (ValueError, OverflowError):
+                pass
+
+            # 2) If the raw value cell itself contains an instrument name,
+            #    the value_col was mis-detected — flag the row.
+            if _is_instrument_cell(value_raw):
+                suspect_machine_id = True
+                _logger.warning(
+                    "table_extractor_instrument_in_value_cell row=%d cell=%r",
+                    ri, value_raw,
+                )
+
+            row_confidence = 0.0 if suspect_machine_id else 0.95
+
             rows.append(OcrTableRow(
                 original_test_name=test_name,
                 original_value_str=value_str,
                 original_unit=unit_str,
                 original_reference_range=ref_str,
                 raw_cells=raw_cells,
+                row_confidence=row_confidence,
                 source="azure_table",
+                suspect_machine_id=suspect_machine_id,
             ))
 
     return rows
@@ -345,6 +480,15 @@ def map_table_rows_to_raw_values(
     seen: dict[str, RawLabValue] = {}
 
     for row in table_rows:
+        # ── P0 safety gate: block rows flagged as suspect machine ID ──────────
+        if row.suspect_machine_id:
+            _logger.warning(
+                "table_extractor_blocked_suspect_machine_id "
+                "test=%r value=%r — row excluded from clean output",
+                row.original_test_name, row.original_value_str,
+            )
+            continue
+
         unit_raw = _apply_unit_corrections(row.original_unit or "").strip() or None
 
         name_noacc = _strip_accents_lower(row.original_test_name)
@@ -434,17 +578,35 @@ def map_table_rows_to_raw_values(
             reasons=reasons,
         )
 
+        # ── requires_review gate ───────────────────────────────────────────────────
+        # Any of the following conditions trigger manual review (not auto-saved):
+        #  • row_confidence == 0 (suspect machine ID or other parser error)
+        #  • overall confidence below 0.5
+        #  • original_unit is missing (ambiguous value)
+        #  • clinical check failed (incompatible unit or impossible value)
+        requires_review = (
+            row.row_confidence == 0.0
+            or overall < 0.5
+            or orig_unit is None
+            or incompatible
+            or clin_conf == 0.0
+            or row.suspect_machine_id
+        )
+
         seen[spec.canonical] = RawLabValue(
             test_name=spec.canonical,
             value=value,
             unit=unit or spec.unit,
             ocr_confidence=overall,
             confidence_detail=detail,
+            # Preserve original as-printed value and unit — never overwrite after conversion.
             original_value=orig_value,
             original_unit=orig_unit or spec.unit,
             raw_test_name=row.original_test_name,
             display_name_vi=display_name_vi,
             ocr_reference_range=row.original_reference_range,
+            requires_review=requires_review,
+            suspect_machine_id=row.suspect_machine_id,
         )
 
     return [seen[c] for c in sorted(seen, key=lambda c: _BIOMARKER_ORDER.get(c, 999))]
