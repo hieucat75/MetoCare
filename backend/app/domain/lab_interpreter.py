@@ -254,6 +254,14 @@ BIOMARKERS: tuple[BiomarkerSpec, ...] = (
         incompatible_units=("IU/mL", "mIU/L", "mIU/mL", "µIU/mL", "pmol/L", "nmol/L"),
         physiological_min=20, physiological_max=1500,
     ),
+    # ---- Adrenal / stress hormones ----
+    BiomarkerSpec(
+        "cortisol",
+        ("cortisol", "hydrocortisone", "cortisol mau", "cortisol huyet thanh"),
+        "nmol/L", 138, 635, critical_low=50, critical_high=1500,
+        incompatible_units=("mg/dL", "mmol/L", "mIU/L", "µIU/mL", "U/L", "pmol/L"),
+        physiological_min=0.1, physiological_max=5000,
+    ),
 )
 
 _ALIAS_INDEX: dict[str, BiomarkerSpec] = {}

@@ -1,4 +1,4 @@
-"""Regression tests for lab_table_extractor — P0 Cobas C502 fix.
+"""Regression tests for lab_table_extractor — P0 Cobas C502 fix + provider profiles.
 
 All tests use mock Azure DI table responses (no real OCR call).
 
@@ -10,7 +10,12 @@ Test inventory:
   5. test_mmol_not_converted_silently
   6. test_row_with_missing_unit_flagged
   7. test_suspect_machine_id_blocked
-  8. TestMedlatecCobasMock  — Medlatec golden fixture (11/11 biomarkers)
+  8. TestMedlatecCobasMock  — Medlatec legacy mock (separate method column)
+  9. TestProviderDetection   — hospital detect from full text
+  10. TestVinmecGoldenFixture — 16/16 expected values
+  11. TestMedlatecInlineGoldenFixture — 11/11 expected values (inline machine suffix)
+  12. TestTestNameCleaner   — clean_test_name() unit tests
+  13. TestUnknownProviderGate — requires_review + confidence cap
 """
 
 from __future__ import annotations
@@ -21,10 +26,12 @@ from app.domain.lab_table_extractor import (
     OcrTableRow,
     _INSTRUMENT_NAME_BLOCKLIST,
     _is_instrument_cell,
+    clean_test_name,
     extract_table_rows,
     map_table_rows_to_raw_values,
     extract_and_map,
 )
+from app.domain.hospital_profiles import detect_hospital
 
 
 # ──────────────────────────────────────────────────── helpers ──────────────────
@@ -284,6 +291,7 @@ class TestSuspectMachineIdBlocked:
         # AND value_str is the model number — simulating the bug scenario.
         suspect_row = OcrTableRow(
             original_test_name="ALT (GPT)",
+            display_test_name="ALT (GPT)",
             original_value_str="502",
             original_unit="U/L",
             original_reference_range="0-56",
@@ -592,3 +600,414 @@ class TestPromoteGateFU1:
         assert len(promoted) == 2
         assert {r.canonical_name for r in promoted} == {"fasting_glucose", "total_cholesterol"}
         assert all(r.verified_by_user for r in promoted)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# NEW: Provider-profile regression tests (feat/ocr-provider-profiles)
+# ══════════════════════════════════════════════════════════════════════════════
+
+from tests.fixtures.vinmec_mock_table import (
+    build_vinmec_analyze_result,
+    VINMEC_EXPECTED,
+    VINMEC_HEADER as _VH,
+    VINMEC_DATA as _VD,
+)
+from tests.fixtures.medlatec_inline_mock_table import (
+    build_medlatec_inline_analyze_result,
+    MEDLATEC_INLINE_EXPECTED,
+    MEDLATEC_INLINE_HEADER as _MH,
+    MEDLATEC_INLINE_DATA as _MD,
+)
+
+
+# ── Helper (duplicated from module-level for import isolation) ────────────────
+
+def _azure_result_with_content(content: str, header: list[str], data_rows: list[list[str]]) -> dict:
+    """Build Azure DI analyzeResult dict with a top-level content string."""
+    cells = _make_header_cells(*header) + _make_data_cells(data_rows)
+    return {"content": content, "tables": [{"cells": cells}]}
+
+
+# ─────────────────────────────────────────── TestProviderDetection ────────────
+
+class TestProviderDetection:
+    """Hospital detection from full document text."""
+
+    def test_vinmec_header_detected(self):
+        profile = detect_hospital("BỆNH VIỆN ĐA KHOA QUỐC TẾ VINMEC\nKết quả xét nghiệm")
+        assert profile is not None
+        assert profile.hospital_id == "vinmec"
+
+    def test_medlatec_header_detected(self):
+        profile = detect_hospital("HỆ THỐNG Y TẾ MEDLATEC\nPhiếu kết quả xét nghiệm")
+        assert profile is not None
+        assert profile.hospital_id == "medlatec"
+
+    def test_unknown_provider_returns_none(self):
+        profile = detect_hospital("XÉT NGHIỆM ABC\nKết quả ngày 01/01/2025")
+        assert profile is None
+
+    def test_medlatec_vn_domain_detected(self):
+        """Text containing 'medlatec' (lowercase) in a line must still resolve."""
+        profile = detect_hospital("medlatec general hospital\nKết quả")
+        assert profile is not None
+        assert profile.hospital_id == "medlatec"
+
+    def test_tam_anh_detected(self):
+        profile = detect_hospital("Bệnh viện Tam Anh")
+        assert profile is not None
+        assert profile.hospital_id == "tam_anh"
+
+    def test_extract_and_map_detects_vinmec_provider(self):
+        """extract_and_map must internally detect Vinmec and apply provider profile."""
+        result = build_vinmec_analyze_result()
+        mapped = extract_and_map(result)
+        # If detected correctly, confidence is not capped at 0.5
+        by_name = {r.test_name: r for r in mapped}
+        ast = by_name.get("ast")
+        assert ast is not None
+        # Known provider → confidence should be > 0.5 for a clear-cut result
+        assert ast.ocr_confidence > 0.5
+
+    def test_extract_and_map_detects_medlatec_provider(self):
+        """extract_and_map must internally detect Medlatec."""
+        result = build_medlatec_inline_analyze_result()
+        mapped = extract_and_map(result)
+        by_name = {r.test_name: r for r in mapped}
+        alt = by_name.get("alt")
+        assert alt is not None
+        assert alt.ocr_confidence > 0.5
+
+
+# ────────────────────────────────────────── TestVinmecGoldenFixture ───────────
+
+class TestVinmecGoldenFixture:
+    """Vinmec golden fixture — 16/16 expected values extracted correctly."""
+
+    def _run(self) -> dict:
+        return {r.test_name: r for r in extract_and_map(build_vinmec_analyze_result())}
+
+    def test_all_16_biomarkers_extracted(self):
+        by_name = self._run()
+        missing = []
+        for exp in VINMEC_EXPECTED:
+            mt = exp["metric_type"]
+            # Handle triglyceride canonical name difference
+            candidates = [mt, mt.rstrip("s")]  # "triglycerides" → also try "triglyceride"
+            if not any(c in by_name for c in candidates):
+                missing.append(mt)
+        assert not missing, (
+            f"Missing {len(missing)}/16 biomarkers: {sorted(missing)}\n"
+            f"Found: {sorted(by_name.keys())}"
+        )
+
+    def test_thiet_bi_column_never_becomes_result(self):
+        """Vinmec 'Thiết bị' device column must not appear in any result value."""
+        # Check via the Layer 1 output (OcrTableRow has original_value_str)
+        result = build_vinmec_analyze_result()
+        rows = extract_table_rows(result, hospital_id="vinmec")
+        for row in rows:
+            assert row.original_value_str not in ("Cobas Pro", "cobas pro"), (
+                f"'{row.original_test_name}': device column value 'Cobas Pro' leaked as result"
+            )
+
+    def test_cobas_pro_not_in_any_result_value(self):
+        """No numeric value should be 'Cobas Pro' or any machine name."""
+        result = build_vinmec_analyze_result()
+        rows = extract_table_rows(result, hospital_id="vinmec")
+        device_strings = {"cobas pro", "cobas", "sysmex", "roche"}
+        for row in rows:
+            val_lower = (row.original_value_str or "").lower()
+            for ds in device_strings:
+                assert ds not in val_lower, (
+                    f"'{row.original_test_name}': device string '{ds}' appeared in result value '{row.original_value_str}'"
+                )
+
+    def test_vinmec_units_preserved(self):
+        """All expected units must be preserved exactly as printed."""
+        by_name = self._run()
+        for exp in VINMEC_EXPECTED:
+            mt = exp["metric_type"]
+            # Handle triglyceride canonical alias
+            row = by_name.get(mt) or by_name.get(mt.rstrip("s"))
+            if row is None:
+                continue  # skip — covered by test_all_16_biomarkers_extracted
+            exp_unit = exp["original_unit"]
+            assert row.original_unit == exp_unit, (
+                f"{mt}: original_unit '{row.original_unit}' ≠ expected '{exp_unit}'"
+            )
+
+    def test_no_502_in_any_result(self):
+        """502 must never appear as a result value in Vinmec output."""
+        by_name = self._run()
+        for name, row in by_name.items():
+            assert row.value != 502.0, f"502 leaked as value for '{name}'"
+            assert row.original_value != 502.0, f"502 leaked as original_value for '{name}'"
+
+    @pytest.mark.parametrize("expected", VINMEC_EXPECTED)
+    def test_golden_fixture_per_biomarker_vinmec(self, expected):
+        """Parametrized: each expected Vinmec biomarker checked individually."""
+        by_name = self._run()
+        mt = expected["metric_type"]
+        # Handle triglyceride name difference
+        row = by_name.get(mt) or by_name.get(mt.rstrip("s"))
+        if row is None:
+            pytest.skip(f"{mt} not extracted — check alias mapping")
+
+        exp_val = float(expected["original_value"])
+        act_val = row.original_value
+        assert act_val is not None, f"{mt}: original_value is None"
+        assert abs(act_val - exp_val) < 0.02, (
+            f"{mt}: original_value {act_val} ≠ expected {exp_val}"
+        )
+        assert row.original_unit == expected["original_unit"], (
+            f"{mt}: original_unit '{row.original_unit}' ≠ expected '{expected['original_unit']}'"
+        )
+
+
+# ──────────────────────────────────── TestMedlatecInlineGoldenFixture ─────────
+
+class TestMedlatecInlineGoldenFixture:
+    """Medlatec inline machine suffix golden fixture — 11/11 expected values."""
+
+    def _run(self) -> dict:
+        return {r.test_name: r for r in extract_and_map(build_medlatec_inline_analyze_result())}
+
+    def test_all_11_biomarkers_extracted(self):
+        by_name = self._run()
+        missing = []
+        for exp in MEDLATEC_INLINE_EXPECTED:
+            mt = exp["metric_type"]
+            candidates = [mt, mt.rstrip("s")]
+            if not any(c in by_name for c in candidates):
+                missing.append(mt)
+        # cortisol may be present now; 11/11 required
+        assert len(missing) == 0, (
+            f"Missing {len(missing)}/11 biomarkers: {sorted(missing)}\n"
+            f"Found: {sorted(by_name.keys())}"
+        )
+
+    def test_cobas_c502_inline_never_becomes_result_502(self):
+        """The P0 bug: 502 must NEVER appear as a result value."""
+        by_name = self._run()
+        for name, row in by_name.items():
+            assert row.value != 502.0, (
+                f"'{name}': value 502 leaked from inline '(Cobas C502)' in test name!"
+            )
+            assert row.original_value != 502.0, (
+                f"'{name}': original_value 502 leaked from '(Cobas C502)'"
+            )
+
+    def test_price_column_never_result(self):
+        """Price column (Đơn giá) values like '85.000' must not be extracted."""
+        # Check via Layer 1 (OcrTableRow has original_value_str)
+        result = build_medlatec_inline_analyze_result()
+        rows = extract_table_rows(result, hospital_id="medlatec")
+        price_values = {"85", "85.000", "100.000", "200.000", "85000", "100000"}
+        for row in rows:
+            assert row.original_value_str not in price_values, (
+                f"'{row.original_test_name}': price column value '{row.original_value_str}' leaked as result"
+            )
+
+    def test_display_test_name_has_cobas_stripped(self):
+        """display_test_name must not contain '(Cobas C502)'."""
+        result = build_medlatec_inline_analyze_result()
+        rows = extract_table_rows(result, hospital_id="medlatec")
+        for row in rows:
+            assert "Cobas C502" not in row.display_test_name, (
+                f"display_test_name still contains '(Cobas C502)': {row.display_test_name!r}"
+            )
+            assert "C502" not in row.display_test_name, (
+                f"display_test_name still contains 'C502': {row.display_test_name!r}"
+            )
+
+    def test_original_test_name_preserved(self):
+        """original_test_name must contain the full as-printed text including machine suffix."""
+        result = build_medlatec_inline_analyze_result()
+        rows = extract_table_rows(result, hospital_id="medlatec")
+        # At least some rows should have the original Cobas suffix preserved
+        cobas_rows = [r for r in rows if "Cobas C502" in r.original_test_name]
+        assert cobas_rows, (
+            "No rows found with '(Cobas C502)' in original_test_name — "
+            "original_test_name was incorrectly cleaned"
+        )
+
+    def test_abnormal_note_tang_not_in_value(self):
+        """The 'Tăng' note in Ghi chú column must NOT appear in result values."""
+        result = build_medlatec_inline_analyze_result()
+        rows = extract_table_rows(result, hospital_id="medlatec")
+        for row in rows:
+            assert row.original_value_str != "Tăng", (
+                f"Note column 'Tăng' leaked as result value for '{row.original_test_name}'"
+            )
+
+    @pytest.mark.parametrize("expected", MEDLATEC_INLINE_EXPECTED)
+    def test_golden_fixture_per_biomarker_medlatec(self, expected):
+        """Parametrized: each expected Medlatec biomarker checked individually."""
+        by_name = self._run()
+        mt = expected["metric_type"]
+        row = by_name.get(mt) or by_name.get(mt.rstrip("s"))
+        if row is None:
+            pytest.skip(f"{mt} not extracted — not in catalog or alias missing")
+
+        exp_val = float(expected["original_value"])
+        act_val = row.original_value
+        assert act_val is not None, f"{mt}: original_value is None"
+        assert abs(act_val - exp_val) < 0.02, (
+            f"{mt}: original_value {act_val} ≠ expected {exp_val}"
+        )
+        assert row.original_unit == expected["original_unit"], (
+            f"{mt}: original_unit '{row.original_unit}' ≠ expected '{expected['original_unit']}'"
+        )
+
+
+# ──────────────────────────────────────────── TestTestNameCleaner ─────────────
+
+class TestTestNameCleaner:
+    """Unit tests for clean_test_name() — strips machine/instrument suffixes."""
+
+    def test_cobas_c502_stripped_from_test_name(self):
+        result = clean_test_name("Glucose (máu) (Cobas C502)")
+        assert "(Cobas C502)" not in result
+        assert "C502" not in result
+        assert "Glucose" in result
+
+    def test_cobas_pro_stripped_from_test_name(self):
+        result = clean_test_name("ALT (GPT) (Cobas Pro)")
+        assert "(Cobas Pro)" not in result
+        assert "Cobas" not in result
+        assert "ALT" in result
+
+    def test_c702_stripped_from_test_name(self):
+        result = clean_test_name("Creatinine (C702)")
+        assert "(C702)" not in result
+        assert "Creatinine" in result
+
+    def test_au480_stripped_from_test_name(self):
+        result = clean_test_name("Glucose (AU480)")
+        assert "(AU480)" not in result
+        assert "Glucose" in result
+
+    def test_sysmex_stripped_from_test_name(self):
+        result = clean_test_name("WBC (Sysmex XN1000)")
+        assert "(Sysmex XN1000)" not in result
+        assert "WBC" in result
+
+    def test_mau_sample_type_preserved(self):
+        """'(máu)' is a sample type qualifier — must NOT be stripped."""
+        result = clean_test_name("Glucose (máu) (Cobas C502)")
+        assert "(máu)" in result, f"'(máu)' was wrongly stripped: {result!r}"
+
+    def test_plain_name_unchanged(self):
+        """Test names without machine suffixes must be returned unchanged."""
+        names = ["AST (GOT)", "ALT (GPT)", "Creatinine", "Glucose lúc đói", "HDL-C"]
+        for name in names:
+            result = clean_test_name(name)
+            assert result == name, f"Plain name '{name}' was changed to '{result}'"
+
+    def test_trailing_asterisk_stripped(self):
+        """Trailing asterisk (abnormal flag) is stripped."""
+        result = clean_test_name("Cholesterol toàn phần (Cobas C502)*")
+        assert "*" not in result
+        assert "Cholesterol" in result
+
+    def test_hospital_id_param_accepted(self):
+        """hospital_id parameter must be accepted without error (reserved for future use)."""
+        result = clean_test_name("Glucose (Cobas C502)", hospital_id="medlatec")
+        assert "Cobas C502" not in result
+
+    def test_cobas_case_insensitive(self):
+        """Strip patterns must match regardless of case."""
+        result = clean_test_name("Glucose (cobas c502)")
+        assert "cobas c502" not in result.lower()
+
+
+# ──────────────────────────────────────────── TestUnknownProviderGate ─────────
+
+class TestUnknownProviderGate:
+    """Unknown provider (hospital_id=None) safety gate."""
+
+    def _build_unknown_analyze_result(self) -> dict:
+        """Build a minimal Azure DI result with no hospital identifier."""
+        header = ["Tên xét nghiệm", "Kết quả", "Đơn vị"]
+        data = [
+            ["Glucose lúc đói", "5.73", "mmol/L"],
+            ["ALT (GPT)",        "51.63", "U/L"],
+            ["Creatinine",       "87.66", "µmol/L"],
+        ]
+        cells = _make_header_cells(*header) + _make_data_cells(data)
+        # No 'content' or hospital name → detect_hospital returns None
+        return {"tables": [{"cells": cells}]}
+
+    def test_unknown_provider_rows_require_review(self):
+        """All rows from unknown provider must have requires_review=True."""
+        result = self._build_unknown_analyze_result()
+        mapped = extract_and_map(result)
+        assert mapped, "No rows extracted from unknown provider mock"
+        for rlv in mapped:
+            assert rlv.requires_review is True, (
+                f"'{rlv.test_name}' from unknown provider must have requires_review=True"
+            )
+
+    def test_unknown_provider_confidence_capped(self):
+        """All rows from unknown provider must have confidence ≤ 0.5."""
+        result = self._build_unknown_analyze_result()
+        mapped = extract_and_map(result)
+        assert mapped, "No rows extracted from unknown provider mock"
+        for rlv in mapped:
+            assert rlv.ocr_confidence <= 0.5, (
+                f"'{rlv.test_name}' confidence {rlv.ocr_confidence} exceeds 0.5 cap for unknown provider"
+            )
+
+    def test_known_provider_not_capped(self):
+        """Rows from a known provider should NOT be capped at 0.5."""
+        result = build_vinmec_analyze_result()
+        mapped = extract_and_map(result)
+        by_name = {r.test_name: r for r in mapped}
+        # AST has clear value + unit + physiological range → should exceed 0.5
+        ast = by_name.get("ast")
+        assert ast is not None
+        assert ast.ocr_confidence > 0.5, (
+            f"AST from known Vinmec provider should have confidence > 0.5, "
+            f"got {ast.ocr_confidence}"
+        )
+
+    def test_map_table_rows_hospital_id_none_caps_confidence(self):
+        """Direct call to map_table_rows_to_raw_values with hospital_id=None caps all rows."""
+        rows = [
+            OcrTableRow(
+                original_test_name="ALT (GPT)",
+                display_test_name="ALT (GPT)",
+                original_value_str="51.63",
+                original_unit="U/L",
+                original_reference_range="0-56",
+                raw_cells=["ALT (GPT)", "51.63", "U/L"],
+                row_confidence=0.95,
+            ),
+        ]
+        mapped = map_table_rows_to_raw_values(rows, ocr_conf=0.95, hospital_id=None)
+        assert mapped, "No rows mapped"
+        for rlv in mapped:
+            assert rlv.requires_review is True
+            assert rlv.ocr_confidence <= 0.5
+
+    def test_map_table_rows_known_hospital_id_not_capped(self):
+        """With hospital_id='vinmec', confidence should not be artificially capped."""
+        rows = [
+            OcrTableRow(
+                original_test_name="ALT (GPT)",
+                display_test_name="ALT (GPT)",
+                original_value_str="51.63",
+                original_unit="U/L",
+                original_reference_range="0-56",
+                raw_cells=["ALT (GPT)", "51.63", "U/L"],
+                row_confidence=0.95,
+            ),
+        ]
+        mapped = map_table_rows_to_raw_values(rows, ocr_conf=0.95, hospital_id="vinmec")
+        assert mapped, "No rows mapped"
+        for rlv in mapped:
+            assert rlv.ocr_confidence > 0.5, (
+                f"Known provider rows should not have confidence capped at 0.5, "
+                f"got {rlv.ocr_confidence}"
+            )

@@ -6,9 +6,12 @@ Implements the 4-layer architecture from the OCR strategy reset:
              No clinical knowledge. Preserves original_test_name/value/unit/reference_range.
 
   Layer 2 — Hospital detection (delegates to hospital_profiles.detect_hospital).
+             Provider-aware: detect_hospital() run on full document text before table
+             extraction so column profiles and test-name cleaning are applied correctly.
 
-  Layer 3 — MedicalMapper: maps original_test_name → metric_type + display_name_vi.
-             Uses _ALIAS_INDEX from lab_interpreter.
+  Layer 3 — MedicalMapper: maps display_test_name → metric_type + display_name_vi.
+             Uses _ALIAS_INDEX from lab_interpreter. display_test_name has machine
+             suffixes like "(Cobas C502)" stripped before matching.
 
   Layer 4 — UnitNormalizer: SI conversion, ocr_reference_range, display_reference_range.
 
@@ -25,13 +28,14 @@ import re
 import unicodedata
 from dataclasses import dataclass, field
 
+from app.domain.hospital_profiles import detect_hospital as _detect_hospital
 from app.domain.lab_catalog import get_catalog as _get_catalog
 from app.domain.lab_interpreter import (
+    _ALIAS_INDEX,
     BIOMARKERS,
     BiomarkerSpec,
     ConfidenceDetail,
     RawLabValue,
-    _ALIAS_INDEX,
 )
 
 _logger = logging.getLogger("mcp.lab_table_extractor")
@@ -47,7 +51,8 @@ class OcrTableRow:
     No clinical mapping, no conversion applied at this stage.
     """
 
-    original_test_name: str
+    original_test_name: str        # raw test name as printed, e.g. "Glucose (máu) (Cobas C502)"
+    display_test_name: str         # cleaned for alias matching (machine suffixes stripped)
     original_value_str: str        # raw numeric string as printed, e.g. "4.78"
     original_unit: str | None      # as printed, e.g. "mmol/L"; None when cell absent
     original_reference_range: str | None  # as printed, e.g. "3.9–6.1"; None when absent
@@ -71,16 +76,24 @@ _COL_ROLE_KEYWORDS: dict[str, frozenset[str]] = {
     }),
     "test_name": frozenset({
         "ten xet nghiem", "ten chi so", "xet nghiem", "chi so",
-        "test name", "test", "analyte", "parameter", "ten",
-        "ten ket qua", "ket qua xet nghiem", "examination",
+        "test name", "analyte", "parameter",
+        "examination",
         "chi so xet nghiem", "ten xet nghiem ky thuat",
+        # Vinmec: "Chỉ định" ("chi dinh" / "chi đinh" — "đ" doesn't decompose under NFD)
+        "chi dinh", "chi đinh",
+        # Medlatec: "Danh mục khám"
+        "danh muc kham", "danh muc",
     }),
     "value": frozenset({
         "ket qua", "gia tri", "result", "value", "so lieu",
         "nong do", "ham luong", "ket qua do", "concentration",
         "level", "measurement",
     }),
-    "unit": frozenset({"don vi", "unit", "dv", "units"}),
+    "unit": frozenset({
+        "don vi", "unit", "dv", "units",
+        # "Đơn vị" normalizes to "đon vi" (not "don vi") because "đ" ≠ "d" under NFD.
+        "đon vi",
+    }),
     "reference": frozenset({
         "gia tri bt", "gia tri binh thuong", "khoang tham chieu",
         "tham chieu", "reference", "normal", "normal range",
@@ -94,6 +107,25 @@ _COL_ROLE_KEYWORDS: dict[str, frozenset[str]] = {
         "analyzer", "thiet bi", "thiet bi do", "machine", "he thong",
         "cobas", "may do", "phuong phap may", "phuong phap / may",
         "pp/may", "pp / may",
+    }),
+    # Price columns must NEVER be used as value_col (Medlatec: "Đơn giá").
+    "price": frozenset({
+        "don gia", "gia tien", "phi", "thanh tien", "price", "cost",
+        "tien", "phi dich vu",
+    }),
+    # Note/comment columns contain abnormal flags like "Tăng", "Giảm" — not values.
+    "note": frozenset({
+        "ghi chu", "ghi chu ket qua", "nhan xet", "note", "comment",
+        "ket luan", "canh bao", "tang", "giam",
+    }),
+    # Vinmec: "Quy trình" (procedure/method name) — not a result.
+    "procedure": frozenset({
+        "quy trinh", "procedure", "method name", "ten quy trinh",
+    }),
+    # Vinmec: "Thiết bị" (device/analyzer) — must NEVER map to value_col.
+    "device": frozenset({
+        "thiet bi", "device", "may do", "analyzer", "instrument",
+        "cobas pro", "cobas", "sysmex",
     }),
 }
 
@@ -134,6 +166,44 @@ def _is_instrument_cell(text: str) -> bool:
 def _row_contains_instrument(raw_cells: list[str]) -> bool:
     """Return True when any cell in the row contains an instrument name."""
     return any(_is_instrument_cell(c) for c in raw_cells)
+
+
+# ─────────────────────────────────────── Provider-aware test name cleaner ──────
+
+# Patterns that appear in test name cells but are NOT part of the test name.
+# Medlatec embeds machine suffix inline, e.g. "Glucose (máu) (Cobas C502)".
+# Strip these before alias matching so the alias index can find the correct biomarker.
+_TEST_NAME_STRIP_PATTERNS: list[re.Pattern] = [
+    # Machine/analyzer suffixes: "(Cobas C502)", "(Cobas 8000)", "(Cobas Pro)", etc.
+    re.compile(r"\(\s*Cobas\s+[A-Za-z0-9]+\s*\)", re.IGNORECASE),
+    re.compile(r"\(\s*C\d{3,4}\s*\)", re.IGNORECASE),          # (C502), (C702)
+    re.compile(r"\(\s*QX[.\w]*\s*\)", re.IGNORECASE),           # (QX series)
+    re.compile(r"\(\s*AU\d{3,4}\s*\)", re.IGNORECASE),          # (AU480), (AU680)
+    re.compile(r"\(\s*Sysmex\s+[A-Za-z0-9]+\s*\)", re.IGNORECASE),
+    # Trailing asterisk often added by Medlatec to flagged results, e.g. "Cholesterol*"
+    re.compile(r"\*\s*$"),
+]
+
+
+def clean_test_name(name: str, hospital_id: str | None = None) -> str:  # noqa: ARG001
+    """Strip machine/instrument suffixes from a test name before alias lookup.
+
+    Applies globally (not limited to specific hospital_id) because Medlatec-style
+    inline machine suffixes can in principle appear from any provider.
+
+    Examples::
+
+        clean_test_name("Glucose (máu) (Cobas C502)") -> "Glucose (máu)"
+        clean_test_name("Triglyceride (Cobas C502)")   -> "Triglyceride"
+        clean_test_name("ALT (GPT)")                   -> "ALT (GPT)"
+
+    The ``hospital_id`` parameter is accepted for future provider-specific overrides
+    but is not used currently.
+    """
+    result = name
+    for pattern in _TEST_NAME_STRIP_PATTERNS:
+        result = pattern.sub("", result)
+    return result.strip()
 
 
 _NUMBER_RE = re.compile(r"\d{1,3}(?:[.,]\d{3})*(?:[.,]\d+)?|\d+(?:[.,]\d+)?")
@@ -208,6 +278,12 @@ def _infer_column_roles_positional(max_col: int) -> dict[str, int | None]:
     return {"stt": 0, "test_name": 1, "value": 2, "unit": 3, "reference": 4}
 
 
+# Column roles that must NEVER be used as value_col.
+_NON_VALUE_ROLES: frozenset[str] = frozenset({
+    "method", "price", "note", "procedure", "device", "stt",
+})
+
+
 def _detect_column_roles(
     cells_raw: list[dict],
     header_row_indices: set[int],
@@ -216,6 +292,7 @@ def _detect_column_roles(
     roles: dict[str, int | None] = {
         "stt": None, "test_name": None, "value": None,
         "unit": None, "reference": None, "method": None,
+        "price": None, "note": None, "procedure": None, "device": None,
     }
     for cell in cells_raw:
         ri = cell.get("rowIndex", 0)
@@ -256,21 +333,25 @@ def _detect_column_roles(
             if roles.get(role) is None:
                 roles[role] = col
 
-    # Safety: if value_col ended up on the method/instrument column, fall back
-    # to positional heuristics for value_col excluding the method column.
-    if roles.get("method") is not None and roles["value"] == roles["method"]:
+    # Safety: if value_col ended up on a non-value column (method, price, device,
+    # procedure, note), fall back to positional heuristics for value_col.
+    non_value_cols: set[int] = {
+        roles[r] for r in _NON_VALUE_ROLES if roles.get(r) is not None
+    }
+    if roles["value"] in non_value_cols:
+        bad_col = roles["value"]
         _logger.warning(
-            "table_extractor_value_col_was_method col=%d — falling back to positional",
-            roles["method"],
+            "table_extractor_value_col_was_non_value col=%d — falling back to positional",
+            bad_col,
         )
         positional = _infer_column_roles_positional(max_col)
         fallback_value = positional.get("value")
-        # The fallback must not land on the method column either.
-        if fallback_value != roles["method"]:
+        # The fallback must not land on any non-value column either.
+        if fallback_value not in non_value_cols:
             roles["value"] = fallback_value
         else:
-            # Last resort: pick the first column that is not stt, test_name, or method.
-            excluded = {roles.get("stt"), roles.get("test_name"), roles.get("method")}
+            # Last resort: pick the first column that is not stt, test_name, or non-value.
+            excluded = {roles.get("stt"), roles.get("test_name")} | non_value_cols
             for ci in range(max_col + 1):
                 if ci not in excluded:
                     roles["value"] = ci
@@ -279,11 +360,17 @@ def _detect_column_roles(
     return roles
 
 
-def extract_table_rows(analyze_result: dict) -> list[OcrTableRow]:
+def extract_table_rows(
+    analyze_result: dict,
+    hospital_id: str | None = None,
+) -> list[OcrTableRow]:
     """Layer 1: Extract OcrTableRow list from Azure DI analyzeResult.tables.
 
     Preserves original test names, values, units, and reference ranges exactly
     as printed. No clinical knowledge applied here.
+
+    When ``hospital_id`` is provided the test name cleaner applies provider-aware
+    stripping of machine suffixes (e.g. "(Cobas C502)") before alias matching.
     """
     rows: list[OcrTableRow] = []
     for table in (analyze_result.get("tables") or []):
@@ -330,6 +417,9 @@ def extract_table_rows(analyze_result: dict) -> list[OcrTableRow]:
                 continue
             if re.fullmatch(r"\d+\.?", test_name):
                 continue  # pure STT row
+
+            # Clean machine suffix for alias matching (e.g. strip "(Cobas C502)").
+            test_name_clean = clean_test_name(test_name, hospital_id=hospital_id)
 
             value_raw = cell_map.get((ri, value_col), "").strip()
             if not value_raw:
@@ -397,6 +487,7 @@ def extract_table_rows(analyze_result: dict) -> list[OcrTableRow]:
 
             rows.append(OcrTableRow(
                 original_test_name=test_name,
+                display_test_name=test_name_clean,
                 original_value_str=value_str,
                 original_unit=unit_str,
                 original_reference_range=ref_str,
@@ -475,8 +566,13 @@ _BIOMARKER_ORDER: dict[str, int] = {s.canonical: i for i, s in enumerate(BIOMARK
 def map_table_rows_to_raw_values(
     table_rows: list[OcrTableRow],
     ocr_conf: float = 0.95,
+    hospital_id: str | None = None,
 ) -> list[RawLabValue]:
-    """Layers 3+4: Map OcrTableRow list → RawLabValue list for interpret_panel()."""
+    """Layers 3+4: Map OcrTableRow list → RawLabValue list for interpret_panel().
+
+    When ``hospital_id`` is None (unknown provider), every row is capped at
+    confidence 0.5 and marked ``requires_review=True`` — none are auto-promoted.
+    """
     seen: dict[str, RawLabValue] = {}
 
     for row in table_rows:
@@ -491,7 +587,9 @@ def map_table_rows_to_raw_values(
 
         unit_raw = _apply_unit_corrections(row.original_unit or "").strip() or None
 
-        name_noacc = _strip_accents_lower(row.original_test_name)
+        # Use display_test_name (machine suffix stripped) for alias matching.
+        # This fixes the P0 Medlatec bug where "Glucose (máu) (Cobas C502)" failed lookup.
+        name_noacc = _strip_accents_lower(row.display_test_name)
         match = _match_test_name(name_noacc)
         if match is None:
             _logger.debug("table_extractor_no_match name=%r", row.original_test_name)
@@ -593,6 +691,13 @@ def map_table_rows_to_raw_values(
             or row.suspect_machine_id
         )
 
+        # ── Unknown provider safety gate ────────────────────────────────────────
+        # When hospital_id is None (unrecognised provider), cap confidence at 0.5
+        # and force requires_review so no row is auto-promoted to patient metrics.
+        if hospital_id is None:
+            overall = min(overall, 0.5)
+            requires_review = True
+
         seen[spec.canonical] = RawLabValue(
             test_name=spec.canonical,
             value=value,
@@ -612,21 +717,65 @@ def map_table_rows_to_raw_values(
     return [seen[c] for c in sorted(seen, key=lambda c: _BIOMARKER_ORDER.get(c, 999))]
 
 
+def _get_full_text(analyze_result: dict) -> str:
+    """Join all cell content from the analyzeResult into a single string.
+
+    Used by extract_and_map() to run detect_hospital() on the full document
+    text rather than just table cells, ensuring header patterns are found
+    even when they appear outside table boundaries.
+
+    Important: the top-level ``content`` string and page lines are placed FIRST
+    so that hospital name patterns (typically in document header) fall within the
+    first 30 lines that detect_hospital() inspects.
+    """
+    parts: list[str] = []
+    # Top-level content (full OCR text — hospital name usually here)
+    if analyze_result.get("content"):
+        parts.append(analyze_result["content"])
+    # Pages / lines (text-parser path)
+    for page in analyze_result.get("pages") or []:
+        for line in page.get("lines") or []:
+            parts.append(line.get("content") or "")
+    # Table cells (table-first path — appended last to not push header beyond 30 lines)
+    for table in analyze_result.get("tables") or []:
+        for cell in table.get("cells") or []:
+            parts.append(cell.get("content") or "")
+    return "\n".join(parts)
+
+
 def extract_and_map(
     analyze_result: dict,
     ocr_conf: float = 0.95,
 ) -> list[RawLabValue]:
     """Full Layer 1→4 pipeline: analyzeResult dict → RawLabValue list.
 
+    Runs hospital detection on the full document text (Layer 2) before extracting
+    table rows, so provider-specific column profiles and test-name cleaning are
+    applied correctly.
+
     Returns an empty list when no usable table rows are found, signalling
     build_draft() to fall back to the text+regex path.
     """
-    table_rows = extract_table_rows(analyze_result)
+    # Layer 2: detect hospital from full document text.
+    full_text = _get_full_text(analyze_result)
+    profile = _detect_hospital(full_text)
+    hospital_id = profile.hospital_id if profile else None
+    if hospital_id:
+        _logger.info("table_extractor_hospital_detected hospital_id=%s", hospital_id)
+    else:
+        _logger.info(
+            "table_extractor_unknown_provider — unknown provider; "
+            "all rows will require_review=True, confidence capped at 0.5"
+        )
+
+    table_rows = extract_table_rows(analyze_result, hospital_id=hospital_id)
     if not table_rows:
         return []
-    raw_values = map_table_rows_to_raw_values(table_rows, ocr_conf=ocr_conf)
+    raw_values = map_table_rows_to_raw_values(
+        table_rows, ocr_conf=ocr_conf, hospital_id=hospital_id
+    )
     _logger.info(
-        "table_extractor rows_extracted=%d rows_mapped=%d conf=%.2f",
-        len(table_rows), len(raw_values), ocr_conf,
+        "table_extractor rows_extracted=%d rows_mapped=%d conf=%.2f hospital=%s",
+        len(table_rows), len(raw_values), ocr_conf, hospital_id or "unknown",
     )
     return raw_values

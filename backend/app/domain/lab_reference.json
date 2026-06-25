@@ -52,6 +52,13 @@
       ]
     },
     {
+      "key": "adrenal",
+      "name": "Vỏ thượng thận & Hormone stress",
+      "biomarkers": [
+        "cortisol"
+      ]
+    },
+    {
       "key": "hematology",
       "name": "Huyết học cơ bản",
       "biomarkers": [
@@ -719,6 +726,25 @@
         }
       ],
       "value_precision": 3,
+      "notes": "",
+      "higher_is_better": null
+    },
+    "cortisol": {
+      "name_vn": "Cortisol",
+      "name_en": "Cortisol (Hydrocortisone)",
+      "category": "adrenal",
+      "units": [
+        {
+          "key": "nmol_per_l",
+          "label": "nmol/L",
+          "ref_range": {
+            "low": 138,
+            "high": 635
+          },
+          "is_primary": true
+        }
+      ],
+      "value_precision": 2,
       "notes": "",
       "higher_is_better": null
     }
