@@ -304,6 +304,12 @@ class RawLabValue:
     raw_test_name: str = ""       # as OCR'd: "CHOLESTEROL TOAN PHAN", "Ure", etc.
     display_name_vi: str = ""     # Vietnamese label from catalog: "Cholesterol toàn phần"
     ocr_reference_range: str | None = None  # as-printed from same OCR row/cell
+    # P0 safety gate: True when the row is suspected to carry a machine model
+    # number as value, or is otherwise too low-confidence to auto-save.
+    # Rows with requires_review=True must NOT be persisted without user confirmation.
+    requires_review: bool = False
+    # Forward the suspect_machine_id flag from OcrTableRow for audit/UI use.
+    suspect_machine_id: bool = False
 
 
 @dataclass

@@ -128,6 +128,38 @@ def process_document(db: Session, *, document_id: str) -> LabDocument | None:
         interpretation = lab_interpreter.interpret_panel(extraction.values)
         new_rows: list[LabResult] = []
         for b in interpretation.biomarkers:
+            # ── P0 Safety gate ───────────────────────────────────────────────────
+            # Rows that carry a suspect machine-model number as value (e.g.
+            # "502" from Cobas C502) are already excluded from interpretation.biomarkers
+            # by map_table_rows_to_raw_values().  However the same gate applies
+            # here at the pipeline level as a defence-in-depth check on the
+            # RawLabValue that was passed in via extraction.values (text-parser
+            # path also flows through here):
+            #
+            # A biomarker is blocked from auto-save when:
+            #   - ocr_confidence < 0.5       (not reliable enough)
+            #   - needs_verification = True  (missing unit, impossible value, etc.)
+            #   - raw value has suspect_machine_id flag
+            #
+            # Blocked rows are stored with verified_by_user=False so the review
+            # UI can show them for explicit user confirmation.
+            raw: lab_interpreter.RawLabValue | None = next(
+                (v for v in extraction.values if v.test_name == b.canonical), None
+            )
+            suspect = getattr(raw, "suspect_machine_id", False) if raw else False
+            requires_review = getattr(raw, "requires_review", False) if raw else False
+            auto_save_blocked = (
+                suspect
+                or requires_review
+                or b.ocr_confidence < 0.5
+                or b.needs_verification
+            )
+            if auto_save_blocked:
+                logger.warning(
+                    "lab_pipeline_review_required document_id=%s canonical=%s "
+                    "confidence=%.2f suspect=%s requires_review=%s",
+                    doc.id, b.canonical, b.ocr_confidence, suspect, requires_review,
+                )
             lr = LabResult(
                 patient_id=doc.patient_id,
                 document_id=doc.id,
@@ -138,13 +170,25 @@ def process_document(db: Session, *, document_id: str) -> LabDocument | None:
                 reference_range=b.reference_range,
                 status=b.status.value,
                 ocr_confidence=b.ocr_confidence,
+                # verified_by_user=False means the row awaits explicit user confirmation.
+                verified_by_user=not auto_save_blocked,
             )
             db.add(lr)
             new_rows.append(lr)
         db.flush()
         # Promote into health_metrics so the dashboard + trends reflect these results.
+        # FU-1 safety gate: only promote rows explicitly confirmed by the user.
+        # Rows with verified_by_user=False (suspect_machine_id, low confidence,
+        # missing unit, needs_verification) remain as LabResult records available
+        # in the review UI but must NOT enter patient metrics/dashboard until confirmed.
         from app.services.lab import promote_lab_rows_to_metrics
-        promote_lab_rows_to_metrics(db, patient_id=doc.patient_id, rows=new_rows, test_date=None)
+        verified_rows = [r for r in new_rows if r.verified_by_user]
+        if len(verified_rows) < len(new_rows):
+            logger.warning(
+                "lab_pipeline_promote_gate document_id=%s total=%d verified=%d blocked=%d",
+                doc.id, len(new_rows), len(verified_rows), len(new_rows) - len(verified_rows),
+            )
+        promote_lab_rows_to_metrics(db, patient_id=doc.patient_id, rows=verified_rows, test_date=None)
         _transition(doc, LabDocStatus.INTERPRETED)
     except Exception as exc:  # interpretation must never crash the worker
         _transition(doc, LabDocStatus.INTERPRETATION_FAILED)

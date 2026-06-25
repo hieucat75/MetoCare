@@ -37,7 +37,20 @@ def _measured_at_for(row: LabResult, test_date: dt.date | None) -> dt.datetime:
 
 def _promote_row(db: Session, row: LabResult, measured_at: dt.datetime) -> bool:
     """Promote a single lab row into a health_metric (idempotent per row). Returns
-    True if a metric was written."""
+    True if a metric was written.
+
+    Defence-in-depth: rows where verified_by_user is explicitly False are NEVER
+    promoted, even if called directly. This guard is the last line of defence;
+    the primary filter is in lab_pipeline.promote_gate (verified_rows list).
+    """
+    if row.verified_by_user is False:
+        import logging as _logging
+        _logging.getLogger("mcp.lab").warning(
+            "_promote_row_blocked_unverified lab_result_id=%s canonical=%s — "
+            "unverified OCR row must not reach patient metrics",
+            row.id, row.canonical_name,
+        )
+        return False
     canonical = row.canonical_name or lab_interpreter.normalize_biomarker(row.test_name)
     if not canonical or canonical not in _PROMOTABLE or row.value is None:
         return False

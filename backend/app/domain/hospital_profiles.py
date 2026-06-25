@@ -27,6 +27,10 @@ class HospitalProfile:
     ocr_corrections: dict[str, str] = field(default_factory=dict)
     # OCR variants of the hospital name/header (not biomarker aliases).
     hospital_name_variants: tuple[str, ...] = field(default_factory=tuple)
+    # Column header texts that identify non-result columns carrying method/instrument
+    # names.  lab_table_extractor uses this to ensure these columns are NEVER
+    # mapped to value_col.  Accent-stripped, lowercase.
+    method_column_headers: tuple[str, ...] = field(default_factory=tuple)
 
 
 def _strip_accents(s: str) -> str:
@@ -78,6 +82,19 @@ HOSPITAL_PROFILES: tuple[HospitalProfile, ...] = (
             "med1atec": "medlatec",
             "mediatec": "medlatec",
         },
+        # Medlatec lab reports include a "Phương pháp / Máy" (Method / Machine)
+        # column that contains strings like "Cobas C502".  This column must NEVER
+        # be used as the result value column.
+        method_column_headers=(
+            "phuong phap / may",
+            "phuong phap",
+            "may xet nghiem",
+            "pp/may",
+            "pp / may",
+            "cobas",
+            "instrument",
+            "method",
+        ),
     ),
     HospitalProfile(
         hospital_id="tam_anh",
