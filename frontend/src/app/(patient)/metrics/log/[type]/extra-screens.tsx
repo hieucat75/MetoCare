@@ -232,7 +232,11 @@ export function TemperatureScreen({
 
       {isFever && <DangerAlertBanner message={FEVER_MESSAGE} />}
 
-      <DateTimeRow measuredAt={measuredAt} max={toISOLocalDefault()} onChange={onChangeMeasuredAt} />
+      <DateTimeRow
+        measuredAt={measuredAt}
+        max={toISOLocalDefault()}
+        onChange={onChangeMeasuredAt}
+      />
 
       <LabUploadLink />
 
@@ -320,7 +324,11 @@ export function SleepHoursScreen({
         </NeuCard>
       )}
 
-      <DateTimeRow measuredAt={measuredAt} max={toISOLocalDefault()} onChange={onChangeMeasuredAt} />
+      <DateTimeRow
+        measuredAt={measuredAt}
+        max={toISOLocalDefault()}
+        onChange={onChangeMeasuredAt}
+      />
 
       <ValidationError message={validationError} />
       <ValidationError message={error} />
@@ -406,7 +414,11 @@ export function StepsScreen({
         </NeuCard>
       )}
 
-      <DateTimeRow measuredAt={measuredAt} max={toISOLocalDefault()} onChange={onChangeMeasuredAt} />
+      <DateTimeRow
+        measuredAt={measuredAt}
+        max={toISOLocalDefault()}
+        onChange={onChangeMeasuredAt}
+      />
 
       <ValidationError message={validationError} />
       <ValidationError message={error} />
@@ -492,7 +504,11 @@ export function ActivityMinutesScreen({
         </NeuCard>
       )}
 
-      <DateTimeRow measuredAt={measuredAt} max={toISOLocalDefault()} onChange={onChangeMeasuredAt} />
+      <DateTimeRow
+        measuredAt={measuredAt}
+        max={toISOLocalDefault()}
+        onChange={onChangeMeasuredAt}
+      />
 
       <ValidationError message={validationError} />
       <ValidationError message={error} />
@@ -632,7 +648,11 @@ export function BmiScreen({
         </NeuCard>
       )}
 
-      <DateTimeRow measuredAt={measuredAt} max={toISOLocalDefault()} onChange={onChangeMeasuredAt} />
+      <DateTimeRow
+        measuredAt={measuredAt}
+        max={toISOLocalDefault()}
+        onChange={onChangeMeasuredAt}
+      />
 
       <ValidationError message={validationError} />
       <ValidationError message={error} />

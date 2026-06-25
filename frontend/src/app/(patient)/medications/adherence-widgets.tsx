@@ -82,10 +82,7 @@ export function AdherenceSummaryCard({ summary }: AdherenceSummaryCardProps) {
         </div>
 
         {/* Current streak */}
-        <div
-          className="flex flex-col items-center rounded-[12px] p-2"
-          style={{ background: bg }}
-        >
+        <div className="flex flex-col items-center rounded-[12px] p-2" style={{ background: bg }}>
           <span className="text-[15px] font-extrabold tabular-nums" style={{ color }}>
             {summary.current_streak}
           </span>
@@ -172,10 +169,7 @@ export function WeeklyAdherenceSection({ summary }: WeeklyAdherenceSectionProps)
 
   return (
     <section aria-labelledby="adherence-history-heading">
-      <h2
-        id="adherence-history-heading"
-        className="px-1 text-[16px] font-bold text-neu-text mb-3"
-      >
+      <h2 id="adherence-history-heading" className="px-1 text-[16px] font-bold text-neu-text mb-3">
         Lịch sử tuân thủ
       </h2>
 
@@ -220,9 +214,7 @@ export function WeeklyAdherenceSection({ summary }: WeeklyAdherenceSectionProps)
                   style={{ color: isToday ? '#0F9C6E' : '#9AADA7' }}
                 >
                   {DAYS_VI[i]}
-                  {isToday && (
-                    <span className="sr-only"> (hôm nay)</span>
-                  )}
+                  {isToday && <span className="sr-only"> (hôm nay)</span>}
                 </span>
               </div>
             )

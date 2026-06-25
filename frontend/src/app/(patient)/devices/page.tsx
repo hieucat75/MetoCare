@@ -202,13 +202,10 @@ export default function DevicesPage() {
 
       {/* Informational banner */}
       <div className="rounded-[14px] bg-[#EFF6FF] border border-[#BFDBFE] px-4 py-3">
-        <p className="text-[13px] font-bold text-[#1D4ED8]">
-          Kết nối tự động đang được phát triển
-        </p>
+        <p className="text-[13px] font-bold text-[#1D4ED8]">Kết nối tự động đang được phát triển</p>
         <p className="text-[12px] text-[#3B82F6] mt-0.5 leading-relaxed">
-          Thiết bị có nhãn{' '}
-          <span className="font-semibold text-[#059669]">Nhập thủ công</span> đã có thể ghi chỉ
-          số ngay bây giờ. Các thiết bị khác sẽ hỗ trợ khi ứng dụng di động ra mắt.
+          Thiết bị có nhãn <span className="font-semibold text-[#059669]">Nhập thủ công</span> đã có
+          thể ghi chỉ số ngay bây giờ. Các thiết bị khác sẽ hỗ trợ khi ứng dụng di động ra mắt.
         </p>
       </div>
 
@@ -219,29 +216,35 @@ export default function DevicesPage() {
             {category.title}
           </p>
           <NeuCard className="!px-4 !py-1">
-            {category.devices.map(({ slug, name, subtitle, icon: Icon, iconColor, status }, idx) => (
-              <button
-                key={slug}
-                type="button"
-                onClick={() => router.push(`/devices/${slug}`)}
-                className={`flex w-full items-center gap-3 py-3.5 text-left${
-                  idx < category.devices.length - 1 ? ' border-b border-[rgba(16,48,44,0.06)]' : ''
-                }`}
-              >
-                <div
-                  className="size-9 rounded-[10px] flex items-center justify-center shrink-0"
-                  style={{ backgroundColor: `${iconColor}1A` }}
+            {category.devices.map(
+              ({ slug, name, subtitle, icon: Icon, iconColor, status }, idx) => (
+                <button
+                  key={slug}
+                  type="button"
+                  onClick={() => router.push(`/devices/${slug}`)}
+                  className={`flex w-full items-center gap-3 py-3.5 text-left${
+                    idx < category.devices.length - 1
+                      ? ' border-b border-[rgba(16,48,44,0.06)]'
+                      : ''
+                  }`}
                 >
-                  <Icon className="size-5" style={{ color: iconColor }} aria-hidden />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-[14.5px] font-semibold text-neu-text leading-tight">{name}</p>
-                  <p className="text-[12px] text-neu-muted mt-0.5 truncate">{subtitle}</p>
-                </div>
-                <StatusBadge status={status} />
-                <ChevronRight className="size-[18px] text-neu-subtle shrink-0" aria-hidden />
-              </button>
-            ))}
+                  <div
+                    className="size-9 rounded-[10px] flex items-center justify-center shrink-0"
+                    style={{ backgroundColor: `${iconColor}1A` }}
+                  >
+                    <Icon className="size-5" style={{ color: iconColor }} aria-hidden />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[14.5px] font-semibold text-neu-text leading-tight">
+                      {name}
+                    </p>
+                    <p className="text-[12px] text-neu-muted mt-0.5 truncate">{subtitle}</p>
+                  </div>
+                  <StatusBadge status={status} />
+                  <ChevronRight className="size-[18px] text-neu-subtle shrink-0" aria-hidden />
+                </button>
+              )
+            )}
           </NeuCard>
         </section>
       ))}

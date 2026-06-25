@@ -209,7 +209,14 @@ type MedModalProps = {
   deleteMode?: boolean
 }
 
-function MedModal({ open, onClose, onSaved, patientId, editing, deleteMode = false }: MedModalProps) {
+function MedModal({
+  open,
+  onClose,
+  onSaved,
+  patientId,
+  editing,
+  deleteMode = false,
+}: MedModalProps) {
   const [name, setName] = React.useState('')
   const [dose, setDose] = React.useState('')
   const [frequency, setFrequency] = React.useState('')

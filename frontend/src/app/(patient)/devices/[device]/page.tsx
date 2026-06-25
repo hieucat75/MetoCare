@@ -164,36 +164,29 @@ const DEVICE_INFO: Record<string, DeviceInfo> = {
   'smart-scale': {
     name: 'Cân thông minh',
     subtitle: 'Withings, Xiaomi Mi Scale...',
-    description:
-      'Đồng bộ cân nặng, BMI và tỷ lệ mỡ cơ thể từ cân thông minh Bluetooth.',
+    description: 'Đồng bộ cân nặng, BMI và tỷ lệ mỡ cơ thể từ cân thông minh Bluetooth.',
     icon: Scale,
     iconColor: '#2563EB',
     status: 'coming-soon',
     whyNative:
       'Cân thông minh dùng Bluetooth LE — kết nối cần quyền BLE từ ứng dụng di động, không hỗ trợ trên web.',
-    manualFallbacks: [
-      { label: 'Nhập cân nặng thủ công', href: '/metrics/log/weight' },
-    ],
+    manualFallbacks: [{ label: 'Nhập cân nặng thủ công', href: '/metrics/log/weight' }],
   },
   glucose: {
     name: 'Máy đo đường huyết',
     subtitle: 'Accu-Chek, OneTouch, Freestyle Libre',
-    description:
-      'Đồng bộ kết quả đường huyết từ máy đo hoặc cảm biến CGM liên tục.',
+    description: 'Đồng bộ kết quả đường huyết từ máy đo hoặc cảm biến CGM liên tục.',
     icon: Droplets,
     iconColor: '#D97706',
     status: 'manual',
     whyNative:
       'Máy đo đường huyết yêu cầu tích hợp Bluetooth LE hoặc NFC đặc thù của từng thiết bị — chỉ khả dụng trên ứng dụng di động. Bạn có thể nhập kết quả thủ công ngay bây giờ.',
-    manualFallbacks: [
-      { label: 'Nhập đường huyết thủ công', href: '/metrics/log/fasting_glucose' },
-    ],
+    manualFallbacks: [{ label: 'Nhập đường huyết thủ công', href: '/metrics/log/fasting_glucose' }],
   },
   'pulse-oximeter': {
     name: 'Máy đo SpO₂',
     subtitle: 'Pulse oximeter Bluetooth',
-    description:
-      'Đo độ bão hòa oxy trong máu (SpO₂) và nhịp tim từ máy đo xung Bluetooth.',
+    description: 'Đo độ bão hòa oxy trong máu (SpO₂) và nhịp tim từ máy đo xung Bluetooth.',
     icon: Heart,
     iconColor: '#D92D20',
     status: 'manual',
@@ -214,15 +207,12 @@ const DEVICE_INFO: Record<string, DeviceInfo> = {
     status: 'manual',
     whyNative:
       'Nhiệt kế Bluetooth dùng BLE — cần quyền native từ ứng dụng di động. Bạn có thể nhập kết quả thủ công ngay bây giờ.',
-    manualFallbacks: [
-      { label: 'Nhập nhiệt độ thủ công', href: '/metrics/log/temperature' },
-    ],
+    manualFallbacks: [{ label: 'Nhập nhiệt độ thủ công', href: '/metrics/log/temperature' }],
   },
   ecg: {
     name: 'Máy đo ECG',
     subtitle: 'KardiaMobile, AliveCor...',
-    description:
-      'Ghi và phân tích điện tâm đồ (ECG) từ thiết bị đo chuyên dụng Bluetooth.',
+    description: 'Ghi và phân tích điện tâm đồ (ECG) từ thiết bị đo chuyên dụng Bluetooth.',
     icon: BarChart2,
     iconColor: '#C0392B',
     status: 'coming-soon',
@@ -233,8 +223,7 @@ const DEVICE_INFO: Record<string, DeviceInfo> = {
   'body-composition': {
     name: 'Máy phân tích cơ thể',
     subtitle: 'Withings Body+, InBody...',
-    description:
-      'Đo cân nặng, BMI, tỷ lệ mỡ, khối cơ và lượng nước trong cơ thể qua Bluetooth.',
+    description: 'Đo cân nặng, BMI, tỷ lệ mỡ, khối cơ và lượng nước trong cơ thể qua Bluetooth.',
     icon: Scale,
     iconColor: '#16A085',
     status: 'coming-soon',
@@ -331,9 +320,7 @@ export default function DeviceDetailPage() {
               <p className="text-[13px] font-bold text-[#15803D]">
                 Kết nối BLE tự động — sắp ra mắt
               </p>
-              <p className="text-[12px] text-[#16A34A] mt-1 leading-relaxed">
-                {device.whyNative}
-              </p>
+              <p className="text-[12px] text-[#16A34A] mt-1 leading-relaxed">{device.whyNative}</p>
             </div>
           </div>
         </div>
