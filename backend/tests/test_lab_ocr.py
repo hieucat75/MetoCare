@@ -403,7 +403,7 @@ def _patch_azure_http(monkeypatch, *, poll_body=_AZURE_SUCCESS):
 
     monkeypatch.setattr(
         httpx, "post",
-        lambda *a, **k: _FakeResp(headers={"operation-location": "https://az/op/123"}),
+        lambda *a, **k: _FakeResp(headers={"operation-location": "https://docintel.example.com/op/123"}),
     )
     monkeypatch.setattr(httpx, "get", lambda *a, **k: _FakeResp(json_body=poll_body))
 
@@ -448,6 +448,21 @@ def test_azure_provider_raises_on_failed_status(monkeypatch):
     monkeypatch.setenv("AZURE_DOC_INTEL_ENDPOINT", "https://docintel.example.com")
     _patch_azure_http(monkeypatch, poll_body={"status": "failed"})
     with pytest.raises(OcrEngineError):
+        AzureDocIntelEngine().run(b"\xff\xd8\xff", "image/jpeg")
+
+
+def test_azure_ssrf_invalid_operation_location(monkeypatch):
+    """operation-location pointing to a different host must be rejected."""
+    import httpx
+    from app.services.ocr_engine import AzureDocIntelEngine, OcrEngineError
+
+    monkeypatch.setenv("AZURE_DOC_INTEL_KEY", "k")
+    monkeypatch.setenv("AZURE_DOC_INTEL_ENDPOINT", "https://docintel.example.com")
+    monkeypatch.setattr(
+        httpx, "post",
+        lambda *a, **k: _FakeResp(headers={"operation-location": "https://attacker.internal/steal"}),
+    )
+    with pytest.raises(OcrEngineError, match="operation-location không hợp lệ"):
         AzureDocIntelEngine().run(b"\xff\xd8\xff", "image/jpeg")
 
 
@@ -1187,3 +1202,49 @@ class TestIncompatibleUnitRejection:
     def test_alt_in_pmol_l_rejected(self):
         values = lab_parser.parse_lab_text("ALT 58 pmol/L")
         assert values and values[0].ocr_confidence == 0.0
+
+
+class TestCodexP1Fixes:
+    """Regression tests for P1 issues found in code review (2026-06-25)."""
+
+    def test_cr_alias_does_not_match_creatinine(self):
+        """Bare 'CR' must NOT match creatinine — it is a CRP abbreviation on some panels."""
+        values = lab_parser.parse_lab_text("CR 15.2 mg/L")
+        creatinine_rows = [v for v in values if v.test_name == "creatinine"]
+        assert not creatinine_rows, (
+            "Bare 'CR' matched creatinine — should be unrecognized (CRP abbreviation)"
+        )
+
+    def test_creatinine_full_alias_still_matches(self):
+        """Full 'CREATININ' alias must still extract creatinine correctly."""
+        values = lab_parser.parse_lab_text("CREATININ 82.2 µmol/L")
+        assert values and values[0].test_name == "creatinine"
+        assert abs(values[0].original_value - 82.2) < 0.01
+
+    def test_missing_unit_row_needs_verification(self):
+        """A row with no unit token must always need_verification via low confidence."""
+        values = lab_parser.parse_lab_text("CREATININ 82.2")
+        assert values, "creatinine should still be extracted without a unit"
+        row = values[0]
+        assert row.ocr_confidence < 0.75, (
+            f"Missing-unit row should be below OCR_CONFIDENCE_THRESHOLD (0.75), "
+            f"got {row.ocr_confidence}"
+        )
+
+    def test_digit_adjacent_mol_not_rewritten(self):
+        """88.42mol/L (no space) must NOT be rewritten to 88.42µmol/L by the global
+        correction — the digit lookbehind guards it, and the value regex handles it."""
+        import re
+        from app.services.lab_parser import _GLOBAL_OCR_CORRECTIONS_RE
+        pattern, replacement = _GLOBAL_OCR_CORRECTIONS_RE[0]
+        result = pattern.sub(replacement, "88.42mol/L")
+        assert result == "88.42mol/L", (
+            f"Digit-adjacent mol/L was incorrectly rewritten to '{result}'"
+        )
+
+    def test_standalone_mol_l_is_rewritten(self):
+        """Standalone ' mol/L' (space before) must still be rewritten to µmol/L."""
+        from app.services.lab_parser import _GLOBAL_OCR_CORRECTIONS_RE
+        pattern, replacement = _GLOBAL_OCR_CORRECTIONS_RE[0]
+        result = pattern.sub(replacement, "CREATININ 82.2 mol/L")
+        assert "µmol/L" in result, f"Standalone mol/L was not rewritten: '{result}'"

@@ -125,7 +125,7 @@ BIOMARKERS: tuple[BiomarkerSpec, ...] = (
     BiomarkerSpec(
         "creatinine",
         ("creatinine", "creatinin",
-         "crea", "creat", "creatinine mau", "serum creatinine", "scr", "cr"),
+         "crea", "creat", "creatinine mau", "serum creatinine", "scr"),
         "mg/dL", 0.6, 1.3, critical_high=4.0,
         si_unit="µmol/L", si_factor=0.011312,  # 1/88.42 µmol/L → mg/dL
         physiological_min=0.1, physiological_max=30,

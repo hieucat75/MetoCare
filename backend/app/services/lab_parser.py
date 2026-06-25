@@ -130,8 +130,9 @@ _GLOBAL_OCR_CORRECTIONS: dict[str, str] = {
 # Applied after _GLOBAL_OCR_CORRECTIONS, before hospital-profile corrections.
 _GLOBAL_OCR_CORRECTIONS_RE: list[tuple[re.Pattern[str], str]] = [
     # Azure DI drops the µ prefix from µmol/L, emitting bare mol/L (e.g. creatinine, urea).
-    # Negative lookbehind prevents corrupting mmol/L → mµmol/L.
-    (re.compile(r"(?<![a-zA-Zµμ])mol/L"), "µmol/L"),
+    # Lookbehind excludes letters AND digits so digit-adjacent forms (e.g. 88.42mol/L)
+    # are not rewritten — the value-unit regex handles those correctly as-is.
+    (re.compile(r"(?<![a-zA-Zµμ0-9])mol/L"), "µmol/L"),
 ]
 
 
@@ -228,7 +229,10 @@ def parse_lab_text(
         orig_unit: str = unit or spec.unit
 
         # ocr_confidence (proxy): did OCR produce a recognizable unit token?
-        ocr_conf_dim = 1.0 if unit else 0.7
+        # 0.5 (not 0.7) when unit absent: ensures overall stays below the 0.75
+        # threshold even at high engine quality (e.g. 0.725 × 0.95 = 0.69 < 0.75),
+        # so missing-unit rows always require patient verification.
+        ocr_conf_dim = 1.0 if unit else 0.5
 
         # conversion_confidence: how well does the extracted unit match the spec?
         conv_conf = 1.0

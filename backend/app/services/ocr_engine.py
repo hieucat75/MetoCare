@@ -232,6 +232,13 @@ class AzureDocIntelEngine:
             op_url = submit.headers.get("operation-location")
             if not op_url:
                 raise OcrEngineError("Azure Doc Intel không trả operation-location.")
+            # Validate that the poll URL belongs to the configured endpoint to prevent
+            # a crafted operation-location from reaching internal hosts.
+            from urllib.parse import urlparse
+            if urlparse(op_url).netloc != urlparse(endpoint).netloc:
+                raise OcrEngineError(
+                    "Azure Doc Intel trả về operation-location không hợp lệ."
+                )
             body = self._poll(httpx, op_url, key)
         except httpx.HTTPError as exc:
             raise OcrEngineError("Cloud OCR (Azure) thất bại.") from exc
