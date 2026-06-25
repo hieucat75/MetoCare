@@ -1010,6 +1010,149 @@ class TestAzureDiOcrCorrections:
             assert by_canonical["tsh"].unit != "pIU/mL"
 
 
+# --------------------------------------------------------------------------- #
+# Vinmec 16-biomarker golden fixture — OCR accuracy ≥ 80% (≥13/16 correct)
+#
+# Source: Vinmec International Hospital lab report (Vietnamese, SI units).
+# "Correct" = all three match: canonical name + numeric value + unit.
+# Reference ranges are intentionally included to verify they don't corrupt
+# result extraction (row-integrity hard rule).
+# --------------------------------------------------------------------------- #
+
+_VINMEC_16_TEXT = """\
+URE 4.47 mmol/L 2.5 - 7.5
+CREATININ 82.2 mol/L 44 - 80
+GLUCOSE 4.78 mmol/L 3.9 - 6.1
+AST (GOT) 34.7 U/L 0 - 40
+ALT (GPT) 58.4 U/L 0 - 56
+CHOLESTEROL TOAN PHAN 5.99 mmol/L 0 - 5.2
+TRIGLYCERID 2.7 mmol/L 0 - 1.7
+HDL-C 1.08 mmol/L 0.9 - 1.6
+LDL-C 4.24 mmol/L 0 - 3.4
+NATRI 140 mmol/L 136 - 145
+KALI 3.95 mmol/L 3.5 - 5.0
+CLO 100.7 mmol/L 98 - 106
+FT3 4.64 pmol/L 3.1 - 6.8
+FT4 18 pmol/L 12.0 - 22.0
+TSH 1.26 pIU/mL 0.4 - 4.0
+THYROGLOBULIN 0.118 ng/mL < 55
+"""
+
+# Expected canonical names and (value, unit) after full normalization.
+# mol/L → µmol/L correction fires for CREATININ; pIU/mL → µIU/mL for TSH.
+_VINMEC_16_EXPECTED: dict[str, tuple[float, str]] = {
+    "urea":              (4.47 * 6.006,   "mg/dL"),
+    "creatinine":        (82.2 * 0.011312, "mg/dL"),
+    "fasting_glucose":   (4.78 * 18.018,  "mg/dL"),
+    "ast":               (34.7,            "U/L"),
+    "alt":               (58.4,            "U/L"),
+    "total_cholesterol": (5.99 * 38.67,   "mg/dL"),
+    "triglyceride":      (2.7  * 88.57,   "mg/dL"),
+    "hdl":               (1.08 * 38.67,   "mg/dL"),
+    "ldl":               (4.24 * 38.67,   "mg/dL"),
+    "sodium":            (140.0,           "mmol/L"),
+    "potassium":         (3.95,            "mmol/L"),
+    "chloride":          (100.7,           "mmol/L"),
+    "ft3":               (4.64,            "pmol/L"),
+    "ft4":               (18.0,            "pmol/L"),
+    "tsh":               (1.26,            "mIU/L"),
+    "thyroglobulin":     (0.118,           "ng/mL"),
+}
+
+
+class TestVinmec16Accuracy:
+    """Vinmec 16-biomarker golden fixture — P0 OCR accuracy gate (≥80% = ≥13/16)."""
+
+    def _parse(self) -> dict[str, object]:
+        return {v.test_name: v for v in lab_parser.parse_lab_text(_VINMEC_16_TEXT)}
+
+    def test_all_16_biomarkers_extracted(self):
+        found = set(self._parse())
+        missing = set(_VINMEC_16_EXPECTED) - found
+        assert not missing, f"Missing biomarkers: {sorted(missing)}"
+
+    def test_accuracy_at_least_80_percent(self):
+        """At least 13/16 biomarkers must be value+unit correct (strict ≥80% gate)."""
+        parsed = self._parse()
+        correct = 0
+        report: list[str] = []
+        for canonical, (exp_val, exp_unit) in _VINMEC_16_EXPECTED.items():
+            row = parsed.get(canonical)
+            if row is None:
+                report.append(f"  MISSING  {canonical}")
+                continue
+            val_ok = abs(row.value - exp_val) / max(abs(exp_val), 1e-9) < 0.01
+            unit_ok = row.unit == exp_unit
+            if val_ok and unit_ok:
+                correct += 1
+                report.append(f"  OK       {canonical}: {row.value:.4f} {row.unit}")
+            else:
+                detail = []
+                if not val_ok:
+                    detail.append(f"value {row.value:.4f} ≠ {exp_val:.4f}")
+                if not unit_ok:
+                    detail.append(f"unit '{row.unit}' ≠ '{exp_unit}'")
+                report.append(f"  WRONG    {canonical}: {', '.join(detail)}")
+        pct = correct / len(_VINMEC_16_EXPECTED) * 100
+        summary = "\n".join(report)
+        assert correct >= 13, (
+            f"Accuracy {correct}/16 ({pct:.1f}%) < 80% threshold.\n{summary}"
+        )
+
+    def test_no_clinically_wrong_unit_survives(self):
+        """No biomarker must have ocr_confidence=0 (incompatible unit or impossible value)."""
+        for row in lab_parser.parse_lab_text(_VINMEC_16_TEXT):
+            assert row.ocr_confidence > 0.0, (
+                f"{row.test_name}: confidence=0 (incompatible unit '{row.unit}'?)"
+            )
+
+    def test_row_integrity_no_ref_range_as_value(self):
+        """Hard rule: reference-range numbers must never appear as result values."""
+        parsed = self._parse()
+        ref_lows = {"urea": 2.5, "sodium": 136.0, "potassium": 3.5, "chloride": 98.0}
+        for canonical, ref_lo in ref_lows.items():
+            row = parsed.get(canonical)
+            if row is None:
+                continue
+            assert abs(row.value - ref_lo) > 0.001, (
+                f"{canonical}: value {row.value} looks like ref_low {ref_lo} — "
+                "reference range leaked as result value"
+            )
+
+    def test_si_converted_rows_have_original_fields(self):
+        """Rows that go through SI conversion must expose original_value/original_unit."""
+        parsed = self._parse()
+        si_biomarkers = {"urea", "creatinine", "fasting_glucose",
+                         "total_cholesterol", "triglyceride", "hdl", "ldl"}
+        for canonical in si_biomarkers:
+            row = parsed.get(canonical)
+            if row is None:
+                continue
+            assert row.original_value is not None, (
+                f"{canonical}: original_value missing after SI conversion"
+            )
+            assert row.original_unit is not None, (
+                f"{canonical}: original_unit missing after SI conversion"
+            )
+
+    @pytest.mark.parametrize("canonical,exp_val,exp_unit", [
+        ("sodium",        140.0,  "mmol/L"),
+        ("potassium",     3.95,   "mmol/L"),
+        ("chloride",      100.7,  "mmol/L"),
+        ("thyroglobulin", 0.118,  "ng/mL"),
+    ])
+    def test_new_biomarkers_extracted_correctly(self, canonical, exp_val, exp_unit):
+        """New biomarkers (electrolytes + thyroglobulin) parse correctly."""
+        parsed = self._parse()
+        row = parsed.get(canonical)
+        assert row is not None, f"{canonical} not extracted"
+        assert abs(row.value - exp_val) / max(abs(exp_val), 1e-9) < 0.01, (
+            f"{canonical}: value {row.value} ≠ {exp_val}"
+        )
+        assert row.unit == exp_unit, f"{canonical}: unit '{row.unit}' ≠ '{exp_unit}'"
+        assert row.ocr_confidence > 0.7, f"{canonical}: low confidence {row.ocr_confidence}"
+
+
 class TestIncompatibleUnitRejection:
     """Clinically nonsensical units must produce ocr_confidence=0.0."""
 

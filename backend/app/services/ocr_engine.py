@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import logging
 import os
+import time
+import unicodedata
 from dataclasses import dataclass, field
 
 from app.core.config import get_settings
@@ -264,25 +266,67 @@ class AzureDocIntelEngine:
             time.sleep(min(delay, self._POLL_BACKOFF_CAP_S))
         raise OcrEngineError("Azure Doc Intel hết thời gian chờ phân tích.")
 
+    # Substrings that identify a "reference range" column header in Vietnamese/English.
+    # When found in row-0 cells, that entire column is excluded from text output so
+    # reference-range numbers cannot be misread as result values.
+    _REF_COL_KEYWORDS: frozenset[str] = frozenset({
+        "binh thuong", "bình thường",
+        "tham chieu", "tham chiếu",
+        "gia tri tham chieu", "giá trị tham chiếu",
+        "gia tri bt", "giá trị bt",
+        "khoang tham chieu", "khoảng tham chiếu",
+        "gia tri binh thuong", "giá trị bình thường",
+        "normal range", "reference range", "reference", "normal",
+    })
+
     @staticmethod
-    def _build_text(analyze_result: dict) -> str:
+    def _strip_accents_lower(s: str) -> str:
+        return "".join(
+            c for c in unicodedata.normalize("NFD", s.lower())
+            if unicodedata.category(c) != "Mn"
+        )
+
+    @classmethod
+    def _build_text(cls, analyze_result: dict) -> str:
         """Document content (reading order) + one reflowed line per table row, so
-        columnar lab data lands on a single line for the heuristic parser."""
+        columnar lab data lands on a single line for the heuristic parser.
+
+        Reference-range columns are detected via header-row keywords and skipped
+        so their values cannot be misread as result values by the parser."""
         content = (analyze_result.get("content") or "").strip()
         table_lines: list[str] = []
         for table in analyze_result.get("tables", []) or []:
-            rows: dict[int, list[tuple[int, str]]] = {}
-            for cell in table.get("cells", []) or []:
+            cells_raw = table.get("cells", []) or []
+
+            # Identify reference-range column indices from the header row
+            # (row 0 or cells with kind="columnHeader").
+            ref_cols: set[int] = set()
+            for cell in cells_raw:
+                ri = cell.get("rowIndex", 0)
+                kind = (cell.get("kind") or "").lower()
+                if ri != 0 and kind != "columnheader":
+                    continue
                 txt = (cell.get("content") or "").strip()
                 if not txt:
                     continue
-                rows.setdefault(cell.get("rowIndex", 0), []).append(
-                    (cell.get("columnIndex", 0), txt)
-                )
+                txt_norm = cls._strip_accents_lower(txt)
+                if any(kw in txt_norm for kw in cls._REF_COL_KEYWORDS):
+                    ref_cols.add(cell.get("columnIndex", 0))
+
+            rows: dict[int, list[tuple[int, str]]] = {}
+            for cell in cells_raw:
+                col = cell.get("columnIndex", 0)
+                if col in ref_cols:
+                    continue
+                txt = (cell.get("content") or "").strip()
+                if not txt:
+                    continue
+                rows.setdefault(cell.get("rowIndex", 0), []).append((col, txt))
+
             for r in sorted(rows):
-                cells = [t for _, t in sorted(rows[r])]
-                if cells:
-                    table_lines.append(" ".join(cells))
+                row_cells = [t for _, t in sorted(rows[r])]
+                if row_cells:
+                    table_lines.append(" ".join(row_cells))
         if table_lines:
             return (content + "\n" + "\n".join(table_lines)).strip()
         return content

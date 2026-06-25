@@ -204,6 +204,36 @@ BIOMARKERS: tuple[BiomarkerSpec, ...] = (
         "%", 36.0, 50.0, critical_low=20.0,
         physiological_min=5, physiological_max=75,
     ),
+    # ---- Electrolytes ----
+    BiomarkerSpec(
+        "sodium",
+        ("sodium", "natri", "na+", "na serum", "serum sodium", "dien giai na"),
+        "mmol/L", 136, 145, critical_low=125, critical_high=155,
+        incompatible_units=("mg/dL", "µmol/L", "mIU/L", "µIU/mL", "U/L", "pmol/L"),
+        physiological_min=100, physiological_max=200,
+    ),
+    BiomarkerSpec(
+        "potassium",
+        ("potassium", "kali", "k+", "k serum", "serum potassium", "dien giai k"),
+        "mmol/L", 3.5, 5.0, critical_low=2.5, critical_high=6.5,
+        incompatible_units=("mg/dL", "µmol/L", "mIU/L", "µIU/mL", "U/L", "pmol/L"),
+        physiological_min=1.0, physiological_max=10.0,
+    ),
+    BiomarkerSpec(
+        "chloride",
+        ("chloride", "clo", "cl-", "cl serum", "serum chloride", "dien giai cl"),
+        "mmol/L", 98, 106, critical_low=80, critical_high=120,
+        incompatible_units=("mg/dL", "µmol/L", "mIU/L", "µIU/mL", "U/L", "pmol/L"),
+        physiological_min=60, physiological_max=160,
+    ),
+    # ---- Tumour / thyroid markers ----
+    BiomarkerSpec(
+        "thyroglobulin",
+        ("thyroglobulin", "thyroglobuline", "tg serum", "thyroglobulin serum"),
+        "ng/mL", 1.4, 78.0, critical_high=300.0,
+        incompatible_units=("mg/dL", "mmol/L", "mIU/L", "µIU/mL", "U/L", "pmol/L"),
+        physiological_min=0, physiological_max=10000,
+    ),
     # ---- Additional required biomarkers ----
     BiomarkerSpec(
         "uric_acid",

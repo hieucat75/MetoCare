@@ -47,7 +47,8 @@
       "biomarkers": [
         "tsh",
         "ft4",
-        "ft3"
+        "ft3",
+        "thyroglobulin"
       ]
     },
     {
@@ -59,6 +60,15 @@
         "hemoglobin",
         "hematocrit",
         "platelet"
+      ]
+    },
+    {
+      "key": "electrolyte",
+      "name": "Điện giải",
+      "biomarkers": [
+        "sodium",
+        "potassium",
+        "chloride"
       ]
     }
   ],
@@ -635,6 +645,82 @@
       "value_precision": 1,
       "notes": "Cao gặp trong gout, suy thận",
       "higher_is_better": false
+    },
+    "sodium": {
+      "name_vn": "Natri",
+      "name_en": "Sodium",
+      "category": "electrolyte",
+      "units": [
+        {
+          "key": "mmol_per_l",
+          "label": "mmol/L",
+          "ref_range": {
+            "low": 136,
+            "high": 145
+          },
+          "is_primary": true
+        }
+      ],
+      "value_precision": 0,
+      "notes": "",
+      "higher_is_better": null
+    },
+    "potassium": {
+      "name_vn": "Kali",
+      "name_en": "Potassium",
+      "category": "electrolyte",
+      "units": [
+        {
+          "key": "mmol_per_l",
+          "label": "mmol/L",
+          "ref_range": {
+            "low": 3.5,
+            "high": 5.0
+          },
+          "is_primary": true
+        }
+      ],
+      "value_precision": 2,
+      "notes": "",
+      "higher_is_better": null
+    },
+    "chloride": {
+      "name_vn": "Clo",
+      "name_en": "Chloride",
+      "category": "electrolyte",
+      "units": [
+        {
+          "key": "mmol_per_l",
+          "label": "mmol/L",
+          "ref_range": {
+            "low": 98,
+            "high": 106
+          },
+          "is_primary": true
+        }
+      ],
+      "value_precision": 1,
+      "notes": "",
+      "higher_is_better": null
+    },
+    "thyroglobulin": {
+      "name_vn": "Thyroglobulin",
+      "name_en": "Thyroglobulin",
+      "category": "thyroid",
+      "units": [
+        {
+          "key": "ng_per_ml",
+          "label": "ng/mL",
+          "ref_range": {
+            "low": 1.4,
+            "high": 78.0
+          },
+          "is_primary": true
+        }
+      ],
+      "value_precision": 3,
+      "notes": "",
+      "higher_is_better": null
     }
   }
 }
