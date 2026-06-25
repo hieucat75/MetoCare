@@ -127,6 +127,7 @@ BIOMARKERS: tuple[BiomarkerSpec, ...] = (
         ("creatinine", "creatinin",
          "crea", "creat", "creatinine mau", "serum creatinine", "scr", "cr"),
         "mg/dL", 0.6, 1.3, critical_high=4.0,
+        si_unit="µmol/L", si_factor=0.011312,  # 1/88.42 µmol/L → mg/dL
         physiological_min=0.1, physiological_max=30,
     ),
     BiomarkerSpec(
@@ -141,6 +142,7 @@ BIOMARKERS: tuple[BiomarkerSpec, ...] = (
         ("urea", "ure", "bun", "blood urea nitrogen", "u rê",
          "ure mau", "bun serum"),
         "mg/dL", 7, 20, critical_high=100,
+        si_unit="mmol/L", si_factor=6.006,  # mmol/L → mg/dL
         physiological_min=1, physiological_max=300,
     ),
     BiomarkerSpec(
@@ -247,11 +249,23 @@ def normalize_biomarker(name: str) -> str | None:
 
 
 @dataclass
+class ConfidenceDetail:
+    """Per-dimension confidence breakdown for one parsed biomarker row."""
+    ocr: float       # OCR text extraction quality (0..1)
+    mapping: float   # Biomarker name recognition quality (0..1)
+    conversion: float  # Unit matching / conversion quality (0..1)
+    clinical: float  # Physiological plausibility (0..1)
+    overall: float   # Weighted: 40%×ocr + 25%×mapping + 25%×conversion + 10%×clinical
+    reasons: list[str]
+
+
+@dataclass
 class RawLabValue:
     test_name: str
     value: float
     unit: str | None = None
     ocr_confidence: float = 1.0
+    confidence_detail: ConfidenceDetail | None = None
 
 
 @dataclass
@@ -265,6 +279,7 @@ class InterpretedBiomarker:
     ocr_confidence: float
     needs_verification: bool
     patient_note: str = ""
+    confidence_detail: ConfidenceDetail | None = None
 
 
 def classify_value(canonical: str, value: float) -> LabStatus:
@@ -323,6 +338,7 @@ def interpret_value(raw: RawLabValue) -> InterpretedBiomarker:
             ocr_confidence=0.0,
             needs_verification=True,
             patient_note="Gia tri vuot ngoai gioi han sinh ly. Vui long kiem tra lai.",
+            confidence_detail=raw.confidence_detail,
         )
     status = classify_value(canonical, raw.value)
     needs_verification = raw.ocr_confidence < OCR_CONFIDENCE_THRESHOLD
@@ -340,6 +356,7 @@ def interpret_value(raw: RawLabValue) -> InterpretedBiomarker:
         ocr_confidence=raw.ocr_confidence,
         needs_verification=needs_verification,
         patient_note=note,
+        confidence_detail=raw.confidence_detail,
     )
 
 

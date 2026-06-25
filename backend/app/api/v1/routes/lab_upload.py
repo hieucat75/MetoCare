@@ -100,6 +100,7 @@ async def create_lab_upload_draft(
                 status=i.status,
                 confidence=i.confidence,
                 needs_verification=i.needs_verification,
+                confidence_reasons=i.confidence_reasons,
             )
             for i in draft.parsed_values
         ],

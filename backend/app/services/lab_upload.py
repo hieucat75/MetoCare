@@ -68,6 +68,7 @@ class DraftItem:
     status: str
     confidence: float
     needs_verification: bool
+    confidence_reasons: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -240,6 +241,9 @@ def build_draft(data: bytes, mime: str) -> LabUploadDraft:
                 status=b.status.value,
                 confidence=round(b.ocr_confidence, 4),
                 needs_verification=b.needs_verification,
+                confidence_reasons=(
+                    b.confidence_detail.reasons if b.confidence_detail else []
+                ),
             )
         )
 

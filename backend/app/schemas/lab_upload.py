@@ -14,6 +14,7 @@ class LabUploadDraftItemOut(BaseModel):
     status: str             # normal | low | high | critical | unknown
     confidence: float
     needs_verification: bool
+    confidence_reasons: list[str] = Field(default_factory=list)
 
 
 class LabUploadDraftOut(BaseModel):

@@ -41,6 +41,7 @@ interface EditRow {
   confidence: number | null // null = manually added row
   needs_verification: boolean
   status: string | null
+  confidence_reasons: string[]
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -60,32 +61,51 @@ function confidenceBadge(c: number | null): { label: string; tone: NeuTone } {
 function ConfidenceBadge({
   confidence,
   needsVerification,
+  reasons,
 }: {
   confidence: number | null
   needsVerification: boolean
+  reasons?: string[]
 }) {
+  const showReasons = reasons && reasons.length > 0 && confidence !== null && confidence < 0.85
+
+  let badge: React.ReactNode = null
   if (confidence === 0) {
-    return (
+    badge = (
       <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-red-50 border border-red-200 text-red-700 ml-2">
-        Gia tri khong hop le - can kiem tra lai
+        Giá trị không hợp lệ — cần kiểm tra lại
       </span>
     )
-  }
-  if (confidence !== null && confidence < 0.75) {
-    return (
+  } else if (confidence !== null && confidence < 0.75) {
+    badge = (
       <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-amber-50 border border-amber-200 text-amber-700 ml-2">
-        Do tin cay thap - nen xac nhan
+        Độ tin cậy thấp — nên xác nhận
       </span>
     )
-  }
-  if (needsVerification) {
-    return (
+  } else if (needsVerification) {
+    badge = (
       <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-blue-50 border border-blue-200 text-blue-700 ml-2">
-        Can xac nhan
+        Cần xác nhận
       </span>
     )
   }
-  return null
+
+  if (!badge && !showReasons) return null
+
+  return (
+    <div className="mt-1">
+      {badge}
+      {showReasons && (
+        <ul className="mt-1 ml-2 space-y-0.5">
+          {reasons!.map((r, i) => (
+            <li key={i} className={`text-xs ${r.startsWith('⚠') ? 'text-amber-700' : 'text-green-700'}`}>
+              {r}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
 }
 
 // ── Mode picker ────────────────────────────────────────────────────────────────
@@ -187,6 +207,7 @@ export default function LabUploadPage() {
         confidence: v.confidence,
         needs_verification: v.needs_verification,
         status: v.status,
+        confidence_reasons: v.confidence_reasons ?? [],
       }))
       // Always give the patient at least one editable row (manual fallback).
       setRows(
@@ -201,6 +222,7 @@ export default function LabUploadPage() {
                 confidence: null,
                 needs_verification: false,
                 status: null,
+                confidence_reasons: [],
               },
             ]
       )
@@ -462,6 +484,7 @@ export default function LabUploadPage() {
                       <ConfidenceBadge
                         confidence={row.confidence}
                         needsVerification={row.needs_verification}
+                        reasons={row.confidence_reasons}
                       />
                     </div>
                     <div className="flex items-center gap-2">
@@ -533,6 +556,7 @@ export default function LabUploadPage() {
                     confidence: null,
                     needs_verification: false,
                     status: null,
+                    confidence_reasons: [],
                   },
                 ])
               }

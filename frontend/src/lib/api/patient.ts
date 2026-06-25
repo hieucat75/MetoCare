@@ -488,6 +488,7 @@ export interface LabUploadDraftItem {
   status: string // normal | low | high | critical | unknown
   confidence: number // 0..1
   needs_verification: boolean
+  confidence_reasons: string[] // per-dimension ✓/⚠ explanations
 }
 
 export interface LabUploadDraft {

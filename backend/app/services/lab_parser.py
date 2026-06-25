@@ -23,6 +23,7 @@ from app.domain.lab_interpreter import (
     _ALIAS_INDEX,
     BIOMARKERS,
     BiomarkerSpec,
+    ConfidenceDetail,
     RawLabValue,
 )
 
@@ -101,8 +102,26 @@ def _match_biomarker(
 
 
 def _norm_unit(u: str) -> str:
-    """Lowercase + normalize µ/μ unicode variants so unit comparisons are stable."""
-    return u.replace("µ", "u").replace("μ", "u").strip().lower()
+    """Lowercase + normalize µ/μ/mc unicode/OCR variants so unit comparisons are stable.
+
+    Handles: µ (U+00B5), μ (U+03BC), and the 'mc' OCR prefix (e.g. mcIU/mL, mcmol/L).
+    'mol' is NOT normalized to 'µmol' — only explicit µ/μ/mc prefixes are replaced.
+    """
+    return (
+        u.replace("µ", "u")
+         .replace("μ", "u")
+         .replace("mc", "u")
+         .strip()
+         .lower()
+    )
+
+
+# Global text corrections applied BEFORE hospital-profile and parser logic.
+# Targets known Azure Document Intelligence OCR misreads that affect unit parsing.
+_GLOBAL_OCR_CORRECTIONS: dict[str, str] = {
+    "pIU/mL": "µIU/mL",  # Azure DI misreads µ as p before IU (TSH, Insulin)
+    "pIU/L": "µIU/L",
+}
 
 
 def _is_incompatible(unit: str, spec: BiomarkerSpec) -> bool:
@@ -126,6 +145,10 @@ def parse_lab_text(
     """Parse OCR/plain text into recognised ``RawLabValue`` rows (first per canonical)."""
     if not text:
         return []
+
+    # Apply global OCR corrections first (e.g. Azure DI µ→p misread).
+    for bad, good in _GLOBAL_OCR_CORRECTIONS.items():
+        text = text.replace(bad, good)
 
     if hospital_profile is None:
         hospital_profile = detect_hospital(text)
@@ -171,38 +194,96 @@ def parse_lab_text(
         # range from the biomarker taxonomy (applied by lab_interpreter) is more
         # reliable than a noisy scanned one.
 
-        parse_conf = 1.0
+        # ── Multi-dimensional confidence ─────────────────────────────────────
+        # mapping_confidence: always 1.0 here — we only emit rows with an exact
+        # alias match from _ALIAS_INDEX (no fuzzy matching emitted).
+        mapping_conf = 1.0
+
+        # ocr_confidence (proxy): did OCR produce a recognizable unit token?
+        ocr_conf_dim = 1.0 if unit else 0.7
+
+        # conversion_confidence: how well does the extracted unit match the spec?
+        conv_conf = 1.0
+        incompatible = False
         if not unit:
-            parse_conf = 0.8
+            conv_conf = 0.7
         elif _is_incompatible(unit, spec):
-            # Clinically nonsensical unit (e.g. glucose in mIU/mL) — zero confidence,
-            # forces needs_verification=True downstream.
-            parse_conf = 0.0
+            conv_conf = 0.0
+            incompatible = True
         else:
             converted = _try_si_convert(unit, value, spec)
             if converted is not None:
-                # Known SI equivalent (e.g. mmol/L for mg/dL biomarker) — convert to
-                # canonical units so classification and DB storage are correct.
                 value = converted
                 unit = spec.unit
+                conv_conf = 1.0
             elif spec.unit:
-                # Unrecognised unit — crude alphabetic root fallback.
-                u_root = re.sub(r"[^a-z]", "", unit.lower())[:3]
-                s_root = re.sub(r"[^a-z]", "", spec.unit.lower())[:3]
-                if u_root and s_root and u_root != s_root:
-                    parse_conf = 0.6
+                if _norm_unit(unit) == _norm_unit(spec.unit):
+                    conv_conf = 1.0
+                else:
+                    u_root = re.sub(r"[^a-z]", "", unit.lower())[:3]
+                    s_root = re.sub(r"[^a-z]", "", spec.unit.lower())[:3]
+                    if u_root and s_root and u_root != s_root:
+                        conv_conf = 0.6
+                    else:
+                        conv_conf = 0.9
 
-        # Physiological plausibility: values outside absolute bounds indicate OCR error.
+        # clinical_confidence: physiological plausibility (hard gate on 0 or 1).
+        clin_conf = 1.0
         if spec.physiological_min is not None and value < spec.physiological_min:
-            parse_conf = 0.0
+            clin_conf = 0.0
         elif spec.physiological_max is not None and value > spec.physiological_max:
-            parse_conf = 0.0
+            clin_conf = 0.0
+
+        # Hard gates: incompatible unit or physiological impossibility → overall 0.
+        if incompatible or clin_conf == 0.0:
+            overall = 0.0
+        else:
+            overall = round(
+                0.40 * ocr_conf_dim
+                + 0.25 * mapping_conf
+                + 0.25 * conv_conf
+                + 0.10 * clin_conf,
+                4,
+            )
+
+        # Build human-readable reasons for the review UI.
+        reasons: list[str] = []
+        if ocr_conf_dim < 1.0:
+            reasons.append("⚠ OCR: đơn vị không trích xuất được từ văn bản")
+        else:
+            reasons.append("✓ OCR: giá trị và đơn vị được trích xuất")
+        reasons.append("✓ Ánh xạ: chỉ số được nhận diện chính xác")
+        if conv_conf == 0.0:
+            reasons.append("⚠ Chuyển đổi: đơn vị không phù hợp lâm sàng")
+        elif conv_conf == 0.6:
+            reasons.append("⚠ Chuyển đổi: đơn vị không khớp chính xác với hệ chuẩn")
+        elif conv_conf == 0.7:
+            reasons.append("⚠ Chuyển đổi: thiếu đơn vị để xác nhận")
+        else:
+            reasons.append("✓ Chuyển đổi: đơn vị khớp hoặc đã quy đổi thành công")
+        if clin_conf == 0.0:
+            reasons.append("⚠ Lâm sàng: giá trị ngoài khoảng sinh lý — có thể lỗi OCR")
+        else:
+            reasons.append("✓ Lâm sàng: giá trị trong khoảng sinh lý")
+
+        detail = ConfidenceDetail(
+            ocr=ocr_conf_dim,
+            mapping=mapping_conf,
+            conversion=conv_conf,
+            clinical=clin_conf,
+            overall=overall,
+            reasons=reasons,
+        )
 
         _logger.debug(
             "ocr_confidence_breakdown",
             extra={
                 "canonical": spec.canonical,
-                "parse_confidence": round(parse_conf, 3),
+                "overall": overall,
+                "ocr": ocr_conf_dim,
+                "mapping": mapping_conf,
+                "conversion": conv_conf,
+                "clinical": clin_conf,
                 "extracted_unit": unit or "",
                 "expected_unit": spec.unit or "",
             },
@@ -212,7 +293,8 @@ def parse_lab_text(
             test_name=spec.canonical,
             value=value,
             unit=unit or spec.unit,
-            ocr_confidence=parse_conf,
+            ocr_confidence=overall,
+            confidence_detail=detail,
         )
     # Preserve biomarker declaration order for a stable, readable draft.
     order = {spec.canonical: i for i, spec in enumerate(BIOMARKERS)}
