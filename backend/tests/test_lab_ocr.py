@@ -82,6 +82,28 @@ def test_parser_drops_unknown_lines():
     assert lab_parser.parse_lab_text("Tên bệnh nhân: Nguyễn Văn A\nĐịa chỉ: Hà Nội") == []
 
 
+def test_additional_aliases_injected_for_canonical_biomarker():
+    """additional_aliases keyed by a real canonical name are injected into the parser."""
+    from app.domain.hospital_profiles import HospitalProfile
+
+    profile = HospitalProfile(
+        hospital_id="test_hospital",
+        name="Test Hospital",
+        header_patterns=("test hospital",),
+        unit_system="conventional",
+        additional_aliases={
+            "fasting_glucose": ("duong huyet doi", "xet nghiem glucose"),
+        },
+    )
+    text = "test hospital\nxet nghiem glucose 95 mg/dL"
+    values = lab_parser.parse_lab_text(text, hospital_profile=profile)
+    by_name = {v.test_name: v for v in values}
+    assert "fasting_glucose" in by_name, (
+        "hospital-specific alias 'xet nghiem glucose' was not injected for fasting_glucose"
+    )
+    assert by_name["fasting_glucose"].value == pytest.approx(95.0)
+
+
 def test_parser_extended_biomarkers():
     text = (
         "eGFR 85 mL/min\nUrea 18 mg/dL\nGGT 30 U/L\n"
