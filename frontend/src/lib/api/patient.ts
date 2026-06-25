@@ -493,8 +493,8 @@ export interface LabUploadDraftItem {
   original_value?: number | null
   original_unit?: string | null
   // Display fields
-  original_test_name?: string  // exact OCR'd label (e.g. "CHOLESTEROL TOAN PHAN")
-  display_name_vi?: string     // Vietnamese catalog label (e.g. "Cholesterol toàn phần")
+  original_test_name?: string // exact OCR'd label (e.g. "CHOLESTEROL TOAN PHAN")
+  display_name_vi?: string // Vietnamese catalog label (e.g. "Cholesterol toàn phần")
   // Canonical SI values — used by the save path (health metrics)
   canonical_value?: number
   canonical_unit?: string

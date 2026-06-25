@@ -276,11 +276,7 @@ export default function LabUploadPage() {
     const results: ManualLabItem[] = named.map((r) => ({
       test_name: r.test_name.trim(),
       value:
-        r.canonical_value != null
-          ? r.canonical_value
-          : r.value.trim()
-            ? parseFloat(r.value)
-            : null,
+        r.canonical_value != null ? r.canonical_value : r.value.trim() ? parseFloat(r.value) : null,
       unit: r.canonical_unit || r.unit.trim() || null,
       reference_range: r.reference_range.trim() || null,
     }))
