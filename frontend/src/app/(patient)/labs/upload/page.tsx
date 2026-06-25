@@ -42,6 +42,9 @@ interface EditRow {
   needs_verification: boolean
   status: string | null
   confidence_reasons: string[]
+  // Raw OCR value/unit before any SI conversion — displayed as "OCR gốc" (read-only).
+  original_value: number | null
+  original_unit: string | null
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -98,7 +101,10 @@ function ConfidenceBadge({
       {showReasons && (
         <ul className="mt-1 ml-2 space-y-0.5">
           {reasons!.map((r, i) => (
-            <li key={i} className={`text-xs ${r.startsWith('⚠') ? 'text-amber-700' : 'text-green-700'}`}>
+            <li
+              key={i}
+              className={`text-xs ${r.startsWith('⚠') ? 'text-amber-700' : 'text-green-700'}`}
+            >
               {r}
             </li>
           ))}
@@ -208,6 +214,8 @@ export default function LabUploadPage() {
         needs_verification: v.needs_verification,
         status: v.status,
         confidence_reasons: v.confidence_reasons ?? [],
+        original_value: v.original_value ?? null,
+        original_unit: v.original_unit ?? null,
       }))
       // Always give the patient at least one editable row (manual fallback).
       setRows(
@@ -223,6 +231,8 @@ export default function LabUploadPage() {
                 needs_verification: false,
                 status: null,
                 confidence_reasons: [],
+                original_value: null,
+                original_unit: null,
               },
             ]
       )
@@ -539,6 +549,15 @@ export default function LabUploadPage() {
                       <AlertTriangle className="size-4" /> Cần kiểm tra lại số liệu này.
                     </p>
                   )}
+                  {row.original_unit && (
+                    <p className="mt-2 text-[12px] text-neu-subtle">
+                      OCR gốc:{' '}
+                      <span className="font-mono">
+                        {row.original_value != null ? row.original_value : '—'}{' '}
+                        {row.original_unit}
+                      </span>
+                    </p>
+                  )}
                 </NeuCard>
               )
             })}
@@ -557,6 +576,8 @@ export default function LabUploadPage() {
                     needs_verification: false,
                     status: null,
                     confidence_reasons: [],
+                    original_value: null,
+                    original_unit: null,
                   },
                 ])
               }

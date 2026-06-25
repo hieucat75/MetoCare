@@ -121,7 +121,17 @@ def _norm_unit(u: str) -> str:
 _GLOBAL_OCR_CORRECTIONS: dict[str, str] = {
     "pIU/mL": "µIU/mL",  # Azure DI misreads µ as p before IU (TSH, Insulin)
     "pIU/L": "µIU/L",
+    "ρIU/mL": "µIU/mL",  # Greek rho (U+03C1) OCR confusion for µ
+    "ρIU/L": "µIU/L",
 }
+
+# Regex corrections for patterns that cannot be safely handled with simple string replace.
+# Applied after _GLOBAL_OCR_CORRECTIONS, before hospital-profile corrections.
+_GLOBAL_OCR_CORRECTIONS_RE: list[tuple[re.Pattern[str], str]] = [
+    # Azure DI drops the µ prefix from µmol/L, emitting bare mol/L (e.g. creatinine, urea).
+    # Negative lookbehind prevents corrupting mmol/L → mµmol/L.
+    (re.compile(r"(?<![a-zA-Zµμ])mol/L"), "µmol/L"),
+]
 
 
 def _is_incompatible(unit: str, spec: BiomarkerSpec) -> bool:
@@ -146,9 +156,11 @@ def parse_lab_text(
     if not text:
         return []
 
-    # Apply global OCR corrections first (e.g. Azure DI µ→p misread).
+    # Apply global OCR corrections first (e.g. Azure DI µ→p misread, mol/L drop).
     for bad, good in _GLOBAL_OCR_CORRECTIONS.items():
         text = text.replace(bad, good)
+    for pattern, replacement in _GLOBAL_OCR_CORRECTIONS_RE:
+        text = pattern.sub(replacement, text)
 
     if hospital_profile is None:
         hospital_profile = detect_hospital(text)
@@ -199,6 +211,11 @@ def parse_lab_text(
         # alias match from _ALIAS_INDEX (no fuzzy matching emitted).
         mapping_conf = 1.0
 
+        # Capture raw OCR value/unit BEFORE any SI conversion so they can be
+        # shown as "OCR gốc" in the review UI alongside the normalized values.
+        orig_value: float | None = None
+        orig_unit: str | None = None
+
         # ocr_confidence (proxy): did OCR produce a recognizable unit token?
         ocr_conf_dim = 1.0 if unit else 0.7
 
@@ -213,6 +230,8 @@ def parse_lab_text(
         else:
             converted = _try_si_convert(unit, value, spec)
             if converted is not None:
+                orig_value = value
+                orig_unit = unit
                 value = converted
                 unit = spec.unit
                 conv_conf = 1.0
@@ -295,6 +314,8 @@ def parse_lab_text(
             unit=unit or spec.unit,
             ocr_confidence=overall,
             confidence_detail=detail,
+            original_value=orig_value,
+            original_unit=orig_unit,
         )
     # Preserve biomarker declaration order for a stable, readable draft.
     order = {spec.canonical: i for i, spec in enumerate(BIOMARKERS)}

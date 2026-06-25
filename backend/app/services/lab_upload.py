@@ -70,6 +70,9 @@ class DraftItem:
     confidence: float
     needs_verification: bool
     confidence_reasons: list[str] = field(default_factory=list)
+    # Raw OCR value/unit before SI conversion — shown as "OCR gốc" in review UI.
+    original_value: float | None = None
+    original_unit: str | None = None
 
 
 @dataclass
@@ -261,6 +264,8 @@ def build_draft(data: bytes, mime: str) -> LabUploadDraft:
                 confidence_reasons=(
                     b.confidence_detail.reasons if b.confidence_detail else []
                 ),
+                original_value=b.original_value,
+                original_unit=b.original_unit,
             )
         )
 

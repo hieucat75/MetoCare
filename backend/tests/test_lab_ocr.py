@@ -899,6 +899,117 @@ class TestVinmecGroundTruth:
             )
 
 
+# --------------------------------------------------------------------------- #
+# Azure DI OCR correction regression — creatinine mol/L + TSH pIU/mL
+#
+# Azure Document Intelligence is known to:
+#   • Drop the µ prefix from µmol/L → bare mol/L  (creatinine, urea)
+#   • Misread µ as p before IU → pIU/mL            (TSH, Insulin)
+#   • Misread µ as Greek rho ρ → ρIU/mL            (TSH, rarer variant)
+#
+# After the global OCR corrections + SI conversion the draft must NEVER expose
+# the broken raw unit as the canonical display value.
+# --------------------------------------------------------------------------- #
+
+_AZURE_DI_BUGGY_TEXT = """\
+CREATININE 82.2 mol/L 44 - 80
+TSH 1.26 pIU/mL 0.4 - 4.0
+UREA 4.47 mmol/L 2.5 - 7.5
+GLUCOSE 5.1 mmol/L 3.9 - 6.1
+"""
+
+_AZURE_DI_BUGGY_RHO = """\
+TSH 2.5 ρIU/mL 0.4 - 4.0
+"""
+
+
+class TestAzureDiOcrCorrections:
+    def test_creatinine_mol_l_corrected_to_umol_l_and_converted(self):
+        """Azure DI drops µ from µmol/L → mol/L. Must be corrected and SI-converted."""
+        values = lab_parser.parse_lab_text("Creatinine 82.2 mol/L")
+        assert values, "creatinine not parsed"
+        v = values[0]
+        assert v.unit == "mg/dL", f"expected canonical mg/dL, got '{v.unit}'"
+        assert v.value == pytest.approx(82.2 * 0.011312, rel=1e-3)
+        assert v.ocr_confidence > 0.7, f"confidence too low: {v.ocr_confidence}"
+        # original_value/original_unit capture the pre-conversion raw OCR
+        assert v.original_value == pytest.approx(82.2)
+        assert v.original_unit == "µmol/L"
+
+    def test_creatinine_no_mol_l_in_draft(self):
+        """Draft payload must never expose bare mol/L for creatinine."""
+        values = lab_parser.parse_lab_text(_AZURE_DI_BUGGY_TEXT)
+        by_name = {v.test_name: v for v in values}
+        assert "creatinine" in by_name
+        cr = by_name["creatinine"]
+        assert cr.unit != "mol/L", "bare mol/L leaked through as canonical unit"
+
+    def test_tsh_piu_ml_corrected_and_converted(self):
+        """Azure DI misreads µ as p → pIU/mL. Must be corrected to mIU/L."""
+        values = lab_parser.parse_lab_text("TSH 1.26 pIU/mL")
+        assert values, "TSH not parsed"
+        v = values[0]
+        assert v.unit == "mIU/L", f"expected mIU/L, got '{v.unit}'"
+        assert v.value == pytest.approx(1.26, rel=1e-3)
+        assert v.ocr_confidence > 0.7, f"confidence too low: {v.ocr_confidence}"
+
+    def test_tsh_piu_ml_not_in_draft(self):
+        """Draft payload must never expose pIU/mL for TSH."""
+        values = lab_parser.parse_lab_text(_AZURE_DI_BUGGY_TEXT)
+        by_name = {v.test_name: v for v in values}
+        assert "tsh" in by_name
+        assert by_name["tsh"].unit != "pIU/mL", "pIU/mL leaked through as canonical unit"
+
+    def test_tsh_greek_rho_variant_corrected(self):
+        """Greek rho ρ (U+03C1) variant of µ misread → must also be corrected."""
+        values = lab_parser.parse_lab_text(_AZURE_DI_BUGGY_RHO)
+        assert values, "TSH not parsed from ρIU/mL text"
+        v = values[0]
+        assert v.unit == "mIU/L", f"expected mIU/L, got '{v.unit}'"
+
+    def test_mmol_l_not_corrupted_by_mol_l_correction(self):
+        """mol/L correction must NOT touch mmol/L (glucose/urea use mmol/L)."""
+        values = lab_parser.parse_lab_text("GLUCOSE 5.1 mmol/L\nUREA 4.47 mmol/L")
+        by_name = {v.test_name: v for v in values}
+        assert by_name["fasting_glucose"].unit == "mg/dL"
+        assert by_name["urea"].unit == "mg/dL"
+        assert by_name["fasting_glucose"].ocr_confidence > 0.7
+        assert by_name["urea"].ocr_confidence > 0.7
+
+    def test_si_converted_item_has_original_value_unit(self):
+        """When SI conversion fires, original_value/original_unit must be set."""
+        values = lab_parser.parse_lab_text("GLUCOSE 5.1 mmol/L")
+        assert values
+        v = values[0]
+        assert v.original_value == pytest.approx(5.1)
+        assert v.original_unit == "mmol/L"
+        assert v.unit == "mg/dL"
+
+    def test_no_conversion_no_original_fields(self):
+        """When no SI conversion needed, original_value/original_unit stay None."""
+        values = lab_parser.parse_lab_text("Glucose 126 mg/dL")
+        assert values
+        v = values[0]
+        assert v.original_value is None
+        assert v.original_unit is None
+
+    def test_draft_build_no_mol_l_for_creatinine(self, monkeypatch):
+        """build_draft: creatinine in draft must not have mol/L as unit."""
+        _patch_ocr(monkeypatch, text=_AZURE_DI_BUGGY_TEXT, confidence=0.95)
+        draft = lab_upload.process_bytes(_png())
+        by_canonical = {i.canonical: i for i in draft.parsed_values}
+        if "creatinine" in by_canonical:
+            assert by_canonical["creatinine"].unit != "mol/L"
+
+    def test_draft_build_no_piu_ml_for_tsh(self, monkeypatch):
+        """build_draft: TSH in draft must not have pIU/mL as unit."""
+        _patch_ocr(monkeypatch, text=_AZURE_DI_BUGGY_TEXT, confidence=0.95)
+        draft = lab_upload.process_bytes(_png())
+        by_canonical = {i.canonical: i for i in draft.parsed_values}
+        if "tsh" in by_canonical:
+            assert by_canonical["tsh"].unit != "pIU/mL"
+
+
 class TestIncompatibleUnitRejection:
     """Clinically nonsensical units must produce ocr_confidence=0.0."""
 

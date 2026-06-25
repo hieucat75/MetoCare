@@ -266,6 +266,10 @@ class RawLabValue:
     unit: str | None = None
     ocr_confidence: float = 1.0
     confidence_detail: ConfidenceDetail | None = None
+    # Raw OCR value/unit before SI conversion or OCR correction — used by the
+    # review UI to show "OCR gốc" alongside the normalized display value.
+    original_value: float | None = None
+    original_unit: str | None = None
 
 
 @dataclass
@@ -280,6 +284,8 @@ class InterpretedBiomarker:
     needs_verification: bool
     patient_note: str = ""
     confidence_detail: ConfidenceDetail | None = None
+    original_value: float | None = None
+    original_unit: str | None = None
 
 
 def classify_value(canonical: str, value: float) -> LabStatus:
@@ -339,6 +345,8 @@ def interpret_value(raw: RawLabValue) -> InterpretedBiomarker:
             needs_verification=True,
             patient_note="Gia tri vuot ngoai gioi han sinh ly. Vui long kiem tra lai.",
             confidence_detail=raw.confidence_detail,
+            original_value=raw.original_value,
+            original_unit=raw.original_unit,
         )
     status = classify_value(canonical, raw.value)
     needs_verification = raw.ocr_confidence < OCR_CONFIDENCE_THRESHOLD
@@ -357,6 +365,8 @@ def interpret_value(raw: RawLabValue) -> InterpretedBiomarker:
         needs_verification=needs_verification,
         patient_note=note,
         confidence_detail=raw.confidence_detail,
+        original_value=raw.original_value,
+        original_unit=raw.original_unit,
     )
 
 

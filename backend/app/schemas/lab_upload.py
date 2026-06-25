@@ -8,13 +8,17 @@ from pydantic import BaseModel, Field
 class LabUploadDraftItemOut(BaseModel):
     test_name: str          # canonical key — feeds straight into the confirm-save form
     canonical: str
-    value: float
-    unit: str
+    value: float            # normalized/canonical value (after SI conversion if any)
+    unit: str               # normalized/canonical unit
     reference_range: str | None = None
     status: str             # normal | low | high | critical | unknown
     confidence: float
     needs_verification: bool
     confidence_reasons: list[str] = Field(default_factory=list)
+    # Raw OCR value/unit before SI conversion — shown as "OCR gốc" in review UI.
+    # None when no conversion was applied (value/unit are already canonical).
+    original_value: float | None = None
+    original_unit: str | None = None
 
 
 class LabUploadDraftOut(BaseModel):
