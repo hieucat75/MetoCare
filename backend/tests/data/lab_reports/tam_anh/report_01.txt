@@ -1,0 +1,6 @@
+BENH VIEN TAM ANH
+Benh nhan: PATIENT-ANON-03
+TSH 8.50 uIU/mL
+FT4 9.5 pmol/L
+FT3 2.8 pmol/L
+GLUCOSE 5.1 mmol/L

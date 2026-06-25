@@ -39,6 +39,7 @@ interface EditRow {
   unit: string
   reference_range: string
   confidence: number | null // null = manually added row
+  needs_verification: boolean
   status: string | null
 }
 
@@ -54,6 +55,37 @@ function confidenceBadge(c: number | null): { label: string; tone: NeuTone } {
   if (c >= 0.85) return { label: 'Độ tin cậy cao', tone: 'ok' }
   if (c >= 0.6) return { label: 'Cần kiểm tra', tone: 'watch' }
   return { label: 'Tin cậy thấp', tone: 'alert' }
+}
+
+function ConfidenceBadge({
+  confidence,
+  needsVerification,
+}: {
+  confidence: number | null
+  needsVerification: boolean
+}) {
+  if (confidence === 0) {
+    return (
+      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-red-50 border border-red-200 text-red-700 ml-2">
+        Gia tri khong hop le - can kiem tra lai
+      </span>
+    )
+  }
+  if (confidence !== null && confidence < 0.75) {
+    return (
+      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-amber-50 border border-amber-200 text-amber-700 ml-2">
+        Do tin cay thap - nen xac nhan
+      </span>
+    )
+  }
+  if (needsVerification) {
+    return (
+      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-blue-50 border border-blue-200 text-blue-700 ml-2">
+        Can xac nhan
+      </span>
+    )
+  }
+  return null
 }
 
 // ── Mode picker ────────────────────────────────────────────────────────────────
@@ -153,6 +185,7 @@ export default function LabUploadPage() {
         unit: v.unit ?? '',
         reference_range: v.reference_range ?? '',
         confidence: v.confidence,
+        needs_verification: v.needs_verification,
         status: v.status,
       }))
       // Always give the patient at least one editable row (manual fallback).
@@ -166,6 +199,7 @@ export default function LabUploadPage() {
                 unit: '',
                 reference_range: '',
                 confidence: null,
+                needs_verification: false,
                 status: null,
               },
             ]
@@ -418,12 +452,18 @@ export default function LabUploadPage() {
               return (
                 <NeuCard key={i}>
                   <div className="mb-2 flex items-start justify-between gap-2">
-                    <NeuBadge
-                      tone={badge.tone}
-                      className="!text-[11px] !px-2.5 !py-0.5 before:!hidden"
-                    >
-                      {badge.label}
-                    </NeuBadge>
+                    <div className="flex items-center flex-wrap gap-1">
+                      <NeuBadge
+                        tone={badge.tone}
+                        className="!text-[11px] !px-2.5 !py-0.5 before:!hidden"
+                      >
+                        {badge.label}
+                      </NeuBadge>
+                      <ConfidenceBadge
+                        confidence={row.confidence}
+                        needsVerification={row.needs_verification}
+                      />
+                    </div>
                     <div className="flex items-center gap-2">
                       {row.status && STATUS_LABEL[row.status] && (
                         <span className="text-[13px] text-neu-subtle">
@@ -491,6 +531,7 @@ export default function LabUploadPage() {
                     unit: '',
                     reference_range: '',
                     confidence: null,
+                    needs_verification: false,
                     status: null,
                   },
                 ])

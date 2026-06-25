@@ -89,21 +89,31 @@ export default function PatientDashboardPage() {
       getHealthSummary(patientId),
       getAdherenceSummary(patientId).catch(() => null),
     ])
-      .then(([metricsResp, liveScore, medsResp, labsResp, profile, healthSummary, adherenceSummary]) => {
-        const metricItems = metricsResp.items ?? []
-        setData({
-          summary: buildDashboardSummary(metricItems, catalog),
-          series: catalog
-            ? groupMetricsByCategory(metricItems, catalog).flatMap((b) => b.series)
-            : [],
+      .then(
+        ([
+          metricsResp,
           liveScore,
-          medications: medsResp.items ?? [],
-          labs: labsResp.items ?? [],
+          medsResp,
+          labsResp,
           profile,
           healthSummary,
           adherenceSummary,
-        })
-      })
+        ]) => {
+          const metricItems = metricsResp.items ?? []
+          setData({
+            summary: buildDashboardSummary(metricItems, catalog),
+            series: catalog
+              ? groupMetricsByCategory(metricItems, catalog).flatMap((b) => b.series)
+              : [],
+            liveScore,
+            medications: medsResp.items ?? [],
+            labs: labsResp.items ?? [],
+            profile,
+            healthSummary,
+            adherenceSummary,
+          })
+        }
+      )
       .catch((err: Error) => setError(err.message))
       .finally(() => setLoading(false))
   }, [patientId, catalog])
@@ -373,7 +383,10 @@ function AdherenceReminderSection({
           <div className="flex items-center gap-3">
             <span
               className="grid size-[52px] shrink-0 place-items-center rounded-[16px] text-white"
-              style={{ background: PINK_GRADIENT, boxShadow: '0 8px 16px -8px rgba(229,84,126,0.6)' }}
+              style={{
+                background: PINK_GRADIENT,
+                boxShadow: '0 8px 16px -8px rgba(229,84,126,0.6)',
+              }}
               aria-hidden="true"
             >
               <Pill className="size-6" />
@@ -399,10 +412,7 @@ function AdherenceReminderSection({
           value={`${Math.round(adherenceSummary.weekly_rate * 100)}%`}
         />
         <div className="h-8 w-px bg-neu-border" aria-hidden="true" />
-        <AdherenceStat
-          label="Chuỗi"
-          value={`${adherenceSummary.current_streak} ngày`}
-        />
+        <AdherenceStat label="Chuỗi" value={`${adherenceSummary.current_streak} ngày`} />
         <div className="h-8 w-px bg-neu-border" aria-hidden="true" />
         <AdherenceStat
           label="Tổng thể"

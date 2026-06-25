@@ -176,6 +176,21 @@ def interpret_document(
     db.flush()
     # Promote into health_metrics so the dashboard + trends reflect these results.
     promote_lab_rows_to_metrics(db, patient_id=doc.patient_id, rows=new_rows, test_date=None)
+
+    # Record OCR pipeline metrics (internal telemetry).
+    from app.domain import hospital_profiles as _hp
+    from app.services import ocr_metrics as _ocr_metrics
+
+    _bm = interpretation.biomarkers
+    _prof = _hp.detect_hospital(getattr(doc, "raw_text", "") or "")
+    _ocr_metrics.get_metrics().record_upload(
+        hospital_id=_prof.hospital_id if _prof else None,
+        biomarkers_found=len(_bm),
+        unknown_biomarkers=sum(1 for b in _bm if b.canonical == "unknown"),
+        avg_confidence=sum(b.ocr_confidence for b in _bm) / max(len(_bm), 1),
+        success=True,
+    )
+
     audit.record(
         db,
         actor_type="user",

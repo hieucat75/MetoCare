@@ -106,7 +106,9 @@ def list_consents(
 def _validate_granted_to(granted_to: str, db: Session) -> None:
     """granted_to must be the user_id of an active DOCTOR. AC-11."""
     from sqlalchemy import select as _select
-    from app.models.user import User as _User, UserRole as _UserRole
+
+    from app.models.user import User as _User
+    from app.models.user import UserRole as _UserRole
     target = db.execute(
         _select(_User).where(
             _User.id == granted_to,

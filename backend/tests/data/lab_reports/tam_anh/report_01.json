@@ -1,0 +1,9 @@
+{
+  "hospital_id": "tam_anh",
+  "expected_biomarkers": {
+    "tsh": {"value_mg_dl": 8.5, "unit": "mIU/L", "status": "high"},
+    "ft4": {"value_mg_dl": 9.5, "unit": "pmol/L", "status": "low"},
+    "ft3": {"value_mg_dl": 2.8, "unit": "pmol/L", "status": "low"},
+    "fasting_glucose": {"value_mg_dl": 91.8918, "unit": "mg/dL", "status": "normal"}
+  }
+}

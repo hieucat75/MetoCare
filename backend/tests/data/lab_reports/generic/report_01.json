@@ -1,0 +1,12 @@
+{
+  "hospital_id": null,
+  "expected_biomarkers": {
+    "fasting_glucose": {"value_mg_dl": 92.0, "unit": "mg/dL", "status": "normal"},
+    "alt": {"value_mg_dl": 35.0, "unit": "U/L", "status": "normal"},
+    "total_cholesterol": {"value_mg_dl": 185.0, "unit": "mg/dL", "status": "normal"},
+    "triglyceride": {"value_mg_dl": 140.0, "unit": "mg/dL", "status": "normal"},
+    "hdl": {"value_mg_dl": 52.0, "unit": "mg/dL", "status": "normal"},
+    "ldl": {"value_mg_dl": 96.0, "unit": "mg/dL", "status": "normal"},
+    "hba1c": {"value_mg_dl": 5.2, "unit": "%", "status": "normal"}
+  }
+}

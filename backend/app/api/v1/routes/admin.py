@@ -16,10 +16,17 @@ from app.api.deps import CurrentUser, get_session, require_mfa, require_roles
 from app.core.ratelimit import get_lockout
 from app.models.governance import AuditLog
 from app.models.user import UserRole
-from app.schemas.admin import DoctorAdminOut, DoctorCreateRequest, UnlockRequest, UserAdminOut, UserAuditLogOut, UserRoleUpdate
-from app.services.doctor import create_doctor_account
+from app.schemas.admin import (
+    DoctorAdminOut,
+    DoctorCreateRequest,
+    UnlockRequest,
+    UserAdminOut,
+    UserAuditLogOut,
+    UserRoleUpdate,
+)
 from app.schemas.common import Message
 from app.services import admin_users, audit
+from app.services.doctor import create_doctor_account
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 

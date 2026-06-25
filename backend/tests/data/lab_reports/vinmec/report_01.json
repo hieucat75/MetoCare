@@ -1,0 +1,16 @@
+{
+  "hospital_id": "vinmec",
+  "expected_biomarkers": {
+    "fasting_glucose": {"value_mg_dl": 93.6936, "unit": "mg/dL", "status": "normal"},
+    "alt": {"value_mg_dl": 28.0, "unit": "U/L", "status": "normal"},
+    "ast": {"value_mg_dl": 22.0, "unit": "U/L", "status": "normal"},
+    "total_cholesterol": {"value_mg_dl": 185.616, "unit": "mg/dL", "status": "normal"},
+    "triglyceride": {"value_mg_dl": 132.855, "unit": "mg/dL", "status": "normal"},
+    "hdl": {"value_mg_dl": 50.271, "unit": "mg/dL", "status": "normal"},
+    "ldl": {"value_mg_dl": 112.143, "unit": "mg/dL", "status": "high"},
+    "tsh": {"value_mg_dl": 2.1, "unit": "mIU/L", "status": "normal"},
+    "ft3": {"value_mg_dl": 4.2, "unit": "pmol/L", "status": "normal"},
+    "ft4": {"value_mg_dl": 15.0, "unit": "pmol/L", "status": "normal"},
+    "hba1c": {"value_mg_dl": 5.4, "unit": "%", "status": "normal"}
+  }
+}

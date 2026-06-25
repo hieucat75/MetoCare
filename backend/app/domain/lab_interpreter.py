@@ -47,69 +47,161 @@ class BiomarkerSpec:
     si_factor: float = 1.0
     # Units that are clinically impossible for this biomarker — trigger confidence=0.
     incompatible_units: tuple[str, ...] = ()
+    # Absolute physiological bounds: values outside these are OCR errors or impossible.
+    physiological_min: float | None = None
+    physiological_max: float | None = None
 
 
 # Adult, fasting where relevant. Screening reference ranges only.
 BIOMARKERS: tuple[BiomarkerSpec, ...] = (
-    BiomarkerSpec("fasting_glucose", ("glucose", "đường huyết đói", "glucose máu", "duong huyet"),
-                  "mg/dL", 70, 99, critical_low=54, critical_high=300,
-                  si_unit="mmol/L", si_factor=18.018,
-                  incompatible_units=("IU/mL", "mIU/L", "mIU/mL", "µIU/mL", "pmol/L", "nmol/L")),
-    BiomarkerSpec("hba1c", ("hba1c", "a1c", "đường huyết trung bình"),
-                  "%", 4.0, 5.6, critical_high=10.0),
-    BiomarkerSpec("ldl", ("ldl", "ldl-c", "ldl cholesterol", "cholesterol xấu"),
-                  "mg/dL", 0, 99, critical_high=190,
-                  si_unit="mmol/L", si_factor=38.67,
-                  incompatible_units=("IU/mL", "mIU/L", "mIU/mL", "µIU/mL", "pmol/L", "nmol/L")),
-    BiomarkerSpec("hdl", ("hdl", "hdl-c", "cholesterol tốt"),
-                  "mg/dL", 40, 200, critical_low=20,
-                  si_unit="mmol/L", si_factor=38.67,
-                  incompatible_units=("IU/mL", "mIU/L", "mIU/mL", "µIU/mL", "pmol/L", "nmol/L")),
-    BiomarkerSpec("triglyceride",
-                  ("triglyceride", "triglycerides", "triglycerid", "tg", "mỡ máu"),
-                  "mg/dL", 0, 149, critical_high=500,
-                  si_unit="mmol/L", si_factor=88.57,
-                  incompatible_units=("IU/mL", "mIU/L", "mIU/mL", "µIU/mL", "pmol/L", "nmol/L")),
-    BiomarkerSpec("total_cholesterol",
-                  ("cholesterol toàn phần", "total cholesterol", "cholesterol"),
-                  "mg/dL", 0, 199, critical_high=300,
-                  si_unit="mmol/L", si_factor=38.67,
-                  incompatible_units=("IU/mL", "mIU/L", "mIU/mL", "µIU/mL", "pmol/L", "nmol/L")),
-    BiomarkerSpec("alt", ("alt", "sgpt", "men gan alt"),
-                  "U/L", 7, 56, critical_high=300,
-                  incompatible_units=("mg/dL", "mmol/L", "mIU/L", "µIU/mL", "pmol/L", "nmol/L")),
-    BiomarkerSpec("ast", ("ast", "sgot", "men gan ast"),
-                  "U/L", 10, 40, critical_high=300,
-                  incompatible_units=("mg/dL", "mmol/L", "mIU/L", "µIU/mL", "pmol/L", "nmol/L")),
-    BiomarkerSpec("creatinine", ("creatinine", "creatinin"),
-                  "mg/dL", 0.6, 1.3, critical_high=4.0),
-    BiomarkerSpec("egfr", ("egfr", "gfr", "mức lọc cầu thận", "muc loc cau than"),
-                  "mL/min/1.73m²", 60, 200, critical_low=15),
-    BiomarkerSpec("urea", ("urea", "ure", "bun", "blood urea nitrogen", "u rê"),
-                  "mg/dL", 7, 20, critical_high=100),
-    BiomarkerSpec("ggt", ("ggt", "gamma gt", "gamma-glutamyl", "men gan ggt"),
-                  "U/L", 9, 48, critical_high=300),
-    BiomarkerSpec("tsh", ("tsh",),
-                  "mIU/L", 0.4, 4.0, critical_low=0.01, critical_high=20.0,
-                  si_unit="µIU/mL", si_factor=1.0,
-                  incompatible_units=("mg/dL", "mmol/L", "g/dL", "U/L", "ng/mL", "pmol/L")),
-    BiomarkerSpec("ft4", ("ft4", "free t4", "ft 4", "free thyroxine"),
-                  "pmol/L", 12.0, 22.0, critical_low=3.0, critical_high=50.0,
-                  incompatible_units=("mg/dL", "mmol/L", "g/dL", "mIU/L", "µIU/mL", "U/L")),
-    BiomarkerSpec("ft3", ("ft3", "free t3", "ft 3", "free triiodothyronine"),
-                  "pmol/L", 3.1, 6.8, critical_low=1.0, critical_high=20.0,
-                  incompatible_units=("mg/dL", "mmol/L", "g/dL", "mIU/L", "µIU/mL", "U/L")),
+    BiomarkerSpec(
+        "fasting_glucose",
+        ("glucose", "đường huyết đói", "glucose máu", "duong huyet",
+         "duong huyet luc doi", "dinh luong glucose", "glucose huyet tuong",
+         "blood glucose", "fbg", "fbs", "fasting plasma glucose", "fpg",
+         "fasting blood glucose"),
+        "mg/dL", 70, 99, critical_low=54, critical_high=300,
+        si_unit="mmol/L", si_factor=18.018,
+        incompatible_units=("IU/mL", "mIU/L", "mIU/mL", "µIU/mL", "pmol/L", "nmol/L"),
+        physiological_min=20, physiological_max=1500,
+    ),
+    BiomarkerSpec(
+        "hba1c",
+        ("hba1c", "a1c", "đường huyết trung bình",
+         "hemoglobin a1c", "haemoglobin a1c", "glycated hemoglobin", "glycohemoglobin"),
+        "%", 4.0, 5.6, critical_high=10.0,
+        physiological_min=2, physiological_max=20,
+    ),
+    BiomarkerSpec(
+        "ldl",
+        ("ldl", "ldl-c", "ldl cholesterol", "cholesterol xấu"),
+        "mg/dL", 0, 99, critical_high=190,
+        si_unit="mmol/L", si_factor=38.67,
+        incompatible_units=("IU/mL", "mIU/L", "mIU/mL", "µIU/mL", "pmol/L", "nmol/L"),
+        physiological_min=0, physiological_max=800,
+    ),
+    BiomarkerSpec(
+        "hdl",
+        ("hdl", "hdl-c", "cholesterol tốt"),
+        "mg/dL", 40, 200, critical_low=20,
+        si_unit="mmol/L", si_factor=38.67,
+        incompatible_units=("IU/mL", "mIU/L", "mIU/mL", "µIU/mL", "pmol/L", "nmol/L"),
+        physiological_min=5, physiological_max=200,
+    ),
+    BiomarkerSpec(
+        "triglyceride",
+        ("triglyceride", "triglycerides", "triglycerid", "tg", "mỡ máu",
+         "trig", "tg mau", "mo mau"),
+        "mg/dL", 0, 149, critical_high=500,
+        si_unit="mmol/L", si_factor=88.57,
+        incompatible_units=("IU/mL", "mIU/L", "mIU/mL", "µIU/mL", "pmol/L", "nmol/L"),
+        physiological_min=10, physiological_max=10000,
+    ),
+    BiomarkerSpec(
+        "total_cholesterol",
+        ("cholesterol toàn phần", "total cholesterol", "cholesterol",
+         "tc", "total chol", "chol tp", "cholesterol tp"),
+        "mg/dL", 0, 199, critical_high=300,
+        si_unit="mmol/L", si_factor=38.67,
+        incompatible_units=("IU/mL", "mIU/L", "mIU/mL", "µIU/mL", "pmol/L", "nmol/L"),
+        physiological_min=50, physiological_max=1000,
+    ),
+    BiomarkerSpec(
+        "alt",
+        ("alt", "sgpt", "men gan alt",
+         "alanine aminotransferase", "alanine transaminase", "gpt", "alat"),
+        "U/L", 7, 56, critical_high=300,
+        incompatible_units=("mg/dL", "mmol/L", "mIU/L", "µIU/mL", "pmol/L", "nmol/L"),
+        physiological_min=0, physiological_max=15000,
+    ),
+    BiomarkerSpec(
+        "ast",
+        ("ast", "sgot", "men gan ast",
+         "aspartate aminotransferase", "aspartate transaminase", "got", "asat"),
+        "U/L", 10, 40, critical_high=300,
+        incompatible_units=("mg/dL", "mmol/L", "mIU/L", "µIU/mL", "pmol/L", "nmol/L"),
+        physiological_min=0, physiological_max=15000,
+    ),
+    BiomarkerSpec(
+        "creatinine",
+        ("creatinine", "creatinin",
+         "crea", "creat", "creatinine mau", "serum creatinine", "scr", "cr"),
+        "mg/dL", 0.6, 1.3, critical_high=4.0,
+        physiological_min=0.1, physiological_max=30,
+    ),
+    BiomarkerSpec(
+        "egfr",
+        ("egfr", "gfr", "mức lọc cầu thận", "muc loc cau than",
+         "estimated gfr", "ckd-epi", "mdrd epi"),
+        "mL/min/1.73m²", 60, 200, critical_low=15,
+        physiological_min=0, physiological_max=200,
+    ),
+    BiomarkerSpec(
+        "urea",
+        ("urea", "ure", "bun", "blood urea nitrogen", "u rê",
+         "ure mau", "bun serum"),
+        "mg/dL", 7, 20, critical_high=100,
+        physiological_min=1, physiological_max=300,
+    ),
+    BiomarkerSpec(
+        "ggt",
+        ("ggt", "gamma gt", "gamma-glutamyl", "men gan ggt"),
+        "U/L", 9, 48, critical_high=300,
+        physiological_min=0, physiological_max=5000,
+    ),
+    BiomarkerSpec(
+        "tsh",
+        ("tsh", "thyroid stimulating hormone", "thyrotropin"),
+        "mIU/L", 0.4, 4.0, critical_low=0.01, critical_high=20.0,
+        si_unit="µIU/mL", si_factor=1.0,
+        incompatible_units=("mg/dL", "mmol/L", "g/dL", "U/L", "ng/mL", "pmol/L"),
+        physiological_min=0, physiological_max=500,
+    ),
+    BiomarkerSpec(
+        "ft4",
+        ("ft4", "free t4", "ft 4", "free thyroxine"),
+        "pmol/L", 12.0, 22.0, critical_low=3.0, critical_high=50.0,
+        incompatible_units=("mg/dL", "mmol/L", "g/dL", "mIU/L", "µIU/mL", "U/L"),
+        physiological_min=0, physiological_max=100,
+    ),
+    BiomarkerSpec(
+        "ft3",
+        ("ft3", "free t3", "ft 3", "free triiodothyronine"),
+        "pmol/L", 3.1, 6.8, critical_low=1.0, critical_high=20.0,
+        incompatible_units=("mg/dL", "mmol/L", "g/dL", "mIU/L", "µIU/mL", "U/L"),
+        physiological_min=0, physiological_max=50,
+    ),
     # ---- Basic CBC (detected when present) ----
-    BiomarkerSpec("hemoglobin", ("hemoglobin", "hgb", "hb", "huyết sắc tố", "huyet sac to"),
-                  "g/dL", 12.0, 17.5, critical_low=7.0, critical_high=20.0),
-    BiomarkerSpec("wbc", ("wbc", "bạch cầu", "bach cau", "white blood cell", "leukocyte"),
-                  "10^9/L", 4.0, 10.0, critical_low=1.0, critical_high=30.0),
-    BiomarkerSpec("platelet", ("platelet", "plt", "tiểu cầu", "tieu cau"),
-                  "10^9/L", 150, 400, critical_low=50, critical_high=1000),
-    BiomarkerSpec("rbc", ("rbc", "hồng cầu", "hong cau", "red blood cell"),
-                  "10^12/L", 4.2, 5.9, critical_low=2.5),
-    BiomarkerSpec("hematocrit", ("hematocrit", "hct", "dung tích hồng cầu"),
-                  "%", 36.0, 50.0, critical_low=20.0),
+    BiomarkerSpec(
+        "hemoglobin",
+        ("hemoglobin", "hgb", "hb", "huyết sắc tố", "huyet sac to", "haemoglobin"),
+        "g/dL", 12.0, 17.5, critical_low=7.0, critical_high=20.0,
+        physiological_min=1, physiological_max=25,
+    ),
+    BiomarkerSpec(
+        "wbc",
+        ("wbc", "bạch cầu", "bach cau", "white blood cell", "leukocyte"),
+        "10^9/L", 4.0, 10.0, critical_low=1.0, critical_high=30.0,
+        physiological_min=0, physiological_max=500,
+    ),
+    BiomarkerSpec(
+        "platelet",
+        ("platelet", "plt", "tiểu cầu", "tieu cau"),
+        "10^9/L", 150, 400, critical_low=50, critical_high=1000,
+        physiological_min=0, physiological_max=3000,
+    ),
+    BiomarkerSpec(
+        "rbc",
+        ("rbc", "hồng cầu", "hong cau", "red blood cell"),
+        "10^12/L", 4.2, 5.9, critical_low=2.5,
+        physiological_min=0.5, physiological_max=10,
+    ),
+    BiomarkerSpec(
+        "hematocrit",
+        ("hematocrit", "hct", "dung tích hồng cầu"),
+        "%", 36.0, 50.0, critical_low=20.0,
+        physiological_min=5, physiological_max=75,
+    ),
     # ---- Additional required biomarkers ----
     BiomarkerSpec(
         "uric_acid",
@@ -117,6 +209,7 @@ BIOMARKERS: tuple[BiomarkerSpec, ...] = (
         # _strip_accents produces the same output as from scanned Vietnamese text.
         ("uric acid", "axit uric", "axit uric máu", "acid uric", "uric"),
         "mg/dL", 3.5, 7.0, critical_high=10.0,
+        physiological_min=0.5, physiological_max=30,
     ),
     BiomarkerSpec(
         "random_glucose",
@@ -127,6 +220,7 @@ BIOMARKERS: tuple[BiomarkerSpec, ...] = (
         "mg/dL", 70, 139, critical_low=54, critical_high=300,
         si_unit="mmol/L", si_factor=18.018,
         incompatible_units=("IU/mL", "mIU/L", "mIU/mL", "µIU/mL", "pmol/L", "nmol/L"),
+        physiological_min=20, physiological_max=1500,
     ),
 )
 
@@ -216,6 +310,20 @@ def interpret_value(raw: RawLabValue) -> InterpretedBiomarker:
         )
 
     spec = _ALIAS_INDEX[canonical]
+    check_lo = spec.physiological_min is not None and raw.value < spec.physiological_min
+    check_hi = spec.physiological_max is not None and raw.value > spec.physiological_max
+    if check_lo or check_hi:
+        return InterpretedBiomarker(
+            canonical=canonical,
+            raw_name=raw.test_name,
+            value=raw.value,
+            unit=raw.unit or spec.unit,
+            status=LabStatus.UNKNOWN,
+            reference_range=str(spec.ref_low) + "-" + str(spec.ref_high) + " " + spec.unit,
+            ocr_confidence=0.0,
+            needs_verification=True,
+            patient_note="Gia tri vuot ngoai gioi han sinh ly. Vui long kiem tra lai.",
+        )
     status = classify_value(canonical, raw.value)
     needs_verification = raw.ocr_confidence < OCR_CONFIDENCE_THRESHOLD
     ref = f"{spec.ref_low}–{spec.ref_high} {spec.unit}"

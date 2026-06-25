@@ -33,6 +33,9 @@ storage/
 !backend/data/
 !backend/data/rag_seed/
 !backend/data/rag_seed/*.md
+# Exception: synthetic regression fixtures (no PHI — generated test data only)
+!backend/tests/data/
+!backend/tests/data/**
 
 # ---- Node / web (future) ----
 node_modules/

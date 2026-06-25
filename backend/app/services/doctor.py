@@ -25,7 +25,6 @@ from app.models.patient import PatientProfile
 from app.models.user import User, UserRole
 from app.services import audit
 
-
 # ---------------------------------------------------------------------------
 # Lookup helpers
 # ---------------------------------------------------------------------------

@@ -11,11 +11,11 @@ already validated access.
 
 from __future__ import annotations
 
+import datetime as dt
+
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
-
-import datetime as dt
 
 from app.core.clock import as_naive_utc, utcnow
 from app.models.clinical import Medication, MedicationAdherence

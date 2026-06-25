@@ -1,0 +1,12 @@
+{
+  "hospital_id": "medlatec",
+  "expected_biomarkers": {
+    "fasting_glucose": {"value_mg_dl": 117.117, "unit": "mg/dL", "status": "high"},
+    "alt": {"value_mg_dl": 68.0, "unit": "U/L", "status": "high"},
+    "total_cholesterol": {"value_mg_dl": 239.754, "unit": "mg/dL", "status": "high"},
+    "triglyceride": {"value_mg_dl": 221.425, "unit": "mg/dL", "status": "high"},
+    "hdl": {"value_mg_dl": 32.8695, "unit": "mg/dL", "status": "low"},
+    "ldl": {"value_mg_dl": 158.547, "unit": "mg/dL", "status": "high"},
+    "hba1c": {"value_mg_dl": 6.2, "unit": "%", "status": "high"}
+  }
+}

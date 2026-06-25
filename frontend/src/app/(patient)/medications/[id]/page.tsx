@@ -146,10 +146,11 @@ function AdherenceHistoryList({ records }: AdherenceHistoryListProps) {
                   if (r.taken_at !== null) {
                     return (
                       <div key={r.id} className="flex items-center gap-2.5">
-                        <CheckCircle2 className="size-4 shrink-0 text-[#0F9C6E]" aria-hidden="true" />
-                        <span className="text-[13px] text-neu-text">
-                          {formatTime(ts)}
-                        </span>
+                        <CheckCircle2
+                          className="size-4 shrink-0 text-[#0F9C6E]"
+                          aria-hidden="true"
+                        />
+                        <span className="text-[13px] text-neu-text">{formatTime(ts)}</span>
                         {r.note && (
                           <span className="text-[12px] text-neu-secondary">· {r.note}</span>
                         )}
@@ -161,9 +162,7 @@ function AdherenceHistoryList({ records }: AdherenceHistoryListProps) {
                       <div key={r.id} className="flex items-center gap-2.5">
                         <XCircle className="size-4 shrink-0 text-neu-muted" aria-hidden="true" />
                         <span className="text-[13px] text-neu-secondary">Bỏ qua</span>
-                        {r.note && (
-                          <span className="text-[12px] text-neu-subtle">· {r.note}</span>
-                        )}
+                        {r.note && <span className="text-[12px] text-neu-subtle">· {r.note}</span>}
                       </div>
                     )
                   }
@@ -294,7 +293,8 @@ export default function MedicationDetailPage() {
 
   const takenToday = todayStatus?.taken_today ?? false
   const skippedToday = todayStatus?.skipped_today ?? false
-  const lastTakenAt = todayStatus?.last_taken_at ?? (history.find((r) => r.taken_at !== null)?.taken_at ?? null)
+  const lastTakenAt =
+    todayStatus?.last_taken_at ?? history.find((r) => r.taken_at !== null)?.taken_at ?? null
   const lastTakenStr = lastTakenAt
     ? new Date(lastTakenAt).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })
     : '—'
@@ -376,21 +376,9 @@ export default function MedicationDetailPage() {
             value={`${Math.round(adherenceRate * 100)}%`}
             color="#0F9C6E"
           />
-          <StatChip
-            label="Hôm nay"
-            value={todayChipValue}
-            color={todayChipColor}
-          />
-          <StatChip
-            label="Lần cuối uống"
-            value={lastTakenStr}
-            color="#2563EB"
-          />
-          <StatChip
-            label="Số lần đã ghi"
-            value={String(history.length)}
-            color="#8B6400"
-          />
+          <StatChip label="Hôm nay" value={todayChipValue} color={todayChipColor} />
+          <StatChip label="Lần cuối uống" value={lastTakenStr} color="#2563EB" />
+          <StatChip label="Số lần đã ghi" value={String(history.length)} color="#8B6400" />
         </div>
       </div>
 

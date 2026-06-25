@@ -2,7 +2,15 @@
 
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
-import { Activity, Bell, ChevronRight, Lock, LogOut, Pencil, Settings as SettingsIcon } from 'lucide-react'
+import {
+  Activity,
+  Bell,
+  ChevronRight,
+  Lock,
+  LogOut,
+  Pencil,
+  Settings as SettingsIcon,
+} from 'lucide-react'
 import { PatientErrorState, PatientSkeleton } from '@/components/patient/states'
 import { NeuCard, NeuButton } from '@/components/patient/neu'
 import { useAuth } from '@/lib/auth/context'
@@ -182,7 +190,9 @@ export default function ProfilePage() {
       .then((p) => setProfile(p))
       .catch((err: Error) => setError(err.message))
       .finally(() => setLoading(false))
-    getAdherenceSummary(patientId).then(setAdherenceSummary).catch(() => {})
+    getAdherenceSummary(patientId)
+      .then(setAdherenceSummary)
+      .catch(() => {})
   }, [patientId])
 
   React.useEffect(() => {
@@ -452,22 +462,34 @@ export default function ProfilePage() {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="rounded-[12px] bg-[#E8F7F2] p-3">
-                  <p className="text-[11px] font-semibold text-[#0F9C6E] uppercase tracking-wide">Tổng thể</p>
-                  <p className="mt-1 text-[22px] font-extrabold text-neu-text">{Math.round(adherenceSummary.adherence_rate * 100)}%</p>
+                  <p className="text-[11px] font-semibold text-[#0F9C6E] uppercase tracking-wide">
+                    Tổng thể
+                  </p>
+                  <p className="mt-1 text-[22px] font-extrabold text-neu-text">
+                    {Math.round(adherenceSummary.adherence_rate * 100)}%
+                  </p>
                 </div>
                 <div className="rounded-[12px] bg-[#F0F4FF] p-3">
-                  <p className="text-[11px] font-semibold text-[#2563EB] uppercase tracking-wide">7 ngày qua</p>
-                  <p className="mt-1 text-[22px] font-extrabold text-neu-text">{Math.round(adherenceSummary.weekly_rate * 100)}%</p>
+                  <p className="text-[11px] font-semibold text-[#2563EB] uppercase tracking-wide">
+                    7 ngày qua
+                  </p>
+                  <p className="mt-1 text-[22px] font-extrabold text-neu-text">
+                    {Math.round(adherenceSummary.weekly_rate * 100)}%
+                  </p>
                 </div>
                 <div className="rounded-[12px] bg-[#FFF4E5] p-3">
-                  <p className="text-[11px] font-semibold text-[#C77A06] uppercase tracking-wide">Chuỗi hiện tại</p>
+                  <p className="text-[11px] font-semibold text-[#C77A06] uppercase tracking-wide">
+                    Chuỗi hiện tại
+                  </p>
                   <p className="mt-1 text-[22px] font-extrabold text-neu-text">
                     {adherenceSummary.current_streak}
                     <span className="text-[13px] font-semibold text-neu-muted ml-1">ngày</span>
                   </p>
                 </div>
                 <div className="rounded-[12px] bg-[#F5F0FF] p-3">
-                  <p className="text-[11px] font-semibold text-[#6D3FBE] uppercase tracking-wide">Kỷ lục</p>
+                  <p className="text-[11px] font-semibold text-[#6D3FBE] uppercase tracking-wide">
+                    Kỷ lục
+                  </p>
                   <p className="mt-1 text-[22px] font-extrabold text-neu-text">
                     {adherenceSummary.longest_streak}
                     <span className="text-[13px] font-semibold text-neu-muted ml-1">ngày</span>

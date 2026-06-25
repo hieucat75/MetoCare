@@ -13,16 +13,20 @@ not look like the expected unit.
 
 from __future__ import annotations
 
+import logging
 import re
 import unicodedata
 from dataclasses import dataclass
 
+from app.domain.hospital_profiles import HospitalProfile, detect_hospital
 from app.domain.lab_interpreter import (
     _ALIAS_INDEX,
     BIOMARKERS,
     BiomarkerSpec,
     RawLabValue,
 )
+
+_logger = logging.getLogger(__name__)
 
 # A number: 1,234.5 / 5.6 / 5,6 (VN decimal comma) / 110
 _NUMBER = r"\d{1,3}(?:[.,]\d{3})*(?:[.,]\d+)?|\d+(?:[.,]\d+)?"
@@ -66,14 +70,18 @@ def _strip_accents(s: str) -> str:
     )
 
 
-def _match_biomarker(line_noacc_lc: str) -> tuple[BiomarkerSpec, int] | None:
+def _match_biomarker(
+    line_noacc_lc: str,
+    alias_index: dict | None = None,
+) -> tuple[BiomarkerSpec, int] | None:
     """Find the biomarker whose alias appears in the accent-stripped, lower-cased
     line. Returns ``(spec, end_index)`` of the longest matching alias (so
     'ldl cholesterol' beats 'cholesterol'), or None. The end index lets the caller
     read the value AFTER the label, never digits embedded in the name (e.g. the
     '1' in 'HbA1c')."""
+    idx = alias_index if alias_index is not None else _ALIAS_INDEX
     best: tuple[int, BiomarkerSpec, int] | None = None  # (alias_len, spec, end_idx)
-    for alias, spec in _ALIAS_INDEX.items():
+    for alias, spec in idx.items():
         a = _strip_accents(alias.lower())
         if not a:
             continue
@@ -81,8 +89,8 @@ def _match_biomarker(line_noacc_lc: str) -> tuple[BiomarkerSpec, int] | None:
             # Word-boundary match for very short aliases (hb, tg, hct …).
             m = re.search(rf"(?<![a-z0-9]){re.escape(a)}(?![a-z0-9])", line_noacc_lc)
         else:
-            idx = line_noacc_lc.find(a)
-            m = None if idx < 0 else re.compile(re.escape(a)).match(line_noacc_lc, idx)
+            pos = line_noacc_lc.find(a)
+            m = None if pos < 0 else re.compile(re.escape(a)).match(line_noacc_lc, pos)
         if m is None:
             continue
         if best is None or len(a) > best[0]:
@@ -111,10 +119,29 @@ def _try_si_convert(unit: str, value: float, spec: BiomarkerSpec) -> float | Non
     return None
 
 
-def parse_lab_text(text: str) -> list[RawLabValue]:
+def parse_lab_text(
+    text: str,
+    hospital_profile: HospitalProfile | None = None,
+) -> list[RawLabValue]:
     """Parse OCR/plain text into recognised ``RawLabValue`` rows (first per canonical)."""
     if not text:
         return []
+
+    if hospital_profile is None:
+        hospital_profile = detect_hospital(text)
+
+    _combined = dict(_ALIAS_INDEX)
+    if hospital_profile:
+        corrected = text
+        for bad, good in hospital_profile.ocr_corrections.items():
+            corrected = corrected.replace(bad, good)
+        text = corrected
+        for canonical, extras in hospital_profile.additional_aliases.items():
+            base_spec = _ALIAS_INDEX.get(canonical)
+            if base_spec:
+                for a in extras:
+                    _combined[a.lower()] = base_spec
+
     seen: dict[str, RawLabValue] = {}
     for raw_line in text.splitlines():
         line = raw_line.strip()
@@ -123,7 +150,7 @@ def parse_lab_text(text: str) -> list[RawLabValue]:
         # Work on an accent-stripped copy — digits/units are ASCII, so this is
         # lossless for value extraction and lets indices line up with the match.
         line_noacc = _strip_accents(line)
-        matched = _match_biomarker(line_noacc.lower())
+        matched = _match_biomarker(line_noacc.lower(), _combined)
         if matched is None:
             continue
         spec, label_end = matched
@@ -164,6 +191,22 @@ def parse_lab_text(text: str) -> list[RawLabValue]:
                 s_root = re.sub(r"[^a-z]", "", spec.unit.lower())[:3]
                 if u_root and s_root and u_root != s_root:
                     parse_conf = 0.6
+
+        # Physiological plausibility: values outside absolute bounds indicate OCR error.
+        if spec.physiological_min is not None and value < spec.physiological_min:
+            parse_conf = 0.0
+        elif spec.physiological_max is not None and value > spec.physiological_max:
+            parse_conf = 0.0
+
+        _logger.debug(
+            "ocr_confidence_breakdown",
+            extra={
+                "canonical": spec.canonical,
+                "parse_confidence": round(parse_conf, 3),
+                "extracted_unit": unit or "",
+                "expected_unit": spec.unit or "",
+            },
+        )
 
         seen[spec.canonical] = RawLabValue(
             test_name=spec.canonical,
