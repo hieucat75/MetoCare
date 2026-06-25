@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 
 from app.core.config import get_settings
 from app.domain import lab_interpreter
+from app.domain.lab_interpreter import ConfidenceDetail
 from app.services import lab_parser
 from app.services.ocr_engine import (
     AzureDocIntelEngine,
@@ -223,8 +224,24 @@ def build_draft(data: bytes, mime: str) -> LabUploadDraft:
 
     # Combine OCR-text confidence with the per-line parse confidence, then let the
     # interpreter classify + flag low-confidence rows needing verification.
+    # Reconstruct confidence_detail so reasons stay consistent with the final score.
     for rv in raw_values:
         rv.ocr_confidence = round((ocr_conf or 0.0) * rv.ocr_confidence, 4)
+        if rv.confidence_detail is not None:
+            engine_pct = round((ocr_conf or 0.0) * 100)
+            engine_note = (
+                f"⚠ Chất lượng OCR ảnh: {engine_pct}% — kiểm tra lại giá trị"
+                if (ocr_conf or 0.0) < 0.9
+                else f"✓ Chất lượng OCR ảnh: {engine_pct}%"
+            )
+            rv.confidence_detail = ConfidenceDetail(
+                ocr=rv.confidence_detail.ocr,
+                mapping=rv.confidence_detail.mapping,
+                conversion=rv.confidence_detail.conversion,
+                clinical=rv.confidence_detail.clinical,
+                overall=rv.ocr_confidence,
+                reasons=[engine_note] + rv.confidence_detail.reasons,
+            )
 
     interpretation = lab_interpreter.interpret_panel(raw_values)
     items: list[DraftItem] = []
