@@ -174,12 +174,17 @@ def _row_contains_instrument(raw_cells: list[str]) -> bool:
 # Medlatec embeds machine suffix inline, e.g. "Glucose (máu) (Cobas C502)".
 # Strip these before alias matching so the alias index can find the correct biomarker.
 _TEST_NAME_STRIP_PATTERNS: list[re.Pattern] = [
-    # Machine/analyzer suffixes: "(Cobas C502)", "(Cobas 8000)", "(Cobas Pro)", etc.
-    re.compile(r"\(\s*Cobas\s+[A-Za-z0-9]+\s*\)", re.IGNORECASE),
-    re.compile(r"\(\s*C\d{3,4}\s*\)", re.IGNORECASE),          # (C502), (C702)
-    re.compile(r"\(\s*QX[.\w]*\s*\)", re.IGNORECASE),           # (QX series)
-    re.compile(r"\(\s*AU\d{3,4}\s*\)", re.IGNORECASE),          # (AU480), (AU680)
-    re.compile(r"\(\s*Sysmex\s+[A-Za-z0-9]+\s*\)", re.IGNORECASE),
+    # Machine/analyzer suffixes — handles both compact and spaced model numbers:
+    # "(Cobas C502)", "(Cobas C 502)", "(Cobas 8000)", "(Cobas Pro)", etc.
+    re.compile(r"\(\s*Cobas\s+[A-Za-z]+\s*[0-9]*\s*\)", re.IGNORECASE),
+    # Bare model codes: (C502), (C 502), (C702), (C 702)
+    re.compile(r"\(\s*C\s*\d{3,4}\s*\)", re.IGNORECASE),
+    # QX series: (QX200), (QX 200)
+    re.compile(r"\(\s*QX\s*[.\w]*\s*\)", re.IGNORECASE),
+    # Beckman AU series: (AU480), (AU 680)
+    re.compile(r"\(\s*AU\s*\d{3,4}\s*\)", re.IGNORECASE),
+    # Sysmex: (Sysmex XN-1000), (Sysmex XN 1000)
+    re.compile(r"\(\s*Sysmex\s+[A-Za-z0-9\s-]+\s*\)", re.IGNORECASE),
     # Trailing asterisk often added by Medlatec to flagged results, e.g. "Cholesterol*"
     re.compile(r"\*\s*$"),
 ]

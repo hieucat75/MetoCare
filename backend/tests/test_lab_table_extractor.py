@@ -921,6 +921,35 @@ class TestTestNameCleaner:
         result = clean_test_name("Glucose (cobas c502)")
         assert "cobas c502" not in result.lower()
 
+    # Codex P1 fix: space-variant model numbers e.g. "Cobas C 502" (space between letter/digit)
+    def test_cobas_c_502_space_variant_stripped(self):
+        """(Cobas C 502) with space between letter and digit must be stripped."""
+        result = clean_test_name("Glucose (máu) (Cobas C 502)")
+        assert "Cobas C 502" not in result
+        assert "502" not in result
+        assert "Glucose" in result
+
+    def test_cobas_c_702_space_variant_stripped(self):
+        result = clean_test_name("Creatinine (Cobas C 702)")
+        assert "C 702" not in result
+        assert "Creatinine" in result
+
+    def test_c_502_bare_space_variant_stripped(self):
+        """(C 502) bare code with space must be stripped."""
+        result = clean_test_name("ALT (C 502)")
+        assert "C 502" not in result
+        assert "ALT" in result
+
+    def test_au_480_space_variant_stripped(self):
+        result = clean_test_name("Glucose (AU 480)")
+        assert "AU 480" not in result
+        assert "Glucose" in result
+
+    def test_sysmex_xn_space_variant_stripped(self):
+        result = clean_test_name("WBC (Sysmex XN 1000)")
+        assert "Sysmex XN 1000" not in result
+        assert "WBC" in result
+
 
 # ──────────────────────────────────────────── TestUnknownProviderGate ─────────
 
