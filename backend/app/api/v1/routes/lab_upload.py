@@ -103,6 +103,10 @@ async def create_lab_upload_draft(
                 confidence_reasons=i.confidence_reasons,
                 original_value=i.original_value,
                 original_unit=i.original_unit,
+                original_test_name=i.original_test_name,
+                display_name_vi=i.display_name_vi,
+                canonical_value=i.canonical_value,
+                canonical_unit=i.canonical_unit,
             )
             for i in draft.parsed_values
         ],

@@ -42,9 +42,15 @@ interface EditRow {
   needs_verification: boolean
   status: string | null
   confidence_reasons: string[]
-  // Raw OCR value/unit before any SI conversion — displayed as "OCR gốc" (read-only).
+  // As-printed values (read-only display).
   original_value: number | null
   original_unit: string | null
+  // Vietnamese display label and exact OCR'd label.
+  display_name_vi: string
+  original_test_name: string
+  // Canonical SI values — for the save path (health metrics).
+  canonical_value: number | null
+  canonical_unit: string | null
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -216,6 +222,10 @@ export default function LabUploadPage() {
         confidence_reasons: v.confidence_reasons ?? [],
         original_value: v.original_value ?? null,
         original_unit: v.original_unit ?? null,
+        display_name_vi: v.display_name_vi ?? '',
+        original_test_name: v.original_test_name ?? '',
+        canonical_value: v.canonical_value ?? null,
+        canonical_unit: v.canonical_unit ?? null,
       }))
       // Always give the patient at least one editable row (manual fallback).
       setRows(
@@ -233,6 +243,10 @@ export default function LabUploadPage() {
                 confidence_reasons: [],
                 original_value: null,
                 original_unit: null,
+                display_name_vi: '',
+                original_test_name: '',
+                canonical_value: null,
+                canonical_unit: null,
               },
             ]
       )
@@ -261,8 +275,13 @@ export default function LabUploadPage() {
     }
     const results: ManualLabItem[] = named.map((r) => ({
       test_name: r.test_name.trim(),
-      value: r.value.trim() ? parseFloat(r.value) : null,
-      unit: r.unit.trim() || null,
+      value:
+        r.canonical_value != null
+          ? r.canonical_value
+          : r.value.trim()
+            ? parseFloat(r.value)
+            : null,
+      unit: r.canonical_unit || r.unit.trim() || null,
       reference_range: r.reference_range.trim() || null,
     }))
     if (results.some((r) => r.value != null && Number.isNaN(r.value))) {
@@ -513,13 +532,15 @@ export default function LabUploadPage() {
                       </button>
                     </div>
                   </div>
-                  <PatientInput
-                    aria-label="Tên chỉ số"
-                    placeholder="Tên chỉ số"
-                    value={row.test_name}
-                    invalid={lowConf}
-                    onChange={(e) => setRow(i, { test_name: e.target.value })}
-                  />
+                  {/* Vietnamese display label — not editable, from OCR + catalog */}
+                  <div className="text-[15px] font-semibold text-neu-text">
+                    {row.display_name_vi || row.test_name}
+                  </div>
+                  {row.original_test_name && row.original_test_name !== row.test_name && (
+                    <div className="text-[11px] text-neu-subtle font-mono">
+                      {row.original_test_name}
+                    </div>
+                  )}
                   <div className="mt-2 grid grid-cols-3 gap-2">
                     <PatientInput
                       aria-label="Giá trị"
@@ -549,15 +570,13 @@ export default function LabUploadPage() {
                       <AlertTriangle className="size-4" /> Cần kiểm tra lại số liệu này.
                     </p>
                   )}
-                  {row.original_unit && (
-                    <p className="mt-2 text-[12px] text-neu-subtle">
-                      OCR gốc:{' '}
-                      <span className="font-mono">
-                        {row.original_value != null ? row.original_value : '—'}{' '}
-                        {row.original_unit}
-                      </span>
-                    </p>
-                  )}
+                  {row.canonical_value != null &&
+                    row.canonical_unit &&
+                    row.canonical_unit !== row.unit && (
+                      <p className="mt-1 text-[11px] text-neu-subtle">
+                        Chuẩn hóa: {row.canonical_value.toFixed(4)} {row.canonical_unit}
+                      </p>
+                    )}
                 </NeuCard>
               )
             })}
@@ -578,6 +597,10 @@ export default function LabUploadPage() {
                     confidence_reasons: [],
                     original_value: null,
                     original_unit: null,
+                    display_name_vi: '',
+                    original_test_name: '',
+                    canonical_value: null,
+                    canonical_unit: null,
                   },
                 ])
               }

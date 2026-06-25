@@ -19,6 +19,7 @@ import unicodedata
 from dataclasses import dataclass
 
 from app.domain.hospital_profiles import HospitalProfile, detect_hospital
+from app.domain.lab_catalog import get_catalog as _get_catalog
 from app.domain.lab_interpreter import (
     _ALIAS_INDEX,
     BIOMARKERS,
@@ -192,6 +193,16 @@ def parse_lab_text(
         if spec.canonical in seen:
             continue
 
+        # raw_test_name: exact printed label, same char count as accent-stripped line.
+        raw_test_name = line[:label_end].strip()
+
+        # Lookup Vietnamese display name from catalog.
+        try:
+            _cat_entry = _get_catalog()["biomarkers"].get(spec.canonical, {})
+            display_name_vi = _cat_entry.get("name_vn") or spec.canonical
+        except Exception:
+            display_name_vi = spec.canonical
+
         # Read the value strictly AFTER the matched label.
         after = line_noacc[label_end:]
         vm = _VALUE_RE.search(after)
@@ -211,10 +222,10 @@ def parse_lab_text(
         # alias match from _ALIAS_INDEX (no fuzzy matching emitted).
         mapping_conf = 1.0
 
-        # Capture raw OCR value/unit BEFORE any SI conversion so they can be
-        # shown as "OCR gốc" in the review UI alongside the normalized values.
-        orig_value: float | None = None
-        orig_unit: str | None = None
+        # Always capture printed value/unit BEFORE any SI conversion so the
+        # review UI can show "as printed" values alongside the canonical ones.
+        orig_value: float = value
+        orig_unit: str = unit or spec.unit
 
         # ocr_confidence (proxy): did OCR produce a recognizable unit token?
         ocr_conf_dim = 1.0 if unit else 0.7
@@ -230,8 +241,6 @@ def parse_lab_text(
         else:
             converted = _try_si_convert(unit, value, spec)
             if converted is not None:
-                orig_value = value
-                orig_unit = unit
                 value = converted
                 unit = spec.unit
                 conv_conf = 1.0
@@ -316,6 +325,8 @@ def parse_lab_text(
             confidence_detail=detail,
             original_value=orig_value,
             original_unit=orig_unit,
+            raw_test_name=raw_test_name,
+            display_name_vi=display_name_vi,
         )
     # Preserve biomarker declaration order for a stable, readable draft.
     order = {spec.canonical: i for i, spec in enumerate(BIOMARKERS)}

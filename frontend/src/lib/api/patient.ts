@@ -482,17 +482,22 @@ export async function createManualLabResults(
 export interface LabUploadDraftItem {
   test_name: string // canonical key — feeds straight into the confirm form
   canonical: string
-  value: number       // normalized/canonical value (after SI conversion if any)
-  unit: string        // normalized/canonical unit
+  value: number // original as-printed value (primary display)
+  unit: string // original as-printed unit  (primary display)
   reference_range: string | null
   status: string // normal | low | high | critical | unknown
   confidence: number // 0..1
   needs_verification: boolean
   confidence_reasons: string[] // per-dimension ✓/⚠ explanations
-  // Raw OCR value/unit before SI conversion — shown as "OCR gốc" (read-only).
-  // null/undefined when no conversion was applied.
+  // As-printed values (kept for backward compat; now same as value/unit above).
   original_value?: number | null
   original_unit?: string | null
+  // Display fields
+  original_test_name?: string  // exact OCR'd label (e.g. "CHOLESTEROL TOAN PHAN")
+  display_name_vi?: string     // Vietnamese catalog label (e.g. "Cholesterol toàn phần")
+  // Canonical SI values — used by the save path (health metrics)
+  canonical_value?: number
+  canonical_unit?: string
 }
 
 export interface LabUploadDraft {

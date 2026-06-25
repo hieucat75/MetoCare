@@ -8,17 +8,20 @@ from pydantic import BaseModel, Field
 class LabUploadDraftItemOut(BaseModel):
     test_name: str          # canonical key — feeds straight into the confirm-save form
     canonical: str
-    value: float            # normalized/canonical value (after SI conversion if any)
-    unit: str               # normalized/canonical unit
+    value: float            # original as-printed value (primary display)
+    unit: str               # original as-printed unit  (primary display)
     reference_range: str | None = None
     status: str             # normal | low | high | critical | unknown
     confidence: float
     needs_verification: bool
     confidence_reasons: list[str] = Field(default_factory=list)
-    # Raw OCR value/unit before SI conversion — shown as "OCR gốc" in review UI.
-    # None when no conversion was applied (value/unit are already canonical).
+    # Keep Optional for backward compat; now always set to the as-printed values.
     original_value: float | None = None
     original_unit: str | None = None
+    original_test_name: str = ""          # as OCR'd printed label
+    display_name_vi: str = ""             # Vietnamese label from catalog
+    canonical_value: float = 0.0          # canonical SI value (for save path)
+    canonical_unit: str = ""              # canonical SI unit  (for save path)
 
 
 class LabUploadDraftOut(BaseModel):

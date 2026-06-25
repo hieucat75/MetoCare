@@ -985,13 +985,13 @@ class TestAzureDiOcrCorrections:
         assert v.original_unit == "mmol/L"
         assert v.unit == "mg/dL"
 
-    def test_no_conversion_no_original_fields(self):
-        """When no SI conversion needed, original_value/original_unit stay None."""
+    def test_no_conversion_original_matches_value(self):
+        """When no SI conversion, original_value/original_unit equal the parsed value."""
         values = lab_parser.parse_lab_text("Glucose 126 mg/dL")
         assert values
         v = values[0]
-        assert v.original_value is None
-        assert v.original_unit is None
+        assert v.original_value == pytest.approx(126.0)
+        assert v.original_unit == "mg/dL"
 
     def test_draft_build_no_mol_l_for_creatinine(self, monkeypatch):
         """build_draft: creatinine in draft must not have mol/L as unit."""
@@ -1038,25 +1038,27 @@ TSH 1.26 pIU/mL 0.4 - 4.0
 THYROGLOBULIN 0.118 ng/mL < 55
 """
 
-# Expected canonical names and (value, unit) after full normalization.
-# mol/L → µmol/L correction fires for CREATININ; pIU/mL → µIU/mL for TSH.
+# Expected original (as-printed) names and (value, unit).
+# value/unit here are what appears on the lab report, NOT after SI conversion.
+# creatinine: mol/L → µmol/L correction fires (global OCR fix), so original_unit=µmol/L.
+# tsh: pIU/mL → µIU/mL correction fires, so original_unit=µIU/mL.
 _VINMEC_16_EXPECTED: dict[str, tuple[float, str]] = {
-    "urea":              (4.47 * 6.006,   "mg/dL"),
-    "creatinine":        (82.2 * 0.011312, "mg/dL"),
-    "fasting_glucose":   (4.78 * 18.018,  "mg/dL"),
-    "ast":               (34.7,            "U/L"),
-    "alt":               (58.4,            "U/L"),
-    "total_cholesterol": (5.99 * 38.67,   "mg/dL"),
-    "triglyceride":      (2.7  * 88.57,   "mg/dL"),
-    "hdl":               (1.08 * 38.67,   "mg/dL"),
-    "ldl":               (4.24 * 38.67,   "mg/dL"),
-    "sodium":            (140.0,           "mmol/L"),
-    "potassium":         (3.95,            "mmol/L"),
-    "chloride":          (100.7,           "mmol/L"),
-    "ft3":               (4.64,            "pmol/L"),
-    "ft4":               (18.0,            "pmol/L"),
-    "tsh":               (1.26,            "mIU/L"),
-    "thyroglobulin":     (0.118,           "ng/mL"),
+    "urea":              (4.47,   "mmol/L"),   # as printed
+    "creatinine":        (82.2,   "µmol/L"),   # after mol→µmol OCR correction
+    "fasting_glucose":   (4.78,   "mmol/L"),   # as printed
+    "ast":               (34.7,   "U/L"),
+    "alt":               (58.4,   "U/L"),
+    "total_cholesterol": (5.99,   "mmol/L"),   # as printed
+    "triglyceride":      (2.7,    "mmol/L"),   # as printed
+    "hdl":               (1.08,   "mmol/L"),   # as printed
+    "ldl":               (4.24,   "mmol/L"),   # as printed
+    "sodium":            (140.0,  "mmol/L"),
+    "potassium":         (3.95,   "mmol/L"),
+    "chloride":          (100.7,  "mmol/L"),
+    "ft3":               (4.64,   "pmol/L"),
+    "ft4":               (18.0,   "pmol/L"),
+    "tsh":               (1.26,   "µIU/mL"),   # after pIU→µIU OCR correction
+    "thyroglobulin":     (0.118,  "ng/mL"),
 }
 
 
@@ -1072,7 +1074,8 @@ class TestVinmec16Accuracy:
         assert not missing, f"Missing biomarkers: {sorted(missing)}"
 
     def test_accuracy_at_least_80_percent(self):
-        """At least 13/16 biomarkers must be value+unit correct (strict ≥80% gate)."""
+        """At least 13/16 biomarkers must be value+unit correct (strict ≥80% gate).
+        Checks original_value/original_unit (as-printed), not canonical."""
         parsed = self._parse()
         correct = 0
         report: list[str] = []
@@ -1081,17 +1084,19 @@ class TestVinmec16Accuracy:
             if row is None:
                 report.append(f"  MISSING  {canonical}")
                 continue
-            val_ok = abs(row.value - exp_val) / max(abs(exp_val), 1e-9) < 0.01
-            unit_ok = row.unit == exp_unit
+            act_val = row.original_value if row.original_value is not None else row.value
+            act_unit = row.original_unit if row.original_unit is not None else row.unit
+            val_ok = abs(act_val - exp_val) / max(abs(exp_val), 1e-9) < 0.01
+            unit_ok = act_unit == exp_unit
             if val_ok and unit_ok:
                 correct += 1
-                report.append(f"  OK       {canonical}: {row.value:.4f} {row.unit}")
+                report.append(f"  OK       {canonical}: {act_val:.4f} {act_unit}")
             else:
                 detail = []
                 if not val_ok:
-                    detail.append(f"value {row.value:.4f} ≠ {exp_val:.4f}")
+                    detail.append(f"value {act_val:.4f} ≠ {exp_val:.4f}")
                 if not unit_ok:
-                    detail.append(f"unit '{row.unit}' ≠ '{exp_unit}'")
+                    detail.append(f"unit '{act_unit}' ≠ '{exp_unit}'")
                 report.append(f"  WRONG    {canonical}: {', '.join(detail)}")
         pct = correct / len(_VINMEC_16_EXPECTED) * 100
         summary = "\n".join(report)
@@ -1120,7 +1125,8 @@ class TestVinmec16Accuracy:
             )
 
     def test_si_converted_rows_have_original_fields(self):
-        """Rows that go through SI conversion must expose original_value/original_unit."""
+        """All rows (including SI-converted ones) must expose original_value/original_unit
+        set to the as-printed values (not the canonical SI values)."""
         parsed = self._parse()
         si_biomarkers = {"urea", "creatinine", "fasting_glucose",
                          "total_cholesterol", "triglyceride", "hdl", "ldl"}
@@ -1129,10 +1135,16 @@ class TestVinmec16Accuracy:
             if row is None:
                 continue
             assert row.original_value is not None, (
-                f"{canonical}: original_value missing after SI conversion"
+                f"{canonical}: original_value missing"
             )
             assert row.original_unit is not None, (
-                f"{canonical}: original_unit missing after SI conversion"
+                f"{canonical}: original_unit missing"
+            )
+            # For SI-converted rows, original_unit must be the SI (as-printed) unit,
+            # NOT the canonical unit (the canonical value is in row.value).
+            assert row.original_unit != row.unit, (
+                f"{canonical}: original_unit '{row.original_unit}' should differ from "
+                f"canonical unit '{row.unit}' for SI-converted rows"
             )
 
     @pytest.mark.parametrize("canonical,exp_val,exp_unit", [

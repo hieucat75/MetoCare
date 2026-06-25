@@ -300,6 +300,9 @@ class RawLabValue:
     # review UI to show "OCR gốc" alongside the normalized display value.
     original_value: float | None = None
     original_unit: str | None = None
+    # Display fields: exact printed label and Vietnamese catalog name.
+    raw_test_name: str = ""       # as OCR'd: "CHOLESTEROL TOAN PHAN", "Ure", etc.
+    display_name_vi: str = ""     # Vietnamese label from catalog: "Cholesterol toàn phần"
 
 
 @dataclass
@@ -316,6 +319,8 @@ class InterpretedBiomarker:
     confidence_detail: ConfidenceDetail | None = None
     original_value: float | None = None
     original_unit: str | None = None
+    raw_test_name: str = ""
+    display_name_vi: str = ""
 
 
 def classify_value(canonical: str, value: float) -> LabStatus:
@@ -358,6 +363,8 @@ def interpret_value(raw: RawLabValue) -> InterpretedBiomarker:
             ocr_confidence=raw.ocr_confidence,
             needs_verification=True,
             patient_note=f"Chỉ số '{raw.test_name}' {_PATIENT_NOTE[LabStatus.UNKNOWN]}",
+            raw_test_name=raw.raw_test_name,
+            display_name_vi=raw.display_name_vi,
         )
 
     spec = _ALIAS_INDEX[canonical]
@@ -377,6 +384,8 @@ def interpret_value(raw: RawLabValue) -> InterpretedBiomarker:
             confidence_detail=raw.confidence_detail,
             original_value=raw.original_value,
             original_unit=raw.original_unit,
+            raw_test_name=raw.raw_test_name,
+            display_name_vi=raw.display_name_vi,
         )
     status = classify_value(canonical, raw.value)
     needs_verification = raw.ocr_confidence < OCR_CONFIDENCE_THRESHOLD
@@ -397,6 +406,8 @@ def interpret_value(raw: RawLabValue) -> InterpretedBiomarker:
         confidence_detail=raw.confidence_detail,
         original_value=raw.original_value,
         original_unit=raw.original_unit,
+        raw_test_name=raw.raw_test_name,
+        display_name_vi=raw.display_name_vi,
     )
 
 

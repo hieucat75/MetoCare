@@ -70,9 +70,13 @@ class DraftItem:
     confidence: float
     needs_verification: bool
     confidence_reasons: list[str] = field(default_factory=list)
-    # Raw OCR value/unit before SI conversion — shown as "OCR gốc" in review UI.
+    # Raw OCR value/unit — always set to the as-printed values for display.
     original_value: float | None = None
     original_unit: str | None = None
+    original_test_name: str = ""   # as OCR'd printed label
+    display_name_vi: str = ""      # Vietnamese label from catalog
+    canonical_value: float = 0.0   # canonical SI value (for save/metrics)
+    canonical_unit: str = ""       # canonical SI unit  (for save/metrics)
 
 
 @dataclass
@@ -251,12 +255,15 @@ def build_draft(data: bytes, mime: str) -> LabUploadDraft:
     for b in interpretation.biomarkers:
         if b.canonical == "unknown":
             continue
+        # Use original (as-printed) value/unit for display; canonical for save path.
+        disp_value = b.original_value if b.original_value is not None else b.value
+        disp_unit = b.original_unit if b.original_unit is not None else b.unit
         items.append(
             DraftItem(
                 test_name=b.canonical,
                 canonical=b.canonical,
-                value=b.value,
-                unit=b.unit,
+                value=disp_value,
+                unit=disp_unit,
                 reference_range=b.reference_range,
                 status=b.status.value,
                 confidence=round(b.ocr_confidence, 4),
@@ -264,8 +271,12 @@ def build_draft(data: bytes, mime: str) -> LabUploadDraft:
                 confidence_reasons=(
                     b.confidence_detail.reasons if b.confidence_detail else []
                 ),
-                original_value=b.original_value,
-                original_unit=b.original_unit,
+                original_value=disp_value,
+                original_unit=disp_unit,
+                original_test_name=b.raw_test_name,
+                display_name_vi=b.display_name_vi,
+                canonical_value=b.value,
+                canonical_unit=b.unit,
             )
         )
 
