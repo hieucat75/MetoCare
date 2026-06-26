@@ -24,6 +24,7 @@ from app.core.ssrf import SSRFError, fetch_url
 from app.models.user import UserRole
 from app.schemas.lab_upload import LabUploadDraftItemOut, LabUploadDraftOut
 from app.services import audit, lab_upload
+from app.services import ocr_case as ocr_case_svc
 
 logger = logging.getLogger("mcp.lab_upload_route")
 
@@ -85,6 +86,34 @@ async def create_lab_upload_draft(
         resource_type="lab_upload",
         resource_id=draft.raw_text_sha256 or "none",
     )
+
+    # Create OCRCase to track this OCR session (non-blocking; failure logs but never raises).
+    ocr_case_id: str | None = None
+    try:
+        extracted_rows = [
+            {
+                "test_name": i.test_name,
+                "original_test_name": i.original_test_name,
+                "display_name_vi": i.display_name_vi,
+                "mapped_metric_type": i.canonical,
+                "value": i.value,
+                "unit": i.unit,
+            }
+            for i in draft.parsed_values
+        ]
+        case = ocr_case_svc.create_case(
+            db,
+            patient_id=user.id,
+            extracted_rows=extracted_rows,
+            hospital_id=draft.hospital_id,
+            hospital_confidence=draft.hospital_confidence,
+            source_file_hash=draft.raw_text_sha256 or None,
+            ocr_engine_version=draft.provider_used,
+        )
+        ocr_case_id = case.id
+    except Exception:
+        logger.exception("ocr_case_create_failed user=%s", user.id)
+
     db.commit()
 
     return LabUploadDraftOut(
@@ -118,4 +147,5 @@ async def create_lab_upload_draft(
         extracted_test_date=draft.extracted_test_date,
         test_date_label=draft.test_date_label,
         test_date_confidence=draft.test_date_confidence,
+        ocr_case_id=ocr_case_id,
     )

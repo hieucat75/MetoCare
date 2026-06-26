@@ -22,9 +22,10 @@ from dataclasses import dataclass, field
 
 from app.core.config import get_settings
 from app.domain import lab_interpreter
+from app.domain.hospital_profiles import UNKNOWN_PROFILE, detect_hospital_result
 from app.domain.lab_interpreter import ConfidenceDetail
-from app.services import lab_parser
 from app.domain.lab_table_extractor import extract_and_map as _extract_table_and_map
+from app.services import lab_parser
 from app.services.ocr_engine import (
     AzureDocIntelEngine,
     OcrEngineError,
@@ -94,6 +95,9 @@ class LabUploadDraft:
     extracted_test_date: str | None = None
     test_date_label: str | None = None
     test_date_confidence: float = 0.0
+    # Hospital detection (populated by build_draft; used by route to create OCRCase).
+    hospital_id: str | None = None
+    hospital_confidence: float = 0.0
 
 
 def sniff_mime(data: bytes) -> str | None:
@@ -254,6 +258,13 @@ def build_draft(data: bytes, mime: str) -> LabUploadDraft:
     raw_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()[:16] if text else ""
     detected_date = lab_parser.parse_test_date(text)
 
+    hospital_detection = detect_hospital_result(text) if text else None
+    hospital_id: str | None = None
+    hospital_confidence: float = 0.0
+    if hospital_detection and hospital_detection.profile is not UNKNOWN_PROFILE:
+        hospital_id = hospital_detection.profile.hospital_id
+        hospital_confidence = hospital_detection.confidence
+
     # Combine OCR-text confidence with the per-line parse confidence, then let the
     # interpreter classify + flag low-confidence rows needing verification.
     # Reconstruct confidence_detail so reasons stay consistent with the final score.
@@ -336,6 +347,8 @@ def build_draft(data: bytes, mime: str) -> LabUploadDraft:
         extracted_test_date=detected_date.iso if detected_date else None,
         test_date_label=detected_date.raw_label if detected_date else None,
         test_date_confidence=round(detected_date.confidence, 4) if detected_date else 0.0,
+        hospital_id=hospital_id,
+        hospital_confidence=hospital_confidence,
     )
 
 

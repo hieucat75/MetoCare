@@ -40,3 +40,5 @@ class LabUploadDraftOut(BaseModel):
     extracted_test_date: str | None = None
     test_date_label: str | None = None
     test_date_confidence: float = 0.0
+    # OCRCase id — frontend passes this to POST /patients/{id}/lab-results to link gap analysis.
+    ocr_case_id: str | None = None

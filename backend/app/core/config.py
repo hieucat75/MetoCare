@@ -84,6 +84,10 @@ class Settings(BaseSettings):
     ocr_lang: str = "vie+eng"               # Tesseract language packs
     ocr_cloud_provider: str = ""            # "" | anthropic | azure (only read when fallback ON)
     ocr_max_upload_mb: int = 10             # reject larger uploads with 413
+    # Explicit opt-in for OCR dataset export (writes corrected rows to ocr_dataset/).
+    # Must be true in addition to env=staging|dev to allow export. Prevents accidental
+    # PHI writes if MCP_ENV is unset or misconfigured. Set MCP_OCR_DATASET_EXPORT_ENABLED=true.
+    ocr_dataset_export_enabled: bool = False
     ocr_url_fetch_timeout_seconds: int = 10  # SSRF-guarded URL paste fetch
     ocr_pdf_max_pages: int = 3              # rasterize/scan at most N pages
 
