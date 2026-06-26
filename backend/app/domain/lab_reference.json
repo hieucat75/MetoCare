@@ -75,7 +75,8 @@
       "biomarkers": [
         "sodium",
         "potassium",
-        "chloride"
+        "chloride",
+        "calcium"
       ]
     }
   ],
@@ -746,6 +747,34 @@
       ],
       "value_precision": 2,
       "notes": "",
+      "higher_is_better": null
+    },
+    "calcium": {
+      "name_vn": "Canxi (Ca2+)",
+      "name_en": "Calcium",
+      "category": "electrolyte",
+      "units": [
+        {
+          "key": "mg_per_dl",
+          "label": "mg/dL",
+          "ref_range": {
+            "low": 8.5,
+            "high": 10.5
+          },
+          "is_primary": true
+        },
+        {
+          "key": "mmol_per_l",
+          "label": "mmol/L",
+          "ref_range": {
+            "low": 2.12,
+            "high": 2.62
+          },
+          "is_primary": false
+        }
+      ],
+      "value_precision": 1,
+      "notes": "Canxi huyết thanh; bất thường nặng (<7 hoặc >13 mg/dL) cần xử trí khẩn.",
       "higher_is_better": null
     }
   }

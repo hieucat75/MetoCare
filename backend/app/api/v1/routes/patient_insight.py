@@ -1,0 +1,154 @@
+"""Patient Insight API Route — Phase E.
+
+POST /api/v1/patients/{patient_id}/patient-insight
+
+Calls the lab_intelligence pipeline internally, then wraps the output through
+generate_patient_insight() to produce a structured PatientInsightReport.
+
+Auth: same as lab_intelligence — requires PATIENT, DOCTOR, or INTERNAL_ADMIN role.
+Patients may only access their own records.
+"""
+
+from __future__ import annotations
+
+import dataclasses
+import datetime as dt
+
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.api.deps import CurrentUser, get_session, require_roles
+from app.api.v1.routes.lab_intelligence import LabIntelligenceRequest
+from app.domain.clinical_patterns import detect_patterns
+from app.domain.clinical_rules import ClinicalFinding, assess_biomarker
+from app.domain.derived_metrics import DerivedMetricResult, compute_all_derived
+from app.domain.longitudinal import BiomarkerTrend, compute_trends
+from app.domain.patient_insight import generate_patient_insight
+from app.models.clinical import LabResult
+from app.models.patient import PatientProfile
+from app.models.user import UserRole
+from app.services import consent
+
+router = APIRouter(tags=["patient_insight"])
+
+
+@router.post("/patients/{patient_id}/patient-insight")
+def patient_insight(
+    patient_id: str,
+    body: LabIntelligenceRequest,
+    db: Session = Depends(get_session),
+    user: CurrentUser = Depends(
+        require_roles(UserRole.PATIENT, UserRole.DOCTOR, UserRole.INTERNAL_ADMIN)
+    ),
+):
+    """Generate a patient-facing insight report from verified lab results.
+
+    Internally runs the lab intelligence pipeline, then passes the results
+    through the Patient Insight Layer to produce InsightCards, ActionCards,
+    urgent alerts, and a timeline summary in Vietnamese.
+
+    Returns:
+        JSON-serialized PatientInsightReport (via dataclasses.asdict).
+    """
+    # --- Auth check (mirrors lab_intelligence) ---
+    if user.role == UserRole.PATIENT.value:
+        profile = db.get(PatientProfile, patient_id)
+        if profile is None or profile.user_id != user.id:
+            raise HTTPException(
+                status_code=403,
+                detail="Patients may only access their own records.",
+            )
+    else:
+        consent.require_access(
+            db, patient_id=patient_id, requester_id=user.id, scope="lab"
+        )
+
+    # --- Fetch verified lab results ---
+    q = select(LabResult).where(
+        LabResult.patient_id == patient_id,
+        LabResult.deleted_at.is_(None),
+    )
+    if body.lab_result_ids:
+        q = q.where(LabResult.id.in_(body.lab_result_ids))
+    rows = db.execute(q).scalars().all()
+    verified = [r for r in rows if r.verified_by_user or r.verified_by_doctor]
+
+    if not verified:
+        # Return a minimal valid report with no data
+        from app.domain.patient_insight import PatientInsightReport
+        empty_report = PatientInsightReport(
+            patient_id=patient_id,
+            generated_at=dt.datetime.now(dt.UTC).isoformat(),
+            overall_status="good",
+            overall_status_text_vi="Chưa có kết quả đã xác minh để phân tích.",
+            top_priorities=[],
+            insights=[],
+            action_cards=[],
+            timeline=[],
+            positive_reinforcement=[],
+            urgent_alerts=[],
+            ai_draft_contract=None,
+            disclaimer_vi=(
+                "Đây là thông tin tham khảo từ kết quả xét nghiệm đã được xác nhận. "
+                "Không phải chẩn đoán y khoa. "
+                "Luôn tham khảo ý kiến bác sĩ trước khi thay đổi chế độ điều trị."
+            ),
+        )
+        return dataclasses.asdict(empty_report)
+
+    # --- Lab Intelligence pipeline ---
+    findings: list[ClinicalFinding] = []
+    raw_inputs: dict[str, float] = {}
+
+    for r in verified:
+        if r.canonical_name and r.value is not None:
+            raw_inputs[r.canonical_name] = r.value
+            f = assess_biomarker(
+                r.canonical_name,
+                r.value,
+                age_years=body.age_years,
+                is_male=body.is_male,
+            )
+            if f:
+                findings.append(f)
+
+    # Derived metrics
+    derived_list: list[DerivedMetricResult] = []
+    if body.include_derived:
+        derived_list = compute_all_derived(
+            raw_inputs,
+            age_years=body.age_years,
+            is_male=body.is_male,
+            waist_cm=body.waist_cm,
+        )
+    derived_map: dict[str, DerivedMetricResult] = {d.canonical: d for d in derived_list}
+
+    # Patterns
+    from app.domain.clinical_patterns import PatternDetection  # noqa: F401
+    patterns_raw = []
+    if body.include_patterns:
+        patterns_raw = detect_patterns({
+            "findings": {f.canonical: f.__dict__ for f in findings},
+            "derived": {
+                k: (v.value if v.value is not None else None)
+                for k, v in derived_map.items()
+            },
+        })
+
+    # Trends
+    trends: list[BiomarkerTrend] = []
+    if body.include_trends:
+        for c in sorted(set(r.canonical_name for r in verified if r.canonical_name)):
+            trends.append(compute_trends(verified, c))
+
+    # --- Patient Insight Layer ---
+    report = generate_patient_insight(
+        patient_id=patient_id,
+        findings=findings,
+        patterns=patterns_raw,
+        trends=trends,
+        derived=derived_map,
+    )
+
+    return dataclasses.asdict(report)

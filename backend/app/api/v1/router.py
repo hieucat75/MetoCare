@@ -21,6 +21,7 @@ from .routes import (
     lab_reference,
     lab_upload,
     notifications,
+    patient_insight,
     patients,
     system,
 )
@@ -43,4 +44,5 @@ api_router.include_router(doctor_review.router, prefix="/doctor", tags=["doctor_
 api_router.include_router(patients.router)
 api_router.include_router(booking.router)
 api_router.include_router(notifications.router)
+api_router.include_router(patient_insight.router)
 api_router.include_router(doctor.router)
