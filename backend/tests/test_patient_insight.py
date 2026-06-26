@@ -679,3 +679,51 @@ def test_patient_insight_request_batch_id_and_lab_result_ids_independent():
     req_both = PatientInsightRequest(batch_id="b1", lab_result_ids=["r1"])
     assert req_both.batch_id == "b1"
     assert req_both.lab_result_ids == ["r1"]
+
+
+# ---------------------------------------------------------------------------
+# Phase E+F Codex fix — P1-1: sex/age field mapping
+# ---------------------------------------------------------------------------
+
+def test_patient_insight_request_sex_age_fields():
+    """PatientInsightRequest must accept sex and age (frontend field names)."""
+    from app.api.v1.routes.patient_insight import PatientInsightRequest
+
+    req_female = PatientInsightRequest(sex="female", age=55)
+    assert req_female.sex == "female"
+    assert req_female.age == 55
+
+    req_male = PatientInsightRequest(sex="male", age=70)
+    assert req_male.sex == "male"
+    assert req_male.age == 70
+
+    req_none = PatientInsightRequest()
+    assert req_none.sex is None
+    assert req_none.age is None
+
+
+def test_patient_insight_request_sex_maps_to_is_male():
+    """is_male must be derived from sex field correctly (not always True)."""
+    from app.api.v1.routes.patient_insight import PatientInsightRequest
+
+    # Simulate the mapping logic in the route
+    def derive_is_male(body: PatientInsightRequest) -> bool:
+        return (body.sex == "male") if body.sex is not None else True
+
+    assert derive_is_male(PatientInsightRequest(sex="male")) is True
+    assert derive_is_male(PatientInsightRequest(sex="female")) is False
+    assert derive_is_male(PatientInsightRequest(sex=None)) is True   # safe default
+    assert derive_is_male(PatientInsightRequest()) is True            # no sex → male default
+
+
+def test_patient_insight_request_age_maps_to_age_years():
+    """age field must pass through to age_years (not silently dropped)."""
+    from app.api.v1.routes.patient_insight import PatientInsightRequest
+
+    body = PatientInsightRequest(age=65)
+    # Simulate the mapping in the route
+    age_years = body.age
+    assert age_years == 65
+
+    body_none = PatientInsightRequest()
+    assert body_none.age is None

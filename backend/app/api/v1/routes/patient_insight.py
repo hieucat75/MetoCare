@@ -24,7 +24,7 @@ from app.domain.clinical_patterns import detect_patterns
 from app.domain.clinical_rules import ClinicalFinding, assess_biomarker
 from app.domain.derived_metrics import DerivedMetricResult, compute_all_derived
 from app.domain.longitudinal import BiomarkerTrend, compute_trends
-from app.domain.patient_insight import generate_patient_insight
+from app.domain.patient_insight import _DISCLAIMER, PatientInsightReport, generate_patient_insight
 from app.models.clinical import LabResult
 from app.models.patient import PatientProfile
 from app.models.user import UserRole
@@ -46,8 +46,9 @@ class PatientInsightRequest(BaseModel):
     include_trends: bool = True
     include_patterns: bool = True
     include_derived: bool = True
-    age_years: int | None = None
-    is_male: bool = True
+    # Patient demographics — frontend sends sex/age; mapped below
+    sex: str | None = None          # "male" | "female" | None
+    age: int | None = None          # years
     waist_cm: float | None = None
 
 
@@ -97,9 +98,12 @@ def patient_insight(
     rows = db.execute(q).scalars().all()
     verified = [r for r in rows if r.verified_by_user or r.verified_by_doctor]
 
+    # Map frontend sex/age fields to clinical engine parameters
+    is_male: bool = (body.sex == "male") if body.sex is not None else True
+    age_years: int | None = body.age
+
     if not verified:
         # Return a minimal valid report with no data
-        from app.domain.patient_insight import PatientInsightReport
         empty_report = PatientInsightReport(
             patient_id=patient_id,
             generated_at=dt.datetime.now(dt.UTC).isoformat(),
@@ -112,11 +116,7 @@ def patient_insight(
             positive_reinforcement=[],
             urgent_alerts=[],
             ai_draft_contract=None,
-            disclaimer_vi=(
-                "Đây là thông tin tham khảo từ kết quả xét nghiệm đã được xác nhận. "
-                "Không phải chẩn đoán y khoa. "
-                "Luôn tham khảo ý kiến bác sĩ trước khi thay đổi chế độ điều trị."
-            ),
+            disclaimer_vi=_DISCLAIMER,
         )
         return dataclasses.asdict(empty_report)
 
@@ -130,8 +130,8 @@ def patient_insight(
             f = assess_biomarker(
                 r.canonical_name,
                 r.value,
-                age_years=body.age_years,
-                is_male=body.is_male,
+                age_years=age_years,
+                is_male=is_male,
             )
             if f:
                 findings.append(f)
@@ -141,14 +141,13 @@ def patient_insight(
     if body.include_derived:
         derived_list = compute_all_derived(
             raw_inputs,
-            age_years=body.age_years,
-            is_male=body.is_male,
+            age_years=age_years,
+            is_male=is_male,
             waist_cm=body.waist_cm,
         )
     derived_map: dict[str, DerivedMetricResult] = {d.canonical: d for d in derived_list}
 
     # Patterns
-    from app.domain.clinical_patterns import PatternDetection  # noqa: F401
     patterns_raw = []
     if body.include_patterns:
         patterns_raw = detect_patterns({
