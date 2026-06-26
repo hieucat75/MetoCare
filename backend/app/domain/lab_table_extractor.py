@@ -753,8 +753,21 @@ def _apply_unit_corrections(unit: str) -> str:
 
 
 def _match_test_name(name_noacc_lc: str) -> tuple[BiomarkerSpec, int] | None:
-    """Find the best alias match in _ALIAS_INDEX (mirrors lab_parser._match_biomarker)."""
-    best: tuple[int, BiomarkerSpec, int] | None = None
+    """Find the best alias match using a 3-tier priority ladder.
+
+    Tiers (lower = higher priority; within a tier, longer alias wins):
+      0 — exact:    normalised alias equals the full name string
+      1 — prefix:   alias starts at position 0 of the name
+      2 — substring: alias found anywhere (original behaviour, preserved for recall)
+
+    This prevents a long alias embedded mid-name (e.g. "cholesterol" in
+    "hdl-cholesterol") from beating a shorter alias that starts at position 0
+    (e.g. "hdl-c"), which caused HDL/LDL to be mis-mapped to total_cholesterol.
+    No existing match is dropped — only priority is reordered.
+    """
+    # (tier, alias_len, match_end, spec)
+    best: tuple[int, int, int, BiomarkerSpec] | None = None
+
     for alias, spec in _ALIAS_INDEX.items():
         a = "".join(
             c for c in unicodedata.normalize("NFD", alias.lower())
@@ -762,16 +775,28 @@ def _match_test_name(name_noacc_lc: str) -> tuple[BiomarkerSpec, int] | None:
         )
         if not a:
             continue
+
         if len(a) <= 3:
             m = re.search(rf"(?<![a-z0-9]){re.escape(a)}(?![a-z0-9])", name_noacc_lc)
         else:
             pos = name_noacc_lc.find(a)
             m = None if pos < 0 else re.compile(re.escape(a)).match(name_noacc_lc, pos)
+
         if m is None:
             continue
-        if best is None or len(a) > best[0]:
-            best = (len(a), spec, m.end())
-    return (best[1], best[2]) if best else None
+
+        if name_noacc_lc == a:
+            tier = 0
+        elif m.start() == 0:
+            tier = 1
+        else:
+            tier = 2
+
+        candidate = (tier, len(a), m.end(), spec)
+        if best is None or tier < best[0] or (tier == best[0] and len(a) > best[1]):
+            best = candidate
+
+    return (best[3], best[2]) if best else None
 
 
 def _is_incompatible_unit(unit: str, spec: BiomarkerSpec) -> bool:

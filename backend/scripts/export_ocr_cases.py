@@ -15,11 +15,10 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from sqlalchemy import create_engine, select
-from sqlalchemy.orm import Session
-
 from app.domain.ocr_dataset_export import export_case
 from app.models.ocr_case import OCRCase
+from sqlalchemy import create_engine, select
+from sqlalchemy.orm import Session
 
 
 def _engine():

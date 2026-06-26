@@ -472,15 +472,6 @@ class TestMedlatecGoldenTable:
         with open(DATA / "medlatec" / "report_02_expected.json", encoding="utf-8") as fh:
             return json.load(fh)
 
-    @pytest.mark.xfail(
-        reason=(
-            "Known alias gap: 'HDL-Cholesterol' and 'LDL-Cholesterol' (Medlatec inline name "
-            "after stripping '(Cobas C502)') are not in the alias index — only 'HDL-C'/'LDL-C' "
-            "match. Fix: add 'HDL-Cholesterol'/'LDL-Cholesterol' aliases in lab_interpreter "
-            "or lab_catalog. Tracked as P2. Current accuracy: 9/11 (82%)."
-        ),
-        strict=True,
-    )
     def test_biomarker_accuracy_at_or_above_threshold(self, result, expected):
         """At least 90% of expected biomarkers must be present in extract_and_map output."""
         mapped = extract_and_map(result)
@@ -808,13 +799,6 @@ class TestAccuracyTargets:
                 f"Vinmec {accuracy:.0%} < 95% target ({found}/{total}). Missing: {missing}"
             )
 
-    @pytest.mark.xfail(
-        reason=(
-            "Known alias gap: 'HDL-Cholesterol'/'LDL-Cholesterol' not in alias index. "
-            "Current Medlatec accuracy: 9/11 (82%). Fix pending in P2 alias expansion."
-        ),
-        strict=True,
-    )
     def test_medlatec_meets_90_percent_target(self, medlatec_result, medlatec_expected):
         """Medlatec golden table must reach ≥90% biomarker accuracy."""
         found, total, accuracy = self._accuracy(

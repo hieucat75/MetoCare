@@ -74,7 +74,7 @@ BIOMARKERS: tuple[BiomarkerSpec, ...] = (
     ),
     BiomarkerSpec(
         "ldl",
-        ("ldl", "ldl-c", "ldl cholesterol", "cholesterol xấu"),
+        ("ldl", "ldl-c", "ldl cholesterol", "ldl-cholesterol", "cholesterol xấu"),
         "mg/dL", 0, 99, critical_high=190,
         si_unit="mmol/L", si_factor=38.67,
         incompatible_units=("IU/mL", "mIU/L", "mIU/mL", "µIU/mL", "pmol/L", "nmol/L"),
@@ -82,7 +82,7 @@ BIOMARKERS: tuple[BiomarkerSpec, ...] = (
     ),
     BiomarkerSpec(
         "hdl",
-        ("hdl", "hdl-c", "cholesterol tốt"),
+        ("hdl", "hdl-c", "hdl-cholesterol", "cholesterol tốt"),
         "mg/dL", 40, 200, critical_low=20,
         si_unit="mmol/L", si_factor=38.67,
         incompatible_units=("IU/mL", "mIU/L", "mIU/mL", "µIU/mL", "pmol/L", "nmol/L"),

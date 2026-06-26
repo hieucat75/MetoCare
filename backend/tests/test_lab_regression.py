@@ -19,8 +19,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
-
 from app.domain.lab_interpreter import LabStatus, classify_value
 from app.services import lab_parser
 
