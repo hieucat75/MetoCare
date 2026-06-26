@@ -17,6 +17,7 @@ from .routes import (
     encounters,
     health,
     lab,
+    lab_intelligence,
     lab_reference,
     lab_upload,
     notifications,
@@ -29,21 +30,17 @@ api_router.include_router(system.router)
 api_router.include_router(auth.router)
 api_router.include_router(health.router)
 api_router.include_router(lab.router)
+api_router.include_router(lab_intelligence.router)
 api_router.include_router(lab_upload.router)
 api_router.include_router(lab_reference.router)
 api_router.include_router(ai.router)
 api_router.include_router(consent.router)
 api_router.include_router(admin.router)
-# T5: Medical API endpoints
 api_router.include_router(encounters.router)
 api_router.include_router(care_plans.router)
 api_router.include_router(ai_sessions.router)
 api_router.include_router(doctor_review.router, prefix="/doctor", tags=["doctor_review"])
-# T12: Patient Profile API
 api_router.include_router(patients.router)
-# T21: Booking scaffold
 api_router.include_router(booking.router)
-# T23: Notification scaffold
 api_router.include_router(notifications.router)
-# Phase 4A: Doctor self-service endpoints
 api_router.include_router(doctor.router)

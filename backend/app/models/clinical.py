@@ -106,6 +106,13 @@ class LabResult(UUIDPrimaryKey, TimestampMixin, SoftDeleteMixin, Base):
     original_unit: Mapped[str | None] = mapped_column(String(24))
     original_reference_range: Mapped[str | None] = mapped_column(String(64))
     original_test_name: Mapped[str | None] = mapped_column(String(128))
+    # Intelligence Engine provenance fields (t6_m1_lieng migration)
+    source_type: Mapped[str] = mapped_column(
+        String(32), default="manual_entry", server_default="manual_entry"
+    )
+    correction_history_json: Mapped[str | None] = mapped_column(Text)   # JSON array, append-only
+    normalized_value_si: Mapped[float | None] = mapped_column(Float)  # SI-normalized for perf
+    normalized_unit_si: Mapped[str | None] = mapped_column(String(24))  # SI unit string
 
 
 class SymptomLog(UUIDPrimaryKey, TimestampMixin, Base):

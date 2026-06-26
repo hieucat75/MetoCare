@@ -1,0 +1,10 @@
+STATUS: PARTIAL
+Files changed: backend/app/domain/lab_provenance.py, backend/app/domain/lab_normalization.py, backend/app/domain/derived_metrics.py, backend/app/domain/clinical_rules.py, backend/app/domain/clinical_patterns.py, backend/app/domain/longitudinal.py, backend/app/api/v1/routes/lab_intelligence.py, backend/app/api/v1/router.py, backend/app/models/clinical.py, backend/alembic/versions/t6_m1_lieng_lab_intelligence_provenance.py, backend/tests/test_lab_intelligence.py, backend/tests/test_derived_metrics.py
+Architecture: Backend-first deterministic lab intelligence stack with provenance dataclasses, SI normalization helpers, derived-metric registry, rule-based clinical findings, cluster/pattern detection, verified-only longitudinal trends, and a single intelligence API endpoint.
+API: POST /patients/{patient_id}/lab-intelligence
+Sample request: {"lab_result_ids":["uuid1","uuid2"],"include_trends":true,"include_patterns":true,"include_derived":true,"age_years":45,"is_male":true,"waist_cm":92.0}
+Sample response: {"patient_id":"...","analysis_timestamp":"...","records_analyzed":0,"unverified_excluded":3,"biomarker_findings":[],"derived_metrics":[],"patterns":[],"trends":[],"top_priorities":[],"doctor_review_required":false,"summary_vi":"Chưa có kết quả đã xác minh để phân tích.","disclaimer_vi":"Đây là công cụ tham khảo, không phải chẩn đoán y tế. Vui lòng tham khảo bác sĩ.","ai_draft_contract":null}
+Tests: Focused lab intelligence test files are in place; the last focused run was still finishing with only a Starlette/httpx deprecation warning visible, so the full suite pass count is not yet confirmed.
+OCR regression: not run
+Known limitations: Full repo test suite, ruff, alembic dry-run, and benchmark_ocr synthetic regression were not completed in this pass; pattern detection and API aggregation are implemented in a minimal deterministic form and may need follow-up hardening against repo fixtures.
+Next phase: Run the full backend test suite, fix any integration mismatches, then execute ruff and the synthetic OCR benchmark regression check before marking COMPLETE.
