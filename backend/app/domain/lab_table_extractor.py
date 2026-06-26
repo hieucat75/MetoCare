@@ -32,7 +32,7 @@ from app.domain.hospital_profiles import (
     HospitalProfile,
 )
 from app.domain.hospital_profiles import (
-    detect_hospital as _detect_hospital,
+    detect_hospital_result as _detect_hospital_result,
 )
 from app.domain.lab_catalog import get_catalog as _get_catalog
 from app.domain.lab_interpreter import (
@@ -525,7 +525,9 @@ def extract_table_rows(
                 #   - value column header does NOT match test_name keywords
                 #   - unit column header (if declared) does NOT look like a reference range
                 _test_name_ok = (
-                    not _test_name_header  # no header text — assume map is correct
+                    not _test_name_header  # Azure DI returned no header cells (common for
+                    # scanned PDFs) — trust the profile's declared column_map, which was
+                    # defined by a human who reviewed real reports from this hospital.
                     or any(
                         kw in _test_name_header or _test_name_header in kw
                         for kw in _COL_ROLE_KEYWORDS["test_name"]
@@ -792,11 +794,14 @@ def map_table_rows_to_raw_values(
     table_rows: list[OcrTableRow],
     ocr_conf: float = 0.95,
     hospital_id: str | None = None,
+    detection_confidence: float = 1.0,
 ) -> list[RawLabValue]:
     """Layers 3+4: Map OcrTableRow list → RawLabValue list for interpret_panel().
 
-    When ``hospital_id`` is None (unknown provider), every row is capped at
-    confidence 0.5 and marked ``requires_review=True`` — none are auto-promoted.
+    When ``hospital_id`` is None (unknown provider) or ``detection_confidence``
+    is below 0.7 (hospital found only in lines 11-50 of the document), every
+    row is marked ``requires_review=True`` — none are auto-promoted to metrics.
+    Unknown-provider rows are additionally capped at confidence 0.5.
     """
     seen: dict[str, RawLabValue] = {}
 
@@ -916,11 +921,16 @@ def map_table_rows_to_raw_values(
             or row.suspect_machine_id
         )
 
-        # ── Unknown provider safety gate ────────────────────────────────────────
-        # When hospital_id is None (unrecognised provider), cap confidence at 0.5
-        # and force requires_review so no row is auto-promoted to patient metrics.
+        # ── Provider confidence safety gate ─────────────────────────────────────
+        # Two conditions force requires_review:
+        #  1. hospital_id is None — unrecognised provider; confidence capped at 0.5.
+        #  2. detection_confidence < 0.7 — hospital found only in lines 11-50 of
+        #     the document, meaning the header match was weak.  In both cases no
+        #     row is auto-promoted; the user must confirm each value in review UI.
         if hospital_id is None:
             overall = min(overall, 0.5)
+            requires_review = True
+        elif detection_confidence < 0.7:
             requires_review = True
 
         seen[spec.canonical] = RawLabValue(
@@ -981,15 +991,19 @@ def extract_and_map(
     Returns an empty list when no usable table rows are found, signalling
     build_draft() to fall back to the text+regex path.
     """
-    # Layer 2: detect hospital from full document text.
+    # Layer 2: detect hospital from full document text (position-weighted confidence).
     full_text = _get_full_text(analyze_result)
-    profile = _detect_hospital(full_text)
+    detection = _detect_hospital_result(full_text)
+    profile = detection.profile if detection.profile.hospital_id != "unknown" else None
     hospital_id = profile.hospital_id if profile else None
     if hospital_id:
-        _logger.info("table_extractor_hospital_detected hospital_id=%s", hospital_id)
+        _logger.info(
+            "table_extractor_hospital_detected hospital_id=%s confidence=%.2f",
+            hospital_id, detection.confidence,
+        )
     else:
         _logger.info(
-            "table_extractor_unknown_provider — unknown provider; "
+            "table_extractor_unknown_provider — "
             "all rows will require_review=True, confidence capped at 0.5"
         )
 
@@ -997,7 +1011,8 @@ def extract_and_map(
     if not table_rows:
         return []
     raw_values = map_table_rows_to_raw_values(
-        table_rows, ocr_conf=ocr_conf, hospital_id=hospital_id
+        table_rows, ocr_conf=ocr_conf, hospital_id=hospital_id,
+        detection_confidence=detection.confidence,
     )
     _logger.info(
         "table_extractor rows_extracted=%d rows_mapped=%d conf=%.2f hospital=%s",

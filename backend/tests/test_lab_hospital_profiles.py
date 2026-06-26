@@ -25,6 +25,7 @@ from app.domain.hospital_profiles import (
     HospitalDetector,
     HospitalProfile,
     detect_hospital,
+    detect_hospital_result,
 )
 from app.domain.lab_table_extractor import extract_and_map
 
@@ -111,22 +112,14 @@ class TestHospitalDetector:
         assert UNKNOWN_PROFILE.hospital_id == "unknown"
 
     def test_confidence_higher_for_early_match(self):
-        """Hospital name appearing in first 30 lines must be detected.
-
-        The detector only inspects the first 30 lines; a name that appears
-        past line 30 must NOT be detected (confirming early-match semantics).
-        """
+        """Hospital name in line 5 must be detected; past line 50 must not be detected."""
         detector = HospitalDetector(HOSPITAL_PROFILES)
-        # Put hospital name in line 5 (within first 30)
-        early_text = "\n".join(["Line"] * 4 + ["VINMEC international"] + ["data"] * 30)
-        early_profile = detector.detect(early_text)
-        assert early_profile is not None
-        assert early_profile.hospital_id == "vinmec"
+        early_text = "\n".join(["Line"] * 4 + ["VINMEC international"] + ["data"] * 50)
+        assert detector.detect(early_text) is not None
 
-        # Put hospital name AFTER line 30 — should NOT be detected
-        late_text = "\n".join(["data"] * 31 + ["VINMEC international"])
-        late_profile = detector.detect(late_text)
-        assert late_profile is None
+        # Detector scans up to 50 lines; a name on line 55 must NOT be detected
+        late_text = "\n".join(["data"] * 54 + ["VINMEC international"])
+        assert detector.detect(late_text) is None
 
     def test_ocr_correction_applied(self):
         """Common OCR typos listed in ocr_corrections must still resolve the hospital.
@@ -156,6 +149,101 @@ class TestHospitalDetector:
         for profile in HOSPITAL_PROFILES:
             assert profile.header_patterns, (
                 f"Hospital '{profile.hospital_id}' has no header_patterns"
+            )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TestHospitalDetectorConfidence  (HIGH #1 fix — position-weighted confidence)
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class TestHospitalDetectorConfidence:
+    """Position-weighted confidence scoring in detect_or_unknown() — HIGH #1 fix.
+
+    Confidence tiers: lines 1-10 → 0.9, lines 11-30 → 0.7, lines 31-50 → 0.5,
+    no match → 0.0.  Highest-confidence match wins; ties broken by earlier line
+    then longer alias.
+    """
+
+    _det = HospitalDetector(HOSPITAL_PROFILES)
+
+    def _text_with_hospital_at_line(self, hospital_text: str, line_number: int) -> str:
+        """Return text where hospital_text appears at 1-based line_number."""
+        padding = ["padding"] * (line_number - 1)
+        return "\n".join(padding + [hospital_text])
+
+    # ── Tests 1-4: confidence tiers ───────────────────────────────────────────
+
+    def test_first_10_lines_confidence_09(self):
+        """Hospital name in lines 1-10 → confidence 0.9."""
+        text = self._text_with_hospital_at_line("VINMEC international hospital", 5)
+        result = self._det.detect_or_unknown(text)
+        assert result.profile.hospital_id == "vinmec"
+        assert result.confidence == 0.9
+
+    def test_lines_11_30_confidence_07(self):
+        """Hospital name in lines 11-30 → confidence 0.7."""
+        text = self._text_with_hospital_at_line("VINMEC international hospital", 20)
+        result = self._det.detect_or_unknown(text)
+        assert result.profile.hospital_id == "vinmec"
+        assert result.confidence == 0.7
+
+    def test_lines_31_50_confidence_05(self):
+        """Hospital name in lines 31-50 → confidence 0.5."""
+        text = self._text_with_hospital_at_line("VINMEC international hospital", 40)
+        result = self._det.detect_or_unknown(text)
+        assert result.profile.hospital_id == "vinmec"
+        assert result.confidence == 0.5
+
+    def test_no_match_returns_unknown_confidence_00(self):
+        """No hospital alias → UNKNOWN_PROFILE, confidence 0.0."""
+        result = self._det.detect_or_unknown("Phong kham tu nhan ABC, khong ro ten benh vien")
+        assert result.profile.hospital_id == "unknown"
+        assert result.confidence == 0.0
+
+    # ── Test 5: multiple profiles — choose highest confidence ─────────────────
+
+    def test_multiple_matches_choose_highest_confidence(self):
+        """When two hospitals match, the one appearing earlier (higher confidence) wins."""
+        # Vinmec on line 5 (0.9), Medlatec on line 25 (0.7) → expect vinmec
+        lines = (
+            ["padding"] * 4
+            + ["VINMEC international"]
+            + ["data"] * 19
+            + ["MEDLATEC hospital"]
+        )
+        result = self._det.detect_or_unknown("\n".join(lines))
+        assert result.profile.hospital_id == "vinmec"
+        assert result.confidence == 0.9
+
+    # ── Test 6: downstream requires_review gate at confidence < 0.7 ──────────
+
+    def test_low_confidence_detection_forces_requires_review(self):
+        """Hospital detected at line 36 (confidence 0.5) → all rows require review.
+
+        This verifies the full pipeline: detect_hospital_result() returns 0.5,
+        extract_and_map() propagates it to map_table_rows_to_raw_values(), and
+        the provider confidence gate forces requires_review=True even though
+        the hospital is recognised (not unknown).
+        """
+        # Hospital name on line 36 → confidence 0.5 (< threshold of 0.7)
+        padded_content = "\n".join(["padding"] * 35 + ["VINMEC international"])
+        azure_result = _azure_result(
+            ["Tên xét nghiệm", "Kết quả", "Đơn vị"],
+            [["Glucose", "5.2", "mmol/L"], ["HbA1c", "5.4", "%"]],
+            content=padded_content,
+        )
+
+        # Confirm detection confidence is 0.5
+        det = detect_hospital_result(padded_content)
+        assert det.confidence == 0.5, f"Expected 0.5 confidence, got {det.confidence}"
+
+        # All extracted rows must require review
+        mapped = extract_and_map(azure_result)
+        assert mapped, "Expected at least one extracted row"
+        for row in mapped:
+            assert row.requires_review is True, (
+                f"Row '{row.test_name}' should require_review when detection confidence=0.5"
             )
 
 
