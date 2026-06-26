@@ -150,7 +150,7 @@ export default function BiomarkerDetailPage() {
     setError(null)
 
     Promise.all([
-      getLabResults(patientId, { limit: 200 }),
+      getLabResults(patientId, { limit: 100 }),
       getPatientInsight(patientId, {
         batchId,
         sex: null,

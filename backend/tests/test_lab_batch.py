@@ -381,3 +381,42 @@ class TestDashboardRecalculates:
 
         score = compute_live_score(db, patient_id=p["patient_id"])
         assert score is None or score is not None  # score without inputs = None or default
+
+
+# ── Test 9: list lab-results rejects limit > 100 (regression: frontend sent 200) ──
+
+class TestListLabResultsLimitValidation:
+    """Regression: frontend bug sent limit=200 which exceeds backend le=100 constraint.
+    Backend must return 422 with a clear validation error."""
+
+    def test_limit_200_returns_422(self, db):
+        p = _make_patient(db)
+        client = TestClient(app)
+        resp = client.get(
+            f"/api/v1/patients/{p['patient_id']}/lab-results?limit=200",
+            headers=p["headers"],
+        )
+        assert resp.status_code == 422
+        body = resp.json()
+        assert "detail" in body
+        # FastAPI validation error contains "less than or equal to 100" message
+        detail_str = str(body["detail"]).lower()
+        assert "100" in detail_str or "less_than_equal" in detail_str or "le" in detail_str
+
+    def test_limit_100_returns_200(self, db):
+        p = _make_patient(db)
+        client = TestClient(app)
+        resp = client.get(
+            f"/api/v1/patients/{p['patient_id']}/lab-results?limit=100",
+            headers=p["headers"],
+        )
+        assert resp.status_code == 200
+
+    def test_limit_101_returns_422(self, db):
+        p = _make_patient(db)
+        client = TestClient(app)
+        resp = client.get(
+            f"/api/v1/patients/{p['patient_id']}/lab-results?limit=101",
+            headers=p["headers"],
+        )
+        assert resp.status_code == 422

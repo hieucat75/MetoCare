@@ -250,7 +250,7 @@ export default function LabsPage() {
     setError(null)
     Promise.all([
       getLabBatches(patientId, { limit: 100 }),
-      getLabResults(patientId, { limit: 200 }),
+      getLabResults(patientId, { limit: 100 }),
     ])
       .then(([batchRes, resultsRes]) => {
         setBatches(batchRes.items)

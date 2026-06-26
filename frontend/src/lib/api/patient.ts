@@ -614,14 +614,14 @@ export async function getLabResults(
 
 /**
  * Fetch lab results scoped to a specific batch.
- * Backend does not support batch_id query param, so we fetch up to 200 items
- * and filter client-side by batch_id field.
+ * Backend does not support batch_id query param, so we fetch up to 100 items
+ * (backend max) and filter client-side by batch_id field.
  */
 export async function getBatchResults(
   patientId: string,
   batchId: string
 ): Promise<LabResultListResponse> {
-  const all = await getLabResults(patientId, { limit: 200 })
+  const all = await getLabResults(patientId, { limit: 100 })
   const items = all.items.filter((r) => r.batch_id === batchId)
   return { patient_id: patientId, total: items.length, items }
 }
