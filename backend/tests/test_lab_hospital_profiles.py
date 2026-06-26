@@ -19,7 +19,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 from app.domain.hospital_profiles import (
     HOSPITAL_PROFILES,
     UNKNOWN_PROFILE,
