@@ -10,13 +10,11 @@ import {
   CheckCircle2,
   Link2,
   Plus,
-  Trash2,
   Upload,
 } from 'lucide-react'
 import { PatientErrorState } from '@/components/patient/states'
 import { PatientInput } from '@/components/patient'
 import { NeuCard, NeuButton, NeuBadge } from '@/components/patient/neu'
-import type { NeuTone } from '@/components/patient/metrics/metricVisuals'
 import { useAuth } from '@/lib/auth/context'
 import { useFeatureFlags } from '@/lib/api/features'
 import {
@@ -27,6 +25,13 @@ import {
   type LabUploadDraft,
   type ManualLabItem,
 } from '@/lib/api/patient'
+import { useLabReference, formatRefRange } from '@/lib/api/labReference'
+import {
+  OcrReviewCard,
+  buildOcrRow,
+  makeEmptyOcrRow,
+  type OcrRow,
+} from './OcrReviewCard'
 import {
   displayDateToIso,
   formatDateInput,
@@ -40,95 +45,6 @@ const ACCEPT = ['image/jpeg', 'image/png', 'application/pdf']
 const HERO_GRADIENT = 'linear-gradient(160deg,#17AE7B,#0B6B4D)'
 
 type Mode = 'camera' | 'file' | 'url'
-
-interface EditRow {
-  test_name: string
-  value: string
-  unit: string
-  reference_range: string
-  confidence: number | null // null = manually added row
-  needs_verification: boolean
-  status: string | null
-  confidence_reasons: string[]
-  // As-printed values (read-only display).
-  original_value: number | null
-  original_unit: string | null
-  // Vietnamese display label and exact OCR'd label.
-  display_name_vi: string
-  original_test_name: string
-  // Canonical SI values — for the save path (health metrics).
-  canonical_value: number | null
-  canonical_unit: string | null
-  // Reference range in the same display unit as value/unit.
-  display_reference_range: string | null
-}
-
-const STATUS_LABEL: Record<string, string> = {
-  normal: 'Bình thường',
-  low: 'Thấp',
-  high: 'Cao',
-  critical: 'Cần lưu ý',
-}
-
-function confidenceBadge(c: number | null): { label: string; tone: NeuTone } {
-  if (c == null) return { label: 'Tự nhập', tone: 'ok' }
-  if (c >= 0.85) return { label: 'Độ tin cậy cao', tone: 'ok' }
-  if (c >= 0.6) return { label: 'Cần kiểm tra', tone: 'watch' }
-  return { label: 'Tin cậy thấp', tone: 'alert' }
-}
-
-function ConfidenceBadge({
-  confidence,
-  needsVerification,
-  reasons,
-}: {
-  confidence: number | null
-  needsVerification: boolean
-  reasons?: string[]
-}) {
-  const showReasons = reasons && reasons.length > 0 && confidence !== null && confidence < 0.85
-
-  let badge: React.ReactNode = null
-  if (confidence === 0) {
-    badge = (
-      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-red-50 border border-red-200 text-red-700 ml-2">
-        Giá trị không hợp lệ — cần kiểm tra lại
-      </span>
-    )
-  } else if (confidence !== null && confidence < 0.75) {
-    badge = (
-      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-amber-50 border border-amber-200 text-amber-700 ml-2">
-        Độ tin cậy thấp — nên xác nhận
-      </span>
-    )
-  } else if (needsVerification) {
-    badge = (
-      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-blue-50 border border-blue-200 text-blue-700 ml-2">
-        Cần xác nhận
-      </span>
-    )
-  }
-
-  if (!badge && !showReasons) return null
-
-  return (
-    <div className="mt-1">
-      {badge}
-      {showReasons && (
-        <ul className="mt-1 ml-2 space-y-0.5">
-          {reasons!.map((r, i) => (
-            <li
-              key={i}
-              className={`text-xs ${r.startsWith('⚠') ? 'text-amber-700' : 'text-green-700'}`}
-            >
-              {r}
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  )
-}
 
 // ── Mode picker ────────────────────────────────────────────────────────────────
 
@@ -175,6 +91,7 @@ export default function LabUploadPage() {
   const { user } = useAuth()
   const patientId = user?.patient_profile_id
   const flags = useFeatureFlags()
+  const catalog = useLabReference()
 
   const [mode, setMode] = React.useState<Mode>('camera')
   const [file, setFile] = React.useState<File | null>(null)
@@ -183,7 +100,7 @@ export default function LabUploadPage() {
   const [error, setError] = React.useState<string | null>(null)
 
   const [draft, setDraft] = React.useState<LabUploadDraft | null>(null)
-  const [rows, setRows] = React.useState<EditRow[]>([])
+  const [rows, setRows] = React.useState<OcrRow[]>([])
   const [labName, setLabName] = React.useState('')
   const [testDate, setTestDate] = React.useState('') // display DD/MM/YYYY
   const [testDateAuto, setTestDateAuto] = React.useState(false) // detected by OCR
@@ -223,53 +140,17 @@ export default function LabUploadPage() {
         setSubmitting(false)
         return
       }
+      if (!catalog) {
+        setError('Đang tải danh mục. Vui lòng thử lại.')
+        setSubmitting(false)
+        return
+      }
       const d = await uploadLabDraft(input)
       setDraft(d)
-      // Pre-fill the exam date from OCR if detected; else leave empty (the patient
-      // MUST choose it — never silently default to today).
       setTestDate(isoToDisplayDate(d.extracted_test_date))
       setTestDateAuto(Boolean(d.extracted_test_date))
-      const mapped: EditRow[] = d.parsed_values.map((v) => ({
-        test_name: v.test_name,
-        value: String(v.value),
-        unit: v.unit ?? '',
-        reference_range: v.display_reference_range ?? v.reference_range ?? '',
-        confidence: v.confidence,
-        needs_verification: v.needs_verification,
-        status: v.status,
-        confidence_reasons: v.confidence_reasons ?? [],
-        original_value: v.original_value ?? null,
-        original_unit: v.original_unit ?? null,
-        display_name_vi: v.display_name_vi ?? '',
-        original_test_name: v.original_test_name ?? '',
-        canonical_value: v.canonical_value ?? null,
-        canonical_unit: v.canonical_unit ?? null,
-        display_reference_range: v.display_reference_range ?? null,
-      }))
-      // Always give the patient at least one editable row (manual fallback).
-      setRows(
-        mapped.length
-          ? mapped
-          : [
-              {
-                test_name: '',
-                value: '',
-                unit: '',
-                reference_range: '',
-                confidence: null,
-                needs_verification: false,
-                status: null,
-                confidence_reasons: [],
-                original_value: null,
-                original_unit: null,
-                display_name_vi: '',
-                original_test_name: '',
-                canonical_value: null,
-                canonical_unit: null,
-                display_reference_range: null,
-              },
-            ]
-      )
+      const mapped: OcrRow[] = d.parsed_values.map((v) => buildOcrRow(catalog, v))
+      setRows(mapped.length ? mapped : [makeEmptyOcrRow()])
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Không xử lý được tệp. Vui lòng thử lại.')
     } finally {
@@ -277,28 +158,35 @@ export default function LabUploadPage() {
     }
   }
 
-  function setRow(i: number, patch: Partial<EditRow>) {
-    setRows((rs) => rs.map((r, idx) => (idx === i ? { ...r, ...patch } : r)))
-  }
-
   function buildResults(): ManualLabItem[] {
+    if (!catalog) return []
     return rows
-      .filter((r) => r.test_name.trim())
-      .map((r) => ({
-        test_name: r.test_name.trim(),
-        value:
-          r.canonical_value != null
-            ? r.canonical_value
-            : r.value.trim()
-              ? parseFloat(r.value)
-              : null,
-        unit: r.canonical_unit || r.unit.trim() || null,
-        reference_range: r.display_reference_range ?? (r.reference_range.trim() || null),
-        original_value: r.original_value,
-        original_unit: r.original_unit,
-        original_reference_range: r.display_reference_range,
-        original_test_name: r.original_test_name || null,
-      }))
+      .filter((r) => r.biomarker_key.trim())
+      .map((r) => {
+        const bm = catalog.biomarkers[r.biomarker_key] ?? null
+        const unit = bm ? (bm.units.find((u) => u.key === r.unit_key) ?? null) : null
+        const unitLabel = unit?.label ?? (r.unit_key || null)
+
+        let refRange: string | null = null
+        if (r.ref_range_source === 'catalog' && bm && unit) {
+          refRange = formatRefRange(unit, bm.higher_is_better ?? false)
+        } else if (r.ref_range_source === 'ocr') {
+          refRange = r.original_reference_range
+        } else if (r.ref_range_source === 'manual') {
+          refRange = r.ref_range_manual.trim() || null
+        }
+
+        return {
+          test_name: r.biomarker_key,
+          value: r.value.trim() ? parseFloat(r.value) : null,
+          unit: unitLabel,
+          reference_range: refRange,
+          original_value: r.original_value,
+          original_unit: r.original_unit,
+          original_reference_range: r.original_reference_range,
+          original_test_name: r.original_test_name || null,
+        }
+      })
   }
 
   async function doSave(
@@ -333,9 +221,17 @@ export default function LabUploadPage() {
       setError(dateErr)
       return
     }
+    if (rows.some((r) => !r.biomarker_key)) {
+      setError('Vui lòng chọn chỉ số xét nghiệm cho tất cả các dòng.')
+      return
+    }
     const results = buildResults()
     if (results.length === 0) {
       setError('Vui lòng nhập ít nhất một chỉ số.')
+      return
+    }
+    if (results.some((r) => r.value == null)) {
+      setError('Vui lòng nhập giá trị cho tất cả các chỉ số.')
       return
     }
     if (results.some((r) => r.value != null && Number.isNaN(r.value))) {
@@ -422,308 +318,221 @@ export default function LabUploadPage() {
 
   return (
     <>
-    {duplicateWarning && (
-      <DuplicateModal
-        onViewExisting={handleDuplicateViewExisting}
-        onSaveNew={handleDuplicateSaveNew}
-        onOverwrite={handleDuplicateOverwrite}
-        saving={saving}
-      />
-    )}
-    <div className="p-4 max-w-md mx-auto space-y-4 pb-28">
-      <PageHeaderNeu
-        title={step === 'input' ? 'Tải lên kết quả' : 'Kiểm tra & xác nhận'}
-        onBack={() => (step === 'review' ? (setDraft(null), setError(null)) : router.push('/labs'))}
-      />
+      {duplicateWarning && (
+        <DuplicateModal
+          onViewExisting={handleDuplicateViewExisting}
+          onSaveNew={handleDuplicateSaveNew}
+          onOverwrite={handleDuplicateOverwrite}
+          saving={saving}
+        />
+      )}
+      <div className="p-4 max-w-md mx-auto space-y-4 pb-28">
+        <PageHeaderNeu
+          title={step === 'input' ? 'Tải lên kết quả' : 'Kiểm tra & xác nhận'}
+          onBack={() => (step === 'review' ? (setDraft(null), setError(null)) : router.push('/labs'))}
+        />
 
-      {error && <PatientErrorState title="Lỗi" message={error} onRetry={() => setError(null)} />}
+        {error && <PatientErrorState title="Lỗi" message={error} onRetry={() => setError(null)} />}
 
-      {step === 'input' && (
-        <>
-          <ModeTabs
-            mode={mode}
-            onChange={(m) => {
-              setMode(m)
-              setError(null)
-            }}
-          />
+        {step === 'input' && (
+          <>
+            <ModeTabs
+              mode={mode}
+              onChange={(m) => {
+                setMode(m)
+                setError(null)
+              }}
+            />
 
-          <NeuCard>
-            {mode === 'camera' && (
-              <FilePicker
-                accept="image/*"
-                capture="environment"
-                file={file}
-                onPick={pickFile}
-                hint="Chụp ảnh phiếu kết quả xét nghiệm bằng camera."
-                icon={<Camera className="size-7 text-neu-green" />}
-              />
-            )}
-            {mode === 'file' && (
-              <FilePicker
-                accept="image/jpeg,image/png,application/pdf"
-                file={file}
-                onPick={pickFile}
-                hint="Chọn ảnh JPG/PNG hoặc tệp PDF (tối đa 10MB)."
-                icon={<Upload className="size-7 text-neu-green" />}
-              />
-            )}
-            {mode === 'url' && (
-              <div className="space-y-3">
-                <p className="text-[15px] text-neu-muted">
-                  Dán đường link tới ảnh/PDF kết quả xét nghiệm.
-                </p>
-                <PatientInput
-                  type="url"
-                  inputMode="url"
-                  placeholder="https://..."
-                  value={url}
-                  onChange={(e) => setUrl(e.target.value)}
-                  leftIcon={<Link2 className="size-5" />}
+            <NeuCard>
+              {mode === 'camera' && (
+                <FilePicker
+                  accept="image/*"
+                  capture="environment"
+                  file={file}
+                  onPick={pickFile}
+                  hint="Chụp ảnh phiếu kết quả xét nghiệm bằng camera."
+                  icon={<Camera className="size-7 text-neu-green" />}
                 />
-                <p className="text-[13px] text-neu-subtle">
-                  Chỉ chấp nhận đường link công khai (http/https).
+              )}
+              {mode === 'file' && (
+                <FilePicker
+                  accept="image/jpeg,image/png,application/pdf"
+                  file={file}
+                  onPick={pickFile}
+                  hint="Chọn ảnh JPG/PNG hoặc tệp PDF (tối đa 10MB)."
+                  icon={<Upload className="size-7 text-neu-green" />}
+                />
+              )}
+              {mode === 'url' && (
+                <div className="space-y-3">
+                  <p className="text-[15px] text-neu-muted">
+                    Dán đường link tới ảnh/PDF kết quả xét nghiệm.
+                  </p>
+                  <PatientInput
+                    type="url"
+                    inputMode="url"
+                    placeholder="https://..."
+                    value={url}
+                    onChange={(e) => setUrl(e.target.value)}
+                    leftIcon={<Link2 className="size-5" />}
+                  />
+                  <p className="text-[13px] text-neu-subtle">
+                    Chỉ chấp nhận đường link công khai (http/https).
+                  </p>
+                </div>
+              )}
+            </NeuCard>
+
+            <NeuButton
+              disabled={submitting || !catalog || (mode === 'url' ? !url.trim() : !file)}
+              onClick={submitForDraft}
+            >
+              {submitting
+                ? 'Đang xử lý...'
+                : !catalog
+                  ? 'Đang tải danh mục...'
+                  : 'Tải lên & đọc kết quả'}
+            </NeuButton>
+          </>
+        )}
+
+        {step === 'review' && draft && catalog && (
+          <>
+            {draft.manual_fallback ? (
+              <div className="rounded-[14px] bg-[#EEF4FB] border border-[#2563EB]/20 p-4">
+                <p className="text-[14px] font-bold text-[#1E4DA1]">Chưa nhận diện được chỉ số</p>
+                <p className="text-[13px] text-[#1E4DA1]/80 mt-1">
+                  Bạn có thể nhập tay kết quả xét nghiệm bên dưới rồi lưu.
+                </p>
+              </div>
+            ) : draft.low_confidence ? (
+              <div
+                role="alert"
+                className="rounded-[14px] bg-[#FEF9EC] border border-[#E0A92E]/30 p-4"
+              >
+                <p className="text-[14px] font-bold text-[#8B6400]">
+                  Một số chỉ số có độ tin cậy thấp
+                </p>
+                <p className="text-[13px] text-[#8B6400]/80 mt-1">
+                  Vui lòng kiểm tra lại các giá trị được tô màu vàng/đỏ trước khi lưu.
+                </p>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 text-[15px] text-neu-green">
+                <CheckCircle2 className="size-5" /> Đã đọc {draft.parsed_values.length} chỉ số. Hãy
+                kiểm tra lại trước khi lưu.
+              </div>
+            )}
+
+            {/* Persistent review reminder */}
+            <div
+              role="note"
+              className="rounded-[14px] bg-[#FEF9EC] border border-[#E0A92E]/30 px-4 py-3"
+            >
+              <p className="text-[13px] font-semibold text-[#8B6400]">
+                Vui lòng kiểm tra lại trước khi lưu
+              </p>
+            </div>
+
+            {/* Backend warnings: no-date detected, cloud-fallback used, OCR issues */}
+            {draft.warnings.length > 0 && (
+              <div className="space-y-1.5">
+                {draft.warnings.map((w, i) => (
+                  <div
+                    key={i}
+                    role="alert"
+                    className="flex items-start gap-2 rounded-[12px] bg-[#FEF9EC] border border-[#E0A92E]/30 px-3 py-2.5"
+                  >
+                    <AlertTriangle className="size-4 mt-0.5 shrink-0 text-[#E0A92E]" />
+                    <p className="text-[13px] text-[#8B6400]">{w}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Exam date — prominent, required, at the TOP of the review form. */}
+            <NeuCard>
+              <div className="mb-1.5 flex items-center justify-between">
+                <label className="flex items-center gap-1.5 text-[15px] font-semibold text-neu-green">
+                  <CalendarDays className="size-5" /> Ngày xét nghiệm
+                </label>
+                {testDateAuto && (
+                  <NeuBadge tone="ok" className="!text-[11px] !px-2.5 !py-0.5 before:!hidden">
+                    Tự động phát hiện
+                  </NeuBadge>
+                )}
+              </div>
+              <PatientInput
+                aria-label="Ngày xét nghiệm"
+                inputMode="numeric"
+                placeholder="DD/MM/YYYY"
+                value={testDate}
+                invalid={Boolean(testDate) && validateExamDate(testDate) !== null}
+                onChange={(e) => {
+                  setTestDate(formatDateInput(e.target.value))
+                  setTestDateAuto(false)
+                }}
+              />
+              <p className="mt-1.5 text-[13px] text-neu-subtle">
+                Ngày khám/lấy mẫu thật trên phiếu — không phải ngày tải lên.
+              </p>
+            </NeuCard>
+
+            {testDate && isOldLabDate(testDate) && (
+              <div
+                role="note"
+                className="rounded-[14px] bg-[#EEF4FB] border border-[#2563EB]/20 px-4 py-3"
+              >
+                <p className="text-[13px] text-[#1E4DA1]">
+                  Kết quả này đã cũ hơn 12 tháng — chỉ dùng để tham khảo lịch sử. Bạn vẫn có thể lưu.
                 </p>
               </div>
             )}
-          </NeuCard>
 
-          <NeuButton
-            disabled={submitting || (mode === 'url' ? !url.trim() : !file)}
-            onClick={submitForDraft}
-          >
-            {submitting ? 'Đang xử lý...' : 'Tải lên & đọc kết quả'}
-          </NeuButton>
-        </>
-      )}
-
-      {step === 'review' && draft && (
-        <>
-          {draft.manual_fallback ? (
-            <div className="rounded-[14px] bg-[#EEF4FB] border border-[#2563EB]/20 p-4">
-              <p className="text-[14px] font-bold text-[#1E4DA1]">Chưa nhận diện được chỉ số</p>
-              <p className="text-[13px] text-[#1E4DA1]/80 mt-1">
-                Bạn có thể nhập tay kết quả xét nghiệm bên dưới rồi lưu.
-              </p>
-            </div>
-          ) : draft.low_confidence ? (
-            <div
-              role="alert"
-              className="rounded-[14px] bg-[#FEF9EC] border border-[#E0A92E]/30 p-4"
-            >
-              <p className="text-[14px] font-bold text-[#8B6400]">
-                Một số chỉ số có độ tin cậy thấp
-              </p>
-              <p className="text-[13px] text-[#8B6400]/80 mt-1">
-                Vui lòng kiểm tra lại các giá trị được tô màu vàng/đỏ trước khi lưu.
-              </p>
-            </div>
-          ) : (
-            <div className="flex items-center gap-2 text-[15px] text-neu-green">
-              <CheckCircle2 className="size-5" /> Đã đọc {draft.parsed_values.length} chỉ số. Hãy
-              kiểm tra lại trước khi lưu.
-            </div>
-          )}
-
-          {/* Persistent review reminder — always shown on all review states */}
-          <div
-            role="note"
-            className="rounded-[14px] bg-[#FEF9EC] border border-[#E0A92E]/30 px-4 py-3"
-          >
-            <p className="text-[13px] font-semibold text-[#8B6400]">
-              Vui lòng kiểm tra lại trước khi lưu
-            </p>
-          </div>
-
-          {/* Backend warnings: no-date detected, cloud-fallback used, OCR issues */}
-          {draft.warnings.length > 0 && (
-            <div className="space-y-1.5">
-              {draft.warnings.map((w, i) => (
-                <div
-                  key={i}
-                  role="alert"
-                  className="flex items-start gap-2 rounded-[12px] bg-[#FEF9EC] border border-[#E0A92E]/30 px-3 py-2.5"
-                >
-                  <AlertTriangle className="size-4 mt-0.5 shrink-0 text-[#E0A92E]" />
-                  <p className="text-[13px] text-[#8B6400]">{w}</p>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Exam date — prominent, required, at the TOP of the review form. */}
-          <NeuCard>
-            <div className="mb-1.5 flex items-center justify-between">
-              <label className="flex items-center gap-1.5 text-[15px] font-semibold text-neu-green">
-                <CalendarDays className="size-5" /> Ngày xét nghiệm
+            <NeuCard>
+              <label className="mb-1.5 block text-[14px] font-semibold text-neu-green">
+                Tên phòng khám / xét nghiệm (tuỳ chọn)
               </label>
-              {testDateAuto && (
-                <NeuBadge tone="ok" className="!text-[11px] !px-2.5 !py-0.5 before:!hidden">
-                  Tự động phát hiện
-                </NeuBadge>
-              )}
+              <PatientInput
+                placeholder="VD: Phòng khám Đa khoa..."
+                value={labName}
+                onChange={(e) => setLabName(e.target.value)}
+              />
+            </NeuCard>
+
+            {/* Catalog-bound OCR review rows */}
+            <div className="space-y-3">
+              {rows.map((row, i) => (
+                <OcrReviewCard
+                  key={row.id}
+                  catalog={catalog}
+                  row={row}
+                  index={i}
+                  onRowChange={(patch) =>
+                    setRows((rs) => rs.map((r, idx) => (idx === i ? { ...r, ...patch } : r)))
+                  }
+                  onRemove={() => setRows((rs) => rs.filter((_, idx) => idx !== i))}
+                />
+              ))}
+
+              <NeuButton
+                variant="secondary"
+                onClick={() => setRows((rs) => [...rs, makeEmptyOcrRow()])}
+              >
+                <Plus className="size-4" /> Thêm chỉ số
+              </NeuButton>
             </div>
-            <PatientInput
-              aria-label="Ngày xét nghiệm"
-              inputMode="numeric"
-              placeholder="DD/MM/YYYY"
-              value={testDate}
-              invalid={Boolean(testDate) && validateExamDate(testDate) !== null}
-              onChange={(e) => {
-                setTestDate(formatDateInput(e.target.value))
-                setTestDateAuto(false)
-              }}
-            />
-            <p className="mt-1.5 text-[13px] text-neu-subtle">
-              Ngày khám/lấy mẫu thật trên phiếu — không phải ngày tải lên.
-            </p>
-          </NeuCard>
 
-          {testDate && isOldLabDate(testDate) && (
-            <div
-              role="note"
-              className="rounded-[14px] bg-[#EEF4FB] border border-[#2563EB]/20 px-4 py-3"
-            >
-              <p className="text-[13px] text-[#1E4DA1]">
-                Kết quả này đã cũ hơn 12 tháng — chỉ dùng để tham khảo lịch sử. Bạn vẫn có thể lưu.
-              </p>
-            </div>
-          )}
-
-          <NeuCard>
-            <label className="mb-1.5 block text-[14px] font-semibold text-neu-green">
-              Tên phòng khám / xét nghiệm (tuỳ chọn)
-            </label>
-            <PatientInput
-              placeholder="VD: Phòng khám Đa khoa..."
-              value={labName}
-              onChange={(e) => setLabName(e.target.value)}
-            />
-          </NeuCard>
-
-          <div className="space-y-3">
-            {rows.map((row, i) => {
-              const badge = confidenceBadge(row.confidence)
-              const lowConf = row.confidence != null && row.confidence < 0.6
-              return (
-                <NeuCard key={i}>
-                  <div className="mb-2 flex items-start justify-between gap-2">
-                    <div className="flex items-center flex-wrap gap-1">
-                      <NeuBadge
-                        tone={badge.tone}
-                        className="!text-[11px] !px-2.5 !py-0.5 before:!hidden"
-                      >
-                        {badge.label}
-                      </NeuBadge>
-                      <ConfidenceBadge
-                        confidence={row.confidence}
-                        needsVerification={row.needs_verification}
-                        reasons={row.confidence_reasons}
-                      />
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {row.status && STATUS_LABEL[row.status] && (
-                        <span className="text-[13px] text-neu-subtle">
-                          {STATUS_LABEL[row.status]}
-                        </span>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => setRows((rs) => rs.filter((_, idx) => idx !== i))}
-                        aria-label="Xoá chỉ số"
-                        className="rounded-md p-1.5 text-[#D92D20] hover:bg-[#f6dede]"
-                      >
-                        <Trash2 className="size-4" />
-                      </button>
-                    </div>
-                  </div>
-                  {/* Vietnamese display label — not editable, from OCR + catalog */}
-                  <div className="text-[15px] font-semibold text-neu-text">
-                    {row.display_name_vi || row.test_name}
-                  </div>
-                  {row.original_test_name && row.original_test_name !== row.test_name && (
-                    <div className="text-[11px] text-neu-subtle font-mono">
-                      {row.original_test_name}
-                    </div>
-                  )}
-                  <div className="mt-2 grid grid-cols-3 gap-2">
-                    <PatientInput
-                      aria-label="Giá trị"
-                      type="number"
-                      step="any"
-                      inputMode="decimal"
-                      placeholder="Giá trị"
-                      value={row.value}
-                      invalid={lowConf}
-                      onChange={(e) => setRow(i, { value: e.target.value })}
-                    />
-                    <PatientInput
-                      aria-label="Đơn vị"
-                      placeholder="Đơn vị"
-                      value={row.unit}
-                      onChange={(e) => setRow(i, { unit: e.target.value })}
-                    />
-                    <PatientInput
-                      aria-label="Tham chiếu"
-                      placeholder="Tham chiếu"
-                      value={row.reference_range}
-                      onChange={(e) => setRow(i, { reference_range: e.target.value })}
-                    />
-                  </div>
-                  {lowConf && (
-                    <p className="mt-2 flex items-center gap-1 text-[13px] text-[#D92D20]">
-                      <AlertTriangle className="size-4" /> Cần kiểm tra lại số liệu này.
-                    </p>
-                  )}
-                  {row.canonical_value != null &&
-                    row.canonical_unit &&
-                    row.canonical_unit !== row.unit && (
-                      <p className="mt-1 text-[11px] text-neu-subtle">
-                        Chuẩn hóa: {row.canonical_value.toFixed(4)} {row.canonical_unit}
-                      </p>
-                    )}
-                </NeuCard>
-              )
-            })}
-
-            <NeuButton
-              variant="secondary"
-              onClick={() =>
-                setRows((rs) => [
-                  ...rs,
-                  {
-                    test_name: '',
-                    value: '',
-                    unit: '',
-                    reference_range: '',
-                    confidence: null,
-                    needs_verification: false,
-                    status: null,
-                    confidence_reasons: [],
-                    original_value: null,
-                    original_unit: null,
-                    display_name_vi: '',
-                    original_test_name: '',
-                    canonical_value: null,
-                    canonical_unit: null,
-                    display_reference_range: null,
-                  },
-                ])
-              }
-            >
-              <Plus className="size-4" /> Thêm chỉ số
+            <NeuButton disabled={saving} onClick={confirmSave}>
+              {saving ? 'Đang lưu...' : 'Xác nhận & lưu vào hồ sơ'}
             </NeuButton>
-          </div>
-
-          <NeuButton disabled={saving} onClick={confirmSave}>
-            {saving ? 'Đang lưu...' : 'Xác nhận & lưu vào hồ sơ'}
-          </NeuButton>
-          <p className="text-center text-[13px] text-neu-subtle">
-            Kết quả chỉ được lưu sau khi bạn xác nhận.
-          </p>
-        </>
-      )}
-    </div>
+            <p className="text-center text-[13px] text-neu-subtle">
+              Kết quả chỉ được lưu sau khi bạn xác nhận.
+            </p>
+          </>
+        )}
+      </div>
     </>
   )
 }
