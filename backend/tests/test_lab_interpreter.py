@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-
 from app.domain import lab_interpreter, policies
 from app.domain.lab_interpreter import LabStatus, RawLabValue
 from app.services import lab_parser

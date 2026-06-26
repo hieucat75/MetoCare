@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import pytest
-
 from app.domain.ocr_gap_analysis import compute_gap
 
 

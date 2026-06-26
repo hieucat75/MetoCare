@@ -21,18 +21,16 @@ Test inventory:
 from __future__ import annotations
 
 import pytest
-
+from app.domain.hospital_profiles import detect_hospital
 from app.domain.lab_table_extractor import (
-    OcrTableRow,
     _INSTRUMENT_NAME_BLOCKLIST,
+    OcrTableRow,
     _is_instrument_cell,
     clean_test_name,
+    extract_and_map,
     extract_table_rows,
     map_table_rows_to_raw_values,
-    extract_and_map,
 )
-from app.domain.hospital_profiles import detect_hospital
-
 
 # ──────────────────────────────────────────────────── helpers ──────────────────
 
@@ -539,9 +537,10 @@ class TestPromoteGateFU1:
 
     def test_unverified_row_not_promoted_by_promote_row(self):
         """_promote_row must return False for verified_by_user=False (defence-in-depth)."""
-        from app.services.lab import _promote_row
-        from unittest.mock import MagicMock
         import datetime as dt
+        from unittest.mock import MagicMock
+
+        from app.services.lab import _promote_row
 
         row = self._make_lab_result(verified=False)
         db = MagicMock()
@@ -551,9 +550,10 @@ class TestPromoteGateFU1:
 
     def test_verified_row_is_promoted(self):
         """_promote_row must proceed normally for verified_by_user=True."""
-        from app.services.lab import _promote_row
-        from unittest.mock import MagicMock, patch
         import datetime as dt
+        from unittest.mock import MagicMock, patch
+
+        from app.services.lab import _promote_row
 
         row = self._make_lab_result(verified=True)
         db = MagicMock()
@@ -565,7 +565,7 @@ class TestPromoteGateFU1:
 
     def test_promote_gate_filters_unverified_in_pipeline(self):
         """lab_pipeline must pass only verified rows to promote_lab_rows_to_metrics."""
-        from unittest.mock import MagicMock, patch, call
+        from unittest.mock import MagicMock, patch
 
         verified = self._make_lab_result(verified=True, canonical="fasting_glucose")
         unverified = self._make_lab_result(verified=False, canonical="alt")
@@ -576,7 +576,6 @@ class TestPromoteGateFU1:
             return len(rows)
 
         with patch("app.services.lab.promote_lab_rows_to_metrics", side_effect=fake_promote):
-            from app.services import lab_pipeline
             # Call the gate logic directly (simulate what pipeline does)
             new_rows = [verified, unverified]
             verified_rows = [r for r in new_rows if r.verified_by_user]
@@ -588,7 +587,6 @@ class TestPromoteGateFU1:
 
     def test_dashboard_aggregation_ignores_unverified(self):
         """No unverified row may appear in the captured promote list."""
-        from unittest.mock import MagicMock
 
         rows = [
             self._make_lab_result(verified=True,  canonical="fasting_glucose"),
@@ -606,19 +604,14 @@ class TestPromoteGateFU1:
 # NEW: Provider-profile regression tests (feat/ocr-provider-profiles)
 # ══════════════════════════════════════════════════════════════════════════════
 
-from tests.fixtures.vinmec_mock_table import (
-    build_vinmec_analyze_result,
-    VINMEC_EXPECTED,
-    VINMEC_HEADER as _VH,
-    VINMEC_DATA as _VD,
-)
 from tests.fixtures.medlatec_inline_mock_table import (
-    build_medlatec_inline_analyze_result,
     MEDLATEC_INLINE_EXPECTED,
-    MEDLATEC_INLINE_HEADER as _MH,
-    MEDLATEC_INLINE_DATA as _MD,
+    build_medlatec_inline_analyze_result,
 )
-
+from tests.fixtures.vinmec_mock_table import (
+    VINMEC_EXPECTED,
+    build_vinmec_analyze_result,
+)
 
 # ── Helper (duplicated from module-level for import isolation) ────────────────
 

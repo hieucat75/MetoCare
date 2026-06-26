@@ -257,7 +257,6 @@ class AzureDocIntelEngine:
     def _poll(self, httpx, op_url: str, key: str) -> dict:
         """Poll the long-running analyze operation until terminal. Honours the
         server-suggested ``retry-after`` backoff; raises on failure/timeout."""
-        import time
 
         for _ in range(self._POLL_MAX_ATTEMPTS):
             poll = httpx.get(

@@ -17,9 +17,6 @@ import datetime as dt
 import os
 
 import pytest
-from fastapi.testclient import TestClient
-from sqlalchemy import select
-
 from app.core.security import create_access_token
 from app.main import app
 from app.models.clinical import HealthMetric, LabResult, LabUploadBatch
@@ -27,7 +24,8 @@ from app.models.patient import PatientProfile
 from app.models.user import User, UserRole
 from app.services import lab as lab_svc
 from app.services import lab_batch
-
+from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 _TODAY = dt.date.today()
 

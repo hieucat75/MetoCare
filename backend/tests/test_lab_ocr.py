@@ -1234,7 +1234,6 @@ class TestCodexP1Fixes:
     def test_digit_adjacent_mol_not_rewritten(self):
         """88.42mol/L (no space) must NOT be rewritten to 88.42µmol/L by the global
         correction — the digit lookbehind guards it, and the value regex handles it."""
-        import re
         from app.services.lab_parser import _GLOBAL_OCR_CORRECTIONS_RE
         pattern, replacement = _GLOBAL_OCR_CORRECTIONS_RE[0]
         result = pattern.sub(replacement, "88.42mol/L")

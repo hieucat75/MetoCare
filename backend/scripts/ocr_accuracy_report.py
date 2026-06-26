@@ -16,10 +16,9 @@ from datetime import datetime, timedelta
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+from app.models.ocr_case import OCRCase
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
-
-from app.models.ocr_case import OCRCase
 
 
 def _engine():

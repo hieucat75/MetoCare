@@ -42,9 +42,9 @@ def _engine():
 
 
 def _load_cases(engine, *, days: int | None) -> list:
+    from app.models.ocr_case import OCRCase
     from sqlalchemy import select
     from sqlalchemy.orm import Session
-    from app.models.ocr_case import OCRCase
 
     with Session(engine) as db:
         stmt = select(OCRCase).where(OCRCase.gap_report_json.is_not(None))
@@ -142,7 +142,10 @@ def run_report(cases: list) -> None:
     print("=" * 72)
 
     print("\n## Overall Baseline\n")
-    avg = lambda k: total_stats[k] / n
+
+    def avg(k: str) -> float:
+        return total_stats[k] / n
+
     print(f"  Cases analysed : {n}")
     print(f"  Row accuracy   : {avg('row_acc'):.1%}")
     print(f"  Value accuracy : {avg('val_acc'):.1%}")
@@ -208,7 +211,7 @@ def run_report(cases: list) -> None:
         print(f"  SUFFICIENT — {n} cases (≥{THRESHOLD}). Patterns are statistically meaningful.")
     else:
         print(f"  INSUFFICIENT — {n} case{'s' if n != 1 else ''} (need ≥{THRESHOLD}).")
-        print(f"  Fix proposals are directional hypotheses only.")
+        print("  Fix proposals are directional hypotheses only.")
         print(f"  Need {THRESHOLD - n} more real-patient uploads for reliable conclusions.")
     print("\n" + "=" * 72)
 
