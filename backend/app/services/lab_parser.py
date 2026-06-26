@@ -38,6 +38,41 @@ _VALUE_RE = re.compile(rf"(?P<value>{_NUMBER})\s*(?P<unit>{_UNIT})?")
 # reference range like "3.9 - 6.1" or "(3.9-6.1)"
 _RANGE_RE = re.compile(rf"(?P<lo>{_NUMBER})\s*[-–—]\s*(?P<hi>{_NUMBER})")
 
+# Machine/instrument suffix patterns in lowercase/accent-stripped form.
+# Applied to the text AFTER a biomarker label match to skip machine names that
+# appear between the label and the actual numeric value.
+# Example: "AST (GOT) (Cobas C502)* 25.37 U/L"
+#   label="AST (GOT)" matched → after=" (Cobas C502)* 25.37 U/L"
+#   → strip "(Cobas C502)*" → " 25.37 U/L" → correct value 25.37
+_AFTER_LABEL_STRIP_RE = re.compile(
+    r"(?:"
+    r"\(\s*cobas\s+[a-z]*\s*\d*\s*\)"          # (cobas c502), (cobas pro), (cobas 8000)
+    r"|\(\s*c\s*\d{3,4}\s*\)"                   # (c502), (c702)
+    r"|\(\s*au\s*\d{3,4}\s*\)"                  # (au480), (au680)
+    r"|\(\s*qx\s*[\w.]*\s*\)"                   # (qx200), (qx.sh.xxx)
+    r"|\(\s*sysmex\s+[a-z0-9\s-]*\)"            # (sysmex xn-1000)
+    r"|\(\s*architect\s*[a-z0-9\s]*\)"          # (architect i2000)
+    r"|\(\s*(?:abbott|roche|siemens|beckman|coulter|olympus|hitachi)\s*[a-z0-9\s-]*\)"
+    r"|\*"                                       # trailing asterisk
+    r")\s*",
+    re.IGNORECASE,
+)
+
+
+def _strip_machine_suffixes(text: str) -> str:
+    """Strip machine/instrument suffixes that precede the numeric lab value.
+
+    Prevents model numbers (e.g. 502 from "(Cobas C502)") from being extracted
+    as the result when the machine suffix appears between the test-name label and
+    the actual result in the OCR text line.  Applied iteratively until stable.
+    """
+    prev = None
+    result = text
+    while result != prev:
+        prev = result
+        result = _AFTER_LABEL_STRIP_RE.sub("", result, count=1).lstrip()
+    return result
+
 
 @dataclass
 class ParsedLine:
@@ -205,7 +240,9 @@ def parse_lab_text(
             display_name_vi = spec.canonical
 
         # Read the value strictly AFTER the matched label.
-        after = line_noacc[label_end:]
+        # Strip any machine/instrument suffixes first (e.g. "(Cobas C502)*") to
+        # prevent model numbers like 502 from being misread as the lab value.
+        after = _strip_machine_suffixes(line_noacc[label_end:])
         vm = _VALUE_RE.search(after)
         if vm is None:
             continue

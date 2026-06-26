@@ -168,6 +168,38 @@ def _row_contains_instrument(raw_cells: list[str]) -> bool:
     return any(_is_instrument_cell(c) for c in raw_cells)
 
 
+def _is_pure_instrument_cell(text: str) -> bool:
+    """True when a cell contains ONLY an instrument/machine name (no medical test-name prefix).
+
+    Differentiates dedicated instrument columns ("Cobas C502", "Sysmex XN-1000")
+    from test-name cells that embed a machine suffix ("AST (GOT) (Cobas C502)*").
+    The latter have meaningful medical text that survives stripping; pure instrument
+    cells have nothing meaningful remaining after stripping known patterns.
+
+    Used for majority-vote instrument-column detection so that the test_name column
+    (which contains inline machine suffixes) is NOT mis-classified as the method column.
+    """
+    if not text:
+        return False
+    t = text.strip()
+    if not _is_instrument_cell(t):
+        return False
+    # Apply all machine-suffix strip patterns.  For a pure instrument cell like
+    # "Cobas C502" (no surrounding parens) these patterns won't match — the text
+    # itself IS the instrument name, detected by _is_instrument_cell above.
+    cleaned = t
+    for pat in _TEST_NAME_STRIP_PATTERNS:
+        cleaned = pat.sub("", cleaned)
+    cleaned = cleaned.strip()
+    # If nothing meaningful remains → pure instrument cell.
+    if len(cleaned) <= 2:
+        return True
+    # If the remaining text is still an instrument name (e.g. bare "Cobas C502"
+    # without enclosing parens can't be stripped by paren-based patterns),
+    # confirm via _is_instrument_cell.
+    return _is_instrument_cell(cleaned)
+
+
 # ─────────────────────────────────────── Provider-aware test name cleaner ──────
 
 # Patterns that appear in test name cells but are NOT part of the test name.
@@ -175,7 +207,7 @@ def _row_contains_instrument(raw_cells: list[str]) -> bool:
 # Strip these before alias matching so the alias index can find the correct biomarker.
 _TEST_NAME_STRIP_PATTERNS: list[re.Pattern] = [
     # Machine/analyzer suffixes — handles both compact and spaced model numbers:
-    # "(Cobas C502)", "(Cobas C 502)", "(Cobas 8000)", "(Cobas Pro)", etc.
+    # "(Cobas C502)", "(Cobas C 502)", "(Cobas 8000)", "(Cobas Pro)", "(Cobas e601)", etc.
     re.compile(r"\(\s*Cobas\s+[A-Za-z]+\s*[0-9]*\s*\)", re.IGNORECASE),
     # Bare model codes: (C502), (C 502), (C702), (C 702)
     re.compile(r"\(\s*C\s*\d{3,4}\s*\)", re.IGNORECASE),
@@ -185,6 +217,16 @@ _TEST_NAME_STRIP_PATTERNS: list[re.Pattern] = [
     re.compile(r"\(\s*AU\s*\d{3,4}\s*\)", re.IGNORECASE),
     # Sysmex: (Sysmex XN-1000), (Sysmex XN 1000)
     re.compile(r"\(\s*Sysmex\s+[A-Za-z0-9\s-]+\s*\)", re.IGNORECASE),
+    # Abbott Architect series: (Architect i2000), (Architect Plus), (Architect c16000)
+    re.compile(r"\(\s*Architect\s+[A-Za-z0-9\s+]*\s*\)", re.IGNORECASE),
+    # Standalone Architect (no model number)
+    re.compile(r"\(\s*Architect\s*\)", re.IGNORECASE),
+    # Other major instrument brands — Abbott, Roche, Siemens, Beckman, Olympus, Hitachi.
+    # These never appear as medically meaningful abbreviations (unlike GOT, GPT, etc.).
+    re.compile(
+        r"\(\s*(?:Abbott|Roche|Siemens|Beckman|Coulter|Olympus|Hitachi)\s*[A-Za-z0-9\s-]*\s*\)",
+        re.IGNORECASE,
+    ),
     # Trailing asterisk often added by Medlatec to flagged results, e.g. "Cholesterol*"
     re.compile(r"\*\s*$"),
 ]
@@ -313,24 +355,43 @@ def _detect_column_roles(
                     roles[role] = ci
                 break
 
-    # Also detect method/instrument columns from cell *content* (not just header text).
-    # Some hospitals omit a proper header but fill the column with "Cobas C502" etc.
-    method_col_candidate: int | None = None
+    # ── Majority-vote instrument column detection ─────────────────────────────
+    # Count data-row cells per column where _is_pure_instrument_cell returns True.
+    # "Pure instrument" = cell contains ONLY an instrument name with no medical prefix.
+    # This prevents test_name cells like "AST (GOT) (Cobas C502)*" from being
+    # classified as the instrument column (the old first-hit scan stopped there,
+    # wrongly marking the test_name column as method, which then corrupted value_col).
+    _pure_instr_counts: dict[int, int] = {}
+    _col_data_counts: dict[int, int] = {}
     for cell in cells_raw:
         ri = cell.get("rowIndex", 0)
         if ri in header_row_indices:
             continue
         ci = cell.get("columnIndex", 0)
         content = (cell.get("content") or "").strip()
-        if content and _is_instrument_cell(content):
-            method_col_candidate = ci
-            break  # first hit is enough
+        _col_data_counts[ci] = _col_data_counts.get(ci, 0) + 1
+        if content and _is_pure_instrument_cell(content):
+            _pure_instr_counts[ci] = _pure_instr_counts.get(ci, 0) + 1
 
-    if method_col_candidate is not None and roles.get("method") is None:
-        roles["method"] = method_col_candidate
+    # A column is the instrument column when >40% of its data cells are pure
+    # instrument names.  This threshold is robust to occasional mixed cells.
+    inferred_method_col: int | None = None
+    for ci, count in _pure_instr_counts.items():
+        total = _col_data_counts.get(ci, 1)
+        ratio = count / total
+        if ratio > 0.4:
+            inferred_method_col = ci
+            _logger.debug(
+                "table_extractor_method_col_majority_vote col=%d ratio=%.2f",
+                ci, ratio,
+            )
+            break
+
+    if inferred_method_col is not None and roles.get("method") is None:
+        roles["method"] = inferred_method_col
         _logger.debug(
-            "table_extractor_method_col_detected col=%d (content scan)",
-            method_col_candidate,
+            "table_extractor_method_col_detected col=%d (majority vote)",
+            inferred_method_col,
         )
 
     if roles["test_name"] is None or roles["value"] is None:
@@ -343,6 +404,7 @@ def _detect_column_roles(
     non_value_cols: set[int] = {
         roles[r] for r in _NON_VALUE_ROLES if roles.get(r) is not None
     }
+    non_value_cols.discard(None)  # type: ignore[arg-type]
     if roles["value"] in non_value_cols:
         bad_col = roles["value"]
         _logger.warning(
@@ -351,16 +413,43 @@ def _detect_column_roles(
         )
         positional = _infer_column_roles_positional(max_col)
         fallback_value = positional.get("value")
-        # The fallback must not land on any non-value column either.
         if fallback_value not in non_value_cols:
             roles["value"] = fallback_value
         else:
-            # Last resort: pick the first column that is not stt, test_name, or non-value.
+            # Last resort: first column that is not stt, test_name, or non-value.
             excluded = {roles.get("stt"), roles.get("test_name")} | non_value_cols
+            excluded.discard(None)  # type: ignore[arg-type]
             for ci in range(max_col + 1):
                 if ci not in excluded:
                     roles["value"] = ci
                     break
+
+    # ── Hard constraint: value_col must always be AFTER test_name_col ─────────
+    # This is the P0 column-locking rule: the result column is always to the RIGHT
+    # of the test name column.  Enforced as a hard post-processing step so no
+    # fallback path can accidentally assign a left column as the result source.
+    if (
+        roles.get("value") is not None
+        and roles.get("test_name") is not None
+        and roles["value"] <= roles["test_name"]  # type: ignore[operator]
+    ):
+        _logger.warning(
+            "table_extractor_value_col_left_of_test_name "
+            "value_col=%d test_name_col=%d — shifting right",
+            roles["value"], roles["test_name"],
+        )
+        bad_val = roles["value"]
+        test_col = roles["test_name"]
+        nv: set[int] = non_value_cols | {test_col}
+        roles["value"] = None
+        for ci in range(test_col + 1, max_col + 1):  # type: ignore[operator]
+            if ci not in nv:
+                roles["value"] = ci
+                break
+        _logger.debug(
+            "table_extractor_value_col_corrected old=%d new=%s",
+            bad_val, roles.get("value"),
+        )
 
     return roles
 
@@ -489,6 +578,23 @@ def extract_table_rows(
                 )
 
             row_confidence = 0.0 if suspect_machine_id else 0.95
+
+            _logger.debug(
+                "table_extractor_row ri=%d "
+                "raw=%r cleaned_name=%r "
+                "val_col=%d val_raw=%r val_str=%r "
+                "unit_col=%s unit=%r ref=%r suspect=%s",
+                ri,
+                raw_cells,
+                test_name_clean,
+                value_col,
+                value_raw,
+                value_str,
+                unit_col,
+                unit_str,
+                ref_str,
+                suspect_machine_id,
+            )
 
             rows.append(OcrTableRow(
                 original_test_name=test_name,
