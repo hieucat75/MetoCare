@@ -28,7 +28,11 @@ import re
 import unicodedata
 from dataclasses import dataclass, field
 
-from app.domain.hospital_profiles import detect_hospital as _detect_hospital
+from app.domain.hospital_profiles import (
+    detect_hospital as _detect_hospital,
+    HospitalProfile,
+    UNKNOWN_PROFILE,
+)
 from app.domain.lab_catalog import get_catalog as _get_catalog
 from app.domain.lab_interpreter import (
     _ALIAS_INDEX,
@@ -457,6 +461,7 @@ def _detect_column_roles(
 def extract_table_rows(
     analyze_result: dict,
     hospital_id: str | None = None,
+    profile: HospitalProfile | None = None,
 ) -> list[OcrTableRow]:
     """Layer 1: Extract OcrTableRow list from Azure DI analyzeResult.tables.
 
@@ -492,7 +497,102 @@ def extract_table_rows(
         if not header_row_indices:
             header_row_indices = {0}
 
-        roles = _detect_column_roles(cells_raw, header_row_indices, max_col)
+        # If the profile provides an explicit column map, validate it against the
+        # actual table structure before using it.  A column map is compatible when:
+        #   1. The table has at least as many columns as the map's max index.
+        #   2. The cell at (header_row, cm.test_name) looks like a test-name column header
+        #      AND the cell at (header_row, cm.value) looks like a value/result column header.
+        # When incompatible, fall back to heuristic column detection.
+        _use_column_map = False
+        if profile is not None and profile.column_map is not None:
+            cm = profile.column_map
+            if cm.value <= max_col:
+                # Gather header text for the mapped test_name and value columns.
+                _col_headers: dict[int, str] = {}
+                for hdr_ri in header_row_indices:
+                    for c in cells_raw:
+                        if c.get("rowIndex") == hdr_ri:
+                            ci = c.get("columnIndex", -1)
+                            _col_headers[ci] = _strip_accents_lower(c.get("content", ""))
+
+                _test_name_header = _col_headers.get(cm.test_name, "")
+                _value_header = _col_headers.get(cm.value, "")
+                _unit_header = _col_headers.get(cm.unit, "") if cm.unit is not None else ""
+
+                # The column_map is valid when:
+                #   - test_name column header matches test_name keywords (or no headers exist)
+                #   - value column header does NOT match test_name keywords
+                #   - unit column header (if declared) does NOT look like a reference range
+                _test_name_ok = (
+                    not _test_name_header  # no header text — assume map is correct
+                    or any(
+                        kw in _test_name_header or _test_name_header in kw
+                        for kw in _COL_ROLE_KEYWORDS["test_name"]
+                    )
+                )
+                _value_not_name_col = not any(
+                    kw in _value_header or _value_header in kw
+                    for kw in _COL_ROLE_KEYWORDS["test_name"]
+                )
+                # If the declared unit column's header looks like a reference column,
+                # the table has a different layout — unit is likely embedded in value.
+                _unit_col_ok = (
+                    not _unit_header
+                    or not any(
+                        kw in _unit_header or _unit_header in kw
+                        for kw in _COL_ROLE_KEYWORDS["reference"]
+                    )
+                )
+                if _test_name_ok and _value_not_name_col and _unit_col_ok:
+                    _use_column_map = True
+                else:
+                    _logger.warning(
+                        "table_extractor_column_map_incompatible hospital=%s "
+                        "test_name_col=%d header=%r value_col=%d value_header=%r "
+                        "unit_col=%s unit_header=%r — falling back to heuristics",
+                        profile.hospital_id, cm.test_name, _test_name_header,
+                        cm.value, _value_header, cm.unit, _unit_header,
+                    )
+
+        if _use_column_map and profile is not None and profile.column_map is not None:
+            cm = profile.column_map
+            roles: dict[str, int | None] = {
+                "stt": cm.stt,
+                "test_name": cm.test_name,
+                "value": cm.value,
+                "unit": cm.unit,
+                "reference": cm.reference,
+                "method": None,
+                "price": None,
+                "note": None,
+                "procedure": None,
+                "device": None,
+            }
+            # Mark all skip_cols as method (excluded from value extraction)
+            for sc in cm.skip_cols:
+                # Assign to method slot if not already used, otherwise track in non_value set
+                if roles["method"] is None:
+                    roles["method"] = sc
+                # If more than one skip col, they'll be handled by non_value_cols check below
+            _logger.debug(
+                "table_extractor_profile_column_map hospital=%s roles=%s",
+                profile.hospital_id, roles,
+            )
+        else:
+            roles = _detect_column_roles(cells_raw, header_row_indices, max_col)
+
+        # Handle multiple skip_cols: ensure value_col is not among them.
+        if _use_column_map and profile is not None and profile.column_map is not None:
+            non_value_cols_from_profile: set[int] = set(profile.column_map.skip_cols)
+            if roles["value"] in non_value_cols_from_profile:
+                _logger.error(
+                    "table_extractor_profile_column_map value_col=%d is in skip_cols=%s "
+                    "— profile misconfigured",
+                    roles["value"], profile.column_map.skip_cols,
+                )
+                # Fall back to heuristic detection
+                roles = _detect_column_roles(cells_raw, header_row_indices, max_col)
+
         test_name_col = roles.get("test_name")
         value_col = roles.get("value")
         unit_col = roles.get("unit")
@@ -502,8 +602,21 @@ def extract_table_rows(
             _logger.debug("table_extractor_no_cols table_cols=%d", max_col + 1)
             continue
 
+        # Build footer row set using profile.footer_patterns (accent-stripped match).
+        footer_rows: set[int] = set()
+        if profile is not None and profile.footer_patterns:
+            for ri_check in range(max_row + 1):
+                if ri_check in header_row_indices:
+                    continue
+                row_text = " ".join(
+                    cell_map.get((ri_check, ci), "") for ci in range(max_col + 1)
+                )
+                row_norm = _strip_accents_lower(row_text)
+                if any(fp in row_norm for fp in profile.footer_patterns):
+                    footer_rows.add(ri_check)
+
         for ri in range(max_row + 1):
-            if ri in header_row_indices:
+            if ri in header_row_indices or ri in footer_rows:
                 continue
 
             test_name = cell_map.get((ri, test_name_col), "").strip()
@@ -879,7 +992,7 @@ def extract_and_map(
             "all rows will require_review=True, confidence capped at 0.5"
         )
 
-    table_rows = extract_table_rows(analyze_result, hospital_id=hospital_id)
+    table_rows = extract_table_rows(analyze_result, hospital_id=hospital_id, profile=profile)
     if not table_rows:
         return []
     raw_values = map_table_rows_to_raw_values(

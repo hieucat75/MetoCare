@@ -1,0 +1,18 @@
+{
+  "hospital_id": "medlatec",
+  "biomarker_count": 11,
+  "acceptance_threshold": 0.90,
+  "expected_biomarkers": {
+    "fasting_glucose":  {"original_value": 5.73,  "original_unit": "mmol/L", "must_not_be_value": 502},
+    "hba1c":            {"original_value": 5.6,   "original_unit": "%"},
+    "total_cholesterol":{"original_value": 5.12,  "original_unit": "mmol/L"},
+    "triglyceride":     {"original_value": 1.97,  "original_unit": "mmol/L"},
+    "hdl":              {"original_value": 1.18,  "original_unit": "mmol/L"},
+    "ldl":              {"original_value": 2.84,  "original_unit": "mmol/L"},
+    "ast":              {"original_value": 35.0,  "original_unit": "U/L"},
+    "alt":              {"original_value": 51.63, "original_unit": "U/L"},
+    "ggt":              {"original_value": 45.0,  "original_unit": "U/L"},
+    "creatinine":       {"original_value": 87.66, "original_unit": "µmol/L"},
+    "urea":             {"original_value": 5.43,  "original_unit": "mmol/L"}
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "hospital_id": "vinmec",
+  "biomarker_count": 16,
+  "acceptance_threshold": 0.95,
+  "expected_biomarkers": {
+    "fasting_glucose":  {"original_value": 5.20,  "original_unit": "mmol/L", "must_not_be_value": 502},
+    "hba1c":            {"original_value": 5.4,   "original_unit": "%"},
+    "total_cholesterol":{"original_value": 4.80,  "original_unit": "mmol/L"},
+    "triglyceride":     {"original_value": 1.50,  "original_unit": "mmol/L"},
+    "hdl":              {"original_value": 1.30,  "original_unit": "mmol/L"},
+    "ldl":              {"original_value": 2.90,  "original_unit": "mmol/L"},
+    "ast":              {"original_value": 22.0,  "original_unit": "U/L"},
+    "alt":              {"original_value": 28.0,  "original_unit": "U/L"},
+    "ggt":              {"original_value": 31.0,  "original_unit": "U/L"},
+    "creatinine":       {"original_value": 72.0,  "original_unit": "µmol/L"},
+    "urea":             {"original_value": 4.8,   "original_unit": "mmol/L"},
+    "uric_acid":        {"original_value": 320.0, "original_unit": "µmol/L"},
+    "tsh":              {"original_value": 2.10,  "original_unit": "µIU/mL"},
+    "ft4":              {"original_value": 15.0,  "original_unit": "pmol/L"},
+    "sodium":           {"original_value": 139.0, "original_unit": "mmol/L"},
+    "potassium":        {"original_value": 4.0,   "original_unit": "mmol/L"}
+  }
+}
