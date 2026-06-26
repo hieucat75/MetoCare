@@ -29,9 +29,10 @@ import unicodedata
 from dataclasses import dataclass, field
 
 from app.domain.hospital_profiles import (
-    detect_hospital as _detect_hospital,
     HospitalProfile,
-    UNKNOWN_PROFILE,
+)
+from app.domain.hospital_profiles import (
+    detect_hospital as _detect_hospital,
 )
 from app.domain.lab_catalog import get_catalog as _get_catalog
 from app.domain.lab_interpreter import (
