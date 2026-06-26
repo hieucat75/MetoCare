@@ -3,19 +3,39 @@
 import { PatientEmptyState, LabEntryModal } from '@/components/patient'
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
-import { CalendarDays, FlaskConical, Plus, Trash2, Upload } from 'lucide-react'
+import {
+  BarChart2,
+  CalendarDays,
+  ChevronDown,
+  ChevronUp,
+  FlaskConical,
+  Plus,
+  Trash2,
+  Upload,
+} from 'lucide-react'
 import { PatientErrorState } from '@/components/patient/states'
 import { NeuCard, NeuBadge, NeuButton } from '@/components/patient/neu'
 import { useAuth } from '@/lib/auth/context'
 import { deleteLabBatch, getLabBatches, type LabUploadBatch } from '@/lib/api/patient'
 import { useFeatureFlags } from '@/lib/api/features'
 import { formatDate } from '@/lib/utils'
+import { LabInsightSection } from '@/components/patient/LabInsightCards'
 
 const HERO_GRADIENT = 'linear-gradient(160deg,#17AE7B,#0B6B4D)'
 
 // ── Batch card ─────────────────────────────────────────────────────────────────
 
-function BatchCard({ batch, onDelete }: { batch: LabUploadBatch; onDelete: (id: string) => void }) {
+function BatchCard({
+  batch,
+  onDelete,
+  isSelected,
+  onToggleInsight,
+}: {
+  batch: LabUploadBatch
+  onDelete: (id: string) => void
+  isSelected: boolean
+  onToggleInsight: (id: string) => void
+}) {
   return (
     <NeuCard className="!p-4">
       <div className="flex items-start gap-3">
@@ -40,14 +60,29 @@ function BatchCard({ batch, onDelete }: { batch: LabUploadBatch; onDelete: (id: 
             {batch.result_count} chỉ số · Tải lên {formatDate(batch.created_at)}
           </p>
         </div>
-        <button
-          type="button"
-          aria-label="Xoá phiếu xét nghiệm"
-          onClick={() => onDelete(batch.id)}
-          className="shrink-0 rounded-md p-1.5 text-[#D92D20] hover:bg-[#f6dede]"
-        >
-          <Trash2 className="size-4" />
-        </button>
+        <div className="flex items-center gap-1 shrink-0">
+          <button
+            type="button"
+            aria-label={isSelected ? 'Thu gọn phân tích' : 'Xem phân tích AI'}
+            onClick={() => onToggleInsight(batch.id)}
+            className="flex items-center gap-1 rounded-[10px] bg-[rgba(11,127,91,0.1)] px-2.5 py-1.5 text-[12px] font-semibold text-neu-green"
+          >
+            <BarChart2 className="size-3.5" aria-hidden="true" />
+            {isSelected ? (
+              <ChevronUp className="size-3" aria-hidden="true" />
+            ) : (
+              <ChevronDown className="size-3" aria-hidden="true" />
+            )}
+          </button>
+          <button
+            type="button"
+            aria-label="Xoá phiếu xét nghiệm"
+            onClick={() => onDelete(batch.id)}
+            className="shrink-0 rounded-md p-1.5 text-[#D92D20] hover:bg-[#f6dede]"
+          >
+            <Trash2 className="size-4" />
+          </button>
+        </div>
       </div>
     </NeuCard>
   )
@@ -124,6 +159,11 @@ export default function LabsPage() {
   const [modalOpen, setModalOpen] = React.useState(false)
   const [confirmDeleteId, setConfirmDeleteId] = React.useState<string | null>(null)
   const [deleting, setDeleting] = React.useState(false)
+  const [selectedBatchId, setSelectedBatchId] = React.useState<string | null>(null)
+
+  function handleToggleInsight(batchId: string) {
+    setSelectedBatchId((prev) => (prev === batchId ? null : batchId))
+  }
 
   const load = React.useCallback(() => {
     if (!patientId) {
@@ -244,7 +284,17 @@ export default function LabsPage() {
         {!loading && !error && batches.length > 0 && (
           <div className="space-y-3">
             {batches.map((b) => (
-              <BatchCard key={b.id} batch={b} onDelete={setConfirmDeleteId} />
+              <React.Fragment key={b.id}>
+                <BatchCard
+                  batch={b}
+                  onDelete={setConfirmDeleteId}
+                  isSelected={selectedBatchId === b.id}
+                  onToggleInsight={handleToggleInsight}
+                />
+                {selectedBatchId === b.id && patientId && (
+                  <LabInsightSection patientId={patientId} />
+                )}
+              </React.Fragment>
             ))}
           </div>
         )}
