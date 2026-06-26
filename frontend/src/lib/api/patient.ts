@@ -476,7 +476,13 @@ export interface ManualLabItem {
 
 export async function createManualLabResults(
   patientId: string,
-  data: { lab_name?: string | null; test_date?: string | null; results: ManualLabItem[] }
+  data: {
+    lab_name?: string | null
+    test_date?: string | null
+    results: ManualLabItem[]
+    force_mode?: 'new' | 'overwrite' | null
+    existing_batch_id?: string | null
+  }
 ): Promise<LabResultListResponse> {
   return api.post<LabResultListResponse>(`/patients/${patientId}/lab-results`, data)
 }
@@ -531,6 +537,62 @@ export async function uploadLabDraft(
   if ('file' in input) form.append('file', input.file)
   else form.append('url', input.url)
   return apiUpload<LabUploadDraft>('/lab-uploads', form)
+}
+
+// ── Lab Batch ─────────────────────────────────────────────────────────────────
+
+export interface LabUploadBatch {
+  id: string
+  patient_id: string
+  lab_name: string | null
+  test_date: string | null
+  result_count: number
+  created_at: string
+}
+
+export interface LabBatchListResponse {
+  patient_id: string
+  total: number
+  items: LabUploadBatch[]
+}
+
+export interface DuplicateCheckResponse {
+  is_duplicate: boolean
+  existing_batch_id: string | null
+  existing_test_date: string | null
+  reason: string | null
+}
+
+export async function checkDuplicate(
+  patientId: string,
+  payload: { test_date: string; lab_name?: string | null; biomarker_names?: string[] }
+): Promise<DuplicateCheckResponse> {
+  return api.post<DuplicateCheckResponse>(
+    `/patients/${patientId}/lab-batches/check-duplicate`,
+    payload
+  )
+}
+
+export async function getLabBatches(
+  patientId: string,
+  params?: { limit?: number; offset?: number }
+): Promise<LabBatchListResponse> {
+  const qs = new URLSearchParams()
+  if (params?.limit != null) qs.set('limit', String(params.limit))
+  if (params?.offset != null) qs.set('offset', String(params.offset))
+  const query = qs.toString()
+  return api.get<LabBatchListResponse>(
+    `/patients/${patientId}/lab-batches${query ? `?${query}` : ''}`
+  )
+}
+
+export async function deleteLabBatch(
+  patientId: string,
+  batchId: string,
+  reason?: string
+): Promise<void> {
+  const qs = reason ? `?reason=${encodeURIComponent(reason)}` : ''
+  await api.del(`/patients/${patientId}/lab-batches/${batchId}${qs}`)
 }
 
 export async function getLabResults(

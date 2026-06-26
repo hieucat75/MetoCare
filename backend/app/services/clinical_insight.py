@@ -297,7 +297,10 @@ def _history(db: Session, patient_id: str) -> dict[str, list[HealthMetric]]:
     rows = list(
         db.execute(
             select(HealthMetric)
-            .where(HealthMetric.patient_id == patient_id)
+            .where(
+                HealthMetric.patient_id == patient_id,
+                HealthMetric.deleted_at.is_(None),
+            )
             .order_by(HealthMetric.measured_at.desc())
         ).scalars()
     )

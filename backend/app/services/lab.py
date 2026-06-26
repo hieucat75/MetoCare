@@ -15,8 +15,8 @@ from sqlalchemy.orm import Session
 from app.core.clock import as_naive_utc, utcnow
 from app.core.config import get_settings
 from app.domain import lab_interpreter
-from app.models.clinical import HealthMetric, LabDocument, LabResult
-from app.services import audit, consent
+from app.models.clinical import HealthMetric, LabDocument, LabResult, LabUploadBatch
+from app.services import audit, consent, lab_batch
 from app.services.health_metrics import classify_status
 
 # Lab biomarkers that double as trackable health metrics. Promoting them into
@@ -260,14 +260,30 @@ def create_manual_entry(
     lab_name: str | None,
     test_date,
     results: list[dict],
+    force_mode: str | None = None,
+    existing_batch_id: str | None = None,
+    file_hash: str | None = None,
 ) -> tuple[LabDocument, list[LabResult]]:
     """Create a lab document + structured results from manual patient entry (PR-B).
 
     No OCR/file involved — the patient types the values. The document is marked
     ``status='manual'`` / ``ocr_status='done'`` and each result is flagged
     ``verified_by_user=True``. Consent-gated + audited, same as upload.
+
+    force_mode="overwrite": soft-delete the existing_batch_id before saving.
+    force_mode="new" or None: save alongside any existing batch.
     """
     consent.require_access(db, patient_id=patient_id, requester_id=requester_id, scope="lab")
+
+    # Overwrite: cascade-delete the existing batch before creating the new one.
+    if force_mode == "overwrite" and existing_batch_id:
+        lab_batch.delete_batch(
+            db,
+            batch_id=existing_batch_id,
+            deleted_by_user_id=requester_id,
+            reason="overwritten by new upload",
+            patient_id=patient_id,
+        )
 
     doc = LabDocument(
         patient_id=patient_id,
@@ -280,6 +296,16 @@ def create_manual_entry(
     db.add(doc)
     db.flush()
 
+    # Create the batch that groups these results into one logical upload session.
+    batch = lab_batch.create_batch(
+        db,
+        patient_id=patient_id,
+        source_document_id=doc.id,
+        lab_name=lab_name,
+        test_date=test_date,
+        file_hash=file_hash,
+    )
+
     rows: list[LabResult] = []
     for item in results:
         # Resolve the canonical biomarker so the row is self-describing and can be
@@ -288,6 +314,7 @@ def create_manual_entry(
         row = LabResult(
             patient_id=patient_id,
             document_id=doc.id,
+            batch_id=batch.id,
             test_name=item["test_name"],
             canonical_name=canonical,
             value=item.get("value"),

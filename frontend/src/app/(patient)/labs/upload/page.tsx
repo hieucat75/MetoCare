@@ -20,8 +20,10 @@ import type { NeuTone } from '@/components/patient/metrics/metricVisuals'
 import { useAuth } from '@/lib/auth/context'
 import { useFeatureFlags } from '@/lib/api/features'
 import {
+  checkDuplicate,
   createManualLabResults,
   uploadLabDraft,
+  type DuplicateCheckResponse,
   type LabUploadDraft,
   type ManualLabItem,
 } from '@/lib/api/patient'
@@ -186,6 +188,14 @@ export default function LabUploadPage() {
   const [testDate, setTestDate] = React.useState('') // display DD/MM/YYYY
   const [testDateAuto, setTestDateAuto] = React.useState(false) // detected by OCR
   const [saving, setSaving] = React.useState(false)
+  const [duplicateWarning, setDuplicateWarning] = React.useState<DuplicateCheckResponse | null>(
+    null,
+  )
+  const pendingResultsRef = React.useRef<{
+    results: ManualLabItem[]
+    labName: string | null
+    isoDate: string
+  } | null>(null)
 
   const step: 'input' | 'review' = draft ? 'review' : 'input'
 
@@ -271,6 +281,51 @@ export default function LabUploadPage() {
     setRows((rs) => rs.map((r, idx) => (idx === i ? { ...r, ...patch } : r)))
   }
 
+  function buildResults(): ManualLabItem[] {
+    return rows
+      .filter((r) => r.test_name.trim())
+      .map((r) => ({
+        test_name: r.test_name.trim(),
+        value:
+          r.canonical_value != null
+            ? r.canonical_value
+            : r.value.trim()
+              ? parseFloat(r.value)
+              : null,
+        unit: r.canonical_unit || r.unit.trim() || null,
+        reference_range: r.display_reference_range ?? (r.reference_range.trim() || null),
+        original_value: r.original_value,
+        original_unit: r.original_unit,
+        original_reference_range: r.display_reference_range,
+        original_test_name: r.original_test_name || null,
+      }))
+  }
+
+  async function doSave(
+    results: ManualLabItem[],
+    labNameVal: string | null,
+    isoDate: string,
+    forceMode?: 'new' | 'overwrite',
+    existingBatchId?: string,
+  ) {
+    if (!patientId) return
+    setSaving(true)
+    setError(null)
+    try {
+      await createManualLabResults(patientId, {
+        lab_name: labNameVal,
+        test_date: isoDate,
+        results,
+        force_mode: forceMode,
+        existing_batch_id: existingBatchId,
+      })
+      router.push('/labs')
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Lưu thất bại. Vui lòng thử lại.')
+      setSaving(false)
+    }
+  }
+
   async function confirmSave() {
     if (!patientId) return
     const dateErr = validateExamDate(testDate)
@@ -278,39 +333,59 @@ export default function LabUploadPage() {
       setError(dateErr)
       return
     }
-    const named = rows.filter((r) => r.test_name.trim())
-    if (named.length === 0) {
+    const results = buildResults()
+    if (results.length === 0) {
       setError('Vui lòng nhập ít nhất một chỉ số.')
       return
     }
-    const results: ManualLabItem[] = named.map((r) => ({
-      test_name: r.test_name.trim(),
-      value:
-        r.canonical_value != null ? r.canonical_value : r.value.trim() ? parseFloat(r.value) : null,
-      unit: r.canonical_unit || r.unit.trim() || null,
-      reference_range: r.display_reference_range ?? (r.reference_range.trim() || null),
-      original_value: r.original_value,
-      original_unit: r.original_unit,
-      original_reference_range: r.display_reference_range,
-      original_test_name: r.original_test_name || null,
-    }))
     if (results.some((r) => r.value != null && Number.isNaN(r.value))) {
       setError('Giá trị phải là số.')
       return
     }
-    setSaving(true)
-    setError(null)
-    try {
-      await createManualLabResults(patientId, {
-        lab_name: labName.trim() || null,
-        test_date: displayDateToIso(testDate),
-        results,
-      })
-      router.push('/labs')
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Lưu thất bại. Vui lòng thử lại.')
-      setSaving(false)
+
+    const isoDate = displayDateToIso(testDate)
+    if (!isoDate) {
+      setError('Ngày xét nghiệm không hợp lệ.')
+      return
     }
+    const labNameVal = labName.trim() || null
+
+    try {
+      const dup = await checkDuplicate(patientId, {
+        test_date: isoDate,
+        lab_name: labNameVal ?? undefined,
+        biomarker_names: results.map((r) => r.test_name),
+      })
+      if (dup.is_duplicate) {
+        pendingResultsRef.current = { results, labName: labNameVal, isoDate }
+        setDuplicateWarning(dup)
+        return
+      }
+    } catch {
+      // If duplicate check fails, proceed to save
+    }
+
+    await doSave(results, labNameVal, isoDate)
+  }
+
+  function handleDuplicateViewExisting() {
+    setDuplicateWarning(null)
+    router.push('/labs')
+  }
+
+  function handleDuplicateSaveNew() {
+    const p = pendingResultsRef.current
+    if (!p) return
+    setDuplicateWarning(null)
+    doSave(p.results, p.labName, p.isoDate, 'new')
+  }
+
+  function handleDuplicateOverwrite() {
+    const p = pendingResultsRef.current
+    if (!p) return
+    const existingId = duplicateWarning?.existing_batch_id ?? undefined
+    setDuplicateWarning(null)
+    doSave(p.results, p.labName, p.isoDate, 'overwrite', existingId)
   }
 
   if (!patientId) {
@@ -346,6 +421,15 @@ export default function LabUploadPage() {
   }
 
   return (
+    <>
+    {duplicateWarning && (
+      <DuplicateModal
+        onViewExisting={handleDuplicateViewExisting}
+        onSaveNew={handleDuplicateSaveNew}
+        onOverwrite={handleDuplicateOverwrite}
+        saving={saving}
+      />
+    )}
     <div className="p-4 max-w-md mx-auto space-y-4 pb-28">
       <PageHeaderNeu
         title={step === 'input' ? 'Tải lên kết quả' : 'Kiểm tra & xác nhận'}
@@ -640,6 +724,7 @@ export default function LabUploadPage() {
         </>
       )}
     </div>
+    </>
   )
 }
 
@@ -658,6 +743,54 @@ function PageHeaderNeu({ title, onBack }: { title: string; onBack: () => void })
       </button>
       <h1 className="text-[20px] font-extrabold tracking-[-0.02em] text-neu-text">{title}</h1>
     </header>
+  )
+}
+
+// ── Duplicate warning modal ────────────────────────────────────────────────────
+
+function DuplicateModal({
+  onViewExisting,
+  onSaveNew,
+  onOverwrite,
+  saving,
+}: {
+  onViewExisting: () => void
+  onSaveNew: () => void
+  onOverwrite: () => void
+  saving: boolean
+}) {
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Kết quả trùng lặp"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 px-4 pb-8"
+    >
+      <div className="w-full max-w-md rounded-[20px] bg-white p-6 space-y-4 shadow-2xl">
+        <div className="flex items-center gap-3">
+          <span className="flex size-11 shrink-0 items-center justify-center rounded-full bg-[#FEF9EC]">
+            <AlertTriangle className="size-6 text-[#E0A92E]" />
+          </span>
+          <div>
+            <p className="text-[16px] font-extrabold text-neu-text">Kết quả có thể trùng</p>
+            <p className="text-[13px] text-neu-muted mt-0.5">
+              Có vẻ kết quả xét nghiệm ngày này đã được lưu.
+            </p>
+          </div>
+        </div>
+        <div className="space-y-2.5">
+          <NeuButton variant="secondary" onClick={onViewExisting} disabled={saving}>
+            Xem kết quả đã lưu
+          </NeuButton>
+          <NeuButton variant="secondary" onClick={onOverwrite} disabled={saving}>
+            {saving ? 'Đang lưu...' : 'Ghi đè kết quả cũ'}
+          </NeuButton>
+          <NeuButton onClick={onSaveNew} disabled={saving}>
+            {saving ? 'Đang lưu...' : 'Lưu thành bản mới'}
+          </NeuButton>
+        </div>
+      </div>
+    </div>
   )
 }
 
