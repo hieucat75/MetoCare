@@ -277,8 +277,14 @@ def _evaluate_report(report_id: str, gt: dict, azure_result: dict) -> ReportResu
 _EDITING_TARGETS: dict[str, float] = {
     "vinmec": 0.10,
     "medlatec": 0.15,
-    "tamanh": 0.20,    # Phase B P1.1: renamed from tam_anh
-    "hongngoc": 0.20,  # Phase B P1.1: renamed from hong_ngoc
+    "tamanh": 0.20,      # Phase B P1.1: renamed from tam_anh
+    "hongngoc": 0.20,    # Phase B P1.1: renamed from hong_ngoc
+    "bachmai": 0.20,     # Phase B P1.1: renamed from bach_mai
+    "bachmai108": 0.20,  # Phase B P1.1: renamed from hospital_108
+    "fv": 0.20,
+    "hoanmy": 0.20,
+    "thucuc": 0.20,
+    "vietduc": 0.20,
 }
 
 

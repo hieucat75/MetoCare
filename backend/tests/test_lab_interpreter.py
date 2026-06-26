@@ -200,3 +200,39 @@ class TestNormUnit:
         result = lab_parser._norm_unit("mol/L")
         assert result == "mol/l"
         assert "u" not in result
+
+
+class TestParenStripping:
+    """normalize_biomarker() strips parenthetical suffixes before alias lookup (Phase B W1)."""
+
+    def test_alt_gpt_suffix(self):
+        assert lab_interpreter.normalize_biomarker("ALT (GPT)") == "alt"
+
+    def test_ast_got_suffix(self):
+        assert lab_interpreter.normalize_biomarker("AST (GOT)") == "ast"
+
+    def test_sgot_ast_suffix(self):
+        assert lab_interpreter.normalize_biomarker("SGOT (AST)") == "ast"
+
+    def test_sgpt_alt_suffix(self):
+        assert lab_interpreter.normalize_biomarker("SGPT (ALT)") == "alt"
+
+    def test_ldl_tinh_suffix(self):
+        assert lab_interpreter.normalize_biomarker("LDL-Cholesterol (tính)") == "ldl"
+
+    def test_ldl_calculated_suffix(self):
+        assert lab_interpreter.normalize_biomarker("LDL-Cholesterol (calculated)") == "ldl"
+
+    def test_glucose_cobas_suffix(self):
+        assert lab_interpreter.normalize_biomarker("Glucose (Cobas C502)") == "fasting_glucose"
+
+    def test_fullwidth_paren(self):
+        """Full-width Unicode parens（）from certain PDF printers (Phase B W4 fix)."""
+        assert lab_interpreter.normalize_biomarker("ALT（GPT）") == "alt"
+
+    def test_no_suffix_unchanged(self):
+        assert lab_interpreter.normalize_biomarker("Glucose") == "fasting_glucose"
+
+    def test_nested_suffix_stripped_iteratively(self):
+        """Multiple trailing groups removed iteratively."""
+        assert lab_interpreter.normalize_biomarker("Glucose (mau) (Cobas C502)") == "fasting_glucose"

@@ -274,7 +274,7 @@ for _spec in BIOMARKERS:
 # Regex to strip parenthetical suffixes from raw OCR test names.
 # Examples: "ALT (GPT)" -> "ALT", "LDL-Cholesterol (Tinh)" -> "LDL-Cholesterol",
 #           "Glucose (mau) (Cobas C502)" -> "Glucose" (applied iteratively).
-_PAREN_SUFFIX_RE = re.compile(r'\s*\([^)]*\)\s*$')
+_PAREN_SUFFIX_RE = re.compile(r'\s*[\(\uff08][^)\uff09]*[\)\uff09]\s*$')
 
 def _strip_paren_suffix(s: str) -> str:
     """Remove all trailing parenthetical groups, e.g. 'ALT (GPT)' -> 'ALT'."""
