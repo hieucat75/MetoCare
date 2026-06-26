@@ -145,6 +145,7 @@ def run_report(cases: list) -> None:
 
     def avg(k: str) -> float:
         return total_stats[k] / n
+
     print(f"  Cases analysed : {n}")
     print(f"  Row accuracy   : {avg('row_acc'):.1%}")
     print(f"  Value accuracy : {avg('val_acc'):.1%}")
