@@ -26,12 +26,7 @@ import {
   type ManualLabItem,
 } from '@/lib/api/patient'
 import { useLabReference, formatRefRange } from '@/lib/api/labReference'
-import {
-  OcrReviewCard,
-  buildOcrRow,
-  makeEmptyOcrRow,
-  type OcrRow,
-} from './OcrReviewCard'
+import { OcrReviewCard, buildOcrRow, makeEmptyOcrRow, type OcrRow } from './OcrReviewCard'
 import {
   displayDateToIso,
   formatDateInput,
@@ -106,7 +101,7 @@ export default function LabUploadPage() {
   const [testDateAuto, setTestDateAuto] = React.useState(false) // detected by OCR
   const [saving, setSaving] = React.useState(false)
   const [duplicateWarning, setDuplicateWarning] = React.useState<DuplicateCheckResponse | null>(
-    null,
+    null
   )
   const pendingResultsRef = React.useRef<{
     results: ManualLabItem[]
@@ -194,7 +189,7 @@ export default function LabUploadPage() {
     labNameVal: string | null,
     isoDate: string,
     forceMode?: 'new' | 'overwrite',
-    existingBatchId?: string,
+    existingBatchId?: string
   ) {
     if (!patientId) return
     setSaving(true)
@@ -329,7 +324,9 @@ export default function LabUploadPage() {
       <div className="p-4 max-w-md mx-auto space-y-4 pb-28">
         <PageHeaderNeu
           title={step === 'input' ? 'Tải lên kết quả' : 'Kiểm tra & xác nhận'}
-          onBack={() => (step === 'review' ? (setDraft(null), setError(null)) : router.push('/labs'))}
+          onBack={() =>
+            step === 'review' ? (setDraft(null), setError(null)) : router.push('/labs')
+          }
         />
 
         {error && <PatientErrorState title="Lỗi" message={error} onRetry={() => setError(null)} />}
@@ -485,7 +482,8 @@ export default function LabUploadPage() {
                 className="rounded-[14px] bg-[#EEF4FB] border border-[#2563EB]/20 px-4 py-3"
               >
                 <p className="text-[13px] text-[#1E4DA1]">
-                  Kết quả này đã cũ hơn 12 tháng — chỉ dùng để tham khảo lịch sử. Bạn vẫn có thể lưu.
+                  Kết quả này đã cũ hơn 12 tháng — chỉ dùng để tham khảo lịch sử. Bạn vẫn có thể
+                  lưu.
                 </p>
               </div>
             )}

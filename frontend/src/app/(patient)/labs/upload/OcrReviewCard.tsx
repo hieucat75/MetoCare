@@ -75,11 +75,7 @@ export function makeEmptyOcrRow(): OcrRow {
  */
 export function matchUnitKey(bm: LabBiomarker, ocrLabel: string | null | undefined): string {
   if (!ocrLabel) return primaryUnit(bm).key
-  const norm = (s: string) =>
-    s
-      .toLowerCase()
-      .replace(/µ/g, 'u')
-      .replace(/\s+/g, '')
+  const norm = (s: string) => s.toLowerCase().replace(/µ/g, 'u').replace(/\s+/g, '')
   const hit = bm.units.find((u) => norm(u.label) === norm(ocrLabel))
   return hit?.key ?? primaryUnit(bm).key
 }
@@ -103,7 +99,7 @@ export function buildOcrRow(
     original_test_name?: string
     display_reference_range?: string | null
     reference_range?: string | null
-  },
+  }
 ): OcrRow {
   const biomarker_key = v.test_name // OCR backend outputs canonical catalog keys
   const bm = catalog.biomarkers[biomarker_key] ?? null
@@ -316,9 +312,7 @@ export function OcrReviewCard({
           {/* ── Value + Unit ── */}
           <div className="mb-3 grid grid-cols-2 gap-2">
             <div>
-              <label className="mb-1 block text-[13px] font-semibold text-neu-green">
-                Giá trị
-              </label>
+              <label className="mb-1 block text-[13px] font-semibold text-neu-green">Giá trị</label>
               <input
                 type="number"
                 step="any"
@@ -336,20 +330,14 @@ export function OcrReviewCard({
                     : 'border-mint-200 focus:border-mint-400 focus:ring-mint-400/25',
                 ].join(' ')}
               />
-              {isInvalidNum && (
-                <p className="mt-0.5 text-[12px] text-[#D92D20]">Phải là số</p>
-              )}
+              {isInvalidNum && <p className="mt-0.5 text-[12px] text-[#D92D20]">Phải là số</p>}
               {row.original_value != null && row.value !== String(row.original_value) && (
-                <p className="mt-0.5 text-[11px] text-neu-subtle">
-                  Phiếu: {row.original_value}
-                </p>
+                <p className="mt-0.5 text-[11px] text-neu-subtle">Phiếu: {row.original_value}</p>
               )}
             </div>
 
             <div>
-              <label className="mb-1 block text-[13px] font-semibold text-neu-green">
-                Đơn vị
-              </label>
+              <label className="mb-1 block text-[13px] font-semibold text-neu-green">Đơn vị</label>
               <PatientSelect
                 value={row.unit_key}
                 onChange={(v) => onRowChange({ unit_key: v })}
@@ -409,9 +397,7 @@ export function OcrReviewCard({
                 <option value="catalog">Theo chuẩn MetoCare ({catalogRange})</option>
               )}
               {row.original_reference_range && (
-                <option value="ocr">
-                  Theo phiếu xét nghiệm ({row.original_reference_range})
-                </option>
+                <option value="ocr">Theo phiếu xét nghiệm ({row.original_reference_range})</option>
               )}
               <option value="manual">Nhập tay</option>
             </PatientSelect>
