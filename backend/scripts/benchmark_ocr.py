@@ -51,7 +51,7 @@ import time
 import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 # Bootstrap sys.path so we can import app modules from backend/
 _BACKEND_DIR = Path(__file__).resolve().parent.parent
@@ -63,7 +63,12 @@ except ImportError:
     print("ERROR: httpx not installed — run 'pip install httpx'", file=sys.stderr)
     sys.exit(1)
 
-from app.domain.hospital_profiles import detect_hospital  # noqa: E402
+from app.domain.hospital_profiles import (  # noqa: E402
+    HOSPITAL_PROFILES,
+    HospitalDetector,
+    detect_hospital,
+)
+from app.domain.lab_interpreter import normalize_biomarker  # noqa: E402
 from app.domain.lab_table_extractor import extract_and_map  # noqa: E402
 
 # Azure DI settings (from environment)
@@ -395,12 +400,275 @@ def _find_image(report_dir: Path) -> Path | None:
     return None
 
 
+# ── Synthetic benchmark ───────────────────────────────────────────────────────
+
+# Canonical name aliases that appear in expected.json but differ slightly from
+# what normalize_biomarker() returns.  Maps expected.json mapped_metric_type →
+# canonical returned by normalize_biomarker().  This lets the synthetic mode
+# compare correctly without requiring exact string equality on edge cases.
+_CANONICAL_ALIASES: dict[str, str] = {
+    # vinmec expected.json uses 'hdl_cholesterol' but normalizer returns 'hdl'
+    "hdl_cholesterol": "hdl",
+    "ldl_cholesterol": "ldl",
+    # vinmec uses 'triglycerides' but normalizer returns 'triglyceride'
+    "triglycerides": "triglyceride",
+    # vinmec uses 'calcium' — added to BIOMARKERS in Phase C fix
+    # No alias needed: normalize_biomarker('calcium') already returns 'calcium'
+}
+
+
+class _SynRowResult(NamedTuple):
+    original_name: str
+    expected_canonical: str | None
+    got_canonical: str | None
+    correct: bool
+
+
+class _SynSampleResult(NamedTuple):
+    sample_id: str
+    hospital: str
+    row_results: list[_SynRowResult]
+    detection_pass: bool
+    detection_pattern: str
+
+
+def _normalize_expected_canonical(raw: str | None) -> str | None:
+    """Normalise a mapped_metric_type from expected.json to what normalize_biomarker returns.
+
+    Some expected.json files use variant names that the live normalizer resolves
+    differently (e.g. 'hdl_cholesterol' → 'hdl').  This function collapses those
+    so the synthetic benchmark doesn't produce false negatives.
+    """
+    if raw is None:
+        return None
+    mapped = _CANONICAL_ALIASES.get(raw)
+    if mapped is None and raw in _CANONICAL_ALIASES:
+        # Explicitly mapped to None (unknown/future biomarker)
+        return None
+    return mapped if raw in _CANONICAL_ALIASES else raw
+
+
+def _test_hospital_detection(hospital_id: str) -> tuple[bool, str]:
+    """Test whether HospitalDetector correctly identifies the hospital.
+
+    Strategy: use the first header_pattern of the matching hospital profile as a
+    synthetic OCR line, then ask HospitalDetector if it resolves to the correct
+    hospital_id.  This tests the detection logic without needing a real image.
+    """
+    profile = next(
+        (p for p in HOSPITAL_PROFILES if p.hospital_id == hospital_id), None
+    )
+    if profile is None or not profile.header_patterns:
+        return False, "(no profile found)"
+
+    detector = HospitalDetector()
+    for pattern in profile.header_patterns:
+        test_line = pattern  # already accent-stripped lowercase
+        detected = detector.detect(test_line)
+        if detected is not None and detected.hospital_id == hospital_id:
+            return True, pattern
+
+    # Fallback: try hospital_name_variants
+    for variant in profile.hospital_name_variants:
+        detected = detector.detect(variant)
+        if detected is not None and detected.hospital_id == hospital_id:
+            return True, variant
+
+    return False, profile.header_patterns[0] if profile.header_patterns else "(none)"
+
+
+def _run_synthetic_sample(
+    sample_path: Path, hospital_id: str
+) -> _SynSampleResult | None:
+    """Process one expected.json file for the synthetic benchmark."""
+    try:
+        data = json.loads(sample_path.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        print(f"  SKIP {sample_path.name}: {exc}")
+        return None
+
+    sample_id = data.get("sample_id", sample_path.stem)
+    rows = data.get("rows", [])
+
+    row_results: list[_SynRowResult] = []
+    for row in rows:
+        original_name = row.get("original_test_name", "")
+        expected_raw = row.get("mapped_metric_type")
+        expected_canonical = _normalize_expected_canonical(expected_raw)
+        got_canonical = normalize_biomarker(original_name)
+        correct = (
+            expected_canonical is not None
+            and got_canonical is not None
+            and got_canonical == expected_canonical
+        )
+        row_results.append(
+            _SynRowResult(
+                original_name=original_name,
+                expected_canonical=expected_canonical,
+                got_canonical=got_canonical,
+                correct=correct,
+            )
+        )
+
+    detection_pass, detection_pattern = _test_hospital_detection(hospital_id)
+    return _SynSampleResult(
+        sample_id=sample_id,
+        hospital=hospital_id,
+        row_results=row_results,
+        detection_pass=detection_pass,
+        detection_pattern=detection_pattern,
+    )
+
+
+def run_synthetic_benchmark(bench_dir: Path, hospital_filter: str | None = None) -> bool:
+    """Run synthetic mapping accuracy benchmark.  Returns True iff all hospitals pass UER target.
+
+    Walks ``bench_dir/<hospital>/expected/*.expected.json``, runs normalize_biomarker()
+    on each original_test_name, compares against mapped_metric_type from the JSON.
+    No Azure DI credentials needed.
+    """
+    if not bench_dir.exists():
+        print(f"ERROR: bench_dir not found at {bench_dir}", file=sys.stderr)
+        sys.exit(1)
+
+    hospital_dirs = sorted(
+        d for d in bench_dir.iterdir()
+        if d.is_dir() and not d.name.startswith(".")
+    )
+    if hospital_filter:
+        hospital_dirs = [d for d in hospital_dirs if d.name == hospital_filter]
+
+    if not hospital_dirs:
+        print(f"No hospital directories found under {bench_dir}", file=sys.stderr)
+        sys.exit(1)
+
+    print("=" * 60)
+    print("  SYNTHETIC BENCHMARK MODE — MetoCare OCR Phase C")
+    print("  (no Azure credentials needed)")
+    print("=" * 60)
+
+    all_pass = True
+    summary_rows: list[tuple[str, int, int, int, bool]] = []
+
+    for hosp_dir in hospital_dirs:
+        hospital_id = hosp_dir.name
+        expected_dir = hosp_dir / "expected"
+        if not expected_dir.exists():
+            print(f"\n[{hospital_id}] No expected/ directory — skipping.")
+            continue
+
+        sample_files = sorted(expected_dir.glob("*.expected.json"))
+        if not sample_files:
+            print(f"\n[{hospital_id}] No *.expected.json files — skipping.")
+            continue
+
+        print(f"\nHOSPITAL: {hospital_id}")
+
+        hosp_total = 0
+        hosp_mapped = 0
+        hosp_unmapped: list[tuple[str, str | None]] = []
+        hosp_detection_pass = False
+        hosp_detection_pattern = ""
+        target_uer = _EDITING_TARGETS.get(hospital_id, 0.20)
+
+        for sf in sample_files:
+            result = _run_synthetic_sample(sf, hospital_id)
+            if result is None:
+                continue
+
+            total = len(result.row_results)
+            mapped = sum(1 for r in result.row_results if r.correct)
+            unmapped = [
+                (r.original_name, r.got_canonical)
+                for r in result.row_results
+                if not r.correct
+            ]
+
+            hosp_total += total
+            hosp_mapped += mapped
+            hosp_unmapped.extend(unmapped)
+            hosp_detection_pass = result.detection_pass
+            hosp_detection_pattern = result.detection_pattern
+
+            unmapped_strs = ", ".join(
+                f"'{n}' → {c!r}" for n, c in unmapped
+            ) if unmapped else "(none)"
+            print(
+                f"  Sample: {result.sample_id} | Rows: {total} | "
+                f"Mapped: {mapped}/{total} | Unmapped: {total - mapped}"
+            )
+            if unmapped:
+                print(f"  Unmapped: [{unmapped_strs}]")
+
+        if hosp_total == 0:
+            continue
+
+        canon_acc = hosp_mapped / hosp_total
+        uer = 1.0 - canon_acc
+        hospital_pass = uer <= target_uer
+        detect_label = (
+            f"PASS (via pattern '{hosp_detection_pattern}')"
+            if hosp_detection_pass
+            else f"FAIL (pattern '{hosp_detection_pattern}' not detected)"
+        )
+
+        print(f"  Canonicalization accuracy: {canon_acc:.0%}")
+        print(f"  Hospital detection: {detect_label}")
+        print(
+            f"  Target UER: ≤{target_uer:.0%} | "
+            f"Actual UER: {uer:.0%} | "
+            f"{'PASS' if hospital_pass else 'FAIL'}"
+        )
+
+        if not hospital_pass:
+            all_pass = False
+
+        summary_rows.append((hospital_id, hosp_total, hosp_mapped, len(hosp_unmapped), hospital_pass))
+
+    # ── Final summary ──────────────────────────────────────────────────────────
+    print()
+    print("=" * 60)
+    print("  SYNTHETIC BENCHMARK SUMMARY")
+    print("=" * 60)
+
+    total_rows = sum(r[1] for r in summary_rows)
+    total_mapped = sum(r[2] for r in summary_rows)
+    passing = sum(1 for r in summary_rows if r[4])
+    n_hospitals = len(summary_rows)
+
+    mapped_pct = total_mapped / total_rows * 100 if total_rows else 0
+    print(
+        f"  Total hospitals: {n_hospitals} | "
+        f"Total rows: {total_rows} | "
+        f"Mapped: {total_mapped}/{total_rows} ({mapped_pct:.1f}%)"
+    )
+    print(f"  Passing hospitals (UER ≤ target): {passing}/{n_hospitals}")
+    print()
+    result_label = "PASS" if all_pass else "FAIL"
+    print(f"  RESULT: {result_label}")
+    print("=" * 60)
+
+    return all_pass
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="MetoCare OCR accuracy benchmark")
     parser.add_argument("--bench-dir", default="./bench_data", help="Root benchmark directory")
     parser.add_argument("--hospital", help="Run only this hospital (e.g. vinmec)")
     parser.add_argument("--no-cache", action="store_true", help="Re-call Azure DI even if cache exists")  # noqa: E501
+    parser.add_argument(
+        "--synthetic-mode",
+        action="store_true",
+        help="Run synthetic mapping benchmark (no Azure credentials needed)",
+    )
     args = parser.parse_args()
+
+    # ── Synthetic mode ─────────────────────────────────────────────────────────
+    if args.synthetic_mode:
+        default_bench = _BACKEND_DIR / "ocr_dataset" / "benchmark"
+        bench_dir = Path(args.bench_dir).resolve() if args.bench_dir != "./bench_data" else default_bench
+        ok = run_synthetic_benchmark(bench_dir, hospital_filter=args.hospital)
+        sys.exit(0 if ok else 1)
 
     bench_dir = Path(args.bench_dir).resolve()
     if not bench_dir.exists():

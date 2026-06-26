@@ -60,7 +60,9 @@ BIOMARKERS: tuple[BiomarkerSpec, ...] = (
         ("glucose", "đường huyết đói", "glucose máu", "duong huyet",
          "duong huyet luc doi", "dinh luong glucose", "glucose huyet tuong",
          "blood glucose", "fbg", "fbs", "fasting plasma glucose", "fpg",
-         "fasting blood glucose"),
+         "fasting blood glucose",
+         # Tam Anh / accented forms
+         "đường huyết lúc đói", "duong huyet luc doi", "glucose luc doi"),
         "mg/dL", 70, 99, critical_low=54, critical_high=300,
         si_unit="mmol/L", si_factor=18.018,
         incompatible_units=("IU/mL", "mIU/L", "mIU/mL", "µIU/mL", "pmol/L", "nmol/L"),
@@ -140,8 +142,8 @@ BIOMARKERS: tuple[BiomarkerSpec, ...] = (
     ),
     BiomarkerSpec(
         "urea",
-        ("urea", "ure", "bun", "blood urea nitrogen", "u rê",
-         "ure mau", "bun serum"),
+        ("urea", "ure", "urê", "bun", "blood urea nitrogen", "u rê",
+         "ure mau", "urea mau", "bun serum"),
         "mg/dL", 7, 20, critical_high=100,
         si_unit="mmol/L", si_factor=6.006,  # mmol/L → mg/dL
         physiological_min=1, physiological_max=300,
@@ -226,6 +228,16 @@ BIOMARKERS: tuple[BiomarkerSpec, ...] = (
         "mmol/L", 98, 106, critical_low=80, critical_high=120,
         incompatible_units=("mg/dL", "µmol/L", "mIU/L", "µIU/mL", "U/L", "pmol/L"),
         physiological_min=60, physiological_max=160,
+    ),
+    # ---- Electrolytes (extended) ----
+    BiomarkerSpec(
+        "calcium",
+        ("calcium", "canxi", "ca2+", "ca serum", "serum calcium",
+         "canxi mau", "canxi (ca2+)", "calcium (ca2+)"),
+        "mg/dL", 8.5, 10.5, critical_low=7.0, critical_high=13.0,
+        si_unit="mmol/L", si_factor=0.2495,
+        incompatible_units=("µmol/L", "mIU/L", "µIU/mL", "U/L", "pmol/L"),
+        physiological_min=4.0, physiological_max=20.0,
     ),
     # ---- Tumour / thyroid markers ----
     BiomarkerSpec(
