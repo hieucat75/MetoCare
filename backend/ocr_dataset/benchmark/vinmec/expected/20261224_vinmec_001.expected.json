@@ -1,0 +1,174 @@
+{
+  "sample_id": "20261224_vinmec_001",
+  "hospital": "vinmec",
+  "report_type": "lab_result",
+  "language": "vi",
+  "test_date": "2024-12-24",
+  "source": {
+    "uploaded_by": "synthetic",
+    "anonymized": true,
+    "contains_phi": false
+  },
+  "rows": [
+    {
+      "row_index": 1,
+      "original_test_name": "Glucose",
+      "display_name_vi": "Đường huyết",
+      "mapped_metric_type": "fasting_glucose",
+      "value": 4.78,
+      "unit": "mmol/L",
+      "reference_range": "4.11–6.05",
+      "status": "normal"
+    },
+    {
+      "row_index": 2,
+      "original_test_name": "HbA1c",
+      "display_name_vi": "Huyết sắc tố glycat hóa",
+      "mapped_metric_type": "hba1c",
+      "value": 5.8,
+      "unit": "%",
+      "reference_range": "< 6.5",
+      "status": "normal"
+    },
+    {
+      "row_index": 3,
+      "original_test_name": "Cholesterol toàn phần",
+      "display_name_vi": "Cholesterol toàn phần",
+      "mapped_metric_type": "total_cholesterol",
+      "value": 4.92,
+      "unit": "mmol/L",
+      "reference_range": "< 5.2",
+      "status": "normal"
+    },
+    {
+      "row_index": 4,
+      "original_test_name": "HDL-Cholesterol",
+      "display_name_vi": "Cholesterol tốt (HDL)",
+      "mapped_metric_type": "hdl_cholesterol",
+      "value": 1.38,
+      "unit": "mmol/L",
+      "reference_range": "> 1.0",
+      "status": "normal"
+    },
+    {
+      "row_index": 5,
+      "original_test_name": "LDL-Cholesterol",
+      "display_name_vi": "Cholesterol xấu (LDL)",
+      "mapped_metric_type": "ldl_cholesterol",
+      "value": 3.01,
+      "unit": "mmol/L",
+      "reference_range": "< 3.4",
+      "status": "normal"
+    },
+    {
+      "row_index": 6,
+      "original_test_name": "Triglyceride",
+      "display_name_vi": "Chất béo trung tính",
+      "mapped_metric_type": "triglycerides",
+      "value": 1.65,
+      "unit": "mmol/L",
+      "reference_range": "< 1.7",
+      "status": "normal"
+    },
+    {
+      "row_index": 7,
+      "original_test_name": "Ure",
+      "display_name_vi": "Urê máu",
+      "mapped_metric_type": "urea",
+      "value": 5.2,
+      "unit": "mmol/L",
+      "reference_range": "2.5–7.5",
+      "status": "normal"
+    },
+    {
+      "row_index": 8,
+      "original_test_name": "Creatinine",
+      "display_name_vi": "Creatinine máu",
+      "mapped_metric_type": "creatinine",
+      "value": 78.0,
+      "unit": "µmol/L",
+      "reference_range": "62–106",
+      "status": "normal"
+    },
+    {
+      "row_index": 9,
+      "original_test_name": "AST (SGOT)",
+      "display_name_vi": "Men gan AST",
+      "mapped_metric_type": "ast",
+      "value": 22.0,
+      "unit": "U/L",
+      "reference_range": "< 40",
+      "status": "normal"
+    },
+    {
+      "row_index": 10,
+      "original_test_name": "ALT (SGPT)",
+      "display_name_vi": "Men gan ALT",
+      "mapped_metric_type": "alt",
+      "value": 18.0,
+      "unit": "U/L",
+      "reference_range": "< 40",
+      "status": "normal"
+    },
+    {
+      "row_index": 11,
+      "original_test_name": "TSH",
+      "display_name_vi": "Hormone kích thích tuyến giáp",
+      "mapped_metric_type": "tsh",
+      "value": 2.14,
+      "unit": "mIU/L",
+      "reference_range": "0.27–4.20",
+      "status": "normal"
+    },
+    {
+      "row_index": 12,
+      "original_test_name": "Natri (Na+)",
+      "display_name_vi": "Natri máu",
+      "mapped_metric_type": "sodium",
+      "value": 139.0,
+      "unit": "mmol/L",
+      "reference_range": "136–145",
+      "status": "normal"
+    },
+    {
+      "row_index": 13,
+      "original_test_name": "Kali (K+)",
+      "display_name_vi": "Kali máu",
+      "mapped_metric_type": "potassium",
+      "value": 4.1,
+      "unit": "mmol/L",
+      "reference_range": "3.5–5.1",
+      "status": "normal"
+    },
+    {
+      "row_index": 14,
+      "original_test_name": "Canxi (Ca2+)",
+      "display_name_vi": "Canxi máu",
+      "mapped_metric_type": "calcium",
+      "value": 2.35,
+      "unit": "mmol/L",
+      "reference_range": "2.15–2.57",
+      "status": "normal"
+    },
+    {
+      "row_index": 15,
+      "original_test_name": "Acid Uric",
+      "display_name_vi": "Acid uric máu",
+      "mapped_metric_type": "uric_acid",
+      "value": 312.0,
+      "unit": "µmol/L",
+      "reference_range": "202–416",
+      "status": "normal"
+    },
+    {
+      "row_index": 16,
+      "original_test_name": "eGFR (CKD-EPI)",
+      "display_name_vi": "Mức lọc cầu thận ước tính",
+      "mapped_metric_type": "egfr",
+      "value": 88.0,
+      "unit": "mL/min/1.73m²",
+      "reference_range": "> 60",
+      "status": "normal"
+    }
+  ]
+}

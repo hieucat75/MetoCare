@@ -1,0 +1,101 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "expected_lab_report.schema.json",
+  "title": "ExpectedLabReport",
+  "description": "Ground-truth annotation for one OCR lab report sample. Must never contain real patient PHI.",
+  "type": "object",
+  "required": ["sample_id", "hospital", "report_type", "language", "test_date", "source", "rows"],
+  "additionalProperties": false,
+  "properties": {
+    "sample_id": {
+      "type": "string",
+      "pattern": "^[0-9]{8}_[a-z0-9]+_[0-9]{3}$",
+      "description": "Format: YYYYMMDD_<hospital>_<seq>. Example: 20261224_vinmec_001"
+    },
+    "hospital": {
+      "type": "string",
+      "enum": ["vinmec", "medlatec", "tamanh", "hongngoc", "bachmai", "bachmai108", "fv", "hoanmy", "thucuc", "vietduc", "other"],
+      "description": "Hospital identifier matching the folder name under benchmark/ or golden/"
+    },
+    "report_type": {
+      "type": "string",
+      "enum": ["lab_result"],
+      "description": "Type of medical report. Currently only lab_result is supported."
+    },
+    "language": {
+      "type": "string",
+      "enum": ["vi", "en"],
+      "description": "Primary language of the source document"
+    },
+    "test_date": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+      "description": "Date of lab tests in ISO 8601 format (YYYY-MM-DD)"
+    },
+    "source": {
+      "type": "object",
+      "required": ["uploaded_by", "anonymized", "contains_phi"],
+      "additionalProperties": false,
+      "properties": {
+        "uploaded_by": {
+          "type": "string",
+          "enum": ["manual", "user_correction", "admin_annotation", "synthetic"],
+          "description": "How this ground truth was produced"
+        },
+        "anonymized": {
+          "type": "boolean",
+          "description": "True = patient name, DOB, ID number, address removed from image before storage"
+        },
+        "contains_phi": {
+          "type": "boolean",
+          "description": "Must be false for any file committed to git. Files with contains_phi=true must not be committed."
+        }
+      }
+    },
+    "rows": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["row_index", "original_test_name", "value", "unit"],
+        "additionalProperties": false,
+        "properties": {
+          "row_index": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "1-based row index in the original OCR table"
+          },
+          "original_test_name": {
+            "type": "string",
+            "description": "Verbatim test name as printed on the lab report"
+          },
+          "display_name_vi": {
+            "type": "string",
+            "description": "Vietnamese display name shown to the patient"
+          },
+          "mapped_metric_type": {
+            "type": ["string", "null"],
+            "description": "Canonical metric_type key. Null if not yet mapped."
+          },
+          "value": {
+            "type": "number",
+            "description": "Numeric result value"
+          },
+          "unit": {
+            "type": "string",
+            "description": "Unit as printed on the report (not canonicalized)"
+          },
+          "reference_range": {
+            "type": ["string", "null"],
+            "description": "Reference range string as printed. Null if absent."
+          },
+          "status": {
+            "type": ["string", "null"],
+            "enum": ["normal", "low", "high", "critical", null],
+            "description": "Clinical status relative to reference range"
+          }
+        }
+      }
+    }
+  }
+}
