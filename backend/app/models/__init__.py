@@ -26,9 +26,9 @@ from .clinical import (
     SymptomLog,
 )
 from .governance import AuditLog, Consent
-from .ocr_case import OCRCase
 from .notification import Notification
 from .nutrition import NutritionLog
+from .ocr_case import OCRCase
 from .patient import PatientProfile
 from .triage_log import TriageLog
 from .user import User, UserRole
