@@ -21,4 +21,5 @@ select = ["E", "F", "I", "UP", "B"]
 ignore = ["B008"]  # FastAPI Depends() in defaults is idiomatic
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["B011"]
+"tests/*" = ["B011", "E402", "E501"]
+"scripts/*" = ["E501"]

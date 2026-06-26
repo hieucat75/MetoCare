@@ -188,7 +188,7 @@ def process_document(db: Session, *, document_id: str) -> LabDocument | None:
                 "lab_pipeline_promote_gate document_id=%s total=%d verified=%d blocked=%d",
                 doc.id, len(new_rows), len(verified_rows), len(new_rows) - len(verified_rows),
             )
-        promote_lab_rows_to_metrics(db, patient_id=doc.patient_id, rows=verified_rows, test_date=None)
+        promote_lab_rows_to_metrics(db, patient_id=doc.patient_id, rows=verified_rows, test_date=None)  # noqa: E501
         _transition(doc, LabDocStatus.INTERPRETED)
     except Exception as exc:  # interpretation must never crash the worker
         _transition(doc, LabDocStatus.INTERPRETATION_FAILED)
