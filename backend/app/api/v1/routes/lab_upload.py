@@ -15,12 +15,14 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from sqlalchemy import select as _select
 from sqlalchemy.orm import Session
 
 from app.api.deps import CurrentUser, get_session, require_roles
 from app.core.config import get_settings
 from app.core.feature_flags import FeatureFlag, is_enabled
 from app.core.ssrf import SSRFError, fetch_url
+from app.models.patient import PatientProfile as _PatientProfile
 from app.models.user import UserRole
 from app.schemas.lab_upload import LabUploadDraftItemOut, LabUploadDraftOut
 from app.services import audit, lab_upload
@@ -88,31 +90,42 @@ async def create_lab_upload_draft(
     )
 
     # Create OCRCase to track this OCR session (non-blocking; failure logs but never raises).
+    # Resolve PatientProfile.id so OCRCase.patient_id matches the lab domain convention
+    # (lab routes use PatientProfile.id, not User.id). Without this, confirm_case() would
+    # fail the ownership check and never store the gap analysis.
+    _patient_profile = db.execute(
+        _select(_PatientProfile).where(_PatientProfile.user_id == user.id)
+    ).scalars().first()
+    ocr_patient_id = _patient_profile.id if _patient_profile is not None else None
+
     ocr_case_id: str | None = None
-    try:
-        extracted_rows = [
-            {
-                "test_name": i.test_name,
-                "original_test_name": i.original_test_name,
-                "display_name_vi": i.display_name_vi,
-                "mapped_metric_type": i.canonical,
-                "value": i.value,
-                "unit": i.unit,
-            }
-            for i in draft.parsed_values
-        ]
-        case = ocr_case_svc.create_case(
-            db,
-            patient_id=user.id,
-            extracted_rows=extracted_rows,
-            hospital_id=draft.hospital_id,
-            hospital_confidence=draft.hospital_confidence,
-            source_file_hash=draft.raw_text_sha256 or None,
-            ocr_engine_version=draft.provider_used,
-        )
-        ocr_case_id = case.id
-    except Exception:
-        logger.exception("ocr_case_create_failed user=%s", user.id)
+    if ocr_patient_id:
+        try:
+            extracted_rows = [
+                {
+                    "test_name": i.test_name,
+                    "original_test_name": i.original_test_name,
+                    "display_name_vi": i.display_name_vi,
+                    "mapped_metric_type": i.canonical,
+                    "value": i.value,
+                    "unit": i.unit,
+                }
+                for i in draft.parsed_values
+            ]
+            case = ocr_case_svc.create_case(
+                db,
+                patient_id=ocr_patient_id,
+                extracted_rows=extracted_rows,
+                hospital_id=draft.hospital_id,
+                hospital_confidence=draft.hospital_confidence,
+                source_file_hash=draft.raw_text_sha256 or None,
+                ocr_engine_version=draft.provider_used,
+            )
+            ocr_case_id = case.id
+        except Exception:
+            logger.exception("ocr_case_create_failed user=%s", user.id)
+    else:
+        logger.warning("ocr_case_skipped_no_profile user=%s", user.id)
 
     db.commit()
 
