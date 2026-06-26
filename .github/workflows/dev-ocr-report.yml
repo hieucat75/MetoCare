@@ -1,0 +1,46 @@
+name: Dev — OCR Gap Report
+
+on:
+  workflow_dispatch:
+    inputs:
+      days:
+        description: 'Only include last N days (blank = all time)'
+        required: false
+        default: ''
+
+jobs:
+  report:
+    name: OCR accuracy baseline
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Run OCR gap report
+        env:
+          DATABASE_URL: ${{ secrets.MCP_DATABASE_URL }}
+        run: |
+          ARGS=""
+          if [ -n "${{ github.event.inputs.days }}" ]; then
+            ARGS="--days ${{ github.event.inputs.days }}"
+          fi
+          python scripts/ocr_gap_report.py $ARGS | tee /tmp/ocr_report.txt
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ocr-gap-report-${{ github.run_number }}
+          path: /tmp/ocr_report.txt
+          retention-days: 30
