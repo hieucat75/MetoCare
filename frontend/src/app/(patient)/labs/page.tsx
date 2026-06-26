@@ -15,13 +15,7 @@ const HERO_GRADIENT = 'linear-gradient(160deg,#17AE7B,#0B6B4D)'
 
 // ── Batch card ─────────────────────────────────────────────────────────────────
 
-function BatchCard({
-  batch,
-  onDelete,
-}: {
-  batch: LabUploadBatch
-  onDelete: (id: string) => void
-}) {
+function BatchCard({ batch, onDelete }: { batch: LabUploadBatch; onDelete: (id: string) => void }) {
   return (
     <NeuCard className="!p-4">
       <div className="flex items-start gap-3">
@@ -94,8 +88,8 @@ function DeleteBatchModal({
         <div>
           <p className="text-[16px] font-extrabold text-neu-text">Xoá phiếu xét nghiệm?</p>
           <p className="mt-1.5 text-[14px] text-neu-muted">
-            Xóa phiếu xét nghiệm này sẽ xóa các chỉ số sức khỏe được tạo từ phiếu này. Bạn có
-            chắc không?
+            Xóa phiếu xét nghiệm này sẽ xóa các chỉ số sức khỏe được tạo từ phiếu này. Bạn có chắc
+            không?
           </p>
         </div>
         <div className="flex gap-2.5">
