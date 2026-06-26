@@ -183,11 +183,29 @@ def interpret_document(
     consent.require_access(db, patient_id=doc.patient_id, requester_id=requester_id, scope="lab")
 
     raw_values = _extract(doc)
+    # Track whether extraction came from mock (deterministic, always trusted) or
+    # real OCR (image scan, must pass confidence + verification gate).
+    is_mock_path = getattr(doc, "storage_key", "").startswith("manual:") or (
+        get_settings().ocr_mode == "mock"
+    )
     interpretation = lab_interpreter.interpret_panel(raw_values)
 
     # Persist normalized results.
     new_rows: list[LabResult] = []
     for b in interpretation.biomarkers:
+        # verified_by_user gate mirrors lab_pipeline: mock/manual rows are trusted;
+        # real OCR rows require confidence >= 0.5 and no needs_verification flag.
+        raw = next((v for v in raw_values if hasattr(v, "test_name") and v.test_name == b.raw_name), None)
+        suspect = getattr(raw, "suspect_machine_id", False) if raw else False
+        requires_review = getattr(raw, "requires_review", False) if raw else False
+        auto_save_blocked = (
+            not is_mock_path and (
+                suspect
+                or requires_review
+                or b.ocr_confidence < 0.5
+                or b.needs_verification
+            )
+        )
         lr = LabResult(
             patient_id=doc.patient_id,
             document_id=doc.id,
@@ -198,13 +216,15 @@ def interpret_document(
             reference_range=b.reference_range,
             status=b.status.value,
             ocr_confidence=b.ocr_confidence,
+            verified_by_user=not auto_save_blocked,
         )
         db.add(lr)
         new_rows.append(lr)
     doc.ocr_status = "done"
     db.flush()
-    # Promote into health_metrics so the dashboard + trends reflect these results.
-    promote_lab_rows_to_metrics(db, patient_id=doc.patient_id, rows=new_rows, test_date=None)
+    # Promote into health_metrics — only verified rows reach patient metrics.
+    verified_rows = [r for r in new_rows if r.verified_by_user]
+    promote_lab_rows_to_metrics(db, patient_id=doc.patient_id, rows=verified_rows, test_date=None)
 
     # Record OCR pipeline metrics (internal telemetry).
     from app.domain import hospital_profiles as _hp
