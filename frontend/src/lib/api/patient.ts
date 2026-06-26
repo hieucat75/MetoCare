@@ -447,7 +447,11 @@ export interface LabResultEntry {
   id: string
   patient_id: string
   document_id: string | null
+  /** The batch (upload session) this result belongs to. */
+  batch_id: string | null
   test_name: string
+  /** Canonical biomarker key (e.g. 'glucose', 'hba1c'). Used for insight matching. */
+  canonical_name: string | null
   value: number | null
   unit: string | null
   reference_range: string | null
@@ -606,6 +610,20 @@ export async function getLabResults(
   return api.get<LabResultListResponse>(
     `/patients/${patientId}/lab-results${query ? `?${query}` : ''}`
   )
+}
+
+/**
+ * Fetch lab results scoped to a specific batch.
+ * Backend does not support batch_id query param, so we fetch up to 200 items
+ * and filter client-side by batch_id field.
+ */
+export async function getBatchResults(
+  patientId: string,
+  batchId: string
+): Promise<LabResultListResponse> {
+  const all = await getLabResults(patientId, { limit: 200 })
+  const items = all.items.filter((r) => r.batch_id === batchId)
+  return { patient_id: patientId, total: items.length, items }
 }
 
 // ── AI Explanation (PA-05) ────────────────────────────────────────────────────

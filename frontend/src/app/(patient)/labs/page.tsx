@@ -16,10 +16,16 @@ import {
 import { PatientErrorState } from '@/components/patient/states'
 import { NeuCard, NeuBadge, NeuButton } from '@/components/patient/neu'
 import { useAuth } from '@/lib/auth/context'
-import { deleteLabBatch, getLabBatches, type LabUploadBatch } from '@/lib/api/patient'
+import {
+  deleteLabBatch,
+  getLabBatches,
+  getLabResults,
+  type LabUploadBatch,
+  type LabResultEntry,
+} from '@/lib/api/patient'
 import { useFeatureFlags } from '@/lib/api/features'
 import { formatDate } from '@/lib/utils'
-import { LabInsightSection } from '@/components/patient/LabInsightCards'
+import { LabResultRow } from '@/components/patient/LabResultRow'
 
 const HERO_GRADIENT = 'linear-gradient(160deg,#17AE7B,#0B6B4D)'
 
@@ -27,74 +33,143 @@ const HERO_GRADIENT = 'linear-gradient(160deg,#17AE7B,#0B6B4D)'
 
 function BatchCard({
   batch,
+  allResults,
   onDelete,
-  isSelected,
-  onToggleInsight,
+  isExpanded,
+  onToggleExpand,
 }: {
   batch: LabUploadBatch
+  allResults: LabResultEntry[]
   onDelete: (id: string) => void
-  isSelected: boolean
-  onToggleInsight: (id: string) => void
+  isExpanded: boolean
+  onToggleExpand: (id: string) => void
 }) {
+  const router = useRouter()
+
+  // Filter results for this batch
+  const batchResults = React.useMemo(
+    () => allResults.filter((r) => r.batch_id === batch.id),
+    [allResults, batch.id],
+  )
+
   return (
-    <NeuCard className="!p-4">
-      <div className="flex items-start gap-3">
-        <span
-          className="grid size-10 shrink-0 place-items-center rounded-[12px] text-white"
+    <NeuCard className="!p-0 overflow-hidden">
+      {/* Card header */}
+      <div className="p-4">
+        <div className="flex items-start gap-3">
+          <span
+            className="grid size-11 shrink-0 place-items-center rounded-[12px] text-white"
+            style={{ background: HERO_GRADIENT }}
+            aria-hidden="true"
+          >
+            <FlaskConical className="size-5" />
+          </span>
+
+          <div className="flex-1 min-w-0">
+            {/* Hospital name — large */}
+            <p
+              className="font-bold text-neu-text leading-snug"
+              style={{ fontSize: '18px' }}
+            >
+              {batch.lab_name ?? 'Phòng xét nghiệm'}
+            </p>
+            {/* Test date — large, green */}
+            {batch.test_date && (
+              <div
+                className="mt-1 flex items-center gap-1.5 text-neu-green font-medium"
+                style={{ fontSize: '16px' }}
+              >
+                <CalendarDays className="size-4 shrink-0" aria-hidden="true" />
+                {formatDate(batch.test_date)}
+              </div>
+            )}
+            {/* Upload date + count — smaller, muted */}
+            <div className="mt-1 flex items-center gap-2">
+              <NeuBadge tone="ok" className="!text-[12px]">
+                {batch.result_count} chỉ số
+              </NeuBadge>
+              <p className="text-[12px] text-neu-muted">
+                Tải lên {formatDate(batch.created_at)}
+              </p>
+            </div>
+          </div>
+
+          {/* Action buttons */}
+          <div className="flex flex-col items-end gap-2 shrink-0">
+            {/* Delete */}
+            <button
+              type="button"
+              aria-label="Xoá phiếu xét nghiệm"
+              onClick={() => onDelete(batch.id)}
+              className="rounded-md p-1.5 text-[#D92D20] hover:bg-[rgba(217,45,32,0.1)]"
+            >
+              <Trash2 className="size-4" />
+            </button>
+            {/* Expand/collapse */}
+            <button
+              type="button"
+              aria-label={isExpanded ? 'Thu gọn chỉ số' : 'Xem chỉ số'}
+              aria-expanded={isExpanded}
+              onClick={() => onToggleExpand(batch.id)}
+              className="flex items-center gap-1 rounded-[10px] bg-[rgba(11,127,91,0.1)] px-2.5 py-1.5 text-[12px] font-semibold text-neu-green"
+            >
+              {isExpanded ? (
+                <ChevronUp className="size-4" aria-hidden="true" />
+              ) : (
+                <ChevronDown className="size-4" aria-hidden="true" />
+              )}
+            </button>
+          </div>
+        </div>
+
+        {/* "Xem AI nhận định" button — always visible */}
+        <button
+          type="button"
+          onClick={() => router.push(`/labs/${batch.id}/insight`)}
+          className="mt-3 flex w-full items-center justify-center gap-2 rounded-[12px] py-2.5 text-[14px] font-semibold text-white"
           style={{ background: HERO_GRADIENT }}
-          aria-hidden="true"
+          aria-label="Xem nhận định AI cho phiếu này"
         >
-          <FlaskConical className="size-[18px]" />
-        </span>
-        <div className="flex-1 min-w-0">
-          <p className="text-[15px] font-semibold text-neu-text truncate">
-            {batch.lab_name ?? 'Phòng xét nghiệm'}
-          </p>
-          {batch.test_date && (
-            <div className="mt-0.5 flex items-center gap-1 text-[13px] text-neu-green">
-              <CalendarDays className="size-3.5 shrink-0" aria-hidden="true" />
-              {formatDate(batch.test_date)}
+          <BarChart2 className="size-4" aria-hidden="true" />
+          Xem AI nhận định
+        </button>
+      </div>
+
+      {/* Expanded biomarker rows */}
+      {isExpanded && (
+        <div className="border-t border-black/[0.06]">
+          {batchResults.length === 0 ? (
+            <p className="px-4 py-4 text-[15px] text-neu-muted text-center">
+              Đang tải chỉ số...
+            </p>
+          ) : (
+            <div className="divide-y divide-black/[0.05]">
+              {batchResults.map((r) => (
+                <LabResultRow
+                  key={r.id}
+                  result={r}
+                  batchId={batch.id}
+                  onNavigate={(bId, rId) => router.push(`/labs/${bId}/results/${rId}`)}
+                />
+              ))}
             </div>
           )}
-          <p className="mt-0.5 text-[12px] text-neu-subtle">
-            {batch.result_count} chỉ số · Tải lên {formatDate(batch.created_at)}
-          </p>
         </div>
-        <div className="flex items-center gap-1 shrink-0">
-          <button
-            type="button"
-            aria-label={isSelected ? 'Thu gọn phân tích' : 'Xem phân tích AI'}
-            onClick={() => onToggleInsight(batch.id)}
-            className="flex items-center gap-1 rounded-[10px] bg-[rgba(11,127,91,0.1)] px-2.5 py-1.5 text-[12px] font-semibold text-neu-green"
-          >
-            <BarChart2 className="size-3.5" aria-hidden="true" />
-            {isSelected ? (
-              <ChevronUp className="size-3" aria-hidden="true" />
-            ) : (
-              <ChevronDown className="size-3" aria-hidden="true" />
-            )}
-          </button>
-          <button
-            type="button"
-            aria-label="Xoá phiếu xét nghiệm"
-            onClick={() => onDelete(batch.id)}
-            className="shrink-0 rounded-md p-1.5 text-[#D92D20] hover:bg-[#f6dede]"
-          >
-            <Trash2 className="size-4" />
-          </button>
-        </div>
-      </div>
+      )}
     </NeuCard>
   )
 }
+
+// ── Skeleton ───────────────────────────────────────────────────────────────────
 
 function LabsSkeleton() {
   return (
     <div className="space-y-3">
       {[1, 2, 3].map((n) => (
         <div key={n} className="neu-card mc-pulse p-4">
-          <div className="h-3.5 w-2/5 rounded-full bg-black/5" />
-          <div className="mt-3 h-4 w-3/5 rounded-full bg-black/5" />
+          <div className="h-4 w-2/5 rounded-full bg-black/5" />
+          <div className="mt-3 h-5 w-3/5 rounded-full bg-black/5" />
+          <div className="mt-2 h-3 w-1/3 rounded-full bg-black/5" />
         </div>
       ))}
     </div>
@@ -121,10 +196,10 @@ function DeleteBatchModal({
     >
       <div className="w-full max-w-md rounded-[20px] bg-white p-6 space-y-4 shadow-2xl">
         <div>
-          <p className="text-[16px] font-extrabold text-neu-text">Xoá phiếu xét nghiệm?</p>
-          <p className="mt-1.5 text-[14px] text-neu-muted">
-            Xóa phiếu xét nghiệm này sẽ xóa các chỉ số sức khỏe được tạo từ phiếu này. Bạn có chắc
-            không?
+          <p className="text-[18px] font-extrabold text-neu-text">Xoá phiếu xét nghiệm?</p>
+          <p className="mt-1.5 text-[15px] text-neu-muted">
+            Xóa phiếu xét nghiệm này sẽ xóa các chỉ số sức khỏe được tạo từ phiếu này. Bạn có
+            chắc không?
           </p>
         </div>
         <div className="flex gap-2.5">
@@ -154,15 +229,16 @@ export default function LabsPage() {
   const flags = useFeatureFlags()
 
   const [batches, setBatches] = React.useState<LabUploadBatch[]>([])
+  const [allResults, setAllResults] = React.useState<LabResultEntry[]>([])
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
   const [modalOpen, setModalOpen] = React.useState(false)
   const [confirmDeleteId, setConfirmDeleteId] = React.useState<string | null>(null)
   const [deleting, setDeleting] = React.useState(false)
-  const [selectedBatchId, setSelectedBatchId] = React.useState<string | null>(null)
+  const [expandedBatchId, setExpandedBatchId] = React.useState<string | null>(null)
 
-  function handleToggleInsight(batchId: string) {
-    setSelectedBatchId((prev) => (prev === batchId ? null : batchId))
+  function handleToggleExpand(batchId: string) {
+    setExpandedBatchId((prev) => (prev === batchId ? null : batchId))
   }
 
   const load = React.useCallback(() => {
@@ -172,8 +248,14 @@ export default function LabsPage() {
     }
     setLoading(true)
     setError(null)
-    getLabBatches(patientId, { limit: 100 })
-      .then((res) => setBatches(res.items))
+    Promise.all([
+      getLabBatches(patientId, { limit: 100 }),
+      getLabResults(patientId, { limit: 200 }),
+    ])
+      .then(([batchRes, resultsRes]) => {
+        setBatches(batchRes.items)
+        setAllResults(resultsRes.items)
+      })
       .catch((err: Error) => setError(err.message))
       .finally(() => setLoading(false))
   }, [patientId])
@@ -188,6 +270,7 @@ export default function LabsPage() {
     try {
       await deleteLabBatch(patientId, confirmDeleteId)
       setConfirmDeleteId(null)
+      if (expandedBatchId === confirmDeleteId) setExpandedBatchId(null)
       load()
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Xoá thất bại. Vui lòng thử lại.')
@@ -201,8 +284,8 @@ export default function LabsPage() {
     return (
       <div className="p-4 lg:p-6 max-w-md mx-auto mt-10">
         <div role="alert" className="rounded-[14px] bg-[#FEF9EC] border border-[#E0A92E]/30 p-4">
-          <p className="text-[14px] font-bold text-[#8B6400]">Chưa có hồ sơ bệnh nhân</p>
-          <p className="text-[13px] text-[#8B6400]/80 mt-1">
+          <p className="text-[16px] font-bold text-[#8B6400]">Chưa có hồ sơ bệnh nhân</p>
+          <p className="text-[14px] text-[#8B6400]/80 mt-1">
             Tài khoản của bạn chưa được liên kết với hồ sơ bệnh nhân. Vui lòng liên hệ hỗ trợ.
           </p>
         </div>
@@ -221,7 +304,7 @@ export default function LabsPage() {
       )}
 
       <div className="p-4 space-y-4 max-w-md mx-auto pb-28">
-        <h1 className="px-1 text-[21px] font-extrabold tracking-[-0.02em] text-neu-text">
+        <h1 className="px-1 text-[24px] font-extrabold tracking-[-0.02em] text-neu-text">
           Xét nghiệm
         </h1>
 
@@ -241,8 +324,8 @@ export default function LabsPage() {
                 <Upload className="size-5" aria-hidden="true" />
               </span>
               <div className="min-w-0">
-                <span className="block text-[16px] font-bold">Tải lên kết quả xét nghiệm</span>
-                <span className="block text-[13px] text-white/85">
+                <span className="block text-[17px] font-bold">Tải lên kết quả xét nghiệm</span>
+                <span className="block text-[14px] text-white/85">
                   Chụp ảnh, tải tệp hoặc dán link — tự động đọc
                 </span>
               </div>
@@ -284,22 +367,19 @@ export default function LabsPage() {
         {!loading && !error && batches.length > 0 && (
           <div className="space-y-3">
             {batches.map((b) => (
-              <React.Fragment key={b.id}>
-                <BatchCard
-                  batch={b}
-                  onDelete={setConfirmDeleteId}
-                  isSelected={selectedBatchId === b.id}
-                  onToggleInsight={handleToggleInsight}
-                />
-                {selectedBatchId === b.id && patientId && (
-                  <LabInsightSection patientId={patientId} batchId={b.id} />
-                )}
-              </React.Fragment>
+              <BatchCard
+                key={b.id}
+                batch={b}
+                allResults={allResults}
+                onDelete={setConfirmDeleteId}
+                isExpanded={expandedBatchId === b.id}
+                onToggleExpand={handleToggleExpand}
+              />
             ))}
           </div>
         )}
 
-        {/* Manual entry — neu FAB (OCR card above is the primary upload path). */}
+        {/* Manual entry — FAB */}
         <button
           type="button"
           aria-label="Nhập kết quả thủ công"
