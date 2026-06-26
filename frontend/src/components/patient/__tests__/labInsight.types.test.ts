@@ -66,3 +66,15 @@ export const mockReport: PatientInsightReport = {
   disclaimer_vi:
     'Đây là phân tích AI hỗ trợ, không thay thế chẩn đoán của bác sĩ. Luôn tham khảo ý kiến chuyên gia y tế.',
 }
+
+// Phase F patch: verify getPatientInsight accepts batchId param (compile-time check)
+import { getPatientInsight } from '@/lib/api/labInsight'
+
+// Type-level assertions: these lines must compile without error.
+// If batchId is not in the opts type, tsc will reject this file.
+export const _batchScopedCall: Parameters<typeof getPatientInsight> = [
+  'patient-123',
+  { batchId: 'batch-abc', sex: 'female', age: 55 },
+]
+
+export const _noBatchCall: Parameters<typeof getPatientInsight> = ['patient-123', { batchId: null }]

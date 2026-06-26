@@ -15,11 +15,11 @@ import dataclasses
 import datetime as dt
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import CurrentUser, get_session, require_roles
-from app.api.v1.routes.lab_intelligence import LabIntelligenceRequest
 from app.domain.clinical_patterns import detect_patterns
 from app.domain.clinical_rules import ClinicalFinding, assess_biomarker
 from app.domain.derived_metrics import DerivedMetricResult, compute_all_derived
@@ -33,10 +33,28 @@ from app.services import consent
 router = APIRouter(tags=["patient_insight"])
 
 
+class PatientInsightRequest(BaseModel):
+    """Scoped request for patient-facing insight.
+
+    Use ``batch_id`` to restrict analysis to one LabUploadBatch (the primary
+    path from the Labs screen).  Omit both filters only for future patient-level
+    dashboard summaries.
+    """
+
+    batch_id: str | None = None           # scope to one LabUploadBatch (preferred)
+    lab_result_ids: list[str] | None = None  # fine-grained fallback
+    include_trends: bool = True
+    include_patterns: bool = True
+    include_derived: bool = True
+    age_years: int | None = None
+    is_male: bool = True
+    waist_cm: float | None = None
+
+
 @router.post("/patients/{patient_id}/patient-insight")
 def patient_insight(
     patient_id: str,
-    body: LabIntelligenceRequest,
+    body: PatientInsightRequest,
     db: Session = Depends(get_session),
     user: CurrentUser = Depends(
         require_roles(UserRole.PATIENT, UserRole.DOCTOR, UserRole.INTERNAL_ADMIN)
@@ -64,13 +82,18 @@ def patient_insight(
             db, patient_id=patient_id, requester_id=user.id, scope="lab"
         )
 
-    # --- Fetch verified lab results ---
+    # --- Fetch verified lab results (batch-scoped or fine-grained) ---
     q = select(LabResult).where(
         LabResult.patient_id == patient_id,
         LabResult.deleted_at.is_(None),
     )
-    if body.lab_result_ids:
+    if body.batch_id:
+        # Primary path: Labs screen opens insight for a specific upload batch.
+        q = q.where(LabResult.batch_id == body.batch_id)
+    elif body.lab_result_ids:
+        # Fallback when batch_id is not available.
         q = q.where(LabResult.id.in_(body.lab_result_ids))
+    # No filter -> all patient records (reserved for future dashboard endpoint).
     rows = db.execute(q).scalars().all()
     verified = [r for r in rows if r.verified_by_user or r.verified_by_doctor]
 

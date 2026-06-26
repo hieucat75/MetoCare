@@ -65,10 +65,14 @@ export interface PatientInsightReport {
 
 export async function getPatientInsight(
   patientId: string,
-  opts?: { sex?: 'male' | 'female' | null; age?: number | null }
+  opts?: {
+    batchId?: string | null
+    sex?: 'male' | 'female' | null
+    age?: number | null
+  }
 ): Promise<PatientInsightReport> {
   return api.post<PatientInsightReport>(`/patients/${patientId}/patient-insight`, {
-    patient_id: patientId,
+    batch_id: opts?.batchId ?? null,
     sex: opts?.sex ?? null,
     age: opts?.age ?? null,
   })

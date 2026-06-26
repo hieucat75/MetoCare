@@ -331,10 +331,13 @@ function InsightSkeleton() {
 
 export function LabInsightSection({
   patientId,
+  batchId,
   sex,
   age,
 }: {
   patientId: string
+  /** Scope insight to a specific upload batch. Required for Labs screen usage. */
+  batchId?: string | null
   sex?: 'male' | 'female' | null
   age?: number | null
 }) {
@@ -347,11 +350,11 @@ export function LabInsightSection({
   const load = React.useCallback(() => {
     setLoading(true)
     setError(null)
-    getPatientInsight(patientId, { sex: sex ?? null, age: age ?? null })
+    getPatientInsight(patientId, { batchId: batchId ?? null, sex: sex ?? null, age: age ?? null })
       .then((r) => setReport(r))
       .catch((err: Error) => setError(err.message))
       .finally(() => setLoading(false))
-  }, [patientId, sex, age])
+  }, [patientId, batchId, sex, age])
 
   React.useEffect(() => {
     load()

@@ -643,3 +643,39 @@ def test_asdict_serializable():
     assert d["patient_id"] == "p001"
     assert d["ai_draft_contract"] is None
     assert d["disclaimer_vi"]
+
+
+# ── Phase F patch tests: batch scoping ────────────────────────────────────────
+
+def test_patient_insight_request_model_has_batch_id():
+    """PatientInsightRequest must accept batch_id field (batch-scoped insight)."""
+    from app.api.v1.routes.patient_insight import PatientInsightRequest
+
+    req = PatientInsightRequest(batch_id="batch-abc-123")
+    assert req.batch_id == "batch-abc-123"
+    assert req.lab_result_ids is None
+
+
+def test_patient_insight_request_batch_id_optional():
+    """batch_id defaults to None — backwards-compatible with existing callers."""
+    from app.api.v1.routes.patient_insight import PatientInsightRequest
+
+    req = PatientInsightRequest()
+    assert req.batch_id is None
+
+
+def test_patient_insight_request_batch_id_and_lab_result_ids_independent():
+    """batch_id and lab_result_ids are independent — either, both, or neither may be set."""
+    from app.api.v1.routes.patient_insight import PatientInsightRequest
+
+    req_batch = PatientInsightRequest(batch_id="b1")
+    assert req_batch.batch_id == "b1"
+    assert req_batch.lab_result_ids is None
+
+    req_ids = PatientInsightRequest(lab_result_ids=["r1", "r2"])
+    assert req_ids.batch_id is None
+    assert req_ids.lab_result_ids == ["r1", "r2"]
+
+    req_both = PatientInsightRequest(batch_id="b1", lab_result_ids=["r1"])
+    assert req_both.batch_id == "b1"
+    assert req_both.lab_result_ids == ["r1"]

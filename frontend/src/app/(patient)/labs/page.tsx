@@ -292,7 +292,7 @@ export default function LabsPage() {
                   onToggleInsight={handleToggleInsight}
                 />
                 {selectedBatchId === b.id && patientId && (
-                  <LabInsightSection patientId={patientId} />
+                  <LabInsightSection patientId={patientId} batchId={b.id} />
                 )}
               </React.Fragment>
             ))}
