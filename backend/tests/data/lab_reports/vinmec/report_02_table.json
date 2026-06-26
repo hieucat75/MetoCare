@@ -1,0 +1,127 @@
+{
+  "content": "BỆNH VIỆN ĐA KHOA QUỐC TẾ VINMEC\nKết quả xét nghiệm",
+  "tables": [
+    {
+      "cells": [
+        {"rowIndex": 0, "columnIndex": 0, "content": "STT", "kind": "columnheader"},
+        {"rowIndex": 0, "columnIndex": 1, "content": "Tên xét nghiệm", "kind": "columnheader"},
+        {"rowIndex": 0, "columnIndex": 2, "content": "Kết quả", "kind": "columnheader"},
+        {"rowIndex": 0, "columnIndex": 3, "content": "Đơn vị", "kind": "columnheader"},
+        {"rowIndex": 0, "columnIndex": 4, "content": "Giá trị bình thường", "kind": "columnheader"},
+        {"rowIndex": 0, "columnIndex": 5, "content": "Thiết bị", "kind": "columnheader"},
+
+        {"rowIndex": 1, "columnIndex": 0, "content": "1"},
+        {"rowIndex": 1, "columnIndex": 1, "content": "Glucose lúc đói"},
+        {"rowIndex": 1, "columnIndex": 2, "content": "5.20"},
+        {"rowIndex": 1, "columnIndex": 3, "content": "mmol/L"},
+        {"rowIndex": 1, "columnIndex": 4, "content": "3.9 - 6.1"},
+        {"rowIndex": 1, "columnIndex": 5, "content": "Cobas Pro"},
+
+        {"rowIndex": 2, "columnIndex": 0, "content": "2"},
+        {"rowIndex": 2, "columnIndex": 1, "content": "HbA1c"},
+        {"rowIndex": 2, "columnIndex": 2, "content": "5.4"},
+        {"rowIndex": 2, "columnIndex": 3, "content": "%"},
+        {"rowIndex": 2, "columnIndex": 4, "content": "4.0 - 5.7"},
+        {"rowIndex": 2, "columnIndex": 5, "content": "Cobas Pro"},
+
+        {"rowIndex": 3, "columnIndex": 0, "content": "3"},
+        {"rowIndex": 3, "columnIndex": 1, "content": "Cholesterol toàn phần"},
+        {"rowIndex": 3, "columnIndex": 2, "content": "4.80"},
+        {"rowIndex": 3, "columnIndex": 3, "content": "mmol/L"},
+        {"rowIndex": 3, "columnIndex": 4, "content": "< 5.2"},
+        {"rowIndex": 3, "columnIndex": 5, "content": "Cobas Pro"},
+
+        {"rowIndex": 4, "columnIndex": 0, "content": "4"},
+        {"rowIndex": 4, "columnIndex": 1, "content": "Triglycerid"},
+        {"rowIndex": 4, "columnIndex": 2, "content": "1.50"},
+        {"rowIndex": 4, "columnIndex": 3, "content": "mmol/L"},
+        {"rowIndex": 4, "columnIndex": 4, "content": "< 1.7"},
+        {"rowIndex": 4, "columnIndex": 5, "content": "Cobas Pro"},
+
+        {"rowIndex": 5, "columnIndex": 0, "content": "5"},
+        {"rowIndex": 5, "columnIndex": 1, "content": "HDL-C"},
+        {"rowIndex": 5, "columnIndex": 2, "content": "1.30"},
+        {"rowIndex": 5, "columnIndex": 3, "content": "mmol/L"},
+        {"rowIndex": 5, "columnIndex": 4, "content": "> 1.0"},
+        {"rowIndex": 5, "columnIndex": 5, "content": "Cobas Pro"},
+
+        {"rowIndex": 6, "columnIndex": 0, "content": "6"},
+        {"rowIndex": 6, "columnIndex": 1, "content": "LDL-C"},
+        {"rowIndex": 6, "columnIndex": 2, "content": "2.90"},
+        {"rowIndex": 6, "columnIndex": 3, "content": "mmol/L"},
+        {"rowIndex": 6, "columnIndex": 4, "content": "< 3.4"},
+        {"rowIndex": 6, "columnIndex": 5, "content": "Cobas Pro"},
+
+        {"rowIndex": 7, "columnIndex": 0, "content": "7"},
+        {"rowIndex": 7, "columnIndex": 1, "content": "AST (GOT)"},
+        {"rowIndex": 7, "columnIndex": 2, "content": "22.0"},
+        {"rowIndex": 7, "columnIndex": 3, "content": "U/L"},
+        {"rowIndex": 7, "columnIndex": 4, "content": "10 - 40"},
+        {"rowIndex": 7, "columnIndex": 5, "content": "Cobas Pro"},
+
+        {"rowIndex": 8, "columnIndex": 0, "content": "8"},
+        {"rowIndex": 8, "columnIndex": 1, "content": "ALT (GPT)"},
+        {"rowIndex": 8, "columnIndex": 2, "content": "28.0"},
+        {"rowIndex": 8, "columnIndex": 3, "content": "U/L"},
+        {"rowIndex": 8, "columnIndex": 4, "content": "7 - 40"},
+        {"rowIndex": 8, "columnIndex": 5, "content": "Cobas Pro"},
+
+        {"rowIndex": 9, "columnIndex": 0, "content": "9"},
+        {"rowIndex": 9, "columnIndex": 1, "content": "GGT"},
+        {"rowIndex": 9, "columnIndex": 2, "content": "31.0"},
+        {"rowIndex": 9, "columnIndex": 3, "content": "U/L"},
+        {"rowIndex": 9, "columnIndex": 4, "content": "9 - 64"},
+        {"rowIndex": 9, "columnIndex": 5, "content": "Cobas Pro"},
+
+        {"rowIndex": 10, "columnIndex": 0, "content": "10"},
+        {"rowIndex": 10, "columnIndex": 1, "content": "Creatinine"},
+        {"rowIndex": 10, "columnIndex": 2, "content": "72.0"},
+        {"rowIndex": 10, "columnIndex": 3, "content": "µmol/L"},
+        {"rowIndex": 10, "columnIndex": 4, "content": "44 - 97"},
+        {"rowIndex": 10, "columnIndex": 5, "content": "Cobas Pro"},
+
+        {"rowIndex": 11, "columnIndex": 0, "content": "11"},
+        {"rowIndex": 11, "columnIndex": 1, "content": "Ure"},
+        {"rowIndex": 11, "columnIndex": 2, "content": "4.8"},
+        {"rowIndex": 11, "columnIndex": 3, "content": "mmol/L"},
+        {"rowIndex": 11, "columnIndex": 4, "content": "2.5 - 7.5"},
+        {"rowIndex": 11, "columnIndex": 5, "content": "Cobas Pro"},
+
+        {"rowIndex": 12, "columnIndex": 0, "content": "12"},
+        {"rowIndex": 12, "columnIndex": 1, "content": "Axit uric"},
+        {"rowIndex": 12, "columnIndex": 2, "content": "320"},
+        {"rowIndex": 12, "columnIndex": 3, "content": "µmol/L"},
+        {"rowIndex": 12, "columnIndex": 4, "content": "155 - 357"},
+        {"rowIndex": 12, "columnIndex": 5, "content": "Cobas Pro"},
+
+        {"rowIndex": 13, "columnIndex": 0, "content": "13"},
+        {"rowIndex": 13, "columnIndex": 1, "content": "TSH"},
+        {"rowIndex": 13, "columnIndex": 2, "content": "2.10"},
+        {"rowIndex": 13, "columnIndex": 3, "content": "µIU/mL"},
+        {"rowIndex": 13, "columnIndex": 4, "content": "0.4 - 4.0"},
+        {"rowIndex": 13, "columnIndex": 5, "content": "Cobas Pro"},
+
+        {"rowIndex": 14, "columnIndex": 0, "content": "14"},
+        {"rowIndex": 14, "columnIndex": 1, "content": "FT4"},
+        {"rowIndex": 14, "columnIndex": 2, "content": "15.0"},
+        {"rowIndex": 14, "columnIndex": 3, "content": "pmol/L"},
+        {"rowIndex": 14, "columnIndex": 4, "content": "11.5 - 22.7"},
+        {"rowIndex": 14, "columnIndex": 5, "content": "Cobas Pro"},
+
+        {"rowIndex": 15, "columnIndex": 0, "content": "15"},
+        {"rowIndex": 15, "columnIndex": 1, "content": "Na (Natri)"},
+        {"rowIndex": 15, "columnIndex": 2, "content": "139"},
+        {"rowIndex": 15, "columnIndex": 3, "content": "mmol/L"},
+        {"rowIndex": 15, "columnIndex": 4, "content": "136 - 145"},
+        {"rowIndex": 15, "columnIndex": 5, "content": "Cobas Pro"},
+
+        {"rowIndex": 16, "columnIndex": 0, "content": "16"},
+        {"rowIndex": 16, "columnIndex": 1, "content": "K (Kali)"},
+        {"rowIndex": 16, "columnIndex": 2, "content": "4.0"},
+        {"rowIndex": 16, "columnIndex": 3, "content": "mmol/L"},
+        {"rowIndex": 16, "columnIndex": 4, "content": "3.5 - 5.0"},
+        {"rowIndex": 16, "columnIndex": 5, "content": "Cobas Pro"}
+      ]
+    }
+  ]
+}

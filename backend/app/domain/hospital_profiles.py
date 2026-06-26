@@ -16,6 +16,25 @@ from dataclasses import dataclass, field
 
 
 @dataclass
+class ColumnMap:
+    """Explicit column-index mapping for a known hospital table layout.
+
+    All indices are 0-based (Azure DI columnIndex).  ``None`` means the column
+    is absent in this hospital's report format.
+
+    ``skip_cols`` lists column indices that must never be used as the result
+    value column (e.g. method/instrument columns, price columns).
+    """
+
+    test_name: int
+    value: int
+    unit: int | None = None
+    reference: int | None = None
+    stt: int | None = None
+    skip_cols: tuple[int, ...] = field(default_factory=tuple)
+
+
+@dataclass
 class HospitalProfile:
     hospital_id: str
     name: str
@@ -31,6 +50,53 @@ class HospitalProfile:
     # names.  lab_table_extractor uses this to ensure these columns are NEVER
     # mapped to value_col.  Accent-stripped, lowercase.
     method_column_headers: tuple[str, ...] = field(default_factory=tuple)
+    # When set, provides an explicit deterministic column mapping for this hospital's
+    # table layout, bypassing heuristic column-role detection entirely.
+    column_map: ColumnMap | None = None
+    # Accent-stripped lowercase substrings that identify footer rows (totals,
+    # signatures, disclaimers) that must be excluded from data extraction.
+    footer_patterns: tuple[str, ...] = field(default_factory=tuple)
+
+
+@dataclass
+class DetectionResult:
+    """Result of hospital detection — bundles the matched profile and a confidence float."""
+
+    profile: HospitalProfile
+    confidence: float = 1.0
+
+
+class HospitalDetector:
+    """Stateless hospital detector wrapping HOSPITAL_PROFILES."""
+
+    def __init__(self, profiles: tuple[HospitalProfile, ...] | None = None) -> None:
+        # Deferred import to avoid circular reference at module load time;
+        # HOSPITAL_PROFILES is defined later in this module.
+        if profiles is None:
+            self._profiles_override = None
+        else:
+            self._profiles_override = profiles
+
+    @property
+    def _profiles(self) -> tuple[HospitalProfile, ...]:
+        if self._profiles_override is not None:
+            return self._profiles_override
+        return HOSPITAL_PROFILES
+
+    def detect(self, text: str) -> HospitalProfile | None:
+        header = _strip_accents("\n".join(text.splitlines()[:30])).lower()
+        for profile in self._profiles:
+            for pattern in profile.header_patterns:
+                if pattern in header:
+                    return profile
+        return None
+
+    def detect_or_unknown(self, text: str) -> DetectionResult:
+        """Detect hospital; return DetectionResult with UNKNOWN_PROFILE when unrecognised."""
+        profile = self.detect(text)
+        if profile is not None:
+            return DetectionResult(profile=profile, confidence=1.0)
+        return DetectionResult(profile=UNKNOWN_PROFILE, confidence=0.0)
 
 
 def _strip_accents(s: str) -> str:
@@ -61,6 +127,17 @@ HOSPITAL_PROFILES: tuple[HospitalProfile, ...] = (
             "vinnmec": "vinmec",
             "vinm3c": "vinmec",
         },
+        # Vinmec 6-column layout:
+        # col 0=STT, col 1=Tên xét nghiệm, col 2=Kết quả,
+        # col 3=Đơn vị, col 4=Giá trị bình thường, col 5=Thiết bị (device — must skip)
+        column_map=ColumnMap(
+            stt=0,
+            test_name=1,
+            value=2,
+            unit=3,
+            reference=4,
+            skip_cols=(5,),
+        ),
     ),
     HospitalProfile(
         hospital_id="medlatec",
@@ -94,6 +171,17 @@ HOSPITAL_PROFILES: tuple[HospitalProfile, ...] = (
             "cobas",
             "instrument",
             "method",
+        ),
+        # Medlatec 6-column layout:
+        # col 0=STT, col 1=Tên xét nghiệm, col 2=Kết quả,
+        # col 3=Đơn vị, col 4=Khoảng tham chiếu, col 5=Phương pháp/Máy (method — must skip)
+        column_map=ColumnMap(
+            stt=0,
+            test_name=1,
+            value=2,
+            unit=3,
+            reference=4,
+            skip_cols=(5,),
         ),
     ),
     HospitalProfile(
@@ -208,10 +296,15 @@ HOSPITAL_PROFILES: tuple[HospitalProfile, ...] = (
 )
 
 
+UNKNOWN_PROFILE = HospitalProfile(
+    hospital_id="unknown",
+    name="Unknown",
+    header_patterns=(),
+    unit_system="SI",
+)
+
+_DETECTOR = HospitalDetector(HOSPITAL_PROFILES)
+
+
 def detect_hospital(text: str) -> HospitalProfile | None:
-    header = _strip_accents("\n".join(text.splitlines()[:30])).lower()
-    for profile in HOSPITAL_PROFILES:
-        for pattern in profile.header_patterns:
-            if pattern in header:
-                return profile
-    return None
+    return _DETECTOR.detect(text)
