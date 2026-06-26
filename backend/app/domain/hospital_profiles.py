@@ -15,7 +15,7 @@ import unicodedata
 from dataclasses import dataclass, field
 
 
-@dataclass
+@dataclass(frozen=True)
 class ColumnMap:
     """Explicit column-index mapping for a known hospital table layout.
 
@@ -84,18 +84,58 @@ class HospitalDetector:
         return HOSPITAL_PROFILES
 
     def detect(self, text: str) -> HospitalProfile | None:
-        header = _strip_accents("\n".join(text.splitlines()[:30])).lower()
-        for profile in self._profiles:
-            for pattern in profile.header_patterns:
-                if pattern in header:
-                    return profile
-        return None
+        result = self.detect_or_unknown(text)
+        return None if result.profile is UNKNOWN_PROFILE else result.profile
 
     def detect_or_unknown(self, text: str) -> DetectionResult:
-        """Detect hospital; return DetectionResult with UNKNOWN_PROFILE when unrecognised."""
-        profile = self.detect(text)
-        if profile is not None:
-            return DetectionResult(profile=profile, confidence=1.0)
+        """Detect hospital with position-weighted confidence.
+
+        Confidence tiers (by the earliest line where any alias matches):
+          lines  1–10 → 0.9   (hospital name clearly in report header)
+          lines 11–30 → 0.7   (found in preamble / secondary header)
+          lines 31–50 → 0.5   (buried — review required downstream)
+          no match    → 0.0   (UNKNOWN_PROFILE)
+
+        When multiple profiles or aliases match, the one with the highest
+        confidence wins.  Ties broken by earlier line, then longer alias
+        (more specific matches rank higher).
+        """
+        lines = text.splitlines()[:50]
+        stripped_lines = [_strip_accents(line).lower() for line in lines]
+
+        best_profile: HospitalProfile | None = None
+        best_confidence: float = 0.0
+        best_line_idx: int = 9999
+        best_alias_len: int = 0
+
+        for profile in self._profiles:
+            for pattern in profile.header_patterns:
+                for line_idx, line_norm in enumerate(stripped_lines):
+                    if pattern in line_norm:
+                        line_num = line_idx + 1
+                        confidence = (
+                            0.9 if line_num <= 10
+                            else 0.7 if line_num <= 30
+                            else 0.5
+                        )
+                        is_better = (
+                            confidence > best_confidence
+                            or (confidence == best_confidence and line_idx < best_line_idx)
+                            or (
+                                confidence == best_confidence
+                                and line_idx == best_line_idx
+                                and len(pattern) > best_alias_len
+                            )
+                        )
+                        if is_better:
+                            best_profile = profile
+                            best_confidence = confidence
+                            best_line_idx = line_idx
+                            best_alias_len = len(pattern)
+                        break  # this pattern matched; skip remaining lines for it
+
+        if best_profile is not None:
+            return DetectionResult(profile=best_profile, confidence=best_confidence)
         return DetectionResult(profile=UNKNOWN_PROFILE, confidence=0.0)
 
 
@@ -308,3 +348,8 @@ _DETECTOR = HospitalDetector(HOSPITAL_PROFILES)
 
 def detect_hospital(text: str) -> HospitalProfile | None:
     return _DETECTOR.detect(text)
+
+
+def detect_hospital_result(text: str) -> DetectionResult:
+    """Return DetectionResult (profile + position-weighted confidence) for the OCR text."""
+    return _DETECTOR.detect_or_unknown(text)
