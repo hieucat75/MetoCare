@@ -17,6 +17,7 @@ steps, per policy.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from enum import StrEnum
 
@@ -270,18 +271,42 @@ for _spec in BIOMARKERS:
     for _a in _spec.aliases:
         _ALIAS_INDEX[_a.lower()] = _spec
 
+# Regex to strip parenthetical suffixes from raw OCR test names.
+# Examples: "ALT (GPT)" -> "ALT", "LDL-Cholesterol (Tinh)" -> "LDL-Cholesterol",
+#           "Glucose (mau) (Cobas C502)" -> "Glucose" (applied iteratively).
+_PAREN_SUFFIX_RE = re.compile(r'\s*\([^)]*\)\s*$')
+
+def _strip_paren_suffix(s: str) -> str:
+    """Remove all trailing parenthetical groups, e.g. 'ALT (GPT)' -> 'ALT'."""
+    prev = None
+    while prev != s:
+        prev = s
+        s = _PAREN_SUFFIX_RE.sub('', s).strip()
+    return s
+
 
 def normalize_biomarker(name: str) -> str | None:
-    """Map a raw test name to a canonical biomarker key, or None if unknown."""
+    """Map a raw test name to a canonical biomarker key, or None if unknown.
+
+    Normalization pipeline:
+    1. Strip leading/trailing whitespace, lowercase.
+    2. Strip trailing parenthetical suffixes (e.g. '(GPT)', '(Tinh)', '(Cobas C502)').
+    3. Exact alias lookup (stripped form first, then original).
+    4. Loose contains-match across all known aliases (using stripped form).
+    """
     if not name:
         return None
     key = name.strip().lower()
-    spec = _ALIAS_INDEX.get(key)
-    if spec:
-        return spec.canonical
-    # loose contains match
+    # Step 2: strip parenthetical suffixes before alias lookup
+    key_stripped = _strip_paren_suffix(key)
+    # Step 3: exact alias lookup -- try stripped form first, then original
+    for k in (key_stripped, key):
+        spec = _ALIAS_INDEX.get(k)
+        if spec:
+            return spec.canonical
+    # Step 4: loose contains match (use stripped form for higher precision)
     for alias, spec in _ALIAS_INDEX.items():
-        if alias in key or key in alias:
+        if alias in key_stripped or key_stripped in alias:
             return spec.canonical
     return None
 

@@ -142,7 +142,7 @@ class TestHospitalDetector:
         detector = HospitalDetector(HOSPITAL_PROFILES)
         profile = detector.detect("Bệnh viện đa khoa Tam Anh\nPhiếu kết quả")
         assert profile is not None
-        assert profile.hospital_id == "tam_anh"
+        assert profile.hospital_id == "tamanh"  # Updated: Phase B P1.1 renamed tam_anh -> tamanh
 
     def test_all_known_hospitals_have_nonempty_header_patterns(self):
         """Every registered hospital profile must declare at least one header pattern."""

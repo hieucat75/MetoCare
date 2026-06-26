@@ -649,7 +649,7 @@ class TestProviderDetection:
     def test_tam_anh_detected(self):
         profile = detect_hospital("Bệnh viện Tam Anh")
         assert profile is not None
-        assert profile.hospital_id == "tam_anh"
+        assert profile.hospital_id == "tamanh"  # Updated: Phase B P1.1 renamed tam_anh -> tamanh
 
     def test_extract_and_map_detects_vinmec_provider(self):
         """extract_and_map must internally detect Vinmec and apply provider profile."""

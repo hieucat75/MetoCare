@@ -16,9 +16,9 @@ bench_data/
       ...
   medlatec/
     ...
-  tam_anh/
+  tamanh/
     ...
-  hong_ngoc/
+  hongngoc/
     ...
 
 Ground truth format
@@ -277,8 +277,8 @@ def _evaluate_report(report_id: str, gt: dict, azure_result: dict) -> ReportResu
 _EDITING_TARGETS: dict[str, float] = {
     "vinmec": 0.10,
     "medlatec": 0.15,
-    "tam_anh": 0.20,
-    "hong_ngoc": 0.20,
+    "tamanh": 0.20,    # Phase B P1.1: renamed from tam_anh
+    "hongngoc": 0.20,  # Phase B P1.1: renamed from hong_ngoc
 }
 
 

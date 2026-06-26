@@ -188,7 +188,11 @@ HOSPITAL_PROFILES: tuple[HospitalProfile, ...] = (
             "he thong y te medlatec",
         ),
         unit_system="SI",
-        additional_aliases={},
+        additional_aliases={
+            "triglyceride": ("triglycerid",),
+            "hdl": ("hdl-cholesterol", "hdl cholesterol"),
+            "ldl": ("ldl-cholesterol", "ldl cholesterol"),
+        },
         hospital_name_variants=(
             "med latec",
             "medla tec",
@@ -225,7 +229,7 @@ HOSPITAL_PROFILES: tuple[HospitalProfile, ...] = (
         ),
     ),
     HospitalProfile(
-        hospital_id="tam_anh",
+        hospital_id="tamanh",
         name="Tam Anh",
         header_patterns=(
             "tam anh",
@@ -234,7 +238,14 @@ HOSPITAL_PROFILES: tuple[HospitalProfile, ...] = (
             "benh vien da khoa tam anh",
         ),
         unit_system="SI",
-        additional_aliases={},
+        additional_aliases={
+            "fasting_glucose": ("duong huyet luc doi", "glucose luc doi"),
+            "hdl": ("hdl cholesterol", "hdl-c"),
+            "ldl": ("ldl cholesterol", "ldl-c"),
+            "alt": ("sgpt", "alat"),
+            "ast": ("sgot", "asat"),
+            "triglyceride": ("triglycerides",),
+        },
         hospital_name_variants=(
             "tam anh hospital",
             "tam anh general hospital",
@@ -247,7 +258,7 @@ HOSPITAL_PROFILES: tuple[HospitalProfile, ...] = (
         },
     ),
     HospitalProfile(
-        hospital_id="hong_ngoc",
+        hospital_id="hongngoc",
         name="Hong Ngoc",
         header_patterns=(
             "hong ngoc",
@@ -255,7 +266,14 @@ HOSPITAL_PROFILES: tuple[HospitalProfile, ...] = (
             "hongngoc",
         ),
         unit_system="mixed",
-        additional_aliases={},
+        additional_aliases={
+            "fasting_glucose": ("glucose mau", "glucose toan phan"),
+            "hdl": ("hdl-c", "hdl cholesterol"),
+            "ldl": ("ldl-c", "ldl cholesterol"),
+            "alt": ("alt (gpt)", "sgpt"),
+            "ast": ("ast (got)", "sgot"),
+            "total_cholesterol": ("cholesterol toan phan",),
+        },
         hospital_name_variants=(
             "hong ngoc hospital",
             "bv hong ngoc",
@@ -268,7 +286,7 @@ HOSPITAL_PROFILES: tuple[HospitalProfile, ...] = (
         },
     ),
     HospitalProfile(
-        hospital_id="hospital_108",
+        hospital_id="bachmai108",
         name="108 Military Hospital",
         header_patterns=(
             "vien quan y 108",
@@ -290,7 +308,7 @@ HOSPITAL_PROFILES: tuple[HospitalProfile, ...] = (
         },
     ),
     HospitalProfile(
-        hospital_id="bach_mai",
+        hospital_id="bachmai",
         name="Bach Mai",
         header_patterns=(
             "bach mai",
@@ -298,7 +316,21 @@ HOSPITAL_PROFILES: tuple[HospitalProfile, ...] = (
             "bv bach mai",
         ),
         unit_system="conventional",
-        additional_aliases={},
+        additional_aliases={
+            "ldl": ("ldl-cholesterol (tinh)", "ldl (tinh)", "ldl cholesterol tinh"),
+            "triglyceride": ("triglycerid",),
+            "hdl": ("hdl-cholesterol", "hdl cholesterol"),
+            "alt": ("alt (sgpt)", "sgpt"),
+            "ast": ("ast (sgot)", "sgot"),
+        },
+        footer_patterns=(
+            "bac si ky ten",
+            "chu ky",
+            "ghi chu",
+            "disclaimer",
+            "luu y",
+            "ket luan",
+        ),
         hospital_name_variants=(
             "bach mai hospital",
             "benh vien da khoa bach mai",
