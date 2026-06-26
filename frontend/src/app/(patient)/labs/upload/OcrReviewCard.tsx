@@ -28,6 +28,7 @@ import {
 export type RefRangeSource = 'catalog' | 'ocr' | 'manual'
 
 export interface OcrRow {
+  id: string // stable React key; generated at row creation
   biomarker_key: string // catalog key (e.g. "fasting_glucose"); '' = unresolved
   unit_key: string // catalog unit key (e.g. "mmol_per_l"); '' = unresolved
   value: string // numeric string as printed on the report
@@ -45,7 +46,7 @@ export interface OcrRow {
   confidence_reasons: string[]
 }
 
-export const EMPTY_OCR_ROW: OcrRow = {
+export const EMPTY_OCR_ROW: Omit<OcrRow, 'id'> = {
   biomarker_key: '',
   unit_key: '',
   value: '',
@@ -59,6 +60,10 @@ export const EMPTY_OCR_ROW: OcrRow = {
   needs_verification: false,
   status: null,
   confidence_reasons: [],
+}
+
+export function makeEmptyOcrRow(): OcrRow {
+  return { ...EMPTY_OCR_ROW, id: crypto.randomUUID() }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -109,6 +114,7 @@ export function buildOcrRow(
     v.original_value != null ? String(v.original_value) : v.value != null ? String(v.value) : ''
 
   return {
+    id: crypto.randomUUID(),
     biomarker_key,
     unit_key,
     value: displayValue,

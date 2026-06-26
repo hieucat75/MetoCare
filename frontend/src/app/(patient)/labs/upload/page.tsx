@@ -29,7 +29,7 @@ import { useLabReference, formatRefRange } from '@/lib/api/labReference'
 import {
   OcrReviewCard,
   buildOcrRow,
-  EMPTY_OCR_ROW,
+  makeEmptyOcrRow,
   type OcrRow,
 } from './OcrReviewCard'
 import {
@@ -150,7 +150,7 @@ export default function LabUploadPage() {
       setTestDate(isoToDisplayDate(d.extracted_test_date))
       setTestDateAuto(Boolean(d.extracted_test_date))
       const mapped: OcrRow[] = d.parsed_values.map((v) => buildOcrRow(catalog, v))
-      setRows(mapped.length ? mapped : [{ ...EMPTY_OCR_ROW }])
+      setRows(mapped.length ? mapped : [makeEmptyOcrRow()])
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Không xử lý được tệp. Vui lòng thử lại.')
     } finally {
@@ -228,6 +228,10 @@ export default function LabUploadPage() {
     const results = buildResults()
     if (results.length === 0) {
       setError('Vui lòng nhập ít nhất một chỉ số.')
+      return
+    }
+    if (results.some((r) => r.value == null)) {
+      setError('Vui lòng nhập giá trị cho tất cả các chỉ số.')
       return
     }
     if (results.some((r) => r.value != null && Number.isNaN(r.value))) {
@@ -501,7 +505,7 @@ export default function LabUploadPage() {
             <div className="space-y-3">
               {rows.map((row, i) => (
                 <OcrReviewCard
-                  key={i}
+                  key={row.id}
                   catalog={catalog}
                   row={row}
                   index={i}
@@ -514,7 +518,7 @@ export default function LabUploadPage() {
 
               <NeuButton
                 variant="secondary"
-                onClick={() => setRows((rs) => [...rs, { ...EMPTY_OCR_ROW }])}
+                onClick={() => setRows((rs) => [...rs, makeEmptyOcrRow()])}
               >
                 <Plus className="size-4" /> Thêm chỉ số
               </NeuButton>
