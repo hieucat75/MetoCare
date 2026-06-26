@@ -88,6 +88,10 @@ def assess_biomarker(canonical: str, value: float, *, age_years: int | None = No
                             f"{canonical}={value} critical high", True)
 
     # Warning/watch patterns
+    if canonical == "fasting_glucose" and 54 < value < 70:
+        return _finding(canonical, "biomarker", "low", "watch", 3,
+                        "Đường huyết lúc đói hơi thấp hơn ngưỡng bình thường. Theo dõi thêm và trao đổi với bác sĩ.",  # noqa: E501
+                        f"{canonical}={value} mg/dL mild hypoglycemia", False)
     if canonical == "fasting_glucose" and 100 <= value <= 125:
         return _finding(canonical, "biomarker", "borderline", "watch", 3,
                         "Đường huyết lúc đói đang ở vùng tiền tiểu đường.",

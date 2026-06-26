@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from app.core.clock import as_naive_utc, utcnow
 from app.core.config import get_settings
 from app.domain import lab_interpreter
+from app.domain.lab_normalization import normalize_value_to_si
 from app.models.clinical import HealthMetric, LabDocument, LabResult
 from app.services import audit, consent, lab_batch
 from app.services import ocr_case as ocr_case_svc
@@ -314,19 +315,33 @@ def create_manual_entry(
         # Resolve the canonical biomarker so the row is self-describing and can be
         # promoted into health_metrics (dashboard/trend sync).
         canonical = lab_interpreter.normalize_biomarker(item["test_name"])
+
+        # P0 safety: normalize value to canonical unit (e.g. mmol/L → mg/dL for glucose)
+        # before storing. Clinical rules always run in canonical units (mg/dL, etc.).
+        # Keep original value/unit for display (already in original_value/original_unit).
+        raw_value = item.get("value")
+        raw_unit = item.get("unit") or ""
+        if canonical and raw_value is not None:
+            canonical_value, canonical_unit_str = normalize_value_to_si(
+                raw_value, raw_unit, canonical
+            )
+        else:
+            canonical_value = raw_value
+            canonical_unit_str = raw_unit
+
         row = LabResult(
             patient_id=patient_id,
             document_id=doc.id,
             batch_id=batch.id,
             test_name=item["test_name"],
             canonical_name=canonical,
-            value=item.get("value"),
-            unit=item.get("unit"),
+            value=canonical_value,
+            unit=canonical_unit_str,
             reference_range=item.get("reference_range"),
             test_date=test_date,
             verified_by_user=True,
-            original_value=item.get("original_value"),
-            original_unit=item.get("original_unit"),
+            original_value=item.get("original_value") if item.get("original_value") is not None else raw_value,  # noqa: E501
+            original_unit=item.get("original_unit") if item.get("original_unit") is not None else raw_unit,  # noqa: E501
             original_reference_range=item.get("original_reference_range"),
             original_test_name=item.get("original_test_name"),
         )

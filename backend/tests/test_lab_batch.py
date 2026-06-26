@@ -420,3 +420,168 @@ class TestListLabResultsLimitValidation:
             headers=p["headers"],
         )
         assert resp.status_code == 422
+
+
+# ── Test 10: P0 clinical safety — glucose mmol/L must be converted to mg/dL ────
+
+class TestGlucoseMmolConversion:
+    """
+    P0 Patient Safety Regression:
+    Manual entry with glucose in mmol/L must be stored/classified in mg/dL.
+    clinical_rules.assess_biomarker always runs in mg/dL.
+    A value like 5.7 mmol/L = 102.7 mg/dL (borderline high) must NEVER
+    be classified as critical/low (which would happen if stored as 5.7 mg/dL).
+
+    Test matrix (all mmol/L input, expected canonical mg/dL status):
+      2.8  → critical (2.8 * 18.018 = 50.5 mg/dL < 54 critical_low)
+      3.5  → low      (3.5 * 18.018 = 63.1 mg/dL  < 70 ref_low)
+      4.8  → normal   (4.8 * 18.018 = 86.5 mg/dL in 70–99)
+      5.7  → high/borderline (5.7 * 18.018 = 102.7 mg/dL, in 100–125 prediabetes)
+      7.2  → high     (7.2 * 18.018 = 129.7 mg/dL in 126–299)
+      11.1 → critical (11.1 * 18.018 = 200.0 mg/dL < 300 but > 126, so high not critical)
+    """
+
+    MMOL_TO_MGDL = 18.018
+
+    def _create_glucose_entry(self, db, patient_id, user_id, mmol_value):
+        """Create a manual lab entry with glucose in mmol/L."""
+        from app.services.lab import create_manual_entry
+        doc, rows = create_manual_entry(
+            db,
+            patient_id=patient_id,
+            requester_id=user_id,
+            lab_name="TEST_LAB",
+            test_date=_TODAY,
+            results=[{
+                "test_name": "fasting_glucose",
+                "value": mmol_value,
+                "unit": "mmol/L",
+            }],
+        )
+        return rows
+
+    def test_5_7_mmol_stored_as_mgdl(self, db):
+        """5.7 mmol/L = 102.7 mg/dL — must NOT be stored as 5.7 mg/dL (would be critical low)."""
+        p = _make_patient(db)
+        rows = self._create_glucose_entry(db, p["patient_id"], p["user_id"], 5.7)
+        assert len(rows) == 1
+        row = rows[0]
+        # Value stored in DB must be ~102.7 mg/dL, not 5.7
+        expected_mgdl = round(5.7 * self.MMOL_TO_MGDL, 1)
+        assert abs(row.value - expected_mgdl) < 2.0, (
+            f"Expected ~{expected_mgdl} mg/dL, got {row.value} {row.unit}. "
+            "Glucose mmol/L not converted — P0 clinical bug!"
+        )
+        assert row.unit == "mg/dL"
+        # Original value must be preserved
+        assert row.original_value == 5.7
+        assert row.original_unit == "mmol/L"
+
+    def test_5_7_mmol_not_classified_as_critical(self, db):
+        """5.7 mmol/L is borderline/prediabetes — must NOT be critical or low."""
+        from app.domain.clinical_rules import assess_biomarker
+        p = _make_patient(db)
+        rows = self._create_glucose_entry(db, p["patient_id"], p["user_id"], 5.7)
+        assert len(rows) == 1
+        finding = assess_biomarker("fasting_glucose", rows[0].value)
+        assert finding is not None
+        assert finding.status in ("borderline", "high"), (
+            f"5.7 mmol/L → {rows[0].value} mg/dL → status={finding.status!r}; "
+            "expected borderline or high (prediabetes range)"
+        )
+        assert finding.status not in ("critical",), (
+            "5.7 mmol/L must NEVER be classified as critical. "
+            "This means the mmol/L value was not converted to mg/dL."
+        )
+
+    def test_2_8_mmol_is_critical(self, db):
+        """2.8 mmol/L = ~50.5 mg/dL — critical hypoglycemia."""
+        from app.domain.clinical_rules import assess_biomarker
+        p = _make_patient(db)
+        rows = self._create_glucose_entry(db, p["patient_id"], p["user_id"], 2.8)
+        assert len(rows) == 1
+        expected_mgdl = round(2.8 * self.MMOL_TO_MGDL, 1)
+        assert abs(rows[0].value - expected_mgdl) < 2.0
+        finding = assess_biomarker("fasting_glucose", rows[0].value)
+        assert finding is not None
+        assert finding.status == "critical", (
+            f"2.8 mmol/L = {expected_mgdl} mg/dL should be critical, got {finding.status}"
+        )
+
+    def test_3_5_mmol_is_low(self, db):
+        """3.5 mmol/L = ~63.1 mg/dL — below ref_low=70, status low."""
+        from app.domain.clinical_rules import assess_biomarker
+        p = _make_patient(db)
+        rows = self._create_glucose_entry(db, p["patient_id"], p["user_id"], 3.5)
+        assert len(rows) == 1
+        expected_mgdl = round(3.5 * self.MMOL_TO_MGDL, 1)
+        assert abs(rows[0].value - expected_mgdl) < 2.0
+        finding = assess_biomarker("fasting_glucose", rows[0].value)
+        assert finding is not None
+        assert finding.status == "low", (
+            f"3.5 mmol/L = {expected_mgdl} mg/dL should be low, got {finding.status}"
+        )
+
+    def test_4_8_mmol_is_normal(self, db):
+        """4.8 mmol/L = ~86.5 mg/dL — normal range 70–99."""
+        from app.domain.clinical_rules import assess_biomarker
+        p = _make_patient(db)
+        rows = self._create_glucose_entry(db, p["patient_id"], p["user_id"], 4.8)
+        assert len(rows) == 1
+        expected_mgdl = round(4.8 * self.MMOL_TO_MGDL, 1)
+        assert abs(rows[0].value - expected_mgdl) < 2.0
+        finding = assess_biomarker("fasting_glucose", rows[0].value)
+        assert finding is not None
+        assert finding.status == "normal", (
+            f"4.8 mmol/L = {expected_mgdl} mg/dL should be normal, got {finding.status}"
+        )
+
+    def test_7_2_mmol_is_high(self, db):
+        """7.2 mmol/L = ~129.7 mg/dL — diabetic range (126–299)."""
+        from app.domain.clinical_rules import assess_biomarker
+        p = _make_patient(db)
+        rows = self._create_glucose_entry(db, p["patient_id"], p["user_id"], 7.2)
+        assert len(rows) == 1
+        expected_mgdl = round(7.2 * self.MMOL_TO_MGDL, 1)
+        assert abs(rows[0].value - expected_mgdl) < 2.0
+        finding = assess_biomarker("fasting_glucose", rows[0].value)
+        assert finding is not None
+        assert finding.status == "high", (
+            f"7.2 mmol/L = {expected_mgdl} mg/dL should be high, got {finding.status}"
+        )
+
+    def test_11_1_mmol_is_high(self, db):
+        """11.1 mmol/L = ~200 mg/dL — clearly diabetic, high (not critical yet, <300)."""
+        from app.domain.clinical_rules import assess_biomarker
+        p = _make_patient(db)
+        rows = self._create_glucose_entry(db, p["patient_id"], p["user_id"], 11.1)
+        assert len(rows) == 1
+        expected_mgdl = round(11.1 * self.MMOL_TO_MGDL, 1)
+        assert abs(rows[0].value - expected_mgdl) < 2.0
+        finding = assess_biomarker("fasting_glucose", rows[0].value)
+        assert finding is not None
+        assert finding.status == "high", (
+            f"11.1 mmol/L = {expected_mgdl} mg/dL should be high (126-299), got {finding.status}"
+        )
+
+    def test_mgdl_input_unchanged(self, db):
+        """Input already in mg/dL (e.g. 102.7) must NOT be double-converted."""
+        from app.services.lab import create_manual_entry
+        p = _make_patient(db)
+        doc, rows = create_manual_entry(
+            db,
+            patient_id=p["patient_id"],
+            requester_id=p["user_id"],
+            lab_name="TEST_LAB",
+            test_date=_TODAY,
+            results=[{
+                "test_name": "fasting_glucose",
+                "value": 102.7,
+                "unit": "mg/dL",
+            }],
+        )
+        assert len(rows) == 1
+        assert abs(rows[0].value - 102.7) < 0.5, (
+            f"mg/dL input should be stored unchanged, got {rows[0].value}"
+        )
+        assert rows[0].unit == "mg/dL"
