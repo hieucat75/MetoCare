@@ -195,6 +195,8 @@ def create_manual_lab_results(
         results=[r.model_dump() for r in payload.results],
         force_mode=payload.force_mode,
         existing_batch_id=payload.existing_batch_id,
+        ocr_case_id=payload.ocr_case_id,
+        review_time_seconds=payload.review_time_seconds,
     )
     return LabResultListResponse(
         patient_id=patient_id,

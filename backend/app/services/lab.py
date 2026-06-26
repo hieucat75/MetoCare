@@ -15,8 +15,9 @@ from sqlalchemy.orm import Session
 from app.core.clock import as_naive_utc, utcnow
 from app.core.config import get_settings
 from app.domain import lab_interpreter
-from app.models.clinical import HealthMetric, LabDocument, LabResult, LabUploadBatch
+from app.models.clinical import HealthMetric, LabDocument, LabResult
 from app.services import audit, consent, lab_batch
+from app.services import ocr_case as ocr_case_svc
 from app.services.health_metrics import classify_status
 
 # Lab biomarkers that double as trackable health metrics. Promoting them into
@@ -195,7 +196,7 @@ def interpret_document(
     for b in interpretation.biomarkers:
         # verified_by_user gate mirrors lab_pipeline: mock/manual rows are trusted;
         # real OCR rows require confidence >= 0.5 and no needs_verification flag.
-        raw = next((v for v in raw_values if hasattr(v, "test_name") and v.test_name == b.raw_name), None)
+        raw = next((v for v in raw_values if hasattr(v, "test_name") and v.test_name == b.raw_name), None)  # noqa: E501
         suspect = getattr(raw, "suspect_machine_id", False) if raw else False
         requires_review = getattr(raw, "requires_review", False) if raw else False
         auto_save_blocked = (
@@ -263,6 +264,8 @@ def create_manual_entry(
     force_mode: str | None = None,
     existing_batch_id: str | None = None,
     file_hash: str | None = None,
+    ocr_case_id: str | None = None,
+    review_time_seconds: float | None = None,
 ) -> tuple[LabDocument, list[LabResult]]:
     """Create a lab document + structured results from manual patient entry (PR-B).
 
@@ -343,6 +346,43 @@ def create_manual_entry(
         resource_type="lab_document",
         resource_id=doc.id,
     )
+
+    # Close the OCR feedback loop — non-blocking; must never abort the save transaction.
+    if ocr_case_id:
+        try:
+            corrected_rows = [
+                {
+                    "test_name": r.get("test_name", ""),
+                    "original_test_name": r.get("original_test_name") or r.get("test_name", ""),
+                    "display_name_vi": r.get("display_name_vi") or "",
+                    # Use the resolved canonical key so gap matching works correctly.
+                    "mapped_metric_type": lab_interpreter.normalize_biomarker(
+                        r.get("test_name", "")
+                    ),
+                    "value": r.get("value"),
+                    "unit": r.get("unit") or "",
+                }
+                for r in results
+            ]
+            test_date_iso = (
+                test_date.isoformat() if hasattr(test_date, "isoformat") else str(test_date)
+            )
+            ocr_case_svc.confirm_case(
+                db,
+                case_id=ocr_case_id,
+                patient_id=patient_id,
+                lab_batch_id=batch.id,
+                corrected_rows=corrected_rows,
+                test_date_iso=test_date_iso,
+                user_review_time_seconds=review_time_seconds,
+            )
+        except Exception:
+            import logging as _log
+            _log.getLogger("mcp.lab").exception(
+                "ocr_case_confirm_failed case=%s patient=%s — lab save NOT rolled back",
+                ocr_case_id, patient_id,
+            )
+
     db.commit()
     for row in rows:
         db.refresh(row)

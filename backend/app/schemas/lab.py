@@ -42,6 +42,9 @@ class LabManualEntryCreate(BaseModel):
     force_mode: Literal["new", "overwrite"] | None = None
     # Required when force_mode="overwrite": the batch_id returned in the 409 response.
     existing_batch_id: str | None = None
+    # OCR feedback loop — pass back the id from the upload draft to close the gap analysis.
+    ocr_case_id: str | None = None
+    review_time_seconds: float | None = None
 
     @field_validator("test_date")
     @classmethod
