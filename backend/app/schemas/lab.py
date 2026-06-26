@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime as dt
+from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -35,6 +36,12 @@ class LabManualEntryCreate(BaseModel):
         ..., description="Exam date (YYYY-MM-DD); must be ≤ today and within 50 years"
     )
     results: list[LabResultItemIn] = Field(..., min_length=1)
+    # Duplicate handling: null = reject if duplicate found (return 409).
+    # "new" = save as a new batch alongside any existing one.
+    # "overwrite" = soft-delete existing_batch_id first, then save.
+    force_mode: Literal["new", "overwrite"] | None = None
+    # Required when force_mode="overwrite": the batch_id returned in the 409 response.
+    existing_batch_id: str | None = None
 
     @field_validator("test_date")
     @classmethod
@@ -45,6 +52,39 @@ class LabManualEntryCreate(BaseModel):
         if v < today.replace(year=today.year - 50):
             raise ValueError("Ngày xét nghiệm quá xa trong quá khứ (>50 năm).")
         return v
+
+
+# ── Batch schemas ────────────────────────────────────────────────────────────
+
+
+class LabUploadBatchOut(BaseModel):
+    id: str
+    patient_id: str
+    lab_name: str | None
+    test_date: dt.date | None
+    result_count: int
+    created_at: dt.datetime
+
+    model_config = {"from_attributes": True}
+
+
+class LabBatchListResponse(BaseModel):
+    patient_id: str
+    total: int
+    items: list[LabUploadBatchOut]
+
+
+class DuplicateCheckRequest(BaseModel):
+    test_date: dt.date
+    lab_name: str | None = None
+    biomarker_names: list[str] = Field(default_factory=list)
+
+
+class DuplicateCheckResponse(BaseModel):
+    is_duplicate: bool
+    existing_batch_id: str | None = None
+    existing_test_date: dt.date | None = None
+    reason: str | None = None  # "exact_hash" | "same_date_lab" | "overlapping_biomarkers"
 
 
 class LabResultOut(BaseModel):

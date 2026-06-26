@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.crypto import EncryptedString
@@ -19,7 +19,7 @@ from app.core.database import Base
 from ._mixins import SoftDeleteMixin, TimestampMixin, UUIDPrimaryKey
 
 
-class HealthMetric(UUIDPrimaryKey, TimestampMixin, Base):
+class HealthMetric(UUIDPrimaryKey, TimestampMixin, SoftDeleteMixin, Base):
     __tablename__ = "health_metrics"
 
     patient_id: Mapped[str] = mapped_column(
@@ -37,6 +37,29 @@ class HealthMetric(UUIDPrimaryKey, TimestampMixin, Base):
     normal_range_min: Mapped[float | None] = mapped_column(Float)
     normal_range_max: Mapped[float | None] = mapped_column(Float)
     status: Mapped[str | None] = mapped_column(String(16))  # normal/low/high/critical
+
+
+class LabUploadBatch(UUIDPrimaryKey, TimestampMixin, SoftDeleteMixin, Base):
+    """One logical upload session: a patient's lab report from one visit.
+
+    Groups all LabResults created in a single save call. Enables batch delete
+    (remove report + cascade to metrics) and duplicate detection (same test_date
+    + lab_name or overlapping biomarkers).
+    """
+
+    __tablename__ = "lab_upload_batches"
+
+    patient_id: Mapped[str] = mapped_column(
+        ForeignKey("patient_profiles.id"), index=True, nullable=False
+    )
+    source_document_id: Mapped[str | None] = mapped_column(
+        ForeignKey("lab_documents.id"), nullable=True
+    )
+    lab_name: Mapped[str | None] = mapped_column(String(255))
+    test_date: Mapped[dt.date | None] = mapped_column(Date)
+    # SHA-256 hex of raw file bytes for exact duplicate detection.
+    file_hash: Mapped[str | None] = mapped_column(String(64))
+    delete_reason: Mapped[str | None] = mapped_column(String(512))
 
 
 class LabDocument(UUIDPrimaryKey, TimestampMixin, Base):
@@ -65,6 +88,9 @@ class LabResult(UUIDPrimaryKey, TimestampMixin, SoftDeleteMixin, Base):
         ForeignKey("patient_profiles.id"), index=True, nullable=False
     )
     document_id: Mapped[str | None] = mapped_column(ForeignKey("lab_documents.id"), index=True)
+    batch_id: Mapped[str | None] = mapped_column(
+        ForeignKey("lab_upload_batches.id"), index=True, nullable=True
+    )
     test_name: Mapped[str] = mapped_column(String(128), nullable=False)
     canonical_name: Mapped[str | None] = mapped_column(String(64), index=True)
     value: Mapped[float | None] = mapped_column(Float)

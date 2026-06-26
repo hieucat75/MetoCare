@@ -62,6 +62,7 @@ def _latest_by_type(db: Session, patient_id: str) -> dict[str, HealthMetric]:
             .where(
                 HealthMetric.patient_id == patient_id,
                 HealthMetric.metric_type.in_(_SCORE_METRIC_TYPES),
+                HealthMetric.deleted_at.is_(None),
             )
             .order_by(HealthMetric.measured_at.desc())
         ).scalars()

@@ -90,7 +90,10 @@ def list_metrics(
     consent.require_access(
         db, patient_id=patient_id, requester_id=requester_id, scope="health_metric"
     )
-    stmt = select(HealthMetric).where(HealthMetric.patient_id == patient_id)
+    stmt = select(HealthMetric).where(
+        HealthMetric.patient_id == patient_id,
+        HealthMetric.deleted_at.is_(None),
+    )
     if metric_type:
         stmt = stmt.where(HealthMetric.metric_type == metric_type)
     stmt = stmt.order_by(HealthMetric.measured_at.desc()).limit(limit)
@@ -130,6 +133,7 @@ def trend(
             HealthMetric.patient_id == patient_id,
             HealthMetric.metric_type == metric_type,
             HealthMetric.measured_at >= since,
+            HealthMetric.deleted_at.is_(None),
         )
         .order_by(HealthMetric.measured_at.asc())
     )

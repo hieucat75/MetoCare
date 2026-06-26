@@ -16,15 +16,19 @@ from app.models.clinical import LabDocument
 from app.models.patient import PatientProfile
 from app.models.user import UserRole
 from app.schemas.lab import (
+    DuplicateCheckRequest,
+    DuplicateCheckResponse,
     InterpretationOut,
+    LabBatchListResponse,
     LabDocumentCreate,
     LabDocumentOut,
     LabDocumentStatusOut,
     LabManualEntryCreate,
     LabResultListResponse,
     LabResultOut,
+    LabUploadBatchOut,
 )
-from app.services import consent, lab
+from app.services import consent, lab, lab_batch
 from app.services.lab_pipeline import get_worker
 
 router = APIRouter(tags=["lab"])
@@ -156,6 +160,32 @@ def create_manual_lab_results(
     excluded by role allowlist).
     """
     _require_patient_ownership(db, patient_id=patient_id, user=user)
+
+    # Duplicate guard: if force_mode is absent, check for existing batch first.
+    if payload.force_mode is None:
+        biomarker_names = [r.test_name for r in payload.results]
+        is_dup, existing_id, reason = lab_batch.check_duplicate(
+            db,
+            patient_id=patient_id,
+            test_date=payload.test_date,
+            lab_name=payload.lab_name,
+            biomarker_names=biomarker_names,
+        )
+        if is_dup:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "duplicate": True,
+                    "existing_batch_id": existing_id,
+                    "existing_test_date": str(payload.test_date),
+                    "reason": reason,
+                    "message": (
+                        "Có vẻ kết quả xét nghiệm ngày này đã được lưu. "
+                        "Chọn 'Ghi đè' để thay thế hoặc 'Bản mới' để lưu thêm."
+                    ),
+                },
+            )
+
     _, rows = lab.create_manual_entry(
         db,
         patient_id=patient_id,
@@ -163,12 +193,102 @@ def create_manual_lab_results(
         lab_name=payload.lab_name,
         test_date=payload.test_date,
         results=[r.model_dump() for r in payload.results],
+        force_mode=payload.force_mode,
+        existing_batch_id=payload.existing_batch_id,
     )
     return LabResultListResponse(
         patient_id=patient_id,
         total=len(rows),
         items=[LabResultOut.model_validate(r) for r in rows],
     )
+
+
+_PATIENT_ROLES = (
+    UserRole.PATIENT,
+    UserRole.INTERNAL_ADMIN,
+    UserRole.SUPER_ADMIN,
+)
+
+
+@router.post(
+    "/patients/{patient_id}/lab-batches/check-duplicate",
+    response_model=DuplicateCheckResponse,
+    summary="Check whether a lab upload would be a duplicate",
+)
+def check_duplicate(
+    patient_id: str,
+    payload: DuplicateCheckRequest,
+    user: CurrentUser = Depends(require_roles(*_PATIENT_ROLES)),
+    db: Session = Depends(get_session),
+) -> DuplicateCheckResponse:
+    """Pre-flight: returns is_duplicate=True + existing_batch_id if a matching
+    non-deleted batch already exists for this patient + test_date."""
+    _require_patient_ownership(db, patient_id=patient_id, user=user)
+    consent.require_access(db, patient_id=patient_id, requester_id=user.id, scope="lab")
+    is_dup, existing_id, reason = lab_batch.check_duplicate(
+        db,
+        patient_id=patient_id,
+        test_date=payload.test_date,
+        lab_name=payload.lab_name,
+        biomarker_names=payload.biomarker_names,
+    )
+    return DuplicateCheckResponse(
+        is_duplicate=is_dup,
+        existing_batch_id=existing_id,
+        existing_test_date=payload.test_date if is_dup else None,
+        reason=reason,
+    )
+
+
+@router.get(
+    "/patients/{patient_id}/lab-batches",
+    response_model=LabBatchListResponse,
+    summary="List lab upload batches (upload sessions) for a patient",
+)
+def list_lab_batches(
+    patient_id: str,
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    user: CurrentUser = Depends(require_roles(*_PATIENT_ROLES)),
+    db: Session = Depends(get_session),
+) -> LabBatchListResponse:
+    _require_patient_ownership(db, patient_id=patient_id, user=user)
+    consent.require_access(db, patient_id=patient_id, requester_id=user.id, scope="lab")
+    total, items = lab_batch.list_batches(
+        db, patient_id=patient_id, limit=limit, offset=offset
+    )
+    return LabBatchListResponse(
+        patient_id=patient_id,
+        total=total,
+        items=[LabUploadBatchOut(**item) for item in items],
+    )
+
+
+@router.delete(
+    "/patients/{patient_id}/lab-batches/{batch_id}",
+    status_code=204,
+    summary="Soft-delete a lab batch and cascade to lab_results + health_metrics",
+)
+def delete_lab_batch(
+    patient_id: str,
+    batch_id: str,
+    reason: str | None = None,
+    user: CurrentUser = Depends(require_roles(*_PATIENT_ROLES)),
+    db: Session = Depends(get_session),
+) -> None:
+    _require_patient_ownership(db, patient_id=patient_id, user=user)
+    try:
+        lab_batch.delete_batch(
+            db,
+            batch_id=batch_id,
+            deleted_by_user_id=user.id,
+            reason=reason,
+            patient_id=patient_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
 
 
 @router.get(

@@ -53,7 +53,10 @@ def _fetch_vitals(db: Session, patient_id: str) -> VitalsSummary:
     rows = list(
         db.execute(
             select(HealthMetric)
-            .where(HealthMetric.patient_id == patient_id)
+            .where(
+                HealthMetric.patient_id == patient_id,
+                HealthMetric.deleted_at.is_(None),
+            )
             .order_by(HealthMetric.measured_at.desc())
             .limit(5)
         ).scalars()
