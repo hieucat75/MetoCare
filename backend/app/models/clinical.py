@@ -113,6 +113,9 @@ class LabResult(UUIDPrimaryKey, TimestampMixin, SoftDeleteMixin, Base):
     correction_history_json: Mapped[str | None] = mapped_column(Text)   # JSON array, append-only
     normalized_value_si: Mapped[float | None] = mapped_column(Float)  # SI-normalized for perf
     normalized_unit_si: Mapped[str | None] = mapped_column(String(24))  # SI unit string
+    # Data quality / plausibility guardrail fields (t7_m1_dquality migration)
+    data_quality_flag: Mapped[str | None] = mapped_column(String(20), nullable=True)  # "save" | "flag"
+    data_quality_note: Mapped[str | None] = mapped_column(Text, nullable=True)  # human-readable reason
 
 
 class SymptomLog(UUIDPrimaryKey, TimestampMixin, Base):

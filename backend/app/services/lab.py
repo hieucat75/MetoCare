@@ -21,6 +21,7 @@ from app.domain.lab_normalization import normalize_value_to_si
 from app.models.clinical import HealthMetric, LabDocument, LabResult, LabUploadBatch
 from app.services import audit, consent, lab_batch
 from app.services import ocr_case as ocr_case_svc
+from app.services.biomarker_specs import check_plausibility
 from app.services.health_metrics import classify_status
 
 _log = logging.getLogger("mcp.lab")
@@ -116,6 +117,54 @@ def normalize_and_classify(canonical_name: str | None, value, unit: str) -> dict
         "status": status,
         "clinical_message": get_clinical_message(canonical_name, status),
     }
+
+
+def validate_before_save(
+    biomarker_name: str,
+    original_value: float,
+    original_unit: str,
+    normalized_value_si: float | None,
+    normalized_unit_si: str | None,
+) -> dict:
+    """Write-time integrity check. Called BEFORE DB save.
+
+    Returns:
+        {
+          "valid":     bool,             # always True — we never silently reject
+          "suspicious": bool,
+          "reason":    str,
+          "action":    "save" | "flag",  # "flag" means save + mark suspicious
+        }
+
+    Rules:
+    - NEVER reject a record; only flag for human review.
+    - Flag when original value/unit is physiologically implausible.
+    - Flag when normalized value is physiologically implausible.
+    - A biomarker with no spec entry is assumed plausible (unknown == not checked).
+    """
+    # 1. Plausibility check on original value/unit.
+    plaus = check_plausibility(biomarker_name, original_value, original_unit)
+
+    if not plaus["plausible"]:
+        return {
+            "valid": True,   # save regardless — never silently discard data
+            "suspicious": True,
+            "reason": plaus["reason"],
+            "action": "flag",
+        }
+
+    # 2. Plausibility check on normalized value (if present).
+    if normalized_value_si is not None and normalized_unit_si is not None:
+        norm_plaus = check_plausibility(biomarker_name, normalized_value_si, normalized_unit_si)
+        if not norm_plaus["plausible"]:
+            return {
+                "valid": True,
+                "suspicious": True,
+                "reason": f"Normalized value implausible: {norm_plaus['reason']}",
+                "action": "flag",
+            }
+
+    return {"valid": True, "suspicious": False, "reason": "OK", "action": "save"}
 
 
 def _measured_at_for(row: LabResult, test_date: dt.date | None) -> dt.datetime:
@@ -335,6 +384,22 @@ def interpret_document(
             normalized_value_si=_clf.get("normalized_value_si") if _clf else None,
             normalized_unit_si=_clf.get("normalized_unit_si") if _clf else None,
         )
+        # Write-time plausibility guardrail (Phase 2) — OCR path.
+        if b.canonical and b.value is not None:
+            _vld_ocr = validate_before_save(
+                biomarker_name=b.canonical,
+                original_value=float(b.value),
+                original_unit=b.unit or "",
+                normalized_value_si=_clf.get("normalized_value_si") if _clf else None,
+                normalized_unit_si=_clf.get("normalized_unit_si") if _clf else None,
+            )
+            lr.data_quality_flag = _vld_ocr.get("action")
+            lr.data_quality_note = _vld_ocr.get("reason") if _vld_ocr["suspicious"] else None
+            if _vld_ocr["suspicious"]:
+                _log.warning(
+                    "validate_before_save (OCR) flagged suspicious: canonical=%s value=%s unit=%s reason=%s",
+                    b.canonical, b.value, b.unit, _vld_ocr["reason"],
+                )
         db.add(lr)
         new_rows.append(lr)
     doc.ocr_status = "done"
@@ -466,6 +531,24 @@ def create_manual_entry(
             normalized_unit_si=classification.get("normalized_unit_si"),
             status=classification.get("status"),
         )
+        # Write-time plausibility guardrail (Phase 2).
+        _orig_val = item.get("original_value") if item.get("original_value") is not None else raw_value
+        _orig_unit = item.get("original_unit") if item.get("original_unit") is not None else raw_unit
+        if canonical and _orig_val is not None:
+            _vld = validate_before_save(
+                biomarker_name=canonical,
+                original_value=float(_orig_val),
+                original_unit=_orig_unit or "",
+                normalized_value_si=classification.get("normalized_value_si"),
+                normalized_unit_si=classification.get("normalized_unit_si"),
+            )
+            row.data_quality_flag = _vld.get("action")
+            row.data_quality_note = _vld.get("reason") if _vld["suspicious"] else None
+            if _vld["suspicious"]:
+                _log.warning(
+                    "validate_before_save flagged suspicious: canonical=%s value=%s unit=%s reason=%s",
+                    canonical, _orig_val, _orig_unit, _vld["reason"],
+                )
         db.add(row)
         rows.append(row)
     db.flush()
