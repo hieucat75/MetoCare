@@ -92,9 +92,20 @@ jobs:
             echo "::error::NEXT_PUBLIC_API_URL must end with /api/v1 (got: $API_URL)"; exit 1
           fi
 
-          HEALTH=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "https://${BACKEND_FQDN}/health")
+          # Poll backend /health with retries to handle ACA cold-start on scale-from-zero.
+          # minReplicas=1 prevents scale-to-zero, but a new revision provisioning during
+          # a concurrent deploy can still cause a brief startup window. Retry for up to
+          # 90 seconds (6 × 15s) before declaring the backend dead.
+          echo "Checking backend health (https://${BACKEND_FQDN}/health) with retry..."
+          HEALTH="000"
+          for i in $(seq 1 6); do
+            HEALTH=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "https://${BACKEND_FQDN}/health" || echo "000")
+            echo "  attempt $i: HTTP $HEALTH"
+            [ "$HEALTH" = "200" ] && break
+            [ "$i" -lt 6 ] && sleep 15
+          done
           if [ "$HEALTH" != "200" ]; then
-            echo "::error::Backend health check returned $HEALTH for https://${BACKEND_FQDN}/health — cannot build with a dead backend"; exit 1
+            echo "::error::Backend health check returned $HEALTH after 6 attempts — backend may be down"; exit 1
           fi
 
           echo "::notice::Pre-build validation PASSED — API_URL=$API_URL backend /health=$HEALTH"
@@ -169,6 +180,7 @@ jobs:
           SUFFIX="fe-$(echo '${{ steps.tag.outputs.tag }}' | cut -c1-8)"
           az containerapp update -g "$RG" -n "$FRONTEND_APP" --image "$IMG" \
             --revision-suffix "$SUFFIX" \
+            --min-replicas 1 \
             --set-env-vars "NEXT_PUBLIC_API_URL=$API_URL" -o none
           echo "Deployed frontend image: $IMG (revision suffix: $SUFFIX)"
 

@@ -194,11 +194,11 @@ jobs:
           if az containerapp show -g "$RG" -n "$BACKEND_APP" -o none 2>/dev/null; then
             az containerapp secret set -g "$RG" -n "$BACKEND_APP" --secrets $COMMON_SECRETS -o none
             az containerapp update -g "$RG" -n "$BACKEND_APP" --image "$IMG" \
-              --set-env-vars $COMMON_ENV -o none
+              --min-replicas 1 --set-env-vars $COMMON_ENV -o none
           else
             az containerapp create -g "$RG" -n "$BACKEND_APP" --environment "$ENV_NAME" \
               --image "$IMG" --target-port 8000 --ingress external \
-              --min-replicas 0 --max-replicas 1 --cpu 0.5 --memory 1.0Gi \
+              --min-replicas 1 --max-replicas 1 --cpu 0.5 --memory 1.0Gi \
               --secrets $COMMON_SECRETS --env-vars $COMMON_ENV -o none
           fi
           FQDN=$(az containerapp show -g "$RG" -n "$BACKEND_APP" --query properties.configuration.ingress.fqdn -o tsv)
@@ -210,20 +210,23 @@ jobs:
           API_URL="https://${BACKEND_FQDN}/api/v1"
           if az containerapp show -g "$RG" -n "$FRONTEND_APP" -o none 2>/dev/null; then
             az containerapp update -g "$RG" -n "$FRONTEND_APP" --image "$IMG" \
-              --set-env-vars "NEXT_PUBLIC_API_URL=$API_URL" -o none
+              --min-replicas 1 --set-env-vars "NEXT_PUBLIC_API_URL=$API_URL" -o none
           else
             az containerapp create -g "$RG" -n "$FRONTEND_APP" --environment "$ENV_NAME" \
               --image "$IMG" --target-port 3000 --ingress external \
-              --min-replicas 0 --max-replicas 1 --cpu 0.25 --memory 0.5Gi \
+              --min-replicas 1 --max-replicas 1 --cpu 0.25 --memory 0.5Gi \
               --env-vars "NEXT_PUBLIC_API_URL=$API_URL" -o none
           fi
 
       - name: Health gate (liveness /health)
         run: |
-          echo "Backend: https://${BACKEND_FQDN}/health"
-          for i in $(seq 1 30); do
-            H=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "https://${BACKEND_FQDN}/health" || echo 000)
-            echo "  $i: /health -> $H"
+          # Poll the DB-aware /api/v1/health endpoint (returns 200 only when app+DB are
+          # ready; 503 when DB unreachable). The root /health is a shallow ping only.
+          # Allow up to 3 minutes (18 x 10s) for the new revision to become ready.
+          echo "Backend: https://${BACKEND_FQDN}/api/v1/health"
+          for i in $(seq 1 18); do
+            H=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "https://${BACKEND_FQDN}/api/v1/health" || echo 000)
+            echo "  $i: /api/v1/health -> $H"
             [ "$H" = "200" ] && { echo "✅ healthy"; exit 0; }
             sleep 10
           done
