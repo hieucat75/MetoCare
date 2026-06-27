@@ -14,7 +14,8 @@ import * as React from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { ArrowLeft, ChevronDown, ChevronUp, TrendingDown, TrendingUp, Minus } from 'lucide-react'
 import { useAuth } from '@/lib/auth/context'
-import { getLabResults, type LabResultEntry } from '@/lib/api/patient'
+import { getLabResults, getLabResultExplanation, type LabResultEntry, type LabExplanation } from '@/lib/api/patient'
+import { ExplanationSection } from '@/components/labs/ExplanationSection'
 import { getPatientInsight, type PatientInsightReport } from '@/lib/api/labInsight'
 import { NeuCard } from '@/components/patient/neu'
 import { statusColor, statusLabel } from '@/components/patient/LabResultRow'
@@ -140,6 +141,21 @@ export default function BiomarkerDetailPage() {
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
 
+  // Claude explanation state
+  const [explanation, setExplanation] = React.useState<LabExplanation | null>(null)
+  const [explanationLoading, setExplanationLoading] = React.useState(false)
+  const [explanationError, setExplanationError] = React.useState(false)
+
+  const fetchExplanation = React.useCallback(() => {
+    if (!patientId || !resultId) return
+    setExplanationLoading(true)
+    setExplanationError(false)
+    getLabResultExplanation(patientId, resultId)
+      .then((data) => setExplanation(data))
+      .catch(() => setExplanationError(true))
+      .finally(() => setExplanationLoading(false))
+  }, [patientId, resultId])
+
   React.useEffect(() => {
     if (!patientId) {
       setLoading(false)
@@ -176,6 +192,13 @@ export default function BiomarkerDetailPage() {
       .catch((err: Error) => setError(err.message))
       .finally(() => setLoading(false))
   }, [patientId, resultId, batchId])
+
+  // Fetch explanation once we have resultId
+  React.useEffect(() => {
+    if (patientId && resultId) {
+      fetchExplanation()
+    }
+  }, [patientId, resultId, fetchExplanation])
 
   if (!patientId) {
     return (
@@ -334,7 +357,16 @@ export default function BiomarkerDetailPage() {
         )}
       </NeuCard>
 
-      {/* ── Section 2: AI Clinical Interpretation ───────────────────────────── */}
+      {/* ── Claude Clinical Explanation (after gauge, before AI Interpretation) ── */}
+      <ExplanationSection
+        explanation={explanation}
+        loading={explanationLoading}
+        error={explanationError}
+        onRetry={fetchExplanation}
+        biomarkerStatus={result.status}
+      />
+
+            {/* ── Section 2: AI Clinical Interpretation ───────────────────────────── */}
       <div className="space-y-3">
         <h2
           className="px-1 font-extrabold text-neu-text"

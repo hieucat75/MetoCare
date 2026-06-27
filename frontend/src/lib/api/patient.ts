@@ -643,6 +643,40 @@ export async function getBatchResults(
   )
 }
 
+// ── Claude Lab Result Explanation ───────────────────────────────────────────────
+// Backend-only: GET /patients/{id}/lab-results/{resultId}/explanation
+// DO NOT import or call Anthropic from frontend — ever.
+
+export interface LabExplanation {
+  explanation: string
+  why_it_matters: string
+  what_to_monitor: string
+  what_to_ask_doctor: string
+  next_step: string
+  source: 'claude' | 'deterministic_fallback' | 'fallback_after_validation_failure' | 'fallback_after_error'
+  validated: boolean
+  input_hash?: string
+}
+
+/**
+ * Fetch a clinical explanation for a specific lab result.
+ * Always calls backend — never calls Anthropic directly.
+ * Returns null on any error so the caller can degrade gracefully.
+ */
+export async function getLabResultExplanation(
+  patientId: string,
+  labResultId: string
+): Promise<LabExplanation | null> {
+  try {
+    return await api.get<LabExplanation>(
+      `/patients/${patientId}/lab-results/${labResultId}/explanation`
+    )
+  } catch (err) {
+    console.error('Failed to fetch explanation:', err)
+    return null
+  }
+}
+
 // ── AI Explanation (PA-05) ────────────────────────────────────────────────────
 
 export type ExplanationType = 'lab_result' | 'metabolic_score' | 'risk_summary' | 'trend_summary'
