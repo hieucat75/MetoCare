@@ -404,6 +404,50 @@ def create_manual_entry(
     return doc, rows
 
 
+def get_results_by_batch(
+    db: Session,
+    *,
+    batch_id: str,
+    patient_id: str,
+) -> list[LabResult]:
+    """Return all non-deleted LabResult rows belonging to *batch_id*.
+
+    Ownership check is the caller's responsibility (pass the authenticated
+    patient_id so the query implicitly enforces it — a batch owned by another
+    patient will simply return []).
+    """
+    from sqlalchemy import select
+    from app.models.clinical import LabUploadBatch
+
+    # Verify the batch exists and belongs to the correct patient.
+    batch = db.execute(
+        select(LabUploadBatch).where(
+            LabUploadBatch.id == batch_id,
+            LabUploadBatch.patient_id == patient_id,
+            LabUploadBatch.deleted_at.is_(None),
+        )
+    ).scalar_one_or_none()
+    if batch is None:
+        return None  # sentinel: caller raises 404
+
+    rows = list(
+        db.execute(
+            select(LabResult)
+            .where(
+                LabResult.batch_id == batch_id,
+                LabResult.patient_id == patient_id,
+                LabResult.deleted_at.is_(None),
+            )
+            .order_by(
+                LabResult.test_date.is_(None),
+                LabResult.test_date.desc(),
+                LabResult.created_at.asc(),
+            )
+        ).scalars()
+    )
+    return rows
+
+
 def list_lab_results(
     db: Session,
     *,

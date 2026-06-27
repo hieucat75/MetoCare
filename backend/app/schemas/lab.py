@@ -94,19 +94,37 @@ class LabResultOut(BaseModel):
     id: str
     patient_id: str
     document_id: str | None
+    batch_id: str | None = None
     test_name: str
+    canonical_name: str | None = None
     value: float | None
     unit: str | None
     reference_range: str | None
     status: str | None
     test_date: dt.date | None
     verified_by_user: bool
+    # OCR originals (may be None for manual entries)
+    original_value: float | None = None
+    original_unit: str | None = None
+    original_reference_range: str | None = None
+    original_test_name: str | None = None
+    # SI-normalized fields
+    normalized_value_si: float | None = None
+    normalized_unit_si: str | None = None
     created_at: dt.datetime
 
     model_config = {"from_attributes": True}
 
 
 class LabResultListResponse(BaseModel):
+    patient_id: str
+    total: int
+    items: list[LabResultOut]
+
+
+class BatchLabResultListResponse(BaseModel):
+    """Response for GET /patients/{patient_id}/lab-batches/{batch_id}/results."""
+    batch_id: str
     patient_id: str
     total: int
     items: list[LabResultOut]

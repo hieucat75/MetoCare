@@ -458,7 +458,20 @@ export interface LabResultEntry {
   status: string | null
   test_date: string | null
   verified_by_user: boolean
+  original_value: number | null
+  original_unit: string | null
+  original_reference_range: string | null
+  original_test_name: string | null
+  normalized_value_si: number | null
+  normalized_unit_si: string | null
   created_at: string
+}
+
+export interface BatchLabResultListResponse {
+  batch_id: string
+  patient_id: string
+  total: number
+  items: LabResultEntry[]
 }
 
 export interface LabResultListResponse {
@@ -614,16 +627,16 @@ export async function getLabResults(
 
 /**
  * Fetch lab results scoped to a specific batch.
- * Backend does not support batch_id query param, so we fetch up to 100 items
- * (backend max) and filter client-side by batch_id field.
+ * Uses the dedicated batch-scoped endpoint: GET /patients/{id}/lab-batches/{batchId}/results
+ * Returns 404 if the batch does not exist or belongs to another patient.
  */
 export async function getBatchResults(
   patientId: string,
   batchId: string
-): Promise<LabResultListResponse> {
-  const all = await getLabResults(patientId, { limit: 100 })
-  const items = all.items.filter((r) => r.batch_id === batchId)
-  return { patient_id: patientId, total: items.length, items }
+): Promise<BatchLabResultListResponse> {
+  return api.get<BatchLabResultListResponse>(
+    `/patients/${patientId}/lab-batches/${batchId}/results`
+  )
 }
 
 // ── AI Explanation (PA-05) ────────────────────────────────────────────────────

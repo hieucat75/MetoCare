@@ -16,6 +16,7 @@ from app.models.clinical import LabDocument
 from app.models.patient import PatientProfile
 from app.models.user import UserRole
 from app.schemas.lab import (
+    BatchLabResultListResponse,
     DuplicateCheckRequest,
     DuplicateCheckResponse,
     InterpretationOut,
@@ -291,6 +292,46 @@ def delete_lab_batch(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+@router.get(
+    "/patients/{patient_id}/lab-batches/{batch_id}/results",
+    response_model=BatchLabResultListResponse,
+    summary="List lab results scoped to a single batch (batch-safe, ownership-checked)",
+)
+def get_batch_results(
+    patient_id: str,
+    batch_id: str,
+    user: CurrentUser = Depends(
+        require_roles(
+            UserRole.PATIENT,
+            UserRole.DOCTOR,
+            UserRole.INTERNAL_ADMIN,
+            UserRole.SUPER_ADMIN,
+        )
+    ),
+    db: Session = Depends(get_session),
+) -> BatchLabResultListResponse:
+    """Return all LabResult rows belonging to *batch_id* for *patient_id*.
+
+    Ownership check: PATIENT role may only access their own batches.
+    Returns HTTP 404 if the batch does not exist or is not owned by the patient.
+    Returns HTTP 200 + empty list if the batch exists but has no results.
+    """
+    _require_patient_ownership(db, patient_id=patient_id, user=user)
+    consent.require_access(db, patient_id=patient_id, requester_id=user.id, scope="lab")
+    rows = lab.get_results_by_batch(db, batch_id=batch_id, patient_id=patient_id)
+    if rows is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Lab batch '{batch_id}' not found or does not belong to patient.",
+        )
+    return BatchLabResultListResponse(
+        batch_id=batch_id,
+        patient_id=patient_id,
+        total=len(rows),
+        items=[LabResultOut.model_validate(r) for r in rows],
+    )
 
 
 @router.get(

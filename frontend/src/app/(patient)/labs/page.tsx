@@ -18,8 +18,8 @@ import { NeuCard, NeuBadge, NeuButton } from '@/components/patient/neu'
 import { useAuth } from '@/lib/auth/context'
 import {
   deleteLabBatch,
+  getBatchResults,
   getLabBatches,
-  getLabResults,
   type LabUploadBatch,
   type LabResultEntry,
 } from '@/lib/api/patient'
@@ -33,24 +33,39 @@ const HERO_GRADIENT = 'linear-gradient(160deg,#17AE7B,#0B6B4D)'
 
 function BatchCard({
   batch,
-  allResults,
+  patientId,
   onDelete,
   isExpanded,
   onToggleExpand,
 }: {
   batch: LabUploadBatch
-  allResults: LabResultEntry[]
+  patientId: string
   onDelete: (id: string) => void
   isExpanded: boolean
   onToggleExpand: (id: string) => void
 }) {
   const router = useRouter()
 
-  // Filter results for this batch
-  const batchResults = React.useMemo(
-    () => allResults.filter((r) => r.batch_id === batch.id),
-    [allResults, batch.id],
-  )
+  // Per-batch results state — fetched lazily on first expand
+  const [results, setResults] = React.useState<LabResultEntry[] | null>(null)
+  const [resultsLoading, setResultsLoading] = React.useState(false)
+  const [resultsError, setResultsError] = React.useState<string | null>(null)
+
+  const loadResults = React.useCallback(() => {
+    setResultsLoading(true)
+    setResultsError(null)
+    getBatchResults(patientId, batch.id)
+      .then((res) => setResults(res.items))
+      .catch((err: Error) => setResultsError(err.message ?? 'Lỗi tải chỉ số'))
+      .finally(() => setResultsLoading(false))
+  }, [patientId, batch.id])
+
+  // Fetch on first expand
+  React.useEffect(() => {
+    if (isExpanded && results === null && !resultsLoading) {
+      loadResults()
+    }
+  }, [isExpanded, results, resultsLoading, loadResults])
 
   return (
     <NeuCard className="!p-0 overflow-hidden">
@@ -127,13 +142,31 @@ function BatchCard({
       {/* Expanded biomarker rows */}
       {isExpanded && (
         <div className="border-t border-black/[0.06]">
-          {batchResults.length === 0 ? (
-            <p className="px-4 py-4 text-[15px] text-neu-muted text-center">
+          {resultsLoading && (
+            <p className="px-4 py-4 text-[15px] text-neu-muted text-center" aria-live="polite">
               Đang tải chỉ số...
             </p>
-          ) : (
+          )}
+          {!resultsLoading && resultsError && (
+            <div className="px-4 py-4 text-center space-y-2">
+              <p className="text-[14px] text-[#D92D20]">{resultsError}</p>
+              <button
+                type="button"
+                onClick={loadResults}
+                className="text-[13px] font-semibold text-neu-green underline"
+              >
+                Thử lại
+              </button>
+            </div>
+          )}
+          {!resultsLoading && !resultsError && results !== null && results.length === 0 && (
+            <p className="px-4 py-4 text-[15px] text-neu-muted text-center">
+              Không có kết quả
+            </p>
+          )}
+          {!resultsLoading && !resultsError && results !== null && results.length > 0 && (
             <div className="divide-y divide-black/[0.05]">
-              {batchResults.map((r) => (
+              {results.map((r) => (
                 <LabResultRow
                   key={r.id}
                   result={r}
@@ -148,7 +181,7 @@ function BatchCard({
             <button
               type="button"
               onClick={() => router.push(`/labs/${batch.id}/insight`)}
-              className="flex w-full items-center justify-center gap-2 rounded-[12px] border-2 border-neu-green bg-transparent py-3 text-[15px] font-semibold text-neu-green hover:bg-[rgba(11,127,91,0.06)] transition-colors"
+              className="flex w-full items-center justify-center gap-2 rounded-[12px] border-2 border-neu-green bg-transparent py-3 text-[15px] font-semibold text-neu-green hover:bg-[rgba(11,107,77,0.06)] transition-colors"
               aria-label="Xem AI nhận định tổng thể cho phiếu này"
             >
               <BarChart2 className="size-4" aria-hidden="true" />
@@ -230,7 +263,6 @@ export default function LabsPage() {
   const flags = useFeatureFlags()
 
   const [batches, setBatches] = React.useState<LabUploadBatch[]>([])
-  const [allResults, setAllResults] = React.useState<LabResultEntry[]>([])
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
   const [modalOpen, setModalOpen] = React.useState(false)
@@ -249,13 +281,9 @@ export default function LabsPage() {
     }
     setLoading(true)
     setError(null)
-    Promise.all([
-      getLabBatches(patientId, { limit: 100 }),
-      getLabResults(patientId, { limit: 100 }),
-    ])
-      .then(([batchRes, resultsRes]) => {
+    getLabBatches(patientId, { limit: 100 })
+      .then((batchRes) => {
         setBatches(batchRes.items)
-        setAllResults(resultsRes.items)
         // Auto-expand the latest batch (first item, sorted descending by backend)
         if (batchRes.items.length > 0) {
           setExpandedBatchId((prev) => prev ?? batchRes.items[0].id)
@@ -375,7 +403,7 @@ export default function LabsPage() {
               <BatchCard
                 key={b.id}
                 batch={b}
-                allResults={allResults}
+                patientId={patientId}
                 onDelete={setConfirmDeleteId}
                 isExpanded={expandedBatchId === b.id}
                 onToggleExpand={handleToggleExpand}
