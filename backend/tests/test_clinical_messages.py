@@ -181,3 +181,99 @@ def test_lab_result_out_no_message_for_unknown_biomarker() -> None:
     # For unknown biomarker: either None or a generic fallback
     # The important thing is it doesn't crash and returns sensible output
     assert row.clinical_message is None or len(row.clinical_message) > 0
+
+# ---------------------------------------------------------------------------
+# P0-hotfix regression: MetricOut.clinical_message and is_critical
+# ---------------------------------------------------------------------------
+
+def test_metric_out_glucose_5_7_mmol_not_critical() -> None:
+    """P0-hotfix regression: MetricOut for glucose 5.7 mmol/L must NOT be critical."""
+    import datetime as dt
+    from app.schemas.health import MetricOut
+
+    m = MetricOut(
+        id="test-id",
+        metric_type="fasting_glucose",
+        value=5.7,
+        unit="mmol/L",
+        measured_at=dt.datetime(2026, 6, 27, 0, 0),
+        status="critical",  # old wrong DB status
+        source="lab_result",
+    )
+    assert m.is_critical is False, (
+        f"5.7 mmol/L must NOT be critical after canonical re-classification, "
+        f"clinical_message={m.clinical_message!r}"
+    )
+    assert m.clinical_message is not None
+    assert "hạ đường huyết" not in m.clinical_message, (
+        f"MetricOut clinical_message must NOT contain hypoglycemia language: {m.clinical_message!r}"
+    )
+    assert "quá thấp" not in m.clinical_message, (
+        f"MetricOut clinical_message must NOT contain 'quá thấp': {m.clinical_message!r}"
+    )
+    # Should be classified as high
+    assert "cao" in m.clinical_message, (
+        f"5.7 mmol/L should be classified as high: {m.clinical_message!r}"
+    )
+
+
+def test_metric_out_glucose_null_unit_small_value_not_critical() -> None:
+    """MetricOut heuristic: glucose value < 30 with no unit assumed mmol/L."""
+    import datetime as dt
+    from app.schemas.health import MetricOut
+
+    m = MetricOut(
+        id="test-id",
+        metric_type="fasting_glucose",
+        value=5.7,
+        unit=None,  # unit dropped — heuristic should rescue
+        measured_at=dt.datetime(2026, 6, 27, 0, 0),
+        status="critical",
+        source="lab_result",
+    )
+    assert m.is_critical is False, (
+        f"5.7 (no unit) must NOT be critical — should be treated as mmol/L: "
+        f"clinical_message={m.clinical_message!r}"
+    )
+
+
+def test_metric_out_glucose_critical_low_is_critical() -> None:
+    """Genuine critical-low glucose (40 mg/dL) must still show is_critical=True."""
+    import datetime as dt
+    from app.schemas.health import MetricOut
+
+    m = MetricOut(
+        id="test-id",
+        metric_type="fasting_glucose",
+        value=40.0,
+        unit="mg/dL",
+        measured_at=dt.datetime(2026, 6, 27, 0, 0),
+        status="critical",
+        source="manual",
+    )
+    assert m.is_critical is True, (
+        f"40 mg/dL must be critical: clinical_message={m.clinical_message!r}"
+    )
+    assert m.clinical_message is not None
+    assert "nguy hiểm" in m.clinical_message, (
+        f"40 mg/dL critical message should mention danger: {m.clinical_message!r}"
+    )
+
+
+def test_metric_out_glucose_normal_not_critical() -> None:
+    """Normal glucose (85 mg/dL) must not be critical."""
+    import datetime as dt
+    from app.schemas.health import MetricOut
+
+    m = MetricOut(
+        id="test-id",
+        metric_type="fasting_glucose",
+        value=85.0,
+        unit="mg/dL",
+        measured_at=dt.datetime(2026, 6, 27, 0, 0),
+        status="normal",
+        source="manual",
+    )
+    assert m.is_critical is False
+    assert m.clinical_message is not None
+    assert "bình thường" in m.clinical_message

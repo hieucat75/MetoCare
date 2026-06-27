@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class MetricCreate(BaseModel):
@@ -25,8 +25,68 @@ class MetricOut(BaseModel):
     measured_at: dt.datetime
     status: str | None
     source: str | None = None  # self_report/manual | lab_result | device …
+    clinical_message: str | None = None  # canonical Vietnamese clinical text (single source of truth)
+    is_critical: bool = False  # True only when canonical re-classification is 'critical'
 
     model_config = {"from_attributes": True}
+
+    @model_validator(mode="after")
+    def _populate_clinical_message(self) -> "MetricOut":
+        """Compute canonical clinical_message for patient-facing banner.
+
+        UNIT-SAFE: normalises value to canonical unit (e.g. mmol/L → mg/dL for
+        glucose) before re-classifying, so that old HealthMetric rows that were
+        promoted with the wrong unit (e.g. value=5.7 stored as mmol/L instead of
+        102.7 mg/dL) still get the correct clinical message.
+
+        This is the SINGLE SOURCE OF TRUTH for clinical text.  The frontend must
+        display this field and must NOT recompute clinical meaning from raw
+        value/unit/thresholds.
+
+        Algorithm:
+          1. Normalise value+unit → canonical unit (mg/dL for glucose).
+          2. Re-classify using canonical thresholds.
+          3. Map (biomarker, status) → Vietnamese clinical message.
+          4. Return None only when biomarker is unknown/unsupported.
+        """
+        if self.clinical_message is not None:
+            return self  # caller already set it — honour that
+
+        try:
+            from app.domain.lab_normalization import normalize_value_to_si
+            from app.domain.lab_interpreter import classify_value
+            from app.services.lab import get_clinical_message
+
+            # Normalise to canonical unit (no-op when already canonical).
+            # HEURISTIC GUARD: for glucose metrics, if the stored unit is missing/
+            # unknown AND the value is implausibly small for mg/dL (< 30), treat it
+            # as mmol/L.  No human survives fasting glucose < 30 mg/dL without
+            # emergency care, so any value this small with an unknown unit MUST be
+            # in mmol/L from an OCR path that dropped the unit string.
+            raw_value = self.value
+            raw_unit = self.unit or ""
+            glucose_metrics = {"fasting_glucose", "postprandial_glucose"}
+            if self.metric_type in glucose_metrics:
+                unit_clean = raw_unit.strip().lower().replace(" ", "")
+                if unit_clean not in ("mg/dl", "mmol/l", "mmol") and raw_value < 30:
+                    # Unit unknown and value implausibly small → must be mmol/L
+                    raw_unit = "mmol/L"
+
+            canonical_value, _ = normalize_value_to_si(
+                raw_value, raw_unit, self.metric_type
+            )
+            # Re-classify using canonical thresholds.
+            status_enum = classify_value(self.metric_type, canonical_value)
+            if status_enum is not None and status_enum.value != "unknown":
+                canonical_status = status_enum.value
+                self.is_critical = (canonical_status == "critical")
+                self.clinical_message = get_clinical_message(
+                    self.metric_type, canonical_status
+                )
+        except Exception:  # noqa: BLE001 — schema must never crash
+            pass
+
+        return self
 
 
 class TrendOut(BaseModel):

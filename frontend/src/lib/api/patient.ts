@@ -153,6 +153,10 @@ export interface HealthMetric {
   notes?: string | null
   source?: 'manual' | 'device' | 'lab' | 'lab_result' | string
   status: 'normal' | 'borderline' | 'abnormal' | 'critical' | null
+  /** Canonical Vietnamese clinical message from backend (single source of truth). */
+  clinical_message?: string | null
+  /** True when canonical re-classification (unit-aware) is 'critical'. Use to show DangerAlertBanner. */
+  is_critical?: boolean
 }
 
 /** A reading that was promoted from a confirmed lab result (vs self-reported). */

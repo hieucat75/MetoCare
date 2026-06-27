@@ -29,34 +29,6 @@ import {
   type NeuTone,
 } from '@/components/patient/metrics/metricVisuals'
 
-// ─── Danger threshold helpers ─────────────────────────────────────────────────
-
-/**
- * Returns a Vietnamese danger warning or null if value is safe for the given metric.
- *
- * UNIT-SAFE: always normalizes glucose to mmol/L before threshold comparison,
- * regardless of whether the stored value is in mg/dL or mmol/L.
- * This prevents false hypoglycemia alerts for OCR-sourced metrics stored in mmol/L.
- */
-function metricDangerMessage(metricType: string, value: number, unit?: string | null): string | null {
-  if (metricType === 'blood_pressure_systolic' && value >= 180) {
-    return 'Huyết áp tâm thu rất cao! Hãy liên hệ bác sĩ ngay.'
-  }
-  if (metricType === 'blood_pressure_diastolic' && value >= 120) {
-    return 'Huyết áp tâm trương rất cao! Hãy liên hệ bác sĩ ngay.'
-  }
-  if (metricType === 'fasting_glucose' || metricType === 'postprandial_glucose') {
-    // Normalize to mmol/L regardless of stored unit (mg/dL or mmol/L).
-    // OCR-sourced lab metrics may be stored in mmol/L; self-logged metrics use mg/dL.
-    const unitLower = (unit ?? '').toLowerCase().replace(/\s/g, '')
-    const isMmol = unitLower === 'mmol/l' || unitLower === 'mmol'
-    const mmol = isMmol ? value : value / 18.0182
-    if (mmol < 2.8) return 'Đường huyết quá thấp (hạ đường huyết)! Hãy ăn ngay và liên hệ bác sĩ.'
-    if (mmol > 13.9) return 'Đường huyết rất cao! Hãy liên hệ bác sĩ ngay.'
-  }
-  return null
-}
-
 // ─── Period segmented control ─────────────────────────────────────────────────
 
 const PERIODS = [
@@ -157,11 +129,9 @@ export default function MetricDetailPage() {
         </h1>
       </header>
 
-      {series &&
-        (() => {
-          const dangerMsg = metricDangerMessage(metricType, series.latest.value, series.latest.unit)
-          return dangerMsg ? <DangerAlertBanner message={dangerMsg} /> : null
-        })()}
+      {series && series.latest.is_critical && series.latest.clinical_message && (
+        <DangerAlertBanner message={series.latest.clinical_message} />
+      )}
 
       {series ? (
         <MetricDetailBody series={series} accent={accent} period={period} onPeriod={setPeriod} />
