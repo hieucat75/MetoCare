@@ -39,7 +39,12 @@ jobs:
 
       - name: Resolve image tag
         id: tag
-        run: echo "tag=${{ github.event.inputs.image_tag || github.sha }}" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "tag=${{ github.event.inputs.image_tag || github.sha }}" >> "$GITHUB_OUTPUT"
+          # Short suffix for ACA revision naming (8 chars of SHA + timestamp)
+          SHORT="$(echo "${{ github.event.inputs.image_tag || github.sha }}" | head -c 8)"
+          TS="$(date +%s)"
+          echo "suffix=${SHORT}-${TS}" >> "$GITHUB_OUTPUT"
 
       - name: Azure login (OIDC)
         uses: azure/login@v2
@@ -194,6 +199,7 @@ jobs:
           if az containerapp show -g "$RG" -n "$BACKEND_APP" -o none 2>/dev/null; then
             az containerapp secret set -g "$RG" -n "$BACKEND_APP" --secrets $COMMON_SECRETS -o none
             az containerapp update -g "$RG" -n "$BACKEND_APP" --image "$IMG" \
+              --revision-suffix "${{ steps.tag.outputs.suffix }}" \
               --min-replicas 1 --set-env-vars $COMMON_ENV -o none
           else
             az containerapp create -g "$RG" -n "$BACKEND_APP" --environment "$ENV_NAME" \
@@ -210,6 +216,7 @@ jobs:
           API_URL="https://${BACKEND_FQDN}/api/v1"
           if az containerapp show -g "$RG" -n "$FRONTEND_APP" -o none 2>/dev/null; then
             az containerapp update -g "$RG" -n "$FRONTEND_APP" --image "$IMG" \
+              --revision-suffix "${{ steps.tag.outputs.suffix }}" \
               --min-replicas 1 --set-env-vars "NEXT_PUBLIC_API_URL=$API_URL" -o none
           else
             az containerapp create -g "$RG" -n "$FRONTEND_APP" --environment "$ENV_NAME" \
