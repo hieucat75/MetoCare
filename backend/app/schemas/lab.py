@@ -5,7 +5,7 @@ from __future__ import annotations
 import datetime as dt
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class LabDocumentCreate(BaseModel):
@@ -101,6 +101,9 @@ class LabResultOut(BaseModel):
     unit: str | None
     reference_range: str | None
     status: str | None
+    # Single source of truth for patient-facing clinical message (Vietnamese).
+    # Frontend must read this field; no hardcoded status->message maps allowed.
+    clinical_message: str | None = None
     test_date: dt.date | None
     verified_by_user: bool
     # OCR originals (may be None for manual entries)
@@ -112,6 +115,18 @@ class LabResultOut(BaseModel):
     normalized_value_si: float | None = None
     normalized_unit_si: str | None = None
     created_at: dt.datetime
+
+    @model_validator(mode="after")
+    def _populate_clinical_message(self) -> "LabResultOut":
+        """Derive clinical_message from canonical_name + status (single source of truth).
+
+        Ensures every response includes a consistent Vietnamese message without
+        requiring a dedicated DB column — derived at serialization time.
+        """
+        if self.clinical_message is None and self.canonical_name and self.status:
+            from app.services.lab import get_clinical_message  # lazy import avoids circular
+            self.clinical_message = get_clinical_message(self.canonical_name, self.status)
+        return self
 
     model_config = {"from_attributes": True}
 

@@ -32,13 +32,59 @@ _log = logging.getLogger("mcp.lab")
 _PROMOTABLE = {spec.canonical for spec in lab_interpreter.BIOMARKERS}
 
 
+# ─── Canonical clinical messages (Vietnamese) ─────────────────────────────────
+# Keyed by (canonical_name, status). Provides a single source of truth for
+# patient-facing clinical messages — used in LabResultOut.clinical_message and
+# as the banner text in the frontend (no hardcoded message maps allowed in UI).
+
+_CLINICAL_MESSAGES: dict[tuple[str, str], str] = {
+    # fasting_glucose (internal: mg/dL)
+    ("fasting_glucose", "critical"):   "Đường huyết ở mức nguy hiểm — cần bác sĩ đánh giá ngay",
+    ("fasting_glucose", "low"):        "Đường huyết thấp — cần theo dõi và trao đổi với bác sĩ",
+    ("fasting_glucose", "normal"):     "Đường huyết bình thường",
+    ("fasting_glucose", "high"):       "Đường huyết cao — nên tư vấn bác sĩ",
+    # postprandial_glucose
+    ("postprandial_glucose", "critical"): "Đường huyết sau ăn nguy hiểm — cần bác sĩ đánh giá ngay",
+    ("postprandial_glucose", "low"):      "Đường huyết sau ăn thấp — cần theo dõi",
+    ("postprandial_glucose", "normal"):   "Đường huyết sau ăn bình thường",
+    ("postprandial_glucose", "high"):     "Đường huyết sau ăn cao — nên tư vấn bác sĩ",
+    # hba1c
+    ("hba1c", "critical"): "HbA1c rất cao — cần bác sĩ xem xét sớm",
+    ("hba1c", "low"):      "HbA1c thấp",
+    ("hba1c", "normal"):   "HbA1c bình thường",
+    ("hba1c", "high"):     "HbA1c cao — nguy cơ tiểu đường, cần theo dõi",
+}
+
+_CLINICAL_MESSAGE_DEFAULT: dict[str, str] = {
+    "critical": "Chỉ số ở mức nguy hiểm — cần bác sĩ đánh giá ngay",
+    "low":      "Chỉ số thấp hơn tham chiếu — nên trao đổi với bác sĩ",
+    "normal":   "Chỉ số trong khoảng bình thường",
+    "high":     "Chỉ số cao hơn tham chiếu — nên tư vấn bác sĩ",
+}
+
+
+def get_clinical_message(canonical_name: str | None, status: str | None) -> str | None:
+    """Return the canonical Vietnamese clinical message for a given biomarker status.
+
+    This is the SINGLE SOURCE OF TRUTH for all clinical messaging in the app.
+    Frontend must NOT maintain its own status-to-message mapping.
+    """
+    if not canonical_name or not status:
+        return None
+    key = (canonical_name, status)
+    if key in _CLINICAL_MESSAGES:
+        return _CLINICAL_MESSAGES[key]
+    # Fall back to generic status message.
+    return _CLINICAL_MESSAGE_DEFAULT.get(status)
+
+
 def normalize_and_classify(canonical_name: str | None, value, unit: str) -> dict:
     """Normalize a raw lab value + unit to canonical unit and classify it.
 
     Given a canonical biomarker name, a raw value, and a unit:
     1. Normalize to canonical unit (e.g. mmol/L -> mg/dL for glucose).
     2. Classify using lab_interpreter.classify_value().
-    3. Return dict with: normalized_value_si, normalized_unit_si, status.
+    3. Return dict with: normalized_value_si, normalized_unit_si, status, clinical_message.
 
     Returns empty dict if canonical_name is None or value is None.
     Returns dict with status=None if biomarker is unsupported.
@@ -60,12 +106,15 @@ def normalize_and_classify(canonical_name: str | None, value, unit: str) -> dict
             "normalized_value_si": norm_value,
             "normalized_unit_si": norm_unit,
             "status": None,
+            "clinical_message": None,
         }
 
+    status = status_enum.value
     return {
         "normalized_value_si": norm_value,
         "normalized_unit_si": norm_unit,
-        "status": status_enum.value,
+        "status": status,
+        "clinical_message": get_clinical_message(canonical_name, status),
     }
 
 
@@ -107,18 +156,34 @@ def _promote_row(db: Session, row: LabResult, measured_at: dt.datetime) -> bool:
     spec = lab_interpreter._ALIAS_INDEX.get(canonical)
     nmin = spec.ref_low if spec else None
     nmax = spec.ref_high if spec else None
+
+    # P0 FIX: always promote in CANONICAL units (e.g. mg/dL for glucose), not SI/display.
+    # row.value/unit may be the original as-printed unit (e.g. mmol/L from OCR path).
+    # Prefer normalized_value_si/normalized_unit_si when available; else normalize now.
+    # Use isinstance guard so MagicMock in tests doesn't bypass normalization.
+    raw_norm_si = getattr(row, "normalized_value_si", None)
+    raw_norm_unit = getattr(row, "normalized_unit_si", None)
+    if isinstance(raw_norm_si, (int, float)) and isinstance(raw_norm_unit, str):
+        promote_value = float(raw_norm_si)
+        promote_unit = raw_norm_unit
+    else:
+        # Normalize on-the-fly (handles OCR rows without pre-normalized fields).
+        promote_value, promote_unit = normalize_value_to_si(
+            float(row.value), row.unit or "", canonical
+        )
+
     db.add(
         HealthMetric(
             patient_id=row.patient_id,
             metric_type=canonical,
-            value=row.value,
-            unit=row.unit,
+            value=promote_value,
+            unit=promote_unit,
             measured_at=measured_at,
             source="lab_result",
             source_ref=row.id,
             normal_range_min=nmin,
             normal_range_max=nmax,
-            status=classify_status(canonical, row.value, nmin, nmax),
+            status=classify_status(canonical, promote_value, nmin, nmax),
         )
     )
     db.flush()  # session is autoflush=False — make the row visible to the next lookup
@@ -720,8 +785,15 @@ def correct_lab_result(
     row.status = classification.get("status")
 
     # Also update the canonical value/unit fields.
-    row.value = classification.get("normalized_value_si") if classification else new_value
-    row.unit = classification.get("normalized_unit_si") if classification else new_unit
+    # IMPORTANT: row.value/unit must use the CANONICAL (primary) unit, not SI.
+    # For glucose: canonical = mg/dL, SI/display = mmol/L.
+    # normalized_value_si is already in canonical unit (despite the name);
+    # normalized_unit_si is the canonical unit string (e.g. 'mg/dL' for glucose).
+    # Using normalized_unit_si here is correct — it IS the canonical unit.
+    canonical_value = classification.get("normalized_value_si")
+    canonical_unit = classification.get("normalized_unit_si")
+    row.value = canonical_value if canonical_value is not None else new_value
+    row.unit = canonical_unit if canonical_unit is not None else new_unit
 
     audit.record(
         db,
