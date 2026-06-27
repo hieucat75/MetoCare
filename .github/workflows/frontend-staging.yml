@@ -177,7 +177,9 @@ jobs:
           API_URL="https://${BACKEND_FQDN}/api/v1"
           # --revision-suffix forces ACA to create a new revision even when the image tag
           # is already active (single-revision mode deduplicates by image+config hash).
-          SUFFIX="fe-$(echo '${{ steps.tag.outputs.tag }}' | cut -c1-8)"
+          # Include a timestamp so that re-deploying the same SHA (e.g. rollback, retry,
+          # or regression test) always produces a distinct revision name.
+          SUFFIX="fe-$(echo '${{ steps.tag.outputs.tag }}' | cut -c1-8)-$(date +%s)"
           az containerapp update -g "$RG" -n "$FRONTEND_APP" --image "$IMG" \
             --revision-suffix "$SUFFIX" \
             --min-replicas 1 \
