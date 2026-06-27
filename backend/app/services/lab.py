@@ -32,6 +32,43 @@ _log = logging.getLogger("mcp.lab")
 _PROMOTABLE = {spec.canonical for spec in lab_interpreter.BIOMARKERS}
 
 
+def normalize_and_classify(canonical_name: str | None, value, unit: str) -> dict:
+    """Normalize a raw lab value + unit to canonical unit and classify it.
+
+    Given a canonical biomarker name, a raw value, and a unit:
+    1. Normalize to canonical unit (e.g. mmol/L -> mg/dL for glucose).
+    2. Classify using lab_interpreter.classify_value().
+    3. Return dict with: normalized_value_si, normalized_unit_si, status.
+
+    Returns empty dict if canonical_name is None or value is None.
+    Returns dict with status=None if biomarker is unsupported.
+    """
+    if not canonical_name or value is None:
+        return {}
+
+    # Normalize to canonical ("SI") unit.
+    try:
+        norm_value, norm_unit = normalize_value_to_si(float(value), unit or "", canonical_name)
+    except (TypeError, ValueError):
+        return {}
+
+    # Classify.
+    status_enum = classify_value(canonical_name, norm_value)
+    if status_enum is None or status_enum.value == "unknown":
+        # Unsupported biomarker -- return normalized fields but no status.
+        return {
+            "normalized_value_si": norm_value,
+            "normalized_unit_si": norm_unit,
+            "status": None,
+        }
+
+    return {
+        "normalized_value_si": norm_value,
+        "normalized_unit_si": norm_unit,
+        "status": status_enum.value,
+    }
+
+
 def _measured_at_for(row: LabResult, test_date: dt.date | None) -> dt.datetime:
     """When the metric was 'measured' = the exam date (test_date), else the row's
     own test_date, else its insert time — NEVER 'now', so trends stay chronological."""
@@ -212,6 +249,13 @@ def interpret_document(
                 or b.needs_verification
             )
         )
+        # Auto-classify + normalize at creation time.
+        _clf = normalize_and_classify(b.canonical, b.value, b.unit or "")
+        _status = _clf.get("status") if _clf else None
+        # Fallback to interpreter status only if canonical classification succeeds.
+        if _status is None and b.status.value not in ("unknown",):
+            _status = b.status.value
+
         lr = LabResult(
             patient_id=doc.patient_id,
             document_id=doc.id,
@@ -220,9 +264,11 @@ def interpret_document(
             value=b.value,
             unit=b.unit,
             reference_range=b.reference_range,
-            status=b.status.value,
+            status=_status,
             ocr_confidence=b.ocr_confidence,
             verified_by_user=not auto_save_blocked,
+            normalized_value_si=_clf.get("normalized_value_si") if _clf else None,
+            normalized_unit_si=_clf.get("normalized_unit_si") if _clf else None,
         )
         db.add(lr)
         new_rows.append(lr)
@@ -333,6 +379,9 @@ def create_manual_entry(
             canonical_value = raw_value
             canonical_unit_str = raw_unit
 
+        # Auto-classify at creation time: use the already-normalized canonical_value.
+        classification = normalize_and_classify(canonical, canonical_value, canonical_unit_str)
+
         row = LabResult(
             patient_id=patient_id,
             document_id=doc.id,
@@ -348,6 +397,9 @@ def create_manual_entry(
             original_unit=item.get("original_unit") if item.get("original_unit") is not None else raw_unit,  # noqa: E501
             original_reference_range=item.get("original_reference_range"),
             original_test_name=item.get("original_test_name"),
+            normalized_value_si=classification.get("normalized_value_si"),
+            normalized_unit_si=classification.get("normalized_unit_si"),
+            status=classification.get("status"),
         )
         db.add(row)
         rows.append(row)
@@ -614,3 +666,72 @@ def reclassify_lab_results(
             updated = 0
 
     return {"updated": updated, "skipped": skipped, "errors": errors}
+
+
+def correct_lab_result(
+    db: Session,
+    *,
+    result_id: str,
+    patient_id: str,
+    requester_id: str,
+    new_value: float,
+    new_unit: str,
+) -> LabResult:
+    """User-corrects value/unit of an existing LabResult and triggers reclassification.
+
+    - Appends old value to correction_history_json (provenance).
+    - Updates original_value, original_unit to corrected values.
+    - Re-runs normalize_and_classify() to update normalized_value_si, normalized_unit_si, status.
+    - NEVER loses the original measurement: correction_history_json stores the trail.
+    """
+    import json
+
+    consent.require_access(db, patient_id=patient_id, requester_id=requester_id, scope="lab")
+
+    row = db.execute(
+        select(LabResult).where(
+            LabResult.id == result_id,
+            LabResult.patient_id == patient_id,
+            LabResult.deleted_at.is_(None),
+        )
+    ).scalar_one_or_none()
+
+    if row is None:
+        raise ValueError(f"LabResult {result_id!r} not found for patient {patient_id!r}")
+
+    # Append provenance record before overwriting.
+    history = json.loads(row.correction_history_json) if row.correction_history_json else []
+    history.append({
+        "timestamp": utcnow().isoformat(),
+        "old_value": row.original_value,
+        "old_unit": row.original_unit,
+        "corrected_by": "user",
+    })
+    row.correction_history_json = json.dumps(history)
+
+    # Update to corrected values.
+    row.original_value = new_value
+    row.original_unit = new_unit
+
+    # Re-classify.
+    classification = normalize_and_classify(row.canonical_name, new_value, new_unit)
+    row.normalized_value_si = classification.get("normalized_value_si")
+    row.normalized_unit_si = classification.get("normalized_unit_si")
+    row.status = classification.get("status")
+
+    # Also update the canonical value/unit fields.
+    row.value = classification.get("normalized_value_si") if classification else new_value
+    row.unit = classification.get("normalized_unit_si") if classification else new_unit
+
+    audit.record(
+        db,
+        actor_type="user",
+        actor_id=requester_id,
+        action="correct_lab_result",
+        resource_type="lab_result",
+        resource_id=row.id,
+    )
+
+    db.commit()
+    db.refresh(row)
+    return row

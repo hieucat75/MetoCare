@@ -25,6 +25,7 @@ from app.schemas.lab import (
     LabDocumentOut,
     LabDocumentStatusOut,
     LabManualEntryCreate,
+    LabResultCorrectionIn,
     LabResultListResponse,
     LabResultOut,
     LabUploadBatchOut,
@@ -499,3 +500,47 @@ def admin_reclassify_lab_results(
     """
     result = lab.reclassify_lab_results(db, batch_id=body.batch_id, dry_run=body.dry_run)
     return _ReclassifyResponse(**result)
+
+
+# ---------------------------------------------------------------------------
+# Phase 3: User correction of a lab result value
+# ---------------------------------------------------------------------------
+
+_CORRECTION_ROLES = (
+    UserRole.PATIENT,
+    UserRole.INTERNAL_ADMIN,
+    UserRole.SUPER_ADMIN,
+)
+
+
+@router.patch(
+    "/patients/{patient_id}/lab-results/{result_id}/correct",
+    response_model=LabResultOut,
+    summary="Correct a lab result value and re-classify",
+)
+def correct_lab_result(
+    patient_id: str,
+    result_id: str,
+    payload: LabResultCorrectionIn,
+    user: CurrentUser = Depends(require_roles(*_CORRECTION_ROLES)),
+    db: Session = Depends(get_session),
+) -> LabResultOut:
+    """User-corrects value/unit of a saved LabResult.
+
+    - Saves provenance in correction_history_json.
+    - Re-runs normalize_and_classify() → updates normalized_value_si, status.
+    - PATIENT role: own results only (enforced via consent.require_access).
+    """
+    _require_patient_ownership(db, patient_id=patient_id, user=user)
+    try:
+        row = lab.correct_lab_result(
+            db,
+            result_id=result_id,
+            patient_id=patient_id,
+            requester_id=user.id,
+            new_value=payload.value,
+            new_unit=payload.unit,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return LabResultOut.model_validate(row)

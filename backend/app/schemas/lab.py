@@ -163,3 +163,9 @@ class InterpretationOut(BaseModel):
     needs_verification: bool
     patient_explanation: str
     doctor_summary: str
+
+
+class LabResultCorrectionIn(BaseModel):
+    """Payload for user-correcting a lab result value and/or unit."""
+    value: float
+    unit: str = ""

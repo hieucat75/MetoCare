@@ -32,6 +32,7 @@ from app.domain import lab_interpreter
 from app.models.clinical import LabDocument, LabResult
 from app.models.patient import PatientProfile
 from app.services import audit, notifications
+from app.services.lab import normalize_and_classify
 from app.services.ocr import OCRError, get_ocr_provider
 
 logger = logging.getLogger("mcp.lab_pipeline")
@@ -160,6 +161,13 @@ def process_document(db: Session, *, document_id: str) -> LabDocument | None:
                     "confidence=%.2f suspect=%s requires_review=%s",
                     doc.id, b.canonical, b.ocr_confidence, suspect, requires_review,
                 )
+            # Auto-classify + normalize at creation time.
+            _clf = normalize_and_classify(b.canonical, b.value, b.unit or "")
+            _status = _clf.get("status") if _clf else None
+            # Fallback to interpreter status when canonical classification succeeds.
+            if _status is None and b.status.value not in ("unknown",):
+                _status = b.status.value
+
             lr = LabResult(
                 patient_id=doc.patient_id,
                 document_id=doc.id,
@@ -168,10 +176,12 @@ def process_document(db: Session, *, document_id: str) -> LabDocument | None:
                 value=b.value,
                 unit=b.unit,
                 reference_range=b.reference_range,
-                status=b.status.value,
+                status=_status,
                 ocr_confidence=b.ocr_confidence,
                 # verified_by_user=False means the row awaits explicit user confirmation.
                 verified_by_user=not auto_save_blocked,
+                normalized_value_si=_clf.get("normalized_value_si") if _clf else None,
+                normalized_unit_si=_clf.get("normalized_unit_si") if _clf else None,
             )
             db.add(lr)
             new_rows.append(lr)
