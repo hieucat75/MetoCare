@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import CurrentUser, get_session, require_roles
 from app.core.feature_flags import FeatureFlag, is_enabled
-from app.models.clinical import LabDocument
+from app.models.clinical import LabDocument, LabResult
 from app.models.patient import PatientProfile
 from app.models.user import UserRole
 from app.schemas.lab import (
@@ -544,3 +544,160 @@ def correct_lab_result(
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return LabResultOut.model_validate(row)
+
+# ---------------------------------------------------------------------------
+# Claude Sonnet Clinical Explanation Layer
+# ---------------------------------------------------------------------------
+# These endpoints generate patient-friendly Vietnamese explanations for
+# pre-classified lab results.  Claude is ONLY called here; it never
+# re-classifies, never overrides canonical status/severity.
+# ---------------------------------------------------------------------------
+
+from pydantic import BaseModel as _ExplainBase  # noqa: E402 (local alias avoids collision)
+from app.services.clinical_explanation import generate_explanation, get_deterministic_fallback
+from app.services.explanation_cache import invalidate_cached_explanation
+from app.services.lab import normalize_and_classify
+
+
+def _build_clinical_input(row: LabResult) -> dict:
+    """Convert a LabResult ORM row into the clinical_input dict for the explanation layer.
+
+    canonical_status is derived from row.status (the stored classification).
+    We map the existing engine's status vocabulary to the explanation layer's
+    canonical_status vocabulary.
+    """
+    # Map existing status values → canonical_status understood by explanation layer
+    STATUS_MAP: dict[str | None, str] = {
+        "normal": "normal",
+        "borderline": "borderline_high",   # existing engine uses "borderline"
+        "high": "high",
+        "low": "low",
+        "critical": "critical",
+        # defensive: treat unknown/None as unknown
+    }
+    canonical_status = STATUS_MAP.get(row.status or "", "unknown")
+
+    # Severity heuristic from status (existing engine doesn't store separate severity)
+    SEVERITY_MAP: dict[str, str] = {
+        "normal": "none",
+        "borderline_high": "moderate",
+        "high": "moderate",
+        "low": "moderate",
+        "critical": "critical",
+        "unknown": "unknown",
+    }
+    canonical_severity = SEVERITY_MAP.get(canonical_status, "moderate")
+    doctor_required = canonical_status in ("critical", "critical_high", "critical_low")
+
+    # Vietnamese display name from canonical name
+    from app.domain.patient_insight import _display_vi  # noqa: PLC0415
+    display_name = _display_vi(row.canonical_name or "") if row.canonical_name else (row.test_name or "xét nghiệm")
+
+    return {
+        "biomarker_name": row.canonical_name or row.test_name or "unknown",
+        "biomarker_display_name": display_name,
+        "normalized_value": row.normalized_value_si if row.normalized_value_si is not None else row.value,
+        "normalized_unit": row.normalized_unit_si or row.unit or "",
+        "original_value": row.original_value,
+        "original_unit": row.original_unit,
+        "reference_range": row.reference_range,
+        "canonical_status": canonical_status,
+        "canonical_severity": canonical_severity,
+        "canonical_priority": "urgent" if doctor_required else "routine",
+        "doctor_review_required": doctor_required,
+        "safety_flags": [],
+    }
+
+
+class _ExplanationOut(_ExplainBase):
+    explanation: str
+    why_it_matters: str = ""
+    what_to_monitor: str = ""
+    what_to_ask_doctor: str = ""
+    next_step: str = ""
+    source: str
+    validated: bool
+
+
+@router.get(
+    "/patients/{patient_id}/lab-results/{result_id}/explanation",
+    response_model=_ExplanationOut,
+    summary="Patient-friendly AI explanation for a lab result",
+)
+def get_lab_result_explanation(
+    patient_id: str,
+    result_id: str,
+    user: CurrentUser = Depends(
+        require_roles(
+            UserRole.PATIENT,
+            UserRole.DOCTOR,
+            UserRole.INTERNAL_ADMIN,
+            UserRole.SUPER_ADMIN,
+        )
+    ),
+    db: Session = Depends(get_session),
+) -> _ExplanationOut:
+    """Generate (or return cached) patient-friendly Vietnamese explanation.
+
+    Claude receives ONLY pre-classified canonical data.
+    Validator blocks any contradicting output → deterministic fallback.
+    """
+    _require_patient_ownership(db, patient_id=patient_id, user=user)
+
+    row = db.execute(
+        select(LabResult).where(
+            LabResult.id == result_id,
+            LabResult.patient_id == patient_id,
+            LabResult.deleted_at.is_(None),
+        )
+    ).scalar_one_or_none()
+
+    if row is None:
+        raise HTTPException(status_code=404, detail="Lab result not found.")
+
+    clinical_input = _build_clinical_input(row)
+    result = generate_explanation(result_id, clinical_input)
+    return _ExplanationOut(**result)
+
+
+@router.post(
+    "/admin/lab-results/{result_id}/explanation/regenerate",
+    response_model=_ExplanationOut,
+    summary="Admin/Doctor: invalidate cache and regenerate explanation",
+)
+def regenerate_lab_result_explanation(
+    result_id: str,
+    user: CurrentUser = Depends(
+        require_roles(
+            UserRole.DOCTOR,
+            UserRole.INTERNAL_ADMIN,
+            UserRole.SUPER_ADMIN,
+        )
+    ),
+    db: Session = Depends(get_session),
+) -> _ExplanationOut:
+    """Invalidate cache and regenerate Claude explanation for a lab result.
+
+    Restricted to DOCTOR, INTERNAL_ADMIN, SUPER_ADMIN.
+    """
+    from sqlalchemy import select as _select  # noqa: PLC0415
+
+    row = db.execute(
+        _select(LabResult).where(
+            LabResult.id == result_id,
+            LabResult.deleted_at.is_(None),
+        )
+    ).scalar_one_or_none()
+
+    if row is None:
+        raise HTTPException(status_code=404, detail="Lab result not found.")
+
+    # Invalidate all cache entries for this result (by generating clinical_input
+    # first to get the hash, then invalidating)
+    clinical_input = _build_clinical_input(row)
+    from app.services.claude_client import hash_clinical_input  # noqa: PLC0415
+    input_hash = hash_clinical_input(clinical_input)
+    invalidate_cached_explanation(result_id, input_hash)
+
+    result = generate_explanation(result_id, clinical_input, use_cache=False)
+    return _ExplanationOut(**result)
