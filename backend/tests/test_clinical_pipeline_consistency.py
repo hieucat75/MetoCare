@@ -361,3 +361,205 @@ class TestNoDuplicateClassification:
         finding = assess_biomarker("creatinine", norm_val)
         assert finding is not None
         assert finding.status == "normal"
+
+
+# ---------------------------------------------------------------------------
+# Phase 6: Sentinel / static-analysis tests
+# Architecture regression guards — fast grep-based checks.
+# Must pass on every commit. DO NOT relax to pass; fix violations instead.
+# ---------------------------------------------------------------------------
+
+import re
+import subprocess
+
+# Root of backend source relative to cwd when pytest runs (backend/ dir)
+_BACKEND_SRC = "app"
+_REPO_ROOT = "/Users/pth/Developer/Metocare"
+_BACKEND_ROOT = "/Users/pth/Developer/Metocare/backend"
+
+
+def _grep(pattern: str, path: str, include: str = "*.py", exclude_dirs: list | None = None) -> list[str]:
+    """Run grep -rn and return matching lines (stripped empty lines)."""
+    cmd = ["grep", "-rn", pattern, path, f"--include={include}"]
+    if exclude_dirs:
+        for d in exclude_dirs:
+            cmd += [f"--exclude-dir={d}"]
+    result = subprocess.run(cmd, capture_output=True, text=True, cwd=_BACKEND_ROOT)
+    return [ln for ln in result.stdout.splitlines() if ln.strip()]
+
+
+# Files that are ALLOWED to contain the raw-value patterns
+# (definitions, tests, migration helpers)
+_SENTINEL_ALLOWLIST = [
+    "clinical_rules.py",
+    "lab_interpreter.py",
+    "lab_normalization.py",
+    "biomarker_specs.py",
+    "derived_metrics.py",     # eGFR formula does legitimate mg/dL→µmol/L conversion
+    "metabolic_live.py",      # metabolic score conversion factors
+    "clinical_insight.py",    # HealthMetric (not LabResult) classification
+    "lab.py",                 # primary normalization service
+    "test_",                  # all test files
+    "migration",              # Alembic migrations
+    "__pycache__",
+]
+
+
+class TestSentinelRawValueGuard:
+    """Static-analysis sentinel tests.
+
+    These tests are the permanent guard against the pattern that caused P0
+    clinical contradictions 3 times:
+
+        P0-1 (2026-06-27): patient_insight.py — raw .value fed to assess_biomarker
+        P0-2 (2026-06-27): metrics/[metricType]/page.tsx — frontend local classification
+        P0-3 (2026-06-28): lab_intelligence.py — raw .value fed to assess_biomarker
+
+    A violation here means a real bug was re-introduced. Fix the code, not the test.
+    """
+
+    def test_no_raw_value_in_assess_biomarker_calls(self):
+        """assess_biomarker() must always receive normalized_value_si, not .value.
+
+        Pattern to detect:
+            assess_biomarker(<name>, r.value, ...)  — raw OCR field
+            assess_biomarker(<name>, result.value, ...) — raw OCR field
+
+        Correct pattern:
+            assess_biomarker(<name>, norm_si, ...)  where norm_si = normalized_value_si
+        """
+        lines = _grep("assess_biomarker", _BACKEND_SRC, exclude_dirs=["__pycache__"])
+
+        violations = []
+        for line in lines:
+            # Skip allowlisted files
+            if any(skip in line for skip in _SENTINEL_ALLOWLIST):
+                continue
+            # Skip definition and import lines
+            if "def assess_biomarker" in line or "import" in line:
+                continue
+            # Detect: assess_biomarker(anything containing ".value" that is NOT "_value_si"
+            # Regex: assess_biomarker( ... .value ... ) where .value is NOT preceded by _si
+            if re.search(
+                r"assess_biomarker\s*\([^)]*\.value\b(?!_si)[^)]*\)",
+                line,
+            ):
+                violations.append(line.strip())
+
+        assert violations == [], (
+            "SENTINEL FAIL — assess_biomarker() called with raw .value instead of "
+            ".normalized_value_si:\n"
+            + "\n".join(violations)
+            + "\n\nFix: use result.normalized_value_si, not result.value"
+            + "\nSee: lab_intelligence.py P0 fix (2026-06-28)"
+        )
+
+    def test_no_raw_value_in_classify_value_labresult_routes(self):
+        """classify_value() in clinical routes must not receive LabResult.value directly.
+
+        Allowed: clinical_insight.py uses classify_value() with HealthMetric.value
+        (which is canonical — not raw OCR). That file is in the allowlist.
+
+        Forbidden: any route/service not in allowlist passing .value to classify_value.
+        """
+        lines = _grep("classify_value", _BACKEND_SRC, exclude_dirs=["__pycache__"])
+
+        violations = []
+        for line in lines:
+            if any(skip in line for skip in _SENTINEL_ALLOWLIST):
+                continue
+            if "def classify_value" in line or "import" in line:
+                continue
+            # Detect: classify_value( ... .value ... ) where .value is NOT normalized
+            if re.search(
+                r"classify_value\s*\([^)]*\.value\b(?!_si)[^)]*\)",
+                line,
+            ):
+                violations.append(line.strip())
+
+        assert violations == [], (
+            "SENTINEL FAIL — classify_value() called with raw .value:\n"
+            + "\n".join(violations)
+            + "\n\nFix: use normalized_value_si, not raw LabResult.value"
+        )
+
+    def test_no_frontend_anthropic_direct_import(self):
+        """Frontend must never import or call Anthropic SDK directly.
+
+        All AI calls must go through the backend API.
+        """
+        frontend_src = f"{_REPO_ROOT}/frontend/src"
+        ts_lines = _grep("anthropic", frontend_src, include="*.ts",
+                         exclude_dirs=["node_modules", "__tests__"]) + \
+                   _grep("anthropic", frontend_src, include="*.tsx",
+                         exclude_dirs=["node_modules", "__tests__"])
+
+        violations = [
+            ln for ln in ts_lines
+            if "import" in ln.lower() or "require" in ln.lower()
+        ]
+        assert violations == [], (
+            "SENTINEL FAIL — Frontend directly imports Anthropic SDK:\n"
+            + "\n".join(violations)
+            + "\n\nFix: all AI calls must go through /api/v1/* endpoints."
+        )
+
+    def test_no_frontend_local_clinical_classification(self):
+        """Frontend must not implement local classification / severity computation.
+
+        All clinical status must come from backend API (lab_intelligence,
+        patient_insight). Local comparison against reference ranges in TSX/TS
+        re-introduces the P0-2 bug pattern.
+        """
+        frontend_src = f"{_REPO_ROOT}/frontend/src"
+        suspect_patterns = [
+            r"localClassify|computeSeverity|getBannerLevel|metricDanger",
+            r"value\s*>\s*refHigh|value\s*<\s*refLow",
+            r"isDangerous\s*=.*value\b",
+        ]
+        violations = []
+        for pattern in suspect_patterns:
+            for ext in ("*.tsx", "*.ts"):
+                found = _grep(pattern, frontend_src, include=ext,
+                              exclude_dirs=["node_modules", "__tests__", "__pycache__"])
+                violations.extend(found)
+
+        assert violations == [], (
+            "SENTINEL FAIL — Frontend contains local clinical classification logic:\n"
+            + "\n".join(violations[:20])
+            + "\n\nFix: all clinical status must come from backend API."
+        )
+
+    def test_no_unit_conversion_in_route_files(self):
+        """Unit conversion factors must not appear in route or schema files.
+
+        Conversion (mmol/L→mg/dL etc.) belongs exclusively in:
+          - lab_interpreter.py (BiomarkerSpec definitions)
+          - lab.py (normalize_and_classify)
+          - derived_metrics.py (eGFR formula, lipid ratios)
+
+        Finding a conversion factor in a route or serializer means someone
+        copy-pasted conversion logic instead of calling the normalization service.
+        """
+        route_dirs = ["app/api", "app/schemas"]
+        # Glucose: ×18.0 or ×18.018; creatinine: ×88.42 or /88.42; lipids: ×38.67
+        conversion_patterns = [
+            r"[*\/]\s*18\.0\b|[*\/]\s*18\.018",
+            r"[*\/]\s*88\.4\d*",
+            r"[*\/]\s*38\.6\d*",
+        ]
+        violations = []
+        for route_dir in route_dirs:
+            path = f"{_BACKEND_ROOT}/{route_dir}"
+            for pattern in conversion_patterns:
+                found = _grep(pattern, path, exclude_dirs=["__pycache__"])
+                for line in found:
+                    if "test_" not in line and "#" not in line.split(":", 2)[-1][:5]:
+                        violations.append(line.strip())
+
+        assert violations == [], (
+            "SENTINEL FAIL — Hardcoded unit conversion in route/schema files:\n"
+            + "\n".join(violations)
+            + "\n\nFix: call lab.normalize_and_classify() or derive from BiomarkerSpec. "
+            + "Do not copy conversion factors into routes."
+        )
