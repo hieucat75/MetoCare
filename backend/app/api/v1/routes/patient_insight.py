@@ -23,6 +23,7 @@ from app.api.deps import CurrentUser, get_session, require_roles
 from app.domain.clinical_patterns import detect_patterns
 from app.domain.clinical_rules import ClinicalFinding, assess_biomarker
 from app.domain.derived_metrics import DerivedMetricResult, compute_all_derived
+from app.services.lab import normalize_and_classify
 from app.domain.longitudinal import BiomarkerTrend, compute_trends
 from app.domain.patient_insight import _DISCLAIMER, PatientInsightReport, generate_patient_insight
 from app.models.clinical import LabResult
@@ -121,20 +122,44 @@ def patient_insight(
         return dataclasses.asdict(empty_report)
 
     # --- Lab Intelligence pipeline ---
+    # IMPORTANT (P0 fix): always use normalized_value_si (canonical mg/dL) for
+    # assess_biomarker() and derived-metric inputs. Using r.value (raw OCR value
+    # which may be mmol/L) caused 5.7 mmol/L glucose to be treated as 5.7 mg/dL
+    # → triggered the critical (≤54 mg/dL) branch → wrongly showed
+    # "rất nguy hiểm" in AI Summary for a merely borderline result.
     findings: list[ClinicalFinding] = []
     raw_inputs: dict[str, float] = {}
 
     for r in verified:
-        if r.canonical_name and r.value is not None:
-            raw_inputs[r.canonical_name] = r.value
-            f = assess_biomarker(
-                r.canonical_name,
-                r.value,
-                age_years=age_years,
-                is_male=is_male,
-            )
-            if f:
-                findings.append(f)
+        if not r.canonical_name:
+            continue
+
+        # Resolve canonical (SI) value — prefer stored normalized_value_si;
+        # fall back to on-the-fly normalization from r.value + r.unit.
+        norm_si: float | None = r.normalized_value_si
+        if norm_si is None and r.value is not None:
+            clf = normalize_and_classify(r.canonical_name, r.value, r.unit or "")
+            norm_si = clf.get("normalized_value_si") if clf else None
+
+        if norm_si is None:
+            # No usable value — skip this result entirely.
+            continue
+
+        # Assertion: never feed raw mmol/L into assess_biomarker
+        assert norm_si is not None, (
+            f"normalized_value_si must be resolved before calling assess_biomarker "
+            f"(canonical={r.canonical_name}, raw_value={r.value}, unit={r.unit})"
+        )
+
+        raw_inputs[r.canonical_name] = norm_si
+        f = assess_biomarker(
+            r.canonical_name,
+            norm_si,
+            age_years=age_years,
+            is_male=is_male,
+        )
+        if f:
+            findings.append(f)
 
     # Derived metrics
     derived_list: list[DerivedMetricResult] = []
