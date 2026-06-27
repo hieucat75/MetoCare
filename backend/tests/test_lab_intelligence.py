@@ -41,7 +41,11 @@ def test_compute_fib4():
 def test_classify_status():
     assert classify_status(126, "fasting_glucose").value == "high"
     assert classify_status(99, "fasting_glucose").value == "normal"
-    assert classify_status(300, "fasting_glucose").value == "critical"
+    # clinical_safety_sweep 2026-06-27: critical_high raised 300→500 (ADA 2024)
+    # 300 mg/dL is now HIGH, not CRITICAL
+    assert classify_status(300, "fasting_glucose").value == "high"
+    # 502 mg/dL ≥ critical_high=500 → CRITICAL
+    assert classify_status(502, "fasting_glucose").value == "critical"
 
 
 def test_clinical_rule_warning():
@@ -51,7 +55,13 @@ def test_clinical_rule_warning():
 
 
 def test_clinical_rule_critical():
-    f = assess_biomarker("fasting_glucose", 310)
+    # clinical_safety_sweep 2026-06-27: critical_high raised 300→500
+    # 310 mg/dL is now HIGH (warning), not CRITICAL
+    f_high = assess_biomarker("fasting_glucose", 310)
+    assert f_high.severity == "warning"
+    assert f_high.doctor_review_required
+    # 502 mg/dL triggers critical
+    f = assess_biomarker("fasting_glucose", 502)
     assert f.severity == "critical"
     assert f.doctor_review_required
 

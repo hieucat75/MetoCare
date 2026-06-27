@@ -792,7 +792,11 @@ def test_random_glucose_normal_at_upper_ref_boundary():
 
 
 def test_random_glucose_critical_high_at_exact_threshold():
-    assert classify_value("random_glucose", 300.0) == LabStatus.CRITICAL
+    # clinical_safety_sweep 2026-06-27: critical_high raised 300→500 (ADA 2024)
+    # 300 mg/dL is now HIGH, not CRITICAL
+    assert classify_value("random_glucose", 300.0) == LabStatus.HIGH
+    # 500 mg/dL is the new CRITICAL boundary
+    assert classify_value("random_glucose", 500.0) == LabStatus.CRITICAL
 
 
 def test_rbs_alias_resolves_to_random_glucose():

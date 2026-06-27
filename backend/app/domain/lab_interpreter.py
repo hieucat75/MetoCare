@@ -63,7 +63,7 @@ BIOMARKERS: tuple[BiomarkerSpec, ...] = (
          "fasting blood glucose",
          # Tam Anh / accented forms
          "đường huyết lúc đói", "duong huyet luc doi", "glucose luc doi"),
-        "mg/dL", 70, 99, critical_low=54, critical_high=300,
+        "mg/dL", 70, 99, critical_low=54, critical_high=500,
         si_unit="mmol/L", si_factor=18.018,
         incompatible_units=("IU/mL", "mIU/L", "mIU/mL", "µIU/mL", "pmol/L", "nmol/L"),
         physiological_min=20, physiological_max=1500,
@@ -144,9 +144,9 @@ BIOMARKERS: tuple[BiomarkerSpec, ...] = (
         "urea",
         ("urea", "ure", "urê", "bun", "blood urea nitrogen", "u rê",
          "ure mau", "urea mau", "bun serum"),
-        "mg/dL", 7, 20, critical_high=100,
-        si_unit="mmol/L", si_factor=6.006,  # mmol/L → mg/dL
-        physiological_min=1, physiological_max=300,
+        "mg/dL", 15, 40, critical_high=200,
+        si_unit="mmol/L", si_factor=6.006,  # mmol/L urea × 6.006 → mg/dL urea
+        physiological_min=1, physiological_max=1000,
     ),
     BiomarkerSpec(
         "ggt",
@@ -254,6 +254,7 @@ BIOMARKERS: tuple[BiomarkerSpec, ...] = (
         # _strip_accents produces the same output as from scanned Vietnamese text.
         ("uric acid", "axit uric", "axit uric máu", "acid uric", "uric"),
         "mg/dL", 3.5, 7.0, critical_high=10.0,
+        si_unit="µmol/L", si_factor=0.016813,  # µmol/L ÷ 59.48 → mg/dL
         physiological_min=0.5, physiological_max=30,
     ),
     BiomarkerSpec(
@@ -262,7 +263,7 @@ BIOMARKERS: tuple[BiomarkerSpec, ...] = (
         # matching OCR output from scanned Vietnamese lab reports.
         ("random glucose", "đường huyết ngẫu nhiên", "glucose ngẫu nhiên",
          "đường huyết bất kỳ", "rbs", "random blood sugar"),
-        "mg/dL", 70, 139, critical_low=54, critical_high=300,
+        "mg/dL", 70, 139, critical_low=54, critical_high=500,
         si_unit="mmol/L", si_factor=18.018,
         incompatible_units=("IU/mL", "mIU/L", "mIU/mL", "µIU/mL", "pmol/L", "nmol/L"),
         physiological_min=20, physiological_max=1500,

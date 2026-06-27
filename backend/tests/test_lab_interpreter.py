@@ -23,7 +23,11 @@ def test_classify_boundaries():
     assert lab_interpreter.classify_value("fasting_glucose", 60) == LabStatus.LOW
     # 50 is at/below critical_low (54) -> CRITICAL
     assert lab_interpreter.classify_value("fasting_glucose", 50) == LabStatus.CRITICAL
-    assert lab_interpreter.classify_value("fasting_glucose", 320) == LabStatus.CRITICAL
+    # 320 mg/dL: below updated critical_high=500 -> HIGH (not CRITICAL)
+    # clinical_safety_sweep 2026-06-27: critical_high raised 300→500 (ADA 2024)
+    assert lab_interpreter.classify_value("fasting_glucose", 320) == LabStatus.HIGH
+    # 502 mg/dL: above critical_high=500 -> CRITICAL
+    assert lab_interpreter.classify_value("fasting_glucose", 502) == LabStatus.CRITICAL
 
 
 def test_unknown_biomarker_needs_verification():
@@ -40,7 +44,7 @@ def test_low_ocr_confidence_flags_verification():
 
 def test_panel_explanation_is_safe():
     panel = [
-        RawLabValue("Glucose", 320.0, "mg/dL"),       # critical
+        RawLabValue("Glucose", 502.0, "mg/dL"),       # critical (>=500)
         RawLabValue("Triglyceride", 220.0, "mg/dL"),  # high
         RawLabValue("HDL", 60.0, "mg/dL"),            # normal
     ]

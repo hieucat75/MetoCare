@@ -65,7 +65,7 @@ def assess_biomarker(canonical: str, value: float, *, age_years: int | None = No
         return None
 
     # Critical rules
-    if canonical == "fasting_glucose" and (value >= 300 or value <= 54):
+    if canonical == "fasting_glucose" and (value >= 500 or value <= 54):
         return _finding(canonical, "biomarker", "critical", "critical", 1,
                         "Đường huyết ở mức rất nguy hiểm, cần bác sĩ đánh giá ngay.",
                         f"{canonical}={value} mg/dL critical", True)
@@ -96,7 +96,7 @@ def assess_biomarker(canonical: str, value: float, *, age_years: int | None = No
         return _finding(canonical, "biomarker", "borderline", "watch", 3,
                         "Đường huyết lúc đói đang ở vùng tiền tiểu đường.",
                         f"{canonical}={value} mg/dL prediabetes range", True)
-    if canonical == "fasting_glucose" and 126 <= value < 300:
+    if canonical == "fasting_glucose" and 126 <= value < 500:
         return _finding(canonical, "biomarker", "high", "warning", 2,
                         "Đường huyết đang cao và cần bác sĩ xem xét thêm.",
                         f"{canonical}={value} mg/dL high", True)
@@ -110,14 +110,14 @@ def assess_biomarker(canonical: str, value: float, *, age_years: int | None = No
             return _finding(canonical, "biomarker", "low", "watch", 3,
                             "HDL đang thấp hơn mức mong muốn.",
                             f"{canonical}={value} low HDL", False)
-    if canonical == "ldl" and value > 3.4:
+    if canonical == "ldl" and value > 130:  # mg/dL borderline-high threshold (AHA)
         return _finding(canonical, "biomarker", "high", "warning", 2,
                         "LDL đang cao, có thể làm tăng nguy cơ tim mạch.",
-                        f"{canonical}={value} mmol/L high LDL", True)
-    if canonical == "triglyceride" and value > 5.6:
+                        f"{canonical}={value} mg/dL high LDL", True)
+    if canonical == "triglyceride" and value > 500:  # mg/dL very-high threshold (AHA)
         return _finding(canonical, "biomarker", "high", "warning", 2,
                         "Triglyceride đang rất cao, cần bác sĩ đánh giá thêm.",
-                        f"{canonical}={value} mmol/L very high TG", True)
+                        f"{canonical}={value} mg/dL very high TG", True)
     if canonical in {"alt", "ast"} and value > (spec.ref_high or 0) * 3:
         return _finding(canonical, "biomarker", "high", "warning", 2,
                         "Men gan đang tăng cao, cần đánh giá thêm.",

@@ -34,7 +34,7 @@ _DEFAULT_VITAL_THRESHOLDS = {
     ),
     "fasting_glucose": VitalThreshold(
         metric_type="fasting_glucose",
-        critical_high=300.0,
+        critical_high=500.0,
         critical_low=54.0,
         unit="mg/dL",
         source="ADA 2024",
@@ -43,7 +43,7 @@ _DEFAULT_VITAL_THRESHOLDS = {
     ),
     "postprandial_glucose": VitalThreshold(
         metric_type="postprandial_glucose",
-        critical_high=350.0,
+        critical_high=500.0,
         critical_low=54.0,
         unit="mg/dL",
         source="ADA 2024",
