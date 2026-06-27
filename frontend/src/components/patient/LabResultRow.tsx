@@ -87,6 +87,32 @@ function TrendArrow({ changePct }: { changePct: number | null }) {
   )
 }
 
+// ── Display helpers ───────────────────────────────────────────────────────────
+
+/**
+ * Resolve the display value + unit for a lab result.
+ *
+ * Display strategy (Option B — P0 arch fix):
+ *   Primary: original_value + original_unit (as printed on the lab report)
+ *   Fallback: value + unit (canonical mg/dL stored after normalization)
+ *
+ * NEVER mix: never show original_value with canonical_unit or vice versa.
+ * This prevents the '87.66 mg/dL' bug where canonical unit was shown with SI value.
+ */
+export function resolveDisplayValueUnit(result: LabResultEntry): {
+  displayValue: number | null
+  displayUnit: string | null
+} {
+  const hasOriginal =
+    result.original_value != null &&
+    result.original_unit != null &&
+    result.original_unit !== ''
+  if (hasOriginal) {
+    return { displayValue: result.original_value, displayUnit: result.original_unit }
+  }
+  return { displayValue: result.value, displayUnit: result.unit }
+}
+
 // ── LabResultRow ───────────────────────────────────────────────────────────────
 
 interface LabResultRowProps {
@@ -99,6 +125,9 @@ interface LabResultRowProps {
 
 export function LabResultRow({ result, batchId, changePct, onNavigate }: LabResultRowProps) {
   const borderColor = statusColor(result.status)
+  // P0 arch fix: display original as-printed value (Option B).
+  // Status/classification always uses canonical normalized_value_si — not this display value.
+  const { displayValue, displayUnit } = resolveDisplayValueUnit(result)
   return (
     <button
       type="button"
@@ -124,7 +153,7 @@ export function LabResultRow({ result, batchId, changePct, onNavigate }: LabResu
         </p>
         {result.reference_range && (
           <p className="mt-0.5 text-neu-muted" style={{ fontSize: '13px' }}>
-            Bình thường: {result.reference_range}{result.unit ? ` ${result.unit}` : ''}
+            Bình thường: {result.reference_range}{displayUnit ? ` ${displayUnit}` : ''}
           </p>
         )}
         <div className="mt-1 flex items-center gap-2 flex-wrap">
@@ -133,7 +162,7 @@ export function LabResultRow({ result, batchId, changePct, onNavigate }: LabResu
         </div>
       </div>
 
-      {/* Value + unit */}
+      {/* Value + unit — shows original as-printed value (preserves what patient saw on report) */}
       <div className="flex items-baseline gap-1.5 shrink-0">
         <span
           className="font-bold tabular-nums"
@@ -142,16 +171,16 @@ export function LabResultRow({ result, batchId, changePct, onNavigate }: LabResu
             color: borderColor,
             lineHeight: 1.1,
           }}
-          aria-label={`Giá trị: ${result.value}`}
+          aria-label={`Giá trị: ${displayValue}`}
         >
-          {result.value != null ? result.value : '—'}
+          {displayValue != null ? displayValue : '—'}
         </span>
-        {result.unit && (
+        {displayUnit && (
           <span
             className="text-neu-muted"
             style={{ fontSize: '16px' }}
           >
-            {result.unit}
+            {displayUnit}
           </span>
         )}
       </div>

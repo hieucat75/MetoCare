@@ -18,7 +18,7 @@ import { getLabResults, getLabResultExplanation, type LabResultEntry, type LabEx
 import { ExplanationSection } from '@/components/labs/ExplanationSection'
 import { getPatientInsight, type PatientInsightReport } from '@/lib/api/labInsight'
 import { NeuCard } from '@/components/patient/neu'
-import { statusColor, statusLabel } from '@/components/patient/LabResultRow'
+import { statusColor, statusLabel, resolveDisplayValueUnit } from '@/components/patient/LabResultRow'
 import { MetricLineChart } from '@/components/patient/metrics/MetricLineChart'
 
 // ── Simple inline gauge (no external deps) ─────────────────────────────────────
@@ -262,6 +262,9 @@ export default function BiomarkerDetailPage() {
 
   const refRange = parseRefRange(result.reference_range)
   const valueColor = statusColor(result.status)
+  // P0 arch fix: display original as-printed value + unit (Option B).
+  // Status badge always uses result.status (pre-computed canonical classification).
+  const { displayValue, displayUnit } = resolveDisplayValueUnit(result)
   const trendValues = allSameTests.map((r) => r.value as number)
   const trendBand =
     refRange.min != null && refRange.max != null
@@ -310,18 +313,18 @@ export default function BiomarkerDetailPage() {
           {result.test_name}
         </h1>
 
-        {/* Value + unit */}
+        {/* Value + unit — shows original as-printed value (preserves what patient saw on report) */}
         <div className="mt-3 flex items-baseline gap-2.5">
           <span
             className="font-extrabold tabular-nums leading-none"
             style={{ fontSize: '48px', color: valueColor }}
-            aria-label={`Giá trị: ${result.value}`}
+            aria-label={`Giá trị: ${displayValue}`}
           >
-            {result.value != null ? result.value : '—'}
+            {displayValue != null ? displayValue : '—'}
           </span>
-          {result.unit && (
+          {displayUnit && (
             <span className="text-neu-muted" style={{ fontSize: '20px' }}>
-              {result.unit}
+              {displayUnit}
             </span>
           )}
         </div>
@@ -341,12 +344,12 @@ export default function BiomarkerDetailPage() {
           <p className="mt-3 text-[16px] text-neu-muted">
             Bình thường:{' '}
             <span className="font-semibold text-[#17AE7B]">
-              {result.reference_range} {result.unit ?? ''}
+              {result.reference_range} {displayUnit ?? ''}
             </span>
           </p>
         )}
 
-        {/* Visual gauge */}
+        {/* Visual gauge — uses canonical value for accurate position on reference scale */}
         {result.value != null && (
           <SimpleGauge
             value={result.value}
@@ -450,19 +453,22 @@ export default function BiomarkerDetailPage() {
               />
               {/* Previous values list */}
               <div className="divide-y divide-black/[0.05]">
-                {allSameTests.map((r) => (
-                  <div key={r.id} className="flex items-center justify-between py-3">
-                    <span className="text-[16px] text-neu-muted">
-                      {formatDate(r.test_date ?? r.created_at)}
-                    </span>
-                    <span
-                      className="font-bold tabular-nums"
-                      style={{ fontSize: '18px', color: statusColor(r.status) }}
-                    >
-                      {r.value} {r.unit ?? ''}
-                    </span>
-                  </div>
-                ))}
+                {allSameTests.map((r) => {
+                  const { displayValue: dv, displayUnit: du } = resolveDisplayValueUnit(r)
+                  return (
+                    <div key={r.id} className="flex items-center justify-between py-3">
+                      <span className="text-[16px] text-neu-muted">
+                        {formatDate(r.test_date ?? r.created_at)}
+                      </span>
+                      <span
+                        className="font-bold tabular-nums"
+                        style={{ fontSize: '18px', color: statusColor(r.status) }}
+                      >
+                        {dv} {du ?? ''}
+                      </span>
+                    </div>
+                  )
+                })}
               </div>
             </div>
           )}

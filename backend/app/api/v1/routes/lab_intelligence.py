@@ -16,6 +16,7 @@ from app.models.clinical import LabResult
 from app.models.patient import PatientProfile
 from app.models.user import UserRole
 from app.services import consent
+from app.services.lab import normalize_and_classify
 
 router = APIRouter(tags=["lab_intelligence"])
 
@@ -71,12 +72,26 @@ def lab_intelligence(
     raw_inputs: dict[str, float] = {}
     biomarker_findings = []
     for r in verified:
-        if r.canonical_name and r.value is not None:
-            raw_inputs[r.canonical_name] = r.value
-            f = assess_biomarker(r.canonical_name, r.value, age_years=body.age_years, is_male=body.is_male)  # noqa: E501
-            if f:
-                findings.append(f)
-                biomarker_findings.append(f.__dict__)
+        if not r.canonical_name:
+            continue
+
+        # P0 FIX: always use normalized_value_si (canonical mg/dL) for assess_biomarker.
+        # Using r.value (raw OCR value, may be µmol/L for creatinine or mmol/L for glucose)
+        # caused e.g. creatinine 87.66 µmol/L to be treated as 87.66 mg/dL → triggered
+        # critical (≥4.0 mg/dL) branch → wrongly showed 'Creatinine tăng rất cao'.
+        norm_si: float | None = getattr(r, "normalized_value_si", None)
+        if norm_si is None and r.value is not None:
+            clf = normalize_and_classify(r.canonical_name, r.value, r.unit or "")
+            norm_si = clf.get("normalized_value_si") if clf else None
+
+        if norm_si is None:
+            continue
+
+        raw_inputs[r.canonical_name] = norm_si
+        f = assess_biomarker(r.canonical_name, norm_si, age_years=body.age_years, is_male=body.is_male)  # noqa: E501
+        if f:
+            findings.append(f)
+            biomarker_findings.append(f.__dict__)
 
     derived = []
     if body.include_derived:
