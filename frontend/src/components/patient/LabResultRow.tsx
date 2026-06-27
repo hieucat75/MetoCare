@@ -98,15 +98,23 @@ interface LabResultRowProps {
 }
 
 export function LabResultRow({ result, batchId, changePct, onNavigate }: LabResultRowProps) {
+  const borderColor = statusColor(result.status)
   return (
     <button
       type="button"
-      className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-black/[0.03] active:bg-black/[0.06] transition-colors"
+      className="relative flex w-full items-center gap-3 pl-5 pr-4 py-3 text-left hover:bg-black/[0.03] active:bg-black/[0.06] transition-colors"
       style={{ minHeight: '72px' }}
       onClick={() => onNavigate(batchId, result.id)}
       aria-label={`Xem chi tiết ${result.test_name}`}
     >
-      {/* Biomarker name + status badge */}
+      {/* Left status border */}
+      <div
+        className="absolute left-0 top-2 bottom-2 w-1 rounded-full"
+        style={{ backgroundColor: borderColor }}
+        aria-hidden="true"
+      />
+
+      {/* Biomarker name + ref range + status badge */}
       <div className="flex-1 min-w-0">
         <p
           className="font-semibold text-neu-text leading-tight truncate"
@@ -114,6 +122,11 @@ export function LabResultRow({ result, batchId, changePct, onNavigate }: LabResu
         >
           {result.test_name}
         </p>
+        {result.reference_range && (
+          <p className="mt-0.5 text-neu-muted" style={{ fontSize: '13px' }}>
+            Bình thường: {result.reference_range}{result.unit ? ` ${result.unit}` : ''}
+          </p>
+        )}
         <div className="mt-1 flex items-center gap-2 flex-wrap">
           <StatusBadge status={result.status} />
           <TrendArrow changePct={changePct ?? null} />
@@ -126,7 +139,7 @@ export function LabResultRow({ result, batchId, changePct, onNavigate }: LabResu
           className="font-bold tabular-nums"
           style={{
             fontSize: '36px',
-            color: statusColor(result.status),
+            color: borderColor,
             lineHeight: 1.1,
           }}
           aria-label={`Giá trị: ${result.value}`}

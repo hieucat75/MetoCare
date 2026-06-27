@@ -122,17 +122,6 @@ function BatchCard({
           </div>
         </div>
 
-        {/* "Xem AI nhận định" button — always visible */}
-        <button
-          type="button"
-          onClick={() => router.push(`/labs/${batch.id}/insight`)}
-          className="mt-3 flex w-full items-center justify-center gap-2 rounded-[12px] py-2.5 text-[14px] font-semibold text-white"
-          style={{ background: HERO_GRADIENT }}
-          aria-label="Xem nhận định AI cho phiếu này"
-        >
-          <BarChart2 className="size-4" aria-hidden="true" />
-          Xem AI nhận định
-        </button>
       </div>
 
       {/* Expanded biomarker rows */}
@@ -154,6 +143,18 @@ function BatchCard({
               ))}
             </div>
           )}
+          {/* AI insight CTA — secondary outline button at bottom of batch */}
+          <div className="px-4 pb-4 pt-3 border-t border-black/[0.05]">
+            <button
+              type="button"
+              onClick={() => router.push(`/labs/${batch.id}/insight`)}
+              className="flex w-full items-center justify-center gap-2 rounded-[12px] border-2 border-neu-green bg-transparent py-3 text-[15px] font-semibold text-neu-green hover:bg-[rgba(11,127,91,0.06)] transition-colors"
+              aria-label="Xem AI nhận định tổng thể cho phiếu này"
+            >
+              <BarChart2 className="size-4" aria-hidden="true" />
+              Xem AI nhận định tổng thể →
+            </button>
+          </div>
         </div>
       )}
     </NeuCard>
@@ -255,6 +256,10 @@ export default function LabsPage() {
       .then(([batchRes, resultsRes]) => {
         setBatches(batchRes.items)
         setAllResults(resultsRes.items)
+        // Auto-expand the latest batch (first item, sorted descending by backend)
+        if (batchRes.items.length > 0) {
+          setExpandedBatchId((prev) => prev ?? batchRes.items[0].id)
+        }
       })
       .catch((err: Error) => setError(err.message))
       .finally(() => setLoading(false))
