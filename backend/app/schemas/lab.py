@@ -120,12 +120,63 @@ class LabResultOut(BaseModel):
     def _populate_clinical_message(self) -> "LabResultOut":
         """Derive clinical_message from canonical_name + status (single source of truth).
 
-        Ensures every response includes a consistent Vietnamese message without
-        requiring a dedicated DB column — derived at serialization time.
+        Applies the same physiological_max heuristic as MetricOut so that LabResult
+        rows that were stored with the wrong unit (e.g. creatinine 87.66 µmol/L stored
+        as value=87.66, unit='mg/dL') are re-classified correctly at serialization time.
+
+        Algorithm:
+          1. Use normalized_value_si if available; else raw value.
+          2. Apply physiological_max guard: if value > physiological_max for the
+             canonical unit AND unit is NOT the SI unit, treat value as SI unit and
+             re-normalize to canonical unit.
+          3. Re-classify using canonical thresholds.
+          4. Derive clinical_message from (canonical_name, canonical_status).
         """
-        if self.clinical_message is None and self.canonical_name and self.status:
-            from app.services.lab import get_clinical_message  # lazy import avoids circular
-            self.clinical_message = get_clinical_message(self.canonical_name, self.status)
+        if not self.canonical_name:
+            return self
+        try:
+            from app.domain.lab_interpreter import _ALIAS_INDEX, classify_value
+            from app.domain.lab_normalization import normalize_value_to_si
+            from app.services.lab import get_clinical_message
+
+            spec = _ALIAS_INDEX.get(self.canonical_name)
+            if spec is None:
+                # Unknown biomarker — fall through to DB status
+                if self.clinical_message is None and self.status:
+                    self.clinical_message = get_clinical_message(self.canonical_name, self.status)
+                return self
+
+            # Prefer normalized_value_si when available (more accurate).
+            raw_value = self.normalized_value_si if self.normalized_value_si is not None else self.value
+            raw_unit = self.normalized_unit_si if self.normalized_unit_si is not None else (self.unit or "")
+
+            if raw_value is None:
+                if self.clinical_message is None and self.status:
+                    self.clinical_message = get_clinical_message(self.canonical_name, self.status)
+                return self
+
+            # Physiological_max heuristic: if value exceeds what is physiologically
+            # possible in the canonical unit, it must be expressed in the SI unit.
+            if spec.si_unit and spec.physiological_max is not None:
+                unit_norm = (raw_unit or "").strip().lower().replace("µ", "u").replace("μ", "u")
+                si_norm = spec.si_unit.strip().lower().replace("µ", "u").replace("μ", "u")
+                already_si = (unit_norm == si_norm)
+                if not already_si and raw_value > spec.physiological_max:
+                    # Value is physiologically impossible in canonical unit → must be SI unit.
+                    raw_unit = spec.si_unit
+
+            canonical_value, _ = normalize_value_to_si(raw_value, raw_unit, self.canonical_name)
+            status_enum = classify_value(self.canonical_name, canonical_value)
+            if status_enum is not None and status_enum.value != "unknown":
+                canonical_status = status_enum.value
+                self.status = canonical_status
+                self.clinical_message = get_clinical_message(self.canonical_name, canonical_status)
+            elif self.clinical_message is None and self.status:
+                self.clinical_message = get_clinical_message(self.canonical_name, self.status)
+        except Exception:  # noqa: BLE001 — schema must never crash
+            if self.clinical_message is None and self.canonical_name and self.status:
+                from app.services.lab import get_clinical_message
+                self.clinical_message = get_clinical_message(self.canonical_name, self.status)
         return self
 
     model_config = {"from_attributes": True}
