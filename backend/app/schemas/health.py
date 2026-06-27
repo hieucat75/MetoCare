@@ -73,21 +73,21 @@ class MetricOut(BaseModel):
                     raw_unit = "mmol/L"
 
             # HEURISTIC GUARD (general): for any biomarker with a known SI/display
-            # unit, if the stored unit is missing/unknown AND the value exceeds the
-            # physiological_max for the canonical unit, the value must be expressed
-            # in the SI unit (e.g. creatinine 87.7 stored without unit is µmol/L,
-            # not mg/dL, because physiological_max for mg/dL is 30).
-            # This prevents old HealthMetric rows (promoted before unit normalization
-            # was added to _promote_row) from being mis-classified as critical.
+            # unit, if the stored value exceeds the physiological_max for the
+            # canonical unit, the value must be expressed in the SI unit.
+            # This covers two failure modes from old _promote_row code:
+            #   A) unit=None/'' AND value=87.7 (µmol/L dropped during promotion)
+            #   B) unit='mg/dL' AND value=87.66 (µmol/L value stored with wrong unit)
+            # Both: 87.7 > physiological_max(30 mg/dL) → treat as µmol/L
+            # → normalize → 0.992 mg/dL → NORMAL (not CRITICAL)
             spec = _ALIAS_INDEX.get(self.metric_type)
             if spec and spec.si_unit and spec.physiological_max is not None:
                 unit_norm = raw_unit.strip().lower().replace("µ", "u").replace("μ", "u")
-                canonical_norm = spec.unit.strip().lower().replace("µ", "u").replace("μ", "u")
                 si_norm = spec.si_unit.strip().lower().replace("µ", "u").replace("μ", "u")
-                unit_unknown = unit_norm not in (canonical_norm, si_norm)
-                if unit_unknown and raw_value > spec.physiological_max:
+                already_si = (unit_norm == si_norm)
+                if not already_si and raw_value > spec.physiological_max:
                     # Value exceeds what is physiologically possible in the
-                    # canonical unit → must be in the SI unit.
+                    # canonical unit → must be in the SI unit (stored incorrectly).
                     raw_unit = spec.si_unit
 
             canonical_value, _ = normalize_value_to_si(
