@@ -277,3 +277,99 @@ def test_metric_out_glucose_normal_not_critical() -> None:
     assert m.is_critical is False
     assert m.clinical_message is not None
     assert "bình thường" in m.clinical_message
+
+
+# ---------------------------------------------------------------------------
+# P0 Regression: Creatinine 87.7 µmol/L banner bug
+# ---------------------------------------------------------------------------
+
+def test_metric_out_creatinine_877_umol_no_unit_not_critical() -> None:
+    """P0 REGRESSION: creatinine 87.7 with no unit must NOT be critical.
+
+    Old HealthMetric rows promoted before the _promote_row unit-normalization fix
+    have value=87.7 (µmol/L) stored with unit=None. The MetricOut validator must
+    detect that 87.7 > physiological_max (30 mg/dL) and treat it as µmol/L,
+    yielding 0.992 mg/dL → normal.
+
+    Without the fix: classify_value('creatinine', 87.7) → CRITICAL (87.7 > 4.0 mg/dL)
+    With the fix: 87.7 → µmol/L → 0.992 mg/dL → NORMAL
+    """
+    import datetime as dt
+    from app.schemas.health import MetricOut
+
+    m = MetricOut(
+        id="test-creatinine-877",
+        metric_type="creatinine",
+        value=87.7,
+        unit=None,  # unit dropped from old promotion path
+        measured_at=dt.datetime(2026, 6, 27, 0, 0),
+        status="critical",  # stale DB status — should be overridden by validator
+        source="lab_result",
+    )
+    assert m.is_critical is False, (
+        f"Creatinine 87.7 (no unit) must NOT be critical — "
+        f"should be treated as µmol/L = 0.992 mg/dL: "
+        f"clinical_message={m.clinical_message!r}, status={m.status!r}"
+    )
+    assert m.status == "normal", (
+        f"Validator must update status to 'normal': got {m.status!r}"
+    )
+    assert m.clinical_message is not None
+    assert "bình thường" in m.clinical_message.lower(), (
+        f"Creatinine 87.7 µmol/L clinical_message must say 'bình thường': "
+        f"got {m.clinical_message!r}"
+    )
+
+
+def test_metric_out_creatinine_877_umol_explicit_unit_not_critical() -> None:
+    """Creatinine 87.7 with explicit µmol/L unit must be NORMAL."""
+    import datetime as dt
+    from app.schemas.health import MetricOut
+
+    m = MetricOut(
+        id="test-creatinine-877-unit",
+        metric_type="creatinine",
+        value=87.7,
+        unit="µmol/L",
+        measured_at=dt.datetime(2026, 6, 27, 0, 0),
+        status=None,
+        source="lab_result",
+    )
+    assert m.is_critical is False
+    assert m.status == "normal"
+
+
+def test_metric_out_creatinine_normal_mgdl_not_critical() -> None:
+    """Creatinine 0.992 mg/dL (canonical) must be NORMAL."""
+    import datetime as dt
+    from app.schemas.health import MetricOut
+
+    m = MetricOut(
+        id="test-creatinine-mgdl",
+        metric_type="creatinine",
+        value=0.992,
+        unit="mg/dL",
+        measured_at=dt.datetime(2026, 6, 27, 0, 0),
+        status=None,
+        source="lab_result",
+    )
+    assert m.is_critical is False
+    assert m.status == "normal"
+
+
+def test_metric_out_creatinine_critical_high_is_critical() -> None:
+    """Genuinely critical creatinine (5.0 mg/dL) must remain CRITICAL."""
+    import datetime as dt
+    from app.schemas.health import MetricOut
+
+    m = MetricOut(
+        id="test-creatinine-critical",
+        metric_type="creatinine",
+        value=5.0,
+        unit="mg/dL",
+        measured_at=dt.datetime(2026, 6, 27, 0, 0),
+        status=None,
+        source="lab_result",
+    )
+    assert m.is_critical is True, "5.0 mg/dL creatinine (> 4.0 critical_high) must be critical"
+    assert m.status == "critical"

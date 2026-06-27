@@ -14,7 +14,7 @@ import {
   type HealthMetric,
   type MetricType,
 } from '@/lib/api/patient'
-import { classifyLabValue, formatRefRange, useLabReference } from '@/lib/api/labReference'
+import { formatRefRange, useLabReference } from '@/lib/api/labReference'
 import {
   groupMetricsByCategory,
   computeTrend,
@@ -24,8 +24,6 @@ import {
 import { MetricLineChart } from '@/components/patient/metrics/MetricLineChart'
 import {
   metricIcon,
-  labToneToNeu,
-  healthMetricStatus,
   type NeuTone,
 } from '@/components/patient/metrics/metricVisuals'
 
@@ -257,8 +255,6 @@ function MetricDetailBody({
               key={m.id ?? i}
               metric={m}
               unitLabel={unitLabel}
-              unit={series.unit}
-              higherIsBetter={higherIsBetter}
               last={i === rows.length - 1}
             />
           ))}
@@ -321,27 +317,54 @@ function StatChip({
 
 // ─── History row ──────────────────────────────────────────────────────────────
 
+// STATUS_LABEL_VI: canonical status → display label (canonical single source of truth from backend).
+// These labels match the backend _CLINICAL_MESSAGES status keys.
+const STATUS_LABEL_VI: Record<string, string> = {
+  normal: 'Bình thường',
+  low: 'Thấp',
+  high: 'Cao',
+  very_low: 'Rất thấp',
+  very_high: 'Rất cao',
+  borderline: 'Cần theo dõi',
+  borderline_high: 'Hơi cao',
+  borderline_low: 'Hơi thấp',
+  abnormal: 'Bất thường',
+  critical: 'Nguy hiểm',
+  critical_high: 'Nguy hiểm cao',
+  critical_low: 'Nguy hiểm thấp',
+}
+
+const STATUS_TONE_VI: Record<string, NeuTone> = {
+  normal: 'ok',
+  borderline: 'watch',
+  borderline_high: 'watch',
+  borderline_low: 'watch',
+  low: 'watch',
+  high: 'watch',
+  very_low: 'alert',
+  very_high: 'alert',
+  abnormal: 'alert',
+  critical: 'alert',
+  critical_high: 'alert',
+  critical_low: 'alert',
+}
+
 function HistoryRow({
   metric,
   unitLabel,
-  unit,
-  higherIsBetter,
   last,
 }: {
   metric: HealthMetric
   unitLabel: string
-  unit: MetricSeries['unit']
-  higherIsBetter: boolean
   last: boolean
 }) {
-  let status: { tone: NeuTone; label: string } | null
-  if (unit) {
-    const s = classifyLabValue(metric.value, unit, higherIsBetter)
-    status = { tone: labToneToNeu(s.tone), label: s.label }
-  } else {
-    status = healthMetricStatus(metric)
-  }
-  const tone = status?.tone ?? 'ok'
+  // Use ONLY canonical status from backend API — never local threshold comparisons.
+  // The backend MetricOut._populate_clinical_message validator unit-normalizes
+  // and re-classifies every row on read, so MetricOut.status is always correct.
+  const apiStatus = metric.status ?? null
+  const tone: NeuTone = (apiStatus && STATUS_TONE_VI[apiStatus]) ?? 'ok'
+  const label = (apiStatus && STATUS_LABEL_VI[apiStatus]) ?? null
+  const status = apiStatus && label ? { tone, label } : null
 
   return (
     <div

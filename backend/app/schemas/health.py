@@ -54,7 +54,7 @@ class MetricOut(BaseModel):
 
         try:
             from app.domain.lab_normalization import normalize_value_to_si
-            from app.domain.lab_interpreter import classify_value
+            from app.domain.lab_interpreter import classify_value, _ALIAS_INDEX
             from app.services.lab import get_clinical_message
 
             # Normalise to canonical unit (no-op when already canonical).
@@ -72,6 +72,24 @@ class MetricOut(BaseModel):
                     # Unit unknown and value implausibly small → must be mmol/L
                     raw_unit = "mmol/L"
 
+            # HEURISTIC GUARD (general): for any biomarker with a known SI/display
+            # unit, if the stored unit is missing/unknown AND the value exceeds the
+            # physiological_max for the canonical unit, the value must be expressed
+            # in the SI unit (e.g. creatinine 87.7 stored without unit is µmol/L,
+            # not mg/dL, because physiological_max for mg/dL is 30).
+            # This prevents old HealthMetric rows (promoted before unit normalization
+            # was added to _promote_row) from being mis-classified as critical.
+            spec = _ALIAS_INDEX.get(self.metric_type)
+            if spec and spec.si_unit and spec.physiological_max is not None:
+                unit_norm = raw_unit.strip().lower().replace("µ", "u").replace("μ", "u")
+                canonical_norm = spec.unit.strip().lower().replace("µ", "u").replace("μ", "u")
+                si_norm = spec.si_unit.strip().lower().replace("µ", "u").replace("μ", "u")
+                unit_unknown = unit_norm not in (canonical_norm, si_norm)
+                if unit_unknown and raw_value > spec.physiological_max:
+                    # Value exceeds what is physiologically possible in the
+                    # canonical unit → must be in the SI unit.
+                    raw_unit = spec.si_unit
+
             canonical_value, _ = normalize_value_to_si(
                 raw_value, raw_unit, self.metric_type
             )
@@ -83,6 +101,11 @@ class MetricOut(BaseModel):
                 self.clinical_message = get_clinical_message(
                     self.metric_type, canonical_status
                 )
+                # Also update status to the canonical re-classification so that
+                # callers reading MetricOut.status get the correct value (even
+                # if the DB row has a stale/wrong status from before the unit-
+                # normalization fix in _promote_row).
+                self.status = canonical_status
         except Exception:  # noqa: BLE001 — schema must never crash
             pass
 
