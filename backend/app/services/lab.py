@@ -8,6 +8,7 @@ Access is consent-gated + audited.
 from __future__ import annotations
 
 import datetime as dt
+import logging
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -15,11 +16,14 @@ from sqlalchemy.orm import Session
 from app.core.clock import as_naive_utc, utcnow
 from app.core.config import get_settings
 from app.domain import lab_interpreter
+from app.domain.lab_interpreter import classify_value
 from app.domain.lab_normalization import normalize_value_to_si
-from app.models.clinical import HealthMetric, LabDocument, LabResult
+from app.models.clinical import HealthMetric, LabDocument, LabResult, LabUploadBatch
 from app.services import audit, consent, lab_batch
 from app.services import ocr_case as ocr_case_svc
 from app.services.health_metrics import classify_status
+
+_log = logging.getLogger("mcp.lab")
 
 # Lab biomarkers that double as trackable health metrics. Promoting them into
 # `health_metrics` (source='lab_result') makes the dashboard tiles + trend charts
@@ -445,6 +449,16 @@ def get_results_by_batch(
             )
         ).scalars()
     )
+
+    # Phase 2 — classify-on-read fallback: if a row has a known canonical name
+    # and a normalized value but still lacks a status (e.g. legacy/backfill gap),
+    # compute it in-memory for display only — DO NOT commit to DB here.
+    for result in rows:
+        if result.status is None and result.normalized_value_si is not None and result.canonical_name:
+            computed = classify_value(result.canonical_name, result.normalized_value_si)
+            if computed is not None:
+                result.status = computed.value
+
     return rows
 
 
@@ -486,3 +500,117 @@ def list_lab_results(
         ).scalars()
     )
     return total, rows
+
+
+def reclassify_lab_results(
+    db: Session,
+    *,
+    batch_id: str | None = None,
+    dry_run: bool = False,
+) -> dict:
+    """Recompute status for existing LabResult records with null or missing status.
+
+    Logic per record:
+    1. Skip if canonical_name is null/missing (can't classify without known biomarker).
+    2. Skip if both original_value and normalized_value_si are null (no value to classify).
+    3. If normalized_value_si is null → compute from original_value + original_unit.
+    4. Recompute status using classify_value(canonical_name, normalized_value_si).
+    5. Update status, normalized fields in DB.
+    6. NEVER overwrite: original_value, original_unit, raw OCR fields.
+    7. If dry_run=True → return what WOULD change, no DB writes.
+
+    Idempotent: records already correctly classified are counted as skipped.
+    Returns: {"updated": N, "skipped": N, "errors": [str, ...]}
+    """
+    errors: list[str] = []
+    updated = 0
+    skipped = 0
+
+    # Build query.
+    conditions = [LabResult.deleted_at.is_(None)]
+    if batch_id is not None:
+        conditions.append(LabResult.batch_id == batch_id)
+
+    rows = list(
+        db.execute(
+            select(LabResult).where(*conditions)
+        ).scalars()
+    )
+
+    for row in rows:
+        try:
+            # Skip if no canonical name (can't classify).
+            if not row.canonical_name:
+                skipped += 1
+                continue
+
+            # Skip if no value available at all.
+            if row.original_value is None and row.value is None and row.normalized_value_si is None:
+                skipped += 1
+                continue
+
+            # Resolve the value to classify against. Use normalized_value_si if present;
+            # otherwise derive from original_value + original_unit (or value + unit).
+            norm_value = row.normalized_value_si
+            norm_unit = row.normalized_unit_si
+
+            if norm_value is None:
+                # Try to normalize from original_value/original_unit first, then fallback to value/unit.
+                raw_val = row.original_value if row.original_value is not None else row.value
+                raw_unit = row.original_unit if row.original_unit is not None else row.unit
+
+                if raw_val is None:
+                    skipped += 1
+                    continue
+
+                if raw_unit:
+                    norm_value, norm_unit = normalize_value_to_si(raw_val, raw_unit, row.canonical_name)
+                else:
+                    # No unit info — assume canonical unit and classify directly.
+                    norm_value = raw_val
+                    norm_unit = lab_interpreter._ALIAS_INDEX.get(row.canonical_name, None)
+                    norm_unit = norm_unit.unit if norm_unit else None
+
+            # Compute new status.
+            new_status_enum = classify_value(row.canonical_name, norm_value)
+            if new_status_enum is None:
+                skipped += 1
+                continue
+
+            new_status = new_status_enum.value
+            old_status = row.status
+
+            # Check if already correctly classified (idempotent).
+            if row.status == new_status and row.normalized_value_si == norm_value:
+                skipped += 1
+                continue
+
+            _log.info(
+                "reclassify %s (%s): %s → %s  (value=%.4f)",
+                row.id, row.canonical_name, old_status, new_status, norm_value,
+            )
+
+            if not dry_run:
+                row.status = new_status
+                # Only update normalized fields if they were missing.
+                if row.normalized_value_si is None:
+                    row.normalized_value_si = norm_value
+                if row.normalized_unit_si is None and norm_unit is not None:
+                    row.normalized_unit_si = norm_unit
+
+            updated += 1
+
+        except Exception as exc:  # noqa: BLE001
+            err_msg = f"reclassify error row {row.id} ({getattr(row, 'canonical_name', '?')}): {exc}"
+            _log.warning(err_msg)
+            errors.append(err_msg)
+
+    if not dry_run and updated > 0:
+        try:
+            db.commit()
+        except Exception as exc:  # noqa: BLE001
+            db.rollback()
+            errors.append(f"DB commit failed: {exc}")
+            updated = 0
+
+    return {"updated": updated, "skipped": skipped, "errors": errors}

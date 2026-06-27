@@ -1,0 +1,18 @@
+# PHI protection — raw images, OCR cache, and unreviewed incoming uploads must never be committed.
+# Only .gitkeep, expected/*.json examples, schema, and documentation are tracked.
+
+# Images (raw lab report scans — may contain patient PHI)
+images/*
+!images/.gitkeep
+
+# Azure Document Intelligence raw API responses (may contain OCR text of PHI)
+azure_cache/*
+!azure_cache/.gitkeep
+
+# Unreviewed uploads waiting for anonymization
+incoming/*
+!incoming/.gitkeep
+
+# In-progress anonymization working copies
+anonymized/*
+!anonymized/.gitkeep

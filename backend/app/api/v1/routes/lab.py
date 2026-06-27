@@ -460,3 +460,42 @@ def interpret_document(
         patient_explanation=result.patient_explanation,
         doctor_summary=result.doctor_summary,
     )
+
+
+# ---------------------------------------------------------------------------
+# Admin — reclassify / backfill
+# ---------------------------------------------------------------------------
+
+from pydantic import BaseModel as _BaseModel  # noqa: E402
+
+class _ReclassifyRequest(_BaseModel):
+    batch_id: str | None = None
+    dry_run: bool = False
+
+class _ReclassifyResponse(_BaseModel):
+    updated: int
+    skipped: int
+    errors: list[str]
+
+
+@router.post(
+    "/admin/labs/reclassify",
+    response_model=_ReclassifyResponse,
+    summary="Admin: recompute status/severity for LabResult records",
+)
+def admin_reclassify_lab_results(
+    body: _ReclassifyRequest,
+    user: CurrentUser = Depends(
+        require_roles(
+            UserRole.INTERNAL_ADMIN,
+            UserRole.SUPER_ADMIN,
+        )
+    ),
+    db: Session = Depends(get_session),
+) -> _ReclassifyResponse:
+    """Admin-only: idempotent status backfill for LabResult rows.
+
+    Safe to run multiple times. Use dry_run=true first to preview counts.
+    """
+    result = lab.reclassify_lab_results(db, batch_id=body.batch_id, dry_run=body.dry_run)
+    return _ReclassifyResponse(**result)
