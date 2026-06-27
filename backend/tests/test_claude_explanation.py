@@ -311,12 +311,21 @@ def test_creatinine_normal_not_dangerous():
 # ---------------------------------------------------------------------------
 
 def test_no_frontend_direct_claude_call():
-    """Frontend source files must not directly import anthropic."""
+    """Frontend source files must not directly import the @anthropic-ai SDK.
+
+    We grep for actual SDK import/require statements only, not the plain word
+    'anthropic' which legitimately appears in test-description strings and
+    assertion regex literals (e.g. ExplanationSection.test.tsx).
+    """
+    # grep -E matches actual SDK imports: `from '@anthropic-ai/...'` or
+    # `require('@anthropic-ai/...')`.  Test files that merely mention the word
+    # 'anthropic' in describe/it strings or .not.toMatch(/@anthropic-ai/)
+    # patterns do NOT match this pattern and are correctly excluded.
     result = subprocess.run(
         [
             "grep",
-            "-r",
-            "anthropic",
+            "-rE",
+            r"from ['\"]@anthropic-ai|require\(['\"]@anthropic-ai",
             "frontend/src/",
             "--include=*.ts",
             "--include=*.tsx",
@@ -327,5 +336,5 @@ def test_no_frontend_direct_claude_call():
         cwd="/Users/pth/Developer/Metocare",
     )
     assert result.stdout.strip() == "", (
-        f"Frontend directly imports anthropic: {result.stdout}"
+        f"Frontend directly imports @anthropic-ai SDK (must go via backend only): {result.stdout}"
     )

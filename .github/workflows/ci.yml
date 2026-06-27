@@ -1,4 +1,28 @@
-name: CI
+# =============================================================================
+# MetoCare — CI + Staging Auto-Deploy Gate
+#
+# Jobs:
+#   test-backend   — always runs on push (main/feature/**) + PRs to main
+#   test-frontend  — always runs on push (main/feature/**) + PRs to main
+#   deploy-staging — ONLY when BOTH tests pass AND push is to main
+#
+# Auto-deploy trigger: merge to main (push event). PRs run tests but never deploy.
+# Gate: needs: [test-backend, test-frontend] + if: push to main.
+#
+# Deploy approach: GHCR (matches azure-staging.yml / existing infra pattern).
+# Secrets already configured (azure-staging.yml uses the same set):
+#   AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID — OIDC to Azure
+#   GITHUB_TOKEN — auto-provided by GitHub for GHCR push
+#
+# Staging ACA vars (env-level, set in Azure):
+#   RG: rg-metocare-staging
+#   ENV_NAME: cae-metocare-staging
+#   BACKEND_APP: ca-metocare-backend
+#   FRONTEND_APP: ca-metocare-frontend
+#   KV_NAME: kv-metocare-stgd9e7
+#   REGISTRY: ghcr.io
+# =============================================================================
+name: CI + Staging Auto-Deploy
 
 on:
   push:
@@ -6,8 +30,25 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  id-token: write   # OIDC → Azure (needed in deploy-staging job)
+  contents: read
+  packages: write   # push images to GHCR
+
+env:
+  REGISTRY: ghcr.io
+  RG: rg-metocare-staging
+  ENV_NAME: cae-metocare-staging
+  BACKEND_APP: ca-metocare-backend
+  FRONTEND_APP: ca-metocare-frontend
+  KV_NAME: kv-metocare-stgd9e7
+
+# ─────────────────────────────────────────────────────────────────────────────
 jobs:
-  test:
+
+  # ── 1. Backend Tests ────────────────────────────────────────────────────────
+  test-backend:
+    name: Backend Tests
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -16,11 +57,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: "pip"
+          cache-dependency-path: backend/requirements-dev.txt
 
       - name: Install dependencies
         run: |
@@ -30,10 +72,13 @@ jobs:
       - name: Ruff lint
         run: ruff check .
 
-      - name: Run tests (SQLite — no Postgres needed in CI)
+      - name: Run backend tests
         run: python -m pytest tests/ -v --tb=short --junit-xml=test-results.xml
         env:
-          MCP_DATABASE_URL: ""   # empty = SQLite in-memory (existing pattern)
+          MCP_DATABASE_URL: ""          # empty → SQLite in-memory (established pattern)
+          ANTHROPIC_API_KEY: test-key-mock  # prevents real API calls; claude_client.py checks for non-empty
+          ENVIRONMENT: test
+          MCP_ENV: test
 
       - name: Upload test results
         if: always()
@@ -42,3 +87,267 @@ jobs:
           name: pytest-results
           path: backend/test-results.xml
         continue-on-error: true
+
+  # ── 2. Frontend Tests ───────────────────────────────────────────────────────
+  test-frontend:
+    name: Frontend Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: cd frontend && npm ci
+
+      - name: Run frontend tests
+        run: cd frontend && npm test -- --watchAll=false --passWithNoTests
+
+  # ── 3. Auto-Deploy to Staging ───────────────────────────────────────────────
+  # GATE: only runs when BOTH test jobs succeed AND this is a push to main.
+  # PRs never trigger this job (event_name == 'push' guard).
+  deploy-staging:
+    name: Deploy to Staging
+    needs: [test-backend, test-frontend]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: azure-staging
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── Resolve image tag (SHA8 + epoch for uniqueness) ──────────────────
+      - name: Resolve image tag
+        id: tag
+        run: |
+          SHA8=$(git rev-parse --short=8 HEAD)
+          EPOCH=$(date +%s)
+          echo "tag=${SHA8}-${EPOCH}" >> "$GITHUB_OUTPUT"
+          echo "sha8=${SHA8}" >> "$GITHUB_OUTPUT"
+
+      # ── Azure OIDC login ──────────────────────────────────────────────────
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Ensure containerapp CLI extension
+        run: az extension add --name containerapp --upgrade --only-show-errors
+
+      # ── Resolve ACA environment domain (needed to bake backend FQDN into frontend) ──
+      - name: Compute Container Apps FQDNs
+        run: |
+          DOMAIN=$(az containerapp env show -g "$RG" -n "$ENV_NAME" \
+            --query 'properties.defaultDomain' -o tsv)
+          if [ -z "$DOMAIN" ]; then
+            echo "::error::Could not resolve ACA env defaultDomain for $ENV_NAME — aborting"
+            exit 1
+          fi
+          echo "BACKEND_FQDN=${BACKEND_APP}.${DOMAIN}" >> "$GITHUB_ENV"
+          echo "FRONTEND_FQDN=${FRONTEND_APP}.${DOMAIN}" >> "$GITHUB_ENV"
+          echo "Backend:  https://${BACKEND_APP}.${DOMAIN}"
+          echo "Frontend: https://${FRONTEND_APP}.${DOMAIN}"
+
+      # ── GHCR login ────────────────────────────────────────────────────────
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── Build & push backend image ────────────────────────────────────────
+      - name: Build & push backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ github.repository_owner }}/metocare-backend:${{ steps.tag.outputs.tag }}
+
+      # ── Build & push frontend image (NEXT_PUBLIC_API_URL baked at build) ──
+      - name: Build & push frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: true
+          build-args: |
+            NEXT_PUBLIC_API_URL=https://${{ env.BACKEND_FQDN }}/api/v1
+          tags: ${{ env.REGISTRY }}/${{ github.repository_owner }}/metocare-frontend:${{ steps.tag.outputs.tag }}
+
+      # ── Resume Postgres if stopped ────────────────────────────────────────
+      - name: Resume Postgres if stopped
+        run: |
+          PG_NAME=psql-metocare-staging
+          STATE=$(az postgres flexible-server show -g "$RG" -n "$PG_NAME" --query state -o tsv 2>/dev/null || echo "Unknown")
+          echo "Postgres state: $STATE"
+          if [ "$STATE" = "Stopped" ]; then
+            az postgres flexible-server start -g "$RG" -n "$PG_NAME"
+            until [ "$(az postgres flexible-server show -g "$RG" -n "$PG_NAME" --query state -o tsv)" = "Ready" ]; do
+              echo "  waiting for Postgres..."; sleep 10
+            done
+          fi
+
+      # ── Read secrets from Key Vault ───────────────────────────────────────
+      - name: Read secrets from Key Vault
+        run: |
+          DB_URL=$(az keyvault secret show --vault-name "$KV_NAME" -n mcp-database-url --query value -o tsv)
+          SECRET_KEY=$(az keyvault secret show --vault-name "$KV_NAME" -n mcp-secret-key --query value -o tsv)
+          ENC_KEYS=$(az keyvault secret show --vault-name "$KV_NAME" -n mcp-encryption-keys --query value -o tsv)
+          APPI=$(az keyvault secret show --vault-name "$KV_NAME" -n appinsights-connection-string --query value -o tsv)
+          DOC_INTEL_ENDPOINT=$(az keyvault secret show --vault-name "$KV_NAME" -n azure-doc-intel-endpoint --query value -o tsv)
+          DOC_INTEL_KEY=$(az keyvault secret show --vault-name "$KV_NAME" -n azure-doc-intel-key --query value -o tsv)
+          echo "::add-mask::$DB_URL"; echo "::add-mask::$SECRET_KEY"
+          echo "::add-mask::$ENC_KEYS"; echo "::add-mask::$DOC_INTEL_KEY"
+          {
+            echo "DB_URL<<EOF"; echo "$DB_URL"; echo "EOF"
+            echo "SECRET_KEY<<EOF"; echo "$SECRET_KEY"; echo "EOF"
+            echo "ENC_KEYS<<EOF"; echo "$ENC_KEYS"; echo "EOF"
+            echo "APPI<<EOF"; echo "$APPI"; echo "EOF"
+            echo "DOC_INTEL_ENDPOINT<<EOF"; echo "$DOC_INTEL_ENDPOINT"; echo "EOF"
+            echo "DOC_INTEL_KEY<<EOF"; echo "$DOC_INTEL_KEY"; echo "EOF"
+          } >> "$GITHUB_ENV"
+
+      # ── Run Alembic migration (one-shot Container Apps Job) ───────────────
+      - name: Run Alembic migration
+        run: |
+          IMG="${REGISTRY}/${{ github.repository_owner }}/metocare-backend:${{ steps.tag.outputs.tag }}"
+          JOB="caj-metocare-migrate"
+          az containerapp job delete -g "$RG" -n "$JOB" --yes -o none 2>/dev/null || true
+          az containerapp job create \
+            --name "$JOB" --resource-group "$RG" --environment "$ENV_NAME" \
+            --image "$IMG" \
+            --trigger-type Manual \
+            --replica-timeout 600 --replica-retry-limit 1 \
+            --parallelism 1 --replica-completion-count 1 \
+            --cpu 0.5 --memory 1.0Gi \
+            --secrets "db-url=$DB_URL" \
+            --env-vars "MCP_DATABASE_URL=secretref:db-url" "MCP_ENV=staging" \
+            --command "alembic" --args "upgrade" "head" \
+            -o none
+          az containerapp job start -g "$RG" -n "$JOB" -o none
+          for i in $(seq 1 40); do
+            ST=$(az containerapp job execution list -g "$RG" -n "$JOB" \
+              --query "[0].properties.status" -o tsv 2>/dev/null || echo Running)
+            echo "  $i: $ST"
+            [ "$ST" = "Succeeded" ] && break
+            [ "$ST" = "Failed" ] && { echo "::error::Alembic migration failed"; exit 1; }
+            sleep 10
+          done
+
+      # ── Deploy backend Container App ──────────────────────────────────────
+      - name: Deploy backend to ACA
+        run: |
+          IMG="${REGISTRY}/${{ github.repository_owner }}/metocare-backend:${{ steps.tag.outputs.tag }}"
+          COMMON_SECRETS="db-url=$DB_URL secret-key=$SECRET_KEY enc-keys=$ENC_KEYS appi=$APPI doc-intel-key=$DOC_INTEL_KEY"
+          COMMON_ENV="MCP_ENV=staging MCP_DEBUG=false \
+            MCP_DATABASE_URL=secretref:db-url MCP_SECRET_KEY=secretref:secret-key \
+            MCP_ENCRYPTION_KEYS=secretref:enc-keys \
+            APPLICATIONINSIGHTS_CONNECTION_STRING=secretref:appi \
+            MCP_CORS_ALLOWED_ORIGINS=https://${FRONTEND_FQDN} \
+            MCP_AI_MODE=mock MCP_LLM_PROVIDER=mock MCP_OCR_MODE=mock \
+            MCP_OCR_WORKER_ENABLED=false MCP_RAG_ENABLED=false \
+            MCP_STORAGE_MODE=local MCP_RATELIMIT_BACKEND=memory \
+            MCP_METRICS_ENABLED=true MCP_ENABLE_DOCS=false \
+            MCP_FEATURE_OCR=true MCP_FEATURE_OCR_CLOUD_FALLBACK=true \
+            MCP_OCR_CLOUD_PROVIDER=azure \
+            AZURE_DOC_INTEL_ENDPOINT=${DOC_INTEL_ENDPOINT} \
+            AZURE_DOC_INTEL_KEY=secretref:doc-intel-key"
+          SUFFIX="be-${{ steps.tag.outputs.sha8 }}-$(date +%s)"
+          if az containerapp show -g "$RG" -n "$BACKEND_APP" -o none 2>/dev/null; then
+            az containerapp secret set -g "$RG" -n "$BACKEND_APP" --secrets $COMMON_SECRETS -o none
+            az containerapp update -g "$RG" -n "$BACKEND_APP" --image "$IMG" \
+              --revision-suffix "$SUFFIX" \
+              --min-replicas 1 --set-env-vars $COMMON_ENV -o none
+          else
+            az containerapp create -g "$RG" -n "$BACKEND_APP" --environment "$ENV_NAME" \
+              --image "$IMG" --target-port 8000 --ingress external \
+              --min-replicas 1 --max-replicas 1 --cpu 0.5 --memory 1.0Gi \
+              --revision-suffix "$SUFFIX" \
+              --secrets $COMMON_SECRETS --env-vars $COMMON_ENV -o none
+          fi
+
+      # ── Deploy frontend Container App ─────────────────────────────────────
+      - name: Deploy frontend to ACA
+        run: |
+          IMG="${REGISTRY}/${{ github.repository_owner }}/metocare-frontend:${{ steps.tag.outputs.tag }}"
+          API_URL="https://${BACKEND_FQDN}/api/v1"
+          SUFFIX="fe-${{ steps.tag.outputs.sha8 }}-$(date +%s)"
+          if az containerapp show -g "$RG" -n "$FRONTEND_APP" -o none 2>/dev/null; then
+            az containerapp update -g "$RG" -n "$FRONTEND_APP" --image "$IMG" \
+              --revision-suffix "$SUFFIX" \
+              --min-replicas 1 --set-env-vars "NEXT_PUBLIC_API_URL=$API_URL" -o none
+          else
+            az containerapp create -g "$RG" -n "$FRONTEND_APP" --environment "$ENV_NAME" \
+              --image "$IMG" --target-port 3000 --ingress external \
+              --min-replicas 1 --max-replicas 1 --cpu 0.25 --memory 0.5Gi \
+              --revision-suffix "$SUFFIX" \
+              --env-vars "NEXT_PUBLIC_API_URL=$API_URL" -o none
+          fi
+
+      # ── Health gate — wait for backend ready ──────────────────────────────
+      - name: Wait for backend healthy
+        run: |
+          echo "Polling https://${BACKEND_FQDN}/api/v1/health ..."
+          for i in $(seq 1 18); do
+            H=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "https://${BACKEND_FQDN}/api/v1/health" || echo 000)
+            echo "  $i: /api/v1/health -> $H"
+            [ "$H" = "200" ] && { echo "✅ Backend healthy"; break; }
+            [ "$i" = "18" ] && { echo "::error::Backend unhealthy after 3 min — ACA keeps previous healthy revision (auto-rollback)"; exit 1; }
+            sleep 10
+          done
+
+      # ── Health gate — wait for frontend ready ─────────────────────────────
+      - name: Wait for frontend healthy
+        run: |
+          echo "Polling https://${FRONTEND_FQDN}/ ..."
+          for i in $(seq 1 18); do
+            H=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "https://${FRONTEND_FQDN}/" || echo 000)
+            echo "  $i: / -> $H"
+            [ "$H" = "200" ] && { echo "✅ Frontend healthy"; break; }
+            [ "$i" = "18" ] && { echo "::error::Frontend unhealthy after 3 min"; exit 1; }
+            sleep 10
+          done
+
+      # ── Smoke tests ───────────────────────────────────────────────────────
+      - name: Smoke tests
+        run: |
+          BASE_BE="https://${BACKEND_FQDN}"
+          BASE_FE="https://${FRONTEND_FQDN}"
+          PASS=true
+
+          check() {
+            local desc="$1" url="$2" expected="${3:-200}"
+            local code
+            code=$(curl -s -o /dev/null -w "%{http_code}" "$url" --max-time 30)
+            if [ "$code" = "$expected" ]; then
+              echo "✅ $desc: $code"
+            else
+              echo "❌ $desc: expected $expected got $code"
+              PASS=false
+            fi
+          }
+
+          check "Backend /health"              "$BASE_BE/api/v1/health"
+          check "Frontend /"                   "$BASE_FE/"
+          check "Labs list (auth required)"    "$BASE_BE/api/v1/patients/me/lab-batches"          "401"
+          check "Explanation (auth required)"  "$BASE_BE/api/v1/patients/me/lab-results/x/explanation" "401"
+          check "OCR upload (auth required)"   "$BASE_BE/api/v1/labs/upload"                      "401"
+          check "AI summary (auth required)"   "$BASE_BE/api/v1/patients/me/lab-batches/x/ai-summary" "401"
+          check "Admin reclassify (auth)"      "$BASE_BE/api/v1/admin/labs/reclassify"            "401"
+
+          if $PASS; then
+            echo "✅ All smoke checks passed"
+          else
+            echo "::error::One or more smoke tests failed — see above"
+            exit 1
+          fi
