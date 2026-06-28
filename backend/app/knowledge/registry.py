@@ -170,6 +170,8 @@ _registry: KnowledgeRegistry | None = None
 
 
 def get_registry(knowledge_base_path: Path | None = None) -> KnowledgeRegistry:
+    # Not thread-safe; acceptable for current single-process app lifecycle.
+    # Add a threading.Lock if multi-threaded registry initialization is needed.
     global _registry
     if _registry is None:
         _registry = KnowledgeRegistry(knowledge_base_path)

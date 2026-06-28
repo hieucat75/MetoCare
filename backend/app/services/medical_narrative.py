@@ -233,7 +233,7 @@ def _format_knowledge_cards_for_prompt(cards: list) -> str:
     if not cards:
         return ""
     lines = [
-        "\n\nKI\u1ebcN TH\u1ee8C Y T\u1ebe \u0110\u00c3 \u0110\u01af\u1ee2C DUY\u1ec6T "
+        "\n\nKI\u1ebeN TH\u1ee8C Y T\u1ebe \u0110\u00c3 \u0110\u01af\u1ee2C DUY\u1ec6T "
         "(d\u00f9ng l\u00e0m c\u01a1 s\u1edf gi\u1ea3i th\u00edch \u2014 kh\u00f4ng "
         "\u0111\u01b0\u1ee3c b\u1ecba th\u00eam ngo\u00e0i ngu\u1ed3n n\u00e0y):"
     ]
