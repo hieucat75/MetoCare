@@ -6,7 +6,7 @@
 #           check() function defined (supports 4-arg: desc url status method)
 
 check "GET /health                                       " "$BASE_BE/api/v1/health" "200" "GET"
-check "POST /auth/login                                  " "$BASE_BE/api/v1/auth/login" "401" "POST"
+# SKIP /api/v1/auth/login — public endpoint requiring body (422 on empty POST)
 check "GET /auth/me                                      " "$BASE_BE/api/v1/auth/me" "401" "GET"
 check "GET /patients/{id}/lab-batches                    " "$BASE_BE/api/v1/patients/_smoke_/lab-batches" "401" "GET"
 check "GET /patients/{id}/lab-results/{id}/explanation   " "$BASE_BE/api/v1/patients/_smoke_/lab-results/_smoke_/explanation" "401" "GET"

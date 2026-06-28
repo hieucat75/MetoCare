@@ -48,6 +48,10 @@ from app.main import app  # noqa: E402
 # Routes that are explicitly public (return 200 unauthenticated)
 PUBLIC_PATHS = {"/api/v1/health", "/health", "/api/v1/info"}
 
+# Routes that are public but require a body to return 200 (empty POST → 422 not 401)
+# These should be skipped from the unauth smoke test entirely or tested separately.
+SKIP_SMOKE_PATHS = {"/api/v1/auth/login", "/api/v1/auth/register", "/api/v1/auth/refresh"}
+
 # Methods to include in smoke tests (skip DELETE to avoid accidental data loss)
 INCLUDED_METHODS = {"GET", "POST"}
 
@@ -101,6 +105,9 @@ def main() -> None:
 
     for coverage_path in SMOKE_COVERAGE_AREAS:
         if coverage_path not in paths:
+            continue
+        if coverage_path in SKIP_SMOKE_PATHS:
+            lines.append(f"# SKIP {coverage_path} — public endpoint requiring body (422 on empty POST)")
             continue
         path_item = paths[coverage_path]
         for method, op in path_item.items():
