@@ -400,3 +400,12 @@ class TestLifestyleParsingFromProfile:
         engine = PatientContextEngine(profile=profile)
         ctx = engine.build()
         assert ctx.exercise_level == "active"
+
+
+def test_lifestyle_profile_non_dict_json_does_not_crash():
+    """Regression: lifestyle_profile that JSON-decodes to a non-dict must not crash."""
+    from app.domain.patient_context import LifestyleProfileMedicationProvider
+    for bad_val in ("0", "42", "null", '"bare string"', '["a","b"]'):
+        provider = LifestyleProfileMedicationProvider(bad_val)
+        result = provider.get_medications("test")
+        assert isinstance(result, list), f"Expected list for input {bad_val!r}, got {type(result)}"

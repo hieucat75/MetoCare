@@ -37,6 +37,8 @@ class LifestyleProfileMedicationProvider(MedicationContextProvider):
         if self._profile_json:
             try:
                 data = json.loads(self._profile_json)
+                if not isinstance(data, dict):
+                    data = {}
                 raw = data.get("medications", [])
                 if isinstance(raw, list):
                     meds.extend([str(m).lower().strip() for m in raw])
