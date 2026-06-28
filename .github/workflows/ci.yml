@@ -319,6 +319,8 @@ jobs:
           done
 
       # ── Smoke tests ───────────────────────────────────────────────────────
+      # Routes sourced from scripts/smoke-routes.sh (auto-generated from OpenAPI).
+      # To regenerate: cd backend && python3 ../scripts/generate-smoke-routes.py > ../scripts/smoke-routes.sh
       - name: Smoke tests
         run: |
           BASE_BE="https://${BACKEND_FQDN}"
@@ -337,13 +339,12 @@ jobs:
             fi
           }
 
-          check "Backend /health"              "$BASE_BE/api/v1/health"
-          check "Frontend /"                   "$BASE_FE/"
-          check "Labs list (auth required)"    "$BASE_BE/api/v1/patients/me/lab-batches"          "401"
-          check "Explanation (auth required)"  "$BASE_BE/api/v1/patients/me/lab-results/x/explanation" "401"
-          check "OCR upload (auth required)"   "$BASE_BE/api/v1/lab-uploads"                       "401" "POST"
-          check "Lab intelligence (auth req)"  "$BASE_BE/api/v1/patients/1/lab-intelligence"        "401" "POST"
-          check "Admin reclassify (auth)"      "$BASE_BE/api/v1/admin/labs/reclassify"            "401" "POST"
+          # Frontend health (not in OpenAPI schema)
+          check "Frontend /" "$BASE_FE/" "200" "GET"
+
+          # Backend routes sourced from OpenAPI-generated smoke list
+          # shellcheck source=scripts/smoke-routes.sh
+          source scripts/smoke-routes.sh
 
           if $PASS; then
             echo "✅ All smoke checks passed"
