@@ -3,6 +3,7 @@
 import { PatientEmptyState, LabEntryModal } from '@/components/patient'
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import {
   BarChart2,
   CalendarDays,
@@ -411,6 +412,32 @@ export default function LabsPage() {
             ))}
           </div>
         )}
+
+        {/* Health Timeline entry point */}
+        <Link href="/health-story/timeline" className="block">
+          <NeuCard className="!p-4 hover:opacity-90 transition-opacity">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <span
+                  className="grid size-11 shrink-0 place-items-center rounded-[14px] text-[22px]"
+                  style={{ background: 'rgba(23,174,123,0.12)' }}
+                  aria-hidden="true"
+                >
+                  📅
+                </span>
+                <div>
+                  <p className="text-[15px] font-bold text-neu-text">Lịch sử sức khỏe của tôi</p>
+                  <p className="text-[13px] text-neu-muted">
+                    Xem toàn bộ diễn biến sức khỏe theo thời gian
+                  </p>
+                </div>
+              </div>
+              <span className="text-[18px] text-neu-muted" aria-hidden="true">
+                →
+              </span>
+            </div>
+          </NeuCard>
+        </Link>
 
         {/* Manual entry — FAB */}
         <button

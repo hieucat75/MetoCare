@@ -16,6 +16,7 @@ from .routes import (
     doctor_review,
     encounters,
     health,
+    health_timeline,
     lab,
     lab_intelligence,
     lab_reference,
@@ -42,6 +43,7 @@ api_router.include_router(care_plans.router)
 api_router.include_router(ai_sessions.router)
 api_router.include_router(doctor_review.router, prefix="/doctor", tags=["doctor_review"])
 api_router.include_router(patients.router)
+api_router.include_router(health_timeline.router, prefix="/patients")
 api_router.include_router(booking.router)
 api_router.include_router(notifications.router)
 api_router.include_router(patient_insight.router)
