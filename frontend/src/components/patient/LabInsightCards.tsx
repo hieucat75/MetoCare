@@ -9,6 +9,7 @@ import {
   Calendar,
   CheckCircle2,
   ChevronDown,
+  ChevronRight,
   ChevronUp,
   HelpCircle,
   Leaf,
@@ -18,6 +19,7 @@ import {
   TrendingDown,
   TrendingUp,
 } from 'lucide-react'
+import Link from 'next/link'
 import { NeuCard, NeuButton } from '@/components/patient/neu'
 import { PatientErrorState } from '@/components/patient/states'
 import {
@@ -204,12 +206,17 @@ function ImportanceDot({ importance }: { importance: InsightCard['importance'] }
   )
 }
 
-export function InsightCardItem({ card }: { card: InsightCard }) {
-  return (
+export function InsightCardItem({ card, batchId }: { card: InsightCard; batchId?: string }) {
+  const cardContent = (
     <NeuCard className="!p-4">
       <div className="flex items-start justify-between gap-2 mb-1.5">
         <p className="text-[15px] font-bold text-neu-text">{card.title_vi}</p>
-        <ImportanceDot importance={card.importance} />
+        <div className="flex items-center gap-1 shrink-0">
+          <ImportanceDot importance={card.importance} />
+          {batchId && (
+            <ChevronRight className="size-4 text-neu-muted" aria-hidden="true" />
+          )}
+        </div>
       </div>
 
       <p className="text-[13px] leading-relaxed text-neu-muted mb-3">{card.explanation_vi}</p>
@@ -237,6 +244,16 @@ export function InsightCardItem({ card }: { card: InsightCard }) {
       </div>
     </NeuCard>
   )
+
+  if (batchId) {
+    return (
+      <Link href={`/labs/${batchId}/insight/${card.card_id}`} className="block">
+        {cardContent}
+      </Link>
+    )
+  }
+
+  return cardContent
 }
 
 // ── ActionCardItem ─────────────────────────────────────────────────────────────

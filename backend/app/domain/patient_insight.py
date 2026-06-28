@@ -17,11 +17,12 @@ Design constraints:
 from __future__ import annotations
 
 import datetime
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from .clinical_patterns import PatternDetection
 from .clinical_rules import ClinicalFinding
 from .derived_metrics import DerivedMetricResult
+from .insight_detail_content import get_insight_detail
 from .longitudinal import BiomarkerTrend
 
 # ---------------------------------------------------------------------------
@@ -39,6 +40,16 @@ class InsightCard:
     trend: str  # "improving" | "stable" | "worsening" | "insufficient_data"
     recommended_action: str  # "continue_monitoring" | "repeat_lab" | "discuss_with_doctor" | "lifestyle_reminder"  # noqa: E501
     action_text_vi: str  # Human-readable action text
+    # --- Rich detail fields (populated for detail page) ---
+    severity_label: str = ""          # "nhẹ" | "cần chú ý" | "quan trọng" | "cần hành động"
+    rationale_vi: str = ""            # Why system flagged this — 2-4 sentences
+    involved_markers: list[str] = field(default_factory=list)    # direct markers (canonical)
+    derived_markers: list[str] = field(default_factory=list)     # derived metric canonicals
+    risk_explanation_vi: str = ""     # Health risk explanation
+    daily_actions: list[str] = field(default_factory=list)       # 3-5 concrete daily actions
+    doctor_questions: list[str] = field(default_factory=list)    # Questions to ask doctor
+    red_flags: list[str] = field(default_factory=list)           # When to see doctor urgently
+    not_to_do: list[str] = field(default_factory=list)           # "Không nên tự làm"
 
 
 @dataclass
@@ -322,6 +333,20 @@ def _build_insight_cards(
                 action_text_vi=action_text,
             )
         )
+
+    # Enrich cards with deep detail content
+    for card in cards:
+        _detail = get_insight_detail(card.card_id)
+        if _detail:
+            card.severity_label = _detail["severity_label"]
+            card.rationale_vi = _detail["rationale_vi"]
+            card.risk_explanation_vi = _detail["risk_explanation_vi"]
+            card.daily_actions = _detail["daily_actions"]
+            card.doctor_questions = _detail["doctor_questions"]
+            card.red_flags = _detail["red_flags"]
+            card.not_to_do = _detail["not_to_do"]
+            card.derived_markers = _detail["derived_markers"]
+            card.involved_markers = _detail.get("involved_markers", card.supporting_biomarkers)
 
     # Sort by importance, then truncate to 5
     cards.sort(key=lambda c: _IMPORTANCE_ORDER.get(c.importance, 99))

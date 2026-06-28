@@ -170,7 +170,7 @@ export default function LabInsightPage() {
                 Nhận xét chi tiết
               </h2>
               {report.insights.map((card) => (
-                <InsightCardItem key={card.card_id} card={card} />
+                <InsightCardItem key={card.card_id} card={card} batchId={batchId} />
               ))}
             </div>
           )}

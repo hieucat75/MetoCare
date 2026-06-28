@@ -15,6 +15,16 @@ export interface InsightCard {
     | 'discuss_with_doctor'
     | 'lifestyle_reminder'
   action_text_vi: string
+  // Rich detail fields (optional, populated when backend has content)
+  severity_label?: string
+  rationale_vi?: string
+  risk_explanation_vi?: string
+  daily_actions?: string[]
+  doctor_questions?: string[]
+  red_flags?: string[]
+  not_to_do?: string[]
+  derived_markers?: string[]
+  involved_markers?: string[]
 }
 
 export interface ActionCard {

@@ -371,6 +371,137 @@ def compute_tyg_from_inputs(inputs: dict[str, float]) -> DerivedMetricResult:
 
 
 # ---------------------------------------------------------------------------
+# TG/HDL Ratio
+# ---------------------------------------------------------------------------
+
+def compute_tg_hdl_ratio_from_inputs(inputs: dict[str, float]) -> DerivedMetricResult:
+    """TG/HDL ratio — screening signal for insulin resistance / atherogenic dyslipidemia.
+    Inputs: triglyceride (mg/dL), hdl (mg/dL).
+    Converts to mmol/L internally: TG /88.57, HDL /38.67.
+    """
+    tg = inputs.get("triglyceride")
+    hdl = inputs.get("hdl")
+    missing = []
+    if tg is None:
+        missing.append("triglyceride")
+    if hdl is None:
+        missing.append("hdl")
+    if missing:
+        return DerivedMetricResult(
+            canonical="tg_hdl_ratio",
+            display_name_vi="Tỷ lệ TG/HDL",
+            value=None, unit="", status="insufficient_data",
+            formula="TG / HDL (mmol/L)",
+            inputs_used=[], missing_inputs=missing,
+        )
+    tg_si = tg / 88.57
+    hdl_si = hdl / 38.67
+    if hdl_si <= 0:
+        return DerivedMetricResult(
+            canonical="tg_hdl_ratio",
+            display_name_vi="Tỷ lệ TG/HDL",
+            value=None, unit="", status="insufficient_data",
+            formula="TG / HDL (mmol/L)",
+            inputs_used=["triglyceride","hdl"], missing_inputs=["hdl_zero"],
+        )
+    ratio = round(tg_si / hdl_si, 3)
+    # Risk thresholds in mmol/L: <1.0 normal, 1.0–1.7 borderline, >1.7 abnormal
+    status = "normal" if ratio < 1.0 else ("borderline" if ratio <= 1.7 else "abnormal")
+    return DerivedMetricResult(
+        canonical="tg_hdl_ratio",
+        display_name_vi="Tỷ lệ TG/HDL",
+        value=ratio, unit="mmol/L / mmol/L", status=status,
+        formula="TG (mmol/L) / HDL (mmol/L)",
+        inputs_used=["triglyceride","hdl"], missing_inputs=[],
+        note_vi="Tỷ lệ TG/HDL >1.7 mmol/L có thể là tín hiệu tầm soát kháng insulin và rối loạn lipid máu sinh xơ vữa.",  # noqa: E501
+    )
+
+
+# ---------------------------------------------------------------------------
+# LDL/HDL Ratio
+# ---------------------------------------------------------------------------
+
+def compute_ldl_hdl_ratio_from_inputs(inputs: dict[str, float]) -> DerivedMetricResult:
+    """LDL/HDL ratio. Inputs: ldl (mg/dL), hdl (mg/dL)."""
+    ldl = inputs.get("ldl")
+    hdl = inputs.get("hdl")
+    missing = []
+    if ldl is None:
+        missing.append("ldl")
+    if hdl is None:
+        missing.append("hdl")
+    if missing:
+        return DerivedMetricResult(
+            canonical="ldl_hdl_ratio",
+            display_name_vi="Tỷ lệ LDL/HDL",
+            value=None, unit="", status="insufficient_data",
+            formula="LDL / HDL (mg/dL)",
+            inputs_used=[], missing_inputs=missing,
+        )
+    if hdl <= 0:
+        return DerivedMetricResult(
+            canonical="ldl_hdl_ratio",
+            display_name_vi="Tỷ lệ LDL/HDL",
+            value=None, unit="", status="insufficient_data",
+            formula="LDL / HDL (mg/dL)",
+            inputs_used=["ldl","hdl"], missing_inputs=["hdl_zero"],
+        )
+    ratio = round(ldl / hdl, 3)
+    # <2.0 optimal, 2.0-3.0 borderline, >3.0 abnormal
+    status = "normal" if ratio < 2.0 else ("borderline" if ratio <= 3.0 else "abnormal")
+    return DerivedMetricResult(
+        canonical="ldl_hdl_ratio",
+        display_name_vi="Tỷ lệ LDL/HDL",
+        value=ratio, unit="mg/dL / mg/dL", status=status,
+        formula="LDL (mg/dL) / HDL (mg/dL)",
+        inputs_used=["ldl","hdl"], missing_inputs=[],
+        note_vi="Tỷ lệ LDL/HDL >3.0 cho thấy sự mất cân bằng giữa cholesterol xấu và cholesterol bảo vệ.",  # noqa: E501
+    )
+
+
+# ---------------------------------------------------------------------------
+# TC/HDL Ratio (Total Cholesterol / HDL)
+# ---------------------------------------------------------------------------
+
+def compute_tc_hdl_ratio_from_inputs(inputs: dict[str, float]) -> DerivedMetricResult:
+    """TC/HDL ratio. Inputs: total_cholesterol (mg/dL), hdl (mg/dL)."""
+    tc = inputs.get("total_cholesterol")
+    hdl = inputs.get("hdl")
+    missing = []
+    if tc is None:
+        missing.append("total_cholesterol")
+    if hdl is None:
+        missing.append("hdl")
+    if missing:
+        return DerivedMetricResult(
+            canonical="tc_hdl_ratio",
+            display_name_vi="Tỷ lệ TC/HDL",
+            value=None, unit="", status="insufficient_data",
+            formula="Total Cholesterol / HDL (mg/dL)",
+            inputs_used=[], missing_inputs=missing,
+        )
+    if hdl <= 0:
+        return DerivedMetricResult(
+            canonical="tc_hdl_ratio",
+            display_name_vi="Tỷ lệ TC/HDL",
+            value=None, unit="", status="insufficient_data",
+            formula="Total Cholesterol / HDL (mg/dL)",
+            inputs_used=["total_cholesterol","hdl"], missing_inputs=["hdl_zero"],
+        )
+    ratio = round(tc / hdl, 3)
+    # <4.0 optimal, 4.0-5.0 borderline, >5.0 abnormal
+    status = "normal" if ratio < 4.0 else ("borderline" if ratio <= 5.0 else "abnormal")
+    return DerivedMetricResult(
+        canonical="tc_hdl_ratio",
+        display_name_vi="Tỷ lệ TC/HDL",
+        value=ratio, unit="mg/dL / mg/dL", status=status,
+        formula="Total Cholesterol (mg/dL) / HDL (mg/dL)",
+        inputs_used=["total_cholesterol","hdl"], missing_inputs=[],
+        note_vi="Tỷ lệ TC/HDL >5.0 liên quan nguy cơ tim mạch cao hơn theo nhiều nghiên cứu.",
+    )
+
+
+# ---------------------------------------------------------------------------
 # FIB-4 Score (Liver fibrosis)
 # ---------------------------------------------------------------------------
 
@@ -624,5 +755,12 @@ def compute_all_derived(
             note_vi=ms.note_vi,
         )
     )
+
+    # TG/HDL Ratio
+    results.append(compute_tg_hdl_ratio_from_inputs(inputs))
+    # LDL/HDL Ratio
+    results.append(compute_ldl_hdl_ratio_from_inputs(inputs))
+    # TC/HDL Ratio
+    results.append(compute_tc_hdl_ratio_from_inputs(inputs))
 
     return results

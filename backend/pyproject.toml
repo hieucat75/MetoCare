@@ -24,3 +24,4 @@ ignore = ["B008"]  # FastAPI Depends() in defaults is idiomatic
 "tests/*" = ["B011", "E402", "E501"]
 "scripts/*" = ["E501"]
 "app/services/clinical_explanation.py" = ["E501"]  # Long Vietnamese prompt strings
+"app/domain/insight_detail_content.py" = ["E501"]  # Long Vietnamese content strings
