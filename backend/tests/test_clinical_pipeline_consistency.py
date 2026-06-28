@@ -376,11 +376,12 @@ class TestNoDuplicateClassification:
 
 import re
 import subprocess
+from pathlib import Path
 
 # Root of backend source relative to cwd when pytest runs (backend/ dir)
 _BACKEND_SRC = "app"
-_REPO_ROOT = "/Users/pth/Developer/Metocare"
-_BACKEND_ROOT = "/Users/pth/Developer/Metocare/backend"
+_BACKEND_ROOT = str(Path(__file__).resolve().parents[1])  # .../backend
+_REPO_ROOT = str(Path(__file__).resolve().parents[2])    # repo root
 
 
 def _grep(

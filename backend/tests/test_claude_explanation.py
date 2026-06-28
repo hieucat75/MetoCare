@@ -11,7 +11,10 @@ Covers:
 from __future__ import annotations
 
 import subprocess
+from pathlib import Path
 from unittest.mock import MagicMock, patch
+
+_REPO_ROOT = str(Path(__file__).resolve().parents[2])  # repo root
 
 from app.services.clinical_explanation import (
     generate_explanation,
@@ -340,7 +343,7 @@ def test_no_frontend_direct_claude_call():
         ],
         capture_output=True,
         text=True,
-        cwd="/Users/pth/Developer/Metocare",
+        cwd=_REPO_ROOT,
     )
     assert result.stdout.strip() == "", (
         f"Frontend directly imports @anthropic-ai SDK (must go via backend only): {result.stdout}"
