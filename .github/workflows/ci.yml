@@ -326,9 +326,9 @@ jobs:
           PASS=true
 
           check() {
-            local desc="$1" url="$2" expected="${3:-200}"
+            local desc="$1" url="$2" expected="${3:-200}" method="${4:-GET}"
             local code
-            code=$(curl -s -o /dev/null -w "%{http_code}" "$url" --max-time 30)
+            code=$(curl -s -o /dev/null -w "%{http_code}" -X "$method" "$url" --max-time 30)
             if [ "$code" = "$expected" ]; then
               echo "✅ $desc: $code"
             else
@@ -341,8 +341,8 @@ jobs:
           check "Frontend /"                   "$BASE_FE/"
           check "Labs list (auth required)"    "$BASE_BE/api/v1/patients/me/lab-batches"          "401"
           check "Explanation (auth required)"  "$BASE_BE/api/v1/patients/me/lab-results/x/explanation" "401"
-          check "OCR upload (auth required)"   "$BASE_BE/api/v1/labs/upload"                      "401"
-          check "AI summary (auth required)"   "$BASE_BE/api/v1/patients/me/lab-batches/x/ai-summary" "401"
+          check "OCR upload (auth required)"   "$BASE_BE/api/v1/lab-uploads"                       "401" "POST"
+          check "Lab intelligence (auth req)"  "$BASE_BE/api/v1/patients/1/lab-intelligence"        "401" "POST"
           check "Admin reclassify (auth)"      "$BASE_BE/api/v1/admin/labs/reclassify"            "401"
 
           if $PASS; then
