@@ -49,8 +49,13 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # Downgrade truncates data silently for any value > original limit.
-    # Only safe if no long values have been written.
+    # ⚠️  DOWNGRADE RISK: Postgres VARCHAR narrowing truncates data silently.
+    # Any unit > 24 chars or reference_range > 64 chars written after t8 upgrade
+    # will be truncated without error on downgrade — permanent data loss.
+    # Downgrade is only safe if:
+    #   1. No saves have occurred after t8 was applied, OR
+    #   2. You have verified all values are within old limits first.
+    # Confirmed via Postgres dress rehearsal 2026-06-28 (local PG 17, mirrors Azure PG 16 behavior).
     with op.batch_alter_table("lab_results") as batch_op:
         batch_op.alter_column("unit",
             existing_type=sa.String(64), type_=sa.String(24), existing_nullable=True)
