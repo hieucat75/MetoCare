@@ -25,6 +25,7 @@ import {
   type LabUploadDraft,
   type ManualLabItem,
 } from '@/lib/api/patient'
+import { ApiError } from '@/lib/api/client'
 import { useLabReference, formatRefRange } from '@/lib/api/labReference'
 import { OcrReviewCard, buildOcrRow, makeEmptyOcrRow, type OcrRow } from './OcrReviewCard'
 import {
@@ -108,6 +109,8 @@ export default function LabUploadPage() {
     labName: string | null
     isoDate: string
   } | null>(null)
+  // Track when the review screen was first shown so we can compute review_time_seconds.
+  const saveStartRef = React.useRef<number>(Date.now())
 
   const step: 'input' | 'review' = draft ? 'review' : 'input'
 
@@ -142,6 +145,7 @@ export default function LabUploadPage() {
       }
       const d = await uploadLabDraft(input)
       setDraft(d)
+      saveStartRef.current = Date.now() // start review timer for review_time_seconds
       setTestDate(isoToDisplayDate(d.extracted_test_date))
       setTestDateAuto(Boolean(d.extracted_test_date))
       const mapped: OcrRow[] = d.parsed_values.map((v) => buildOcrRow(catalog, v))
@@ -201,10 +205,31 @@ export default function LabUploadPage() {
         results,
         force_mode: forceMode,
         existing_batch_id: existingBatchId,
+        ocr_case_id: draft?.ocr_case_id ?? null,
+        review_time_seconds: draft ? (Date.now() - saveStartRef.current) / 1000 : null,
       })
       router.push('/labs')
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Lưu thất bại. Vui lòng thử lại.')
+      console.error('[doSave] error:', e)
+      if (e instanceof ApiError) {
+        // Parse structured VALIDATION_ERROR detail from backend
+        let msg: string
+        try {
+          const body = JSON.parse(e.detail) as { code?: string; detail?: Array<{ field: string; message: string; received: string }> }
+          if (body?.code === 'VALIDATION_ERROR' && Array.isArray(body.detail)) {
+            msg = body.detail
+              .map((err) => `${err.field}: ${err.message} (nhận được: "${err.received}")`)
+              .join('\n')
+          } else {
+            msg = `${e.status} — ${e.detail}`
+          }
+        } catch {
+          msg = `${e.status} — ${e.detail}`
+        }
+        setError(msg)
+      } else {
+        setError(e instanceof Error ? e.message : 'Lưu thất bại. Vui lòng thử lại.')
+      }
       setSaving(false)
     }
   }

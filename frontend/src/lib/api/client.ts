@@ -105,8 +105,14 @@ export async function apiFetch<T>(path: string, options: FetchOptions = {}): Pro
     let detail = `Lỗi ${res.status}`
     try {
       const body = await res.json()
-      if (typeof body.detail === 'string') detail = body.detail
-      else if (Array.isArray(body.detail)) detail = body.detail.map((e: { msg?: string }) => e.msg).join('; ')
+      if (body?.code === 'VALIDATION_ERROR') {
+        // Structured validation error: serialize full body so callers can render field-level detail
+        detail = JSON.stringify(body)
+      } else if (typeof body.detail === 'string') {
+        detail = body.detail
+      } else if (Array.isArray(body.detail)) {
+        detail = body.detail.map((e: { msg?: string }) => e.msg).join('; ')
+      }
     } catch {}
     throw new ApiError(res.status, detail)
   }

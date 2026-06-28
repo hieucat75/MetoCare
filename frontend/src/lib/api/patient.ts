@@ -503,6 +503,8 @@ export async function createManualLabResults(
     results: ManualLabItem[]
     force_mode?: 'new' | 'overwrite' | null
     existing_batch_id?: string | null
+    ocr_case_id?: string | null
+    review_time_seconds?: number | null
   }
 ): Promise<LabResultListResponse> {
   return api.post<LabResultListResponse>(`/patients/${patientId}/lab-results`, data)
@@ -545,6 +547,8 @@ export interface LabUploadDraft {
   extracted_test_date: string | null
   test_date_label: string | null
   test_date_confidence: number
+  // OCR case id — pass back to POST /patients/{id}/lab-results to close gap analysis loop.
+  ocr_case_id: string | null
 }
 
 /**

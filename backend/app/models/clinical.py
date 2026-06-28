@@ -27,7 +27,7 @@ class HealthMetric(UUIDPrimaryKey, TimestampMixin, SoftDeleteMixin, Base):
     )
     metric_type: Mapped[str] = mapped_column(String(48), index=True, nullable=False)
     value: Mapped[float] = mapped_column(Float, nullable=False)
-    unit: Mapped[str | None] = mapped_column(String(24))
+    unit: Mapped[str | None] = mapped_column(String(64))
     measured_at: Mapped[dt.datetime] = mapped_column(index=True, nullable=False)
     source: Mapped[str | None] = mapped_column(String(48))  # self_report | lab_result | …
     # Originating record id when source != self_report (e.g. the lab_result id).
@@ -94,8 +94,8 @@ class LabResult(UUIDPrimaryKey, TimestampMixin, SoftDeleteMixin, Base):
     test_name: Mapped[str] = mapped_column(String(128), nullable=False)
     canonical_name: Mapped[str | None] = mapped_column(String(64), index=True)
     value: Mapped[float | None] = mapped_column(Float)
-    unit: Mapped[str | None] = mapped_column(String(24))
-    reference_range: Mapped[str | None] = mapped_column(String(64))
+    unit: Mapped[str | None] = mapped_column(String(64))
+    reference_range: Mapped[str | None] = mapped_column(String(128))
     status: Mapped[str | None] = mapped_column(String(16))
     test_date: Mapped[dt.date | None]
     ocr_confidence: Mapped[float | None] = mapped_column(Float)
@@ -103,8 +103,8 @@ class LabResult(UUIDPrimaryKey, TimestampMixin, SoftDeleteMixin, Base):
     verified_by_doctor: Mapped[bool] = mapped_column(Boolean, default=False)
     # OCR originals — as printed on the patient's lab report.
     original_value: Mapped[float | None] = mapped_column(Float)
-    original_unit: Mapped[str | None] = mapped_column(String(24))
-    original_reference_range: Mapped[str | None] = mapped_column(String(64))
+    original_unit: Mapped[str | None] = mapped_column(String(64))
+    original_reference_range: Mapped[str | None] = mapped_column(String(128))
     original_test_name: Mapped[str | None] = mapped_column(String(128))
     # Intelligence Engine provenance fields (t6_m1_lieng migration)
     source_type: Mapped[str] = mapped_column(
@@ -112,7 +112,7 @@ class LabResult(UUIDPrimaryKey, TimestampMixin, SoftDeleteMixin, Base):
     )
     correction_history_json: Mapped[str | None] = mapped_column(Text)  # JSON array, append-only
     normalized_value_si: Mapped[float | None] = mapped_column(Float)  # SI-normalized for perf
-    normalized_unit_si: Mapped[str | None] = mapped_column(String(24))  # SI unit string
+    normalized_unit_si: Mapped[str | None] = mapped_column(String(64))  # SI unit string
     # Data quality / plausibility guardrail fields (t7_m1_dquality migration)
     data_quality_flag: Mapped[str | None] = mapped_column(
         String(20), nullable=True

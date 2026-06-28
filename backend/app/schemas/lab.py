@@ -20,11 +20,11 @@ class LabDocumentCreate(BaseModel):
 class LabResultItemIn(BaseModel):
     test_name: str = Field(..., min_length=1, max_length=128)
     value: float | None = None
-    unit: str | None = Field(None, max_length=24)
-    reference_range: str | None = Field(None, max_length=64)
+    unit: str | None = Field(None, max_length=64)
+    reference_range: str | None = Field(None, max_length=128)
     original_value: float | None = None
-    original_unit: str | None = Field(None, max_length=24)
-    original_reference_range: str | None = Field(None, max_length=64)
+    original_unit: str | None = Field(None, max_length=64)
+    original_reference_range: str | None = Field(None, max_length=128)
     original_test_name: str | None = Field(None, max_length=128)
 
 

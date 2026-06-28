@@ -14,6 +14,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Response
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
 
@@ -97,6 +98,25 @@ def create_app() -> FastAPI:
 
     for warning in settings.warn_if_insecure():
         logger.warning("INSECURE CONFIG: %s", warning)
+
+    @app.exception_handler(RequestValidationError)
+    async def _validation_error_handler(_: Request, exc: RequestValidationError) -> JSONResponse:
+        """Return structured 422 with field path + message so frontend can show
+        actionable errors instead of a generic failure message."""
+        errors = [
+            {
+                "field": " → ".join(str(loc) for loc in e["loc"][1:])  # noqa: E501
+                if len(e["loc"]) > 1
+                else str(e["loc"]),
+                "message": e["msg"],
+                "received": str(e.get("input", ""))[:120],  # truncate for safety
+            }
+            for e in exc.errors()
+        ]
+        return JSONResponse(
+            status_code=422,
+            content={"code": "VALIDATION_ERROR", "detail": errors},
+        )
 
     @app.exception_handler(ConsentDenied)
     async def _consent_denied_handler(_: Request, exc: ConsentDenied) -> JSONResponse:
