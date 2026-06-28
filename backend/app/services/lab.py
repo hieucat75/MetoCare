@@ -561,7 +561,7 @@ def create_manual_entry(
             row.data_quality_flag = _vld.get("action")
             row.data_quality_note = _vld.get("reason") if _vld["suspicious"] else None
             if _vld["suspicious"]:
-                _log.warning(  # noqa: F823
+                _log.warning(
                     "validate_before_save flagged suspicious: canonical=%s value=%s unit=%s reason=%s",  # noqa: E501
                     canonical,
                     _orig_val,
@@ -615,9 +615,7 @@ def create_manual_entry(
                 user_review_time_seconds=review_time_seconds,
             )
         except Exception:
-            import logging as _log
-
-            _log.getLogger("mcp.lab").exception(
+            _log.exception(
                 "ocr_case_confirm_failed case=%s patient=%s — lab save NOT rolled back",
                 ocr_case_id,
                 patient_id,
