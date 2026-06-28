@@ -25,3 +25,7 @@ ignore = ["B008"]  # FastAPI Depends() in defaults is idiomatic
 "scripts/*" = ["E501"]
 "app/services/clinical_explanation.py" = ["E501"]  # Long Vietnamese prompt strings
 "app/domain/insight_detail_content.py" = ["E501"]  # Long Vietnamese content strings
+"app/domain/patient_context.py" = ["E501"]         # Long Vietnamese content strings
+"app/domain/clinical_patterns_v3.py" = ["E501"]    # Long Vietnamese content strings
+"app/domain/priority_engine.py" = ["E501"]         # Long Vietnamese content strings
+"app/api/v1/routes/patient_insight.py" = ["E501"]  # Long Vietnamese strings in route

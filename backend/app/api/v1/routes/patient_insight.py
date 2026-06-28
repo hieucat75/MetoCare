@@ -24,6 +24,8 @@ from app.domain.clinical_patterns import detect_patterns
 from app.domain.clinical_rules import ClinicalFinding, assess_biomarker
 from app.domain.derived_metrics import DerivedMetricResult, compute_all_derived
 from app.domain.longitudinal import BiomarkerTrend, compute_trends
+from app.domain.patient_context import PatientContextEngine
+from app.domain.patient_context import PatientContextInput as PatientContextInputDomain
 from app.domain.patient_insight import _DISCLAIMER, PatientInsightReport, generate_patient_insight
 from app.models.clinical import LabResult
 from app.models.patient import PatientProfile
@@ -32,6 +34,19 @@ from app.services import consent
 from app.services.lab import normalize_and_classify
 
 router = APIRouter(tags=["patient_insight"])
+
+
+class PatientContextInputModel(BaseModel):
+    """Patient context supplement from frontend — merged with PatientProfile DB data."""
+    sex: str | None = None
+    age: int | None = None
+    height_cm: float | None = None
+    weight_kg: float | None = None
+    waist_cm: float | None = None
+    medications: list[str] | None = None
+    exercise_level: str | None = None
+    is_smoker: bool | None = None
+    is_vegetarian: bool | None = None
 
 
 class PatientInsightRequest(BaseModel):
@@ -47,7 +62,9 @@ class PatientInsightRequest(BaseModel):
     include_trends: bool = True
     include_patterns: bool = True
     include_derived: bool = True
-    # Patient demographics — frontend sends sex/age; mapped below
+    # v3: structured context object
+    context: PatientContextInputModel | None = None
+    # Legacy compat (v1/v2 callers) — merged into context if present
     sex: str | None = None  # "male" | "female" | None
     age: int | None = None  # years
     waist_cm: float | None = None
@@ -97,9 +114,25 @@ def patient_insight(
     rows = db.execute(q).scalars().all()
     verified = [r for r in rows if r.verified_by_user or r.verified_by_doctor]
 
-    # Map frontend sex/age fields to clinical engine parameters
-    is_male: bool = (body.sex == "male") if body.sex is not None else True
-    age_years: int | None = body.age
+    # --- Build PatientContext (Engine 1) ---
+    # Merge: v3 context object takes priority; legacy sex/age/waist_cm as fallback
+    profile = db.get(PatientProfile, patient_id)
+    ctx_input = PatientContextInputDomain(
+        sex=(body.context.sex if body.context and body.context.sex else body.sex),
+        age=(body.context.age if body.context and body.context.age else body.age),
+        height_cm=(body.context.height_cm if body.context else None),
+        weight_kg=(body.context.weight_kg if body.context else None),
+        waist_cm=(body.context.waist_cm if body.context and body.context.waist_cm else body.waist_cm),
+        medications=(body.context.medications if body.context else None),
+        exercise_level=(body.context.exercise_level if body.context else None),
+        is_smoker=(body.context.is_smoker if body.context else None),
+        is_vegetarian=(body.context.is_vegetarian if body.context else None),
+    )
+    patient_ctx = PatientContextEngine(profile, ctx_input).build()
+
+    # Map frontend sex/age fields to clinical engine parameters (legacy path)
+    is_male: bool = (patient_ctx.sex == "male") if patient_ctx.sex is not None else True
+    age_years: int | None = patient_ctx.age
 
     if not verified:
         # Return a minimal valid report with no data
@@ -116,6 +149,8 @@ def patient_insight(
             urgent_alerts=[],
             ai_draft_contract=None,
             disclaimer_vi=_DISCLAIMER,
+            context_completeness=patient_ctx.context_completeness,
+            missing_context=patient_ctx.missing_context,
         )
         return dataclasses.asdict(empty_report)
 
@@ -195,6 +230,7 @@ def patient_insight(
         patterns=patterns_raw,
         trends=trends,
         derived=derived_map,
+        ctx=patient_ctx,
     )
 
     return dataclasses.asdict(report)

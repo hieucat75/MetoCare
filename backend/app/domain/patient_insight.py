@@ -24,6 +24,7 @@ from .clinical_rules import ClinicalFinding
 from .derived_metrics import DerivedMetricResult
 from .insight_detail_content import get_insight_detail
 from .longitudinal import BiomarkerTrend
+from .patient_context import PatientContext
 
 # ---------------------------------------------------------------------------
 # Dataclasses
@@ -117,6 +118,12 @@ class PatientInsightReport:
 
     # Safety
     disclaimer_vi: str  # Required: "Đây là thông tin tham khảo..."
+
+    # v3 new fields (all optional for backward compat)
+    priorities: list = field(default_factory=list)           # list[PriorityIssue]
+    patterns_v3: list = field(default_factory=list)          # list[ClinicalPattern]
+    context_completeness: float = 0.0
+    missing_context: list[str] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -615,6 +622,7 @@ def generate_patient_insight(
     patterns: list[PatternDetection],
     trends: list[BiomarkerTrend],
     derived: dict[str, DerivedMetricResult],
+    ctx: PatientContext | None = None,
 ) -> PatientInsightReport:
     """Generate a PatientInsightReport from clinical outputs.
 
@@ -659,6 +667,31 @@ def generate_patient_insight(
     # 7. Top priorities (card_ids of top 3 InsightCards by importance)
     top_priorities = [c.card_id for c in insights[:3]]
 
+    # 8. v3 engines — patterns + priorities (context-aware)
+    patterns_v3: list = []
+    priorities: list = []
+    context_completeness: float = 0.0
+    missing_context_list: list[str] = []
+
+    if ctx is not None:
+        from .clinical_patterns_v3 import detect_patterns_v3
+        from .priority_engine import PriorityEngine
+
+        findings_dict = {  # noqa: E501
+            f.canonical: {"status": f.status, "severity": f.severity}
+            for f in findings
+        }
+        derived_dict = {k: v.value for k, v in derived.items() if v.value is not None}
+        # Also pass raw DerivedMetricResult for metabolic_syndrome dict detection
+        for k, v in derived.items():
+            if hasattr(v, "value") and v.value is None and k not in derived_dict:
+                pass  # skip None
+            # keep the raw object accessible for pattern registry helpers
+        patterns_v3 = detect_patterns_v3(findings_dict, derived_dict, ctx)
+        priorities = PriorityEngine().rank(insights, patterns_v3, urgent_alerts, ctx)
+        context_completeness = ctx.context_completeness
+        missing_context_list = ctx.missing_context
+
     return PatientInsightReport(
         patient_id=patient_id,
         generated_at=generated_at,
@@ -672,4 +705,8 @@ def generate_patient_insight(
         urgent_alerts=urgent_alerts,
         ai_draft_contract=None,
         disclaimer_vi=_DISCLAIMER,
+        priorities=priorities,
+        patterns_v3=patterns_v3,
+        context_completeness=context_completeness,
+        missing_context=missing_context_list,
     )
