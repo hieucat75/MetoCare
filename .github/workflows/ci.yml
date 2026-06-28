@@ -343,7 +343,7 @@ jobs:
           check "Explanation (auth required)"  "$BASE_BE/api/v1/patients/me/lab-results/x/explanation" "401"
           check "OCR upload (auth required)"   "$BASE_BE/api/v1/lab-uploads"                       "401" "POST"
           check "Lab intelligence (auth req)"  "$BASE_BE/api/v1/patients/1/lab-intelligence"        "401" "POST"
-          check "Admin reclassify (auth)"      "$BASE_BE/api/v1/admin/labs/reclassify"            "401"
+          check "Admin reclassify (auth)"      "$BASE_BE/api/v1/admin/labs/reclassify"            "401" "POST"
 
           if $PASS; then
             echo "✅ All smoke checks passed"
