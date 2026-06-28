@@ -15,7 +15,7 @@ from __future__ import annotations
 from typing import TypedDict
 
 
-class InsightDetailContent(TypedDict):
+class InsightDetailContent(TypedDict, total=False):
     severity_label: str                # "nhẹ" | "cần chú ý" | "quan trọng" | "cần hành động"
     rationale_vi: str                  # Why flagged
     risk_explanation_vi: str           # Health risks
@@ -25,6 +25,14 @@ class InsightDetailContent(TypedDict):
     not_to_do: list[str]               # What NOT to do
     derived_markers: list[str]         # relevant derived canonicals
     involved_markers: list[str]        # primary biomarker canonicals
+    # v2 fields
+    biomarker_explainer_vi: str
+    reasoning_steps: list[str]
+    related_insights: list[str]
+    urgency_label: str       # "routine" | "1_month" | "soon" | "immediately"
+    urgency_vi: str
+    evidence_level: str      # "strong" | "moderate" | "emerging"
+    evidence_label_vi: str
 
 
 INSIGHT_DETAIL: dict[str, InsightDetailContent] = {
@@ -67,6 +75,19 @@ INSIGHT_DETAIL: dict[str, InsightDetailContent] = {
         ],
         "derived_markers": ["non_hdl_cholesterol", "ldl_hdl_ratio", "tc_hdl_ratio", "ldl_friedewald"],
         "involved_markers": ["ldl", "total_cholesterol", "hdl", "triglyceride"],
+        "biomarker_explainer_vi": "LDL-C (Low-Density Lipoprotein Cholesterol) là dạng cholesterol vận chuyển chất béo từ gan đến các mô trong cơ thể. Khi LDL quá cao trong thời gian dài, cholesterol có thể tích tụ trong thành động mạch, tạo thành mảng xơ vữa làm hẹp lòng mạch. LDL thường được gọi là 'cholesterol xấu' — không phải vì nó vô dụng, mà vì khi dư thừa, nó gây hại.",
+        "reasoning_steps": [
+            "✓ LDL-C vượt ngưỡng khuyến cáo (<3.40 mmol/L theo ACC/AHA)",
+            "✓ Non-HDL Cholesterol tính từ TC − HDL cũng tăng theo",
+            "✓ HDL chưa đủ bù trừ cho LDL cao",
+            "→ Mẫu hình gợi ý tăng cholesterol đơn thuần (hypercholesterolemia)",
+            "→ Nguy cơ xơ vữa động mạch tăng khi kéo dài",
+        ],
+        "related_insights": ["hdl_low", "triglyceride_elevated", "insulin_resistance"],
+        "urgency_label": "1_month",
+        "urgency_vi": "Tái khám trong vòng 1 tháng",
+        "evidence_level": "strong",
+        "evidence_label_vi": "Bằng chứng mạnh — Hướng dẫn ACC/AHA 2019",
     },
     "hdl_low": {
         "severity_label": "cần chú ý",
@@ -102,6 +123,18 @@ INSIGHT_DETAIL: dict[str, InsightDetailContent] = {
         ],
         "derived_markers": ["tg_hdl_ratio", "non_hdl_cholesterol", "tc_hdl_ratio"],
         "involved_markers": ["hdl", "triglyceride", "total_cholesterol"],
+        "biomarker_explainer_vi": "HDL-C (High-Density Lipoprotein Cholesterol) là dạng cholesterol 'tốt' — nó vận chuyển cholesterol dư thừa từ thành mạch trở về gan để loại bỏ. HDL thấp có nghĩa là cơ thể có ít 'người dọn dẹp' hơn cho cholesterol trong mạch máu. HDL thường giảm khi có lối sống ít vận động, hút thuốc, hoặc kháng insulin.",
+        "reasoning_steps": [
+            "✓ HDL-C thấp hơn ngưỡng bảo vệ (nam <1.0 mmol/L, nữ <1.3 mmol/L)",
+            "✓ Tỷ lệ TG/HDL tăng — gợi ý rối loạn lipid máu sinh xơ vữa",
+            "✓ Non-HDL tăng khi HDL thấp cùng TC bình thường hoặc cao",
+            "→ Mẫu hình HDL thấp thường đi kèm kháng insulin hoặc hội chứng chuyển hóa",
+        ],
+        "related_insights": ["triglyceride_elevated", "insulin_resistance", "ldl_elevated"],
+        "urgency_label": "1_month",
+        "urgency_vi": "Tái khám trong vòng 1 tháng",
+        "evidence_level": "strong",
+        "evidence_label_vi": "Bằng chứng mạnh — Hướng dẫn ESC/EAS 2019",
     },
     "triglyceride_elevated": {
         "severity_label": "cần chú ý",
@@ -139,6 +172,18 @@ INSIGHT_DETAIL: dict[str, InsightDetailContent] = {
         ],
         "derived_markers": ["tg_hdl_ratio", "tyg_index", "ldl_friedewald", "non_hdl_cholesterol"],
         "involved_markers": ["triglyceride", "hdl", "fasting_glucose"],
+        "biomarker_explainer_vi": "Triglyceride (TG) là dạng mỡ chính được cơ thể dự trữ năng lượng. Sau bữa ăn nhiều đường hoặc tinh bột, gan chuyển hóa lượng dư thừa thành TG và đưa vào máu. TG cao thường phản ánh chế độ ăn nhiều carbohydrate tinh chế, ít vận động, hoặc có thể là dấu hiệu sớm của rối loạn chuyển hóa.",
+        "reasoning_steps": [
+            "✓ Triglyceride vượt ngưỡng bình thường (<1.70 mmol/L)",
+            "✓ Khi TG ≥4.5 mmol/L, công thức Friedewald tính LDL không còn chính xác",
+            "✓ TG cao kết hợp HDL thấp → tỷ lệ TG/HDL tăng — tín hiệu tầm soát kháng insulin",
+            "→ TG rất cao (>10 mmol/L) có nguy cơ viêm tụy cấp — cần điều trị y tế ngay",
+        ],
+        "related_insights": ["hdl_low", "insulin_resistance", "glucose_elevated"],
+        "urgency_label": "1_month",
+        "urgency_vi": "Tái khám trong vòng 1 tháng",
+        "evidence_level": "strong",
+        "evidence_label_vi": "Bằng chứng mạnh — Hướng dẫn AHA/ACC 2018",
     },
     # ── Glucose / Metabolic ──────────────────────────────────────────────────────
     "glucose_elevated": {
@@ -179,6 +224,19 @@ INSIGHT_DETAIL: dict[str, InsightDetailContent] = {
         ],
         "derived_markers": ["tyg_index", "tg_hdl_ratio", "metabolic_syndrome"],
         "involved_markers": ["fasting_glucose", "triglyceride", "hdl"],
+        "biomarker_explainer_vi": "Glucose máu lúc đói (Fasting Glucose) đo lượng đường trong máu sau ít nhất 8 giờ không ăn. Đây là xét nghiệm cơ bản để tầm soát tiền tiểu đường và tiểu đường. Glucose cao kéo dài làm tổn thương mạch máu và thần kinh — đặc biệt ở mắt, thận và bàn chân.",
+        "reasoning_steps": [
+            "✓ Glucose lúc đói ≥100 mg/dL (5.6 mmol/L) — vượt ngưỡng bình thường",
+            "✓ Mức 100–125 mg/dL: Tiền tiểu đường (Impaired Fasting Glucose) — ADA 2023",
+            "✓ Khi kết hợp TG cao + HDL thấp: mẫu hình gợi ý hội chứng chuyển hóa",
+            "✓ Chỉ số TyG tăng nếu cả glucose và TG đều cao",
+            "→ Cần xét nghiệm HbA1c để đánh giá toàn diện hơn",
+        ],
+        "related_insights": ["insulin_resistance", "triglyceride_elevated", "hdl_low"],
+        "urgency_label": "1_month",
+        "urgency_vi": "Xét nghiệm lại và gặp bác sĩ trong 1 tháng",
+        "evidence_level": "strong",
+        "evidence_label_vi": "Bằng chứng mạnh — ADA Standards of Care 2023",
     },
     "insulin_resistance": {
         "severity_label": "cần chú ý",
@@ -218,6 +276,19 @@ INSIGHT_DETAIL: dict[str, InsightDetailContent] = {
         ],
         "derived_markers": ["tyg_index", "tg_hdl_ratio", "metabolic_syndrome", "non_hdl_cholesterol"],
         "involved_markers": ["fasting_glucose", "triglyceride", "hdl"],
+        "biomarker_explainer_vi": "Kháng insulin là tình trạng tế bào cơ thể (cơ, gan, mỡ) không phản ứng tốt với insulin, khiến tụy phải sản xuất nhiều hơn để duy trì đường huyết. Kháng insulin thường không có triệu chứng rõ ràng ở giai đoạn sớm, nhưng được gợi ý qua mẫu hình lipid: TG cao, HDL thấp, và chỉ số TyG tăng.",
+        "reasoning_steps": [
+            "✓ Chỉ số TyG = ln(TG × Glucose / 2) vượt ngưỡng 9.0",
+            "✓ Tỷ lệ TG/HDL tăng — chỉ số tầm soát gián tiếp kháng insulin",
+            "✓ Mẫu hình lipid đặc trưng: TG ↑, HDL ↓, glucose ↑ hoặc borderline",
+            "→ TyG và TG/HDL là chỉ số tầm soát — không thay thế HOMA-IR hoặc insulin máu",
+            "→ Cần bác sĩ xác nhận bằng insulin lúc đói hoặc HOMA-IR",
+        ],
+        "related_insights": ["glucose_elevated", "triglyceride_elevated", "hdl_low"],
+        "urgency_label": "1_month",
+        "urgency_vi": "Gặp bác sĩ trong 1 tháng để đánh giá toàn diện",
+        "evidence_level": "moderate",
+        "evidence_label_vi": "Bằng chứng trung bình — TyG là chỉ số tầm soát, không chẩn đoán",
     },
     # ── Kidney / Liver ───────────────────────────────────────────────────────────
     "creatinine_elevated": {
@@ -257,6 +328,18 @@ INSIGHT_DETAIL: dict[str, InsightDetailContent] = {
         ],
         "derived_markers": ["egfr_ckd_epi"],
         "involved_markers": ["creatinine"],
+        "biomarker_explainer_vi": "Creatinine là sản phẩm chuyển hóa của cơ bắp, được thận lọc và thải qua nước tiểu. Creatinine tăng gợi ý thận đang lọc kém hơn bình thường. eGFR (Estimated Glomerular Filtration Rate) tính từ creatinine, tuổi và giới tính — cho biết khả năng lọc của thận chính xác hơn.",
+        "reasoning_steps": [
+            "✓ Creatinine vượt ngưỡng bình thường (nam <106 µmol/L, nữ <90 µmol/L)",
+            "✓ eGFR ước tính từ creatinine + tuổi + giới tính (CKD-EPI 2021)",
+            "✓ eGFR <60 mL/min/1.73m² kéo dài ≥3 tháng = tiêu chí Bệnh thận mãn tính (CKD)",
+            "→ Một lần creatinine tăng cần xác nhận lại — mất nước cũng làm tăng tạm thời",
+        ],
+        "related_insights": [],
+        "urgency_label": "1_month",
+        "urgency_vi": "Xét nghiệm lại trong 1 tháng; gặp bác sĩ nếu tăng liên tục",
+        "evidence_level": "strong",
+        "evidence_label_vi": "Bằng chứng mạnh — KDIGO CKD Guidelines 2022",
     },
     # ── Blood pressure ───────────────────────────────────────────────────────────
     "blood_pressure_elevated": {
@@ -295,6 +378,18 @@ INSIGHT_DETAIL: dict[str, InsightDetailContent] = {
         ],
         "derived_markers": ["metabolic_syndrome"],
         "involved_markers": ["systolic_bp", "diastolic_bp"],
+        "biomarker_explainer_vi": "Huyết áp đo lực máu tác động lên thành động mạch khi tim bơm máu. Huyết áp tâm thu (số trên) phản ánh lực khi tim co bóp. Huyết áp tâm trương (số dưới) phản ánh lực khi tim nghỉ. Tăng huyết áp thường không có triệu chứng — được gọi là 'kẻ giết người thầm lặng'.",
+        "reasoning_steps": [
+            "✓ Huyết áp tâm thu ≥130 mmHg hoặc tâm trương ≥80 mmHg — Tăng HA Giai đoạn 1 (ACC/AHA 2017)",
+            "✓ Cần đo lại nhiều lần ở trạng thái nghỉ để xác nhận",
+            "✓ Khi kết hợp TG cao, HDL thấp, glucose cao → nguy cơ tim mạch tích lũy",
+            "→ Huyết áp đơn lẻ một lần không đủ để chẩn đoán — cần theo dõi xu hướng",
+        ],
+        "related_insights": [],
+        "urgency_label": "1_month",
+        "urgency_vi": "Đo lại và gặp bác sĩ trong 1 tháng",
+        "evidence_level": "strong",
+        "evidence_label_vi": "Bằng chứng mạnh — ACC/AHA Hypertension Guidelines 2017",
     },
     # ── Liver ────────────────────────────────────────────────────────────────────
     "ast_elevated": {
@@ -330,6 +425,18 @@ INSIGHT_DETAIL: dict[str, InsightDetailContent] = {
         ],
         "derived_markers": ["fib4_score"],
         "involved_markers": ["ast", "alt"],
+        "biomarker_explainer_vi": "AST (Aspartate Aminotransferase) là enzyme có trong tế bào gan, cơ tim và cơ xương. Khi tế bào bị tổn thương, AST rò rỉ vào máu và nồng độ tăng cao. AST không đặc hiệu cho gan như ALT — cần xem AST cùng với ALT để xác định nguồn gốc.",
+        "reasoning_steps": [
+            "✓ AST vượt giới hạn trên bình thường (ULN)",
+            "✓ AST ít đặc hiệu hơn ALT cho gan — cần xét AST/ALT ratio",
+            "✓ AST/ALT >2: gợi ý tổn thương do rượu. AST/ALT <1: gợi ý gan nhiễm mỡ không do rượu",
+            "→ Mệt cơ sau tập luyện nặng cũng làm AST tăng — cần loại trừ",
+        ],
+        "related_insights": ["alt_elevated"],
+        "urgency_label": "1_month",
+        "urgency_vi": "Gặp bác sĩ trong 1 tháng để đánh giá nguyên nhân",
+        "evidence_level": "moderate",
+        "evidence_label_vi": "Bằng chứng trung bình — cần kết hợp ALT và siêu âm",
     },
     "alt_elevated": {
         "severity_label": "cần chú ý",
@@ -362,6 +469,19 @@ INSIGHT_DETAIL: dict[str, InsightDetailContent] = {
         ],
         "derived_markers": ["fib4_score"],
         "involved_markers": ["alt", "ast"],
+        "biomarker_explainer_vi": "ALT (Alanine Aminotransferase) là enzyme đặc hiệu hơn cho tế bào gan so với AST. ALT tăng là dấu hiệu thường gặp đầu tiên của tổn thương gan. Nguyên nhân phổ biến nhất: gan nhiễm mỡ (NAFLD), uống rượu, hoặc do thuốc.",
+        "reasoning_steps": [
+            "✓ ALT vượt giới hạn trên bình thường (ULN)",
+            "✓ ALT đặc hiệu hơn AST cho tổn thương tế bào gan",
+            "✓ ALT tăng nhẹ (<3× ULN): thường do gan nhiễm mỡ, rượu, hoặc thuốc",
+            "✓ ALT tăng kết hợp TG cao: mẫu hình gan nhiễm mỡ chuyển hóa (MAFLD)",
+            "→ Cần loại trừ viêm gan B, C bằng xét nghiệm huyết thanh học",
+        ],
+        "related_insights": ["ast_elevated"],
+        "urgency_label": "1_month",
+        "urgency_vi": "Gặp bác sĩ trong 1 tháng",
+        "evidence_level": "moderate",
+        "evidence_label_vi": "Bằng chứng trung bình — EASL NAFLD Guidelines 2021",
     },
 }
 

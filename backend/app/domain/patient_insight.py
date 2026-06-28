@@ -50,6 +50,16 @@ class InsightCard:
     doctor_questions: list[str] = field(default_factory=list)    # Questions to ask doctor
     red_flags: list[str] = field(default_factory=list)           # When to see doctor urgently
     not_to_do: list[str] = field(default_factory=list)           # "Không nên tự làm"
+    # v2 fields
+    biomarker_explainer_vi: str = ""         # Section 3: "What is this biomarker?"
+    reasoning_steps: list[str] = field(default_factory=list)   # Section 4: AI reasoning chain
+    related_insights: list[str] = field(default_factory=list)  # Section 14: related card_ids
+    urgency_label: str = ""                  # "routine" | "1_month" | "soon" | "immediately"
+    urgency_vi: str = ""                     # Vietnamese label for urgency
+    evidence_level: str = ""                 # "strong" | "moderate" | "emerging"
+    evidence_label_vi: str = ""              # Vietnamese label for evidence
+    derived_indicators: list[dict] = field(default_factory=list)  # Section 6: computed indicators
+    patterns_vi: list[str] = field(default_factory=list)          # Section 7: pattern descriptions
 
 
 @dataclass
@@ -347,6 +357,68 @@ def _build_insight_cards(
             card.not_to_do = _detail["not_to_do"]
             card.derived_markers = _detail["derived_markers"]
             card.involved_markers = _detail.get("involved_markers", card.supporting_biomarkers)
+            # v2 fields
+            card.biomarker_explainer_vi = _detail.get("biomarker_explainer_vi", "")
+            card.reasoning_steps = _detail.get("reasoning_steps", [])
+            card.related_insights = _detail.get("related_insights", [])
+            card.urgency_label = _detail.get("urgency_label", "routine")
+            card.urgency_vi = _detail.get("urgency_vi", "")
+            card.evidence_level = _detail.get("evidence_level", "")
+            card.evidence_label_vi = _detail.get("evidence_label_vi", "")
+
+    # Populate derived_indicators for relevant cards
+    _DERIVED_DISPLAY: dict[str, tuple[str, str, str, str, str]] = {
+        "tg_hdl_ratio": (
+            "TG/HDL", "TG (mmol/L) / HDL (mmol/L)", "<1.0",
+            "Tầm soát kháng insulin", "moderate",
+        ),
+        "ldl_hdl_ratio": (
+            "LDL/HDL", "LDL (mg/dL) / HDL (mg/dL)", "<2.0",
+            "Nguy cơ xơ vữa", "strong",
+        ),
+        "tc_hdl_ratio": (
+            "TC/HDL", "TC (mg/dL) / HDL (mg/dL)", "<4.0",
+            "Nguy cơ tim mạch tổng thể", "strong",
+        ),
+        "non_hdl_cholesterol": (
+            "Non-HDL-C", "TC − HDL (mmol/L)", "<3.37 mmol/L",
+            "Gánh nặng lipoprotein sinh xơ vữa", "strong",
+        ),
+        "ldl_friedewald": (
+            "LDL Friedewald", "TC − HDL − TG/5 (mg/dL)", "<130 mg/dL",
+            "LDL ước tính; không dùng khi TG≥400", "strong",
+        ),
+        "tyg_index": (
+            "TyG Index", "ln(TG × Glu / 2)", "<9.0",
+            "Tầm soát kháng insulin gián tiếp", "moderate",
+        ),
+        "egfr_ckd_epi": (
+            "eGFR", "CKD-EPI 2021", "≥60 mL/min/1.73m²",
+            "Chức năng lọc thận", "strong",
+        ),
+        "fib4_score": (
+            "FIB-4", "(Tuổi × AST) / (Tiểu cầu × √ALT)", "<1.30",
+            "Xơ hóa gan giai đoạn sớm", "moderate",
+        ),
+    }
+    for card in cards:
+        relevant = card.derived_markers or []
+        card.derived_indicators = []
+        for canon in relevant:
+            dr = derived.get(canon)
+            display = _DERIVED_DISPLAY.get(canon)
+            if dr and display and dr.value is not None:
+                card.derived_indicators.append({
+                    "canonical": canon,
+                    "display_name": display[0],
+                    "formula": display[1],
+                    "patient_value": dr.value,
+                    "normal_range": display[2],
+                    "clinical_meaning_vi": display[3],
+                    "evidence_level": display[4],
+                    "status": dr.status,
+                    "unit": dr.unit,
+                })
 
     # Sort by importance, then truncate to 5
     cards.sort(key=lambda c: _IMPORTANCE_ORDER.get(c.importance, 99))

@@ -25,6 +25,26 @@ export interface InsightCard {
   not_to_do?: string[]
   derived_markers?: string[]
   involved_markers?: string[]
+  // v2 fields
+  biomarker_explainer_vi?: string
+  reasoning_steps?: string[]
+  related_insights?: string[]
+  urgency_label?: string
+  urgency_vi?: string
+  evidence_level?: string
+  evidence_label_vi?: string
+  derived_indicators?: Array<{
+    canonical: string
+    display_name: string
+    formula: string
+    patient_value: number
+    normal_range: string
+    clinical_meaning_vi: string
+    evidence_level: string
+    status: string
+    unit: string
+  }>
+  patterns_vi?: string[]
 }
 
 export interface ActionCard {
