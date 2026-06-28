@@ -24,10 +24,10 @@ from app.models.governance import Consent
 from app.models.patient import PatientProfile
 from app.models.user import User, UserRole
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_consent(db, *, patient_id: str, granted_to: str) -> None:
     """Create an active lab consent (patient self-consent covers PATIENT role)."""
@@ -43,8 +43,9 @@ def _make_consent(db, *, patient_id: str, granted_to: str) -> None:
     db.commit()
 
 
-def _post_batch(client, *, patient_id: str, headers: dict, lab_name: str,
-                test_date: str, results: list[dict]) -> dict:
+def _post_batch(
+    client, *, patient_id: str, headers: dict, lab_name: str, test_date: str, results: list[dict]
+) -> dict:
     """POST /patients/{id}/lab-results and return the response JSON."""
     r = client.post(
         f"/api/v1/patients/{patient_id}/lab-results",
@@ -62,6 +63,7 @@ def _batch_results_url(patient_id: str, batch_id: str) -> str:
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def patient(db):
@@ -146,6 +148,7 @@ def batch_b(client, patient):
 # Helper: extract batch_id from the POST /lab-results response
 # ---------------------------------------------------------------------------
 
+
 def _get_batch_id(client, *, patient_id: str, headers: dict, resp_json: dict) -> str:
     """Pull the batch_id from one of the result items in the POST response."""
     items = resp_json.get("items", [])
@@ -170,6 +173,7 @@ def _get_batch_id(client, *, patient_id: str, headers: dict, resp_json: dict) ->
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 class TestBatchResultsEndpoint:
     """GET /patients/{patient_id}/lab-batches/{batch_id}/results"""
@@ -261,7 +265,9 @@ class TestBatchResultsEndpoint:
             _batch_results_url(patient["patient_id"], batch_id),
             headers=other_patient["headers"],  # Patient B's JWT
         )
-        assert r.status_code == 403, f"Expected 403 for cross-patient access, got {r.status_code}: {r.text}"
+        assert r.status_code == 403, (
+            f"Expected 403 for cross-patient access, got {r.status_code}: {r.text}"
+        )
 
     def test_ownership_check_via_wrong_patient_id(self, client, patient, other_patient, batch_a):
         """Patient B cannot enumerate Patient A's batch by substituting their own patient_id."""
@@ -277,7 +283,9 @@ class TestBatchResultsEndpoint:
             _batch_results_url(other_patient["patient_id"], batch_id),
             headers=other_patient["headers"],
         )
-        assert r.status_code == 404, f"Expected 404 for wrong-patient batch_id, got {r.status_code}: {r.text}"
+        assert r.status_code == 404, (
+            f"Expected 404 for wrong-patient batch_id, got {r.status_code}: {r.text}"
+        )
 
     def test_empty_batch_returns_200_empty_list(self, client, db, patient):
         """A batch that exists but has no results returns 200 + empty items list."""
@@ -332,6 +340,4 @@ class TestBatchResultsEndpoint:
         )
         assert r.status_code == 200
         for item in r.json()["items"]:
-            assert item.get("batch_id") == batch_id, (
-                f"item {item['id']} missing/wrong batch_id"
-            )
+            assert item.get("batch_id") == batch_id, f"item {item['id']} missing/wrong batch_id"

@@ -93,9 +93,11 @@ async def create_lab_upload_draft(
     # Resolve PatientProfile.id so OCRCase.patient_id matches the lab domain convention
     # (lab routes use PatientProfile.id, not User.id). Without this, confirm_case() would
     # fail the ownership check and never store the gap analysis.
-    _patient_profile = db.execute(
-        _select(_PatientProfile).where(_PatientProfile.user_id == user.id)
-    ).scalars().first()
+    _patient_profile = (
+        db.execute(_select(_PatientProfile).where(_PatientProfile.user_id == user.id))
+        .scalars()
+        .first()
+    )
     ocr_patient_id = _patient_profile.id if _patient_profile is not None else None
 
     ocr_case_id: str | None = None

@@ -82,12 +82,16 @@ def check_duplicate(
 
     # 1. Exact hash
     if file_hash:
-        row = db.execute(
-            select(LabUploadBatch).where(
-                *base_filter,
-                LabUploadBatch.file_hash == file_hash,
+        row = (
+            db.execute(
+                select(LabUploadBatch).where(
+                    *base_filter,
+                    LabUploadBatch.file_hash == file_hash,
+                )
             )
-        ).scalars().first()
+            .scalars()
+            .first()
+        )
         if row:
             _logger.info("lab_batch_duplicate_hash batch=%s patient=%s", row.id, patient_id)
             return True, row.id, "exact_hash"
@@ -95,23 +99,17 @@ def check_duplicate(
     # 2. Same test_date + lab_name
     if lab_name:
         ln = lab_name.strip().lower()
-        candidates = db.execute(
-            select(LabUploadBatch).where(*base_filter)
-        ).scalars().all()
+        candidates = db.execute(select(LabUploadBatch).where(*base_filter)).scalars().all()
         for c in candidates:
             if c.lab_name and ln in c.lab_name.lower():
-                _logger.info(
-                    "lab_batch_duplicate_name batch=%s patient=%s", c.id, patient_id
-                )
+                _logger.info("lab_batch_duplicate_name batch=%s patient=%s", c.id, patient_id)
                 return True, c.id, "same_date_lab"
 
     # 3. Overlapping biomarkers
     if biomarker_names:
         incoming = {n.strip().lower() for n in biomarker_names if n}
         if incoming:
-            candidates = db.execute(
-                select(LabUploadBatch).where(*base_filter)
-            ).scalars().all()
+            candidates = db.execute(select(LabUploadBatch).where(*base_filter)).scalars().all()
             for c in candidates:
                 existing_canonicals = set(
                     db.execute(
@@ -120,7 +118,9 @@ def check_duplicate(
                             LabResult.deleted_at.is_(None),
                             LabResult.canonical_name.is_not(None),
                         )
-                    ).scalars().all()
+                    )
+                    .scalars()
+                    .all()
                 )
                 if not existing_canonicals:
                     continue
@@ -129,7 +129,9 @@ def check_duplicate(
                 if ratio >= _OVERLAP_THRESHOLD:
                     _logger.info(
                         "lab_batch_duplicate_overlap batch=%s ratio=%.2f patient=%s",
-                        c.id, ratio, patient_id,
+                        c.id,
+                        ratio,
+                        patient_id,
                     )
                     return True, c.id, "overlapping_biomarkers"
 
@@ -158,9 +160,7 @@ def delete_batch(
     if batch is None:
         raise ValueError(f"Batch {batch_id} not found.")
     if batch.patient_id != patient_id:
-        raise PermissionError(
-            f"Batch {batch_id} does not belong to patient {patient_id}."
-        )
+        raise PermissionError(f"Batch {batch_id} does not belong to patient {patient_id}.")
     if batch.deleted_at is not None:
         _logger.debug("lab_batch_delete_idempotent batch_id=%s", batch_id)
         return  # already deleted -- idempotent
@@ -168,37 +168,41 @@ def delete_batch(
     now = dt.datetime.utcnow()
 
     # Collect live lab_results in this batch.
-    live_results = db.execute(
-        select(LabResult).where(
-            LabResult.batch_id == batch_id,
-            LabResult.deleted_at.is_(None),
+    live_results = (
+        db.execute(
+            select(LabResult).where(
+                LabResult.batch_id == batch_id,
+                LabResult.deleted_at.is_(None),
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     result_ids = [r.id for r in live_results]
 
     # Soft-delete health_metrics promoted from these results (via source_ref).
     if result_ids:
-        metrics = db.execute(
-            select(HealthMetric).where(
-                HealthMetric.source_ref.in_(result_ids),
-                HealthMetric.deleted_at.is_(None),
+        metrics = (
+            db.execute(
+                select(HealthMetric).where(
+                    HealthMetric.source_ref.in_(result_ids),
+                    HealthMetric.deleted_at.is_(None),
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         for m in metrics:
             m.deleted_at = now
             m.deleted_by = deleted_by_user_id
-        _logger.info(
-            "lab_batch_delete_metrics count=%d batch_id=%s", len(metrics), batch_id
-        )
+        _logger.info("lab_batch_delete_metrics count=%d batch_id=%s", len(metrics), batch_id)
 
     # Soft-delete lab_results.
     for r in live_results:
         r.deleted_at = now
         r.deleted_by = deleted_by_user_id
-    _logger.info(
-        "lab_batch_delete_results count=%d batch_id=%s", len(live_results), batch_id
-    )
+    _logger.info("lab_batch_delete_results count=%d batch_id=%s", len(live_results), batch_id)
 
     # Soft-delete the batch itself.
     batch.deleted_at = now
@@ -236,21 +240,23 @@ def list_batches(
         LabUploadBatch.patient_id == patient_id,
         LabUploadBatch.deleted_at.is_(None),
     )
-    total = db.execute(
-        select(func.count()).select_from(LabUploadBatch).where(*base)
-    ).scalar_one()
+    total = db.execute(select(func.count()).select_from(LabUploadBatch).where(*base)).scalar_one()
 
-    batches = db.execute(
-        select(LabUploadBatch)
-        .where(*base)
-        .order_by(
-            LabUploadBatch.test_date.is_(None),
-            LabUploadBatch.test_date.desc(),
-            LabUploadBatch.created_at.desc(),
+    batches = (
+        db.execute(
+            select(LabUploadBatch)
+            .where(*base)
+            .order_by(
+                LabUploadBatch.test_date.is_(None),
+                LabUploadBatch.test_date.desc(),
+                LabUploadBatch.created_at.desc(),
+            )
+            .limit(limit)
+            .offset(offset)
         )
-        .limit(limit)
-        .offset(offset)
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     items = []
     for b in batches:

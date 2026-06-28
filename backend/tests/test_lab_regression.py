@@ -14,6 +14,7 @@ Physiological plausibility bounds are enforced in lab_parser.parse_lab_text:
   NOTE: the NUMBER regex caps contiguous digit runs at 3 digits, so
   implausibly large integers must be expressed as decimals (e.g. 250.0 not 2500).
 """
+
 from __future__ import annotations
 
 import json
@@ -41,6 +42,7 @@ def _find(parsed, canonical: str):
 # ---------------------------------------------------------------------------
 # Vinmec — SI units, all-normal panel except LDL
 # ---------------------------------------------------------------------------
+
 
 class TestVinmecGoldenMaster:
     """Vinmec report: SI input (mmol/L) → mg/dL after conversion."""
@@ -143,6 +145,7 @@ class TestVinmecGoldenMaster:
 # Medlatec — metabolic syndrome panel (multiple HIGH, one LOW)
 # ---------------------------------------------------------------------------
 
+
 class TestMedlatecGoldenMaster:
     """Medlatec report: elevated glucose, lipids, ALT; low HDL."""
 
@@ -213,6 +216,7 @@ class TestMedlatecGoldenMaster:
 # Tam Anh — thyroid panel (hypothyroid pattern: high TSH, low FT4+FT3)
 # ---------------------------------------------------------------------------
 
+
 class TestTamAnhGoldenMaster:
     """Tam Anh report: hypothyroid pattern — high TSH, low FT3 and FT4."""
 
@@ -262,6 +266,7 @@ class TestTamAnhGoldenMaster:
 # ---------------------------------------------------------------------------
 # Generic — conventional mg/dL input, all-normal panel
 # ---------------------------------------------------------------------------
+
 
 class TestGenericNoHospital:
     """Generic report with no hospital header: mg/dL values must pass through unchanged."""
@@ -317,6 +322,7 @@ class TestGenericNoHospital:
 # ---------------------------------------------------------------------------
 # Physiological plausibility — values outside absolute bounds
 # ---------------------------------------------------------------------------
+
 
 class TestPhysiologicalPlausibility:
     """Values outside biomarker physiological bounds must get ocr_confidence=0.0.

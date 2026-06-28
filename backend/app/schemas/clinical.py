@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 # Medication  (record-only — AI must NEVER modify dose)
 # ---------------------------------------------------------------------------
 
+
 class MedicationCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     dose: str | None = Field(None, max_length=128)
@@ -36,6 +37,7 @@ class MedicationOut(BaseModel):
 # Risk Score
 # ---------------------------------------------------------------------------
 
+
 class RiskScoreOut(BaseModel):
     id: str
     patient_id: str
@@ -49,6 +51,7 @@ class RiskScoreOut(BaseModel):
 # ---------------------------------------------------------------------------
 # Symptom Log
 # ---------------------------------------------------------------------------
+
 
 class SymptomLogCreate(BaseModel):
     description: str = Field(..., min_length=1, max_length=2048)
@@ -69,6 +72,7 @@ class SymptomLogOut(BaseModel):
 # ---------------------------------------------------------------------------
 # AISession & AIClinicalRecommendation
 # ---------------------------------------------------------------------------
+
 
 class AISessionOut(BaseModel):
     id: str

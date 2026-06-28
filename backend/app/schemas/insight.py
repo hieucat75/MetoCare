@@ -12,9 +12,9 @@ from pydantic import BaseModel, ConfigDict
 class TrendOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
-    direction: str                 # up | down | flat | none
-    pct: float | None = None       # signed % change vs previous reading
-    improved: bool | None = None   # True=better, False=worse, None=stable/unknown
+    direction: str  # up | down | flat | none
+    pct: float | None = None  # signed % change vs previous reading
+    improved: bool | None = None  # True=better, False=worse, None=stable/unknown
     label: str
 
 
@@ -25,13 +25,13 @@ class MetricInsightOut(BaseModel):
     label: str
     value: float
     unit: str | None = None
-    status: str                    # normal | low | high | critical | unknown
+    status: str  # normal | low | high | critical | unknown
     trend: TrendOut
     meaning: str
     risks: list[str]
     lifestyle: list[str]
     follow_up: str
-    priority: str                  # monitor | watch | see_doctor
+    priority: str  # monitor | watch | see_doctor
     priority_label: str
     disclaimer: str
 
@@ -45,6 +45,6 @@ class HealthSummaryOut(BaseModel):
     stable: list[str]
     positives: list[str]
     focus: list[str]
-    overall_risk: str              # low | medium | high
+    overall_risk: str  # low | medium | high
     top_action: str
     disclaimer: str

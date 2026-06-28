@@ -63,6 +63,7 @@ def _matches_any(text: str, patterns: tuple[str, ...]) -> list[str]:
 # Input guardrail
 # --------------------------------------------------------------------------- #
 
+
 def check_input(user_text: str) -> GuardrailResult:
     """Inspect user input BEFORE the LLM reasoning layer.
 
@@ -99,9 +100,7 @@ def check_input(user_text: str) -> GuardrailResult:
         flags.append("intent:diagnosis_query")
         reasons.append("Người dùng hỏi chẩn đoán → dùng ngôn ngữ khả năng, không khẳng định.")
 
-    return GuardrailResult(
-        decision=GuardrailDecision.ALLOW, safety_flags=flags, reasons=reasons
-    )
+    return GuardrailResult(decision=GuardrailDecision.ALLOW, safety_flags=flags, reasons=reasons)
 
 
 # --------------------------------------------------------------------------- #
@@ -141,8 +140,7 @@ def check_output(ai_text: str) -> GuardrailResult:
             safe_message=policies.SAFE_REFUSAL_MEDICATION_VI
             if any("medication" in f or "diagnosis" in f for f in flags)
             else (
-                "Mình xin lỗi, phần này cần bác sĩ đánh giá trực tiếp. "
-                + policies.DISCLAIMER_VI
+                "Mình xin lỗi, phần này cần bác sĩ đánh giá trực tiếp. " + policies.DISCLAIMER_VI
             ),
             reasons=reasons,
         )

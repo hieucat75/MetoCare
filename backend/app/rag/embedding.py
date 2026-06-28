@@ -29,8 +29,7 @@ class EmbeddingProvider(ABC):
     dim: int = 256
 
     @abstractmethod
-    def embed(self, text: str) -> list[float]:
-        ...
+    def embed(self, text: str) -> list[float]: ...
 
     def embed_many(self, texts: list[str]) -> list[list[float]]:
         return [self.embed(t) for t in texts]

@@ -33,10 +33,10 @@ ALLOWED_ACTIONS: tuple[str, ...] = (
 )
 
 PROHIBITED_ACTIONS: tuple[str, ...] = (
-    "definitive_diagnosis",      # ❌ chẩn đoán khẳng định
-    "prescribe_medication",      # ❌ kê đơn / gợi ý thuốc cụ thể
-    "change_medication_dose",    # ❌ thay đổi liều
-    "start_stop_medication",     # ❌ bảo bắt đầu/ngừng thuốc
+    "definitive_diagnosis",  # ❌ chẩn đoán khẳng định
+    "prescribe_medication",  # ❌ kê đơn / gợi ý thuốc cụ thể
+    "change_medication_dose",  # ❌ thay đổi liều
+    "start_stop_medication",  # ❌ bảo bắt đầu/ngừng thuốc
     "treat_emergency_as_routine",
     "downplay_red_flag",
     "clinical_treatment_protocol",
@@ -148,12 +148,10 @@ SYSTEM_SAFETY_PROMPT_VI = (
 
 EMERGENCY_MESSAGE_VI = (
     "Mình ghi nhận dấu hiệu có thể nguy hiểm. Bạn nên liên hệ cơ sở y tế hoặc "
-    "gọi cấp cứu ngay bây giờ. Mình sẽ gắn cảnh báo này để bác sĩ theo dõi. "
-    + DISCLAIMER_VI
+    "gọi cấp cứu ngay bây giờ. Mình sẽ gắn cảnh báo này để bác sĩ theo dõi. " + DISCLAIMER_VI
 )
 
 SAFE_REFUSAL_MEDICATION_VI = (
     "Việc sử dụng hoặc điều chỉnh thuốc cần do bác sĩ hoặc dược sĩ quyết định dựa trên "
-    "tình trạng cụ thể của bạn. Mình không thể tư vấn về thuốc hay liều lượng. "
-    + DISCLAIMER_VI
+    "tình trạng cụ thể của bạn. Mình không thể tư vấn về thuốc hay liều lượng. " + DISCLAIMER_VI
 )

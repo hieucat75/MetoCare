@@ -7,12 +7,11 @@ Covers:
 - generate_explanation: fallback on validation failure, success path, cache
 - No frontend direct Anthropic import
 """
+
 from __future__ import annotations
 
 import subprocess
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 from app.services.clinical_explanation import (
     generate_explanation,
@@ -45,6 +44,7 @@ GLUCOSE_57_INPUT = {
 # ---------------------------------------------------------------------------
 # Validator tests
 # ---------------------------------------------------------------------------
+
 
 def test_validator_rejects_dangerous_for_borderline():
     """Claude says dangerous for borderline_high → must be rejected."""
@@ -132,6 +132,7 @@ def test_validator_rejects_urgent_when_doctor_not_required():
 # Deterministic fallback tests
 # ---------------------------------------------------------------------------
 
+
 def test_fallback_borderline_high_not_dangerous():
     """Fallback for borderline_high must not contain 'nguy hiểm'."""
     fb = get_deterministic_fallback(GLUCOSE_57_INPUT)
@@ -187,6 +188,7 @@ def test_fallback_low_not_normal():
 # ---------------------------------------------------------------------------
 # Integration: generate_explanation
 # ---------------------------------------------------------------------------
+
 
 def test_generate_uses_fallback_when_claude_contradicts():
     """If Claude returns dangerous text for borderline → fallback is used."""
@@ -252,9 +254,12 @@ def test_generate_caches_valid_result(tmp_path, monkeypatch):
 
     # Reload cache module with patched env
     import importlib
+
     import app.services.explanation_cache as ec_module
+
     importlib.reload(ec_module)
     import app.services.clinical_explanation as ce_module
+
     importlib.reload(ce_module)
 
     valid_claude_text = (
@@ -281,6 +286,7 @@ def test_generate_caches_valid_result(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 # Creatinine normal case
 # ---------------------------------------------------------------------------
+
 
 def test_creatinine_normal_not_dangerous():
     """Fallback for normal creatinine must say bình thường and not nguy hiểm."""
@@ -309,6 +315,7 @@ def test_creatinine_normal_not_dangerous():
 # ---------------------------------------------------------------------------
 # Security: no frontend direct Anthropic import
 # ---------------------------------------------------------------------------
+
 
 def test_no_frontend_direct_claude_call():
     """Frontend source files must not directly import the @anthropic-ai SDK.

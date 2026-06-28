@@ -7,6 +7,7 @@ Exit codes:
     0 — all files valid, no PHI flags set
     1 — one or more validation errors
 """
+
 from __future__ import annotations
 
 import argparse
@@ -23,9 +24,17 @@ BACKEND_DIR = SCRIPT_DIR.parent
 DATASET_DIR = BACKEND_DIR / "ocr_dataset"
 
 VALID_HOSPITALS = (
-    "vinmec", "medlatec", "tamanh", "hongngoc",
-    "bachmai", "bachmai108", "fv", "hoanmy",
-    "thucuc", "vietduc", "other",
+    "vinmec",
+    "medlatec",
+    "tamanh",
+    "hongngoc",
+    "bachmai",
+    "bachmai108",
+    "fv",
+    "hoanmy",
+    "thucuc",
+    "vietduc",
+    "other",
 )
 _SAMPLE_ID_RE = re.compile(r"^\d{8}_[a-z0-9]+_\d{3}$")
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -51,9 +60,17 @@ class _LabRow(BaseModel):
 class ExpectedLabReport(BaseModel):
     sample_id: str
     hospital: Literal[
-        "vinmec", "medlatec", "tamanh", "hongngoc",
-        "bachmai", "bachmai108", "fv", "hoanmy",
-        "thucuc", "vietduc", "other",
+        "vinmec",
+        "medlatec",
+        "tamanh",
+        "hongngoc",
+        "bachmai",
+        "bachmai108",
+        "fv",
+        "hoanmy",
+        "thucuc",
+        "vietduc",
+        "other",
     ]
     report_type: Literal["lab_result"]
     language: Literal["vi", "en"]

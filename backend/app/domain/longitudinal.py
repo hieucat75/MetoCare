@@ -14,7 +14,7 @@ class BiomarkerTrend:
     canonical: str
     display_name_vi: str
     data_points: list[tuple[date, float]]
-    trend: str      # improving | stable | worsening | insufficient_data
+    trend: str  # improving | stable | worsening | insufficient_data
     change_pct: float | None
     explanation_vi: str
 
@@ -47,7 +47,14 @@ def compute_trends(results: list[object], canonical: str) -> BiomarkerTrend:
         points.append((d, float(v)))
     points.sort(key=lambda x: x[0])
     if len(points) < 2:
-        return BiomarkerTrend(canonical, canonical, points, "insufficient_data", None, "Chưa đủ dữ liệu để đánh giá xu hướng.")  # noqa: E501
+        return BiomarkerTrend(
+            canonical,
+            canonical,
+            points,
+            "insufficient_data",
+            None,
+            "Chưa đủ dữ liệu để đánh giá xu hướng.",
+        )  # noqa: E501
     first, last = points[0][1], points[-1][1]
     change_pct = ((last - first) / abs(first) * 100.0) if first else None
     if change_pct is not None and abs(change_pct) < 10:
@@ -58,7 +65,16 @@ def compute_trends(results: list[object], canonical: str) -> BiomarkerTrend:
             fs = classify_status(first, canonical)
             ls = classify_status(last, canonical)
             better = {"normal": 0, "low": 1, "high": 1, "critical": 2, "unknown": 3}
-            trend = "improving" if better.get(ls.value, 9) < better.get(fs.value, 9) else "worsening"  # noqa: E501
+            trend = (
+                "improving" if better.get(ls.value, 9) < better.get(fs.value, 9) else "worsening"
+            )  # noqa: E501
         else:
             trend = "worsening" if last > first else "improving"
-    return BiomarkerTrend(canonical, spec.canonical if spec else canonical, points, trend, round(change_pct, 2) if change_pct is not None else None, "Xu hướng được tính từ các giá trị đã xác minh và chuẩn hóa SI.")  # noqa: E501
+    return BiomarkerTrend(
+        canonical,
+        spec.canonical if spec else canonical,
+        points,
+        trend,
+        round(change_pct, 2) if change_pct is not None else None,
+        "Xu hướng được tính từ các giá trị đã xác minh và chuẩn hóa SI.",
+    )  # noqa: E501

@@ -149,14 +149,18 @@ class DoctorReviewService:
 
         if action == "accept":
             # 3. Supersede older recommendations of the same type for this patient (bulk)
-            prior_ids_result = self.db.execute(
-                select(AIClinicalRecommendation.id).where(
-                    AIClinicalRecommendation.patient_id == rec.patient_id,
-                    AIClinicalRecommendation.recommendation_type == rec.recommendation_type,
-                    AIClinicalRecommendation.status == RecommendationStatus.ACCEPTED,
-                    AIClinicalRecommendation.id != recommendation_id,
+            prior_ids_result = (
+                self.db.execute(
+                    select(AIClinicalRecommendation.id).where(
+                        AIClinicalRecommendation.patient_id == rec.patient_id,
+                        AIClinicalRecommendation.recommendation_type == rec.recommendation_type,
+                        AIClinicalRecommendation.status == RecommendationStatus.ACCEPTED,
+                        AIClinicalRecommendation.id != recommendation_id,
+                    )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
             if prior_ids_result:
                 self.db.execute(
                     update(AIClinicalRecommendation)
@@ -245,11 +249,13 @@ class DoctorReviewService:
             clauses.append(AIClinicalRecommendation.patient_id.in_(consented_patient_ids))
 
         # Join with Encounter to get recommendations linked to encounters of this doctor
-        encounter_sub = select(AIClinicalRecommendation.id).join(
-            Encounter, AIClinicalRecommendation.encounter_id == Encounter.id
-        ).where(
-            Encounter.doctor_id == doctor_rec.id,
-            AIClinicalRecommendation.status == RecommendationStatus.PENDING_REVIEW,
+        encounter_sub = (
+            select(AIClinicalRecommendation.id)
+            .join(Encounter, AIClinicalRecommendation.encounter_id == Encounter.id)
+            .where(
+                Encounter.doctor_id == doctor_rec.id,
+                AIClinicalRecommendation.status == RecommendationStatus.PENDING_REVIEW,
+            )
         )
         clauses.append(AIClinicalRecommendation.id.in_(encounter_sub))
 

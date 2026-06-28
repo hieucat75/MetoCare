@@ -40,6 +40,7 @@ Usage
   python scripts/benchmark_ocr.py --bench-dir ./bench_data --hospital vinmec
   python scripts/benchmark_ocr.py --bench-dir ./bench_data --no-cache   # re-call Azure DI
 """
+
 from __future__ import annotations
 
 import argparse
@@ -82,6 +83,7 @@ _POLL_TIMEOUT = 120.0
 
 # ── Azure DI call ──────────────────────────────────────────────────────────────
 
+
 def _call_azure_di(image_path: Path) -> dict:
     if not _AZ_ENDPOINT or not _AZ_KEY:
         raise RuntimeError(
@@ -89,9 +91,11 @@ def _call_azure_di(image_path: Path) -> dict:
         )
     mime = {
         ".pdf": "application/pdf",
-        ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
         ".png": "image/png",
-        ".tiff": "image/tiff", ".tif": "image/tiff",
+        ".tiff": "image/tiff",
+        ".tif": "image/tiff",
     }.get(image_path.suffix.lower(), "application/octet-stream")
 
     analyze_url = (
@@ -124,10 +128,10 @@ def _call_azure_di(image_path: Path) -> dict:
 
 # ── Normalisation helpers ──────────────────────────────────────────────────────
 
+
 def _strip_accents_lower(s: str) -> str:
     return "".join(
-        c for c in unicodedata.normalize("NFD", s.lower())
-        if unicodedata.category(c) != "Mn"
+        c for c in unicodedata.normalize("NFD", s.lower()) if unicodedata.category(c) != "Mn"
     )
 
 
@@ -147,11 +151,18 @@ def _norm_unit(u: str | None) -> str:
 def _norm_ref(r: str | None) -> str:
     if not r:
         return ""
-    s = _strip_accents_lower(r).replace("–", "-").replace("—", "-").replace("~", "-").replace(" ", "")  # noqa: E501
+    s = (
+        _strip_accents_lower(r)
+        .replace("–", "-")
+        .replace("—", "-")
+        .replace("~", "-")
+        .replace(" ", "")
+    )  # noqa: E501
     return s
 
 
 # ── Ground truth matching ──────────────────────────────────────────────────────
+
 
 @dataclass
 class FieldResult:
@@ -242,19 +253,21 @@ def _evaluate_report(report_id: str, gt: dict, azure_result: dict) -> ReportResu
         matched_key = _best_match(gt_name, list(by_name.keys()))
         if matched_key is None:
             rr.missed_test_names.append(gt_name)
-            rr.matched_rows.append(RowResult(
-                test_name_gt=gt_name,
-                test_name_matched=False,
-                value=FieldResult(False, "(not found)", str(gt_value)),
-                unit=FieldResult(False, "(not found)", str(gt_row.get("unit", ""))),
-                reference_range=FieldResult(False, "(not found)", str(gt_row.get("reference_range", ""))),  # noqa: E501
-            ))
+            rr.matched_rows.append(
+                RowResult(
+                    test_name_gt=gt_name,
+                    test_name_matched=False,
+                    value=FieldResult(False, "(not found)", str(gt_value)),
+                    unit=FieldResult(False, "(not found)", str(gt_row.get("unit", ""))),
+                    reference_range=FieldResult(
+                        False, "(not found)", str(gt_row.get("reference_range", ""))
+                    ),  # noqa: E501
+                )
+            )
             continue
 
         ext = by_name[matched_key]
-        ext_value = _norm_value(
-            getattr(ext, "original_value", None) or getattr(ext, "value", None)
-        )
+        ext_value = _norm_value(getattr(ext, "original_value", None) or getattr(ext, "value", None))
         ext_unit = _norm_unit(getattr(ext, "original_unit", None))
         ext_ref = _norm_ref(getattr(ext, "reference_range", None))
 
@@ -263,16 +276,23 @@ def _evaluate_report(report_id: str, gt: dict, azure_result: dict) -> ReportResu
             and ext_value is not None
             and (
                 math.isclose(gt_value, ext_value, rel_tol=0.01)
-                if gt_value != 0 else abs(ext_value) < 0.001
+                if gt_value != 0
+                else abs(ext_value) < 0.001
             )
         )
-        rr.matched_rows.append(RowResult(
-            test_name_gt=gt_name,
-            test_name_matched=True,
-            value=FieldResult(value_ok, str(ext_value) if ext_value is not None else "(missing)", str(gt_value)),  # noqa: E501
-            unit=FieldResult(gt_unit == ext_unit, ext_unit, gt_unit),
-            reference_range=FieldResult(not gt_ref or gt_ref == ext_ref, ext_ref, gt_ref),
-        ))
+        rr.matched_rows.append(
+            RowResult(
+                test_name_gt=gt_name,
+                test_name_matched=True,
+                value=FieldResult(
+                    value_ok,
+                    str(ext_value) if ext_value is not None else "(missing)",
+                    str(gt_value),
+                ),  # noqa: E501
+                unit=FieldResult(gt_unit == ext_unit, ext_unit, gt_unit),
+                reference_range=FieldResult(not gt_ref or gt_ref == ext_ref, ext_ref, gt_ref),
+            )
+        )
 
     return rr
 
@@ -282,9 +302,9 @@ def _evaluate_report(report_id: str, gt: dict, azure_result: dict) -> ReportResu
 _EDITING_TARGETS: dict[str, float] = {
     "vinmec": 0.10,
     "medlatec": 0.15,
-    "tamanh": 0.20,      # Phase B P1.1: renamed from tam_anh
-    "hongngoc": 0.20,    # Phase B P1.1: renamed from hong_ngoc
-    "bachmai": 0.20,     # Phase B P1.1: renamed from bach_mai
+    "tamanh": 0.20,  # Phase B P1.1: renamed from tam_anh
+    "hongngoc": 0.20,  # Phase B P1.1: renamed from hong_ngoc
+    "bachmai": 0.20,  # Phase B P1.1: renamed from bach_mai
     "bachmai108": 0.20,  # Phase B P1.1: renamed from hospital_108
     "fv": 0.20,
     "hoanmy": 0.20,
@@ -306,9 +326,9 @@ def _print_hospital_report(hospital: str, reports: list[ReportResult]) -> None:
     target = _EDITING_TARGETS.get(hospital.lower(), 0.20)
     edit_pass = editing_rate <= target
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"  {hospital.upper()}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     print(f"  Reports:              {n}")
     print(f"  Rows (ground truth):  {total_rows}")
     print(f"  Correct rows:         {total_correct}")
@@ -328,14 +348,29 @@ def _print_hospital_report(hospital: str, reports: list[ReportResult]) -> None:
                 wrongs.append((r.report_id, row.test_name_gt, "not found in OCR output"))
             else:
                 if not row.value.correct:
-                    wrongs.append((r.report_id, row.test_name_gt,
-                                   f"value: got {row.value.got!r}  expected {row.value.expected!r}"))  # noqa: E501
+                    wrongs.append(
+                        (
+                            r.report_id,
+                            row.test_name_gt,
+                            f"value: got {row.value.got!r}  expected {row.value.expected!r}",
+                        )
+                    )  # noqa: E501
                 if not row.unit.correct:
-                    wrongs.append((r.report_id, row.test_name_gt,
-                                   f"unit: got {row.unit.got!r}  expected {row.unit.expected!r}"))
+                    wrongs.append(
+                        (
+                            r.report_id,
+                            row.test_name_gt,
+                            f"unit: got {row.unit.got!r}  expected {row.unit.expected!r}",
+                        )
+                    )
                 if not row.reference_range.correct:
-                    wrongs.append((r.report_id, row.test_name_gt,
-                                   f"ref: got {row.reference_range.got!r}  expected {row.reference_range.expected!r}"))  # noqa: E501
+                    wrongs.append(
+                        (
+                            r.report_id,
+                            row.test_name_gt,
+                            f"ref: got {row.reference_range.got!r}  expected {row.reference_range.expected!r}",
+                        )
+                    )  # noqa: E501
 
     if wrongs:
         print(f"\n  Wrong rows ({len(wrongs)}):")
@@ -346,9 +381,9 @@ def _print_hospital_report(hospital: str, reports: list[ReportResult]) -> None:
 
 
 def _print_summary(all_hospitals: dict[str, list[ReportResult]]) -> None:
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("  OVERALL SUMMARY")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     totals = {"reports": 0, "rows": 0, "correct": 0, "edit": 0, "detected": 0}
     for hospital, reports in all_hospitals.items():
@@ -364,7 +399,9 @@ def _print_summary(all_hospitals: dict[str, list[ReportResult]]) -> None:
         totals["detected"] += td
         acc = tc / tr if tr else 0.0
         edit = te / tr if tr else 0.0
-        print(f"  {hospital:<15}  reports={n:>3}  rows={tr:>4}  accuracy={acc:.1%}  editing={edit:.1%}")  # noqa: E501
+        print(
+            f"  {hospital:<15}  reports={n:>3}  rows={tr:>4}  accuracy={acc:.1%}  editing={edit:.1%}"
+        )  # noqa: E501
 
     print()
     ov_acc = totals["correct"] / totals["rows"] if totals["rows"] else 0.0
@@ -391,6 +428,7 @@ def _print_summary(all_hospitals: dict[str, list[ReportResult]]) -> None:
 
 
 # ── Main ───────────────────────────────────────────────────────────────────────
+
 
 def _find_image(report_dir: Path) -> Path | None:
     for ext in (".pdf", ".jpg", ".jpeg", ".png", ".tiff", ".tif"):
@@ -455,9 +493,7 @@ def _test_hospital_detection(hospital_id: str) -> tuple[bool, str]:
     synthetic OCR line, then ask HospitalDetector if it resolves to the correct
     hospital_id.  This tests the detection logic without needing a real image.
     """
-    profile = next(
-        (p for p in HOSPITAL_PROFILES if p.hospital_id == hospital_id), None
-    )
+    profile = next((p for p in HOSPITAL_PROFILES if p.hospital_id == hospital_id), None)
     if profile is None or not profile.header_patterns:
         return False, "(no profile found)"
 
@@ -477,9 +513,7 @@ def _test_hospital_detection(hospital_id: str) -> tuple[bool, str]:
     return False, profile.header_patterns[0] if profile.header_patterns else "(none)"
 
 
-def _run_synthetic_sample(
-    sample_path: Path, hospital_id: str
-) -> _SynSampleResult | None:
+def _run_synthetic_sample(sample_path: Path, hospital_id: str) -> _SynSampleResult | None:
     """Process one expected.json file for the synthetic benchmark."""
     try:
         data = json.loads(sample_path.read_text(encoding="utf-8"))
@@ -532,8 +566,7 @@ def run_synthetic_benchmark(bench_dir: Path, hospital_filter: str | None = None)
         sys.exit(1)
 
     hospital_dirs = sorted(
-        d for d in bench_dir.iterdir()
-        if d.is_dir() and not d.name.startswith(".")
+        d for d in bench_dir.iterdir() if d.is_dir() and not d.name.startswith(".")
     )
     if hospital_filter:
         hospital_dirs = [d for d in hospital_dirs if d.name == hospital_filter]
@@ -579,9 +612,7 @@ def run_synthetic_benchmark(bench_dir: Path, hospital_filter: str | None = None)
             total = len(result.row_results)
             mapped = sum(1 for r in result.row_results if r.correct)
             unmapped = [
-                (r.original_name, r.got_canonical)
-                for r in result.row_results
-                if not r.correct
+                (r.original_name, r.got_canonical) for r in result.row_results if not r.correct
             ]
 
             hosp_total += total
@@ -590,9 +621,9 @@ def run_synthetic_benchmark(bench_dir: Path, hospital_filter: str | None = None)
             hosp_detection_pass = result.detection_pass
             hosp_detection_pattern = result.detection_pattern
 
-            unmapped_strs = ", ".join(
-                f"'{n}' → {c!r}" for n, c in unmapped
-            ) if unmapped else "(none)"
+            unmapped_strs = (
+                ", ".join(f"'{n}' → {c!r}" for n, c in unmapped) if unmapped else "(none)"
+            )
             print(
                 f"  Sample: {result.sample_id} | Rows: {total} | "
                 f"Mapped: {mapped}/{total} | Unmapped: {total - mapped}"
@@ -623,7 +654,9 @@ def run_synthetic_benchmark(bench_dir: Path, hospital_filter: str | None = None)
         if not hospital_pass:
             all_pass = False
 
-        summary_rows.append((hospital_id, hosp_total, hosp_mapped, len(hosp_unmapped), hospital_pass))
+        summary_rows.append(
+            (hospital_id, hosp_total, hosp_mapped, len(hosp_unmapped), hospital_pass)
+        )
 
     # ── Final summary ──────────────────────────────────────────────────────────
     print()
@@ -655,7 +688,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="MetoCare OCR accuracy benchmark")
     parser.add_argument("--bench-dir", default="./bench_data", help="Root benchmark directory")
     parser.add_argument("--hospital", help="Run only this hospital (e.g. vinmec)")
-    parser.add_argument("--no-cache", action="store_true", help="Re-call Azure DI even if cache exists")  # noqa: E501
+    parser.add_argument(
+        "--no-cache", action="store_true", help="Re-call Azure DI even if cache exists"
+    )  # noqa: E501
     parser.add_argument(
         "--synthetic-mode",
         action="store_true",
@@ -666,19 +701,23 @@ def main() -> None:
     # ── Synthetic mode ─────────────────────────────────────────────────────────
     if args.synthetic_mode:
         default_bench = _BACKEND_DIR / "ocr_dataset" / "benchmark"
-        bench_dir = Path(args.bench_dir).resolve() if args.bench_dir != "./bench_data" else default_bench
+        bench_dir = (
+            Path(args.bench_dir).resolve() if args.bench_dir != "./bench_data" else default_bench
+        )
         ok = run_synthetic_benchmark(bench_dir, hospital_filter=args.hospital)
         sys.exit(0 if ok else 1)
 
     bench_dir = Path(args.bench_dir).resolve()
     if not bench_dir.exists():
         print(f"ERROR: bench_data not found at {bench_dir}", file=sys.stderr)
-        print("Layout: bench_data/{hospital}/{report_id}/image.pdf + ground_truth.json", file=sys.stderr)  # noqa: E501
+        print(
+            "Layout: bench_data/{hospital}/{report_id}/image.pdf + ground_truth.json",
+            file=sys.stderr,
+        )  # noqa: E501
         sys.exit(1)
 
     hospitals = sorted(
-        d.name for d in bench_dir.iterdir()
-        if d.is_dir() and not d.name.startswith(".")
+        d.name for d in bench_dir.iterdir() if d.is_dir() and not d.name.startswith(".")
     )
     if args.hospital:
         hospitals = [h for h in hospitals if h == args.hospital]
@@ -691,8 +730,7 @@ def main() -> None:
 
     for hospital in hospitals:
         report_dirs = sorted(
-            d for d in (bench_dir / hospital).iterdir()
-            if d.is_dir() and not d.name.startswith(".")
+            d for d in (bench_dir / hospital).iterdir() if d.is_dir() and not d.name.startswith(".")
         )
         if not report_dirs:
             continue
@@ -717,7 +755,9 @@ def main() -> None:
                 if img is None:
                     print(f"  SKIP {report_dir.name}: no image file")
                     continue
-                print(f"  {report_dir.name}: calling Azure DI on {img.name} ...", end="", flush=True)  # noqa: E501
+                print(
+                    f"  {report_dir.name}: calling Azure DI on {img.name} ...", end="", flush=True
+                )  # noqa: E501
                 try:
                     azure_result = _call_azure_di(img)
                     cache.write_text(json.dumps(azure_result, ensure_ascii=False, indent=2))

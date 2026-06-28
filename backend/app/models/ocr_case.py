@@ -12,6 +12,7 @@ Privacy rules:
 - source_file_path is a blob reference, never actual bytes.
 - This record is patient-owned; patients may only read their own cases.
 """
+
 from __future__ import annotations
 
 from sqlalchemy import Float, Integer, String, Text
@@ -25,9 +26,7 @@ class OCRCase(UUIDPrimaryKey, TimestampMixin, Base):
     __tablename__ = "ocr_cases"
 
     # ── Ownership ──────────────────────────────────────────────────────────────
-    patient_id: Mapped[str] = mapped_column(
-        String(36), index=True, nullable=False
-    )
+    patient_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
     # Set when user confirms save (links OCR draft → LabUploadBatch).
     lab_batch_id: Mapped[str | None] = mapped_column(String(36), index=True, nullable=True)
 

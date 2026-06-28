@@ -7,6 +7,7 @@ Lifecycle:
 
 Never raises into the caller's save transaction — export/gap errors are logged.
 """
+
 from __future__ import annotations
 
 import json
@@ -51,7 +52,10 @@ def create_case(
     db.flush()
     _logger.info(
         "ocr_case_created id=%s patient=%s hospital=%s rows=%d",
-        case.id, patient_id, hospital_id, len(extracted_rows),
+        case.id,
+        patient_id,
+        hospital_id,
+        len(extracted_rows),
     )
     return case
 
@@ -71,9 +75,7 @@ def confirm_case(
     Returns updated case or None if not found / wrong patient.
     Export failures are caught and logged; never propagate to the save transaction.
     """
-    case = db.execute(
-        select(OCRCase).where(OCRCase.id == case_id)
-    ).scalars().first()
+    case = db.execute(select(OCRCase).where(OCRCase.id == case_id)).scalars().first()
 
     if case is None:
         _logger.warning("ocr_case_not_found id=%s", case_id)
@@ -82,7 +84,9 @@ def confirm_case(
     if case.patient_id != patient_id:
         _logger.error(
             "ocr_case_ownership_violation id=%s expected=%s got=%s",
-            case_id, case.patient_id, patient_id,
+            case_id,
+            case.patient_id,
+            patient_id,
         )
         return None
 
@@ -109,7 +113,7 @@ def confirm_case(
     case.editing_rate = gap.editing_rate
     case.rows_total = gap.total_extracted_rows
     case.rows_correct = gap.matched_rows
-    case.rows_missing = gap.missing_rows        # corrected rows not found in extracted
+    case.rows_missing = gap.missing_rows  # corrected rows not found in extracted
     case.rows_added = gap.corrected_rows_count  # rows that had any correction applied
     case.rows_deleted = gap.false_positive_rows
     case.rows_value_corrected = gap.value_mismatches
@@ -118,7 +122,10 @@ def confirm_case(
 
     _logger.info(
         "ocr_case_gap id=%s row_acc=%.3f val_acc=%.3f edit_rate=%.3f",
-        case_id, gap.row_accuracy, gap.value_accuracy, gap.editing_rate,
+        case_id,
+        gap.row_accuracy,
+        gap.value_accuracy,
+        gap.editing_rate,
     )
 
     try:

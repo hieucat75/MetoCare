@@ -46,14 +46,14 @@ _RANGE_RE = re.compile(rf"(?P<lo>{_NUMBER})\s*[-–—]\s*(?P<hi>{_NUMBER})")
 #   → strip "(Cobas C502)*" → " 25.37 U/L" → correct value 25.37
 _AFTER_LABEL_STRIP_RE = re.compile(
     r"(?:"
-    r"\(\s*cobas\s+[a-z]*\s*\d*\s*\)"          # (cobas c502), (cobas pro), (cobas 8000)
-    r"|\(\s*c\s*\d{3,4}\s*\)"                   # (c502), (c702)
-    r"|\(\s*au\s*\d{3,4}\s*\)"                  # (au480), (au680)
-    r"|\(\s*qx\s*[\w.]*\s*\)"                   # (qx200), (qx.sh.xxx)
-    r"|\(\s*sysmex\s+[a-z0-9\s-]*\)"            # (sysmex xn-1000)
-    r"|\(\s*architect\s*[a-z0-9\s]*\)"          # (architect i2000)
+    r"\(\s*cobas\s+[a-z]*\s*\d*\s*\)"  # (cobas c502), (cobas pro), (cobas 8000)
+    r"|\(\s*c\s*\d{3,4}\s*\)"  # (c502), (c702)
+    r"|\(\s*au\s*\d{3,4}\s*\)"  # (au480), (au680)
+    r"|\(\s*qx\s*[\w.]*\s*\)"  # (qx200), (qx.sh.xxx)
+    r"|\(\s*sysmex\s+[a-z0-9\s-]*\)"  # (sysmex xn-1000)
+    r"|\(\s*architect\s*[a-z0-9\s]*\)"  # (architect i2000)
     r"|\(\s*(?:abbott|roche|siemens|beckman|coulter|olympus|hitachi)\s*[a-z0-9\s-]*\)"
-    r"|\*"                                       # trailing asterisk
+    r"|\*"  # trailing asterisk
     r")\s*",
     re.IGNORECASE,
 )
@@ -102,9 +102,7 @@ def _to_float(token: str) -> float | None:
 
 
 def _strip_accents(s: str) -> str:
-    return "".join(
-        c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn"
-    )
+    return "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn")
 
 
 def _match_biomarker(
@@ -143,13 +141,7 @@ def _norm_unit(u: str) -> str:
     Handles: µ (U+00B5), μ (U+03BC), and the 'mc' OCR prefix (e.g. mcIU/mL, mcmol/L).
     'mol' is NOT normalized to 'µmol' — only explicit µ/μ/mc prefixes are replaced.
     """
-    return (
-        u.replace("µ", "u")
-         .replace("μ", "u")
-         .replace("mc", "u")
-         .strip()
-         .lower()
-    )
+    return u.replace("µ", "u").replace("μ", "u").replace("mc", "u").strip().lower()
 
 
 # Global text corrections applied BEFORE hospital-profile and parser logic.
@@ -253,7 +245,7 @@ def parse_lab_text(
 
         # Extract reference range from the remainder of the line (after value+unit).
         # Supports: "3.9–6.1", "44 - 80", "< 55", "> 60".
-        after_unit = after[vm.end():].strip()
+        after_unit = after[vm.end() :].strip()
         ocr_ref: str | None = None
         rm = _RANGE_RE.search(after_unit)
         if rm:
@@ -327,10 +319,7 @@ def parse_lab_text(
             overall = 0.0
         else:
             overall = round(
-                0.40 * ocr_conf_dim
-                + 0.25 * mapping_conf
-                + 0.25 * conv_conf
-                + 0.10 * clin_conf,
+                0.40 * ocr_conf_dim + 0.25 * mapping_conf + 0.25 * conv_conf + 0.10 * clin_conf,
                 4,
             )
 
@@ -431,7 +420,7 @@ _MIN_YEAR = 1975
 
 @dataclass
 class ExtractedDate:
-    iso: str            # YYYY-MM-DD
+    iso: str  # YYYY-MM-DD
     raw_label: str | None
     confidence: float
 
@@ -442,8 +431,20 @@ def _valid_dmy(d: int, m: int, y: int) -> str | None:
     plus calendar validation. The endpoint applies the strict ≤today check."""
     if not (1 <= m <= 12 and 1 <= d <= 31 and _MIN_YEAR <= y <= 2100):
         return None
-    days_in_month = [31, 29 if y % 4 == 0 and (y % 100 != 0 or y % 400 == 0) else 28,
-                     31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    days_in_month = [
+        31,
+        29 if y % 4 == 0 and (y % 100 != 0 or y % 400 == 0) else 28,
+        31,
+        30,
+        31,
+        30,
+        31,
+        31,
+        30,
+        31,
+        30,
+        31,
+    ]
     if d > days_in_month[m - 1]:
         return None
     return f"{y:04d}-{m:02d}-{d:02d}"
@@ -478,7 +479,7 @@ def parse_test_date(text: str) -> ExtractedDate | None:
             if idx < 0:
                 continue
             # Look after the label on the same line, then the next line.
-            iso = _find_date_in(line[idx + len(label):])
+            iso = _find_date_in(line[idx + len(label) :])
             search_window = "same"
             if iso is None and i + 1 < len(lines):
                 iso = _find_date_in(lines[i + 1])

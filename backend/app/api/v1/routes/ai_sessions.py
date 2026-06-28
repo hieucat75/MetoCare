@@ -43,6 +43,7 @@ router = APIRouter(prefix="/ai_sessions", tags=["ai_sessions"])
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _check_session_read_access(
     db: Session,
     session: AISession,
@@ -70,9 +71,11 @@ def _check_session_read_access(
         detail="Insufficient permissions to access this AI session.",
     )
 
+
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
+
 
 @router.post("", response_model=AISessionOut, status_code=status.HTTP_201_CREATED)
 def create_ai_session(
@@ -256,10 +259,14 @@ def list_recommendations(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="AI session not found.")
     _check_session_read_access(db, session, user)
 
-    recs = db.execute(
-        select(AIClinicalRecommendation).where(
-            AIClinicalRecommendation.session_id == session_id,
-            AIClinicalRecommendation.deleted_at.is_(None),
+    recs = (
+        db.execute(
+            select(AIClinicalRecommendation).where(
+                AIClinicalRecommendation.session_id == session_id,
+                AIClinicalRecommendation.deleted_at.is_(None),
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return [AIClinicalRecommendationOut.model_validate(r) for r in recs]

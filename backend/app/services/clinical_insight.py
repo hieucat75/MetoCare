@@ -77,10 +77,10 @@ _TONE_THRESHOLD_PCT = 2.0  # |%| below this is "flat"
 
 @dataclass(frozen=True)
 class Trend:
-    direction: str           # "up" | "down" | "flat" | "none"
-    pct: float | None        # signed % change vs previous reading
-    improved: bool | None    # True=better, False=worse, None=stable/unknown
-    label: str               # patient-facing narrative
+    direction: str  # "up" | "down" | "flat" | "none"
+    pct: float | None  # signed % change vs previous reading
+    improved: bool | None  # True=better, False=worse, None=stable/unknown
+    label: str  # patient-facing narrative
 
 
 @dataclass(frozen=True)
@@ -89,13 +89,13 @@ class MetricInsight:
     label: str
     value: float
     unit: str | None
-    status: str              # normal | low | high | critical | unknown
+    status: str  # normal | low | high | critical | unknown
     trend: Trend
     meaning: str
     risks: list[str]
     lifestyle: list[str]
     follow_up: str
-    priority: str            # monitor | watch | see_doctor
+    priority: str  # monitor | watch | see_doctor
     priority_label: str
     disclaimer: str = policies.DISCLAIMER_VI
 
@@ -108,7 +108,7 @@ class HealthSummary:
     stable: list[str] = field(default_factory=list)
     positives: list[str] = field(default_factory=list)
     focus: list[str] = field(default_factory=list)
-    overall_risk: str = "low"   # low | medium | high
+    overall_risk: str = "low"  # low | medium | high
     top_action: str = ""
     disclaimer: str = policies.DISCLAIMER_VI
 
@@ -116,6 +116,7 @@ class HealthSummary:
 # --------------------------------------------------------------------------- #
 # Helpers
 # --------------------------------------------------------------------------- #
+
 
 def _safe(text: str) -> str:
     """Re-validate composed patient text; replace with a neutral line if blocked."""
@@ -239,9 +240,9 @@ def _improved(prev: float, cur: float, prev_status: str, cur_status: str) -> boo
         return _SEVERITY[cur_status] < _SEVERITY[prev_status]
     if cur == prev:
         return None
-    if cur_status == "high":   # too high → lower is better
+    if cur_status == "high":  # too high → lower is better
         return cur < prev
-    if cur_status == "low":    # too low → higher is better
+    if cur_status == "low":  # too low → higher is better
         return cur > prev
     return None  # normal / unknown / same-bucket critical
 
@@ -292,6 +293,7 @@ def _label(metric_type: str) -> str:
 # --------------------------------------------------------------------------- #
 # Public API
 # --------------------------------------------------------------------------- #
+
 
 def _history(db: Session, patient_id: str) -> dict[str, list[HealthMetric]]:
     rows = list(

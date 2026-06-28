@@ -40,10 +40,20 @@ class CarePlanStatus(StrEnum):
 
 
 # Statuses that AI code paths (ai_generated=True) may NEVER set at construction
-_AI_CAREPLAN_FORBIDDEN_STATUSES: frozenset[str] = frozenset({
-    "PENDING_REVIEW", "APPROVED", "ACTIVE", "SUPERSEDED", "ARCHIVED",
-    "pending_review", "approved", "active", "superseded", "archived",
-})
+_AI_CAREPLAN_FORBIDDEN_STATUSES: frozenset[str] = frozenset(
+    {
+        "PENDING_REVIEW",
+        "APPROVED",
+        "ACTIVE",
+        "SUPERSEDED",
+        "ARCHIVED",
+        "pending_review",
+        "approved",
+        "active",
+        "superseded",
+        "archived",
+    }
+)
 
 
 class Clinic(UUIDPrimaryKey, TimestampMixin, Base):
@@ -78,6 +88,7 @@ class Doctor(UUIDPrimaryKey, TimestampMixin, Base):
 
 class DoctorClinic(Base):
     """Step 5: doctor_clinic junction table."""
+
     __tablename__ = "doctor_clinic"
 
     doctor_id: Mapped[str] = mapped_column(ForeignKey("doctors.id"), primary_key=True)
@@ -105,6 +116,7 @@ class Appointment(UUIDPrimaryKey, TimestampMixin, Base):
 
 class Encounter(UUIDPrimaryKey, TimestampMixin, SoftDeleteMixin, Base):
     """Step 4: Encounter model."""
+
     __tablename__ = "encounters"
 
     patient_id: Mapped[str] = mapped_column(
@@ -158,9 +170,15 @@ class CarePlan(UUIDPrimaryKey, TimestampMixin, SoftDeleteMixin, Base):
     # C2 GUARD: order-independent via dual @validates                      #
     # ------------------------------------------------------------------ #
 
-    _AI_FORBIDDEN_CP_STATUSES: frozenset[str] = frozenset({
-        "PENDING_REVIEW", "APPROVED", "ACTIVE", "SUPERSEDED", "ARCHIVED",
-    })
+    _AI_FORBIDDEN_CP_STATUSES: frozenset[str] = frozenset(
+        {
+            "PENDING_REVIEW",
+            "APPROVED",
+            "ACTIVE",
+            "SUPERSEDED",
+            "ARCHIVED",
+        }
+    )
 
     def _check_ai_status(self) -> None:
         """Raise if ai_generated=True and current status is forbidden."""
@@ -227,13 +245,14 @@ class CarePlan(UUIDPrimaryKey, TimestampMixin, SoftDeleteMixin, Base):
             content=content,
             encounter_id=encounter_id,
             version=version,
-            ai_generated=True,   # set BEFORE status so @validates can check it
+            ai_generated=True,  # set BEFORE status so @validates can check it
             status=CarePlanStatus.DRAFT,
         )
 
 
 class BookingHealthSnapshot(UUIDPrimaryKey, Base):
     """Step 4: BookingHealthSnapshot model (append-only)."""
+
     __tablename__ = "booking_health_snapshots"
 
     appointment_id: Mapped[str] = mapped_column(

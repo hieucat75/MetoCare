@@ -28,15 +28,19 @@ from app.services.consent import ConsentError, require_access
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-_BLOCKED_ROLES: frozenset[str] = frozenset({
-    UserRole.AI_SERVICE,
-    UserRole.CLINIC_ADMIN,
-})
+_BLOCKED_ROLES: frozenset[str] = frozenset(
+    {
+        UserRole.AI_SERVICE,
+        UserRole.CLINIC_ADMIN,
+    }
+)
 
-_ADMIN_ROLES: frozenset[str] = frozenset({
-    UserRole.INTERNAL_ADMIN,
-    UserRole.SUPER_ADMIN,
-})
+_ADMIN_ROLES: frozenset[str] = frozenset(
+    {
+        UserRole.INTERNAL_ADMIN,
+        UserRole.SUPER_ADMIN,
+    }
+)
 
 
 def _fetch_profile(db: Session, patient_id: str) -> PatientProfile:

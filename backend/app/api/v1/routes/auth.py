@@ -59,8 +59,11 @@ def register(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     access, refresh = auth.issue_tokens(db, user, mfa=False)
     return TokenResponse(
-        access_token=access, refresh_token=refresh, role=user.role.value,
-        user_id=user.id, mfa=False,
+        access_token=access,
+        refresh_token=refresh,
+        role=user.role.value,
+        user_id=user.id,
+        mfa=False,
     )
 
 
@@ -119,8 +122,11 @@ def login(
     lockout.reset(lkey)
     access, refresh = auth.issue_tokens(db, user, mfa=mfa_ok)
     return TokenResponse(
-        access_token=access, refresh_token=refresh, role=user.role.value,
-        user_id=user.id, mfa=mfa_ok,
+        access_token=access,
+        refresh_token=refresh,
+        role=user.role.value,
+        user_id=user.id,
+        mfa=mfa_ok,
     )
 
 
@@ -136,8 +142,11 @@ def refresh(
     # mfa level is preserved by refresh_session via the stored token.
     claims = decode_token(access) or {}
     return TokenResponse(
-        access_token=access, refresh_token=new_refresh, role=user.role.value,
-        user_id=user.id, mfa=bool(claims.get("mfa")),
+        access_token=access,
+        refresh_token=new_refresh,
+        role=user.role.value,
+        user_id=user.id,
+        mfa=bool(claims.get("mfa")),
     )
 
 
@@ -193,9 +202,7 @@ def change_password(
             new_password=payload.new_password,
         )
     except auth.AuthError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
-        ) from exc
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return Message(message="password changed")
 
 
@@ -211,9 +218,7 @@ def update_account(
             db, user_id=actor.id, data=payload.model_dump(exclude_unset=True)
         )
     except auth.AuthError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail=str(exc)
-        ) from exc
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     return _user_out(db, db_user)
 
 
@@ -227,8 +232,12 @@ def mfa_enroll(
         raise HTTPException(status_code=404, detail="user not found")
     secret, uri, codes = mfa.begin_enrollment(db, db_user)
     audit.record(
-        db, actor_type="user", actor_id=actor.id, action="mfa_enroll",
-        resource_type="user", resource_id=actor.id,
+        db,
+        actor_type="user",
+        actor_id=actor.id,
+        action="mfa_enroll",
+        resource_type="user",
+        resource_id=actor.id,
     )
     db.commit()
     return MfaEnrollResponse(secret=secret, provisioning_uri=uri, backup_codes=codes)

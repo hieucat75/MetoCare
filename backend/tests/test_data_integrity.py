@@ -10,11 +10,7 @@ Tests:
 
 from __future__ import annotations
 
-import os
-import pytest
-
 # ─── Plausibility checks (pure, no DB) ──────────────────────────────────────
-
 from app.services.biomarker_specs import check_plausibility
 
 
@@ -123,7 +119,7 @@ class TestValidateBeforeSave:
             normalized_value_si=87.7,
             normalized_unit_si="mg/dL",
         )
-        assert result["valid"] is True   # save regardless
+        assert result["valid"] is True  # save regardless
         assert result["suspicious"] is True
         assert result["action"] == "flag"
 
@@ -179,10 +175,12 @@ class TestValidateBeforeSave:
 
 # ─── Cleanup script safety constraints ──────────────────────────────────────
 
+
 class TestCleanupScript:
     def test_no_deletion_on_clean_db(self, db):
         """Cleanup on a clean DB should find 0 suspicious records and delete nothing."""
         from scripts.data_integrity_cleanup import run_cleanup
+
         summary = run_cleanup(dry_run=True)
         assert summary["total_suspicious"] == 0
         assert len(summary["errors"]) == 0
@@ -209,7 +207,7 @@ class TestCleanupScript:
             canonical_name="creatinine",
             value=87.7,
             unit="mg/dL",
-            original_value=87.7,    # <-- must never change
+            original_value=87.7,  # <-- must never change
             original_unit="mg/dL",  # <-- must never change
             normalized_value_si=87.7,  # bad: should be ~0.99
             normalized_unit_si="mg/dL",
@@ -221,6 +219,7 @@ class TestCleanupScript:
         original_unit_before = row.original_unit
 
         from scripts.data_integrity_cleanup import run_cleanup
+
         run_cleanup(dry_run=False)
         db.refresh(row)
 
@@ -244,20 +243,21 @@ class TestCleanupScript:
 
     def test_no_silent_deletion(self, db):
         """Cleanup script must never delete records."""
-        from sqlalchemy import select
         from app.models.clinical import LabResult
+        from sqlalchemy import select
 
-        before_count = db.execute(
-            select(LabResult).where(LabResult.deleted_at.is_(None))
-        ).scalars().all()
+        before_count = (
+            db.execute(select(LabResult).where(LabResult.deleted_at.is_(None))).scalars().all()
+        )
         count_before = len(before_count)
 
         from scripts.data_integrity_cleanup import run_cleanup
+
         run_cleanup(dry_run=False)
 
-        after_rows = db.execute(
-            select(LabResult).where(LabResult.deleted_at.is_(None))
-        ).scalars().all()
+        after_rows = (
+            db.execute(select(LabResult).where(LabResult.deleted_at.is_(None))).scalars().all()
+        )
         count_after = len(after_rows)
 
         # Must not delete any records

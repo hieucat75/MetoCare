@@ -28,33 +28,34 @@ from .longitudinal import BiomarkerTrend
 # Dataclasses
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class InsightCard:
-    card_id: str           # e.g. "ldl_elevated"
-    title_vi: str          # "LDL vẫn cao hơn mục tiêu"
-    explanation_vi: str    # 1–2 sentences, plain language
-    importance: str        # "high" | "medium" | "low"
+    card_id: str  # e.g. "ldl_elevated"
+    title_vi: str  # "LDL vẫn cao hơn mục tiêu"
+    explanation_vi: str  # 1–2 sentences, plain language
+    importance: str  # "high" | "medium" | "low"
     supporting_biomarkers: list[str]  # canonical names
-    trend: str             # "improving" | "stable" | "worsening" | "insufficient_data"
+    trend: str  # "improving" | "stable" | "worsening" | "insufficient_data"
     recommended_action: str  # "continue_monitoring" | "repeat_lab" | "discuss_with_doctor" | "lifestyle_reminder"  # noqa: E501
-    action_text_vi: str    # Human-readable action text
+    action_text_vi: str  # Human-readable action text
 
 
 @dataclass
 class ActionCard:
-    action_id: str         # e.g. "repeat_lipid_panel"
+    action_id: str  # e.g. "repeat_lipid_panel"
     title_vi: str
     detail_vi: str
-    interval_days: int | None   # e.g. 90 for "repeat in 3 months"
-    action_type: str       # "monitor" | "repeat_lab" | "doctor_visit" | "lifestyle"
+    interval_days: int | None  # e.g. 90 for "repeat in 3 months"
+    action_type: str  # "monitor" | "repeat_lab" | "doctor_visit" | "lifestyle"
 
 
 @dataclass
 class TimelineSummaryItem:
     canonical: str
     display_name_vi: str
-    trend: str             # "improving" | "stable" | "worsening" | "insufficient_data"
-    trend_text_vi: str     # Plain Vietnamese: "Đang cải thiện", "Ổn định", etc.
+    trend: str  # "improving" | "stable" | "worsening" | "insufficient_data"
+    trend_text_vi: str  # Plain Vietnamese: "Đang cải thiện", "Ổn định", etc.
     change_pct: float | None
 
 
@@ -64,24 +65,24 @@ class UrgentAlert:
     title_vi: str
     detail_vi: str
     biomarkers: list[str]
-    action_vi: str         # Always "Cần gặp bác sĩ sớm" or similar — never diagnose
+    action_vi: str  # Always "Cần gặp bác sĩ sớm" or similar — never diagnose
 
 
 @dataclass
 class PositiveReinforcement:
-    message_vi: str        # "Đường huyết đã cải thiện so với lần trước."
+    message_vi: str  # "Đường huyết đã cải thiện so với lần trước."
     biomarkers: list[str]
 
 
 @dataclass
 class PatientInsightReport:
     patient_id: str
-    generated_at: str      # ISO8601
+    generated_at: str  # ISO8601
 
     # Executive Summary
-    overall_status: str    # "good" | "attention" | "action_required" | "urgent"
+    overall_status: str  # "good" | "attention" | "action_required" | "urgent"
     overall_status_text_vi: str
-    top_priorities: list[str]    # list of card_id strings, max 3
+    top_priorities: list[str]  # list of card_id strings, max 3
 
     # Sections
     insights: list[InsightCard]
@@ -94,7 +95,7 @@ class PatientInsightReport:
     ai_draft_contract: None
 
     # Safety
-    disclaimer_vi: str     # Required: "Đây là thông tin tham khảo..."
+    disclaimer_vi: str  # Required: "Đây là thông tin tham khảo..."
 
 
 # ---------------------------------------------------------------------------
@@ -173,18 +174,21 @@ def _display_vi(canonical: str) -> str:
 # Internal builders
 # ---------------------------------------------------------------------------
 
+
 def _build_urgent_alerts(findings: list[ClinicalFinding]) -> list[UrgentAlert]:
     """Generate UrgentAlert for every finding with severity == 'critical'."""
     alerts: list[UrgentAlert] = []
     for f in findings:
         if f.severity == "critical":
-            alerts.append(UrgentAlert(
-                alert_id=f"alert_{f.canonical}",
-                title_vi=f"Chỉ số {_display_vi(f.canonical)} cần chú ý ngay",  # noqa: E501
-                detail_vi=f.patient_explanation_vi,
-                biomarkers=[f.canonical],
-                action_vi="Cần gặp bác sĩ sớm để được đánh giá và xử lý kịp thời.",
-            ))
+            alerts.append(
+                UrgentAlert(
+                    alert_id=f"alert_{f.canonical}",
+                    title_vi=f"Chỉ số {_display_vi(f.canonical)} cần chú ý ngay",  # noqa: E501
+                    detail_vi=f.patient_explanation_vi,
+                    biomarkers=[f.canonical],
+                    action_vi="Cần gặp bác sĩ sớm để được đánh giá và xử lý kịp thời.",
+                )
+            )
     return alerts
 
 
@@ -248,16 +252,18 @@ def _build_insight_cards(
 
         trend = _trend_for(f.canonical, trends)
 
-        cards.append(InsightCard(
-            card_id=card_id,
-            title_vi=_title_for_finding(f),
-            explanation_vi=f.patient_explanation_vi,
-            importance=importance,
-            supporting_biomarkers=[f.canonical],
-            trend=trend,
-            recommended_action=action,
-            action_text_vi=action_text,
-        ))
+        cards.append(
+            InsightCard(
+                card_id=card_id,
+                title_vi=_title_for_finding(f),
+                explanation_vi=f.patient_explanation_vi,
+                importance=importance,
+                supporting_biomarkers=[f.canonical],
+                trend=trend,
+                recommended_action=action,
+                action_text_vi=action_text,
+            )
+        )
 
     # Cards from patterns
     for p in patterns:
@@ -273,16 +279,18 @@ def _build_insight_cards(
         # Determine collective trend from supporting biomarkers
         trend = _collective_trend(p.supporting_findings, trends)
 
-        cards.append(InsightCard(
-            card_id=card_id,
-            title_vi=p.display_name_vi,
-            explanation_vi=p.description_vi,
-            importance=importance,
-            supporting_biomarkers=p.supporting_findings,
-            trend=trend,
-            recommended_action=action,
-            action_text_vi=action_text,
-        ))
+        cards.append(
+            InsightCard(
+                card_id=card_id,
+                title_vi=p.display_name_vi,
+                explanation_vi=p.description_vi,
+                importance=importance,
+                supporting_biomarkers=p.supporting_findings,
+                trend=trend,
+                recommended_action=action,
+                action_text_vi=action_text,
+            )
+        )
 
     # Cards from derived metrics with abnormal status
     for canonical, dr in derived.items():
@@ -302,16 +310,18 @@ def _build_insight_cards(
         )
         trend = _trend_for(canonical, trends)
 
-        cards.append(InsightCard(
-            card_id=card_id,
-            title_vi=dr.display_name_vi,
-            explanation_vi=dr.note_vi or f"{dr.display_name_vi} đang ở mức cần chú ý.",  # noqa: E501
-            importance=importance,
-            supporting_biomarkers=dr.inputs_used,
-            trend=trend,
-            recommended_action=action,
-            action_text_vi=action_text,
-        ))
+        cards.append(
+            InsightCard(
+                card_id=card_id,
+                title_vi=dr.display_name_vi,
+                explanation_vi=dr.note_vi or f"{dr.display_name_vi} đang ở mức cần chú ý.",  # noqa: E501
+                importance=importance,
+                supporting_biomarkers=dr.inputs_used,
+                trend=trend,
+                recommended_action=action,
+                action_text_vi=action_text,
+            )
+        )
 
     # Sort by importance, then truncate to 5
     cards.sort(key=lambda c: _IMPORTANCE_ORDER.get(c.importance, 99))
@@ -355,17 +365,26 @@ def _build_action_cards(
 
     # Critical → immediate doctor visit
     if any(f.severity == "critical" for f in findings):
-        cards.append(ActionCard(
-            action_id="doctor_visit_urgent",
-            title_vi="Gặp bác sĩ sớm",
-            detail_vi="Có chỉ số xét nghiệm ở mức nguy hiểm. Cần bác sĩ đánh giá ngay.",  # noqa: E501
-            interval_days=0,
-            action_type="doctor_visit",
-        ))
+        cards.append(
+            ActionCard(
+                action_id="doctor_visit_urgent",
+                title_vi="Gặp bác sĩ sớm",
+                detail_vi="Có chỉ số xét nghiệm ở mức nguy hiểm. Cần bác sĩ đánh giá ngay.",  # noqa: E501
+                interval_days=0,
+                action_type="doctor_visit",
+            )
+        )
         seen.add("doctor_visit_urgent")
 
     # Categorize findings by organ/system
-    lipid_names = {"ldl", "hdl", "triglyceride", "total_cholesterol", "non_hdl_cholesterol", "ldl_friedewald"}  # noqa: E501
+    lipid_names = {
+        "ldl",
+        "hdl",
+        "triglyceride",
+        "total_cholesterol",
+        "non_hdl_cholesterol",
+        "ldl_friedewald",
+    }  # noqa: E501
     glucose_names = {"fasting_glucose", "hba1c", "tyg_index"}
     kidney_names = {"creatinine", "egfr", "egfr_ckd_epi"}
     liver_names = {"alt", "ast", "fib4_score"}
@@ -388,58 +407,71 @@ def _build_action_cards(
     )
 
     # Pattern-based triggers
-    if any(p.pattern_id in {"dyslipidemia", "insulin_resistance", "metabolic_syndrome"} for p in patterns):  # noqa: E501
+    if any(
+        p.pattern_id in {"dyslipidemia", "insulin_resistance", "metabolic_syndrome"}
+        for p in patterns
+    ):  # noqa: E501
         has_abnormal_lipid = True
 
     if has_abnormal_lipid and "repeat_lipid_panel" not in seen:
-        cards.append(ActionCard(
-            action_id="repeat_lipid_panel",
-            title_vi="Xét nghiệm lipid định kỳ",
-            detail_vi="Kiểm tra lại bộ mỡ máu (LDL, HDL, Triglyceride) sau 3 tháng.",
-            interval_days=90,
-            action_type="repeat_lab",
-        ))
+        cards.append(
+            ActionCard(
+                action_id="repeat_lipid_panel",
+                title_vi="Xét nghiệm lipid định kỳ",
+                detail_vi="Kiểm tra lại bộ mỡ máu (LDL, HDL, Triglyceride) sau 3 tháng.",
+                interval_days=90,
+                action_type="repeat_lab",
+            )
+        )
         seen.add("repeat_lipid_panel")
 
     if has_abnormal_glucose and "repeat_glucose" not in seen:
-        cards.append(ActionCard(
-            action_id="repeat_glucose",
-            title_vi="Xét nghiệm đường huyết lại",
-            detail_vi="Kiểm tra lại đường huyết lúc đói và HbA1c sau 1 tháng.",
-            interval_days=30,
-            action_type="repeat_lab",
-        ))
+        cards.append(
+            ActionCard(
+                action_id="repeat_glucose",
+                title_vi="Xét nghiệm đường huyết lại",
+                detail_vi="Kiểm tra lại đường huyết lúc đói và HbA1c sau 1 tháng.",
+                interval_days=30,
+                action_type="repeat_lab",
+            )
+        )
         seen.add("repeat_glucose")
 
     if has_abnormal_kidney and "repeat_kidney" not in seen:
-        cards.append(ActionCard(
-            action_id="repeat_kidney",
-            title_vi="Theo dõi chức năng thận",
-            detail_vi="Kiểm tra lại creatinine và eGFR sau 3 tháng để theo dõi chức năng thận.",  # noqa: E501
-            interval_days=90,
-            action_type="repeat_lab",
-        ))
+        cards.append(
+            ActionCard(
+                action_id="repeat_kidney",
+                title_vi="Theo dõi chức năng thận",
+                detail_vi="Kiểm tra lại creatinine và eGFR sau 3 tháng để theo dõi chức năng thận.",  # noqa: E501
+                interval_days=90,
+                action_type="repeat_lab",
+            )
+        )
         seen.add("repeat_kidney")
 
     if has_abnormal_liver and "repeat_liver" not in seen:
-        cards.append(ActionCard(
-            action_id="repeat_liver",
-            title_vi="Theo dõi men gan",
-            detail_vi="Kiểm tra lại ALT/AST sau 1–3 tháng để theo dõi chức năng gan.",
-            interval_days=60,
-            action_type="repeat_lab",
-        ))
+        cards.append(
+            ActionCard(
+                action_id="repeat_liver",
+                title_vi="Theo dõi men gan",
+                detail_vi="Kiểm tra lại ALT/AST sau 1–3 tháng để theo dõi chức năng gan.",
+                interval_days=60,
+                action_type="repeat_lab",
+            )
+        )
         seen.add("repeat_liver")
 
     # If nothing abnormal → general monitoring reminder
     if not cards:
-        cards.append(ActionCard(
-            action_id="continue_monitoring",
-            title_vi="Tiếp tục theo dõi sức khỏe",
-            detail_vi="Các chỉ số hiện đang ổn định. Duy trì xét nghiệm định kỳ 6 tháng/lần.",
-            interval_days=180,
-            action_type="monitor",
-        ))
+        cards.append(
+            ActionCard(
+                action_id="continue_monitoring",
+                title_vi="Tiếp tục theo dõi sức khỏe",
+                detail_vi="Các chỉ số hiện đang ổn định. Duy trì xét nghiệm định kỳ 6 tháng/lần.",
+                interval_days=180,
+                action_type="monitor",
+            )
+        )
 
     return cards
 
@@ -448,13 +480,15 @@ def _build_timeline(trends: list[BiomarkerTrend]) -> list[TimelineSummaryItem]:
     """Convert BiomarkerTrend objects to TimelineSummaryItem."""
     items: list[TimelineSummaryItem] = []
     for t in trends:
-        items.append(TimelineSummaryItem(
-            canonical=t.canonical,
-            display_name_vi=t.display_name_vi or _display_vi(t.canonical),
-            trend=t.trend,
-            trend_text_vi=_TREND_TEXT_VI.get(t.trend, "Không rõ xu hướng"),
-            change_pct=t.change_pct,
-        ))
+        items.append(
+            TimelineSummaryItem(
+                canonical=t.canonical,
+                display_name_vi=t.display_name_vi or _display_vi(t.canonical),
+                trend=t.trend,
+                trend_text_vi=_TREND_TEXT_VI.get(t.trend, "Không rõ xu hướng"),
+                change_pct=t.change_pct,
+            )
+        )
     return items
 
 
@@ -464,16 +498,19 @@ def _build_positive_reinforcement(trends: list[BiomarkerTrend]) -> list[Positive
     for t in trends:
         if t.trend == "improving":
             name = t.display_name_vi or _display_vi(t.canonical)
-            items.append(PositiveReinforcement(
-                message_vi=f"{name} đã cải thiện so với lần đo trước. Hãy duy trì lối sống lành mạnh!",  # noqa: E501
-                biomarkers=[t.canonical],
-            ))
+            items.append(
+                PositiveReinforcement(
+                    message_vi=f"{name} đã cải thiện so với lần đo trước. Hãy duy trì lối sống lành mạnh!",  # noqa: E501
+                    biomarkers=[t.canonical],
+                )
+            )
     return items
 
 
 # ---------------------------------------------------------------------------
 # Main public function
 # ---------------------------------------------------------------------------
+
 
 def generate_patient_insight(
     patient_id: str,

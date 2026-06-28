@@ -37,9 +37,7 @@ def _cipher() -> MultiFernet:
     settings = get_settings()
     raw = (settings.encryption_keys or "").strip()
     if not raw:
-        raise EncryptionConfigError(
-            "MCP_ENCRYPTION_KEYS is not set; cannot encrypt PHI fields."
-        )
+        raise EncryptionConfigError("MCP_ENCRYPTION_KEYS is not set; cannot encrypt PHI fields.")
     keys = [k.strip() for k in raw.split(",") if k.strip()]
     try:
         return MultiFernet([Fernet(k.encode()) for k in keys])

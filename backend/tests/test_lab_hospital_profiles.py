@@ -206,12 +206,7 @@ class TestHospitalDetectorConfidence:
     def test_multiple_matches_choose_highest_confidence(self):
         """When two hospitals match, the one appearing earlier (higher confidence) wins."""
         # Vinmec on line 5 (0.9), Medlatec on line 25 (0.7) → expect vinmec
-        lines = (
-            ["padding"] * 4
-            + ["VINMEC international"]
-            + ["data"] * 19
-            + ["MEDLATEC hospital"]
-        )
+        lines = ["padding"] * 4 + ["VINMEC international"] + ["data"] * 19 + ["MEDLATEC hospital"]
         result = self._det.detect_or_unknown("\n".join(lines))
         assert result.profile.hospital_id == "vinmec"
         assert result.confidence == 0.9
@@ -275,12 +270,8 @@ class TestColumnMap:
             if profile.column_map is None:
                 continue
             cm = profile.column_map
-            assert cm.test_name >= 0, (
-                f"{profile.hospital_id}: column_map.test_name must be >= 0"
-            )
-            assert cm.value >= 0, (
-                f"{profile.hospital_id}: column_map.value must be >= 0"
-            )
+            assert cm.test_name >= 0, f"{profile.hospital_id}: column_map.test_name must be >= 0"
+            assert cm.value >= 0, f"{profile.hospital_id}: column_map.value must be >= 0"
             assert cm.value != cm.test_name, (
                 f"{profile.hospital_id}: column_map.value must differ from test_name"
             )
@@ -357,9 +348,7 @@ class TestVinmecGoldenTable:
         """Value 502 from a Cobas model number must never appear in any result."""
         mapped = extract_and_map(result)
         for r in mapped:
-            assert r.value != 502.0, (
-                f"{r.test_name}: value 502 leaked from Cobas suffix"
-            )
+            assert r.value != 502.0, f"{r.test_name}: value 502 leaked from Cobas suffix"
             assert r.original_value != 502.0, (
                 f"{r.test_name}: original_value 502 leaked from Cobas suffix"
             )
@@ -415,20 +404,21 @@ class TestVinmecGoldenTable:
         mapped = extract_and_map(result)
         assert mapped, "extract_and_map returned empty list for Vinmec golden table"
         for r in mapped:
-            assert r.original_value is not None, (
-                f"{r.test_name}: original_value is None"
-            )
+            assert r.original_value is not None, f"{r.test_name}: original_value is None"
 
-    @pytest.mark.parametrize("bm_key,exp_val,exp_unit", [
-        ("fasting_glucose",   5.20,   "mmol/L"),
-        ("total_cholesterol", 4.80,   "mmol/L"),
-        ("ast",               22.0,   "U/L"),
-        ("alt",               28.0,   "U/L"),
-        ("creatinine",        72.0,   "µmol/L"),
-        ("tsh",               2.10,   "µIU/mL"),
-        ("sodium",            139.0,  "mmol/L"),
-        ("potassium",         4.0,    "mmol/L"),
-    ])
+    @pytest.mark.parametrize(
+        "bm_key,exp_val,exp_unit",
+        [
+            ("fasting_glucose", 5.20, "mmol/L"),
+            ("total_cholesterol", 4.80, "mmol/L"),
+            ("ast", 22.0, "U/L"),
+            ("alt", 28.0, "U/L"),
+            ("creatinine", 72.0, "µmol/L"),
+            ("tsh", 2.10, "µIU/mL"),
+            ("sodium", 139.0, "mmol/L"),
+            ("potassium", 4.0, "mmol/L"),
+        ],
+    )
     def test_critical_biomarker_value_and_unit(self, result, bm_key, exp_val, exp_unit):
         """Spot-check critical biomarkers for exact value + unit from Vinmec golden table."""
         mapped = extract_and_map(result)
@@ -489,9 +479,7 @@ class TestMedlatecGoldenTable:
         """Value 502 must never appear in any result — P0 Cobas C502 regression."""
         mapped = extract_and_map(result)
         for r in mapped:
-            assert r.value != 502.0, (
-                f"{r.test_name}: value 502 leaked from Cobas C502 suffix"
-            )
+            assert r.value != 502.0, f"{r.test_name}: value 502 leaked from Cobas C502 suffix"
             assert r.original_value != 502.0, (
                 f"{r.test_name}: original_value 502 leaked from Cobas C502 suffix"
             )
@@ -539,18 +527,19 @@ class TestMedlatecGoldenTable:
         """No suspect_machine_id=True row must reach the final output list."""
         mapped = extract_and_map(result)
         for r in mapped:
-            assert not r.suspect_machine_id, (
-                f"{r.test_name}: suspect_machine_id row escaped output"
-            )
+            assert not r.suspect_machine_id, f"{r.test_name}: suspect_machine_id row escaped output"
 
-    @pytest.mark.parametrize("bm_key,exp_val,exp_unit", [
-        ("ast",               35.0,   "U/L"),
-        ("alt",               51.63,  "U/L"),
-        ("fasting_glucose",   5.73,   "mmol/L"),
-        ("creatinine",        87.66,  "µmol/L"),
-        ("urea",              5.43,   "mmol/L"),
-        ("total_cholesterol", 5.12,   "mmol/L"),
-    ])
+    @pytest.mark.parametrize(
+        "bm_key,exp_val,exp_unit",
+        [
+            ("ast", 35.0, "U/L"),
+            ("alt", 51.63, "U/L"),
+            ("fasting_glucose", 5.73, "mmol/L"),
+            ("creatinine", 87.66, "µmol/L"),
+            ("urea", 5.43, "mmol/L"),
+            ("total_cholesterol", 5.12, "mmol/L"),
+        ],
+    )
     def test_critical_biomarker_value_and_unit(self, result, bm_key, exp_val, exp_unit):
         """Spot-check critical biomarkers for exact value + unit from Medlatec golden table."""
         mapped = extract_and_map(result)
@@ -815,9 +804,7 @@ class TestAccuracyTargets:
         self, vinmec_result, vinmec_expected, medlatec_result, medlatec_expected
     ):
         """Combined accuracy across Vinmec + Medlatec must meet the 85% global target."""
-        v_found, v_total, _ = self._accuracy(
-            vinmec_result, vinmec_expected["expected_biomarkers"]
-        )
+        v_found, v_total, _ = self._accuracy(vinmec_result, vinmec_expected["expected_biomarkers"])
         m_found, m_total, _ = self._accuracy(
             medlatec_result, medlatec_expected["expected_biomarkers"]
         )

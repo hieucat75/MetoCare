@@ -72,9 +72,7 @@ def get_history(
     limit = min(limit, 100)
 
     total: int = db.execute(
-        select(func.count()).select_from(RiskScore).where(
-            RiskScore.patient_id == patient_id
-        )
+        select(func.count()).select_from(RiskScore).where(RiskScore.patient_id == patient_id)
     ).scalar_one()
 
     rows = list(

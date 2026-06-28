@@ -50,8 +50,7 @@ _VALID_GENDERS = frozenset({"male", "female", "other"})
 def _validate_password(password: str) -> None:
     if len(password) < _PASSWORD_MIN_LEN:
         raise ValueError(
-            f"Password must be at least {_PASSWORD_MIN_LEN} characters long "
-            f"(got {len(password)})."
+            f"Password must be at least {_PASSWORD_MIN_LEN} characters long (got {len(password)})."
         )
     if not _PASSWORD_PATTERN.match(password):
         raise ValueError(
@@ -76,9 +75,7 @@ def _validate_dob(dob: str) -> str:
 def _validate_gender(gender: str) -> str:
     g = gender.strip().lower()
     if g not in _VALID_GENDERS:
-        raise ValueError(
-            f"--gender must be one of {sorted(_VALID_GENDERS)}, got: '{gender}'."
-        )
+        raise ValueError(f"--gender must be one of {sorted(_VALID_GENDERS)}, got: '{gender}'.")
     return g
 
 
@@ -86,9 +83,7 @@ def _validate_measurement(value: float | None, flag: str, min_val: float, max_va
     if value is None:
         return
     if not (min_val <= value <= max_val):
-        raise ValueError(
-            f"--{flag} must be between {min_val} and {max_val}, got: {value}."
-        )
+        raise ValueError(f"--{flag} must be between {min_val} and {max_val}, got: {value}.")
 
 
 def seed_patient(
@@ -133,9 +128,7 @@ def seed_patient(
 
     db = SessionLocal()
     try:
-        existing_user = db.execute(
-            select(User).where(User.email == email)
-        ).scalar_one_or_none()
+        existing_user = db.execute(select(User).where(User.email == email)).scalar_one_or_none()
 
         if existing_user is not None:
             # Fetch the existing profile (created by auth.register at PATIENT registration).
@@ -210,25 +203,32 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--email", required=True, help="Patient email address.")
     parser.add_argument(
-        "--password", required=True,
+        "--password",
+        required=True,
         help="Password (min 12 chars, upper+lower+digit+special).",
     )
     parser.add_argument("--full-name", required=True, help="Patient full name.")
     parser.add_argument(
-        "--dob", default=None,
+        "--dob",
+        default=None,
         help="Date of birth in YYYY-MM-DD format (optional).",
     )
     parser.add_argument(
-        "--gender", default=None,
+        "--gender",
+        default=None,
         choices=sorted(_VALID_GENDERS),
         help="Biological sex / gender identity (optional).",
     )
     parser.add_argument(
-        "--height-cm", type=float, default=None,
+        "--height-cm",
+        type=float,
+        default=None,
         help="Height in centimetres (optional, range 50–250).",
     )
     parser.add_argument(
-        "--weight-kg", type=float, default=None,
+        "--weight-kg",
+        type=float,
+        default=None,
         help="Weight in kilograms (optional, range 10–500).",
     )
     return parser

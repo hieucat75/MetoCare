@@ -25,13 +25,15 @@ class MetricOut(BaseModel):
     measured_at: dt.datetime
     status: str | None
     source: str | None = None  # self_report/manual | lab_result | device …
-    clinical_message: str | None = None  # canonical Vietnamese clinical text (single source of truth)
+    clinical_message: str | None = (
+        None  # canonical Vietnamese clinical text (single source of truth)
+    )
     is_critical: bool = False  # True only when canonical re-classification is 'critical'
 
     model_config = {"from_attributes": True}
 
     @model_validator(mode="after")
-    def _populate_clinical_message(self) -> "MetricOut":
+    def _populate_clinical_message(self) -> MetricOut:
         """Compute canonical clinical_message for patient-facing banner.
 
         UNIT-SAFE: normalises value to canonical unit (e.g. mmol/L → mg/dL for
@@ -53,8 +55,8 @@ class MetricOut(BaseModel):
             return self  # caller already set it — honour that
 
         try:
+            from app.domain.lab_interpreter import _ALIAS_INDEX, classify_value
             from app.domain.lab_normalization import normalize_value_to_si
-            from app.domain.lab_interpreter import classify_value, _ALIAS_INDEX
             from app.services.lab import get_clinical_message
 
             # Normalise to canonical unit (no-op when already canonical).
@@ -84,23 +86,19 @@ class MetricOut(BaseModel):
             if spec and spec.si_unit and spec.physiological_max is not None:
                 unit_norm = raw_unit.strip().lower().replace("µ", "u").replace("μ", "u")
                 si_norm = spec.si_unit.strip().lower().replace("µ", "u").replace("μ", "u")
-                already_si = (unit_norm == si_norm)
+                already_si = unit_norm == si_norm
                 if not already_si and raw_value > spec.physiological_max:
                     # Value exceeds what is physiologically possible in the
                     # canonical unit → must be in the SI unit (stored incorrectly).
                     raw_unit = spec.si_unit
 
-            canonical_value, _ = normalize_value_to_si(
-                raw_value, raw_unit, self.metric_type
-            )
+            canonical_value, _ = normalize_value_to_si(raw_value, raw_unit, self.metric_type)
             # Re-classify using canonical thresholds.
             status_enum = classify_value(self.metric_type, canonical_value)
             if status_enum is not None and status_enum.value != "unknown":
                 canonical_status = status_enum.value
-                self.is_critical = (canonical_status == "critical")
-                self.clinical_message = get_clinical_message(
-                    self.metric_type, canonical_status
-                )
+                self.is_critical = canonical_status == "critical"
+                self.clinical_message = get_clinical_message(self.metric_type, canonical_status)
                 # Also update status to the canonical re-classification so that
                 # callers reading MetricOut.status get the correct value (even
                 # if the DB row has a stale/wrong status from before the unit-

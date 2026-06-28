@@ -88,6 +88,7 @@ class PatientCompactOut(BaseModel):
 # T22 — Pre-Visit Patient Summary
 # ---------------------------------------------------------------------------
 
+
 class VitalsSummary(BaseModel):
     """Recent vitals snapshot for the summary endpoint."""
 

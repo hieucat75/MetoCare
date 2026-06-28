@@ -20,32 +20,29 @@ Test strategy:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
-from unittest.mock import MagicMock, patch
-
-import pytest
 
 from app.domain.clinical_rules import ClinicalFinding, assess_biomarker
 from app.domain.patient_insight import PatientInsightReport, generate_patient_insight
 from app.services.lab import normalize_and_classify
 
-
 # ---------------------------------------------------------------------------
 # Helper: Mock LabResult for testing the route pipeline
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class MockLabResult:
     """Minimal LabResult substitute for unit tests."""
+
     canonical_name: str
-    value: float                  # raw (may be mmol/L)
-    unit: str                     # raw unit as reported
-    normalized_value_si: Optional[float]   # pre-computed canonical mg/dL
-    normalized_unit_si: Optional[str]
-    status: Optional[str]         # canonical status from backfill
+    value: float  # raw (may be mmol/L)
+    unit: str  # raw unit as reported
+    normalized_value_si: float | None  # pre-computed canonical mg/dL
+    normalized_unit_si: str | None
+    status: str | None  # canonical status from backfill
     verified_by_user: bool = True
     verified_by_doctor: bool = False
-    batch_id: Optional[str] = None
+    batch_id: str | None = None
     patient_id: str = "p-test-001"
     id: str = "result-test-001"
 
@@ -83,7 +80,7 @@ def _make_creatinine_822_umol() -> MockLabResult:
         canonical_name="creatinine",
         value=82.2,
         unit="umol/L",
-        normalized_value_si=0.93,   # 82.2 / 88.42
+        normalized_value_si=0.93,  # 82.2 / 88.42
         normalized_unit_si="mg/dL",
         status="normal",
     )
@@ -105,7 +102,8 @@ def _make_creatinine_212_mgdl() -> MockLabResult:
 # Helper: simulate the route's normalization logic (post-P0 fix)
 # ---------------------------------------------------------------------------
 
-def _resolve_norm_si(r: MockLabResult) -> Optional[float]:
+
+def _resolve_norm_si(r: MockLabResult) -> float | None:
     """Mirror the route's logic: use normalized_value_si, else re-normalize."""
     norm_si = r.normalized_value_si
     if norm_si is None and r.value is not None:
@@ -117,8 +115,7 @@ def _resolve_norm_si(r: MockLabResult) -> Optional[float]:
 def _run_insight_pipeline(results: list[MockLabResult]) -> PatientInsightReport:
     """Reproduce the fixed patient_insight route pipeline for unit testing."""
     from app.domain.clinical_patterns import detect_patterns
-    from app.domain.derived_metrics import DerivedMetricResult, compute_all_derived
-    from app.domain.longitudinal import BiomarkerTrend
+    from app.domain.derived_metrics import compute_all_derived
 
     findings: list[ClinicalFinding] = []
     raw_inputs: dict[str, float] = {}
@@ -137,10 +134,14 @@ def _run_insight_pipeline(results: list[MockLabResult]) -> PatientInsightReport:
     derived_list = compute_all_derived(raw_inputs)
     derived_map = {d.canonical: d for d in derived_list}
 
-    patterns_raw = detect_patterns({
-        "findings": {f.canonical: f.__dict__ for f in findings},
-        "derived": {k: (v.value if v.value is not None else None) for k, v in derived_map.items()},
-    })
+    patterns_raw = detect_patterns(
+        {
+            "findings": {f.canonical: f.__dict__ for f in findings},
+            "derived": {
+                k: (v.value if v.value is not None else None) for k, v in derived_map.items()
+            },
+        }
+    )
 
     return generate_patient_insight(
         patient_id="p-test-001",
@@ -154,6 +155,7 @@ def _run_insight_pipeline(results: list[MockLabResult]) -> PatientInsightReport:
 # ---------------------------------------------------------------------------
 # Test 1: normalize_and_classify agrees with assess_biomarker
 # ---------------------------------------------------------------------------
+
 
 class TestNormalizationAgrees:
     """Verify normalize_and_classify → assess_biomarker produce consistent status."""
@@ -221,6 +223,7 @@ class TestNormalizationAgrees:
 # Test 2: End-to-end pipeline — glucose 5.7 mmol/L must NOT be urgent
 # ---------------------------------------------------------------------------
 
+
 class TestGlucose57MmolPipeline:
     """End-to-end: 5.7 mmol/L glucose → AI Summary must NOT say urgent/dangerous."""
 
@@ -238,7 +241,8 @@ class TestGlucose57MmolPipeline:
         result = _make_glucose_57_mmol()
         report = _run_insight_pipeline([result])
         glucose_alerts = [
-            a for a in report.urgent_alerts
+            a
+            for a in report.urgent_alerts
             if "fasting_glucose" in a.biomarkers or "glucose" in a.alert_id.lower()
         ]
         assert len(glucose_alerts) == 0, (
@@ -263,8 +267,7 @@ class TestGlucose57MmolPipeline:
         result = _make_glucose_57_mmol()
         report = _run_insight_pipeline([result])
         glucose_insights = [
-            c for c in report.insights
-            if "fasting_glucose" in c.supporting_biomarkers
+            c for c in report.insights if "fasting_glucose" in c.supporting_biomarkers
         ]
         # 5.7 mmol/L = borderline → watch severity → medium importance
         for card in glucose_insights:
@@ -277,6 +280,7 @@ class TestGlucose57MmolPipeline:
 # ---------------------------------------------------------------------------
 # Test 3: Genuinely critical glucose must still be urgent
 # ---------------------------------------------------------------------------
+
 
 class TestGlucose502Critical:
     """502 mg/dL is genuinely critical — AI Summary must flag as urgent."""
@@ -310,6 +314,7 @@ class TestGlucose502Critical:
 # Test 4: Creatinine unit normalization
 # ---------------------------------------------------------------------------
 
+
 class TestCreatinineNormalization:
     """Creatinine must be normalized from µmol/L to mg/dL before clinical assessment."""
 
@@ -332,7 +337,8 @@ class TestCreatinineNormalization:
         though clinical_rules.assess_biomarker only has a critical rule for creatinine
         (not a separate 'high' rule). The key test is the lab_interpreter path."""
         # classify_value (lab_interpreter) correctly flags 2.12 as 'high'
-        from app.domain.lab_interpreter import classify_value, LabStatus
+        from app.domain.lab_interpreter import classify_value
+
         lab_status = classify_value("creatinine", 2.12)
         assert lab_status.value == "high", (
             f"lab_interpreter should classify 2.12 mg/dL creatinine as 'high', got '{lab_status}'"
@@ -353,10 +359,7 @@ class TestCreatinineNormalization:
         assert report.overall_status != "urgent", (
             f"82.2 µmol/L creatinine (=0.93 mg/dL) must NOT be urgent. Got '{report.overall_status}'"
         )
-        creatinine_alerts = [
-            a for a in report.urgent_alerts
-            if "creatinine" in a.biomarkers
-        ]
+        creatinine_alerts = [a for a in report.urgent_alerts if "creatinine" in a.biomarkers]
         assert len(creatinine_alerts) == 0, (
             f"82.2 µmol/L creatinine must produce NO urgent alerts. Got: {creatinine_alerts}"
         )
@@ -365,6 +368,7 @@ class TestCreatinineNormalization:
 # ---------------------------------------------------------------------------
 # Test 5: All surfaces must agree
 # ---------------------------------------------------------------------------
+
 
 class TestSurfaceConsistency:
     """Batch row, assess_biomarker, and AI Summary must all agree on severity."""
@@ -432,6 +436,7 @@ class TestSurfaceConsistency:
 # Test 6: normalized_value_si must be used, not raw value
 # ---------------------------------------------------------------------------
 
+
 class TestNormalizedValueUsed:
     """Verify the route uses normalized_value_si, not r.value."""
 
@@ -439,19 +444,15 @@ class TestNormalizedValueUsed:
         """When normalized_value_si is set, use it directly (no re-normalization)."""
         result = MockLabResult(
             canonical_name="fasting_glucose",
-            value=5.7,         # raw mmol/L
+            value=5.7,  # raw mmol/L
             unit="mmol/L",
-            normalized_value_si=102.7,   # pre-computed canonical
+            normalized_value_si=102.7,  # pre-computed canonical
             normalized_unit_si="mg/dL",
             status="borderline",
         )
         norm_si = _resolve_norm_si(result)
-        assert norm_si == 102.7, (
-            f"Should use stored normalized_value_si=102.7, got {norm_si}"
-        )
-        assert norm_si != 5.7, (
-            "CRITICAL: Route must NOT use raw 5.7 (mmol/L) as mg/dL value!"
-        )
+        assert norm_si == 102.7, f"Should use stored normalized_value_si=102.7, got {norm_si}"
+        assert norm_si != 5.7, "CRITICAL: Route must NOT use raw 5.7 (mmol/L) as mg/dL value!"
 
     def test_resolve_norm_si_fallback_normalizes(self):
         """When normalized_value_si is None, fall back to on-the-fly normalization."""
@@ -459,7 +460,7 @@ class TestNormalizedValueUsed:
             canonical_name="fasting_glucose",
             value=5.7,
             unit="mmol/L",
-            normalized_value_si=None,   # not pre-computed
+            normalized_value_si=None,  # not pre-computed
             normalized_unit_si=None,
             status=None,
         )
@@ -468,9 +469,7 @@ class TestNormalizedValueUsed:
         assert 100.0 <= norm_si <= 115.0, (
             f"5.7 mmol/L should normalize to ~102.7 mg/dL, got {norm_si}"
         )
-        assert norm_si != 5.7, (
-            "Fallback must normalize, not return raw mmol/L value!"
-        )
+        assert norm_si != 5.7, "Fallback must normalize, not return raw mmol/L value!"
 
     def test_raw_57_as_mgdl_would_be_critically_wrong(self):
         """Document that using r.value=5.7 directly would incorrectly classify as critical.

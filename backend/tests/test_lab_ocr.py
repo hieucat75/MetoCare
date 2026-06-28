@@ -49,7 +49,8 @@ def _png(data_text: bytes = b"x" * 32) -> bytes:
 
 def _patch_ocr(monkeypatch, text=SAMPLE_VN_LAB, confidence=0.92, provider="tesseract"):
     monkeypatch.setattr(
-        lab_upload, "run_ocr",
+        lab_upload,
+        "run_ocr",
         lambda data, mime: OcrTextResult(text=text, confidence=confidence, provider=provider),
     )
 
@@ -57,6 +58,7 @@ def _patch_ocr(monkeypatch, text=SAMPLE_VN_LAB, confidence=0.92, provider="tesse
 # --------------------------------------------------------------------------- #
 # Parser (pure python — no binary)
 # --------------------------------------------------------------------------- #
+
 
 def test_parser_recognises_core_panel():
     values = lab_parser.parse_lab_text(SAMPLE_VN_LAB)
@@ -140,10 +142,7 @@ def test_parser_random_glucose_english_alias():
 def test_parser_uric_acid_and_random_glucose_in_panel():
     """Both new biomarkers appear in a realistic mixed-language panel."""
     text = (
-        "HbA1c 6.8 %\n"
-        "Đường huyết ngẫu nhiên: 165 mg/dL\n"
-        "Axit uric 7.4 mg/dL\n"
-        "Creatinine 1.0 mg/dL"
+        "HbA1c 6.8 %\nĐường huyết ngẫu nhiên: 165 mg/dL\nAxit uric 7.4 mg/dL\nCreatinine 1.0 mg/dL"
     )
     by_name = {v.test_name: v for v in lab_parser.parse_lab_text(text)}
     assert "random_glucose" in by_name
@@ -157,16 +156,19 @@ def test_parser_uric_acid_and_random_glucose_in_panel():
 def test_uric_acid_critical_high_classified():
     """Value above critical_high (10.0) should be CRITICAL."""
     from app.domain.lab_interpreter import LabStatus, classify_value
+
     assert classify_value("uric_acid", 11.0) == LabStatus.CRITICAL
 
 
 def test_uric_acid_normal_classified():
     from app.domain.lab_interpreter import LabStatus, classify_value
+
     assert classify_value("uric_acid", 5.5) == LabStatus.NORMAL
 
 
 def test_random_glucose_high_classified():
     from app.domain.lab_interpreter import LabStatus, classify_value
+
     assert classify_value("random_glucose", 200.0) == LabStatus.HIGH
 
 
@@ -200,6 +202,7 @@ def test_new_biomarkers_promote_to_health_metric(client, patient, ocr_on):
 # MIME sniff + validation
 # --------------------------------------------------------------------------- #
 
+
 def test_sniff_mime():
     assert lab_upload.sniff_mime(JPEG_HEADER) == "image/jpeg"
     assert lab_upload.sniff_mime(PNG_HEADER) == "image/png"
@@ -214,7 +217,8 @@ def test_validate_rejects_wrong_mime():
 
 def test_validate_rejects_oversize(monkeypatch):
     monkeypatch.setattr(
-        lab_upload, "get_settings",
+        lab_upload,
+        "get_settings",
         lambda: SimpleNamespace(ocr_max_upload_mb=0, ocr_pdf_max_pages=3, ocr_lang="vie+eng"),
     )
     with pytest.raises(lab_upload.PayloadTooLargeError):
@@ -228,6 +232,7 @@ def test_validate_accepts_png_within_limit():
 # --------------------------------------------------------------------------- #
 # Draft build (OCR monkeypatched)
 # --------------------------------------------------------------------------- #
+
 
 def test_build_draft_success(monkeypatch):
     _patch_ocr(monkeypatch)
@@ -277,17 +282,21 @@ def test_build_draft_pdf_text_layer():
 # SSRF guard
 # --------------------------------------------------------------------------- #
 
-@pytest.mark.parametrize("url", [
-    "http://127.0.0.1/lab.png",
-    "http://10.0.0.5/lab.png",
-    "http://172.16.0.9/lab.png",
-    "http://192.168.1.10/lab.png",
-    "http://169.254.169.254/latest/meta-data/",   # IMDS
-    "http://169.254.169.254/metadata/instance",    # Azure IMDS
-    "https://[::1]/lab.png",
-    "ftp://example.com/lab.png",                    # bad scheme
-    "file:///etc/passwd",                           # bad scheme
-])
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://127.0.0.1/lab.png",
+        "http://10.0.0.5/lab.png",
+        "http://172.16.0.9/lab.png",
+        "http://192.168.1.10/lab.png",
+        "http://169.254.169.254/latest/meta-data/",  # IMDS
+        "http://169.254.169.254/metadata/instance",  # Azure IMDS
+        "https://[::1]/lab.png",
+        "ftp://example.com/lab.png",  # bad scheme
+        "file:///etc/passwd",  # bad scheme
+    ],
+)
 def test_ssrf_blocks_private_and_bad_scheme(url):
     with pytest.raises(ssrf.SSRFError):
         ssrf.validate_public_url(url)
@@ -306,11 +315,14 @@ def test_ssrf_blocks_metadata_hostname():
 # Cloud fallback gating (opt-in only; never silently called)
 # --------------------------------------------------------------------------- #
 
+
 def _force_local(monkeypatch, confidence):
     from app.services import ocr_engine
+
     monkeypatch.setattr(ocr_engine.TesseractEngine, "available", staticmethod(lambda: True))
     monkeypatch.setattr(
-        ocr_engine.TesseractEngine, "run",
+        ocr_engine.TesseractEngine,
+        "run",
         lambda self, data: OcrTextResult(
             text="Glucose 99 mg/dL", confidence=confidence, provider="tesseract"
         ),
@@ -352,7 +364,8 @@ def test_cloud_flag_on_but_no_key_falls_through(monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     ocr_engine = _force_local(monkeypatch, confidence=0.3)
     monkeypatch.setattr(
-        ocr_engine, "get_settings",
+        ocr_engine,
+        "get_settings",
         lambda: SimpleNamespace(ocr_cloud_provider="anthropic", ocr_lang="vie+eng"),
     )
     res = ocr_engine.run_ocr(b"x", "image/png")  # must NOT crash
@@ -362,6 +375,7 @@ def test_cloud_flag_on_but_no_key_falls_through(monkeypatch):
 # --------------------------------------------------------------------------- #
 # Azure Document Intelligence provider (real impl, mocked HTTP)
 # --------------------------------------------------------------------------- #
+
 
 class _FakeResp:
     """Minimal stand-in for an httpx.Response."""
@@ -402,8 +416,11 @@ def _patch_azure_http(monkeypatch, *, poll_body=_AZURE_SUCCESS):
     import httpx
 
     monkeypatch.setattr(
-        httpx, "post",
-        lambda *a, **k: _FakeResp(headers={"operation-location": "https://docintel.example.com/op/123"}),
+        httpx,
+        "post",
+        lambda *a, **k: _FakeResp(
+            headers={"operation-location": "https://docintel.example.com/op/123"}
+        ),
     )
     monkeypatch.setattr(httpx, "get", lambda *a, **k: _FakeResp(json_body=poll_body))
 
@@ -459,8 +476,11 @@ def test_azure_ssrf_invalid_operation_location(monkeypatch):
     monkeypatch.setenv("AZURE_DOC_INTEL_KEY", "k")
     monkeypatch.setenv("AZURE_DOC_INTEL_ENDPOINT", "https://docintel.example.com")
     monkeypatch.setattr(
-        httpx, "post",
-        lambda *a, **k: _FakeResp(headers={"operation-location": "https://attacker.internal/steal"}),
+        httpx,
+        "post",
+        lambda *a, **k: _FakeResp(
+            headers={"operation-location": "https://attacker.internal/steal"}
+        ),
     )
     with pytest.raises(OcrEngineError, match="operation-location không hợp lệ"):
         AzureDocIntelEngine().run(b"\xff\xd8\xff", "image/jpeg")
@@ -472,7 +492,8 @@ def test_run_ocr_uses_azure_primary_ignoring_local_confidence(monkeypatch):
     monkeypatch.setenv("AZURE_DOC_INTEL_ENDPOINT", "https://docintel.example.com")
     ocr_engine = _force_local(monkeypatch, confidence=0.3)
     monkeypatch.setattr(
-        ocr_engine.AzureDocIntelEngine, "run",
+        ocr_engine.AzureDocIntelEngine,
+        "run",
         lambda self, data, mime: OcrTextResult(
             text="Glucose 99 mg/dL", confidence=0.96, provider="azure"
         ),
@@ -500,7 +521,8 @@ def test_zero_biomarker_escalation_uses_cloud(monkeypatch):
     # Local OCR is high-confidence but parses nothing -> escalate to permitted cloud.
     _patch_ocr(monkeypatch, text="(ảnh mờ không đọc được)", confidence=0.95)
     monkeypatch.setattr(
-        lab_upload, "run_cloud_ocr_if_permitted",
+        lab_upload,
+        "run_cloud_ocr_if_permitted",
         lambda data, mime: OcrTextResult(
             text="Glucose lúc đói 126 mg/dL", confidence=0.97, provider="azure"
         ),
@@ -513,9 +535,7 @@ def test_zero_biomarker_escalation_uses_cloud(monkeypatch):
 
 def test_zero_biomarker_no_escalation_when_cloud_not_permitted(monkeypatch):
     _patch_ocr(monkeypatch, text="(ảnh mờ không đọc được)", confidence=0.95)
-    monkeypatch.setattr(
-        lab_upload, "run_cloud_ocr_if_permitted", lambda data, mime: None
-    )
+    monkeypatch.setattr(lab_upload, "run_cloud_ocr_if_permitted", lambda data, mime: None)
     draft = lab_upload.process_bytes(_png())
     assert draft.provider_used == "tesseract"
     assert draft.manual_fallback is True
@@ -525,6 +545,7 @@ def test_zero_biomarker_no_escalation_when_cloud_not_permitted(monkeypatch):
 # --------------------------------------------------------------------------- #
 # Endpoint: flag gate, RBAC, file + url, confirm-save
 # --------------------------------------------------------------------------- #
+
 
 def test_endpoint_503_when_flag_off(client, patient, monkeypatch):
     # FEATURE_OCR (unprefixed) takes precedence over MCP_FEATURE_OCR — clear both.
@@ -585,8 +606,12 @@ def test_confirm_save_persists_canonical_record(client, patient, monkeypatch, oc
     ).json()
     # 2) confirm via the existing manual-entry endpoint (review/edit then save)
     results = [
-        {"test_name": v["canonical"], "value": v["value"], "unit": v["unit"],
-         "reference_range": v["reference_range"]}
+        {
+            "test_name": v["canonical"],
+            "value": v["value"],
+            "unit": v["unit"],
+            "reference_range": v["reference_range"],
+        }
         for v in draft["parsed_values"]
     ]
     pid = patient["patient_id"]
@@ -604,6 +629,7 @@ def test_confirm_save_persists_canonical_record(client, patient, monkeypatch, oc
 # --------------------------------------------------------------------------- #
 # Real Tesseract (opt-in; skipped when the binary is absent)
 # --------------------------------------------------------------------------- #
+
 
 def test_real_tesseract_roundtrip(monkeypatch, ocr_on):
     from app.services.ocr_engine import TesseractEngine
@@ -628,14 +654,18 @@ def test_real_tesseract_roundtrip(monkeypatch, ocr_on):
 # Test-date extraction (parser) + required/validated test_date (endpoint)
 # --------------------------------------------------------------------------- #
 
-@pytest.mark.parametrize("text,expected,label_has", [
-    ("Ngày xét nghiệm: 15/10/2024\nGlucose 90 mg/dL", "2024-10-15", "xét nghiệm"),
-    # sample date wins over the print/report date:
-    ("Ngày lấy mẫu: 03/01/2025\nNgày in báo cáo: 05/01/2025", "2025-01-03", "lấy mẫu"),
-    ("Sample date 07-08-2023\nGlucose 90", "2023-08-07", "Sample"),
-    ("Ngày thực hiện\n22.09.2024", "2024-09-22", "thực hiện"),  # date on next line
-    ("Kết quả xét nghiệm ngày 02 tháng 03 năm 2024", "2024-03-02", None),
-])
+
+@pytest.mark.parametrize(
+    "text,expected,label_has",
+    [
+        ("Ngày xét nghiệm: 15/10/2024\nGlucose 90 mg/dL", "2024-10-15", "xét nghiệm"),
+        # sample date wins over the print/report date:
+        ("Ngày lấy mẫu: 03/01/2025\nNgày in báo cáo: 05/01/2025", "2025-01-03", "lấy mẫu"),
+        ("Sample date 07-08-2023\nGlucose 90", "2023-08-07", "Sample"),
+        ("Ngày thực hiện\n22.09.2024", "2024-09-22", "thực hiện"),  # date on next line
+        ("Kết quả xét nghiệm ngày 02 tháng 03 năm 2024", "2024-03-02", None),
+    ],
+)
 def test_parse_test_date_labels(text, expected, label_has):
     res = lab_parser.parse_test_date(text)
     assert res is not None and res.iso == expected, f"got {res}"
@@ -680,6 +710,7 @@ def test_manual_entry_requires_test_date(client, patient):
 # Azure DI as primary (Phase 1 OCR policy)
 # --------------------------------------------------------------------------- #
 
+
 def test_run_ocr_azure_primary_bypasses_tesseract(monkeypatch):
     """When Azure credentials are present, run_ocr goes to Azure without touching Tesseract."""
     monkeypatch.setenv("AZURE_DOC_INTEL_KEY", "k")
@@ -692,7 +723,8 @@ def test_run_ocr_azure_primary_bypasses_tesseract(monkeypatch):
     monkeypatch.setattr(ocr_engine.TesseractEngine, "available", staticmethod(lambda: True))
     monkeypatch.setattr(ocr_engine.TesseractEngine, "run", _boom)
     monkeypatch.setattr(
-        ocr_engine.AzureDocIntelEngine, "run",
+        ocr_engine.AzureDocIntelEngine,
+        "run",
         lambda self, data, mime: OcrTextResult(
             text="Glucose 99 mg/dL", confidence=0.97, provider="azure"
         ),
@@ -707,8 +739,10 @@ def test_pdf_routes_directly_to_azure_when_configured(monkeypatch):
     monkeypatch.setenv("AZURE_DOC_INTEL_KEY", "k")
     monkeypatch.setenv("AZURE_DOC_INTEL_ENDPOINT", "https://docintel.example.com")
     from app.services import ocr_engine as _ocr
+
     monkeypatch.setattr(
-        _ocr.AzureDocIntelEngine, "run",
+        _ocr.AzureDocIntelEngine,
+        "run",
         lambda self, data, mime: OcrTextResult(
             text="HbA1c 6.8 %\nGlucose 99 mg/dL", confidence=0.97, provider="azure"
         ),
@@ -838,8 +872,15 @@ class TestVinmecGroundTruth:
         values = lab_parser.parse_lab_text(_VINMEC_TEXT)
         found = {v.test_name for v in values}
         expected = {
-            "fasting_glucose", "alt", "total_cholesterol", "triglyceride",
-            "hdl", "ldl", "tsh", "ft3", "ft4",
+            "fasting_glucose",
+            "alt",
+            "total_cholesterol",
+            "triglyceride",
+            "hdl",
+            "ldl",
+            "tsh",
+            "ft3",
+            "ft4",
         }
         assert expected.issubset(found), f"Missing: {expected - found}"
 
@@ -1062,22 +1103,22 @@ THYROGLOBULIN 0.118 ng/mL < 55
 # creatinine: mol/L → µmol/L correction fires (global OCR fix), so original_unit=µmol/L.
 # tsh: pIU/mL → µIU/mL correction fires, so original_unit=µIU/mL.
 _VINMEC_16_EXPECTED: dict[str, tuple[float, str]] = {
-    "urea":              (4.47,   "mmol/L"),   # as printed
-    "creatinine":        (82.2,   "µmol/L"),   # after mol→µmol OCR correction
-    "fasting_glucose":   (4.78,   "mmol/L"),   # as printed
-    "ast":               (34.7,   "U/L"),
-    "alt":               (58.4,   "U/L"),
-    "total_cholesterol": (5.99,   "mmol/L"),   # as printed
-    "triglyceride":      (2.7,    "mmol/L"),   # as printed
-    "hdl":               (1.08,   "mmol/L"),   # as printed
-    "ldl":               (4.24,   "mmol/L"),   # as printed
-    "sodium":            (140.0,  "mmol/L"),
-    "potassium":         (3.95,   "mmol/L"),
-    "chloride":          (100.7,  "mmol/L"),
-    "ft3":               (4.64,   "pmol/L"),
-    "ft4":               (18.0,   "pmol/L"),
-    "tsh":               (1.26,   "µIU/mL"),   # after pIU→µIU OCR correction
-    "thyroglobulin":     (0.118,  "ng/mL"),
+    "urea": (4.47, "mmol/L"),  # as printed
+    "creatinine": (82.2, "µmol/L"),  # after mol→µmol OCR correction
+    "fasting_glucose": (4.78, "mmol/L"),  # as printed
+    "ast": (34.7, "U/L"),
+    "alt": (58.4, "U/L"),
+    "total_cholesterol": (5.99, "mmol/L"),  # as printed
+    "triglyceride": (2.7, "mmol/L"),  # as printed
+    "hdl": (1.08, "mmol/L"),  # as printed
+    "ldl": (4.24, "mmol/L"),  # as printed
+    "sodium": (140.0, "mmol/L"),
+    "potassium": (3.95, "mmol/L"),
+    "chloride": (100.7, "mmol/L"),
+    "ft3": (4.64, "pmol/L"),
+    "ft4": (18.0, "pmol/L"),
+    "tsh": (1.26, "µIU/mL"),  # after pIU→µIU OCR correction
+    "thyroglobulin": (0.118, "ng/mL"),
 }
 
 
@@ -1119,9 +1160,7 @@ class TestVinmec16Accuracy:
                 report.append(f"  WRONG    {canonical}: {', '.join(detail)}")
         pct = correct / len(_VINMEC_16_EXPECTED) * 100
         summary = "\n".join(report)
-        assert correct >= 13, (
-            f"Accuracy {correct}/16 ({pct:.1f}%) < 80% threshold.\n{summary}"
-        )
+        assert correct >= 13, f"Accuracy {correct}/16 ({pct:.1f}%) < 80% threshold.\n{summary}"
 
     def test_no_clinically_wrong_unit_survives(self):
         """No biomarker must have ocr_confidence=0 (incompatible unit or impossible value)."""
@@ -1147,18 +1186,21 @@ class TestVinmec16Accuracy:
         """All rows (including SI-converted ones) must expose original_value/original_unit
         set to the as-printed values (not the canonical SI values)."""
         parsed = self._parse()
-        si_biomarkers = {"urea", "creatinine", "fasting_glucose",
-                         "total_cholesterol", "triglyceride", "hdl", "ldl"}
+        si_biomarkers = {
+            "urea",
+            "creatinine",
+            "fasting_glucose",
+            "total_cholesterol",
+            "triglyceride",
+            "hdl",
+            "ldl",
+        }
         for canonical in si_biomarkers:
             row = parsed.get(canonical)
             if row is None:
                 continue
-            assert row.original_value is not None, (
-                f"{canonical}: original_value missing"
-            )
-            assert row.original_unit is not None, (
-                f"{canonical}: original_unit missing"
-            )
+            assert row.original_value is not None, f"{canonical}: original_value missing"
+            assert row.original_unit is not None, f"{canonical}: original_unit missing"
             # For SI-converted rows, original_unit must be the SI (as-printed) unit,
             # NOT the canonical unit (the canonical value is in row.value).
             assert row.original_unit != row.unit, (
@@ -1166,12 +1208,15 @@ class TestVinmec16Accuracy:
                 f"canonical unit '{row.unit}' for SI-converted rows"
             )
 
-    @pytest.mark.parametrize("canonical,exp_val,exp_unit", [
-        ("sodium",        140.0,  "mmol/L"),
-        ("potassium",     3.95,   "mmol/L"),
-        ("chloride",      100.7,  "mmol/L"),
-        ("thyroglobulin", 0.118,  "ng/mL"),
-    ])
+    @pytest.mark.parametrize(
+        "canonical,exp_val,exp_unit",
+        [
+            ("sodium", 140.0, "mmol/L"),
+            ("potassium", 3.95, "mmol/L"),
+            ("chloride", 100.7, "mmol/L"),
+            ("thyroglobulin", 0.118, "ng/mL"),
+        ],
+    )
     def test_new_biomarkers_extracted_correctly(self, canonical, exp_val, exp_unit):
         """New biomarkers (electrolytes + thyroglobulin) parse correctly."""
         parsed = self._parse()
@@ -1239,6 +1284,7 @@ class TestCodexP1Fixes:
         """88.42mol/L (no space) must NOT be rewritten to 88.42µmol/L by the global
         correction — the digit lookbehind guards it, and the value regex handles it."""
         from app.services.lab_parser import _GLOBAL_OCR_CORRECTIONS_RE
+
         pattern, replacement = _GLOBAL_OCR_CORRECTIONS_RE[0]
         result = pattern.sub(replacement, "88.42mol/L")
         assert result == "88.42mol/L", (
@@ -1248,6 +1294,7 @@ class TestCodexP1Fixes:
     def test_standalone_mol_l_is_rewritten(self):
         """Standalone ' mol/L' (space before) must still be rewritten to µmol/L."""
         from app.services.lab_parser import _GLOBAL_OCR_CORRECTIONS_RE
+
         pattern, replacement = _GLOBAL_OCR_CORRECTIONS_RE[0]
         result = pattern.sub(replacement, "CREATININ 82.2 mol/L")
         assert "µmol/L" in result, f"Standalone mol/L was not rewritten: '{result}'"

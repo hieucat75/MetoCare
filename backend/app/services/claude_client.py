@@ -4,13 +4,13 @@ Claude Sonnet client for MetoCare.
 - Used ONLY for natural language explanation from canonical clinical JSON.
 - Never used for classification, diagnosis, or clinical decisions.
 """
+
 from __future__ import annotations
 
 import hashlib
 import json
 import logging
 import os
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -23,9 +23,7 @@ def get_client():
     try:
         import anthropic  # noqa: PLC0415
     except ImportError as exc:
-        raise RuntimeError(
-            "anthropic package not installed — run: pip install anthropic"
-        ) from exc
+        raise RuntimeError("anthropic package not installed — run: pip install anthropic") from exc
 
     if not ANTHROPIC_API_KEY:
         raise ValueError("ANTHROPIC_API_KEY not set")

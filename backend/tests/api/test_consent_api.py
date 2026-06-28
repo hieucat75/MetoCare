@@ -23,6 +23,7 @@ from app.models.user import User, UserRole
 # Payload helpers
 # ---------------------------------------------------------------------------
 
+
 def _grant_payload(granted_to: str) -> dict:
     return {
         "consent_type": "lab_access",
@@ -99,15 +100,11 @@ def doctor_setup(db):
     db.add(d_user)
     db.flush()
 
-    doctor = Doctor(
-        user_id=d_user.id, clinic_id=clinic.id, full_name="Dr. Consent", is_active=True
-    )
+    doctor = Doctor(user_id=d_user.id, clinic_id=clinic.id, full_name="Dr. Consent", is_active=True)
     db.add(doctor)
     db.flush()
 
-    link = DoctorClinic(
-        doctor_id=doctor.id, clinic_id=clinic.id, is_primary=True, is_active=True
-    )
+    link = DoctorClinic(doctor_id=doctor.id, clinic_id=clinic.id, is_primary=True, is_active=True)
     db.add(link)
     db.commit()
 
@@ -293,6 +290,7 @@ def test_unauthenticated_cannot_revoke_consent(client, db, patient_setup, patien
     )
     assert r.status_code == 401, r.text
 
+
 def test_ai_service_cannot_revoke_consent(
     client, db, patient_setup, patient_consent, ai_service_setup
 ):
@@ -302,6 +300,7 @@ def test_ai_service_cannot_revoke_consent(
         headers=ai_service_setup["headers"],
     )
     assert r.status_code == 403, r.text
+
 
 def test_patient_cannot_revoke_another_patients_consent(
     client, db, patient_setup, another_patient_setup, doctor_setup

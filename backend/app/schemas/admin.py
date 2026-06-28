@@ -12,6 +12,7 @@ from app.models.user import UserRole
 # User admin views
 # ---------------------------------------------------------------------------
 
+
 class UserAdminOut(BaseModel):
     id: str
     email: str
@@ -51,6 +52,7 @@ class UserAuditLogOut(BaseModel):
 # Audit log read (admin-only)
 # ---------------------------------------------------------------------------
 
+
 class AuditLogOut(BaseModel):
     id: str
     actor_type: str
@@ -82,6 +84,7 @@ class AuditLogFilter(BaseModel):
 # Admin actions
 # ---------------------------------------------------------------------------
 
+
 class UnlockRequest(BaseModel):
     email: str
 
@@ -107,9 +110,11 @@ class DoctorAdminOut(BaseModel):
 
     model_config = {"from_attributes": True}
 
+
 # ---------------------------------------------------------------------------
 # System stats (lightweight, no PHI)
 # ---------------------------------------------------------------------------
+
 
 class SystemStatsOut(BaseModel):
     total_users: int

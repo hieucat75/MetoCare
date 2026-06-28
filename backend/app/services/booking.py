@@ -48,14 +48,18 @@ def list_available_slots(
     doctor_id: str,
 ) -> list[DoctorAvailability]:
     """Return all open (not yet booked) slots for a given doctor."""
-    rows = db.execute(
-        select(DoctorAvailability)
-        .where(
-            DoctorAvailability.doctor_id == doctor_id,
-            DoctorAvailability.is_booked == False,  # noqa: E712
+    rows = (
+        db.execute(
+            select(DoctorAvailability)
+            .where(
+                DoctorAvailability.doctor_id == doctor_id,
+                DoctorAvailability.is_booked == False,  # noqa: E712
+            )
+            .order_by(DoctorAvailability.slot_start)
         )
-        .order_by(DoctorAvailability.slot_start)
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return list(rows)
 
 

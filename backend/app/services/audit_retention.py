@@ -63,9 +63,7 @@ def purge_expired(db: Session, *, now: dt.datetime | None = None) -> dict[str, i
             deleted[category] = res.rowcount or 0
             continue
 
-        stmt = delete(AuditLog).where(
-            AuditLog.timestamp < cutoff, AuditLog.action.in_(actions)
-        )
+        stmt = delete(AuditLog).where(AuditLog.timestamp < cutoff, AuditLog.action.in_(actions))
         res = db.execute(stmt)
         deleted[category] = res.rowcount or 0
 

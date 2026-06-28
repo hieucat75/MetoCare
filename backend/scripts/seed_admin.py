@@ -62,8 +62,7 @@ def _validate_password(password: str) -> None:
     """Raise ValueError with a descriptive message if the password is weak."""
     if len(password) < _PASSWORD_MIN_LEN:
         raise ValueError(
-            f"Password must be at least {_PASSWORD_MIN_LEN} characters long "
-            f"(got {len(password)})."
+            f"Password must be at least {_PASSWORD_MIN_LEN} characters long (got {len(password)})."
         )
     if not _PASSWORD_PATTERN.match(password):
         raise ValueError(
@@ -78,8 +77,7 @@ def _validate_role(role: str) -> UserRole:
     if role not in _ALLOWED_ROLES:
         allowed = ", ".join(sorted(_ALLOWED_ROLES))
         raise ValueError(
-            f"Role '{role}' is not permitted by this script. "
-            f"Allowed roles: {allowed}."
+            f"Role '{role}' is not permitted by this script. Allowed roles: {allowed}."
         )
     return UserRole(role)
 
@@ -120,9 +118,7 @@ def seed_admin(
 
     db = SessionLocal()
     try:
-        existing = db.execute(
-            select(User).where(User.email == email)
-        ).scalar_one_or_none()
+        existing = db.execute(select(User).where(User.email == email)).scalar_one_or_none()
 
         if existing is not None:
             return {

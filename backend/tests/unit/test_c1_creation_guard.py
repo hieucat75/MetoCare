@@ -7,6 +7,7 @@ These tests verify that:
 4. DoctorReviewService.review(accept) can set ACCEPTED/safety_cleared=True (SQL UPDATE path)
 5. AI service bypassing the factory cannot silently create ACCEPTED recommendations
 """
+
 from __future__ import annotations
 
 import os
@@ -22,6 +23,7 @@ from app.services.doctor_review import DoctorReviewService
 # ---------------------------------------------------------------------------
 # C1: AIClinicalRecommendation creation guard
 # ---------------------------------------------------------------------------
+
 
 class TestC1RecommendationCreationGuard:
     """All bypass attempts must raise ValueError — guard is structural, not just policy."""
@@ -131,6 +133,7 @@ class TestC1RecommendationCreationGuard:
         db.flush()
 
         from app.models.care import Doctor
+
         doctor = Doctor(user_id=d_user.id, full_name="C1 Doctor")
         db.add(doctor)
         db.flush()
@@ -165,6 +168,7 @@ class TestC1RecommendationCreationGuard:
 # ---------------------------------------------------------------------------
 # C2: CarePlan AI creation guard
 # ---------------------------------------------------------------------------
+
 
 class TestC2CarePlanCreationGuard:
     """CarePlan.create_from_ai() must enforce status=DRAFT and ai_generated=True."""

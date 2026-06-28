@@ -44,6 +44,7 @@ from fastapi.testclient import TestClient
 # URL helpers
 # ---------------------------------------------------------------------------
 
+
 def _symptoms_url(patient_id: str) -> str:
     return f"/api/v1/patients/{patient_id}/symptoms"
 
@@ -59,6 +60,7 @@ def _medication_url(patient_id: str, med_id: str) -> str:
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def patient_a(db):
@@ -151,6 +153,7 @@ def doctor_consent_for_patient_a(db, patient_a, doctor):
 # Symptom Log tests
 # ---------------------------------------------------------------------------
 
+
 # 1
 def test_patient_creates_symptom_log(client: TestClient, patient_a):
     """PATIENT can log a symptom for their own profile — 201 with correct fields."""
@@ -199,9 +202,7 @@ def test_doctor_creates_symptom_with_consent(
 # 4
 def test_ai_service_cannot_create_symptom(client: TestClient, patient_a):
     """AI_SERVICE role must be blocked (403) — critical safety check."""
-    ai_token = create_access_token(
-        subject=f"ai-{os.urandom(4).hex()}", role="ai_service"
-    )
+    ai_token = create_access_token(subject=f"ai-{os.urandom(4).hex()}", role="ai_service")
     r = client.post(
         _symptoms_url(patient_a["patient_id"]),
         headers={"Authorization": f"Bearer {ai_token}"},
@@ -245,6 +246,7 @@ def test_symptom_severity_validation(client: TestClient, patient_a):
 # Medication tests
 # ---------------------------------------------------------------------------
 
+
 # 7
 def test_patient_adds_medication(client: TestClient, patient_a):
     """PATIENT can add a medication record — 201 with correct fields."""
@@ -279,9 +281,7 @@ def test_patient_cannot_add_medication_for_another_patient(
 # 9
 def test_ai_service_cannot_add_medication(client: TestClient, patient_a):
     """AI_SERVICE must be blocked from adding medications — 403 (CRITICAL SAFETY)."""
-    ai_token = create_access_token(
-        subject=f"ai-{os.urandom(4).hex()}", role="ai_service"
-    )
+    ai_token = create_access_token(subject=f"ai-{os.urandom(4).hex()}", role="ai_service")
     r = client.post(
         _medications_url(patient_a["patient_id"]),
         headers={"Authorization": f"Bearer {ai_token}"},
@@ -328,9 +328,7 @@ def test_soft_delete_medication(client: TestClient, patient_a):
     assert del_r.status_code == 204, del_r.text
 
     # Confirm it no longer appears in list
-    list_r = client.get(
-        _medications_url(patient_a["patient_id"]), headers=patient_a["headers"]
-    )
+    list_r = client.get(_medications_url(patient_a["patient_id"]), headers=patient_a["headers"])
     assert list_r.status_code == 200, list_r.text
     ids = [item["id"] for item in list_r.json()["items"]]
     assert med_id not in ids, "Soft-deleted medication should not appear in list"
@@ -394,9 +392,7 @@ def test_deleted_medication_not_in_list(client: TestClient, patient_a):
     )
 
     # List should contain "Keep This" but not "Delete This"
-    list_r = client.get(
-        _medications_url(patient_a["patient_id"]), headers=patient_a["headers"]
-    )
+    list_r = client.get(_medications_url(patient_a["patient_id"]), headers=patient_a["headers"])
     assert list_r.status_code == 200, list_r.text
     ids = [item["id"] for item in list_r.json()["items"]]
     assert keep_id in ids, "'Keep This' should still be in the list"

@@ -11,6 +11,7 @@ Usage:
 
 Can also read DATABASE_URL from .env in the backend directory.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -27,9 +28,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 # DB helpers
 # ---------------------------------------------------------------------------
 
+
 def _engine():
     try:
         from dotenv import load_dotenv
+
         load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
     except ImportError:
         pass
@@ -38,6 +41,7 @@ def _engine():
         print("ERROR: DATABASE_URL or MCP_DATABASE_URL not set", file=sys.stderr)
         sys.exit(1)
     from sqlalchemy import create_engine
+
     return create_engine(url)
 
 
@@ -58,6 +62,7 @@ def _load_cases(engine, *, days: int | None) -> list:
 # Analysis helpers
 # ---------------------------------------------------------------------------
 
+
 def _parse_json(s: str | None) -> list | dict | None:
     if not s:
         return None
@@ -71,6 +76,7 @@ def _parse_json(s: str | None) -> list | dict | None:
 # Core report logic
 # ---------------------------------------------------------------------------
 
+
 def run_report(cases: list) -> None:
     if not cases:
         print("No confirmed OCRCases with gap data found.")
@@ -81,8 +87,12 @@ def run_report(cases: list) -> None:
     error_examples: dict[tuple, list] = defaultdict(list)
 
     total_stats: dict[str, float] = dict(
-        row_acc=0.0, val_acc=0.0, unit_acc=0.0, bm_acc=0.0,
-        edit_rate=0.0, review_s=0.0,
+        row_acc=0.0,
+        val_acc=0.0,
+        unit_acc=0.0,
+        bm_acc=0.0,
+        edit_rate=0.0,
+        review_s=0.0,
     )
     review_n = 0
 
@@ -123,16 +133,18 @@ def run_report(cases: list) -> None:
             error_counter[key] += 1
 
             if len(error_examples[key]) < 3:
-                error_examples[key].append({
-                    "case_id": case.id[:8],
-                    "hospital": hospital,
-                    "e_name": e_row.get("original_test_name") or e_row.get("test_name"),
-                    "e_value": e_row.get("value"),
-                    "e_unit": e_row.get("unit"),
-                    "c_name": c_row.get("original_test_name") or c_row.get("test_name"),
-                    "c_value": c_row.get("value"),
-                    "c_unit": c_row.get("unit"),
-                })
+                error_examples[key].append(
+                    {
+                        "case_id": case.id[:8],
+                        "hospital": hospital,
+                        "e_name": e_row.get("original_test_name") or e_row.get("test_name"),
+                        "e_value": e_row.get("value"),
+                        "e_unit": e_row.get("unit"),
+                        "c_name": c_row.get("original_test_name") or c_row.get("test_name"),
+                        "c_value": c_row.get("value"),
+                        "c_unit": c_row.get("unit"),
+                    }
+                )
 
     n = len(cases)
 
@@ -163,15 +175,12 @@ def run_report(cases: list) -> None:
         hcases = by_hospital[hosp]
         hn = len(hcases)
         confs = [c.hospital_confidence for c in hcases if c.hospital_confidence is not None]
-        conf_str = f"{sum(confs)/len(confs):.0%}" if confs else "  n/a"
+        conf_str = f"{sum(confs) / len(confs):.0%}" if confs else "  n/a"
         ra = sum(c.row_accuracy or 0 for c in hcases) / hn
         va = sum(c.value_accuracy or 0 for c in hcases) / hn
         ua = sum(c.unit_accuracy or 0 for c in hcases) / hn
         er = sum(c.editing_rate or 0 for c in hcases) / hn
-        print(
-            f"  {hosp:<14} {hn:>3} {conf_str:>6} "
-            f"{ra:>7.1%} {va:>7.1%} {ua:>8.1%} {er:>9.1%}"
-        )
+        print(f"  {hosp:<14} {hn:>3} {conf_str:>6} {ra:>7.1%} {va:>7.1%} {ua:>8.1%} {er:>9.1%}")
 
     total_errors = sum(error_counter.values())
     print(f"\n## Error Breakdown  ({total_errors} total edits)\n")
@@ -195,8 +204,8 @@ def run_report(cases: list) -> None:
         count = error_counter[key]
         print(f"  [{edit_type.upper()}] {canonical}  ({count}×)")
         for ex in error_examples[key]:
-            e_str = f"{ex['e_value']} {ex['e_unit']}" if ex['e_value'] is not None else "(no value)"
-            c_str = f"{ex['c_value']} {ex['c_unit']}" if ex['c_value'] is not None else "(no value)"
+            e_str = f"{ex['e_value']} {ex['e_unit']}" if ex["e_value"] is not None else "(no value)"
+            c_str = f"{ex['c_value']} {ex['c_unit']}" if ex["c_value"] is not None else "(no value)"
             name_str = ex["e_name"] or "?"
             if ex.get("c_name") and ex["c_name"] != ex["e_name"]:
                 name_str += f" → {ex['c_name']}"

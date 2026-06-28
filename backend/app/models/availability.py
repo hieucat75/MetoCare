@@ -25,15 +25,9 @@ class DoctorAvailability(UUIDPrimaryKey, Base):
 
     __tablename__ = "doctor_availability"
 
-    doctor_id: Mapped[str] = mapped_column(
-        ForeignKey("users.id"), index=True, nullable=False
-    )
-    slot_start: Mapped[dt.datetime] = mapped_column(
-        DateTime(timezone=False), nullable=False
-    )
-    slot_end: Mapped[dt.datetime] = mapped_column(
-        DateTime(timezone=False), nullable=False
-    )
+    doctor_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    slot_start: Mapped[dt.datetime] = mapped_column(DateTime(timezone=False), nullable=False)
+    slot_end: Mapped[dt.datetime] = mapped_column(DateTime(timezone=False), nullable=False)
     is_booked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), server_default=_NOW, nullable=False

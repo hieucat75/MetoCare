@@ -27,12 +27,8 @@ def test_seed_is_idempotent_and_creates_demo(db):
     assert first["consent"] is True
 
     # Three demo accounts exist with the expected roles.
-    patient = db.execute(
-        select(User).where(User.email == "demo.patient@example.com")
-    ).scalar_one()
-    doctor = db.execute(
-        select(User).where(User.email == "demo.doctor@example.com")
-    ).scalar_one()
+    patient = db.execute(select(User).where(User.email == "demo.patient@example.com")).scalar_one()
+    doctor = db.execute(select(User).where(User.email == "demo.doctor@example.com")).scalar_one()
     assert patient.role == UserRole.PATIENT
     assert doctor.role == UserRole.DOCTOR
 
@@ -40,9 +36,11 @@ def test_seed_is_idempotent_and_creates_demo(db):
     assert auth.authenticate(db, email="demo.patient@example.com", password="DemoPatient123!")
 
     # Metrics landed on the patient's profile.
-    metrics = db.execute(
-        select(HealthMetric).where(HealthMetric.patient_id == first["patient_id"])
-    ).scalars().all()
+    metrics = (
+        db.execute(select(HealthMetric).where(HealthMetric.patient_id == first["patient_id"]))
+        .scalars()
+        .all()
+    )
     assert len(metrics) == first["metrics"]
 
     # Re-running adds nothing.

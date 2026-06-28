@@ -162,8 +162,7 @@ def test_cannot_breathe_must_be_emergency(phrase):
     """
     result = triage.assess(triage.TriageInput(symptom_text=phrase))
     assert result.risk_level == RiskLevel.EMERGENCY, (
-        f"SAFETY HOLE: '{phrase}' returned {result.risk_level!r}. "
-        f"Red flags: {result.red_flags}"
+        f"SAFETY HOLE: '{phrase}' returned {result.risk_level!r}. Red flags: {result.red_flags}"
     )
     assert result.action == EscalationAction.EMERGENCY_ESCALATION
 
@@ -203,9 +202,7 @@ def test_severe_hypoglycemia_glucose_critical_low_emergency():
     If the threshold is misconfigured and this passes as non-emergency,
     a patient in hypoglycemic crisis would not receive emergency escalation.
     """
-    result = triage.assess(
-        triage.TriageInput(vitals=[triage.VitalSign("fasting_glucose", 40.0)])
-    )
+    result = triage.assess(triage.TriageInput(vitals=[triage.VitalSign("fasting_glucose", 40.0)]))
     assert result.risk_level == RiskLevel.EMERGENCY, (
         f"SAFETY HOLE: glucose=40 returned {result.risk_level!r}. "
         f"Must be EMERGENCY (critical_low threshold breach). "
@@ -242,9 +239,7 @@ def test_suicidal_ideation_must_not_be_low(phrase):
         f"Suicidal ideation must NOT return LOW or MODERATE. "
         f"Red flags: {result.red_flags}"
     )
-    assert result.escalated_to_doctor is True, (
-        "Suicidal ideation must trigger doctor escalation."
-    )
+    assert result.escalated_to_doctor is True, "Suicidal ideation must trigger doctor escalation."
 
 
 # ---------------------------------------------------------------------------
@@ -292,8 +287,7 @@ def test_output_guardrail_blocks_specific_medication_dose():
     for text in unsafe_outputs:
         result = guardrails.check_output(text)
         assert result.decision == GuardrailDecision.BLOCK, (
-            f"SAFETY HOLE: Output guardrail FAILED to block: {text!r}\n"
-            f"Flags: {result.safety_flags}"
+            f"SAFETY HOLE: Output guardrail FAILED to block: {text!r}\nFlags: {result.safety_flags}"
         )
         assert any("prescribe_medication" in f for f in result.safety_flags), (
             f"Expected 'prohibited:prescribe_medication' in safety_flags for: {text!r}"
@@ -317,8 +311,7 @@ def test_output_guardrail_blocks_definitive_diagnosis():
     for text in diagnosis_outputs:
         result = guardrails.check_output(text)
         assert result.decision == GuardrailDecision.BLOCK, (
-            f"SAFETY HOLE: Diagnosis assertion not blocked: {text!r}\n"
-            f"Flags: {result.safety_flags}"
+            f"SAFETY HOLE: Diagnosis assertion not blocked: {text!r}\nFlags: {result.safety_flags}"
         )
         assert any("definitive_diagnosis" in f for f in result.safety_flags), (
             f"Expected 'prohibited:definitive_diagnosis' flag for: {text!r}"
@@ -375,9 +368,7 @@ def test_triage_response_contains_no_diagnosis(client, patient_a):
 
 
 # Test 10: Patient A cannot read Patient B's triage history
-def test_patient_a_cannot_read_patient_b_triage_history(
-    client, patient_a, patient_b
-):
+def test_patient_a_cannot_read_patient_b_triage_history(client, patient_a, patient_b):
     """Test 10 — Cross-patient isolation: triage history.
 
     Patient A's JWT must NOT allow access to Patient B's triage history.
@@ -393,9 +384,7 @@ def test_patient_a_cannot_read_patient_b_triage_history(
 
 
 # Test 11: Patient A cannot read Patient B's AI sessions
-def test_patient_a_cannot_read_patient_b_ai_session(
-    client, db, patient_a, patient_b
-):
+def test_patient_a_cannot_read_patient_b_ai_session(client, db, patient_a, patient_b):
     """Test 11 — Cross-patient isolation: AI sessions.
 
     Patient B's AI session must be inaccessible to Patient A's token.
@@ -422,9 +411,7 @@ def test_patient_a_cannot_read_patient_b_ai_session(
 
 
 # Test 12: Patient A cannot read Patient B's nutrition logs
-def test_patient_a_cannot_read_patient_b_nutrition_logs(
-    client, db, patient_a, patient_b
-):
+def test_patient_a_cannot_read_patient_b_nutrition_logs(client, db, patient_a, patient_b):
     """Test 12 — Cross-patient isolation: nutrition logs.
 
     Patient A's JWT must NOT be able to list Patient B's nutrition logs.
@@ -520,9 +507,7 @@ def test_clinic_admin_cannot_write_patient_health_metrics(
         ("GET", "/api/v1/patients/{patient_id}/nutrition", None),
     ],
 )
-def test_unauthenticated_request_returns_401(
-    client, patient_a, method, url, payload
-):
+def test_unauthenticated_request_returns_401(client, patient_a, method, url, payload):
     """Test 15 — Unauthenticated requests to patient data endpoints must return 401.
 
     No endpoint serving patient health data should be accessible without a

@@ -24,13 +24,15 @@ from ._mixins import UUIDPrimaryKey
 _NOW = text("CURRENT_TIMESTAMP")
 
 # Valid notification type values (open-ended for extensibility, enforced at schema)
-NOTIFICATION_TYPES = frozenset({
-    "appointment_reminder",
-    "health_alert",
-    "lab_ready",
-    "care_plan_update",
-    "system",
-})
+NOTIFICATION_TYPES = frozenset(
+    {
+        "appointment_reminder",
+        "health_alert",
+        "lab_ready",
+        "care_plan_update",
+        "system",
+    }
+)
 
 
 class Notification(UUIDPrimaryKey, Base):
@@ -55,9 +57,7 @@ class Notification(UUIDPrimaryKey, Base):
     title: Mapped[str] = mapped_column(String(256), nullable=False)
     body: Mapped[str] = mapped_column(Text, nullable=False)
     is_read: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    read_at: Mapped[dt.datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    read_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

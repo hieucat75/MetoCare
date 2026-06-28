@@ -64,15 +64,19 @@ router = APIRouter(prefix="/patients", tags=["patients"])
 # RBAC helpers shared by T15 endpoints
 # ---------------------------------------------------------------------------
 
-_BLOCKED_WRITE_ROLES: frozenset[str] = frozenset({
-    UserRole.AI_SERVICE,
-    UserRole.CLINIC_ADMIN,
-})
+_BLOCKED_WRITE_ROLES: frozenset[str] = frozenset(
+    {
+        UserRole.AI_SERVICE,
+        UserRole.CLINIC_ADMIN,
+    }
+)
 
-_ADMIN_ROLES: frozenset[str] = frozenset({
-    UserRole.INTERNAL_ADMIN,
-    UserRole.SUPER_ADMIN,
-})
+_ADMIN_ROLES: frozenset[str] = frozenset(
+    {
+        UserRole.INTERNAL_ADMIN,
+        UserRole.SUPER_ADMIN,
+    }
+)
 
 
 def _check_write_access(
@@ -98,6 +102,7 @@ def _check_write_access(
     if requester.role == UserRole.PATIENT:
         # Ownership check: resolve patient profile → compare user_id
         from app.models.patient import PatientProfile
+
         profile = db.get(PatientProfile, patient_id)
         if profile is None or profile.user_id != requester.id:
             raise HTTPException(
@@ -112,6 +117,7 @@ def _check_write_access(
         except ConsentError as exc:
             from fastapi import HTTPException  # noqa: F811
             from fastapi import status as http_status
+
             raise HTTPException(
                 status_code=http_status.HTTP_403_FORBIDDEN,
                 detail=str(exc),
@@ -120,6 +126,7 @@ def _check_write_access(
 
     from fastapi import HTTPException  # noqa: F811
     from fastapi import status as http_status
+
     raise HTTPException(
         status_code=http_status.HTTP_403_FORBIDDEN,
         detail=f"Role '{requester.role}' is not permitted.",
@@ -255,9 +262,7 @@ def get_metabolic_score_history(
     # We don\'t return the profile — just validate access.
     svc.get_profile(db, patient_id=patient_id, requester=user)
 
-    total, items = risk_score_svc.get_history(
-        db, patient_id=patient_id, limit=limit, offset=offset
-    )
+    total, items = risk_score_svc.get_history(db, patient_id=patient_id, limit=limit, offset=offset)
     trend = risk_score_svc.compute_trend(items)
 
     return RiskScoreHistoryResponse(
@@ -303,9 +308,7 @@ def get_live_metabolic_score(
     # GET /metrics routes. PATIENT-own and ADMIN access are already granted by
     # get_profile, so the scope check is limited to DOCTOR.
     if user.role == UserRole.DOCTOR:
-        require_access(
-            db, patient_id=patient_id, requester_id=user.id, scope="health_metric"
-        )
+        require_access(db, patient_id=patient_id, requester_id=user.id, scope="health_metric")
 
     result = metabolic_live_svc.compute_live_score(db, patient_id=patient_id)
     if result is None:
@@ -316,10 +319,7 @@ def get_live_metabolic_score(
         available=True,
         score=result.score,
         band=result.band.value,
-        factors=[
-            {"name": f.name, "points": f.points, "detail": f.detail}
-            for f in result.factors
-        ],
+        factors=[{"name": f.name, "points": f.points, "detail": f.detail} for f in result.factors],
         explanation=result.explanation,
     )
 
@@ -379,9 +379,7 @@ def get_patient_metric_insight(
 ) -> MetricInsightOut:
     _ensure_insight_enabled()
     _require_insight_access(db, user, patient_id)
-    insight = clinical_insight_svc.get_insight(
-        db, patient_id=patient_id, metric_type=metric_type
-    )
+    insight = clinical_insight_svc.get_insight(db, patient_id=patient_id, metric_type=metric_type)
     if insight is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -637,9 +635,7 @@ def update_medication(
     _check_write_access(db, patient_id=patient_id, requester=user)
 
     data = payload.model_dump(exclude_unset=True)
-    record = medication_svc.update_medication(
-        db, patient_id=patient_id, med_id=med_id, data=data
-    )
+    record = medication_svc.update_medication(db, patient_id=patient_id, med_id=med_id, data=data)
 
     audit.record(
         db,
@@ -655,9 +651,11 @@ def update_medication(
 
     return MedicationOut.model_validate(record)
 
+
 # ---------------------------------------------------------------------------
 # Phase 2 — Medication Adherence endpoints
 # ---------------------------------------------------------------------------
+
 
 @router.get(
     "/{patient_id}/medications/adherence-summary",
@@ -732,6 +730,7 @@ def get_medication_adherence(
 # ---------------------------------------------------------------------------
 # T18 — Nutrition Log endpoints
 # ---------------------------------------------------------------------------
+
 
 @router.post(
     "/{patient_id}/nutrition",
@@ -808,6 +807,7 @@ def list_nutrition_logs(
 # T19 — Triage Log history endpoint
 # ---------------------------------------------------------------------------
 
+
 @router.get(
     "/{patient_id}/triage-history",
     response_model=TriageLogHistoryResponse,
@@ -831,9 +831,7 @@ def get_triage_history(
     """
     _check_read_access(db, patient_id=patient_id, requester=user)
 
-    total, items = triage_log_svc.get_history(
-        db, patient_id=patient_id, limit=limit, offset=offset
-    )
+    total, items = triage_log_svc.get_history(db, patient_id=patient_id, limit=limit, offset=offset)
 
     return TriageLogHistoryResponse(
         patient_id=patient_id,
@@ -845,6 +843,7 @@ def get_triage_history(
 # ---------------------------------------------------------------------------
 # T22 — Pre-Visit Patient Summary
 # ---------------------------------------------------------------------------
+
 
 @router.get(
     "/{patient_id}/summary",
@@ -873,11 +872,13 @@ def get_patient_summary(
     from fastapi import status as http_status
 
     # Block PATIENT and AI_SERVICE explicitly (and CLINIC_ADMIN via _BLOCKED_WRITE_ROLES)
-    _SUMMARY_BLOCKED: frozenset[str] = frozenset({
-        UserRole.PATIENT,
-        UserRole.AI_SERVICE,
-        UserRole.CLINIC_ADMIN,
-    })
+    _SUMMARY_BLOCKED: frozenset[str] = frozenset(
+        {
+            UserRole.PATIENT,
+            UserRole.AI_SERVICE,
+            UserRole.CLINIC_ADMIN,
+        }
+    )
     if user.role in _SUMMARY_BLOCKED:
         raise HTTPException(
             status_code=http_status.HTTP_403_FORBIDDEN,
@@ -903,6 +904,7 @@ def get_patient_summary(
 # ---------------------------------------------------------------------------
 # T24 — PDF Export
 # ---------------------------------------------------------------------------
+
 
 @router.get(
     "/{patient_id}/summary.pdf",
@@ -930,11 +932,13 @@ def get_patient_summary_pdf(
     from fastapi import HTTPException
     from fastapi import status as http_status
 
-    _PDF_BLOCKED: frozenset[str] = frozenset({
-        UserRole.PATIENT,
-        UserRole.AI_SERVICE,
-        UserRole.CLINIC_ADMIN,
-    })
+    _PDF_BLOCKED: frozenset[str] = frozenset(
+        {
+            UserRole.PATIENT,
+            UserRole.AI_SERVICE,
+            UserRole.CLINIC_ADMIN,
+        }
+    )
     if user.role in _PDF_BLOCKED:
         raise HTTPException(
             status_code=http_status.HTTP_403_FORBIDDEN,

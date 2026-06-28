@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def api_client(client: TestClient) -> TestClient:
     return client
@@ -130,6 +131,7 @@ def encounter_for_patient(db, patient_setup, doctor_setup):
 # Tests
 # ---------------------------------------------------------------------------
 
+
 def test_doctor_can_create_encounter(client, doctor_setup, patient_setup):
     """Doctor POSTs an encounter for a patient — should get 201."""
     r = client.post(
@@ -192,9 +194,7 @@ def test_doctor_reads_assigned_encounter(client, doctor_setup, encounter_for_pat
     assert r.status_code == 200, r.text
 
 
-def test_doctor_cannot_read_unassigned_encounter(
-    client, db, patient_setup, encounter_for_patient
-):
+def test_doctor_cannot_read_unassigned_encounter(client, db, patient_setup, encounter_for_patient):
     """An unrelated doctor cannot read another doctor's encounter — 403."""
     # Create a second doctor with no DoctorClinic link to the patient's encounter
     d2_user = User(

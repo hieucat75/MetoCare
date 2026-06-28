@@ -63,9 +63,7 @@ def chat(
     if not is_enabled(FeatureFlag.AI_ASSISTANT):
         raise HTTPException(status_code=503, detail="AI assistant is disabled.")
     try:
-        resp = ai_assistant.respond(
-            payload.message, intent=payload.intent, user_id=user.id
-        )
+        resp = ai_assistant.respond(payload.message, intent=payload.intent, user_id=user.id)
     except LLMRateLimitError as exc:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,

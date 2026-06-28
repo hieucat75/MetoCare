@@ -48,6 +48,7 @@ __all__ = ["build_summary"]
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+
 def _fetch_vitals(db: Session, patient_id: str) -> VitalsSummary:
     """Return the 5 most-recent HealthMetric rows + a directional trend."""
     rows = list(
@@ -258,14 +259,16 @@ def _fetch_upcoming_appointments(
     rows = db.execute(stmt).all()
     result = []
     for appt, slot_start in rows:
-        result.append({
-            "id": appt.id,
-            "doctor_id": appt.doctor_id,
-            "status": appt.status,
-            "notes": appt.notes,
-            "slot_start": slot_start.isoformat() if slot_start else None,
-            "created_at": appt.created_at.isoformat() if appt.created_at else None,
-        })
+        result.append(
+            {
+                "id": appt.id,
+                "doctor_id": appt.doctor_id,
+                "status": appt.status,
+                "notes": appt.notes,
+                "slot_start": slot_start.isoformat() if slot_start else None,
+                "created_at": appt.created_at.isoformat() if appt.created_at else None,
+            }
+        )
     return result
 
 
@@ -288,6 +291,7 @@ def _fetch_active_care_plans(db: Session, patient_id: str) -> list[dict]:
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def build_summary(
     db: Session,

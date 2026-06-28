@@ -4,15 +4,14 @@ Cache Claude explanations by (lab_result_id, clinical_input_hash).
 Uses a simple file-based JSON cache (interim solution).
 If a DB explanation table is added later, swap the backend here.
 """
+
 from __future__ import annotations
 
 import json
 import os
 from datetime import datetime
 
-CACHE_DIR: str = os.getenv(
-    "EXPLANATION_CACHE_DIR", "/tmp/metocare_explanations"
-)
+CACHE_DIR: str = os.getenv("EXPLANATION_CACHE_DIR", "/tmp/metocare_explanations")
 
 
 def get_cached_explanation(lab_result_id: str, input_hash: str) -> dict | None:
@@ -27,9 +26,7 @@ def get_cached_explanation(lab_result_id: str, input_hash: str) -> dict | None:
     return None
 
 
-def save_cached_explanation(
-    lab_result_id: str, input_hash: str, data: dict
-) -> None:
+def save_cached_explanation(lab_result_id: str, input_hash: str, data: dict) -> None:
     """Persist explanation to cache (fire-and-forget; errors are logged but not raised)."""
     os.makedirs(CACHE_DIR, exist_ok=True)
     payload = {**data, "cached_at": datetime.utcnow().isoformat()}

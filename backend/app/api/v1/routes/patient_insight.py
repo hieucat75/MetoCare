@@ -23,13 +23,13 @@ from app.api.deps import CurrentUser, get_session, require_roles
 from app.domain.clinical_patterns import detect_patterns
 from app.domain.clinical_rules import ClinicalFinding, assess_biomarker
 from app.domain.derived_metrics import DerivedMetricResult, compute_all_derived
-from app.services.lab import normalize_and_classify
 from app.domain.longitudinal import BiomarkerTrend, compute_trends
 from app.domain.patient_insight import _DISCLAIMER, PatientInsightReport, generate_patient_insight
 from app.models.clinical import LabResult
 from app.models.patient import PatientProfile
 from app.models.user import UserRole
 from app.services import consent
+from app.services.lab import normalize_and_classify
 
 router = APIRouter(tags=["patient_insight"])
 
@@ -42,14 +42,14 @@ class PatientInsightRequest(BaseModel):
     dashboard summaries.
     """
 
-    batch_id: str | None = None           # scope to one LabUploadBatch (preferred)
+    batch_id: str | None = None  # scope to one LabUploadBatch (preferred)
     lab_result_ids: list[str] | None = None  # fine-grained fallback
     include_trends: bool = True
     include_patterns: bool = True
     include_derived: bool = True
     # Patient demographics — frontend sends sex/age; mapped below
-    sex: str | None = None          # "male" | "female" | None
-    age: int | None = None          # years
+    sex: str | None = None  # "male" | "female" | None
+    age: int | None = None  # years
     waist_cm: float | None = None
 
 
@@ -80,9 +80,7 @@ def patient_insight(
                 detail="Patients may only access their own records.",
             )
     else:
-        consent.require_access(
-            db, patient_id=patient_id, requester_id=user.id, scope="lab"
-        )
+        consent.require_access(db, patient_id=patient_id, requester_id=user.id, scope="lab")
 
     # --- Fetch verified lab results (batch-scoped or fine-grained) ---
     q = select(LabResult).where(
@@ -175,13 +173,14 @@ def patient_insight(
     # Patterns
     patterns_raw = []
     if body.include_patterns:
-        patterns_raw = detect_patterns({
-            "findings": {f.canonical: f.__dict__ for f in findings},
-            "derived": {
-                k: (v.value if v.value is not None else None)
-                for k, v in derived_map.items()
-            },
-        })
+        patterns_raw = detect_patterns(
+            {
+                "findings": {f.canonical: f.__dict__ for f in findings},
+                "derived": {
+                    k: (v.value if v.value is not None else None) for k, v in derived_map.items()
+                },
+            }
+        )
 
     # Trends
     trends: list[BiomarkerTrend] = []

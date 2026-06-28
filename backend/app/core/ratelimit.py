@@ -25,8 +25,7 @@ class RateLimiter(ABC):
         """Return True if a token is available (and consume it), else False."""
 
     @abstractmethod
-    def reset(self) -> None:
-        ...
+    def reset(self) -> None: ...
 
 
 class InMemoryRateLimiter(RateLimiter):

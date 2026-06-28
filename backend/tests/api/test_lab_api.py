@@ -54,6 +54,7 @@ def _make_consent(db, *, patient_id: str, granted_to: str) -> Consent:
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def patient_setup(db):
     """Patient user + profile + JWT token."""
@@ -176,6 +177,7 @@ def ai_service_setup(db):
 # Upload tests (POST /patients/{patient_id}/lab-documents)
 # ---------------------------------------------------------------------------
 
+
 def test_patient_uploads_own_lab_document(client, db, patient_setup):
     """T7-01: PATIENT uploading for themselves → 201."""
     r = client.post(
@@ -247,6 +249,7 @@ def test_ai_service_cannot_upload_lab_document(client, db, patient_setup, ai_ser
 # Process tests (POST /lab-documents/{id}/process)
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def patient_document(db, patient_setup):
     """A LabDocument owned by patient_setup."""
@@ -293,6 +296,7 @@ def test_unauthenticated_cannot_enqueue(client, patient_document):
 # ---------------------------------------------------------------------------
 # Status tests (GET /lab-documents/{id})
 # ---------------------------------------------------------------------------
+
 
 def test_patient_reads_own_document_status(client, db, patient_setup, patient_document):
     """T7-09: PATIENT reading own document status → 200."""
@@ -341,6 +345,7 @@ def test_admin_reads_any_document(client, db, patient_setup, patient_document, a
     body = r.json()
     assert body["id"] == patient_document.id
 
+
 def test_clinic_admin_can_read_document_status(client, db, patient_setup, patient_document):
     """T10-L01: CLINIC_ADMIN with active lab consent can read document status → 200."""
     import os as _os
@@ -378,6 +383,7 @@ def test_clinic_admin_can_read_document_status(client, db, patient_setup, patien
 # ---------------------------------------------------------------------------
 # Interpret tests (POST /lab-documents/{id}/interpret)
 # ---------------------------------------------------------------------------
+
 
 def test_patient_interprets_own_document(client, db, patient_setup, patient_document):
     """T7-12: PATIENT interpreting their own document → 200, has `biomarkers` field."""

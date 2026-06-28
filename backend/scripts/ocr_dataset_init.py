@@ -3,6 +3,7 @@
 Usage:
     python scripts/ocr_dataset_init.py
 """
+
 from __future__ import annotations
 
 import sys
@@ -13,9 +14,17 @@ BACKEND_DIR = SCRIPT_DIR.parent
 DATASET_DIR = BACKEND_DIR / "ocr_dataset"
 
 HOSPITALS = (
-    "vinmec", "medlatec", "tamanh", "hongngoc",
-    "bachmai", "bachmai108", "fv", "hoanmy",
-    "thucuc", "vietduc", "other",
+    "vinmec",
+    "medlatec",
+    "tamanh",
+    "hongngoc",
+    "bachmai",
+    "bachmai108",
+    "fv",
+    "hoanmy",
+    "thucuc",
+    "vietduc",
+    "other",
 )
 
 TIERS = ("golden", "benchmark")

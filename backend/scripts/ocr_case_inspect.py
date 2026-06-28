@@ -4,6 +4,7 @@
 Usage:
     python scripts/ocr_case_inspect.py <case_id>
 """
+
 from __future__ import annotations
 
 import json
@@ -19,6 +20,7 @@ from sqlalchemy.orm import Session
 
 def _engine():
     from dotenv import load_dotenv
+
     load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
     url = os.environ.get("DATABASE_URL", "")
     if not url:

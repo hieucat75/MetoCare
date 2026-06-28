@@ -34,6 +34,7 @@ from app.domain.lab_table_extractor import (
 
 # ──────────────────────────────────────────────────── helpers ──────────────────
 
+
 def _make_header_cells(*names: str, row: int = 0) -> list[dict]:
     """Create a list of columnheader cells from column names."""
     return [
@@ -76,36 +77,37 @@ _MEDLATEC_HEADER = [
 ]
 
 _MEDLATEC_DATA = [
-    ["1",  "AST (GOT)",                "25.37",  "U/L",     "0 - 40",     "Cobas C502"],
-    ["2",  "ALT (GPT)",                "51.63",  "U/L",     "0 - 56",     "Cobas C502"],
-    ["3",  "GGT",                      "75.78",  "U/L",     "0 - 60",     "Cobas C502"],
-    ["4",  "Glucose lúc đói",          "5.73",   "mmol/L",  "3.9 - 6.1",  "Cobas C502"],
-    ["5",  "Ure (Urea)",               "4.55",   "mmol/L",  "2.5 - 7.5",  "Cobas C502"],
-    ["6",  "Creatinine",               "87.66",  "µmol/L",  "44 - 80",    "Cobas C502"],
-    ["7",  "Triglyceride",             "1.97",   "mmol/L",  "0 - 1.7",    "Cobas C502"],
-    ["8",  "Cholesterol toàn phần",    "5.49",   "mmol/L",  "0 - 5.2",    "Cobas C502"],
-    ["9",  "HDL-C",                    "1.01",   "mmol/L",  "0.9 - 1.6",  "Cobas C502"],
-    ["10", "LDL-C",                    "3.59",   "mmol/L",  "0 - 3.4",    "Cobas C502"],
-    ["11", "Cortisol",                 "2.50",   "nmol/L",  "171 - 536",  "Cobas C502"],
+    ["1", "AST (GOT)", "25.37", "U/L", "0 - 40", "Cobas C502"],
+    ["2", "ALT (GPT)", "51.63", "U/L", "0 - 56", "Cobas C502"],
+    ["3", "GGT", "75.78", "U/L", "0 - 60", "Cobas C502"],
+    ["4", "Glucose lúc đói", "5.73", "mmol/L", "3.9 - 6.1", "Cobas C502"],
+    ["5", "Ure (Urea)", "4.55", "mmol/L", "2.5 - 7.5", "Cobas C502"],
+    ["6", "Creatinine", "87.66", "µmol/L", "44 - 80", "Cobas C502"],
+    ["7", "Triglyceride", "1.97", "mmol/L", "0 - 1.7", "Cobas C502"],
+    ["8", "Cholesterol toàn phần", "5.49", "mmol/L", "0 - 5.2", "Cobas C502"],
+    ["9", "HDL-C", "1.01", "mmol/L", "0.9 - 1.6", "Cobas C502"],
+    ["10", "LDL-C", "3.59", "mmol/L", "0 - 3.4", "Cobas C502"],
+    ["11", "Cortisol", "2.50", "nmol/L", "171 - 536", "Cobas C502"],
 ]
 
 # Expected values in original (as-printed) unit — NO silent conversion.
 MEDLATEC_EXPECTED = [
-    {"metric_type": "ast",               "original_value": 25.37,  "original_unit": "U/L"},
-    {"metric_type": "alt",               "original_value": 51.63,  "original_unit": "U/L"},
-    {"metric_type": "ggt",               "original_value": 75.78,  "original_unit": "U/L"},
-    {"metric_type": "fasting_glucose",   "original_value": 5.73,   "original_unit": "mmol/L"},
-    {"metric_type": "urea",              "original_value": 4.55,   "original_unit": "mmol/L"},
-    {"metric_type": "creatinine",        "original_value": 87.66,  "original_unit": "µmol/L"},
-    {"metric_type": "triglycerides",     "original_value": 1.97,   "original_unit": "mmol/L"},
-    {"metric_type": "total_cholesterol", "original_value": 5.49,   "original_unit": "mmol/L"},
-    {"metric_type": "hdl",               "original_value": 1.01,   "original_unit": "mmol/L"},
-    {"metric_type": "ldl",               "original_value": 3.59,   "original_unit": "mmol/L"},
-    {"metric_type": "cortisol",          "original_value": 2.50,   "original_unit": "nmol/L"},
+    {"metric_type": "ast", "original_value": 25.37, "original_unit": "U/L"},
+    {"metric_type": "alt", "original_value": 51.63, "original_unit": "U/L"},
+    {"metric_type": "ggt", "original_value": 75.78, "original_unit": "U/L"},
+    {"metric_type": "fasting_glucose", "original_value": 5.73, "original_unit": "mmol/L"},
+    {"metric_type": "urea", "original_value": 4.55, "original_unit": "mmol/L"},
+    {"metric_type": "creatinine", "original_value": 87.66, "original_unit": "µmol/L"},
+    {"metric_type": "triglycerides", "original_value": 1.97, "original_unit": "mmol/L"},
+    {"metric_type": "total_cholesterol", "original_value": 5.49, "original_unit": "mmol/L"},
+    {"metric_type": "hdl", "original_value": 1.01, "original_unit": "mmol/L"},
+    {"metric_type": "ldl", "original_value": 3.59, "original_unit": "mmol/L"},
+    {"metric_type": "cortisol", "original_value": 2.50, "original_unit": "nmol/L"},
 ]
 
 
 # ──────────────────────────────────────────────────── Unit tests ───────────────
+
 
 class TestInstrumentBlocklist:
     """test_instrument_blocklist — all blocklist entries must be detected."""
@@ -174,16 +176,15 @@ class TestPriceColumnNeverResult:
         result = _azure_result(header, data)
         rows = extract_table_rows(result)
         # The extracted value should be the result (5.73), not the price (125000)
-        glucose_rows = [r for r in rows if "glucose" in r.original_test_name.lower()
-                        or "đói" in r.original_test_name]
+        glucose_rows = [
+            r
+            for r in rows
+            if "glucose" in r.original_test_name.lower() or "đói" in r.original_test_name
+        ]
         if glucose_rows:
             for row in glucose_rows:
-                assert row.original_value_str != "125", (
-                    "Price column value leaked as result"
-                )
-                assert row.original_value_str != "125,000", (
-                    "Price column value leaked as result"
-                )
+                assert row.original_value_str != "125", "Price column value leaked as result"
+                assert row.original_value_str != "125,000", "Price column value leaked as result"
 
 
 class TestReferenceRangeNeverResult:
@@ -193,22 +194,30 @@ class TestReferenceRangeNeverResult:
         header = ["STT", "Tên xét nghiệm", "Kết quả", "Đơn vị", "Khoảng tham chiếu"]
         data = [
             ["1", "Glucose lúc đói", "5.73", "mmol/L", "3.9-6.1"],
-            ["2", "Creatinine",       "87.66", "µmol/L", "44-80"],
+            ["2", "Creatinine", "87.66", "µmol/L", "44-80"],
         ]
         result = _azure_result(header, data)
         rows = extract_table_rows(result)
         value_strs = {r.original_value_str for r in rows}
 
         # Reference range bounds must not appear as values
-        assert "3.9" not in value_strs or any(
-            r.original_value_str == "3.9" and "glucose" in r.original_test_name.lower()
-            for r in rows
-        ) is False, "Reference range low bound leaked as glucose result"
+        assert (
+            "3.9" not in value_strs
+            or any(
+                r.original_value_str == "3.9" and "glucose" in r.original_test_name.lower()
+                for r in rows
+            )
+            is False
+        ), "Reference range low bound leaked as glucose result"
 
-        assert "44" not in value_strs or any(
-            r.original_value_str == "44" and "creatinine" in r.original_test_name.lower()
-            for r in rows
-        ) is False, "Reference range low bound leaked as creatinine result"
+        assert (
+            "44" not in value_strs
+            or any(
+                r.original_value_str == "44" and "creatinine" in r.original_test_name.lower()
+                for r in rows
+            )
+            is False
+        ), "Reference range low bound leaked as creatinine result"
 
     def test_correct_values_extracted_with_reference_range_present(self):
         header = ["STT", "Tên xét nghiệm", "Kết quả", "Đơn vị", "Khoảng tham chiếu"]
@@ -264,7 +273,7 @@ class TestRowWithMissingUnitFlagged:
         header = ["STT", "Tên xét nghiệm", "Kết quả"]
         data = [
             ["1", "Glucose lúc đói", "5.73"],
-            ["2", "ALT (GPT)",        "51.63"],
+            ["2", "ALT (GPT)", "51.63"],
         ]
         result = _azure_result(header, data)
         rows = extract_table_rows(result)
@@ -299,9 +308,7 @@ class TestSuspectMachineIdBlocked:
         )
         # map_table_rows_to_raw_values must skip suspect rows
         mapped = map_table_rows_to_raw_values([suspect_row])
-        assert not mapped, (
-            f"Suspect row was not blocked; got {mapped}"
-        )
+        assert not mapped, f"Suspect row was not blocked; got {mapped}"
 
     def test_cobas_table_produces_no_502_value_in_output(self):
         """Full pipeline: Medlatec mock → no value==502 in any output row."""
@@ -329,6 +336,7 @@ class TestSuspectMachineIdBlocked:
 
 
 # ──────────────────────────────────────────────── Medlatec golden fixture ─────
+
 
 class TestMedlatecCobasMock:
     """Medlatec golden fixture: 11/11 biomarkers must be extracted with correct value + unit.
@@ -368,9 +376,7 @@ class TestMedlatecCobasMock:
     def test_no_value_502_in_output(self):
         by_name = self._run()
         for name, row in by_name.items():
-            assert row.value != 502.0, (
-                f"'{name}': value 502 leaked from Cobas C502 machine ID!"
-            )
+            assert row.value != 502.0, f"'{name}': value 502 leaked from Cobas C502 machine ID!"
             assert row.original_value != 502.0, (
                 f"'{name}': original_value 502 leaked from Cobas C502 machine ID!"
             )
@@ -465,12 +471,11 @@ class TestMedlatecCobasMock:
         assert abs(act_val - exp_val) < 0.02, (
             f"{metric}: original_value {act_val} ≠ expected {exp_val}"
         )
-        assert act_unit == exp_unit, (
-            f"{metric}: original_unit '{act_unit}' ≠ expected '{exp_unit}'"
-        )
+        assert act_unit == exp_unit, f"{metric}: original_unit '{act_unit}' ≠ expected '{exp_unit}'"
 
 
 # ──────────────────────────────────────────────── Additional edge cases ───────
+
 
 class TestColumnRoleDetection:
     """Verify column role detection picks value_col correctly under various layouts."""
@@ -496,7 +501,7 @@ class TestColumnRoleDetection:
         header = ["STT", "Tên xét nghiệm", "Kết quả", "Đơn vị"]
         data = [
             ["1", "Glucose lúc đói", "5.73", "mmol/L"],
-            ["2", "ALT",             "51.63", "U/L"],
+            ["2", "ALT", "51.63", "U/L"],
         ]
         rows = extract_table_rows(_azure_result(header, data))
         test_names = [r.original_test_name for r in rows]
@@ -507,7 +512,7 @@ class TestColumnRoleDetection:
         header = ["STT", "Tên xét nghiệm", "Kết quả", "Đơn vị", "Phương pháp / Máy"]
         data = [
             ["1", "Glucose", "5.73", "mmol/L", "Cobas C502"],
-            ["2", "ALT",     "51.63", "U/L",    "Cobas C502"],
+            ["2", "ALT", "51.63", "U/L", "Cobas C502"],
         ]
         rows = extract_table_rows(_azure_result(header, data))
         for row in rows:
@@ -520,11 +525,15 @@ class TestColumnRoleDetection:
 # FU-1 regression: promote gate — verified_by_user filter
 # ---------------------------------------------------------------------------
 
+
 class TestPromoteGateFU1:
     """FU-1: unverified OCR rows must not reach patient metrics."""
 
-    def _make_lab_result(self, *, verified: bool, canonical: str = "fasting_glucose", value: float = 5.73):
+    def _make_lab_result(
+        self, *, verified: bool, canonical: str = "fasting_glucose", value: float = 5.73
+    ):
         from unittest.mock import MagicMock
+
         row = MagicMock()
         row.verified_by_user = verified
         row.canonical_name = canonical
@@ -571,6 +580,7 @@ class TestPromoteGateFU1:
         unverified = self._make_lab_result(verified=False, canonical="alt")
 
         captured: list = []
+
         def fake_promote(db, *, patient_id, rows, test_date):
             captured.extend(rows)
             return len(rows)
@@ -589,10 +599,10 @@ class TestPromoteGateFU1:
         """No unverified row may appear in the captured promote list."""
 
         rows = [
-            self._make_lab_result(verified=True,  canonical="fasting_glucose"),
-            self._make_lab_result(verified=False, canonical="alt"),       # suspect: Cobas row
+            self._make_lab_result(verified=True, canonical="fasting_glucose"),
+            self._make_lab_result(verified=False, canonical="alt"),  # suspect: Cobas row
             self._make_lab_result(verified=False, canonical="triglycerides"),  # low confidence
-            self._make_lab_result(verified=True,  canonical="total_cholesterol"),
+            self._make_lab_result(verified=True, canonical="total_cholesterol"),
         ]
         promoted = [r for r in rows if r.verified_by_user]
         assert len(promoted) == 2
@@ -615,6 +625,7 @@ from tests.fixtures.vinmec_mock_table import (
 
 # ── Helper (duplicated from module-level for import isolation) ────────────────
 
+
 def _azure_result_with_content(content: str, header: list[str], data_rows: list[list[str]]) -> dict:
     """Build Azure DI analyzeResult dict with a top-level content string."""
     cells = _make_header_cells(*header) + _make_data_cells(data_rows)
@@ -622,6 +633,7 @@ def _azure_result_with_content(content: str, header: list[str], data_rows: list[
 
 
 # ─────────────────────────────────────────── TestProviderDetection ────────────
+
 
 class TestProviderDetection:
     """Hospital detection from full document text."""
@@ -673,6 +685,7 @@ class TestProviderDetection:
 
 
 # ────────────────────────────────────────── TestVinmecGoldenFixture ───────────
+
 
 class TestVinmecGoldenFixture:
     """Vinmec golden fixture — 16/16 expected values extracted correctly."""
@@ -750,15 +763,14 @@ class TestVinmecGoldenFixture:
         exp_val = float(expected["original_value"])
         act_val = row.original_value
         assert act_val is not None, f"{mt}: original_value is None"
-        assert abs(act_val - exp_val) < 0.02, (
-            f"{mt}: original_value {act_val} ≠ expected {exp_val}"
-        )
+        assert abs(act_val - exp_val) < 0.02, f"{mt}: original_value {act_val} ≠ expected {exp_val}"
         assert row.original_unit == expected["original_unit"], (
             f"{mt}: original_unit '{row.original_unit}' ≠ expected '{expected['original_unit']}'"
         )
 
 
 # ──────────────────────────────────── TestMedlatecInlineGoldenFixture ─────────
+
 
 class TestMedlatecInlineGoldenFixture:
     """Medlatec inline machine suffix golden fixture — 11/11 expected values."""
@@ -846,15 +858,14 @@ class TestMedlatecInlineGoldenFixture:
         exp_val = float(expected["original_value"])
         act_val = row.original_value
         assert act_val is not None, f"{mt}: original_value is None"
-        assert abs(act_val - exp_val) < 0.02, (
-            f"{mt}: original_value {act_val} ≠ expected {exp_val}"
-        )
+        assert abs(act_val - exp_val) < 0.02, f"{mt}: original_value {act_val} ≠ expected {exp_val}"
         assert row.original_unit == expected["original_unit"], (
             f"{mt}: original_unit '{row.original_unit}' ≠ expected '{expected['original_unit']}'"
         )
 
 
 # ──────────────────────────────────────────── TestTestNameCleaner ─────────────
+
 
 class TestTestNameCleaner:
     """Unit tests for clean_test_name() — strips machine/instrument suffixes."""
@@ -946,6 +957,7 @@ class TestTestNameCleaner:
 
 # ──────────────────────────────────────────── TestUnknownProviderGate ─────────
 
+
 class TestUnknownProviderGate:
     """Unknown provider (hospital_id=None) safety gate."""
 
@@ -954,8 +966,8 @@ class TestUnknownProviderGate:
         header = ["Tên xét nghiệm", "Kết quả", "Đơn vị"]
         data = [
             ["Glucose lúc đói", "5.73", "mmol/L"],
-            ["ALT (GPT)",        "51.63", "U/L"],
-            ["Creatinine",       "87.66", "µmol/L"],
+            ["ALT (GPT)", "51.63", "U/L"],
+            ["Creatinine", "87.66", "µmol/L"],
         ]
         cells = _make_header_cells(*header) + _make_data_cells(data)
         # No 'content' or hospital name → detect_hospital returns None
@@ -990,8 +1002,7 @@ class TestUnknownProviderGate:
         ast = by_name.get("ast")
         assert ast is not None
         assert ast.ocr_confidence > 0.5, (
-            f"AST from known Vinmec provider should have confidence > 0.5, "
-            f"got {ast.ocr_confidence}"
+            f"AST from known Vinmec provider should have confidence > 0.5, got {ast.ocr_confidence}"
         )
 
     def test_map_table_rows_hospital_id_none_caps_confidence(self):
@@ -1066,7 +1077,7 @@ class TestNeverExtractResultFromTestNameColumn:
         header = ["STT", "Tên xét nghiệm", "Kết quả", "Đơn vị"]
         data = [
             ["1", "Cholesterol (C502 series)", "5.49", "mmol/L"],
-            ["2", "ALT (GPT) ref C702",        "51.63", "U/L"],
+            ["2", "ALT (GPT) ref C702", "51.63", "U/L"],
         ]
         result = _azure_result(header, data)
         rows = extract_table_rows(result)
@@ -1087,9 +1098,9 @@ class TestCobasC502NotUsedAsResult:
         """'(Cobas C502)' embedded in test name → result must come from result col."""
         header = ["STT", "Tên xét nghiệm", "Kết quả", "Đơn vị", "Khoảng tham chiếu"]
         data = [
-            ["1", "AST (GOT) (Cobas C502)*",    "25.37", "U/L",    "10-40"],
-            ["2", "ALT (GPT) (Cobas C502)*",    "51.63", "U/L",    "10-40"],
-            ["3", "Cholesterol (Cobas C502)*",  "5.49",  "mmol/L", "< 5.2"],
+            ["1", "AST (GOT) (Cobas C502)*", "25.37", "U/L", "10-40"],
+            ["2", "ALT (GPT) (Cobas C502)*", "51.63", "U/L", "10-40"],
+            ["3", "Cholesterol (Cobas C502)*", "5.49", "mmol/L", "< 5.2"],
         ]
         result = _azure_result(header, data)
         rows = extract_table_rows(result)
@@ -1105,9 +1116,9 @@ class TestCobasC502NotUsedAsResult:
         """Separate method column 'Cobas C502' must not become value_col."""
         header = ["STT", "Tên xét nghiệm", "Kết quả", "Đơn vị", "Phương pháp / Máy"]
         data = [
-            ["1", "AST (GOT)",   "25.37", "U/L",    "Cobas C502"],
-            ["2", "ALT (GPT)",   "51.63", "U/L",    "Cobas C502"],
-            ["3", "Cholesterol", "5.49",  "mmol/L",  "Cobas C502"],
+            ["1", "AST (GOT)", "25.37", "U/L", "Cobas C502"],
+            ["2", "ALT (GPT)", "51.63", "U/L", "Cobas C502"],
+            ["3", "Cholesterol", "5.49", "mmol/L", "Cobas C502"],
         ]
         result = _azure_result(header, data)
         rows = extract_table_rows(result)
@@ -1126,16 +1137,16 @@ class TestMedlatecC502PanelResults:
     """
 
     _EXPECTED = [
-        ("ast",               25.37,  "U/L"),
-        ("alt",               51.63,  "U/L"),
-        ("ggt",               75.78,  "U/L"),
-        ("fasting_glucose",   5.73,   "mmol/L"),
-        ("urea",              4.55,   "mmol/L"),
-        ("creatinine",        87.66,  "µmol/L"),
-        ("triglyceride",      1.97,   "mmol/L"),
-        ("total_cholesterol", 5.49,   "mmol/L"),
-        ("hdl",               1.01,   "mmol/L"),
-        ("ldl",               3.59,   "mmol/L"),
+        ("ast", 25.37, "U/L"),
+        ("alt", 51.63, "U/L"),
+        ("ggt", 75.78, "U/L"),
+        ("fasting_glucose", 5.73, "mmol/L"),
+        ("urea", 4.55, "mmol/L"),
+        ("creatinine", 87.66, "µmol/L"),
+        ("triglyceride", 1.97, "mmol/L"),
+        ("total_cholesterol", 5.49, "mmol/L"),
+        ("hdl", 1.01, "mmol/L"),
+        ("ldl", 3.59, "mmol/L"),
     ]
 
     def _run(self) -> dict:
@@ -1170,22 +1181,22 @@ class TestVinmecColumnLockedPanel:
     """
 
     _EXPECTED = [
-        ("urea",              4.47,   "mmol/L"),
-        ("creatinine",        82.2,   "µmol/L"),
-        ("fasting_glucose",   4.78,   "mmol/L"),
-        ("ast",               34.7,   "U/L"),
-        ("alt",               58.4,   "U/L"),
-        ("total_cholesterol", 5.99,   "mmol/L"),
-        ("triglyceride",      2.7,    "mmol/L"),
-        ("hdl",               1.08,   "mmol/L"),
-        ("ldl",               4.24,   "mmol/L"),
-        ("sodium",            140.0,  "mmol/L"),
-        ("potassium",         3.95,   "mmol/L"),
-        ("chloride",          100.7,  "mmol/L"),
-        ("ft3",               4.64,   "pmol/L"),
-        ("ft4",               18.0,   "pmol/L"),
-        ("tsh",               1.26,   "µIU/mL"),
-        ("thyroglobulin",     0.118,  "ng/mL"),
+        ("urea", 4.47, "mmol/L"),
+        ("creatinine", 82.2, "µmol/L"),
+        ("fasting_glucose", 4.78, "mmol/L"),
+        ("ast", 34.7, "U/L"),
+        ("alt", 58.4, "U/L"),
+        ("total_cholesterol", 5.99, "mmol/L"),
+        ("triglyceride", 2.7, "mmol/L"),
+        ("hdl", 1.08, "mmol/L"),
+        ("ldl", 4.24, "mmol/L"),
+        ("sodium", 140.0, "mmol/L"),
+        ("potassium", 3.95, "mmol/L"),
+        ("chloride", 100.7, "mmol/L"),
+        ("ft3", 4.64, "pmol/L"),
+        ("ft4", 18.0, "pmol/L"),
+        ("tsh", 1.26, "µIU/mL"),
+        ("thyroglobulin", 0.118, "ng/mL"),
     ]
 
     def _run(self) -> dict:
@@ -1197,14 +1208,15 @@ class TestVinmecColumnLockedPanel:
             assert str(row.original_value or "").lower() not in ("cobas pro", "cobas"), (
                 f"'{name}': Cobas Pro appeared as value!"
             )
-            assert row.original_unit != "Pro", (
-                f"'{name}': 'Pro' appeared as unit!"
-            )
+            assert row.original_unit != "Pro", f"'{name}': 'Pro' appeared as unit!"
 
     def test_all_16_extracted(self):
         by_name = self._run()
-        missing = [m for m, _, _ in self._EXPECTED
-                   if by_name.get(m) is None and by_name.get(m.rstrip("s")) is None]
+        missing = [
+            m
+            for m, _, _ in self._EXPECTED
+            if by_name.get(m) is None and by_name.get(m.rstrip("s")) is None
+        ]
         assert not missing, f"Missing biomarkers: {missing}"
 
     @pytest.mark.parametrize("metric,val,unit", _EXPECTED)
@@ -1233,8 +1245,8 @@ class TestEmptyResultColumnDoesNotSearchTestName:
         """Row with empty result cell must not appear in extracted output."""
         header = ["STT", "Tên xét nghiệm", "Kết quả", "Đơn vị"]
         data = [
-            ["1", "AST (GOT) 502 annotation",  "",      "U/L"],   # empty result
-            ["2", "ALT (GPT)",                 "51.63", "U/L"],   # normal
+            ["1", "AST (GOT) 502 annotation", "", "U/L"],  # empty result
+            ["2", "ALT (GPT)", "51.63", "U/L"],  # normal
         ]
         result = _azure_result(header, data)
         rows = extract_table_rows(result)
@@ -1249,7 +1261,7 @@ class TestEmptyResultColumnDoesNotSearchTestName:
         header = ["STT", "Tên xét nghiệm", "Kết quả", "Đơn vị"]
         data = [
             ["1", "Glucose (C502 lot)", "", "mmol/L"],
-            ["2", "ALT 51 baseline",    "", "U/L"],
+            ["2", "ALT 51 baseline", "", "U/L"],
         ]
         result = _azure_result(header, data)
         rows = extract_table_rows(result)
@@ -1268,18 +1280,21 @@ class TestStripDeviceSuffixPreserveMedicalParentheses:
     (Free Triiodothyronine), (Free Thyroxine), (máu), (Na+), (K+).
     """
 
-    @pytest.mark.parametrize("name,must_contain,must_not_contain", [
-        ("AST (GOT) (Cobas C502)*",                   "GOT",                 "Cobas C502"),
-        ("ALT (GPT) (Cobas C502)*",                   "GPT",                 "Cobas C502"),
-        ("FT3 (Free Triiodothyronine) (Cobas C502)",  "Free Triiodothyronine", "Cobas C502"),
-        ("FT4 (Free Thyroxine) (Cobas C502)",          "Free Thyroxine",      "Cobas C502"),
-        ("AST (GOT) (Architect i2000)",               "GOT",                 "Architect"),
-        ("Glucose (Roche)",                           "Glucose",             "Roche"),
-        ("Creatinine (Siemens DxC)",                  "Creatinine",          "Siemens"),
-        ("ALT (Abbott)",                              "ALT",                 "Abbott"),
-        ("TSH (Cobas e601)",                          "TSH",                 "Cobas e601"),
-        ("Cholesterol (Cobas C502)*",                 "Cholesterol",         "C502"),
-    ])
+    @pytest.mark.parametrize(
+        "name,must_contain,must_not_contain",
+        [
+            ("AST (GOT) (Cobas C502)*", "GOT", "Cobas C502"),
+            ("ALT (GPT) (Cobas C502)*", "GPT", "Cobas C502"),
+            ("FT3 (Free Triiodothyronine) (Cobas C502)", "Free Triiodothyronine", "Cobas C502"),
+            ("FT4 (Free Thyroxine) (Cobas C502)", "Free Thyroxine", "Cobas C502"),
+            ("AST (GOT) (Architect i2000)", "GOT", "Architect"),
+            ("Glucose (Roche)", "Glucose", "Roche"),
+            ("Creatinine (Siemens DxC)", "Creatinine", "Siemens"),
+            ("ALT (Abbott)", "ALT", "Abbott"),
+            ("TSH (Cobas e601)", "TSH", "Cobas e601"),
+            ("Cholesterol (Cobas C502)*", "Cholesterol", "C502"),
+        ],
+    )
     def test_device_stripped_medical_preserved(self, name, must_contain, must_not_contain):
         result = clean_test_name(name)
         assert must_contain in result, (
@@ -1289,18 +1304,19 @@ class TestStripDeviceSuffixPreserveMedicalParentheses:
             f"Device suffix '{must_not_contain}' NOT stripped from '{name}' → '{result}'"
         )
 
-    @pytest.mark.parametrize("name", [
-        "AST (GOT)",
-        "ALT (GPT)",
-        "FT3 (Free Triiodothyronine)",
-        "FT4 (Free Thyroxine)",
-        "Glucose (máu)",
-        "Natri (Na+)",
-        "Kali (K+)",
-        "Chloride (Cl-)",
-    ])
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "AST (GOT)",
+            "ALT (GPT)",
+            "FT3 (Free Triiodothyronine)",
+            "FT4 (Free Thyroxine)",
+            "Glucose (máu)",
+            "Natri (Na+)",
+            "Kali (K+)",
+            "Chloride (Cl-)",
+        ],
+    )
     def test_medical_parentheses_not_stripped(self, name):
         result = clean_test_name(name)
-        assert result.strip() == name, (
-            f"Medical name '{name}' was wrongly changed to '{result}'"
-        )
+        assert result.strip() == name, f"Medical name '{name}' was wrongly changed to '{result}'"

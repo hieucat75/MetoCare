@@ -42,17 +42,17 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./data/mcp_dev.sqlite3"
 
     # ---- AI / OCR / Storage modes (mock by default = no external calls) ----
-    ai_mode: str = "mock"        # mock | gateway
+    ai_mode: str = "mock"  # mock | gateway
     llm_gateway_url: str = ""
     llm_api_key: str = ""
-    ocr_mode: str = "mock"       # mock | provider
+    ocr_mode: str = "mock"  # mock | provider
     ocr_provider_url: str = ""
     ocr_api_key: str = ""
     storage_mode: str = "local"  # local | s3 | minio
     storage_local_dir: str = "./storage"
 
     # ---- LLM Gateway (P2 #1) — provider abstraction, never calls real LLM in mock ----
-    llm_provider: str = "mock"   # mock | openai | anthropic (openai/anthropic = skeleton)
+    llm_provider: str = "mock"  # mock | openai | anthropic (openai/anthropic = skeleton)
     llm_model: str = "mock-vi-1"
     llm_max_tokens: int = 512
     llm_temperature: float = 0.2
@@ -66,14 +66,14 @@ class Settings(BaseSettings):
 
     # ---- RAG retrieval (P2 #2) ----
     rag_enabled: bool = True
-    embedding_provider: str = "mock"   # mock | openai (openai = skeleton)
+    embedding_provider: str = "mock"  # mock | openai (openai = skeleton)
     embedding_dim: int = 256
-    vector_store: str = "memory"       # memory | pgvector | qdrant (latter two = skeleton)
+    vector_store: str = "memory"  # memory | pgvector | qdrant (latter two = skeleton)
     rag_top_k: int = 3
     rag_seed_dir: str = "./data/rag_seed"
 
     # ---- OCR worker (P2 #3) — async queue, mock provider by default ----
-    ocr_provider: str = "mock"         # mock | tesseract | cloud (latter two = skeleton)
+    ocr_provider: str = "mock"  # mock | tesseract | cloud (latter two = skeleton)
     ocr_worker_enabled: bool = True
     ocr_queue_max_size: int = 256
 
@@ -81,15 +81,15 @@ class Settings(BaseSettings):
     # Primary OCR is Tesseract running locally in-container, cost $0. Cloud OCR is an
     # opt-in fallback gated by FeatureFlag.OCR_CLOUD_FALLBACK + a provider key (read
     # from the unprefixed ANTHROPIC_API_KEY / AZURE_DOC_INTEL_* env at call time).
-    ocr_lang: str = "vie+eng"               # Tesseract language packs
-    ocr_cloud_provider: str = ""            # "" | anthropic | azure (only read when fallback ON)
-    ocr_max_upload_mb: int = 10             # reject larger uploads with 413
+    ocr_lang: str = "vie+eng"  # Tesseract language packs
+    ocr_cloud_provider: str = ""  # "" | anthropic | azure (only read when fallback ON)
+    ocr_max_upload_mb: int = 10  # reject larger uploads with 413
     # Explicit opt-in for OCR dataset export (writes corrected rows to ocr_dataset/).
     # Must be true in addition to env=staging|dev to allow export. Prevents accidental
     # PHI writes if MCP_ENV is unset or misconfigured. Set MCP_OCR_DATASET_EXPORT_ENABLED=true.
     ocr_dataset_export_enabled: bool = False
     ocr_url_fetch_timeout_seconds: int = 10  # SSRF-guarded URL paste fetch
-    ocr_pdf_max_pages: int = 3              # rasterize/scan at most N pages
+    ocr_pdf_max_pages: int = 3  # rasterize/scan at most N pages
 
     # ---- CORS ----
     # Comma-separated list of allowed origins for CORS preflight.
@@ -122,7 +122,7 @@ class Settings(BaseSettings):
     # ---- Rate limiting & account lockout ----
     ratelimit_enabled: bool = True
     ratelimit_backend: str = "memory"  # memory | redis (redis = optional, lazy-imported)
-    ratelimit_redis_url: str = ""      # required when ratelimit_backend=redis
+    ratelimit_redis_url: str = ""  # required when ratelimit_backend=redis
     ratelimit_redis_prefix: str = "metocare:ratelimit:"  # namespace; reset() only touches this
     ratelimit_auth_capacity: int = 20  # max burst per window per client+action
     ratelimit_auth_window_seconds: int = 60
@@ -151,8 +151,7 @@ class Settings(BaseSettings):
         if missing:
             raise RuntimeError(
                 "Required environment variables are not set or empty. "
-                "The server cannot start safely. Missing: "
-                + ", ".join(missing)
+                "The server cannot start safely. Missing: " + ", ".join(missing)
             )
 
     def warn_if_insecure(self) -> list[str]:

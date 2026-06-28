@@ -13,23 +13,23 @@ Covers:
 Run:
     cd backend && python -m pytest tests/test_auto_classify.py -v
 """
+
 from __future__ import annotations
 
+import datetime as dt
 import json
 import uuid
-import datetime as dt
 
 import pytest
-
 from app.models.clinical import LabDocument, LabResult, LabUploadBatch
-from app.models.user import User, UserRole
 from app.models.patient import PatientProfile
-from app.services.lab import create_manual_entry, correct_lab_result, normalize_and_classify
-
+from app.models.user import User, UserRole
+from app.services.lab import correct_lab_result, create_manual_entry, normalize_and_classify
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_patient(db) -> dict:
     """Create a minimal patient + user; return {"patient_id": ..., "user_id": ...}."""
@@ -75,7 +75,9 @@ def _make_result_directly(
     return row
 
 
-def _create_entry(db, p: dict, test_name: str, value: float, unit: str, test_date=None) -> LabResult:
+def _create_entry(
+    db, p: dict, test_name: str, value: float, unit: str, test_date=None
+) -> LabResult:
     """Convenience: create a manual entry and return the first row."""
     _, rows = create_manual_entry(
         db,
@@ -92,6 +94,7 @@ def _create_entry(db, p: dict, test_name: str, value: float, unit: str, test_dat
 # ---------------------------------------------------------------------------
 # Phase 1: normalize_and_classify() unit tests
 # ---------------------------------------------------------------------------
+
 
 class TestNormalizeAndClassify:
     def test_glucose_mmol_normalized_and_classified(self):
@@ -146,6 +149,7 @@ class TestNormalizeAndClassify:
 # Phase 2: Manual entry creation — auto-classified at save
 # ---------------------------------------------------------------------------
 
+
 class TestManualEntryAutoClassify:
     def test_glucose_57_mmol_classified_at_save(self, db):
         """create_manual_entry(glucose 5.7 mmol/L) → status != None after DB save."""
@@ -169,9 +173,7 @@ class TestManualEntryAutoClassify:
         db.refresh(row)
 
         # original_value and original_unit must be the raw inputs
-        assert row.original_value == 5.7, (
-            f"original_value must be 5.7, got {row.original_value}"
-        )
+        assert row.original_value == 5.7, f"original_value must be 5.7, got {row.original_value}"
         assert row.original_unit == "mmol/L", (
             f"original_unit must be 'mmol/L', got {row.original_unit}"
         )
@@ -240,9 +242,7 @@ class TestManualEntryAutoClassify:
         row = _create_entry(db, p, "fasting_glucose", 85, "mg/dL")
         db.refresh(row)
 
-        assert row.status == "normal", (
-            f"Glucose 85 mg/dL should be 'normal', got '{row.status}'"
-        )
+        assert row.status == "normal", f"Glucose 85 mg/dL should be 'normal', got '{row.status}'"
 
     def test_unsupported_biomarker_status_none_no_crash(self, db):
         """Unsupported biomarker name → status=None, no crash."""
@@ -277,6 +277,7 @@ class TestManualEntryAutoClassify:
 # ---------------------------------------------------------------------------
 # Phase 3: User correction → reclassify
 # ---------------------------------------------------------------------------
+
 
 class TestUserCorrectionReclassify:
     def test_correction_triggers_reclassify(self, db):
@@ -347,7 +348,10 @@ class TestUserCorrectionReclassify:
         )
 
         # 85 mg/dL should be normalized as-is
-        assert corrected.normalized_value_si != old_norm or abs(corrected.normalized_value_si - 85.0) < 0.1
+        assert (
+            corrected.normalized_value_si != old_norm
+            or abs(corrected.normalized_value_si - 85.0) < 0.1
+        )
 
     def test_correction_not_found_raises(self, db):
         """Correcting non-existent result_id raises ValueError."""
@@ -367,6 +371,7 @@ class TestUserCorrectionReclassify:
 # Phase 4: OCR / interpret_document path
 # ---------------------------------------------------------------------------
 
+
 class TestOCRPathAutoClassify:
     """
     Test that interpret_document (the OCR confirm path) also auto-classifies at save.
@@ -375,7 +380,7 @@ class TestOCRPathAutoClassify:
 
     def test_ocr_interpret_classifies_at_save(self, db):
         """interpret_document() should produce LabResult rows with status set."""
-        from app.services.lab import interpret_document, register_document
+        from app.services.lab import interpret_document
 
         p = _make_patient(db)
 
@@ -401,6 +406,7 @@ class TestOCRPathAutoClassify:
 
         # Fetch the saved rows
         from sqlalchemy import select as _select
+
         rows = list(
             db.execute(
                 _select(LabResult).where(
@@ -425,6 +431,7 @@ class TestOCRPathAutoClassify:
 # ---------------------------------------------------------------------------
 # Backfill regression: existing backfill logic still passes
 # ---------------------------------------------------------------------------
+
 
 class TestBackfillRegression:
     """Ensure the reclassify backfill path still works (regression guard)."""

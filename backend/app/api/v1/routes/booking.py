@@ -35,15 +35,19 @@ router = APIRouter(tags=["booking"])
 # Role helpers
 # ---------------------------------------------------------------------------
 
-_BLOCKED_ROLES: frozenset[str] = frozenset({
-    UserRole.AI_SERVICE,
-    UserRole.CLINIC_ADMIN,
-})
+_BLOCKED_ROLES: frozenset[str] = frozenset(
+    {
+        UserRole.AI_SERVICE,
+        UserRole.CLINIC_ADMIN,
+    }
+)
 
-_ADMIN_ROLES: frozenset[str] = frozenset({
-    UserRole.INTERNAL_ADMIN,
-    UserRole.SUPER_ADMIN,
-})
+_ADMIN_ROLES: frozenset[str] = frozenset(
+    {
+        UserRole.INTERNAL_ADMIN,
+        UserRole.SUPER_ADMIN,
+    }
+)
 
 
 def _require_not_blocked(user: CurrentUser) -> None:
@@ -73,6 +77,7 @@ def _resolve_patient_profile(db: Session, user_id: str) -> PatientProfile:
 # ---------------------------------------------------------------------------
 # POST /doctors/{doctor_id}/availability — DOCTOR only (own slots)
 # ---------------------------------------------------------------------------
+
 
 @router.post(
     "/doctors/{doctor_id}/availability",
@@ -112,6 +117,7 @@ def add_availability(
 # GET /doctors/{doctor_id}/availability — PATIENT / DOCTOR / ADMIN
 # ---------------------------------------------------------------------------
 
+
 @router.get(
     "/doctors/{doctor_id}/availability",
     response_model=list[AvailabilityOut],
@@ -146,6 +152,7 @@ def list_availability(
 # GET /doctors/me/appointments — DOCTOR only
 # ---------------------------------------------------------------------------
 
+
 @router.get(
     "/doctors/me/appointments",
     response_model=list[AppointmentOut],
@@ -178,6 +185,7 @@ def list_my_appointments(
 # ---------------------------------------------------------------------------
 # POST /appointments — PATIENT only
 # ---------------------------------------------------------------------------
+
 
 @router.post(
     "/appointments",
@@ -219,6 +227,7 @@ def book_appointment(
 # GET /patients/{patient_id}/appointments
 # ---------------------------------------------------------------------------
 
+
 @router.get(
     "/patients/{patient_id}/appointments",
     response_model=list[AppointmentOut],
@@ -251,9 +260,7 @@ def list_patient_appointments(
 
     elif user.role == UserRole.DOCTOR:
         # Doctor sees appointments for this patient where they are the doctor
-        appts = booking_svc.list_appointments(
-            db, patient_id=patient_id, doctor_id=user.id
-        )
+        appts = booking_svc.list_appointments(db, patient_id=patient_id, doctor_id=user.id)
 
     elif user.role in _ADMIN_ROLES:
         appts = booking_svc.list_appointments(db, patient_id=patient_id)
@@ -270,6 +277,7 @@ def list_patient_appointments(
 # ---------------------------------------------------------------------------
 # PATCH /appointments/{appointment_id}
 # ---------------------------------------------------------------------------
+
 
 @router.patch(
     "/appointments/{appointment_id}",

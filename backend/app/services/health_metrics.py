@@ -160,8 +160,6 @@ def trend(
         "first": values[0],
         "last": values[-1],
         "direction": (
-            "up" if values[-1] > values[0]
-            else "down" if values[-1] < values[0]
-            else "flat"
+            "up" if values[-1] > values[0] else "down" if values[-1] < values[0] else "flat"
         ),
     }

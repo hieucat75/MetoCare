@@ -31,9 +31,7 @@ def test_critical_vital_escalates():
 
 
 def test_critical_low_glucose_escalates():
-    result = triage.assess(
-        triage.TriageInput(vitals=[triage.VitalSign("fasting_glucose", 40)])
-    )
+    result = triage.assess(triage.TriageInput(vitals=[triage.VitalSign("fasting_glucose", 40)]))
     assert result.risk_level == RiskLevel.EMERGENCY
 
 

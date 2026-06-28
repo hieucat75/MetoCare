@@ -11,6 +11,7 @@ from app.core.ratelimit import InMemoryRateLimiter, LockoutManager
 # Unit
 # --------------------------------------------------------------------------- #
 
+
 def test_token_bucket_limits_then_refills():
     rl = InMemoryRateLimiter()
     allowed = [rl.allow("k", capacity=3, refill_per_sec=0, now=0) for _ in range(5)]
@@ -39,6 +40,7 @@ def test_lockout_reset_clears_counter():
 # --------------------------------------------------------------------------- #
 # Integration
 # --------------------------------------------------------------------------- #
+
 
 def _register(client, role="patient"):
     email = f"rl-{os.urandom(4).hex()}@example.com"
@@ -90,9 +92,9 @@ def test_admin_can_unlock_account(client, token_for):
     settings = get_settings()
     for _ in range(settings.lockout_max_failures):
         client.post("/api/v1/auth/login", json={"email": email, "password": "wrong"})
-    assert client.post(
-        "/api/v1/auth/login", json={"email": email, "password": pw}
-    ).status_code == 423
+    assert (
+        client.post("/api/v1/auth/login", json={"email": email, "password": pw}).status_code == 423
+    )
 
     unlock = client.post(
         "/api/v1/admin/unlock-account",
@@ -101,9 +103,9 @@ def test_admin_can_unlock_account(client, token_for):
     )
     assert unlock.status_code == 200, unlock.text
 
-    assert client.post(
-        "/api/v1/auth/login", json={"email": email, "password": pw}
-    ).status_code == 200
+    assert (
+        client.post("/api/v1/auth/login", json={"email": email, "password": pw}).status_code == 200
+    )
 
 
 def test_non_auth_endpoint_not_rate_limited(client):

@@ -17,6 +17,7 @@ from app.models.user import User, UserRole
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def patient_setup(db):
     p_user = User(
@@ -99,6 +100,7 @@ def ai_session_for_patient(db, patient_setup):
 # Tests
 # ---------------------------------------------------------------------------
 
+
 def test_create_ai_session_flag_enabled(
     client, patient_setup, grant_ai_consent_for_patient, monkeypatch
 ):
@@ -145,6 +147,7 @@ def test_create_ai_session_no_consent_returns_403(client, patient_setup, monkeyp
     monkeypatch.setenv("FEATURE_AI_SESSION_ENABLED", "true")
     # Create an unrelated doctor who has NO consent from the patient
     from app.models.user import User, UserRole
+
     d_user = User(
         email=f"doctor-noconsent-{os.urandom(4).hex()}@example.com",
         password_hash="x",
@@ -188,9 +191,7 @@ def test_patient_cannot_read_other_ai_session(
     assert r.status_code == 403, r.text
 
 
-def test_list_recommendations_scoped(
-    client, patient_setup, ai_session_for_patient, monkeypatch
-):
+def test_list_recommendations_scoped(client, patient_setup, ai_session_for_patient, monkeypatch):
     """Recommendations endpoint gated by AI_CLINICAL_RECS_ENABLED flag."""
     # Flag off → 503
     monkeypatch.setenv("FEATURE_AI_CLINICAL_RECS_ENABLED", "false")

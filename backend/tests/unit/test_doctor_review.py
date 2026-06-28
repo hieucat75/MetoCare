@@ -19,13 +19,13 @@ def setup_data(db):
         email=f"patient-{os.urandom(4).hex()}@example.com",
         password_hash="x",
         role=UserRole.PATIENT,
-        full_name="Patient Name"
+        full_name="Patient Name",
     )
     db.add(p_user)
     db.flush()
     patient = PatientProfile(user_id=p_user.id, full_name="Patient Name")
     db.add(patient)
-    
+
     # Create clinic
     clinic = Clinic(name="MetoClinic")
     db.add(clinic)
@@ -36,7 +36,7 @@ def setup_data(db):
         email=f"doctor-{os.urandom(4).hex()}@example.com",
         password_hash="x",
         role=UserRole.DOCTOR,
-        full_name="Dr. Clinical"
+        full_name="Dr. Clinical",
     )
     db.add(d_user)
     db.flush()
@@ -66,18 +66,15 @@ def setup_data(db):
         "doctor": doctor,
         "d_user": d_user,
         "ai_user": ai_user,
-        "p_user": p_user
+        "p_user": p_user,
     }
+
 
 def test_submit_for_review_permissions(db, setup_data):
     service = DoctorReviewService(db)
-    
+
     # Create session
-    session = AISession(
-        patient_id=setup_data["patient"].id,
-        session_type="triage",
-        messages="{}"
-    )
+    session = AISession(patient_id=setup_data["patient"].id, session_type="triage", messages="{}")
     db.add(session)
     db.flush()
 
@@ -87,7 +84,7 @@ def test_submit_for_review_permissions(db, setup_data):
         patient_id=setup_data["patient"].id,
         recommendation_type="triage_assessment",
         content="Clean",
-        status=RecommendationStatus.PENDING_REVIEW
+        status=RecommendationStatus.PENDING_REVIEW,
     )
     db.add(rec)
     db.commit()
@@ -100,9 +97,10 @@ def test_submit_for_review_permissions(db, setup_data):
     service.submit_for_review(rec.id, setup_data["ai_user"])
     assert rec.status == RecommendationStatus.PENDING_REVIEW
 
+
 def test_doctor_review_accept_and_reject(db, setup_data):
     service = DoctorReviewService(db)
-    
+
     # Create session and rec
     session = AISession(patient_id=setup_data["patient"].id, session_type="triage")
     db.add(session)
@@ -112,7 +110,7 @@ def test_doctor_review_accept_and_reject(db, setup_data):
         patient_id=setup_data["patient"].id,
         recommendation_type="triage_assessment",
         content="Clean",
-        status=RecommendationStatus.PENDING_REVIEW
+        status=RecommendationStatus.PENDING_REVIEW,
     )
     db.add(rec)
     db.commit()
@@ -132,11 +130,13 @@ def test_doctor_review_accept_and_reject(db, setup_data):
     assert rec.reviewed_at is not None
 
     # Check AuditLog for acceptance
-    audit_entry = db.query(AuditLog).filter_by(
-        resource_id=rec.id,
-        action="ai.recommendation_accepted"
-    ).first()
+    audit_entry = (
+        db.query(AuditLog)
+        .filter_by(resource_id=rec.id, action="ai.recommendation_accepted")
+        .first()
+    )
     assert audit_entry is not None
+
 
 def test_doctor_review_supersedes(db, setup_data):
     service = DoctorReviewService(db)
@@ -169,7 +169,7 @@ def test_doctor_review_supersedes(db, setup_data):
         patient_id=setup_data["patient"].id,
         recommendation_type="triage_assessment",
         content="New Rec",
-        status=RecommendationStatus.PENDING_REVIEW
+        status=RecommendationStatus.PENDING_REVIEW,
     )
     db.add(rec2)
     db.commit()
@@ -183,6 +183,7 @@ def test_doctor_review_supersedes(db, setup_data):
     db.refresh(rec2)
     assert rec1.status == RecommendationStatus.SUPERSEDED
     assert rec2.status == RecommendationStatus.ACCEPTED
+
 
 def test_doctor_review_request_info(db, setup_data):
     """P1-01: request_info action sets status=request_info, does NOT set safety_cleared=False."""
@@ -218,16 +219,21 @@ def test_doctor_review_request_info(db, setup_data):
 
     # Check audit log
     from app.models.governance import AuditLog
-    audit_entry = db.query(AuditLog).filter_by(
-        resource_id=rec.id,
-        action="ai.recommendation_request_info",
-    ).first()
+
+    audit_entry = (
+        db.query(AuditLog)
+        .filter_by(
+            resource_id=rec.id,
+            action="ai.recommendation_request_info",
+        )
+        .first()
+    )
     assert audit_entry is not None, "Audit log for request_info not found"
 
 
 def test_get_pending_queue(db, setup_data):
     service = DoctorReviewService(db)
-    
+
     # Create pending rec
     sess = AISession(patient_id=setup_data["patient"].id, session_type="triage")
     db.add(sess)
@@ -237,7 +243,7 @@ def test_get_pending_queue(db, setup_data):
         patient_id=setup_data["patient"].id,
         recommendation_type="triage_assessment",
         content="Queue content",
-        status=RecommendationStatus.PENDING_REVIEW
+        status=RecommendationStatus.PENDING_REVIEW,
     )
     db.add(rec)
     db.commit()
@@ -253,7 +259,7 @@ def test_get_pending_queue(db, setup_data):
         data_scope="*",
         granted_to=setup_data["clinic"].id,
         valid_from=utcnow() - dt.timedelta(hours=1),
-        valid_until=utcnow() + dt.timedelta(hours=1)
+        valid_until=utcnow() + dt.timedelta(hours=1),
     )
     db.add(consent)
     db.commit()

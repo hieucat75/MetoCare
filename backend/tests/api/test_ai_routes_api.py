@@ -40,6 +40,7 @@ _SCORE_PAYLOAD = {
 # Unsafe mock provider — forces output guardrail to fire (blocked=True)
 # ---------------------------------------------------------------------------
 
+
 class _UnsafeMockProvider:
     """Returns a response containing a prohibited diagnosis assertion.
 
@@ -47,6 +48,7 @@ class _UnsafeMockProvider:
     blocked=True in the ChatResponse.  Matches DIAGNOSIS_ASSERTION_PATTERNS:
     r"bạn (\u0111ã |chắc chắn )?bị (tiểu đường|...)"
     """
+
     name = "unsafe-mock"
 
     def complete(self, messages, *, system=None, max_tokens=512, temperature=0.2):
@@ -58,6 +60,7 @@ class _UnsafeMockProvider:
             prompt_tokens=5,
             completion_tokens=10,
         )
+
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -175,6 +178,7 @@ def test_chat_blocked_message_returns_blocked_true(client, patient_setup, monkey
     """
     monkeypatch.setattr("app.llm.gateway.get_provider", lambda: _UnsafeMockProvider())
     from app.llm import reset_gateway
+
     reset_gateway()
     r = client.post(
         "/api/v1/ai/chat",

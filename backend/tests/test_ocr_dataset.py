@@ -1,4 +1,5 @@
 """Tests for OCR dataset structure, schema, and validation scripts."""
+
 from __future__ import annotations
 
 import json
@@ -15,9 +16,17 @@ sys.path.insert(0, str(SCRIPTS_DIR))
 from ocr_dataset_validate import ExpectedLabReport, validate_file  # noqa: E402
 
 HOSPITALS = (
-    "vinmec", "medlatec", "tamanh", "hongngoc",
-    "bachmai", "bachmai108", "fv", "hoanmy",
-    "thucuc", "vietduc", "other",
+    "vinmec",
+    "medlatec",
+    "tamanh",
+    "hongngoc",
+    "bachmai",
+    "bachmai108",
+    "fv",
+    "hoanmy",
+    "thucuc",
+    "vietduc",
+    "other",
 )
 TIERS = ("golden", "benchmark")
 HOSPITAL_SUBDIRS = ("images", "expected", "azure_cache", "notes")
@@ -103,8 +112,7 @@ class TestSchemaValidation:
 
     def test_committed_synthetic_example_is_valid(self):
         path = (
-            DATASET_DIR / "benchmark" / "vinmec" / "expected"
-            / "20261224_vinmec_001.expected.json"
+            DATASET_DIR / "benchmark" / "vinmec" / "expected" / "20261224_vinmec_001.expected.json"
         )
         assert path.exists(), "Synthetic example file missing"
         errors = validate_file(path)
@@ -112,8 +120,7 @@ class TestSchemaValidation:
 
     def test_committed_example_has_no_phi(self):
         path = (
-            DATASET_DIR / "benchmark" / "vinmec" / "expected"
-            / "20261224_vinmec_001.expected.json"
+            DATASET_DIR / "benchmark" / "vinmec" / "expected" / "20261224_vinmec_001.expected.json"
         )
         data = json.loads(path.read_text())
         assert data["source"]["contains_phi"] is False

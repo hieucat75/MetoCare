@@ -44,6 +44,7 @@ _doctor_mfa = require_roles(UserRole.DOCTOR)
 # GET /doctors/me
 # ---------------------------------------------------------------------------
 
+
 @router.get(
     "/doctors/me",
     response_model=DoctorProfileOut,
@@ -63,6 +64,7 @@ def get_my_profile(
 # PATCH /doctors/me
 # ---------------------------------------------------------------------------
 
+
 @router.patch(
     "/doctors/me",
     response_model=DoctorProfileOut,
@@ -76,9 +78,7 @@ def patch_my_profile(
     db: Session = Depends(get_session),
 ) -> DoctorProfileOut:
     doc = _require_doctor(db, user.id)
-    updated = update_doctor_profile(
-        db, doc, payload.model_dump(exclude_none=True)
-    )
+    updated = update_doctor_profile(db, doc, payload.model_dump(exclude_none=True))
     db.commit()
     return DoctorProfileOut.model_validate(updated)
 
@@ -86,6 +86,7 @@ def patch_my_profile(
 # ---------------------------------------------------------------------------
 # GET /doctors/me/patients
 # ---------------------------------------------------------------------------
+
 
 @router.get(
     "/doctors/me/patients",
@@ -114,6 +115,7 @@ def list_my_patients(
 # ---------------------------------------------------------------------------
 # GET /doctors/me/dashboard
 # ---------------------------------------------------------------------------
+
 
 @router.get(
     "/doctors/me/dashboard",

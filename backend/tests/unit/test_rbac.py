@@ -15,6 +15,7 @@ from fastapi import HTTPException
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def patient_profile(db):
     user = User(
@@ -46,9 +47,7 @@ def doctor_with_clinic(db):
     db.add(d_user)
     db.flush()
 
-    doctor = Doctor(
-        user_id=d_user.id, clinic_id=clinic.id, full_name="RBAC Doctor", is_active=True
-    )
+    doctor = Doctor(user_id=d_user.id, clinic_id=clinic.id, full_name="RBAC Doctor", is_active=True)
     db.add(doctor)
     db.flush()
 
@@ -62,6 +61,7 @@ def doctor_with_clinic(db):
 # ---------------------------------------------------------------------------
 # assert_patient_owns
 # ---------------------------------------------------------------------------
+
 
 def test_patient_own_resource_passes(patient_profile):
     """Patient accessing their own resource (user_id matches) — no exception."""
@@ -88,6 +88,7 @@ def test_patient_other_resource_raises_403(patient_profile):
 # ---------------------------------------------------------------------------
 # assert_doctor_assigned
 # ---------------------------------------------------------------------------
+
 
 def test_doctor_assigned_passes(db, doctor_with_clinic):
     """Doctor with active DoctorClinic to the patient's clinic — no exception."""
@@ -125,6 +126,7 @@ def test_doctor_direct_assignment_passes(db, doctor_with_clinic):
 # ---------------------------------------------------------------------------
 # Admin bypass
 # ---------------------------------------------------------------------------
+
 
 def test_admin_bypass(patient_profile):
     """INTERNAL_ADMIN bypasses patient-own check."""

@@ -63,7 +63,7 @@ class PayloadTooLargeError(LabUploadError):
 
 @dataclass
 class DraftItem:
-    test_name: str          # canonical key (maps to LabResultItemIn.test_name)
+    test_name: str  # canonical key (maps to LabResultItemIn.test_name)
     canonical: str
     value: float
     unit: str
@@ -75,10 +75,10 @@ class DraftItem:
     # Raw OCR value/unit — always set to the as-printed values for display.
     original_value: float | None = None
     original_unit: str | None = None
-    original_test_name: str = ""   # as OCR'd printed label
-    display_name_vi: str = ""      # Vietnamese label from catalog
-    canonical_value: float = 0.0   # canonical SI value (for save/metrics)
-    canonical_unit: str = ""       # canonical SI unit  (for save/metrics)
+    original_test_name: str = ""  # as OCR'd printed label
+    display_name_vi: str = ""  # Vietnamese label from catalog
+    canonical_value: float = 0.0  # canonical SI value (for save/metrics)
+    canonical_unit: str = ""  # canonical SI unit  (for save/metrics)
     display_reference_range: str | None = None  # ref range in display unit (same unit as result)
 
 
@@ -130,6 +130,7 @@ def validate_upload(data: bytes, *, declared_mime: str | None = None) -> str:
 # --------------------------------------------------------------------------- #
 # Text extraction
 # --------------------------------------------------------------------------- #
+
 
 def _extract_pdf_text(data: bytes) -> tuple[str, float, str, list[str]]:
     """PDF: Azure DI primary (table-aware, handles scanned printouts); text layer
@@ -210,6 +211,7 @@ def _extract_text(data: bytes, mime: str) -> tuple[str, float, str, list[str]]:
 # --------------------------------------------------------------------------- #
 # Build draft
 # --------------------------------------------------------------------------- #
+
 
 def build_draft(data: bytes, mime: str) -> LabUploadDraft:
     warnings: list[str] = []
@@ -304,9 +306,7 @@ def build_draft(data: bytes, mime: str) -> LabUploadDraft:
                 status=b.status.value,
                 confidence=round(b.ocr_confidence, 4),
                 needs_verification=b.needs_verification,
-                confidence_reasons=(
-                    b.confidence_detail.reasons if b.confidence_detail else []
-                ),
+                confidence_reasons=(b.confidence_detail.reasons if b.confidence_detail else []),
                 original_value=disp_value,
                 original_unit=disp_unit,
                 original_test_name=b.raw_test_name,
@@ -317,20 +317,14 @@ def build_draft(data: bytes, mime: str) -> LabUploadDraft:
             )
         )
 
-    confidence_avg = (
-        round(sum(i.confidence for i in items) / len(items), 4) if items else 0.0
-    )
+    confidence_avg = round(sum(i.confidence for i in items) / len(items), 4) if items else 0.0
     low_confidence = bool(items) and confidence_avg < lab_interpreter.OCR_CONFIDENCE_THRESHOLD
     manual_fallback = not items
 
     if low_confidence and not any("tin cậy" in w.lower() for w in warnings):
-        warnings.append(
-            "Một số chỉ số có độ tin cậy thấp — vui lòng kiểm tra lại trước khi lưu."
-        )
+        warnings.append("Một số chỉ số có độ tin cậy thấp — vui lòng kiểm tra lại trước khi lưu.")
     if manual_fallback:
-        warnings.append(
-            "Chưa nhận diện được chỉ số nào — bạn có thể nhập tay kết quả xét nghiệm."
-        )
+        warnings.append("Chưa nhận diện được chỉ số nào — bạn có thể nhập tay kết quả xét nghiệm.")
     if detected_date is None:
         warnings.append(
             "Chưa nhận diện được ngày xét nghiệm — vui lòng chọn ngày khám trước khi lưu."
@@ -357,7 +351,9 @@ def process_bytes(data: bytes, *, declared_mime: str | None = None) -> LabUpload
     draft = build_draft(data, mime)
     logger.info(
         "lab_upload_draft provider=%s items=%d conf=%.2f hash=%s",
-        draft.provider_used, len(draft.parsed_values), draft.confidence_avg,
+        draft.provider_used,
+        len(draft.parsed_values),
+        draft.confidence_avg,
         draft.raw_text_sha256 or "-",
     )
     return draft

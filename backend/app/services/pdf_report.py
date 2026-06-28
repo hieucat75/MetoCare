@@ -18,8 +18,7 @@ try:
     import reportlab  # noqa: F401 — presence check only
 except ImportError as _rl_missing:
     raise RuntimeError(
-        "reportlab is required for PDF export. "
-        "Install it with: pip install reportlab>=4.0"
+        "reportlab is required for PDF export. Install it with: pip install reportlab>=4.0"
     ) from _rl_missing
 
 
@@ -103,15 +102,24 @@ def generate_patient_summary_pdf(
 
     def _make_table(data: list[list[str]]) -> Table:
         tbl = Table(data, hAlign="LEFT", repeatRows=1)
-        tbl.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1a4f8a")),
-            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-            ("FONTSIZE", (0, 0), (-1, -1), 9),
-            ("GRID", (0, 0), (-1, -1), 0.5, colors.lightgrey),
-            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f0f4f8")]),
-            ("TOPPADDING", (0, 0), (-1, -1), 3),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-        ]))
+        tbl.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1a4f8a")),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                    ("FONTSIZE", (0, 0), (-1, -1), 9),
+                    ("GRID", (0, 0), (-1, -1), 0.5, colors.lightgrey),
+                    (
+                        "ROWBACKGROUNDS",
+                        (0, 1),
+                        (-1, -1),
+                        [colors.white, colors.HexColor("#f0f4f8")],
+                    ),
+                    ("TOPPADDING", (0, 0), (-1, -1), 3),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+                ]
+            )
+        )
         return tbl
 
     # 1. Vitals
@@ -122,13 +130,15 @@ def generate_patient_summary_pdf(
     if latest_vitals:
         rows = [["Metric", "Value", "Unit", "Status", "Measured At"]]
         for v in latest_vitals:
-            rows.append([
-                str(v.get("metric_type", "")),
-                str(v.get("value", "")),
-                str(v.get("unit", "")),
-                str(v.get("status", "")),
-                str(v.get("measured_at", "")),
-            ])
+            rows.append(
+                [
+                    str(v.get("metric_type", "")),
+                    str(v.get("value", "")),
+                    str(v.get("unit", "")),
+                    str(v.get("status", "")),
+                    str(v.get("measured_at", "")),
+                ]
+            )
         story.append(_make_table(rows))
     else:
         story.append(Paragraph("No vitals recorded.", body_style))
@@ -157,12 +167,14 @@ def generate_patient_summary_pdf(
     if medications:
         rows = [["Name", "Dose", "Note", "Added"]]
         for m in medications:
-            rows.append([
-                str(m.get("name", "")),
-                str(m.get("dose", "")),
-                str(m.get("note", "") or ""),
-                str(m.get("created_at", "")),
-            ])
+            rows.append(
+                [
+                    str(m.get("name", "")),
+                    str(m.get("dose", "")),
+                    str(m.get("note", "") or ""),
+                    str(m.get("created_at", "")),
+                ]
+            )
         story.append(_make_table(rows))
     else:
         story.append(Paragraph("No active medications.", body_style))
@@ -174,11 +186,13 @@ def generate_patient_summary_pdf(
     if symptoms:
         rows = [["Description", "Severity", "Reported At"]]
         for s in symptoms:
-            rows.append([
-                str(s.get("description", "")),
-                str(s.get("severity", "")),
-                str(s.get("reported_at", "")),
-            ])
+            rows.append(
+                [
+                    str(s.get("description", "")),
+                    str(s.get("severity", "")),
+                    str(s.get("reported_at", "")),
+                ]
+            )
         story.append(_make_table(rows))
     else:
         story.append(Paragraph("No symptoms logged.", body_style))
@@ -190,12 +204,14 @@ def generate_patient_summary_pdf(
     if nutrition:
         rows = [["Description", "Meal Type", "Calories (kcal)", "Logged At"]]
         for n in nutrition:
-            rows.append([
-                str(n.get("description", "")),
-                str(n.get("meal_type", "")),
-                str(n.get("calories_kcal", "") or ""),
-                str(n.get("logged_at", "")),
-            ])
+            rows.append(
+                [
+                    str(n.get("description", "")),
+                    str(n.get("meal_type", "")),
+                    str(n.get("calories_kcal", "") or ""),
+                    str(n.get("logged_at", "")),
+                ]
+            )
         story.append(_make_table(rows))
     else:
         story.append(Paragraph("No nutrition logs.", body_style))
@@ -207,11 +223,13 @@ def generate_patient_summary_pdf(
     if care_plans:
         rows = [["Title", "Version", "ID"]]
         for cp in care_plans:
-            rows.append([
-                str(cp.get("title", "")),
-                str(cp.get("version", "")),
-                str(cp.get("id", "")),
-            ])
+            rows.append(
+                [
+                    str(cp.get("title", "")),
+                    str(cp.get("version", "")),
+                    str(cp.get("id", "")),
+                ]
+            )
         story.append(_make_table(rows))
     else:
         story.append(Paragraph("No active care plans.", body_style))
@@ -219,16 +237,18 @@ def generate_patient_summary_pdf(
 
     # Footer
     story.append(HRFlowable(width="100%", thickness=0.5, color=colors.gray))
-    story.append(Paragraph(
-        "Generated by MetoCare — Confidential",
-        ParagraphStyle(
-            "Footer",
-            parent=styles["Normal"],
-            fontSize=8,
-            textColor=colors.gray,
-            alignment=1,
-        ),
-    ))
+    story.append(
+        Paragraph(
+            "Generated by MetoCare — Confidential",
+            ParagraphStyle(
+                "Footer",
+                parent=styles["Normal"],
+                fontSize=8,
+                textColor=colors.gray,
+                alignment=1,
+            ),
+        )
+    )
 
     doc.build(story)
     pdf_bytes = buffer.getvalue()

@@ -62,11 +62,11 @@ def _metric(metric_type, value, unit, status, days_ago=0):
 )
 def test_abnormal_insight_has_all_fields_and_disclaimer(metric_type, value, unit, status):
     insight = ci.build_metric_insight(metric_type, [_metric(metric_type, value, unit, status)])
-    assert insight.meaning.strip()          # AC1
-    assert insight.trend.label.strip()      # AC2
-    assert len(insight.risks) >= 1          # AC3
-    assert len(insight.lifestyle) >= 1      # AC4
-    assert insight.follow_up.strip()        # AC4
+    assert insight.meaning.strip()  # AC1
+    assert insight.trend.label.strip()  # AC2
+    assert len(insight.risks) >= 1  # AC3
+    assert len(insight.lifestyle) >= 1  # AC4
+    assert insight.follow_up.strip()  # AC4
     assert insight.disclaimer == DISCLAIMER_VI
     # AC8: composed strings carry no prohibited language.
     for text in [insight.meaning, insight.follow_up, *insight.risks, *insight.lifestyle]:
@@ -107,8 +107,8 @@ def test_mixed_unit_trend_is_normalized():
     """Codex P2: prev 129 mg/dL then cur 3.59 mmol/L (~138.8 mg/dL) is a slight
     increase, not a ~97% drop — both readings normalised before % change."""
     rows = [
-        _metric("ldl", 3.59, "mmol/L", "high", days_ago=0),   # newest
-        _metric("ldl", 129.0, "mg/dL", "high", days_ago=2),   # previous
+        _metric("ldl", 3.59, "mmol/L", "high", days_ago=0),  # newest
+        _metric("ldl", 129.0, "mg/dL", "high", days_ago=2),  # previous
     ]
     insight = ci.build_metric_insight("ldl", rows)
     assert insight.trend.direction == "up"
@@ -126,9 +126,7 @@ def test_si_unit_lab_not_falsely_flagged():
     assert insight.status == "normal"
     assert insight.risks == []
     # And with no stored status, an unconvertible SI unit stays 'unknown', not high.
-    unknown = ci.build_metric_insight(
-        "creatinine", [_metric("creatinine", 80.0, "µmol/L", None)]
-    )
+    unknown = ci.build_metric_insight("creatinine", [_metric("creatinine", 80.0, "µmol/L", None)])
     assert unknown.status == "unknown"
 
 
@@ -154,9 +152,9 @@ def test_abnormal_without_bespoke_status_gets_generic_risk():
 @pytest.mark.parametrize(
     "metric_type,value,unit,stored",
     [
-        ("hba1c", 12.0, "%", "high"),       # critical_high 10.0
-        ("alt", 400.0, "U/L", "high"),      # critical_high 300
-        ("tsh", 0.005, "mIU/L", "low"),     # critical_low 0.01
+        ("hba1c", 12.0, "%", "high"),  # critical_high 10.0
+        ("alt", 400.0, "U/L", "high"),  # critical_high 300
+        ("tsh", 0.005, "mIU/L", "low"),  # critical_low 0.01
     ],
 )
 def test_critical_threshold_escalated_over_stored_status(metric_type, value, unit, stored):
@@ -167,8 +165,8 @@ def test_critical_threshold_escalated_over_stored_status(metric_type, value, uni
 
 
 def test_group_key_merges_insight_aliases_but_splits_bp():
-    assert ci._group_key("glucose") == "fasting_glucose"   # lab alias
-    assert ci._group_key("ldl_c") == "ldl"                 # insight-only alias
+    assert ci._group_key("glucose") == "fasting_glucose"  # lab alias
+    assert ci._group_key("ldl_c") == "ldl"  # insight-only alias
     assert ci._group_key("weight_kg") == "weight"
     assert ci._group_key("waist") == "waist_cm"
     assert ci._group_key("blood_pressure_systolic") == "blood_pressure_systolic"
@@ -178,11 +176,11 @@ def test_group_key_merges_insight_aliases_but_splits_bp():
 @pytest.mark.parametrize(
     "metric_type,value,expected",
     [
-        ("blood_pressure_systolic", 150.0, "high"),    # ≥140 normal-range high
+        ("blood_pressure_systolic", 150.0, "high"),  # ≥140 normal-range high
         ("blood_pressure_systolic", 185.0, "critical"),  # ≥180 critical
-        ("blood_pressure_systolic", 85.0, "low"),      # <90 low
+        ("blood_pressure_systolic", 85.0, "low"),  # <90 low
         ("blood_pressure_systolic", 120.0, "normal"),
-        ("blood_pressure_diastolic", 95.0, "high"),    # ≥90
+        ("blood_pressure_diastolic", 95.0, "high"),  # ≥90
         ("blood_pressure_diastolic", 125.0, "critical"),  # ≥120
     ],
 )

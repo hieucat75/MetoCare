@@ -58,9 +58,7 @@ def list_symptoms(
     limit = min(limit, 100)
 
     total: int = db.execute(
-        select(func.count()).select_from(SymptomLog).where(
-            SymptomLog.patient_id == patient_id
-        )
+        select(func.count()).select_from(SymptomLog).where(SymptomLog.patient_id == patient_id)
     ).scalar_one()
 
     rows = list(

@@ -39,8 +39,7 @@ class OCRProvider(ABC):
     name: str = "base"
 
     @abstractmethod
-    def extract(self, storage_key: str) -> OCRExtraction:
-        ...
+    def extract(self, storage_key: str) -> OCRExtraction: ...
 
 
 # Deterministic fixture panels keyed by a token in the storage_key. The default

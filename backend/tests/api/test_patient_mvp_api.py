@@ -173,9 +173,7 @@ def test_me_doctor_no_patient_profile_id(client: TestClient, doctor_ctx):
 # ---------------------------------------------------------------------------
 
 
-def test_patient_profile_upsert_creates_on_first_patch(
-    client: TestClient, db, patient_no_profile
-):
+def test_patient_profile_upsert_creates_on_first_patch(client: TestClient, db, patient_no_profile):
     """PATIENT with no profile: PATCH /patients/{user_id}/profile → 200, profile auto-created."""
     user_id = patient_no_profile["user_id"]
 
@@ -208,9 +206,7 @@ def test_patient_profile_upsert_creates_on_first_patch(
 # ---------------------------------------------------------------------------
 
 
-def test_patient_profile_upsert_updates_on_second_patch(
-    client: TestClient, patient_with_profile
-):
+def test_patient_profile_upsert_updates_on_second_patch(client: TestClient, patient_with_profile):
     """Second PATCH on existing profile → updates fields correctly."""
     patient_id = patient_with_profile["patient_id"]
     headers = patient_with_profile["headers"]
@@ -296,9 +292,11 @@ def test_notifications_unauthenticated(client: TestClient):
     r = client.get(_NOTIF_URL)
     assert r.status_code == 401, r.text
 
+
 # ---------------------------------------------------------------------------
 # 9. PATCH twice same user → only 1 PatientProfile row (no duplicate) [PA-04]
 # ---------------------------------------------------------------------------
+
 
 def test_patient_profile_upsert_no_duplicate(client: TestClient, db, patient_no_profile):
     """Calling PATCH profile twice with same user must update — NOT create a second row.
@@ -338,9 +336,7 @@ def test_patient_profile_upsert_no_duplicate(client: TestClient, db, patient_no_
     # Critical: only ONE row for this user_id
     db.expire_all()
     row_count = db.execute(
-        select(func.count()).select_from(PatientProfile).where(
-            PatientProfile.user_id == user_id
-        )
+        select(func.count()).select_from(PatientProfile).where(PatientProfile.user_id == user_id)
     ).scalar()
     assert row_count == 1, (
         f"Expected exactly 1 PatientProfile for user {user_id}, got {row_count}. "

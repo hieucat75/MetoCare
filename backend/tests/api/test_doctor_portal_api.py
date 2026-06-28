@@ -36,6 +36,7 @@ from fastapi.testclient import TestClient
 # URL helpers
 # ---------------------------------------------------------------------------
 
+
 def _summary_url(patient_id: str) -> str:
     return f"/api/v1/patients/{patient_id}/summary"
 
@@ -47,6 +48,7 @@ def _doctor_appointments_url() -> str:
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def doctor_user(db):
@@ -199,6 +201,7 @@ def _seed_appointment(
 # 1. DOCTOR with consent → 200, all top-level keys present
 # ---------------------------------------------------------------------------
 
+
 def test_doctor_with_consent_gets_summary(
     client: TestClient, patient_user, doctor_user, consent_for_doctor
 ):
@@ -219,9 +222,7 @@ def test_doctor_with_consent_gets_summary(
         "upcoming_appointments",
         "active_care_plans",
     }
-    assert expected_keys.issubset(body.keys()), (
-        f"Missing keys: {expected_keys - body.keys()}"
-    )
+    assert expected_keys.issubset(body.keys()), f"Missing keys: {expected_keys - body.keys()}"
     assert body["patient_id"] == patient_user["patient_id"]
 
 
@@ -229,9 +230,8 @@ def test_doctor_with_consent_gets_summary(
 # 2. vitals.latest is a list (may be empty — not an error)
 # ---------------------------------------------------------------------------
 
-def test_summary_vitals_is_list(
-    client: TestClient, patient_user, doctor_user, consent_for_doctor
-):
+
+def test_summary_vitals_is_list(client: TestClient, patient_user, doctor_user, consent_for_doctor):
     """vitals.latest must be a list; an empty list is valid (no metrics yet)."""
     r = client.get(_summary_url(patient_user["patient_id"]), headers=doctor_user["headers"])
     assert r.status_code == 200, r.text
@@ -244,6 +244,7 @@ def test_summary_vitals_is_list(
 # ---------------------------------------------------------------------------
 # 3. medications only contains active records (not soft-deleted)
 # ---------------------------------------------------------------------------
+
 
 def test_summary_medications_only_active(
     client: TestClient, db, patient_user, doctor_user, consent_for_doctor
@@ -278,6 +279,7 @@ def test_summary_medications_only_active(
 # 4. PATIENT → 403
 # ---------------------------------------------------------------------------
 
+
 def test_patient_cannot_access_summary(client: TestClient, patient_user):
     """PATIENT role must receive 403 on the summary endpoint."""
     r = client.get(_summary_url(patient_user["patient_id"]), headers=patient_user["headers"])
@@ -288,9 +290,8 @@ def test_patient_cannot_access_summary(client: TestClient, patient_user):
 # 5. AI_SERVICE → 403
 # ---------------------------------------------------------------------------
 
-def test_ai_service_cannot_access_summary(
-    client: TestClient, patient_user, ai_service_user
-):
+
+def test_ai_service_cannot_access_summary(client: TestClient, patient_user, ai_service_user):
     """AI_SERVICE role must receive 403 on the summary endpoint."""
     r = client.get(_summary_url(patient_user["patient_id"]), headers=ai_service_user["headers"])
     assert r.status_code == 403, r.text
@@ -300,13 +301,10 @@ def test_ai_service_cannot_access_summary(
 # 6. DOCTOR without consent → 403
 # ---------------------------------------------------------------------------
 
-def test_doctor_without_consent_gets_403(
-    client: TestClient, patient_user, another_doctor
-):
+
+def test_doctor_without_consent_gets_403(client: TestClient, patient_user, another_doctor):
     """DOCTOR without an active consent record for the patient must receive 403."""
-    r = client.get(
-        _summary_url(patient_user["patient_id"]), headers=another_doctor["headers"]
-    )
+    r = client.get(_summary_url(patient_user["patient_id"]), headers=another_doctor["headers"])
     assert r.status_code == 403, r.text
 
 
@@ -314,9 +312,8 @@ def test_doctor_without_consent_gets_403(
 # 7. ADMIN → 200 (no consent needed)
 # ---------------------------------------------------------------------------
 
-def test_admin_gets_summary_without_consent(
-    client: TestClient, patient_user, admin_user
-):
+
+def test_admin_gets_summary_without_consent(client: TestClient, patient_user, admin_user):
     """INTERNAL_ADMIN must receive 200 without any consent record."""
     r = client.get(_summary_url(patient_user["patient_id"]), headers=admin_user["headers"])
     assert r.status_code == 200, r.text
@@ -327,9 +324,8 @@ def test_admin_gets_summary_without_consent(
 # 8. DOCTOR lists own appointments → 200, list
 # ---------------------------------------------------------------------------
 
-def test_doctor_lists_own_appointments(
-    client: TestClient, db, doctor_user, patient_user
-):
+
+def test_doctor_lists_own_appointments(client: TestClient, db, doctor_user, patient_user):
     """DOCTOR calling GET /doctors/me/appointments receives 200 with a list."""
     slot = _seed_availability(db, doctor_user["user_id"])
     _seed_appointment(
@@ -354,9 +350,8 @@ def test_doctor_lists_own_appointments(
 # 9. PATIENT → 403 on doctor appointments endpoint
 # ---------------------------------------------------------------------------
 
-def test_patient_cannot_list_doctor_appointments(
-    client: TestClient, patient_user
-):
+
+def test_patient_cannot_list_doctor_appointments(client: TestClient, patient_user):
     """PATIENT role must receive 403 on the doctor appointments endpoint."""
     r = client.get(_doctor_appointments_url(), headers=patient_user["headers"])
     assert r.status_code == 403, r.text
@@ -366,9 +361,8 @@ def test_patient_cannot_list_doctor_appointments(
 # 10. Unauthenticated → 401 on both endpoints
 # ---------------------------------------------------------------------------
 
-def test_unauthenticated_cannot_access_summary_or_appointments(
-    client: TestClient, patient_user
-):
+
+def test_unauthenticated_cannot_access_summary_or_appointments(client: TestClient, patient_user):
     """Requests without a bearer token must receive 401."""
     r1 = client.get(_summary_url(patient_user["patient_id"]))
     assert r1.status_code == 401, r1.text

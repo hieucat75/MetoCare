@@ -1,11 +1,14 @@
 """Unit tests for ocr_gap_analysis.compute_gap()."""
+
 from __future__ import annotations
 
 import pytest
 from app.domain.ocr_gap_analysis import compute_gap
 
 
-def _row(name: str, value: float | None = 5.0, unit: str = "g/dL", metric: str | None = None) -> dict:
+def _row(
+    name: str, value: float | None = 5.0, unit: str = "g/dL", metric: str | None = None
+) -> dict:
     return {
         "test_name": name,
         "original_test_name": name,
@@ -130,11 +133,36 @@ class TestAccuracyMetrics:
 
     def test_all_accuracy_fields_non_negative(self):
         gap = compute_gap([_row("x", 1.0)], [_row("x", 2.0)])
-        for field in ("row_accuracy", "value_accuracy", "unit_accuracy", "biomarker_accuracy", "overall_accuracy", "editing_rate"):
+        for field in (
+            "row_accuracy",
+            "value_accuracy",
+            "unit_accuracy",
+            "biomarker_accuracy",
+            "overall_accuracy",
+            "editing_rate",
+        ):
             assert getattr(gap, field) >= 0.0
 
     def test_canonical_match_takes_priority(self):
-        e = [{"test_name": "a", "original_test_name": "aaa", "mapped_metric_type": "glucose", "display_name_vi": "", "value": 1.0, "unit": "g"}]
-        c = [{"test_name": "a", "original_test_name": "aab", "mapped_metric_type": "glucose", "display_name_vi": "", "value": 1.0, "unit": "g"}]
+        e = [
+            {
+                "test_name": "a",
+                "original_test_name": "aaa",
+                "mapped_metric_type": "glucose",
+                "display_name_vi": "",
+                "value": 1.0,
+                "unit": "g",
+            }
+        ]
+        c = [
+            {
+                "test_name": "a",
+                "original_test_name": "aab",
+                "mapped_metric_type": "glucose",
+                "display_name_vi": "",
+                "value": 1.0,
+                "unit": "g",
+            }
+        ]
         gap = compute_gap(e, c)
         assert gap.matched_rows == 1

@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 # Clinic
 # ---------------------------------------------------------------------------
 
+
 class ClinicCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     address: str | None = Field(None, max_length=512)
@@ -28,6 +29,7 @@ class ClinicOut(BaseModel):
 # ---------------------------------------------------------------------------
 # Doctor
 # ---------------------------------------------------------------------------
+
 
 class DoctorCreate(BaseModel):
     user_id: str | None = None
@@ -70,6 +72,7 @@ class DoctorSummaryOut(BaseModel):
 # Appointment / Booking
 # ---------------------------------------------------------------------------
 
+
 class AppointmentCreate(BaseModel):
     doctor_id: str
     scheduled_at: dt.datetime
@@ -102,6 +105,7 @@ class AppointmentOut(BaseModel):
 # Care Plan  (note-only scaffold; full schema deferred to Blueprint T4)
 # ---------------------------------------------------------------------------
 
+
 class CarePlanNoteCreate(BaseModel):
     """Doctor writes a care note after a consultation."""
 
@@ -126,6 +130,7 @@ class CarePlanNoteOut(BaseModel):
 # ---------------------------------------------------------------------------
 # Encounter
 # ---------------------------------------------------------------------------
+
 
 class EncounterCreate(BaseModel):
     patient_id: str
@@ -167,6 +172,7 @@ class EncounterOut(BaseModel):
 # ---------------------------------------------------------------------------
 # CarePlan
 # ---------------------------------------------------------------------------
+
 
 class CarePlanCreate(BaseModel):
     patient_id: str

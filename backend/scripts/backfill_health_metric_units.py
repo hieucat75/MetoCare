@@ -32,7 +32,8 @@ _BACKEND = _HERE.parents[1]  # .../backend
 if str(_BACKEND) not in sys.path:
     sys.path.insert(0, str(_BACKEND))
 
-import logging
+import logging  # noqa: E402
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
@@ -44,17 +45,17 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="Sync HealthMetric value/unit/status from LabResult (P0 unit fix)."
     )
-    parser.add_argument("--dry-run", action="store_true", default=False,
-                        help="Preview only, no DB writes.")
-    parser.add_argument("--limit", type=int, default=0,
-                        help="Max rows to process (0 = all).")
+    parser.add_argument(
+        "--dry-run", action="store_true", default=False, help="Preview only, no DB writes."
+    )
+    parser.add_argument("--limit", type=int, default=0, help="Max rows to process (0 = all).")
     args = parser.parse_args()
 
-    from sqlalchemy import select
     from app.core.database import SessionLocal, create_all
-    from app.models.clinical import HealthMetric, LabResult
     from app.domain.lab_interpreter import classify_value
     from app.domain.lab_normalization import normalize_value_to_si
+    from app.models.clinical import HealthMetric, LabResult
+    from sqlalchemy import select
 
     try:
         create_all()
@@ -66,13 +67,10 @@ def main() -> int:
 
     try:
         # Find all lab-sourced HealthMetric rows.
-        stmt = (
-            select(HealthMetric)
-            .where(
-                HealthMetric.source == "lab_result",
-                HealthMetric.deleted_at.is_(None),
-                HealthMetric.source_ref.is_not(None),
-            )
+        stmt = select(HealthMetric).where(
+            HealthMetric.source == "lab_result",
+            HealthMetric.deleted_at.is_(None),
+            HealthMetric.source_ref.is_not(None),
         )
         if args.limit > 0:
             stmt = stmt.limit(args.limit)
@@ -85,8 +83,11 @@ def main() -> int:
                 # Load the source LabResult.
                 lr = db.get(LabResult, hm.source_ref)
                 if lr is None:
-                    _log.warning("HealthMetric %s has source_ref %s but LabResult not found",
-                                 hm.id, hm.source_ref)
+                    _log.warning(
+                        "HealthMetric %s has source_ref %s but LabResult not found",
+                        hm.id,
+                        hm.source_ref,
+                    )
                     skipped += 1
                     continue
 
@@ -103,8 +104,11 @@ def main() -> int:
                     )
 
                 if norm_value is None:
-                    _log.warning("HealthMetric %s: could not resolve canonical value for lab %s",
-                                 hm.id, hm.source_ref)
+                    _log.warning(
+                        "HealthMetric %s: could not resolve canonical value for lab %s",
+                        hm.id,
+                        hm.source_ref,
+                    )
                     skipped += 1
                     continue
 
@@ -125,10 +129,14 @@ def main() -> int:
                 _log.info(
                     "%s HealthMetric %s (%s): value %s→%.4f, unit %r→%r, status %r→%r",
                     "[DRY]" if args.dry_run else "[FIX]",
-                    hm.id, hm.metric_type,
-                    hm.value, norm_value,
-                    hm.unit, norm_unit,
-                    hm.status, new_status,
+                    hm.id,
+                    hm.metric_type,
+                    hm.value,
+                    norm_value,
+                    hm.unit,
+                    norm_unit,
+                    hm.status,
+                    new_status,
                 )
 
                 if not args.dry_run:
@@ -148,7 +156,10 @@ def main() -> int:
 
         _log.info(
             "Done. updated=%d skipped=%d errors=%d dry_run=%s",
-            updated, skipped, errors, args.dry_run,
+            updated,
+            skipped,
+            errors,
+            args.dry_run,
         )
 
     finally:

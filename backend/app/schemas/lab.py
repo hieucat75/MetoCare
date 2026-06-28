@@ -117,7 +117,7 @@ class LabResultOut(BaseModel):
     created_at: dt.datetime
 
     @model_validator(mode="after")
-    def _populate_clinical_message(self) -> "LabResultOut":
+    def _populate_clinical_message(self) -> LabResultOut:
         """Derive clinical_message from canonical_name + status (single source of truth).
 
         Applies the same physiological_max heuristic as MetricOut so that LabResult
@@ -147,8 +147,14 @@ class LabResultOut(BaseModel):
                 return self
 
             # Prefer normalized_value_si when available (more accurate).
-            raw_value = self.normalized_value_si if self.normalized_value_si is not None else self.value
-            raw_unit = self.normalized_unit_si if self.normalized_unit_si is not None else (self.unit or "")
+            raw_value = (
+                self.normalized_value_si if self.normalized_value_si is not None else self.value
+            )
+            raw_unit = (
+                self.normalized_unit_si
+                if self.normalized_unit_si is not None
+                else (self.unit or "")
+            )
 
             if raw_value is None:
                 if self.clinical_message is None and self.status:
@@ -160,7 +166,7 @@ class LabResultOut(BaseModel):
             if spec.si_unit and spec.physiological_max is not None:
                 unit_norm = (raw_unit or "").strip().lower().replace("µ", "u").replace("μ", "u")
                 si_norm = spec.si_unit.strip().lower().replace("µ", "u").replace("μ", "u")
-                already_si = (unit_norm == si_norm)
+                already_si = unit_norm == si_norm
                 if not already_si and raw_value > spec.physiological_max:
                     # Value is physiologically impossible in canonical unit → must be SI unit.
                     raw_unit = spec.si_unit
@@ -176,6 +182,7 @@ class LabResultOut(BaseModel):
         except Exception:  # noqa: BLE001 — schema must never crash
             if self.clinical_message is None and self.canonical_name and self.status:
                 from app.services.lab import get_clinical_message
+
                 self.clinical_message = get_clinical_message(self.canonical_name, self.status)
         return self
 
@@ -190,6 +197,7 @@ class LabResultListResponse(BaseModel):
 
 class BatchLabResultListResponse(BaseModel):
     """Response for GET /patients/{patient_id}/lab-batches/{batch_id}/results."""
+
     batch_id: str
     patient_id: str
     total: int
@@ -233,5 +241,6 @@ class InterpretationOut(BaseModel):
 
 class LabResultCorrectionIn(BaseModel):
     """Payload for user-correcting a lab result value and/or unit."""
+
     value: float
     unit: str = ""

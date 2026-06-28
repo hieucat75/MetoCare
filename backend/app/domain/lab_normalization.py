@@ -18,6 +18,7 @@ from .lab_interpreter import _ALIAS_INDEX, BiomarkerSpec, LabStatus
 # Conversion helpers
 # ---------------------------------------------------------------------------
 
+
 def _get_spec(canonical: str) -> BiomarkerSpec | None:
     return _ALIAS_INDEX.get(canonical)
 

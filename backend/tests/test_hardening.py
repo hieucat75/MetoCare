@@ -23,6 +23,7 @@ from app.services import auth
 # FIX 1 [P1] — Refresh cleanup: delete ONLY expired; preserve revoked-unexpired
 # --------------------------------------------------------------------------- #
 
+
 def _add_refresh(db, *, jti, expires_at, revoked_at=None):
     db.add(
         RefreshToken(
@@ -60,7 +61,7 @@ def test_cleanup_deletes_expired_keeps_revoked_unexpired(db):
     remaining = {
         r.jti for r in db.query(RefreshToken).filter(RefreshToken.jti.like(f"%-{tag}")).all()
     }
-    assert f"revfut-{tag}" in remaining   # revoked-unexpired preserved
+    assert f"revfut-{tag}" in remaining  # revoked-unexpired preserved
     assert f"live-{tag}" in remaining
     assert f"exprev-{tag}" not in remaining
     assert f"exp-{tag}" not in remaining
@@ -97,6 +98,7 @@ def test_reuse_detection_survives_cleanup(db):
 # C — Maintenance job
 # --------------------------------------------------------------------------- #
 
+
 def test_run_maintenance_returns_summary(db):
     summary = run_maintenance(db, now=dt.datetime(2026, 6, 14))
     assert "audit_retention_purged" in summary
@@ -107,6 +109,7 @@ def test_run_maintenance_returns_summary(db):
 # --------------------------------------------------------------------------- #
 # FIX 2 + FIX 3 — Redis backend (fake client; no real Redis dependency)
 # --------------------------------------------------------------------------- #
+
 
 class _FakeRedis:
     """Minimal Redis stand-in supporting the limiter's Lua + scan paths."""
@@ -190,7 +193,7 @@ def test_redis_rejects_unsafe_prefix():
 
 def test_redis_reset_only_deletes_namespace_not_flushdb():
     fake = _FakeRedis()
-    fake.set("cache:foo", 1)        # unrelated app data
+    fake.set("cache:foo", 1)  # unrelated app data
     fake.set("session:bar", 1)
     rl = RedisRateLimiter(client=fake, prefix="metocare:ratelimit:")
     rl.allow("login:x", capacity=5, refill_per_sec=1)
@@ -199,13 +202,14 @@ def test_redis_reset_only_deletes_namespace_not_flushdb():
     rl.reset()
 
     assert not any(k.startswith("metocare:ratelimit:") for k in fake.store)  # ours gone
-    assert "cache:foo" in fake.store      # unrelated data survives
+    assert "cache:foo" in fake.store  # unrelated data survives
     assert "session:bar" in fake.store
 
 
 # --------------------------------------------------------------------------- #
 # E — Email blind index
 # --------------------------------------------------------------------------- #
+
 
 def test_blind_index_is_deterministic_and_case_insensitive():
     a = crypto.blind_index("User@Example.com")

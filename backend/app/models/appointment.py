@@ -36,9 +36,7 @@ class BookingAppointment(UUIDPrimaryKey, TimestampMixin, Base):
     patient_id: Mapped[str] = mapped_column(
         ForeignKey("patient_profiles.id"), index=True, nullable=False
     )
-    doctor_id: Mapped[str] = mapped_column(
-        ForeignKey("users.id"), index=True, nullable=False
-    )
+    doctor_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
     availability_id: Mapped[str] = mapped_column(
         ForeignKey("doctor_availability.id"), index=True, nullable=False, unique=True
     )

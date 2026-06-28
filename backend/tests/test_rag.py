@@ -26,6 +26,7 @@ from app.rag.vector_store import cosine
 # Embedding determinism + similarity ranking
 # --------------------------------------------------------------------------- #
 
+
 def test_mock_embedding_deterministic():
     emb = MockEmbedding(dim=128)
     a = emb.embed("đường huyết đói cao")
@@ -46,6 +47,7 @@ def test_mock_embedding_similarity_ranks_shared_words_higher():
 # Chunking
 # --------------------------------------------------------------------------- #
 
+
 def test_chunk_markdown_splits_on_headings():
     md = "# Title\nintro\n\n## A\nbody a\n\n## B\nbody b\n"
     docs = chunk_markdown(md, source="x.md")
@@ -58,6 +60,7 @@ def test_chunk_markdown_splits_on_headings():
 # --------------------------------------------------------------------------- #
 # Knowledge base ingestion + injection rejection
 # --------------------------------------------------------------------------- #
+
 
 def _fresh_kb() -> KnowledgeBase:
     return KnowledgeBase(embedder=MockEmbedding(dim=256), store=InMemoryVectorStore())
@@ -87,6 +90,7 @@ def test_kb_rejects_injection_chunk():
 # --------------------------------------------------------------------------- #
 # Retrieval relevance + determinism
 # --------------------------------------------------------------------------- #
+
 
 def test_retrieval_returns_relevant_chunk():
     kb = _fresh_kb()
@@ -118,6 +122,7 @@ def test_build_context_has_approved_marker():
 # --------------------------------------------------------------------------- #
 # RAG-augmented gateway response respects the guardrail
 # --------------------------------------------------------------------------- #
+
 
 def test_rag_augmented_response_is_guardrailed(monkeypatch):
     # Force the retriever to a known KB so the test is hermetic.

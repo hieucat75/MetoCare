@@ -16,10 +16,8 @@ Fix applied: lab_intelligence now uses normalized_value_si (same as patient_insi
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
 import pytest
-
 from app.domain.clinical_rules import assess_biomarker
 from app.domain.lab_normalization import normalize_value_to_si
 from app.services.lab import normalize_and_classify
@@ -31,26 +29,27 @@ from app.services.lab import normalize_and_classify
 CREATININE_TEST_CASES = [
     # (original_value, original_unit, expected_normalized_approx, expected_unit, expected_status)
     (87.66, "µmol/L", 0.991, "mg/dL", "normal"),
-    (0.99,  "mg/dL",  0.990, "mg/dL", "normal"),
+    (0.99, "mg/dL", 0.990, "mg/dL", "normal"),
     (150.0, "µmol/L", 1.697, "mg/dL", "high"),
     (502.0, "µmol/L", 5.679, "mg/dL", "critical"),
-    (2.12,  "mg/dL",  2.120, "mg/dL", "high"),
-    (0.50,  "mg/dL",  0.500, "mg/dL", "low"),
+    (2.12, "mg/dL", 2.120, "mg/dL", "high"),
+    (0.50, "mg/dL", 0.500, "mg/dL", "low"),
 ]
 
 
 @dataclass
 class MockLabResult:
     """Minimal LabResult substitute — mirrors the ORM model."""
+
     canonical_name: str
     value: float
     unit: str
-    normalized_value_si: Optional[float]
-    normalized_unit_si: Optional[str]
-    status: Optional[str]
+    normalized_value_si: float | None
+    normalized_unit_si: str | None
+    status: str | None
     verified_by_user: bool = True
     verified_by_doctor: bool = False
-    batch_id: Optional[str] = None
+    batch_id: str | None = None
     patient_id: str = "p-pipeline-test"
     id: str = "result-pipeline-test"
 
@@ -60,8 +59,8 @@ def _make_creatinine_877() -> MockLabResult:
     # create_manual_entry normalizes: 87.66 µmol/L → 0.9916 mg/dL
     return MockLabResult(
         canonical_name="creatinine",
-        value=0.9916,           # canonical stored value (after normalization)
-        unit="mg/dL",           # canonical unit
+        value=0.9916,  # canonical stored value (after normalization)
+        unit="mg/dL",  # canonical unit
         normalized_value_si=0.9916,
         normalized_unit_si="mg/dL",
         status="normal",
@@ -70,7 +69,7 @@ def _make_creatinine_877() -> MockLabResult:
     )
 
 
-def _resolve_norm_si(r: MockLabResult) -> Optional[float]:
+def _resolve_norm_si(r: MockLabResult) -> float | None:
     """Mirror the route's normalization logic: use stored normalized_value_si, else re-normalize."""
     norm_si = r.normalized_value_si
     if norm_si is None and r.value is not None:
@@ -82,6 +81,7 @@ def _resolve_norm_si(r: MockLabResult) -> Optional[float]:
 # ---------------------------------------------------------------------------
 # Phase 0 verification: normalization layer
 # ---------------------------------------------------------------------------
+
 
 class TestCreatinineNormalization:
     """normalize_value_to_si + normalize_and_classify must agree for all test cases."""
@@ -138,6 +138,7 @@ class TestCreatinineNormalization:
 # Phase 1: assess_biomarker layer (canonical values only)
 # ---------------------------------------------------------------------------
 
+
 class TestAssessBiomarkerCreatinine:
     """assess_biomarker must produce correct finding when given NORMALIZED mg/dL value."""
 
@@ -172,6 +173,7 @@ class TestAssessBiomarkerCreatinine:
 # ---------------------------------------------------------------------------
 # Phase 2: lab_intelligence route normalization (P0 fix verification)
 # ---------------------------------------------------------------------------
+
 
 class TestLabIntelligenceNormalization:
     """Verify lab_intelligence route resolves norm_si correctly (the P0 fix)."""
@@ -210,7 +212,7 @@ class TestLabIntelligenceNormalization:
             canonical_name="creatinine",
             value=87.66,
             unit="µmol/L",
-            normalized_value_si=None,   # old data without normalized fields
+            normalized_value_si=None,  # old data without normalized fields
             normalized_unit_si=None,
             status=None,
         )
@@ -228,6 +230,7 @@ class TestLabIntelligenceNormalization:
 # ---------------------------------------------------------------------------
 # Phase 3: display unit consistency
 # ---------------------------------------------------------------------------
+
 
 class TestDisplayUnitConsistency:
     """Frontend receives consistent value+unit — never mixed (e.g. never 87.66 mg/dL)."""
@@ -290,6 +293,7 @@ class TestDisplayUnitConsistency:
 # Phase 4: AI Summary must not say "tăng rất cao" for normal creatinine
 # ---------------------------------------------------------------------------
 
+
 class TestAISummaryCreatinine:
     """AI/patient insight must not generate alarming text for normal creatinine."""
 
@@ -322,19 +326,20 @@ class TestAISummaryCreatinine:
 
         # Step 3: clinical_message via LabResultOut.clinical_message
         from app.services.lab import get_clinical_message
+
         msg = get_clinical_message("creatinine", "normal")
         # Verify message is non-alarming
         alarming = ["nguy hiểm", "tăng rất cao", "khẩn", "cần bác sĩ ngay"]
         for phrase in alarming:
             assert phrase not in (msg or ""), (
-                f"clinical_message for creatinine/normal must not contain '{phrase}'. "
-                f"Got: {msg!r}"
+                f"clinical_message for creatinine/normal must not contain '{phrase}'. Got: {msg!r}"
             )
 
 
 # ---------------------------------------------------------------------------
 # Phase 5: No duplicate classification outside clinical_rules
 # ---------------------------------------------------------------------------
+
 
 class TestNoDuplicateClassification:
     """classify_value calls outside clinical_rules must all go through normalize_and_classify."""
@@ -378,7 +383,9 @@ _REPO_ROOT = "/Users/pth/Developer/Metocare"
 _BACKEND_ROOT = "/Users/pth/Developer/Metocare/backend"
 
 
-def _grep(pattern: str, path: str, include: str = "*.py", exclude_dirs: list | None = None) -> list[str]:
+def _grep(
+    pattern: str, path: str, include: str = "*.py", exclude_dirs: list | None = None
+) -> list[str]:
     """Run grep -rn and return matching lines (stripped empty lines)."""
     cmd = ["grep", "-rn", pattern, path, f"--include={include}"]
     if exclude_dirs:
@@ -395,12 +402,12 @@ _SENTINEL_ALLOWLIST = [
     "lab_interpreter.py",
     "lab_normalization.py",
     "biomarker_specs.py",
-    "derived_metrics.py",     # eGFR formula does legitimate mg/dL→µmol/L conversion
-    "metabolic_live.py",      # metabolic score conversion factors
-    "clinical_insight.py",    # HealthMetric (not LabResult) classification
-    "lab.py",                 # primary normalization service
-    "test_",                  # all test files
-    "migration",              # Alembic migrations
+    "derived_metrics.py",  # eGFR formula does legitimate mg/dL→µmol/L conversion
+    "metabolic_live.py",  # metabolic score conversion factors
+    "clinical_insight.py",  # HealthMetric (not LabResult) classification
+    "lab.py",  # primary normalization service
+    "test_",  # all test files
+    "migration",  # Alembic migrations
     "__pycache__",
 ]
 
@@ -489,15 +496,13 @@ class TestSentinelRawValueGuard:
         All AI calls must go through the backend API.
         """
         frontend_src = f"{_REPO_ROOT}/frontend/src"
-        ts_lines = _grep("anthropic", frontend_src, include="*.ts",
-                         exclude_dirs=["node_modules", "__tests__"]) + \
-                   _grep("anthropic", frontend_src, include="*.tsx",
-                         exclude_dirs=["node_modules", "__tests__"])
+        ts_lines = _grep(
+            "anthropic", frontend_src, include="*.ts", exclude_dirs=["node_modules", "__tests__"]
+        ) + _grep(
+            "anthropic", frontend_src, include="*.tsx", exclude_dirs=["node_modules", "__tests__"]
+        )
 
-        violations = [
-            ln for ln in ts_lines
-            if "import" in ln.lower() or "require" in ln.lower()
-        ]
+        violations = [ln for ln in ts_lines if "import" in ln.lower() or "require" in ln.lower()]
         assert violations == [], (
             "SENTINEL FAIL — Frontend directly imports Anthropic SDK:\n"
             + "\n".join(violations)
@@ -520,8 +525,12 @@ class TestSentinelRawValueGuard:
         violations = []
         for pattern in suspect_patterns:
             for ext in ("*.tsx", "*.ts"):
-                found = _grep(pattern, frontend_src, include=ext,
-                              exclude_dirs=["node_modules", "__tests__", "__pycache__"])
+                found = _grep(
+                    pattern,
+                    frontend_src,
+                    include=ext,
+                    exclude_dirs=["node_modules", "__tests__", "__pycache__"],
+                )
                 violations.extend(found)
 
         assert violations == [], (

@@ -7,12 +7,13 @@ HARD RULES:
 3. If validation fails → use deterministic fallback, never show contradicting text.
 4. No diagnosis, no medication advice, no contradiction with canonical status.
 """
+
 from __future__ import annotations
 
 import json
 import logging
 
-from app.services.claude_client import get_client, hash_clinical_input, ANTHROPIC_MODEL
+from app.services.claude_client import ANTHROPIC_MODEL, get_client, hash_clinical_input
 from app.services.explanation_cache import (
     get_cached_explanation,
     save_cached_explanation,
@@ -92,6 +93,7 @@ FORBIDDEN_FOR_LOW = [
 # Validator
 # ---------------------------------------------------------------------------
 
+
 def validate_explanation(output: dict, clinical_input: dict) -> dict:
     """
     Validate that Claude output does not contradict canonical_status.
@@ -102,16 +104,22 @@ def validate_explanation(output: dict, clinical_input: dict) -> dict:
     severity = clinical_input.get("canonical_severity", "")
     doctor_required = clinical_input.get("doctor_review_required", False)
 
-    explanation_text = " ".join([
-        output.get("explanation", ""),
-        output.get("why_it_matters", ""),
-        output.get("what_to_monitor", ""),
-        output.get("next_step", ""),
-    ]).lower()
+    explanation_text = " ".join(
+        [
+            output.get("explanation", ""),
+            output.get("why_it_matters", ""),
+            output.get("what_to_monitor", ""),
+            output.get("next_step", ""),
+        ]
+    ).lower()
 
     # Rule 1: non-urgent status → no dangerous language
-    if status not in ("critical", "very_high", "critical_high", "critical_low") and \
-       severity not in ("urgent", "critical"):
+    if status not in (
+        "critical",
+        "very_high",
+        "critical_high",
+        "critical_low",
+    ) and severity not in ("urgent", "critical"):
         for phrase in FORBIDDEN_FOR_NON_CRITICAL:
             if phrase in explanation_text:
                 return {
@@ -167,41 +175,24 @@ FALLBACK_TEMPLATES: dict[str, str] = {
         "Tiếp tục duy trì lối sống lành mạnh."
     ),
     "borderline_high": (
-        "Chỉ số {name} ({value} {unit}) đang hơi cao so với mức bình thường. "
-        "Nên theo dõi định kỳ."
+        "Chỉ số {name} ({value} {unit}) đang hơi cao so với mức bình thường. Nên theo dõi định kỳ."
     ),
     # Align with ClinicalFinding.status values used by the existing engine
-    "borderline": (
-        "Chỉ số {name} ({value} {unit}) đang ở vùng cần chú ý. "
-        "Nên theo dõi định kỳ."
-    ),
+    "borderline": ("Chỉ số {name} ({value} {unit}) đang ở vùng cần chú ý. Nên theo dõi định kỳ."),
     "high": (
         "Chỉ số {name} ({value} {unit}) cao hơn mức bình thường. "
         "Nên thảo luận với bác sĩ trong lần khám tiếp theo."
     ),
-    "very_high": (
-        "Chỉ số {name} ({value} {unit}) ở mức cao đáng kể. "
-        "Cần được bác sĩ đánh giá."
-    ),
-    "critical_high": (
-        "Chỉ số {name} ({value} {unit}) ở mức rất cao. "
-        "Cần liên hệ bác sĩ sớm."
-    ),
+    "very_high": ("Chỉ số {name} ({value} {unit}) ở mức cao đáng kể. Cần được bác sĩ đánh giá."),
+    "critical_high": ("Chỉ số {name} ({value} {unit}) ở mức rất cao. Cần liên hệ bác sĩ sớm."),
     "critical": (
         "Chỉ số {name} ({value} {unit}) ở mức cần được bác sĩ đánh giá khẩn. "
         "Vui lòng liên hệ bác sĩ sớm."
     ),
-    "low": (
-        "Chỉ số {name} ({value} {unit}) đang thấp hơn mức bình thường. "
-        "Nên theo dõi."
-    ),
-    "critical_low": (
-        "Chỉ số {name} ({value} {unit}) ở mức thấp đáng lo. "
-        "Cần liên hệ bác sĩ."
-    ),
+    "low": ("Chỉ số {name} ({value} {unit}) đang thấp hơn mức bình thường. Nên theo dõi."),
+    "critical_low": ("Chỉ số {name} ({value} {unit}) ở mức thấp đáng lo. Cần liên hệ bác sĩ."),
     "unknown": (
-        "Chỉ số {name} ({value} {unit}) đã được ghi nhận. "
-        "Vui lòng tham khảo bác sĩ để hiểu rõ hơn."
+        "Chỉ số {name} ({value} {unit}) đã được ghi nhận. Vui lòng tham khảo bác sĩ để hiểu rõ hơn."
     ),
 }
 
@@ -233,6 +224,7 @@ def get_deterministic_fallback(clinical_input: dict) -> dict:
 # Logging
 # ---------------------------------------------------------------------------
 
+
 def log_explanation_attempt(
     lab_result_id: str,
     input_hash: str,
@@ -259,6 +251,7 @@ def log_explanation_attempt(
 # ---------------------------------------------------------------------------
 # Main generator
 # ---------------------------------------------------------------------------
+
 
 def generate_explanation(
     lab_result_id: str,
@@ -287,7 +280,7 @@ def generate_explanation(
     for field in required:
         if clinical_input.get(field) is None:
             logger.warning(
-                "generate_explanation: missing required field '%s' for lab_result=%s — using fallback",
+                "generate_explanation: missing required field '%s' for lab_result=%s — using fallback",  # noqa: E501
                 field,
                 lab_result_id,
             )
@@ -301,9 +294,7 @@ def generate_explanation(
     if use_cache:
         cached = get_cached_explanation(lab_result_id, input_hash)
         if cached:
-            logger.info(
-                "Cache hit for lab_result=%s hash=%s", lab_result_id, input_hash
-            )
+            logger.info("Cache hit for lab_result=%s hash=%s", lab_result_id, input_hash)
             return cached
 
     # Call Claude
@@ -322,10 +313,7 @@ def generate_explanation(
         # Strip markdown code fences if Claude wraps in ```json ... ```
         if raw_output.startswith("```"):
             lines = raw_output.split("\n")
-            raw_output = "\n".join(
-                l for l in lines
-                if not l.startswith("```")
-            ).strip()
+            raw_output = "\n".join(ln for ln in lines if not ln.startswith("```")).strip()
 
         parsed = json.loads(raw_output)
 

@@ -208,9 +208,7 @@ def test_patient_cannot_create_session_for_another_patient(
     assert "consent" in body["detail"].lower()
 
 
-def test_doctor_cannot_create_session_without_consent(
-    client, ai_patient, ai_doctor, monkeypatch
-):
+def test_doctor_cannot_create_session_without_consent(client, ai_patient, ai_doctor, monkeypatch):
     """DOCTOR without patient consent → 403."""
     monkeypatch.setenv("FEATURE_AI_SESSION_ENABLED", "true")
     r = client.post(
@@ -241,9 +239,7 @@ def test_patient_reads_own_session(client, ai_patient, seeded_session_for_a):
     assert r.json()["id"] == seeded_session_for_a.id
 
 
-def test_patient_cannot_read_another_patients_session(
-    client, ai_patient, seeded_session_for_b
-):
+def test_patient_cannot_read_another_patients_session(client, ai_patient, seeded_session_for_b):
     """Patient A cannot read Patient B's session → 403."""
     r = client.get(
         f"/api/v1/ai_sessions/{seeded_session_for_b.id}",
@@ -252,9 +248,7 @@ def test_patient_cannot_read_another_patients_session(
     assert r.status_code == 403, r.text
 
 
-def test_doctor_reads_patient_session_with_consent(
-    client, ai_doctor, seeded_session_for_a
-):
+def test_doctor_reads_patient_session_with_consent(client, ai_doctor, seeded_session_for_a):
     """DOCTOR role is allowed to read any session (permissive in read-access check) → 200."""
     r = client.get(
         f"/api/v1/ai_sessions/{seeded_session_for_a.id}",
@@ -304,9 +298,7 @@ def test_doctor_lists_patient_sessions(
 # ---------------------------------------------------------------------------
 
 
-def test_list_recommendations_empty(
-    client, ai_patient, seeded_session_for_a, monkeypatch
-):
+def test_list_recommendations_empty(client, ai_patient, seeded_session_for_a, monkeypatch):
     """Patient with flag on and no recs seeded → 200, empty list."""
     monkeypatch.setenv("FEATURE_AI_CLINICAL_RECS_ENABLED", "true")
     r = client.get(

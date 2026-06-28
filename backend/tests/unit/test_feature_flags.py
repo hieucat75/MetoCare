@@ -12,16 +12,18 @@ def test_feature_flag_defaults():
     assert is_enabled(FeatureFlag.DOCTOR_REVIEW_GATE) is True
     assert is_enabled(FeatureFlag.CONSENT_GATE) is True
 
+
 def test_feature_flag_fail_closed():
     # Unknown flag should be disabled (fail closed)
     assert is_enabled("unknown_flag") is False
     assert is_enabled("random_name") is False
 
+
 def test_feature_flag_env_overrides():
     # Test enabling a disabled flag
     os.environ["FEATURE_AI_TRIAGE"] = "true"
     assert is_enabled(FeatureFlag.AI_TRIAGE) is True
-    
+
     # Test disabling an enabled flag
     os.environ["FEATURE_DOCTOR_REVIEW_GATE"] = "false"
     assert is_enabled(FeatureFlag.DOCTOR_REVIEW_GATE) is False
@@ -41,8 +43,10 @@ def test_feature_flag_env_overrides():
 
     # Clean up
     env_keys = [
-        "FEATURE_AI_TRIAGE", "FEATURE_DOCTOR_REVIEW_GATE",
-        "FEATURE_AI_LAB_INTERPRET", "FEATURE_AI_SAFETY_LAYER",
+        "FEATURE_AI_TRIAGE",
+        "FEATURE_DOCTOR_REVIEW_GATE",
+        "FEATURE_AI_LAB_INTERPRET",
+        "FEATURE_AI_SAFETY_LAYER",
     ]
     for key in env_keys:
         if key in os.environ:

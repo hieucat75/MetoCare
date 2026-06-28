@@ -30,9 +30,7 @@ class LLMGateway:
         self._cache = cache
 
     @staticmethod
-    def _augment_with_rag(
-        system: str, rag_query: str | None, messages: list[LLMMessage]
-    ) -> str:
+    def _augment_with_rag(system: str, rag_query: str | None, messages: list[LLMMessage]) -> str:
         # Lazy import keeps the LLM package independent of the RAG package.
         from app.rag import get_retriever
 

@@ -39,6 +39,7 @@ from fastapi.testclient import TestClient
 # URL helpers
 # ---------------------------------------------------------------------------
 
+
 def _avail_url(doctor_id: str) -> str:
     return f"/api/v1/doctors/{doctor_id}/availability"
 
@@ -58,6 +59,7 @@ def _patient_appts_url(patient_id: str) -> str:
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def doctor_user(db):
@@ -155,6 +157,7 @@ def admin_headers():
 # Helper — seed an availability slot directly
 # ---------------------------------------------------------------------------
 
+
 def _seed_availability(db, doctor_id: str, *, is_booked: bool = False) -> DoctorAvailability:
     base = dt.datetime(2026, 9, 1, 9, 0, 0)
     slot = DoctorAvailability(
@@ -193,6 +196,7 @@ def _seed_appointment(
 # 1. Doctor can add availability slot → 201
 # ---------------------------------------------------------------------------
 
+
 def test_doctor_can_add_availability_slot(client: TestClient, doctor_user):
     """DOCTOR adds a slot for their own user_id → 201 with slot in response."""
     payload = {
@@ -217,6 +221,7 @@ def test_doctor_can_add_availability_slot(client: TestClient, doctor_user):
 # 2. Patient can list available slots → 200
 # ---------------------------------------------------------------------------
 
+
 def test_patient_can_list_available_slots(client: TestClient, db, doctor_user, patient_user):
     """PATIENT can GET open slots for a doctor — 200 with items list."""
     _seed_availability(db, doctor_user["user_id"])
@@ -239,6 +244,7 @@ def test_patient_can_list_available_slots(client: TestClient, db, doctor_user, p
 # 3. Non-doctor cannot add availability → 403
 # ---------------------------------------------------------------------------
 
+
 def test_non_doctor_cannot_add_availability(client: TestClient, patient_user):
     """PATIENT trying to POST availability → 403."""
     payload = {
@@ -256,6 +262,7 @@ def test_non_doctor_cannot_add_availability(client: TestClient, patient_user):
 # ---------------------------------------------------------------------------
 # 4. Patient can book a slot → 201
 # ---------------------------------------------------------------------------
+
 
 def test_patient_can_book_slot(client: TestClient, db, doctor_user, patient_user):
     """PATIENT books an available slot → 201 with appointment in response."""
@@ -280,6 +287,7 @@ def test_patient_can_book_slot(client: TestClient, db, doctor_user, patient_user
 # 5. Booking marks slot as is_booked=True
 # ---------------------------------------------------------------------------
 
+
 def test_booking_marks_slot_as_booked(client: TestClient, db, doctor_user, patient_user):
     """After a successful booking, DoctorAvailability.is_booked becomes True."""
     slot = _seed_availability(db, doctor_user["user_id"])
@@ -301,6 +309,7 @@ def test_booking_marks_slot_as_booked(client: TestClient, db, doctor_user, patie
 # ---------------------------------------------------------------------------
 # 6. Cannot double-book same slot → 409
 # ---------------------------------------------------------------------------
+
 
 def test_cannot_double_book_same_slot(
     client: TestClient, db, doctor_user, patient_user, another_patient
@@ -325,6 +334,7 @@ def test_cannot_double_book_same_slot(
 # ---------------------------------------------------------------------------
 # 7. Patient can view own appointments → 200
 # ---------------------------------------------------------------------------
+
 
 def test_patient_can_view_own_appointments(client: TestClient, db, doctor_user, patient_user):
     """PATIENT can GET their own appointments — 200 with list."""
@@ -355,6 +365,7 @@ def test_patient_can_view_own_appointments(client: TestClient, db, doctor_user, 
 # 8. Patient cannot view other patient's appointments → 403
 # ---------------------------------------------------------------------------
 
+
 def test_patient_cannot_view_other_patients_appointments(
     client: TestClient, db, doctor_user, patient_user, another_patient
 ):
@@ -377,6 +388,7 @@ def test_patient_cannot_view_other_patients_appointments(
 # ---------------------------------------------------------------------------
 # 9. Doctor can view their appointment queue → 200
 # ---------------------------------------------------------------------------
+
 
 def test_doctor_can_view_appointment_queue(
     client: TestClient, db, doctor_user, patient_user, admin_headers
@@ -406,9 +418,8 @@ def test_doctor_can_view_appointment_queue(
 # 10. Doctor can confirm appointment → 200 status=confirmed
 # ---------------------------------------------------------------------------
 
-def test_doctor_can_confirm_appointment(
-    client: TestClient, db, doctor_user, patient_user
-):
+
+def test_doctor_can_confirm_appointment(client: TestClient, db, doctor_user, patient_user):
     """DOCTOR PATCHes appointment to confirmed — 200 with status=confirmed."""
     slot = _seed_availability(db, doctor_user["user_id"])
     appt = _seed_appointment(
@@ -431,6 +442,7 @@ def test_doctor_can_confirm_appointment(
 # ---------------------------------------------------------------------------
 # 11. Patient can cancel own pending appointment → 200 status=cancelled
 # ---------------------------------------------------------------------------
+
 
 def test_patient_can_cancel_own_pending_appointment(
     client: TestClient, db, doctor_user, patient_user
@@ -457,6 +469,7 @@ def test_patient_can_cancel_own_pending_appointment(
 # ---------------------------------------------------------------------------
 # 12. Unauthenticated → 401
 # ---------------------------------------------------------------------------
+
 
 def test_unauthenticated_returns_401(client: TestClient, doctor_user):
     """Request without a bearer token → 401."""

@@ -3,6 +3,7 @@
 These tests verify the synthetic benchmark logic works correctly without
 requiring Azure DI credentials or real lab images.
 """
+
 from __future__ import annotations
 
 import json
@@ -27,6 +28,7 @@ _BENCH_DIR = _BACKEND_DIR / "ocr_dataset" / "benchmark"
 
 
 # ── 1. _normalize_expected_canonical ─────────────────────────────────────────
+
 
 class TestNormalizeExpectedCanonical:
     """_normalize_expected_canonical() maps expected.json aliases to live canonical names."""
@@ -57,18 +59,22 @@ class TestNormalizeExpectedCanonical:
 
 # ── 2. _test_hospital_detection ───────────────────────────────────────────────
 
+
 class TestHospitalDetection:
     """_test_hospital_detection() returns True for every known hospital profile."""
 
-    @pytest.mark.parametrize("hospital_id", [
-        "vinmec",
-        "medlatec",
-        "tamanh",
-        "hongngoc",
-        "bachmai",
-        "bachmai108",
-        "fv",
-    ])
+    @pytest.mark.parametrize(
+        "hospital_id",
+        [
+            "vinmec",
+            "medlatec",
+            "tamanh",
+            "hongngoc",
+            "bachmai",
+            "bachmai108",
+            "fv",
+        ],
+    )
     def test_known_hospitals_detected(self, hospital_id: str) -> None:
         ok, pattern = _test_hospital_detection(hospital_id)
         assert ok, (
@@ -84,6 +90,7 @@ class TestHospitalDetection:
 
 
 # ── 3. run_synthetic_benchmark (integration) ──────────────────────────────────
+
 
 class TestRunSyntheticBenchmark:
     """Full integration test of run_synthetic_benchmark()."""
@@ -149,31 +156,36 @@ class TestRunSyntheticBenchmark:
 
 # ── 4. normalize_biomarker edge cases (used by synthetic mode) ────────────────
 
+
 class TestNormalizeBiomarkerEdgeCases:
     """Spot-check normalize_biomarker() for names appearing in expected.json files."""
 
-    @pytest.mark.parametrize("raw_name,expected_canonical", [
-        # Vietnamese test names from tamanh
-        ("Đường huyết lúc đói", "fasting_glucose"),  # Phase C fix: accented alias added
-        ("Urê", "urea"),                                # Phase C fix: Urê alias added
-        # tamanh SGOT/SGPT with leading keyword
-        ("SGOT (AST)", "ast"),
-        ("SGPT (ALT)", "alt"),
-        # Vinmec parenthetical stripping
-        ("AST (SGOT)", "ast"),
-        ("ALT (SGPT)", "alt"),
-        ("eGFR (CKD-EPI)", "egfr"),
-        # Plain names
-        ("Glucose", "fasting_glucose"),
-        ("HbA1c", "hba1c"),
-        ("Creatinine", "creatinine"),
-        ("Triglycerid", "triglyceride"),
-        ("Triglycerides", "triglyceride"),
-        ("HDL-Cholesterol", "hdl"),
-        ("LDL-Cholesterol", "ldl"),
-        ("Acid Uric", "uric_acid"),
-        ("TSH", "tsh"),
-    ])
+    @pytest.mark.parametrize(
+        "raw_name,expected_canonical",
+        [
+            # Vietnamese test names from tamanh
+            ("Đường huyết lúc đói", "fasting_glucose"),  # Phase C fix: accented alias added
+            ("Urê", "urea"),  # Phase C fix: Urê alias added
+            # tamanh SGOT/SGPT with leading keyword
+            ("SGOT (AST)", "ast"),
+            ("SGPT (ALT)", "alt"),
+            # Vinmec parenthetical stripping
+            ("AST (SGOT)", "ast"),
+            ("ALT (SGPT)", "alt"),
+            ("eGFR (CKD-EPI)", "egfr"),
+            # Plain names
+            ("Glucose", "fasting_glucose"),
+            ("HbA1c", "hba1c"),
+            ("Creatinine", "creatinine"),
+            ("Triglycerid", "triglyceride"),
+            ("Triglycerides", "triglyceride"),
+            ("HDL-Cholesterol", "hdl"),
+            ("LDL-Cholesterol", "ldl"),
+            ("Acid Uric", "uric_acid"),
+            ("TSH", "tsh"),
+        ],
+    )
     def test_normalize(self, raw_name: str, expected_canonical: str | None) -> None:
         from app.domain.lab_interpreter import normalize_biomarker
+
         assert normalize_biomarker(raw_name) == expected_canonical

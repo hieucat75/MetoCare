@@ -1,4 +1,5 @@
 """Integration tests for OCRCase service lifecycle (create -> confirm -> export)."""
+
 from __future__ import annotations
 
 import json
@@ -28,23 +29,55 @@ def db():
 
 def _extracted():
     return [
-        {"test_name": "glucose", "original_test_name": "Glucose", "mapped_metric_type": "glucose", "display_name_vi": "Duong mau", "value": 5.2, "unit": "mmol/L"},
-        {"test_name": "urea", "original_test_name": "Urea", "mapped_metric_type": "urea", "display_name_vi": "Ure", "value": 6.0, "unit": "mmol/L"},
+        {
+            "test_name": "glucose",
+            "original_test_name": "Glucose",
+            "mapped_metric_type": "glucose",
+            "display_name_vi": "Duong mau",
+            "value": 5.2,
+            "unit": "mmol/L",
+        },
+        {
+            "test_name": "urea",
+            "original_test_name": "Urea",
+            "mapped_metric_type": "urea",
+            "display_name_vi": "Ure",
+            "value": 6.0,
+            "unit": "mmol/L",
+        },
     ]
 
 
 def _corrected():
     return [
-        {"test_name": "glucose", "original_test_name": "Glucose", "mapped_metric_type": "glucose", "display_name_vi": "Duong mau", "value": 5.5, "unit": "mmol/L"},
-        {"test_name": "urea", "original_test_name": "Urea", "mapped_metric_type": "urea", "display_name_vi": "Ure", "value": 6.0, "unit": "mmol/L"},
+        {
+            "test_name": "glucose",
+            "original_test_name": "Glucose",
+            "mapped_metric_type": "glucose",
+            "display_name_vi": "Duong mau",
+            "value": 5.5,
+            "unit": "mmol/L",
+        },
+        {
+            "test_name": "urea",
+            "original_test_name": "Urea",
+            "mapped_metric_type": "urea",
+            "display_name_vi": "Ure",
+            "value": 6.0,
+            "unit": "mmol/L",
+        },
     ]
 
 
 def test_create_case_persists_extracted_rows(db):
     case = ocr_case_svc.create_case(
-        db, patient_id="patient-1", extracted_rows=_extracted(),
-        hospital_id="vinmec", hospital_confidence=0.9,
-        source_file_hash="abc123", ocr_engine_version="tesseract",
+        db,
+        patient_id="patient-1",
+        extracted_rows=_extracted(),
+        hospital_id="vinmec",
+        hospital_confidence=0.9,
+        source_file_hash="abc123",
+        ocr_engine_version="tesseract",
     )
     db.commit()
     assert case.id is not None
@@ -55,15 +88,23 @@ def test_create_case_persists_extracted_rows(db):
 
 def test_confirm_case_computes_gap(db):
     case = ocr_case_svc.create_case(
-        db, patient_id="patient-1", extracted_rows=_extracted(),
-        hospital_id="vinmec", hospital_confidence=0.9,
-        source_file_hash="abc123", ocr_engine_version="tesseract",
+        db,
+        patient_id="patient-1",
+        extracted_rows=_extracted(),
+        hospital_id="vinmec",
+        hospital_confidence=0.9,
+        source_file_hash="abc123",
+        ocr_engine_version="tesseract",
     )
     db.flush()
     confirmed = ocr_case_svc.confirm_case(
-        db, case_id=case.id, patient_id="patient-1",
-        lab_batch_id="batch-1", corrected_rows=_corrected(),
-        test_date_iso="2026-06-01", user_review_time_seconds=45.0,
+        db,
+        case_id=case.id,
+        patient_id="patient-1",
+        lab_batch_id="batch-1",
+        corrected_rows=_corrected(),
+        test_date_iso="2026-06-01",
+        user_review_time_seconds=45.0,
     )
     db.commit()
     assert confirmed is not None
@@ -74,14 +115,21 @@ def test_confirm_case_computes_gap(db):
 
 def test_confirm_case_rejects_wrong_patient(db):
     case = ocr_case_svc.create_case(
-        db, patient_id="patient-1", extracted_rows=_extracted(),
-        hospital_id=None, hospital_confidence=None,
-        source_file_hash=None, ocr_engine_version=None,
+        db,
+        patient_id="patient-1",
+        extracted_rows=_extracted(),
+        hospital_id=None,
+        hospital_confidence=None,
+        source_file_hash=None,
+        ocr_engine_version=None,
     )
     db.flush()
     result = ocr_case_svc.confirm_case(
-        db, case_id=case.id, patient_id="patient-WRONG",
-        lab_batch_id="batch-1", corrected_rows=_corrected(),
+        db,
+        case_id=case.id,
+        patient_id="patient-WRONG",
+        lab_batch_id="batch-1",
+        corrected_rows=_corrected(),
         test_date_iso="2026-06-01",
     )
     assert result is None
@@ -89,17 +137,25 @@ def test_confirm_case_rejects_wrong_patient(db):
 
 def test_confirm_case_missing_case_returns_none(db):
     result = ocr_case_svc.confirm_case(
-        db, case_id="nonexistent-id", patient_id="patient-1",
-        lab_batch_id="batch-1", corrected_rows=[], test_date_iso="2026-06-01",
+        db,
+        case_id="nonexistent-id",
+        patient_id="patient-1",
+        lab_batch_id="batch-1",
+        corrected_rows=[],
+        test_date_iso="2026-06-01",
     )
     assert result is None
 
 
 def test_get_case_returns_own(db):
     case = ocr_case_svc.create_case(
-        db, patient_id="patient-1", extracted_rows=[],
-        hospital_id=None, hospital_confidence=None,
-        source_file_hash=None, ocr_engine_version=None,
+        db,
+        patient_id="patient-1",
+        extracted_rows=[],
+        hospital_id=None,
+        hospital_confidence=None,
+        source_file_hash=None,
+        ocr_engine_version=None,
     )
     db.commit()
     found = ocr_case_svc.get_case(db, case_id=case.id, patient_id="patient-1")
@@ -108,9 +164,13 @@ def test_get_case_returns_own(db):
 
 def test_get_case_blocks_other_patient(db):
     case = ocr_case_svc.create_case(
-        db, patient_id="patient-1", extracted_rows=[],
-        hospital_id=None, hospital_confidence=None,
-        source_file_hash=None, ocr_engine_version=None,
+        db,
+        patient_id="patient-1",
+        extracted_rows=[],
+        hospital_id=None,
+        hospital_confidence=None,
+        source_file_hash=None,
+        ocr_engine_version=None,
     )
     db.commit()
     assert ocr_case_svc.get_case(db, case_id=case.id, patient_id="patient-2") is None
@@ -118,23 +178,34 @@ def test_get_case_blocks_other_patient(db):
 
 def test_create_case_export_status_pending(db):
     case = ocr_case_svc.create_case(
-        db, patient_id="p", extracted_rows=[],
-        hospital_id=None, hospital_confidence=None,
-        source_file_hash=None, ocr_engine_version=None,
+        db,
+        patient_id="p",
+        extracted_rows=[],
+        hospital_id=None,
+        hospital_confidence=None,
+        source_file_hash=None,
+        ocr_engine_version=None,
     )
     assert case.export_status == "pending"
 
 
 def test_confirm_case_changes_export_status(db):
     case = ocr_case_svc.create_case(
-        db, patient_id="p", extracted_rows=_extracted(),
-        hospital_id="vinmec", hospital_confidence=0.9,
-        source_file_hash=None, ocr_engine_version=None,
+        db,
+        patient_id="p",
+        extracted_rows=_extracted(),
+        hospital_id="vinmec",
+        hospital_confidence=0.9,
+        source_file_hash=None,
+        ocr_engine_version=None,
     )
     db.flush()
     confirmed = ocr_case_svc.confirm_case(
-        db, case_id=case.id, patient_id="p",
-        lab_batch_id="b", corrected_rows=_corrected(),
+        db,
+        case_id=case.id,
+        patient_id="p",
+        lab_batch_id="b",
+        corrected_rows=_corrected(),
         test_date_iso="2026-06-01",
     )
     db.commit()
@@ -143,14 +214,21 @@ def test_confirm_case_changes_export_status(db):
 
 def test_confirm_case_stores_corrected_rows(db):
     case = ocr_case_svc.create_case(
-        db, patient_id="p", extracted_rows=_extracted(),
-        hospital_id=None, hospital_confidence=None,
-        source_file_hash=None, ocr_engine_version=None,
+        db,
+        patient_id="p",
+        extracted_rows=_extracted(),
+        hospital_id=None,
+        hospital_confidence=None,
+        source_file_hash=None,
+        ocr_engine_version=None,
     )
     db.flush()
     ocr_case_svc.confirm_case(
-        db, case_id=case.id, patient_id="p",
-        lab_batch_id="b", corrected_rows=_corrected(),
+        db,
+        case_id=case.id,
+        patient_id="p",
+        lab_batch_id="b",
+        corrected_rows=_corrected(),
         test_date_iso="2026-06-01",
     )
     db.commit()
@@ -160,29 +238,44 @@ def test_confirm_case_stores_corrected_rows(db):
 
 def test_confirm_case_stores_review_time(db):
     case = ocr_case_svc.create_case(
-        db, patient_id="p", extracted_rows=_extracted(),
-        hospital_id=None, hospital_confidence=None,
-        source_file_hash=None, ocr_engine_version=None,
+        db,
+        patient_id="p",
+        extracted_rows=_extracted(),
+        hospital_id=None,
+        hospital_confidence=None,
+        source_file_hash=None,
+        ocr_engine_version=None,
     )
     db.flush()
     confirmed = ocr_case_svc.confirm_case(
-        db, case_id=case.id, patient_id="p",
-        lab_batch_id="b", corrected_rows=_corrected(),
-        test_date_iso="2026-06-01", user_review_time_seconds=120.5,
+        db,
+        case_id=case.id,
+        patient_id="p",
+        lab_batch_id="b",
+        corrected_rows=_corrected(),
+        test_date_iso="2026-06-01",
+        user_review_time_seconds=120.5,
     )
     assert confirmed.user_review_time_seconds == 120.5
 
 
 def test_confirm_case_editing_rate_one_of_two(db):
     case = ocr_case_svc.create_case(
-        db, patient_id="p", extracted_rows=_extracted(),
-        hospital_id=None, hospital_confidence=None,
-        source_file_hash=None, ocr_engine_version=None,
+        db,
+        patient_id="p",
+        extracted_rows=_extracted(),
+        hospital_id=None,
+        hospital_confidence=None,
+        source_file_hash=None,
+        ocr_engine_version=None,
     )
     db.flush()
     confirmed = ocr_case_svc.confirm_case(
-        db, case_id=case.id, patient_id="p",
-        lab_batch_id="b", corrected_rows=_corrected(),
+        db,
+        case_id=case.id,
+        patient_id="p",
+        lab_batch_id="b",
+        corrected_rows=_corrected(),
         test_date_iso="2026-06-01",
     )
     assert confirmed.editing_rate == pytest.approx(0.5, abs=0.01)
@@ -190,14 +283,21 @@ def test_confirm_case_editing_rate_one_of_two(db):
 
 def test_confirm_case_gap_report_stored(db):
     case = ocr_case_svc.create_case(
-        db, patient_id="p", extracted_rows=_extracted(),
-        hospital_id=None, hospital_confidence=None,
-        source_file_hash=None, ocr_engine_version=None,
+        db,
+        patient_id="p",
+        extracted_rows=_extracted(),
+        hospital_id=None,
+        hospital_confidence=None,
+        source_file_hash=None,
+        ocr_engine_version=None,
     )
     db.flush()
     ocr_case_svc.confirm_case(
-        db, case_id=case.id, patient_id="p",
-        lab_batch_id="b", corrected_rows=_corrected(),
+        db,
+        case_id=case.id,
+        patient_id="p",
+        lab_batch_id="b",
+        corrected_rows=_corrected(),
         test_date_iso="2026-06-01",
     )
     db.commit()

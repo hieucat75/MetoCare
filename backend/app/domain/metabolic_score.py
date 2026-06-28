@@ -16,20 +16,20 @@ from enum import StrEnum
 
 
 class ScoreBand(StrEnum):
-    GOOD = "good"            # 0–24
-    FAIR = "fair"            # 25–49
-    ELEVATED = "elevated"    # 50–74
+    GOOD = "good"  # 0–24
+    FAIR = "fair"  # 25–49
+    ELEVATED = "elevated"  # 50–74
     HIGH_CONCERN = "high_concern"  # 75–100
 
 
 @dataclass
 class MetabolicInputs:
-    waist_cm: float | None = None        # abdominal obesity proxy
+    waist_cm: float | None = None  # abdominal obesity proxy
     fasting_glucose: float | None = None  # mg/dL
-    hba1c: float | None = None           # %
-    triglyceride: float | None = None    # mg/dL
-    hdl: float | None = None             # mg/dL
-    systolic_bp: float | None = None     # mmHg
+    hba1c: float | None = None  # %
+    triglyceride: float | None = None  # mg/dL
+    hdl: float | None = None  # mg/dL
+    systolic_bp: float | None = None  # mmHg
     is_male: bool = True
 
 

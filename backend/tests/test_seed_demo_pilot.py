@@ -79,9 +79,7 @@ class TestProductionGuard:
                 seed(db)
         # No pilot patients should have been created
         pilot_phones = [row[0] for row in _mod.PILOT_PATIENTS]
-        users = db.execute(
-            select(User).where(User.phone.in_(pilot_phones))
-        ).scalars().all()
+        users = db.execute(select(User).where(User.phone.in_(pilot_phones))).scalars().all()
         assert len(users) == 0
 
 
@@ -102,9 +100,7 @@ class TestSeedIdempotency:
     def test_seed_creates_all_patients_and_data(self, db):
         """Single comprehensive first-run check: 10 patients, expected counts."""
         # Collect what the db already has before this test runs
-        existing_phones = {
-            u.phone for u in db.execute(select(User)).scalars()
-        }
+        existing_phones = {u.phone for u in db.execute(select(User)).scalars()}
         pilot_phones = {row[0] for row in _mod.PILOT_PATIENTS}
         already_seeded = pilot_phones & existing_phones
 
@@ -117,30 +113,35 @@ class TestSeedIdempotency:
 
         # All 10 pilot users must exist in the DB regardless of whether
         # they were just created or already present
-        users = db.execute(
-            select(User).where(User.phone.in_(pilot_phones))
-        ).scalars().all()
+        users = db.execute(select(User).where(User.phone.in_(pilot_phones))).scalars().all()
         assert len(users) == 10
 
         # Get profile IDs for pilot patients
         pilot_profile_ids = set()
         for ph in pilot_phones:
             profile = db.execute(
-                select(PatientProfile).join(User, PatientProfile.user_id == User.id)
+                select(PatientProfile)
+                .join(User, PatientProfile.user_id == User.id)
                 .where(User.phone == ph)
             ).scalar_one_or_none()
             if profile:
                 pilot_profile_ids.add(profile.id)
 
-        metric_count = len(db.execute(
-            select(HealthMetric).where(HealthMetric.patient_id.in_(pilot_profile_ids))
-        ).scalars().all())
-        lab_count = len(db.execute(
-            select(LabResult).where(LabResult.patient_id.in_(pilot_profile_ids))
-        ).scalars().all())
-        med_count = len(db.execute(
-            select(Medication).where(Medication.patient_id.in_(pilot_profile_ids))
-        ).scalars().all())
+        metric_count = len(
+            db.execute(select(HealthMetric).where(HealthMetric.patient_id.in_(pilot_profile_ids)))
+            .scalars()
+            .all()
+        )
+        lab_count = len(
+            db.execute(select(LabResult).where(LabResult.patient_id.in_(pilot_profile_ids)))
+            .scalars()
+            .all()
+        )
+        med_count = len(
+            db.execute(select(Medication).where(Medication.patient_id.in_(pilot_profile_ids)))
+            .scalars()
+            .all()
+        )
 
         assert metric_count >= 960
         assert lab_count == 84
@@ -148,7 +149,7 @@ class TestSeedIdempotency:
 
     def test_second_run_is_no_op(self, db):
         """Two consecutive seed() calls: second returns zero new records."""
-        seed(db)      # ensure fully seeded
+        seed(db)  # ensure fully seeded
         result2 = seed(db)
 
         assert len(result2["patients_created"]) == 0
@@ -175,13 +176,22 @@ class TestTransactionSafety:
 
     def _mini_patients(self, phones: list[str]) -> list[tuple]:
         """Build minimal PILOT_PATIENTS-compatible rows for isolated phones."""
-        names = [f"Test Patient {i+1}" for i, _ in enumerate(phones)]
+        names = [f"Test Patient {i + 1}" for i, _ in enumerate(phones)]
         return [
             (
-                phone, "TestPass1!", name,
-                "1990-01-01", "male",
-                170.0, 70.0, 80.0, "low",
-                "Không có", "Không có", "Không có", "Không có",
+                phone,
+                "TestPass1!",
+                name,
+                "1990-01-01",
+                "male",
+                170.0,
+                70.0,
+                80.0,
+                "low",
+                "Không có",
+                "Không có",
+                "Không có",
+                "Không có",
             )
             for phone, name in zip(phones, names, strict=False)
         ]
@@ -221,19 +231,21 @@ class TestTransactionSafety:
         def inject_then_fail(inner_db, patient_id, phone, now):
             if phone == self._PHONE_B:
                 # Insert a lab result then raise — savepoint must undo this
-                inner_db.add(LabResult(
-                    patient_id=patient_id,
-                    test_name="Glucose",
-                    canonical_name="fasting_glucose",
-                    value=100.0,
-                    unit="mg/dL",
-                    reference_range="70-99",
-                    status="normal",
-                    test_date=now.date(),
-                    ocr_confidence=1.0,
-                    verified_by_user=True,
-                    verified_by_doctor=False,
-                ))
+                inner_db.add(
+                    LabResult(
+                        patient_id=patient_id,
+                        test_name="Glucose",
+                        canonical_name="fasting_glucose",
+                        value=100.0,
+                        unit="mg/dL",
+                        reference_range="70-99",
+                        status="normal",
+                        test_date=now.date(),
+                        ocr_confidence=1.0,
+                        verified_by_user=True,
+                        verified_by_doctor=False,
+                    )
+                )
                 raise ValueError("forced failure for B")
             return 0  # A and C: no labs
 
@@ -243,18 +255,18 @@ class TestTransactionSafety:
         assert result["patients_failed"][0]["name"] == "Test Patient 2"
 
         # Patient B's user still exists (auth.register is irreversible)
-        user_b = db.execute(
-            select(User).where(User.phone == self._PHONE_B)
-        ).scalar_one()
+        user_b = db.execute(select(User).where(User.phone == self._PHONE_B)).scalar_one()
         assert user_b is not None
 
         # Patient B has no lab results (savepoint rolled back the insert)
         profile_b = db.execute(
             select(PatientProfile).where(PatientProfile.user_id == user_b.id)
         ).scalar_one()
-        labs_b = db.execute(
-            select(LabResult).where(LabResult.patient_id == profile_b.id)
-        ).scalars().all()
+        labs_b = (
+            db.execute(select(LabResult).where(LabResult.patient_id == profile_b.id))
+            .scalars()
+            .all()
+        )
         assert len(labs_b) == 0
 
     def test_rerun_recovers_failed_patient(self, db):

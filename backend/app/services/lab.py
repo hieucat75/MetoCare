@@ -40,27 +40,27 @@ _PROMOTABLE = {spec.canonical for spec in lab_interpreter.BIOMARKERS}
 
 _CLINICAL_MESSAGES: dict[tuple[str, str], str] = {
     # fasting_glucose (internal: mg/dL)
-    ("fasting_glucose", "critical"):   "Đường huyết ở mức nguy hiểm — cần bác sĩ đánh giá ngay",
-    ("fasting_glucose", "low"):        "Đường huyết thấp — cần theo dõi và trao đổi với bác sĩ",
-    ("fasting_glucose", "normal"):     "Đường huyết bình thường",
-    ("fasting_glucose", "high"):       "Đường huyết cao — nên tư vấn bác sĩ",
+    ("fasting_glucose", "critical"): "Đường huyết ở mức nguy hiểm — cần bác sĩ đánh giá ngay",
+    ("fasting_glucose", "low"): "Đường huyết thấp — cần theo dõi và trao đổi với bác sĩ",
+    ("fasting_glucose", "normal"): "Đường huyết bình thường",
+    ("fasting_glucose", "high"): "Đường huyết cao — nên tư vấn bác sĩ",
     # postprandial_glucose
     ("postprandial_glucose", "critical"): "Đường huyết sau ăn nguy hiểm — cần bác sĩ đánh giá ngay",
-    ("postprandial_glucose", "low"):      "Đường huyết sau ăn thấp — cần theo dõi",
-    ("postprandial_glucose", "normal"):   "Đường huyết sau ăn bình thường",
-    ("postprandial_glucose", "high"):     "Đường huyết sau ăn cao — nên tư vấn bác sĩ",
+    ("postprandial_glucose", "low"): "Đường huyết sau ăn thấp — cần theo dõi",
+    ("postprandial_glucose", "normal"): "Đường huyết sau ăn bình thường",
+    ("postprandial_glucose", "high"): "Đường huyết sau ăn cao — nên tư vấn bác sĩ",
     # hba1c
     ("hba1c", "critical"): "HbA1c rất cao — cần bác sĩ xem xét sớm",
-    ("hba1c", "low"):      "HbA1c thấp",
-    ("hba1c", "normal"):   "HbA1c bình thường",
-    ("hba1c", "high"):     "HbA1c cao — nguy cơ tiểu đường, cần theo dõi",
+    ("hba1c", "low"): "HbA1c thấp",
+    ("hba1c", "normal"): "HbA1c bình thường",
+    ("hba1c", "high"): "HbA1c cao — nguy cơ tiểu đường, cần theo dõi",
 }
 
 _CLINICAL_MESSAGE_DEFAULT: dict[str, str] = {
     "critical": "Chỉ số ở mức nguy hiểm — cần bác sĩ đánh giá ngay",
-    "low":      "Chỉ số thấp hơn tham chiếu — nên trao đổi với bác sĩ",
-    "normal":   "Chỉ số trong khoảng bình thường",
-    "high":     "Chỉ số cao hơn tham chiếu — nên tư vấn bác sĩ",
+    "low": "Chỉ số thấp hơn tham chiếu — nên trao đổi với bác sĩ",
+    "normal": "Chỉ số trong khoảng bình thường",
+    "high": "Chỉ số cao hơn tham chiếu — nên tư vấn bác sĩ",
 }
 
 
@@ -147,7 +147,7 @@ def validate_before_save(
 
     if not plaus["plausible"]:
         return {
-            "valid": True,   # save regardless — never silently discard data
+            "valid": True,  # save regardless — never silently discard data
             "suspicious": True,
             "reason": plaus["reason"],
             "action": "flag",
@@ -186,10 +186,12 @@ def _promote_row(db: Session, row: LabResult, measured_at: dt.datetime) -> bool:
     """
     if row.verified_by_user is False:
         import logging as _logging
+
         _logging.getLogger("mcp.lab").warning(
             "_promote_row_blocked_unverified lab_result_id=%s canonical=%s — "
             "unverified OCR row must not reach patient metrics",
-            row.id, row.canonical_name,
+            row.id,
+            row.canonical_name,
         )
         return False
     canonical = row.canonical_name or lab_interpreter.normalize_biomarker(row.test_name)
@@ -263,24 +265,30 @@ def backfill_lab_metrics(db: Session, *, commit: bool = True) -> int:
     # load_only avoids selecting columns added after this backfill migration ran
     # (e.g. original_value/unit/reference_range/test_name) so this function is safe
     # to call from the hmbk_backfill migration even on DBs that don't have them yet.
-    orphans = db.execute(
-        select(LabResult)
-        .where(
-            LabResult.deleted_at.is_(None),
-            LabResult.value.is_not(None),
-            LabResult.id.not_in(promoted_refs),
+    orphans = (
+        db.execute(
+            select(LabResult)
+            .where(
+                LabResult.deleted_at.is_(None),
+                LabResult.value.is_not(None),
+                LabResult.id.not_in(promoted_refs),
+            )
+            .options(
+                _load_only(
+                    LabResult.id,
+                    LabResult.patient_id,
+                    LabResult.canonical_name,
+                    LabResult.test_name,
+                    LabResult.value,
+                    LabResult.unit,
+                    LabResult.test_date,
+                    LabResult.created_at,
+                )
+            )
         )
-        .options(_load_only(
-            LabResult.id,
-            LabResult.patient_id,
-            LabResult.canonical_name,
-            LabResult.test_name,
-            LabResult.value,
-            LabResult.unit,
-            LabResult.test_date,
-            LabResult.created_at,
-        ))
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     written = sum(_promote_row(db, row, _measured_at_for(row, None)) for row in orphans)
     if commit:
         db.commit()
@@ -352,16 +360,13 @@ def interpret_document(
     for b in interpretation.biomarkers:
         # verified_by_user gate mirrors lab_pipeline: mock/manual rows are trusted;
         # real OCR rows require confidence >= 0.5 and no needs_verification flag.
-        raw = next((v for v in raw_values if hasattr(v, "test_name") and v.test_name == b.raw_name), None)  # noqa: E501
+        raw = next(
+            (v for v in raw_values if hasattr(v, "test_name") and v.test_name == b.raw_name), None
+        )  # noqa: E501
         suspect = getattr(raw, "suspect_machine_id", False) if raw else False
         requires_review = getattr(raw, "requires_review", False) if raw else False
-        auto_save_blocked = (
-            not is_mock_path and (
-                suspect
-                or requires_review
-                or b.ocr_confidence < 0.5
-                or b.needs_verification
-            )
+        auto_save_blocked = not is_mock_path and (
+            suspect or requires_review or b.ocr_confidence < 0.5 or b.needs_verification
         )
         # Auto-classify + normalize at creation time.
         _clf = normalize_and_classify(b.canonical, b.value, b.unit or "")
@@ -397,8 +402,11 @@ def interpret_document(
             lr.data_quality_note = _vld_ocr.get("reason") if _vld_ocr["suspicious"] else None
             if _vld_ocr["suspicious"]:
                 _log.warning(
-                    "validate_before_save (OCR) flagged suspicious: canonical=%s value=%s unit=%s reason=%s",
-                    b.canonical, b.value, b.unit, _vld_ocr["reason"],
+                    "validate_before_save (OCR) flagged suspicious: canonical=%s value=%s unit=%s reason=%s",  # noqa: E501
+                    b.canonical,
+                    b.value,
+                    b.unit,
+                    _vld_ocr["reason"],
                 )
         db.add(lr)
         new_rows.append(lr)
@@ -523,8 +531,12 @@ def create_manual_entry(
             reference_range=item.get("reference_range"),
             test_date=test_date,
             verified_by_user=True,
-            original_value=item.get("original_value") if item.get("original_value") is not None else raw_value,  # noqa: E501
-            original_unit=item.get("original_unit") if item.get("original_unit") is not None else raw_unit,  # noqa: E501
+            original_value=item.get("original_value")
+            if item.get("original_value") is not None
+            else raw_value,  # noqa: E501
+            original_unit=item.get("original_unit")
+            if item.get("original_unit") is not None
+            else raw_unit,  # noqa: E501
             original_reference_range=item.get("original_reference_range"),
             original_test_name=item.get("original_test_name"),
             normalized_value_si=classification.get("normalized_value_si"),
@@ -532,8 +544,12 @@ def create_manual_entry(
             status=classification.get("status"),
         )
         # Write-time plausibility guardrail (Phase 2).
-        _orig_val = item.get("original_value") if item.get("original_value") is not None else raw_value
-        _orig_unit = item.get("original_unit") if item.get("original_unit") is not None else raw_unit
+        _orig_val = (
+            item.get("original_value") if item.get("original_value") is not None else raw_value
+        )
+        _orig_unit = (
+            item.get("original_unit") if item.get("original_unit") is not None else raw_unit
+        )
         if canonical and _orig_val is not None:
             _vld = validate_before_save(
                 biomarker_name=canonical,
@@ -545,9 +561,12 @@ def create_manual_entry(
             row.data_quality_flag = _vld.get("action")
             row.data_quality_note = _vld.get("reason") if _vld["suspicious"] else None
             if _vld["suspicious"]:
-                _log.warning(
-                    "validate_before_save flagged suspicious: canonical=%s value=%s unit=%s reason=%s",
-                    canonical, _orig_val, _orig_unit, _vld["reason"],
+                _log.warning(  # noqa: F823
+                    "validate_before_save flagged suspicious: canonical=%s value=%s unit=%s reason=%s",  # noqa: E501
+                    canonical,
+                    _orig_val,
+                    _orig_unit,
+                    _vld["reason"],
                 )
         db.add(row)
         rows.append(row)
@@ -597,9 +616,11 @@ def create_manual_entry(
             )
         except Exception:
             import logging as _log
+
             _log.getLogger("mcp.lab").exception(
                 "ocr_case_confirm_failed case=%s patient=%s — lab save NOT rolled back",
-                ocr_case_id, patient_id,
+                ocr_case_id,
+                patient_id,
             )
 
     db.commit()
@@ -621,7 +642,6 @@ def get_results_by_batch(
     patient will simply return []).
     """
     from sqlalchemy import select
-    from app.models.clinical import LabUploadBatch
 
     # Verify the batch exists and belongs to the correct patient.
     batch = db.execute(
@@ -654,7 +674,11 @@ def get_results_by_batch(
     # and a normalized value but still lacks a status (e.g. legacy/backfill gap),
     # compute it in-memory for display only — DO NOT commit to DB here.
     for result in rows:
-        if result.status is None and result.normalized_value_si is not None and result.canonical_name:
+        if (
+            result.status is None
+            and result.normalized_value_si is not None
+            and result.canonical_name
+        ):
             computed = classify_value(result.canonical_name, result.normalized_value_si)
             if computed is not None:
                 result.status = computed.value
@@ -681,9 +705,7 @@ def list_lab_results(
         LabResult.patient_id == patient_id,
         LabResult.deleted_at.is_(None),
     )
-    total = db.execute(
-        select(func.count()).select_from(LabResult).where(*base)
-    ).scalar_one()
+    total = db.execute(select(func.count()).select_from(LabResult).where(*base)).scalar_one()
     rows = list(
         db.execute(
             select(LabResult)
@@ -731,11 +753,7 @@ def reclassify_lab_results(
     if batch_id is not None:
         conditions.append(LabResult.batch_id == batch_id)
 
-    rows = list(
-        db.execute(
-            select(LabResult).where(*conditions)
-        ).scalars()
-    )
+    rows = list(db.execute(select(LabResult).where(*conditions)).scalars())
 
     for row in rows:
         try:
@@ -755,7 +773,7 @@ def reclassify_lab_results(
             norm_unit = row.normalized_unit_si
 
             if norm_value is None:
-                # Try to normalize from original_value/original_unit first, then fallback to value/unit.
+                # Try to normalize from original_value/original_unit first, then fallback to value/unit.  # noqa: E501
                 raw_val = row.original_value if row.original_value is not None else row.value
                 raw_unit = row.original_unit if row.original_unit is not None else row.unit
 
@@ -764,7 +782,9 @@ def reclassify_lab_results(
                     continue
 
                 if raw_unit:
-                    norm_value, norm_unit = normalize_value_to_si(raw_val, raw_unit, row.canonical_name)
+                    norm_value, norm_unit = normalize_value_to_si(
+                        raw_val, raw_unit, row.canonical_name
+                    )
                 else:
                     # No unit info — assume canonical unit and classify directly.
                     norm_value = raw_val
@@ -787,7 +807,11 @@ def reclassify_lab_results(
 
             _log.info(
                 "reclassify %s (%s): %s → %s  (value=%.4f)",
-                row.id, row.canonical_name, old_status, new_status, norm_value,
+                row.id,
+                row.canonical_name,
+                old_status,
+                new_status,
+                norm_value,
             )
 
             if not dry_run:
@@ -801,7 +825,9 @@ def reclassify_lab_results(
             updated += 1
 
         except Exception as exc:  # noqa: BLE001
-            err_msg = f"reclassify error row {row.id} ({getattr(row, 'canonical_name', '?')}): {exc}"
+            err_msg = (
+                f"reclassify error row {row.id} ({getattr(row, 'canonical_name', '?')}): {exc}"
+            )
             _log.warning(err_msg)
             errors.append(err_msg)
 
@@ -849,12 +875,14 @@ def correct_lab_result(
 
     # Append provenance record before overwriting.
     history = json.loads(row.correction_history_json) if row.correction_history_json else []
-    history.append({
-        "timestamp": utcnow().isoformat(),
-        "old_value": row.original_value,
-        "old_unit": row.original_unit,
-        "corrected_by": "user",
-    })
+    history.append(
+        {
+            "timestamp": utcnow().isoformat(),
+            "old_value": row.original_value,
+            "old_unit": row.original_unit,
+            "corrected_by": "user",
+        }
+    )
     row.correction_history_json = json.dumps(history)
 
     # Update to corrected values.

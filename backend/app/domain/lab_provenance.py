@@ -31,10 +31,10 @@ class RawOcrProvenance:
 class CorrectionEvent:
     """An immutable record of one correction applied by patient or doctor."""
 
-    field: str          # "value" | "unit" | "test_name"
+    field: str  # "value" | "unit" | "test_name"
     old_value: str
     new_value: str
-    corrected_by: str   # "patient" | "doctor"
+    corrected_by: str  # "patient" | "doctor"
     corrected_at: datetime
 
 
@@ -48,14 +48,14 @@ class LabRecordProvenance:
     """
 
     lab_result_id: str
-    source_type: str               # "ocr_upload" | "manual_entry" | "device_sync"
-    verification_status: str       # "unverified" | "patient_verified" | "doctor_verified"
+    source_type: str  # "ocr_upload" | "manual_entry" | "device_sync"
+    verification_status: str  # "unverified" | "patient_verified" | "doctor_verified"
     raw_ocr: RawOcrProvenance | None  # None for manual_entry / device_sync
     corrections: list[CorrectionEvent] = field(default_factory=list)
     is_clinically_usable: bool = False  # True ONLY when verified_by_user or verified_by_doctor
 
     @classmethod
-    def from_lab_result(cls, row: object) -> "LabRecordProvenance":
+    def from_lab_result(cls, row: object) -> LabRecordProvenance:
         """Build provenance from a LabResult ORM row (duck-typed to avoid circular imports)."""
         verified_by_user = getattr(row, "verified_by_user", False) or False
         verified_by_doctor = getattr(row, "verified_by_doctor", False) or False
@@ -79,12 +79,13 @@ class LabRecordProvenance:
                 original_unit=getattr(row, "original_unit", None),
                 original_reference_range=getattr(row, "original_reference_range", None),
                 ocr_confidence=getattr(row, "ocr_confidence", None),
-                hospital_detected=None,   # stored on LabDocument, not LabResult
+                hospital_detected=None,  # stored on LabDocument, not LabResult
                 parser_version=None,
             )
 
         # Correction history — stored as JSON array in correction_history_json column.
         import json as _json
+
         corrections: list[CorrectionEvent] = []
         raw_history = getattr(row, "correction_history_json", None)
         if raw_history:

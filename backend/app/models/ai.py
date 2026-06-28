@@ -20,11 +20,11 @@ from ._mixins import SoftDeleteMixin, TimestampMixin, UUIDPrimaryKey
 
 class RecommendationStatus(StrEnum):
     PENDING_REVIEW = "pending_review"
-    REVIEWED       = "reviewed"
-    ACCEPTED       = "accepted"
-    REJECTED       = "rejected"
-    SUPERSEDED     = "superseded"
-    REQUEST_INFO   = "request_info"
+    REVIEWED = "reviewed"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
+    SUPERSEDED = "superseded"
+    REQUEST_INFO = "request_info"
 
 
 class AISession(UUIDPrimaryKey, TimestampMixin, SoftDeleteMixin, Base):

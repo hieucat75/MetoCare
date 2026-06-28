@@ -84,6 +84,7 @@ def _patient_user_id(db: Session, patient_id: str) -> str:
 # Pipeline core (synchronous, self-contained, unit-testable)
 # --------------------------------------------------------------------------- #
 
+
 def process_document(db: Session, *, document_id: str) -> LabDocument | None:
     """Run OCR + interpretation for a document that is in OCR_PENDING.
 
@@ -150,16 +151,17 @@ def process_document(db: Session, *, document_id: str) -> LabDocument | None:
             suspect = getattr(raw, "suspect_machine_id", False) if raw else False
             requires_review = getattr(raw, "requires_review", False) if raw else False
             auto_save_blocked = (
-                suspect
-                or requires_review
-                or b.ocr_confidence < 0.5
-                or b.needs_verification
+                suspect or requires_review or b.ocr_confidence < 0.5 or b.needs_verification
             )
             if auto_save_blocked:
                 logger.warning(
                     "lab_pipeline_review_required document_id=%s canonical=%s "
                     "confidence=%.2f suspect=%s requires_review=%s",
-                    doc.id, b.canonical, b.ocr_confidence, suspect, requires_review,
+                    doc.id,
+                    b.canonical,
+                    b.ocr_confidence,
+                    suspect,
+                    requires_review,
                 )
             # Auto-classify + normalize at creation time.
             _clf = normalize_and_classify(b.canonical, b.value, b.unit or "")
@@ -192,13 +194,19 @@ def process_document(db: Session, *, document_id: str) -> LabDocument | None:
         # missing unit, needs_verification) remain as LabResult records available
         # in the review UI but must NOT enter patient metrics/dashboard until confirmed.
         from app.services.lab import promote_lab_rows_to_metrics
+
         verified_rows = [r for r in new_rows if r.verified_by_user]
         if len(verified_rows) < len(new_rows):
             logger.warning(
                 "lab_pipeline_promote_gate document_id=%s total=%d verified=%d blocked=%d",
-                doc.id, len(new_rows), len(verified_rows), len(new_rows) - len(verified_rows),
+                doc.id,
+                len(new_rows),
+                len(verified_rows),
+                len(new_rows) - len(verified_rows),
             )
-        promote_lab_rows_to_metrics(db, patient_id=doc.patient_id, rows=verified_rows, test_date=None)  # noqa: E501
+        promote_lab_rows_to_metrics(
+            db, patient_id=doc.patient_id, rows=verified_rows, test_date=None
+        )  # noqa: E501
         _transition(doc, LabDocStatus.INTERPRETED)
     except Exception as exc:  # interpretation must never crash the worker
         _transition(doc, LabDocStatus.INTERPRETATION_FAILED)
@@ -234,6 +242,7 @@ def process_document(db: Session, *, document_id: str) -> LabDocument | None:
 # --------------------------------------------------------------------------- #
 # Worker manager: idempotent enqueue + asyncio queue + drain
 # --------------------------------------------------------------------------- #
+
 
 class OCRWorkerManager:
     def __init__(self) -> None:

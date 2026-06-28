@@ -56,6 +56,7 @@ class DoctorDashboardOut(BaseModel):
 
 class DoctorPublicOut(BaseModel):
     """Minimal public profile used by patients searching for a doctor to grant consent."""
+
     id: str
     full_name: str
     specialty: str | None

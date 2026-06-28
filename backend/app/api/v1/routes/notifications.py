@@ -28,23 +28,29 @@ router = APIRouter(prefix="/notifications", tags=["notifications"])
 # Role constants
 # ---------------------------------------------------------------------------
 
-_ADMIN_ROLES: frozenset[str] = frozenset({
-    UserRole.INTERNAL_ADMIN,
-    UserRole.SUPER_ADMIN,
-})
+_ADMIN_ROLES: frozenset[str] = frozenset(
+    {
+        UserRole.INTERNAL_ADMIN,
+        UserRole.SUPER_ADMIN,
+    }
+)
 
-_READ_ALLOWED_ROLES: frozenset[str] = frozenset({
-    UserRole.PATIENT,
-    UserRole.DOCTOR,
-    UserRole.INTERNAL_ADMIN,
-    UserRole.SUPER_ADMIN,
-    UserRole.MEDICAL_REVIEWER,
-})
+_READ_ALLOWED_ROLES: frozenset[str] = frozenset(
+    {
+        UserRole.PATIENT,
+        UserRole.DOCTOR,
+        UserRole.INTERNAL_ADMIN,
+        UserRole.SUPER_ADMIN,
+        UserRole.MEDICAL_REVIEWER,
+    }
+)
 
-_BLOCKED_ROLES: frozenset[str] = frozenset({
-    UserRole.AI_SERVICE,
-    UserRole.CLINIC_ADMIN,
-})
+_BLOCKED_ROLES: frozenset[str] = frozenset(
+    {
+        UserRole.AI_SERVICE,
+        UserRole.CLINIC_ADMIN,
+    }
+)
 
 
 def _require_read_access(user: CurrentUser) -> None:
@@ -59,6 +65,7 @@ def _require_read_access(user: CurrentUser) -> None:
 # ---------------------------------------------------------------------------
 # GET /notifications — own notifications (paginated, optional unread filter)
 # ---------------------------------------------------------------------------
+
 
 @router.get(
     "",
@@ -104,6 +111,7 @@ def list_notifications(
 # PATCH /notifications/{notification_id}/read — mark single as read
 # ---------------------------------------------------------------------------
 
+
 @router.patch(
     "/{notification_id}/read",
     response_model=NotificationOut,
@@ -129,15 +137,14 @@ def mark_notification_read(
             detail=f"Role '{user.role}' is not permitted.",
         )
 
-    notif = notification_svc.mark_read(
-        db, notification_id=notification_id, user_id=user.id
-    )
+    notif = notification_svc.mark_read(db, notification_id=notification_id, user_id=user.id)
     return NotificationOut.model_validate(notif)
 
 
 # ---------------------------------------------------------------------------
 # POST /notifications/read-all — mark all own notifications as read
 # ---------------------------------------------------------------------------
+
 
 @router.post(
     "/read-all",
@@ -169,6 +176,7 @@ def mark_all_notifications_read(
 # ---------------------------------------------------------------------------
 # POST /notifications — admin creates a notification for any user
 # ---------------------------------------------------------------------------
+
 
 @router.post(
     "",

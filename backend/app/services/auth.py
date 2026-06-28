@@ -82,9 +82,7 @@ def register(
     return user
 
 
-def change_password(
-    db: Session, *, user_id: str, current_password: str, new_password: str
-) -> User:
+def change_password(db: Session, *, user_id: str, current_password: str, new_password: str) -> User:
     """Change a user's password after verifying the current one (PR-F).
 
     Raises:

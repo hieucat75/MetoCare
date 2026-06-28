@@ -32,6 +32,7 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 _admin_only = require_roles(UserRole.INTERNAL_ADMIN, UserRole.SUPER_ADMIN)
 
+
 @router.get("/audit-logs")
 def list_audit_logs(
     limit: int = Query(default=50, ge=1, le=500),
@@ -62,6 +63,7 @@ def list_audit_logs(
         }
         for r in rows
     ]
+
 
 @router.post("/unlock-account", response_model=Message)
 def unlock_account(
@@ -220,6 +222,7 @@ def get_user_audit_log(
 # ---------------------------------------------------------------------------
 # POST /admin/doctors — SUPER_ADMIN + MFA only (AC-12, AC-13)
 # ---------------------------------------------------------------------------
+
 
 @router.post(
     "/doctors",

@@ -14,6 +14,7 @@ from app.models.user import User, UserRole
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def doctor_setup(db):
     clinic = Clinic(name=f"Clinic-{os.urandom(4).hex()}", is_active=True)
@@ -127,6 +128,7 @@ def care_plan_for_patient(db, patient_setup, doctor_setup):
 # Tests
 # ---------------------------------------------------------------------------
 
+
 def test_doctor_creates_care_plan(client, doctor_setup, patient_setup):
     """Doctor can create a care plan — 201."""
     r = client.post(
@@ -158,9 +160,7 @@ def test_patient_reads_own_care_plan(client, patient_setup, care_plan_for_patien
     assert r.json()["id"] == care_plan_for_patient.id
 
 
-def test_patient_cannot_read_other_care_plan(
-    client, another_patient_setup, care_plan_for_patient
-):
+def test_patient_cannot_read_other_care_plan(client, another_patient_setup, care_plan_for_patient):
     """Patient B cannot read Patient A's care plan — 403."""
     r = client.get(
         f"/api/v1/care_plans/{care_plan_for_patient.id}",

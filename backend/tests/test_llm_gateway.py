@@ -24,6 +24,7 @@ from app.llm.gateway import LLMGateway
 # Provider switch (factory)
 # --------------------------------------------------------------------------- #
 
+
 def test_factory_default_is_mock():
     provider = get_provider()
     assert provider.name == "mock"
@@ -58,6 +59,7 @@ def test_factory_unknown_provider_raises(monkeypatch):
 # Mock determinism
 # --------------------------------------------------------------------------- #
 
+
 def test_mock_provider_is_deterministic():
     p = get_provider()
     msgs = [LLMMessage(role="user", content="Tôi nên ăn gì buổi tối?")]
@@ -71,6 +73,7 @@ def test_mock_provider_is_deterministic():
 # --------------------------------------------------------------------------- #
 # Guardrail BLOCK enforcement inside the gateway
 # --------------------------------------------------------------------------- #
+
 
 class _UnsafeProvider:
     name = "unsafe"
@@ -117,6 +120,7 @@ def test_gateway_safe_output_gets_disclaimer():
 # --------------------------------------------------------------------------- #
 # Cost cap -> rate-limit error
 # --------------------------------------------------------------------------- #
+
 
 def test_cost_guard_rpm_cap_raises():
     guard = CostGuard(max_rpm=2, max_tpm=1_000_000)
@@ -177,6 +181,7 @@ def test_gateway_cost_cap_maps_to_429(client, patient, monkeypatch):
 # Cache hit / miss
 # --------------------------------------------------------------------------- #
 
+
 def test_cache_hit_and_miss():
     cache = LRUResponseCache(max_entries=8, ttl_seconds=300)
     gw = LLMGateway(cost_guard=CostGuard(max_rpm=1000, max_tpm=1_000_000), cache=cache)
@@ -196,9 +201,13 @@ def test_cache_hit_and_miss():
 def test_cache_ttl_expiry():
     cache = LRUResponseCache(max_entries=8, ttl_seconds=10)
     key = make_key(
-        provider="mock", model="m", system="s",
+        provider="mock",
+        model="m",
+        system="s",
         messages=[LLMMessage(role="user", content="x")],
-        user_id="u", max_tokens=10, temperature=0.0,
+        user_id="u",
+        max_tokens=10,
+        temperature=0.0,
     )
     from app.llm.base import LLMResponse
 

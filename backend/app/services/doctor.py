@@ -29,11 +29,10 @@ from app.services import audit
 # Lookup helpers
 # ---------------------------------------------------------------------------
 
+
 def get_doctor_by_user_id(db: Session, user_id: str) -> Doctor | None:
     """Return the Doctor row linked to the given user, or None."""
-    return db.execute(
-        select(Doctor).where(Doctor.user_id == user_id)
-    ).scalar_one_or_none()
+    return db.execute(select(Doctor).where(Doctor.user_id == user_id)).scalar_one_or_none()
 
 
 def _require_doctor(db: Session, user_id: str) -> Doctor:
@@ -55,6 +54,7 @@ def _require_doctor(db: Session, user_id: str) -> Doctor:
 # Profile
 # ---------------------------------------------------------------------------
 
+
 def update_doctor_profile(db: Session, doctor: Doctor, data: dict) -> Doctor:
     """Apply partial update to allowed Doctor fields only."""
     allowed = {"full_name", "bio", "avatar_url", "consultation_fee", "specialty"}
@@ -69,41 +69,54 @@ def update_doctor_profile(db: Session, doctor: Doctor, data: dict) -> Doctor:
 # Patient list — consent + encounter union
 # ---------------------------------------------------------------------------
 
+
 def _active_consented_patient_ids(db: Session, doctor_user_id: str) -> set[str]:
     """Patient profile IDs where the patient has granted active consent to this doctor."""
     now = utcnow()
-    rows = db.execute(
-        select(Consent.patient_id).where(
-            Consent.granted_to == doctor_user_id,
-            Consent.revoked_at.is_(None),
-            (Consent.valid_until.is_(None)) | (Consent.valid_until > now),
+    rows = (
+        db.execute(
+            select(Consent.patient_id).where(
+                Consent.granted_to == doctor_user_id,
+                Consent.revoked_at.is_(None),
+                (Consent.valid_until.is_(None)) | (Consent.valid_until > now),
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return set(rows)
 
 
 def _encounter_patient_ids(db: Session, doctor_id: str) -> set[str]:
     """Patient profile IDs that have an active encounter assigned to this doctor."""
-    rows = db.execute(
-        select(Encounter.patient_id).where(
-            Encounter.doctor_id == doctor_id,
-            Encounter.deleted_at.is_(None),
+    rows = (
+        db.execute(
+            select(Encounter.patient_id).where(
+                Encounter.doctor_id == doctor_id,
+                Encounter.deleted_at.is_(None),
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return set(rows)
 
 
 def _pending_item_count(db: Session, patient_id: str) -> int:
     """Count pending AI recommendations + pending-review care plans for one patient."""
     rec_count = db.execute(
-        select(func.count()).select_from(AIClinicalRecommendation).where(
+        select(func.count())
+        .select_from(AIClinicalRecommendation)
+        .where(
             AIClinicalRecommendation.patient_id == patient_id,
             AIClinicalRecommendation.status == RecommendationStatus.PENDING_REVIEW,
             AIClinicalRecommendation.deleted_at.is_(None),
         )
     ).scalar_one()
     plan_count = db.execute(
-        select(func.count()).select_from(CarePlan).where(
+        select(func.count())
+        .select_from(CarePlan)
+        .where(
             CarePlan.patient_id == patient_id,
             CarePlan.status == CarePlanStatus.PENDING_REVIEW,
             CarePlan.deleted_at.is_(None),
@@ -132,9 +145,8 @@ def list_doctor_patients(
     has_pending_review: bool = False,
 ) -> list[dict]:
     """Return patients visible to this doctor (consented + encounter-assigned)."""
-    patient_ids = (
-        _active_consented_patient_ids(db, doctor_user_id)
-        | _encounter_patient_ids(db, doctor_id)
+    patient_ids = _active_consented_patient_ids(db, doctor_user_id) | _encounter_patient_ids(
+        db, doctor_id
     )
     if not patient_ids:
         return []
@@ -153,13 +165,15 @@ def list_doctor_patients(
         pending = _pending_item_count(db, profile.id)
         if has_pending_review and pending == 0:
             continue
-        result.append({
-            "patient_id": profile.id,
-            "full_name": profile.full_name or user.full_name,
-            "risk_segment": profile.risk_segment,
-            "last_encounter_at": _last_encounter_at(db, profile.id, doctor_id),
-            "pending_items": pending,
-        })
+        result.append(
+            {
+                "patient_id": profile.id,
+                "full_name": profile.full_name or user.full_name,
+                "risk_segment": profile.risk_segment,
+                "last_encounter_at": _last_encounter_at(db, profile.id, doctor_id),
+                "pending_items": pending,
+            }
+        )
     return result
 
 
@@ -167,46 +181,61 @@ def list_doctor_patients(
 # Dashboard aggregate
 # ---------------------------------------------------------------------------
 
+
 def get_doctor_dashboard(
     db: Session,
     doctor_id: str,
     doctor_user_id: str,
 ) -> dict:
     """Aggregate dashboard counts for the authenticated doctor."""
-    patient_ids = (
-        _active_consented_patient_ids(db, doctor_user_id)
-        | _encounter_patient_ids(db, doctor_id)
+    patient_ids = _active_consented_patient_ids(db, doctor_user_id) | _encounter_patient_ids(
+        db, doctor_id
     )
 
     now = utcnow()
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     today_end = today_start + dt.timedelta(days=1)
 
-    appts_today = db.execute(
-        select(func.count()).select_from(Appointment).where(
-            Appointment.doctor_id == doctor_id,
-            Appointment.scheduled_at >= today_start,
-            Appointment.scheduled_at < today_end,
-            Appointment.status.in_(["requested", "confirmed"]),
-        )
-    ).scalar_one() or 0
+    appts_today = (
+        db.execute(
+            select(func.count())
+            .select_from(Appointment)
+            .where(
+                Appointment.doctor_id == doctor_id,
+                Appointment.scheduled_at >= today_start,
+                Appointment.scheduled_at < today_end,
+                Appointment.status.in_(["requested", "confirmed"]),
+            )
+        ).scalar_one()
+        or 0
+    )
 
     if patient_ids:
-        pending_reviews = db.execute(
-            select(func.count()).select_from(AIClinicalRecommendation).where(
-                AIClinicalRecommendation.patient_id.in_(patient_ids),
-                AIClinicalRecommendation.status == RecommendationStatus.PENDING_REVIEW,
-                AIClinicalRecommendation.deleted_at.is_(None),
-            )
-        ).scalar_one() or 0
+        pending_reviews = (
+            db.execute(
+                select(func.count())
+                .select_from(AIClinicalRecommendation)
+                .where(
+                    AIClinicalRecommendation.patient_id.in_(patient_ids),
+                    AIClinicalRecommendation.status == RecommendationStatus.PENDING_REVIEW,
+                    AIClinicalRecommendation.deleted_at.is_(None),
+                )
+            ).scalar_one()
+            or 0
+        )
 
-        pending_approvals = db.execute(
-            select(func.count()).select_from(CarePlan).where(
-                CarePlan.patient_id.in_(patient_ids),
-                CarePlan.status == CarePlanStatus.PENDING_REVIEW,
-                CarePlan.deleted_at.is_(None),
-            )
-        ).scalar_one() or 0
+        pending_approvals = (
+            db.execute(
+                select(func.count())
+                .select_from(CarePlan)
+                .where(
+                    CarePlan.patient_id.in_(patient_ids),
+                    CarePlan.status == CarePlanStatus.PENDING_REVIEW,
+                    CarePlan.deleted_at.is_(None),
+                )
+            ).scalar_one()
+            or 0
+        )
 
         alert_rows = db.execute(
             select(PatientProfile, User)
@@ -244,6 +273,7 @@ def get_doctor_dashboard(
 # Admin: create doctor account
 # ---------------------------------------------------------------------------
 
+
 def create_doctor_account(
     db: Session,
     *,
@@ -262,9 +292,7 @@ def create_doctor_account(
     Caller must commit after this returns.
     """
     normalized_email = email.lower().strip()
-    existing = db.execute(
-        select(User).where(User.email == normalized_email)
-    ).scalar_one_or_none()
+    existing = db.execute(select(User).where(User.email == normalized_email)).scalar_one_or_none()
     if existing is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

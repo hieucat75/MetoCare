@@ -137,10 +137,9 @@ def test_approve_already_approved_plan(client, db, doctor_setup, care_plan_for_p
     """Approving an already approved plan -> 409."""
     # Move status to APPROVED first via DB update to bypass validator
     from sqlalchemy import update
+
     db.execute(
-        update(CarePlan)
-        .where(CarePlan.id == care_plan_for_patient.id)
-        .values(status="APPROVED")
+        update(CarePlan).where(CarePlan.id == care_plan_for_patient.id).values(status="APPROVED")
     )
     db.commit()
 

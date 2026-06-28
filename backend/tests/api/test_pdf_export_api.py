@@ -43,6 +43,7 @@ def _pdf_url(patient_id: str) -> str:
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def doctor_user(db):
     """DOCTOR user + JWT."""
@@ -138,6 +139,7 @@ def consent_for_doctor(db, patient_user, doctor_user):
 # 1. DOCTOR with consent -> 200, content-type application/pdf
 # ---------------------------------------------------------------------------
 
+
 def test_doctor_with_consent_gets_pdf_200(
     client: TestClient, patient_user, doctor_user, consent_for_doctor
 ):
@@ -158,6 +160,7 @@ def test_doctor_with_consent_gets_pdf_200(
 # 2. Response body starts with %PDF (valid PDF header)
 # ---------------------------------------------------------------------------
 
+
 def test_pdf_body_starts_with_pdf_header(
     client: TestClient, patient_user, doctor_user, consent_for_doctor
 ):
@@ -169,14 +172,13 @@ def test_pdf_body_starts_with_pdf_header(
         r = client.get(_pdf_url(patient_user["patient_id"]), headers=doctor_user["headers"])
 
     assert r.status_code == 200, r.text
-    assert r.content.startswith(b"%PDF"), (
-        f"PDF body must start with %PDF; got: {r.content[:20]!r}"
-    )
+    assert r.content.startswith(b"%PDF"), f"PDF body must start with %PDF; got: {r.content[:20]!r}"
 
 
 # ---------------------------------------------------------------------------
 # 3. Content-Disposition header present with filename
 # ---------------------------------------------------------------------------
+
 
 def test_pdf_content_disposition_header(
     client: TestClient, patient_user, doctor_user, consent_for_doctor
@@ -205,6 +207,7 @@ def test_pdf_content_disposition_header(
 # 4. PATIENT -> 403
 # ---------------------------------------------------------------------------
 
+
 def test_patient_cannot_export_pdf(client: TestClient, patient_user):
     """PATIENT role must receive 403 on the PDF export endpoint."""
     r = client.get(_pdf_url(patient_user["patient_id"]), headers=patient_user["headers"])
@@ -215,9 +218,8 @@ def test_patient_cannot_export_pdf(client: TestClient, patient_user):
 # 5. AI_SERVICE -> 403
 # ---------------------------------------------------------------------------
 
-def test_ai_service_cannot_export_pdf(
-    client: TestClient, patient_user, ai_service_user
-):
+
+def test_ai_service_cannot_export_pdf(client: TestClient, patient_user, ai_service_user):
     """AI_SERVICE role must receive 403 on the PDF export endpoint."""
     r = client.get(_pdf_url(patient_user["patient_id"]), headers=ai_service_user["headers"])
     assert r.status_code == 403, r.text
@@ -227,9 +229,8 @@ def test_ai_service_cannot_export_pdf(
 # 6. ADMIN -> 200, application/pdf (no consent required)
 # ---------------------------------------------------------------------------
 
-def test_admin_gets_pdf_without_consent(
-    client: TestClient, patient_user, admin_user
-):
+
+def test_admin_gets_pdf_without_consent(client: TestClient, patient_user, admin_user):
     """INTERNAL_ADMIN must receive 200 with PDF content-type, no consent needed."""
     with patch(
         "app.services.pdf_report.generate_patient_summary_pdf",
@@ -246,6 +247,7 @@ def test_admin_gets_pdf_without_consent(
 # ---------------------------------------------------------------------------
 # 7. Unauthenticated -> 401
 # ---------------------------------------------------------------------------
+
 
 def test_unauthenticated_cannot_export_pdf(client: TestClient, patient_user):
     """Requests without a bearer token must receive 401."""

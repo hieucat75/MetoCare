@@ -39,6 +39,7 @@ router = APIRouter(tags=["lab"])
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _require_patient_ownership(
     db: Session,
     *,
@@ -62,9 +63,11 @@ def _require_patient_ownership(
                 detail="Patients may only access their own lab documents.",
             )
 
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
+
 
 @router.get(
     "/patients/{patient_id}/lab-documents",
@@ -258,9 +261,7 @@ def list_lab_batches(
 ) -> LabBatchListResponse:
     _require_patient_ownership(db, patient_id=patient_id, user=user)
     consent.require_access(db, patient_id=patient_id, requester_id=user.id, scope="lab")
-    total, items = lab_batch.list_batches(
-        db, patient_id=patient_id, limit=limit, offset=offset
-    )
+    total, items = lab_batch.list_batches(db, patient_id=patient_id, limit=limit, offset=offset)
     return LabBatchListResponse(
         patient_id=patient_id,
         total=total,
@@ -469,9 +470,11 @@ def interpret_document(
 
 from pydantic import BaseModel as _BaseModel  # noqa: E402
 
+
 class _ReclassifyRequest(_BaseModel):
     batch_id: str | None = None
     dry_run: bool = False
+
 
 class _ReclassifyResponse(_BaseModel):
     updated: int
@@ -545,6 +548,7 @@ def correct_lab_result(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return LabResultOut.model_validate(row)
 
+
 # ---------------------------------------------------------------------------
 # Claude Sonnet Clinical Explanation Layer
 # ---------------------------------------------------------------------------
@@ -554,9 +558,9 @@ def correct_lab_result(
 # ---------------------------------------------------------------------------
 
 from pydantic import BaseModel as _ExplainBase  # noqa: E402 (local alias avoids collision)
-from app.services.clinical_explanation import generate_explanation, get_deterministic_fallback
-from app.services.explanation_cache import invalidate_cached_explanation
-from app.services.lab import normalize_and_classify
+
+from app.services.clinical_explanation import generate_explanation  # noqa: E402
+from app.services.explanation_cache import invalidate_cached_explanation  # noqa: E402
 
 
 def _build_clinical_input(row: LabResult) -> dict:
@@ -569,7 +573,7 @@ def _build_clinical_input(row: LabResult) -> dict:
     # Map existing status values → canonical_status understood by explanation layer
     STATUS_MAP: dict[str | None, str] = {
         "normal": "normal",
-        "borderline": "borderline_high",   # existing engine uses "borderline"
+        "borderline": "borderline_high",  # existing engine uses "borderline"
         "high": "high",
         "low": "low",
         "critical": "critical",
@@ -591,12 +595,19 @@ def _build_clinical_input(row: LabResult) -> dict:
 
     # Vietnamese display name from canonical name
     from app.domain.patient_insight import _display_vi  # noqa: PLC0415
-    display_name = _display_vi(row.canonical_name or "") if row.canonical_name else (row.test_name or "xét nghiệm")
+
+    display_name = (
+        _display_vi(row.canonical_name or "")
+        if row.canonical_name
+        else (row.test_name or "xét nghiệm")
+    )
 
     return {
         "biomarker_name": row.canonical_name or row.test_name or "unknown",
         "biomarker_display_name": display_name,
-        "normalized_value": row.normalized_value_si if row.normalized_value_si is not None else row.value,
+        "normalized_value": row.normalized_value_si
+        if row.normalized_value_si is not None
+        else row.value,
         "normalized_unit": row.normalized_unit_si or row.unit or "",
         "original_value": row.original_value,
         "original_unit": row.original_unit,
@@ -696,6 +707,7 @@ def regenerate_lab_result_explanation(
     # first to get the hash, then invalidating)
     clinical_input = _build_clinical_input(row)
     from app.services.claude_client import hash_clinical_input  # noqa: PLC0415
+
     input_hash = hash_clinical_input(clinical_input)
     invalidate_cached_explanation(result_id, input_hash)
 

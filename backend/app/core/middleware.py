@@ -43,6 +43,7 @@ class MfaEnrollmentMiddleware(BaseHTTPMiddleware):
             payload = decode_token(authz[7:])
             if payload and payload.get("mfa_enrollment_required"):
                 from app.core.config import get_settings as _gs
+
                 if _gs().skip_mfa_in_dev:
                     return await call_next(request)
                 path = request.url.path

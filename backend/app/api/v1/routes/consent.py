@@ -55,6 +55,7 @@ def _enforce_consent_ownership(patient_id: str, user: CurrentUser, db: Session) 
 # T18A — GET /patients/{patient_id}/consents
 # ---------------------------------------------------------------------------
 
+
 @router.get("", response_model=list[ConsentOut], summary="List consents for a patient")
 def list_consents(
     patient_id: str,
@@ -103,12 +104,14 @@ def list_consents(
 # POST /patients/{patient_id}/consents (grant)
 # ---------------------------------------------------------------------------
 
+
 def _validate_granted_to(granted_to: str, db: Session) -> None:
     """granted_to must be the user_id of an active DOCTOR. AC-11."""
     from sqlalchemy import select as _select
 
     from app.models.user import User as _User
     from app.models.user import UserRole as _UserRole
+
     target = db.execute(
         _select(_User).where(
             _User.id == granted_to,
@@ -155,6 +158,7 @@ def grant_consent(
 # ---------------------------------------------------------------------------
 # DELETE /patients/{patient_id}/consents/{consent_id} (revoke)
 # ---------------------------------------------------------------------------
+
 
 @router.delete("/{consent_id}", response_model=Message)
 def revoke_consent(

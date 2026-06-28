@@ -382,8 +382,7 @@ CONTENT: dict[str, BiomarkerContent] = {
     },
     "waist_cm": {
         "meaning": (
-            "Vòng eo phản ánh lượng mỡ tích tụ quanh bụng, có liên quan tới nguy cơ "
-            "chuyển hóa."
+            "Vòng eo phản ánh lượng mỡ tích tụ quanh bụng, có liên quan tới nguy cơ chuyển hóa."
         ),
         "lifestyle": (
             "Giảm đường và tinh bột tinh chế.",

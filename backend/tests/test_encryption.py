@@ -46,13 +46,16 @@ def test_orm_field_is_ciphertext_at_rest(db):
 
 
 def test_profile_phi_fields_encrypted(db):
-    u = User(email=f"p-{os.urandom(4).hex()}@example.com",
-             password_hash="x", role=UserRole.PATIENT)
+    u = User(email=f"p-{os.urandom(4).hex()}@example.com", password_hash="x", role=UserRole.PATIENT)
     db.add(u)
     db.flush()
     p = PatientProfile(
-        user_id=u.id, full_name="BN Test", dob="1990-05-01",
-        phone="0900000000", address="123 Đường Test", allergies="penicillin",
+        user_id=u.id,
+        full_name="BN Test",
+        dob="1990-05-01",
+        phone="0900000000",
+        address="123 Đường Test",
+        allergies="penicillin",
     )
     db.add(p)
     db.commit()
@@ -81,8 +84,9 @@ def test_key_rotation_decrypts_old_ciphertext():
 
 def test_encrypt_existing_phi_migrates_plaintext(db):
     # Insert a row with PLAINTEXT directly (bypassing ORM encryption).
-    u = User(email=f"legacy-{os.urandom(4).hex()}@example.com",
-             password_hash="x", role=UserRole.PATIENT)
+    u = User(
+        email=f"legacy-{os.urandom(4).hex()}@example.com", password_hash="x", role=UserRole.PATIENT
+    )
     db.add(u)
     db.commit()
     db.execute(

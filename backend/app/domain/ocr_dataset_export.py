@@ -9,6 +9,7 @@ the admin must rename the flag after PHI removal before committing to git.
 No image bytes are written here. The image file is placed by the admin
 after PHI review into images/<sample_id>.<ext> locally (never committed).
 """
+
 from __future__ import annotations
 
 import json
@@ -24,11 +25,20 @@ _BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
 DATASET_DIR = _BACKEND_DIR / "ocr_dataset"
 
 _ALLOWED_ENVS = frozenset({"staging", "dev"})
-_KNOWN_HOSPITALS = frozenset({
-    "vinmec", "medlatec", "tamanh", "hongngoc",
-    "bachmai", "bachmai108", "fv", "hoanmy",
-    "thucuc", "vietduc",
-})
+_KNOWN_HOSPITALS = frozenset(
+    {
+        "vinmec",
+        "medlatec",
+        "tamanh",
+        "hongngoc",
+        "bachmai",
+        "bachmai108",
+        "fv",
+        "hoanmy",
+        "thucuc",
+        "vietduc",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -119,7 +129,7 @@ def _write_expected(
         "test_date": test_date or "",
         "source": {
             "uploaded_by": "user_correction",
-            "anonymized": False,   # admin must verify PHI removal before setting True
+            "anonymized": False,  # admin must verify PHI removal before setting True
             "contains_phi": True,  # assumed until admin confirms — never commit as-is
         },
         "rows": rows_out,

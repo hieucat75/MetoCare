@@ -12,6 +12,7 @@ from __future__ import annotations
 # T20-S01 — GET /health returns 200 with db status
 # ---------------------------------------------------------------------------
 
+
 def test_health_returns_200_when_db_up(client):
     """T20-S01: GET /health → 200 with status=ok and db=ok when DB is reachable."""
     r = client.get("/api/v1/health")
@@ -25,6 +26,7 @@ def test_health_returns_200_when_db_up(client):
 # T20-S02 — /health is public (no auth required)
 # ---------------------------------------------------------------------------
 
+
 def test_health_unauthenticated_allowed(client):
     """T20-S02: GET /health without Authorization header → 200 (public endpoint)."""
     r = client.get("/api/v1/health")
@@ -36,6 +38,7 @@ def test_health_unauthenticated_allowed(client):
 # ---------------------------------------------------------------------------
 # T20-S03 — GET /info contains migration_version
 # ---------------------------------------------------------------------------
+
 
 def test_info_contains_migration_version(client):
     """T20-S03: GET /info → 200 with migration_version key (non-empty string)."""
@@ -51,6 +54,7 @@ def test_info_contains_migration_version(client):
 # ---------------------------------------------------------------------------
 # T20-S04 — GET /info contains feature_flags dict
 # ---------------------------------------------------------------------------
+
 
 def test_info_contains_feature_flags(client):
     """T20-S04: GET /info → 200 with feature_flags as a dict."""
@@ -72,6 +76,7 @@ def test_info_contains_feature_flags(client):
 # T20-S05 — /info is public (no auth required)
 # ---------------------------------------------------------------------------
 
+
 def test_info_unauthenticated_allowed(client):
     """T20-S05: GET /info without Authorization header → 200 (public endpoint)."""
     r = client.get("/api/v1/info")
@@ -82,6 +87,7 @@ def test_info_unauthenticated_allowed(client):
 # ---------------------------------------------------------------------------
 # T20-S06 — GET /info returns known fields (regression guard)
 # ---------------------------------------------------------------------------
+
 
 def test_info_returns_known_fields(client):
     """T20-S06: GET /info → known static fields still present (regression guard)."""
@@ -96,6 +102,7 @@ def test_info_returns_known_fields(client):
 # T20-S07 — /health response shape (both fields present)
 # ---------------------------------------------------------------------------
 
+
 def test_health_response_has_required_shape(client):
     """T20-S07: GET /health → response has both 'status' and 'db' fields."""
     r = client.get("/api/v1/health")
@@ -106,9 +113,11 @@ def test_health_response_has_required_shape(client):
     assert body["status"] in ("ok", "degraded"), f"Unexpected status: {body['status']}"
     assert body["db"] in ("ok", "error"), f"Unexpected db value: {body['db']}"
 
+
 # ---------------------------------------------------------------------------
 # T20-S08 — GET /health returns 503 when DB unreachable
 # ---------------------------------------------------------------------------
+
 
 def test_health_returns_503_when_db_down(client):
     """T20-S08: GET /health with DB failure → 503 status=degraded db=error."""
@@ -130,9 +139,7 @@ def test_health_returns_503_when_db_down(client):
     finally:
         _app.dependency_overrides.pop(_get_session, None)
 
-    assert r.status_code == 503, (
-        f"Expected 503 on DB failure, got {r.status_code}: {r.text}"
-    )
+    assert r.status_code == 503, f"Expected 503 on DB failure, got {r.status_code}: {r.text}"
     body = r.json()
     assert body["status"] == "degraded"
     assert body["db"] == "error"

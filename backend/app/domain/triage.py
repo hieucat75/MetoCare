@@ -18,9 +18,9 @@ from . import policies
 
 
 class RiskLevel(StrEnum):
-    LOW = "low"          # Thấp — tự theo dõi + coaching
+    LOW = "low"  # Thấp — tự theo dõi + coaching
     MODERATE = "moderate"  # Vừa — gợi ý đặt lịch bác sĩ
-    HIGH = "high"        # Cao — cần gặp bác sĩ sớm + doctor handoff
+    HIGH = "high"  # Cao — cần gặp bác sĩ sớm + doctor handoff
     EMERGENCY = "emergency"  # Khẩn cấp — escalate cấp cứu
 
 

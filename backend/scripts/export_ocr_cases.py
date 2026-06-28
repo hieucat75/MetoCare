@@ -6,6 +6,7 @@ Useful after adding new hospitals or correcting export logic.
 Usage:
     python scripts/export_ocr_cases.py [--hospital HOSPITAL] [--dry-run]
 """
+
 from __future__ import annotations
 
 import argparse
@@ -23,6 +24,7 @@ from sqlalchemy.orm import Session
 
 def _engine():
     from dotenv import load_dotenv
+
     load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
     url = os.environ.get("DATABASE_URL", "")
     if not url:

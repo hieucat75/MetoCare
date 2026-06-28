@@ -32,10 +32,10 @@ BIOMARKER_PLAUSIBILITY: dict[str, dict] = {
         # Stored in mg/dL (BiomarkerSpec.unit = "mg/dL"), alt SI = µmol/L
         "si_unit": "mg/dL",
         "alt_unit": "µmol/L",
-        "si_max_plausible": 30.0,      # mg/dL — critically high but documented
-        "si_min_plausible": 0.1,       # mg/dL
-        "alt_max_plausible": 2650.0,   # µmol/L
-        "alt_min_plausible": 9.0,      # µmol/L
+        "si_max_plausible": 30.0,  # mg/dL — critically high but documented
+        "si_min_plausible": 0.1,  # mg/dL
+        "alt_max_plausible": 2650.0,  # µmol/L
+        "alt_min_plausible": 9.0,  # µmol/L
     },
     # ---- Glucose ----
     "fasting_glucose": {
@@ -185,15 +185,10 @@ BIOMARKER_PLAUSIBILITY: dict[str, dict] = {
 # Plausibility check function
 # ---------------------------------------------------------------------------
 
+
 def _norm_unit(u: str) -> str:
     """Normalize unit string for comparison (handle micro-sign variants)."""
-    return (
-        u.replace("µ", "u")
-        .replace("μ", "u")
-        .replace("mc", "u")
-        .strip()
-        .lower()
-    )
+    return u.replace("µ", "u").replace("μ", "u").replace("mc", "u").strip().lower()
 
 
 def check_plausibility(biomarker_name: str, value: float, unit: str) -> dict:
@@ -267,7 +262,5 @@ def check_plausibility(biomarker_name: str, value: float, unit: str) -> dict:
     return {
         "plausible": False,
         "suspicious": False,
-        "reason": (
-            f"Value {value} {unit} is implausible for {biomarker_name} in any known unit"
-        ),
+        "reason": (f"Value {value} {unit} is implausible for {biomarker_name} in any known unit"),
     }

@@ -21,6 +21,7 @@ from app.domain.patient_insight import (
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _finding(
     canonical: str = "fasting_glucose",
     status: str = "high",
@@ -131,6 +132,7 @@ def _empty_report() -> PatientInsightReport:
 # Tests: overall_status
 # ---------------------------------------------------------------------------
 
+
 def test_overall_status_urgent():
     report = generate_patient_insight(
         patient_id="p001",
@@ -188,6 +190,7 @@ def test_overall_status_good_empty():
 # Tests: urgent alerts
 # ---------------------------------------------------------------------------
 
+
 def test_urgent_alert_generated():
     report = generate_patient_insight(
         patient_id="p001",
@@ -230,11 +233,11 @@ def test_multiple_critical_findings_produce_multiple_alerts():
 # Tests: insight cards
 # ---------------------------------------------------------------------------
 
+
 def test_insight_cards_max_5():
     """Even with many findings, only 5 insight cards are returned."""
     many_findings = [
-        _finding(canonical=f"biomarker_{i}", severity="warning", status="high")
-        for i in range(10)
+        _finding(canonical=f"biomarker_{i}", severity="warning", status="high") for i in range(10)
     ]
     report = generate_patient_insight(
         patient_id="p001",
@@ -249,9 +252,9 @@ def test_insight_cards_max_5():
 def test_insights_sorted_by_importance():
     """High-importance cards must come before medium and low."""
     findings = [
-        _finding(canonical="hdl", severity="watch", status="borderline"),    # medium
+        _finding(canonical="hdl", severity="watch", status="borderline"),  # medium
         _finding(canonical="fasting_glucose", severity="warning", status="high"),  # high
-        _finding(canonical="alt", severity="watch", status="borderline"),    # medium
+        _finding(canonical="alt", severity="watch", status="borderline"),  # medium
     ]
     report = generate_patient_insight(
         patient_id="p001",
@@ -308,6 +311,7 @@ def test_abnormal_derived_produces_insight_card():
 # ---------------------------------------------------------------------------
 # Tests: action cards
 # ---------------------------------------------------------------------------
+
 
 def test_action_cards_doctor_visit_on_critical():
     """Critical finding → doctor_visit action card with interval_days=0."""
@@ -379,6 +383,7 @@ def test_action_cards_kidney_on_kidney_abnormal():
 # Tests: timeline
 # ---------------------------------------------------------------------------
 
+
 def test_timeline_conversion():
     """BiomarkerTrend objects should map 1:1 to TimelineSummaryItems."""
     t1 = _trend("fasting_glucose", "improving", -10.0)
@@ -432,6 +437,7 @@ def test_timeline_change_pct_preserved():
 # Tests: positive reinforcement
 # ---------------------------------------------------------------------------
 
+
 def test_positive_reinforcement_on_improving():
     """Improving trends should produce positive reinforcement messages."""
     report = generate_patient_insight(
@@ -472,6 +478,7 @@ def test_no_positive_reinforcement_on_worsening():
 # ---------------------------------------------------------------------------
 # Tests: safety guarantees
 # ---------------------------------------------------------------------------
+
 
 def test_disclaimer_always_present():
     """disclaimer_vi must never be empty, even with no findings."""
@@ -520,8 +527,7 @@ def test_ai_draft_contract_null_with_findings():
 def test_top_priorities_max_3():
     """top_priorities must never exceed 3 entries."""
     many_findings = [
-        _finding(canonical=f"biomarker_{i}", severity="warning", status="high")
-        for i in range(10)
+        _finding(canonical=f"biomarker_{i}", severity="warning", status="high") for i in range(10)
     ]
     report = generate_patient_insight(
         patient_id="p001",
@@ -566,6 +572,7 @@ def test_top_priorities_empty_when_no_abnormal():
 # Tests: field types and structure
 # ---------------------------------------------------------------------------
 
+
 def test_report_patient_id_preserved():
     """patient_id must be passed through correctly."""
     report = generate_patient_insight(
@@ -604,7 +611,10 @@ def test_insight_card_fields():
     assert isinstance(card.supporting_biomarkers, list)
     assert card.trend in {"improving", "stable", "worsening", "insufficient_data"}
     assert card.recommended_action in {
-        "continue_monitoring", "repeat_lab", "discuss_with_doctor", "lifestyle_reminder"
+        "continue_monitoring",
+        "repeat_lab",
+        "discuss_with_doctor",
+        "lifestyle_reminder",
     }
     assert isinstance(card.action_text_vi, str) and card.action_text_vi
 
@@ -647,6 +657,7 @@ def test_asdict_serializable():
 
 # ── Phase F patch tests: batch scoping ────────────────────────────────────────
 
+
 def test_patient_insight_request_model_has_batch_id():
     """PatientInsightRequest must accept batch_id field (batch-scoped insight)."""
     from app.api.v1.routes.patient_insight import PatientInsightRequest
@@ -685,6 +696,7 @@ def test_patient_insight_request_batch_id_and_lab_result_ids_independent():
 # Phase E+F Codex fix — P1-1: sex/age field mapping
 # ---------------------------------------------------------------------------
 
+
 def test_patient_insight_request_sex_age_fields():
     """PatientInsightRequest must accept sex and age (frontend field names)."""
     from app.api.v1.routes.patient_insight import PatientInsightRequest
@@ -712,8 +724,8 @@ def test_patient_insight_request_sex_maps_to_is_male():
 
     assert derive_is_male(PatientInsightRequest(sex="male")) is True
     assert derive_is_male(PatientInsightRequest(sex="female")) is False
-    assert derive_is_male(PatientInsightRequest(sex=None)) is True   # safe default
-    assert derive_is_male(PatientInsightRequest()) is True            # no sex → male default
+    assert derive_is_male(PatientInsightRequest(sex=None)) is True  # safe default
+    assert derive_is_male(PatientInsightRequest()) is True  # no sex → male default
 
 
 def test_patient_insight_request_age_maps_to_age_years():

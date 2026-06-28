@@ -28,7 +28,7 @@ class ConsentGuard:
     def require(
         self,
         patient_id: str,
-        consent_type: str,          # "ai_use", "data_sharing", etc.
+        consent_type: str,  # "ai_use", "data_sharing", etc.
         data_scope: str,
         actor_id: str,
         actor_type: str = "user",

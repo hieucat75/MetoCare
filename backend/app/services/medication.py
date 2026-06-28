@@ -145,6 +145,7 @@ def delete_medication(
 # Adherence (Phase 2)
 # --------------------------------------------------------------------------- #
 
+
 def log_adherence(
     db: Session,
     *,
@@ -294,20 +295,13 @@ def adherence_summary(
     )
 
     # weekly_rate: taken / total in last 7 days
-    week_records = [
-        r for r in all_records
-        if as_naive_utc(r.created_at) >= week_start
-    ]
+    week_records = [r for r in all_records if as_naive_utc(r.created_at) >= week_start]
     total_in_week = len(week_records)
     taken_in_week = sum(1 for r in week_records if r.taken_at is not None)
     weekly_rate = round(taken_in_week / total_in_week, 4) if total_in_week > 0 else 0.0
 
     # streaks: unique UTC calendar dates where a dose was taken
-    taken_dates = [
-        as_naive_utc(r.taken_at).date()
-        for r in all_records
-        if r.taken_at is not None
-    ]
+    taken_dates = [as_naive_utc(r.taken_at).date() for r in all_records if r.taken_at is not None]
     current_streak, longest_streak = _compute_streaks(taken_dates)
 
     _, active_meds = list_medications(db, patient_id=patient_id, limit=100)
@@ -315,7 +309,8 @@ def adherence_summary(
     today_medications: list[TodayMedicationOut] = []
     for med in active_meds:
         today_records = [
-            r for r in all_records
+            r
+            for r in all_records
             if r.medication_id == med.id
             and as_naive_utc(r.created_at) >= today_start
             and as_naive_utc(r.created_at) < today_end
@@ -331,15 +326,17 @@ def adherence_summary(
             skipped_today = False
         med_records = [r for r in all_records if r.medication_id == med.id and r.taken_at]
         last_taken = max((r.taken_at for r in med_records), default=None)
-        today_medications.append(TodayMedicationOut(
-            medication_id=med.id,
-            name=med.name,
-            dose=med.dose,
-            frequency=med.frequency,
-            taken_today=taken_today,
-            skipped_today=skipped_today,
-            last_taken_at=last_taken,
-        ))
+        today_medications.append(
+            TodayMedicationOut(
+                medication_id=med.id,
+                name=med.name,
+                dose=med.dose,
+                frequency=med.frequency,
+                taken_today=taken_today,
+                skipped_today=skipped_today,
+                last_taken_at=last_taken,
+            )
+        )
 
     return {
         "total_doses_logged": total,

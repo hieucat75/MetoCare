@@ -174,6 +174,7 @@ def test_adherence_summary_today_medication_fields(client, patient):
 # Streak / weekly-rate / last_taken_at tests
 # --------------------------------------------------------------------------- #
 
+
 def test_adherence_summary_streak_single_day(client, patient):
     """Taking a dose today → current_streak=1, longest_streak=1."""
     import datetime

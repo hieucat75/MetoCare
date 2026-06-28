@@ -14,9 +14,7 @@ must NOT trigger hypoglycemia alert banner.
 from __future__ import annotations
 
 import pytest
-
 from app.services.lab import get_clinical_message, normalize_and_classify
-
 
 # ---------------------------------------------------------------------------
 # Core classification + message cases
@@ -24,16 +22,16 @@ from app.services.lab import get_clinical_message, normalize_and_classify
 
 GLUCOSE_CASES = [
     # (value, unit, expected_status, message_must_contain, message_must_not_contain)
-    (2.8,  "mmol/L", "critical", "nguy hiểm",   ["thấp thông thường", "bình thường"]),
-    (3.5,  "mmol/L", "low",      "thấp",        ["bình thường", "cao"]),
-    (4.8,  "mmol/L", "normal",   "bình thường", ["thấp", "cao", "nguy hiểm"]),
+    (2.8, "mmol/L", "critical", "nguy hiểm", ["thấp thông thường", "bình thường"]),
+    (3.5, "mmol/L", "low", "thấp", ["bình thường", "cao"]),
+    (4.8, "mmol/L", "normal", "bình thường", ["thấp", "cao", "nguy hiểm"]),
     # P0 key case: 5.7 mmol/L = 102.7 mg/dL → HIGH, NOT hypoglycemia
-    (5.7,  "mmol/L", "high",     "cao",         ["hạ đường huyết", "quá thấp", "thấp"]),
-    (7.2,  "mmol/L", "high",     "cao",         ["thấp", "bình thường"]),
+    (5.7, "mmol/L", "high", "cao", ["hạ đường huyết", "quá thấp", "thấp"]),
+    (7.2, "mmol/L", "high", "cao", ["thấp", "bình thường"]),
     # Same values in mg/dL
-    (50.4, "mg/dL",  "critical", "nguy hiểm",   ["bình thường", "cao"]),
-    (85.0, "mg/dL",  "normal",   "bình thường", ["thấp", "cao", "nguy hiểm"]),
-    (102.7,"mg/dL",  "high",     "cao",         ["hạ đường huyết", "quá thấp", "thấp"]),
+    (50.4, "mg/dL", "critical", "nguy hiểm", ["bình thường", "cao"]),
+    (85.0, "mg/dL", "normal", "bình thường", ["thấp", "cao", "nguy hiểm"]),
+    (102.7, "mg/dL", "high", "cao", ["hạ đường huyết", "quá thấp", "thấp"]),
 ]
 
 
@@ -81,12 +79,8 @@ def test_glucose_5_7_not_hypoglycemia() -> None:
         f"5.7 mmol/L glucose must NOT be low/critical, got: {result.get('status')!r}"
     )
     msg = (result.get("clinical_message") or "").lower()
-    assert "hạ đường huyết" not in msg, (
-        f"5.7 mmol/L banner must NOT say hypoglycemia, got: {msg!r}"
-    )
-    assert "quá thấp" not in msg, (
-        f"5.7 mmol/L banner must NOT say 'quá thấp', got: {msg!r}"
-    )
+    assert "hạ đường huyết" not in msg, f"5.7 mmol/L banner must NOT say hypoglycemia, got: {msg!r}"
+    assert "quá thấp" not in msg, f"5.7 mmol/L banner must NOT say 'quá thấp', got: {msg!r}"
     # Correct: should be HIGH (borderline or above normal range)
     assert result.get("status") == "high", (
         f"5.7 mmol/L (=102.7 mg/dL) must be HIGH status, got: {result.get('status')!r}"
@@ -133,8 +127,9 @@ def test_normalize_and_classify_includes_clinical_message_field() -> None:
 
 def test_lab_result_out_has_clinical_message() -> None:
     """LabResultOut schema must populate clinical_message from canonical_name + status."""
-    from app.schemas.lab import LabResultOut
     import datetime as dt
+
+    from app.schemas.lab import LabResultOut
 
     row = LabResultOut(
         id="test-id",
@@ -161,8 +156,9 @@ def test_lab_result_out_has_clinical_message() -> None:
 
 def test_lab_result_out_no_message_for_unknown_biomarker() -> None:
     """LabResultOut with unknown canonical_name should have clinical_message=None."""
-    from app.schemas.lab import LabResultOut
     import datetime as dt
+
+    from app.schemas.lab import LabResultOut
 
     row = LabResultOut(
         id="test-id-2",
@@ -182,13 +178,16 @@ def test_lab_result_out_no_message_for_unknown_biomarker() -> None:
     # The important thing is it doesn't crash and returns sensible output
     assert row.clinical_message is None or len(row.clinical_message) > 0
 
+
 # ---------------------------------------------------------------------------
 # P0-hotfix regression: MetricOut.clinical_message and is_critical
 # ---------------------------------------------------------------------------
 
+
 def test_metric_out_glucose_5_7_mmol_not_critical() -> None:
     """P0-hotfix regression: MetricOut for glucose 5.7 mmol/L must NOT be critical."""
     import datetime as dt
+
     from app.schemas.health import MetricOut
 
     m = MetricOut(
@@ -220,6 +219,7 @@ def test_metric_out_glucose_5_7_mmol_not_critical() -> None:
 def test_metric_out_glucose_null_unit_small_value_not_critical() -> None:
     """MetricOut heuristic: glucose value < 30 with no unit assumed mmol/L."""
     import datetime as dt
+
     from app.schemas.health import MetricOut
 
     m = MetricOut(
@@ -240,6 +240,7 @@ def test_metric_out_glucose_null_unit_small_value_not_critical() -> None:
 def test_metric_out_glucose_critical_low_is_critical() -> None:
     """Genuine critical-low glucose (40 mg/dL) must still show is_critical=True."""
     import datetime as dt
+
     from app.schemas.health import MetricOut
 
     m = MetricOut(
@@ -263,6 +264,7 @@ def test_metric_out_glucose_critical_low_is_critical() -> None:
 def test_metric_out_glucose_normal_not_critical() -> None:
     """Normal glucose (85 mg/dL) must not be critical."""
     import datetime as dt
+
     from app.schemas.health import MetricOut
 
     m = MetricOut(
@@ -283,6 +285,7 @@ def test_metric_out_glucose_normal_not_critical() -> None:
 # P0 Regression: Creatinine 87.7 µmol/L banner bug
 # ---------------------------------------------------------------------------
 
+
 def test_metric_out_creatinine_877_umol_no_unit_not_critical() -> None:
     """P0 REGRESSION: creatinine 87.7 with no unit must NOT be critical.
 
@@ -295,6 +298,7 @@ def test_metric_out_creatinine_877_umol_no_unit_not_critical() -> None:
     With the fix: 87.7 → µmol/L → 0.992 mg/dL → NORMAL
     """
     import datetime as dt
+
     from app.schemas.health import MetricOut
 
     m = MetricOut(
@@ -311,9 +315,7 @@ def test_metric_out_creatinine_877_umol_no_unit_not_critical() -> None:
         f"should be treated as µmol/L = 0.992 mg/dL: "
         f"clinical_message={m.clinical_message!r}, status={m.status!r}"
     )
-    assert m.status == "normal", (
-        f"Validator must update status to 'normal': got {m.status!r}"
-    )
+    assert m.status == "normal", f"Validator must update status to 'normal': got {m.status!r}"
     assert m.clinical_message is not None
     assert "bình thường" in m.clinical_message.lower(), (
         f"Creatinine 87.7 µmol/L clinical_message must say 'bình thường': "
@@ -324,6 +326,7 @@ def test_metric_out_creatinine_877_umol_no_unit_not_critical() -> None:
 def test_metric_out_creatinine_877_umol_explicit_unit_not_critical() -> None:
     """Creatinine 87.7 with explicit µmol/L unit must be NORMAL."""
     import datetime as dt
+
     from app.schemas.health import MetricOut
 
     m = MetricOut(
@@ -342,6 +345,7 @@ def test_metric_out_creatinine_877_umol_explicit_unit_not_critical() -> None:
 def test_metric_out_creatinine_normal_mgdl_not_critical() -> None:
     """Creatinine 0.992 mg/dL (canonical) must be NORMAL."""
     import datetime as dt
+
     from app.schemas.health import MetricOut
 
     m = MetricOut(
@@ -360,6 +364,7 @@ def test_metric_out_creatinine_normal_mgdl_not_critical() -> None:
 def test_metric_out_creatinine_critical_high_is_critical() -> None:
     """Genuinely critical creatinine (5.0 mg/dL) must remain CRITICAL."""
     import datetime as dt
+
     from app.schemas.health import MetricOut
 
     m = MetricOut(

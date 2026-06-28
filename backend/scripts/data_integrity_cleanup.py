@@ -26,7 +26,7 @@ _BACKEND = _HERE.parents[1]  # .../backend
 if str(_BACKEND) not in sys.path:
     sys.path.insert(0, str(_BACKEND))
 
-import logging
+import logging  # noqa: E402
 
 logging.basicConfig(
     level=logging.INFO,
@@ -70,7 +70,7 @@ PATTERNS: list[dict] = [
         ),
         "canonical_name": "creatinine",
         "model": "health_metric",
-        "safe_correction": False,   # do NOT auto-correct metric_type
+        "safe_correction": False,  # do NOT auto-correct metric_type
         "correction_description": "Flag as suspicious only; manual review required",
     },
     {
@@ -89,20 +89,12 @@ PATTERNS: list[dict] = [
 
 
 def _norm_unit(u: str) -> str:
-    return (
-        (u or "")
-        .replace("µ", "u")
-        .replace("μ", "u")
-        .replace("mc", "u")
-        .strip()
-        .lower()
-    )
+    return (u or "").replace("µ", "u").replace("μ", "u").replace("mc", "u").strip().lower()
 
 
 def run_cleanup(dry_run: bool = True) -> dict:
     from app.core.database import SessionLocal, create_all
     from app.models.clinical import HealthMetric, LabResult
-    from app.domain.lab_normalization import normalize_value_to_si
 
     try:
         create_all()
@@ -156,13 +148,15 @@ def run_cleanup(dry_run: bool = True) -> dict:
             # Re-normalize: if stored value is actually µmol/L, convert to mg/dL
             # creatinine si_factor = 0.011312  (µmol/L → mg/dL)
             corrected_val = round(orig_val * 0.011312, 4)
-            pattern_result["examples"].append({
-                "id": str(row.id),
-                "canonical_name": row.canonical_name,
-                "normalized_value_si": orig_val,
-                "normalized_unit_si": row.normalized_unit_si,
-                "suggested_correction": f"{corrected_val} mg/dL",
-            })
+            pattern_result["examples"].append(
+                {
+                    "id": str(row.id),
+                    "canonical_name": row.canonical_name,
+                    "normalized_value_si": orig_val,
+                    "normalized_unit_si": row.normalized_unit_si,
+                    "suggested_correction": f"{corrected_val} mg/dL",
+                }
+            )
 
         if not dry_run:
             for row in suspicious_lab:
@@ -227,13 +221,15 @@ def run_cleanup(dry_run: bool = True) -> dict:
         }
 
         for row in suspicious_hm[:5]:
-            pattern2["examples"].append({
-                "id": str(row.id),
-                "metric_type": row.metric_type,
-                "value": row.value,
-                "unit": row.unit,
-                "note": "Implausible creatinine — manual review required",
-            })
+            pattern2["examples"].append(
+                {
+                    "id": str(row.id),
+                    "metric_type": row.metric_type,
+                    "value": row.value,
+                    "unit": row.unit,
+                    "note": "Implausible creatinine — manual review required",
+                }
+            )
 
         # Always flag only — never auto-correct HealthMetric metric_type
         if not dry_run:
@@ -278,13 +274,15 @@ def run_cleanup(dry_run: bool = True) -> dict:
         }
 
         for row in suspicious_hm3[:5]:
-            pattern3["examples"].append({
-                "id": str(row.id),
-                "metric_type": row.metric_type,
-                "value": row.value,
-                "unit": row.unit,
-                "note": "Glucose-range value stored as creatinine — probable metric_type mismatch",
-            })
+            pattern3["examples"].append(
+                {
+                    "id": str(row.id),
+                    "metric_type": row.metric_type,
+                    "value": row.value,
+                    "unit": row.unit,
+                    "note": "Glucose-range value stored as creatinine — probable metric_type mismatch",
+                }
+            )
 
         # Flag only — no auto-correction
         if not dry_run:
@@ -331,9 +329,9 @@ def run_cleanup(dry_run: bool = True) -> dict:
 
 def print_report(summary: dict) -> None:
     mode = "DRY-RUN" if summary["dry_run"] else "APPLY"
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"  Data Integrity Cleanup Report [{mode}]")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
     for p in summary["patterns"]:
         print(f"Pattern: {p['name']}")
@@ -350,19 +348,19 @@ def print_report(summary: dict) -> None:
             print(f"  Flagged:        {p['flagged']}")
         print()
 
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     print(f"SUMMARY [{mode}]:")
     print(f"  Total suspicious records: {summary['total_suspicious']}")
     if not summary["dry_run"]:
         print(f"  Auto-corrected (re-normalized): {summary['total_auto_corrected']}")
         print(f"  Flagged for manual review:      {summary['total_flagged']}")
-        print(f"  Records deleted: 0 (NEVER DELETE)")
+        print("  Records deleted: 0 (NEVER DELETE)")
     print(f"  Errors: {len(summary['errors'])}")
     if summary["errors"]:
         print("  Error details:")
         for e in summary["errors"]:
             print(f"    - {e}")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
 
 def main() -> int:

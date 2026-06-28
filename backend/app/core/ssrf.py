@@ -34,7 +34,7 @@ _ALLOWED_SCHEMES = {"http", "https"}
 # Explicit block for the cloud metadata endpoints (defense in depth — these are
 # also caught by the link-local / private checks below).
 _BLOCKED_HOSTS = {
-    "169.254.169.254",   # AWS/Azure/GCP IMDS
+    "169.254.169.254",  # AWS/Azure/GCP IMDS
     "metadata.google.internal",
     "metadata.goog",
 }

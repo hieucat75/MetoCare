@@ -164,9 +164,7 @@ def test_doctor_with_consent_can_list_lab_documents(
     assert len(r.json()) == 3
 
 
-def test_doctor_without_consent_cannot_list_lab_documents(
-    client, patient_setup, doctor_setup
-):
+def test_doctor_without_consent_cannot_list_lab_documents(client, patient_setup, doctor_setup):
     """T18A-LL04: Doctor without consent gets 403."""
     r = client.get(
         f"/api/v1/patients/{patient_setup['patient_id']}/lab-documents",
@@ -216,9 +214,7 @@ def test_lab_list_pagination(client, patient_setup, patient_docs):
 
 def test_unauthenticated_cannot_list_lab_documents(client, patient_setup):
     """T18A-LL07: No token returns 401."""
-    r = client.get(
-        f"/api/v1/patients/{patient_setup['patient_id']}/lab-documents"
-    )
+    r = client.get(f"/api/v1/patients/{patient_setup['patient_id']}/lab-documents")
     assert r.status_code == 401, r.text
 
 

@@ -44,9 +44,9 @@ def test_low_ocr_confidence_flags_verification():
 
 def test_panel_explanation_is_safe():
     panel = [
-        RawLabValue("Glucose", 502.0, "mg/dL"),       # critical (>=500)
+        RawLabValue("Glucose", 502.0, "mg/dL"),  # critical (>=500)
         RawLabValue("Triglyceride", 220.0, "mg/dL"),  # high
-        RawLabValue("HDL", 60.0, "mg/dL"),            # normal
+        RawLabValue("HDL", 60.0, "mg/dL"),  # normal
     ]
     result = lab_interpreter.interpret_panel(panel)
     assert "fasting_glucose" in result.critical
@@ -67,6 +67,7 @@ def test_mock_ocr_extract_is_deterministic():
 # ---------------------------------------------------------------------------
 # P0 Confidence Engine — golden regression tests
 # ---------------------------------------------------------------------------
+
 
 def _parse_single(text: str, canonical: str):
     results = lab_parser.parse_lab_text(text)
@@ -239,4 +240,6 @@ class TestParenStripping:
 
     def test_nested_suffix_stripped_iteratively(self):
         """Multiple trailing groups removed iteratively."""
-        assert lab_interpreter.normalize_biomarker("Glucose (mau) (Cobas C502)") == "fasting_glucose"
+        assert (
+            lab_interpreter.normalize_biomarker("Glucose (mau) (Cobas C502)") == "fasting_glucose"
+        )

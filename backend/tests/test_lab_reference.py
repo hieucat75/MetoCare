@@ -45,7 +45,7 @@ def test_catalog_categories_reference_real_biomarkers():
 
 def test_catalog_has_multi_unit_examples():
     bm = get_catalog()["biomarkers"]
-    assert len(bm["fasting_glucose"]["units"]) >= 2   # mmol/L + mg/dL
+    assert len(bm["fasting_glucose"]["units"]) >= 2  # mmol/L + mg/dL
     assert any(u["label"] == "mmol/L" for u in bm["fasting_glucose"]["units"])
 
 

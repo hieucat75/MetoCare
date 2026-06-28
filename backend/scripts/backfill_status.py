@@ -22,7 +22,8 @@ _BACKEND = _HERE.parents[1]  # .../backend
 if str(_BACKEND) not in sys.path:
     sys.path.insert(0, str(_BACKEND))
 
-import logging
+import logging  # noqa: E402
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
@@ -49,7 +50,8 @@ def main() -> int:
     try:
         _log.info(
             "Starting reclassification [dry_run=%s, batch_id=%s] ...",
-            args.dry_run, args.batch_id,
+            args.dry_run,
+            args.batch_id,
         )
         result = reclassify_lab_results(db, batch_id=args.batch_id, dry_run=args.dry_run)
     except Exception as exc:

@@ -54,9 +54,7 @@ def test_doctor_blocked_until_mfa_enrolled(client, db):
 
 def test_patient_not_forced_to_enroll(client):
     email = f"pat-{os.urandom(4).hex()}@example.com"
-    reg = client.post(
-        "/api/v1/auth/register", json={"email": email, "password": "password123"}
-    )
+    reg = client.post("/api/v1/auth/register", json={"email": email, "password": "password123"})
     assert reg.status_code == 201
     headers = {"Authorization": f"Bearer {reg.json()['access_token']}"}
     # Patient reaches a normal endpoint without enrolling MFA.

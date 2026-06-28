@@ -92,6 +92,7 @@ def _seed_abnormal(db, pid):
 # AC1–AC4: every abnormal metric has all five guidance fields
 # --------------------------------------------------------------------------- #
 
+
 def test_every_abnormal_metric_has_all_fields(client: TestClient, db, patient_setup):
     pid = patient_setup["patient_id"]
     _seed_abnormal(db, pid)
@@ -101,11 +102,11 @@ def test_every_abnormal_metric_has_all_fields(client: TestClient, db, patient_se
     items = r.json()
     assert len(items) == 3  # all three are abnormal
     for it in items:
-        assert it["meaning"].strip()                       # AC1 meaning
-        assert it["trend"]["label"].strip()                # AC2 trend
-        assert len(it["risks"]) >= 1                        # AC3 risk
-        assert len(it["lifestyle"]) >= 1                   # AC4 lifestyle
-        assert it["follow_up"].strip()                     # AC4 follow-up
+        assert it["meaning"].strip()  # AC1 meaning
+        assert it["trend"]["label"].strip()  # AC2 trend
+        assert len(it["risks"]) >= 1  # AC3 risk
+        assert len(it["lifestyle"]) >= 1  # AC4 lifestyle
+        assert it["follow_up"].strip()  # AC4 follow-up
         assert it["priority"] in {"monitor", "watch", "see_doctor"}
         assert it["disclaimer"] == DISCLAIMER_VI
 
@@ -113,6 +114,7 @@ def test_every_abnormal_metric_has_all_fields(client: TestClient, db, patient_se
 # --------------------------------------------------------------------------- #
 # AC2: trend direction + improvement vs previous reading
 # --------------------------------------------------------------------------- #
+
 
 def test_trend_improvement_detected(client: TestClient, db, patient_setup):
     pid = patient_setup["patient_id"]
@@ -132,6 +134,7 @@ def test_trend_improvement_detected(client: TestClient, db, patient_setup):
 # AC5/AC6: health summary — what changed + overall
 # --------------------------------------------------------------------------- #
 
+
 def test_health_summary_shape(client: TestClient, db, patient_setup):
     pid = patient_setup["patient_id"]
     _add_metric(db, pid, "ldl", 4.50, "mmol/L", "high", days_ago=2)
@@ -145,14 +148,15 @@ def test_health_summary_shape(client: TestClient, db, patient_setup):
     assert body["abnormal_count"] >= 1
     assert body["overall_risk"] in {"low", "medium", "high"}
     assert body["top_action"].strip()
-    assert any("LDL" in s for s in body["improved"])     # LDL improved
-    assert any("Đường" in s for s in body["worsened"])   # glucose worsened
+    assert any("LDL" in s for s in body["improved"])  # LDL improved
+    assert any("Đường" in s for s in body["worsened"])  # glucose worsened
     assert body["disclaimer"] == DISCLAIMER_VI
 
 
 # --------------------------------------------------------------------------- #
 # AC7: works with AI disabled (default)
 # --------------------------------------------------------------------------- #
+
 
 def test_works_without_ai(client: TestClient, db, patient_setup):
     assert is_enabled(FeatureFlag.CLINICAL_INSIGHT_AI) is False  # v1 rules-only
@@ -167,6 +171,7 @@ def test_works_without_ai(client: TestClient, db, patient_setup):
 # AC8: no prohibited language; disclaimer present
 # --------------------------------------------------------------------------- #
 
+
 def test_no_prohibited_language(client: TestClient, db, patient_setup):
     pid = patient_setup["patient_id"]
     _seed_abnormal(db, pid)
@@ -179,6 +184,7 @@ def test_no_prohibited_language(client: TestClient, db, patient_setup):
 # --------------------------------------------------------------------------- #
 # RBAC + flag gating
 # --------------------------------------------------------------------------- #
+
 
 def test_cross_patient_forbidden(client: TestClient, patient_setup, other_patient):
     r = client.get(_insights_url(other_patient["patient_id"]), headers=patient_setup["headers"])

@@ -394,8 +394,12 @@ def test_request_info_audit_action(db, setup_api_data):
         )
     db.commit()
 
-    audit_entry = db.query(AuditLog).filter_by(
-        resource_id=rec.id,
-        action="ai.recommendation_request_info",
-    ).first()
+    audit_entry = (
+        db.query(AuditLog)
+        .filter_by(
+            resource_id=rec.id,
+            action="ai.recommendation_request_info",
+        )
+        .first()
+    )
     assert audit_entry is not None, "Audit log for request_info action not found"

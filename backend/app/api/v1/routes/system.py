@@ -53,9 +53,7 @@ def info(db: Session = Depends(get_session)) -> dict:
         migration_version = "unknown"
 
     # --- Feature flags (P1-FIX-02) ---
-    feature_flags: dict[str, bool] = {
-        flag.value: is_enabled(flag) for flag in FeatureFlag
-    }
+    feature_flags: dict[str, bool] = {flag.value: is_enabled(flag) for flag in FeatureFlag}
 
     return {
         "app": s.app_name,

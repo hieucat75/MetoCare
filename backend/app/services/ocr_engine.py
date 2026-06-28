@@ -45,6 +45,7 @@ class OcrEngineError(Exception):
 # Local Tesseract (default)
 # --------------------------------------------------------------------------- #
 
+
 class TesseractEngine:
     name = "tesseract"
 
@@ -80,7 +81,9 @@ class TesseractEngine:
         lang = get_settings().ocr_lang
         try:
             data = pytesseract.image_to_data(
-                prepared, lang=lang, config="--psm 6",
+                prepared,
+                lang=lang,
+                config="--psm 6",
                 output_type=pytesseract.Output.DICT,
             )
         except pytesseract.TesseractError as exc:
@@ -127,6 +130,7 @@ class TesseractEngine:
 # Cloud fallback adapters (opt-in; never called unless flag ON + key present)
 # --------------------------------------------------------------------------- #
 
+
 class AnthropicVisionEngine:
     name = "anthropic"
 
@@ -159,12 +163,18 @@ class AnthropicVisionEngine:
                         {
                             "role": "user",
                             "content": [
-                                {"type": "image", "source": {
-                                    "type": "base64", "media_type": mime, "data": b64}},
-                                {"type": "text", "text": (
-                                    "Transcribe every line of this lab report verbatim as "
-                                    "plain text. Keep each test name and its value/unit on "
-                                    "the same line. Do not interpret or summarise.")},
+                                {
+                                    "type": "image",
+                                    "source": {"type": "base64", "media_type": mime, "data": b64},
+                                },
+                                {
+                                    "type": "text",
+                                    "text": (
+                                        "Transcribe every line of this lab report verbatim as "
+                                        "plain text. Keep each test name and its value/unit on "
+                                        "the same line. Do not interpret or summarise."
+                                    ),
+                                },
                             ],
                         }
                     ],
@@ -239,10 +249,9 @@ class AzureDocIntelEngine:
             if not op_url:
                 raise OcrEngineError("Azure Doc Intel không trả operation-location.")
             from urllib.parse import urlparse
+
             if urlparse(op_url).netloc != urlparse(endpoint).netloc:
-                raise OcrEngineError(
-                    "Azure Doc Intel trả về operation-location không hợp lệ."
-                )
+                raise OcrEngineError("Azure Doc Intel trả về operation-location không hợp lệ.")
             body = self._poll(httpx, op_url, key)
         except httpx.HTTPError as exc:
             raise OcrEngineError("Cloud OCR (Azure) thất bại.") from exc
@@ -260,7 +269,8 @@ class AzureDocIntelEngine:
 
         for _ in range(self._POLL_MAX_ATTEMPTS):
             poll = httpx.get(
-                op_url, headers={"Ocp-Apim-Subscription-Key": key},
+                op_url,
+                headers={"Ocp-Apim-Subscription-Key": key},
                 timeout=self._POLL_TIMEOUT_S,
             )
             poll.raise_for_status()
@@ -281,21 +291,31 @@ class AzureDocIntelEngine:
     # Substrings that identify a "reference range" column header in Vietnamese/English.
     # When found in row-0 cells, that entire column is excluded from text output so
     # reference-range numbers cannot be misread as result values.
-    _REF_COL_KEYWORDS: frozenset[str] = frozenset({
-        "binh thuong", "bình thường",
-        "tham chieu", "tham chiếu",
-        "gia tri tham chieu", "giá trị tham chiếu",
-        "gia tri bt", "giá trị bt",
-        "khoang tham chieu", "khoảng tham chiếu",
-        "gia tri binh thuong", "giá trị bình thường",
-        "normal range", "reference range", "reference", "normal",
-    })
+    _REF_COL_KEYWORDS: frozenset[str] = frozenset(
+        {
+            "binh thuong",
+            "bình thường",
+            "tham chieu",
+            "tham chiếu",
+            "gia tri tham chieu",
+            "giá trị tham chiếu",
+            "gia tri bt",
+            "giá trị bt",
+            "khoang tham chieu",
+            "khoảng tham chiếu",
+            "gia tri binh thuong",
+            "giá trị bình thường",
+            "normal range",
+            "reference range",
+            "reference",
+            "normal",
+        }
+    )
 
     @staticmethod
     def _strip_accents_lower(s: str) -> str:
         return "".join(
-            c for c in unicodedata.normalize("NFD", s.lower())
-            if unicodedata.category(c) != "Mn"
+            c for c in unicodedata.normalize("NFD", s.lower()) if unicodedata.category(c) != "Mn"
         )
 
     @classmethod
@@ -396,6 +416,7 @@ def run_cloud_ocr_if_permitted(image_bytes: bytes, mime: str) -> OcrTextResult |
 # --------------------------------------------------------------------------- #
 # Orchestrator
 # --------------------------------------------------------------------------- #
+
 
 def run_ocr(image_bytes: bytes, mime: str) -> OcrTextResult:
     """Azure DI is primary when credentials present; Tesseract is local-only fallback.

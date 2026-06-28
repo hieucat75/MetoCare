@@ -12,23 +12,21 @@ Covers:
 Run:
     cd backend && python -m pytest tests/test_status_backfill.py -v
 """
+
 from __future__ import annotations
 
-import os
 import uuid
-
-import pytest
 
 # --- fixtures (shared conftest.py already sets up in-memory SQLite) ---
 from app.models.clinical import LabResult, LabUploadBatch
-from app.models.user import User, UserRole
 from app.models.patient import PatientProfile
-from app.services.lab import reclassify_lab_results, get_results_by_batch
-
+from app.models.user import User, UserRole
+from app.services.lab import get_results_by_batch, reclassify_lab_results
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_patient(db) -> str:
     """Create a minimal patient and return patient_id."""
@@ -93,6 +91,7 @@ def _make_lab_result(
 # ---------------------------------------------------------------------------
 # Core classification tests
 # ---------------------------------------------------------------------------
+
 
 class TestGlucoseReclassification:
     def test_glucose_57_mmol_reclassified_as_high(self, db):
@@ -259,6 +258,7 @@ class TestCreatinineReclassification:
 # Safety / edge-case tests
 # ---------------------------------------------------------------------------
 
+
 class TestIdempotency:
     def test_idempotent_double_run(self, db):
         """Running reclassify twice produces the same result, no corruption."""
@@ -397,6 +397,7 @@ class TestUnsupportedBiomarker:
 # Batch-scoped reclassification
 # ---------------------------------------------------------------------------
 
+
 class TestBatchScoped:
     def test_batch_id_filters_correctly(self, db):
         """Providing batch_id processes only records from that batch."""
@@ -439,6 +440,7 @@ class TestBatchScoped:
 # Dry-run mode
 # ---------------------------------------------------------------------------
 
+
 class TestDryRun:
     def test_dry_run_no_db_writes(self, db):
         """dry_run=True: returns counts but does not write to DB."""
@@ -465,11 +467,11 @@ class TestDryRun:
 # Classify-on-read fallback
 # ---------------------------------------------------------------------------
 
+
 class TestClassifyOnReadFallback:
     def test_classify_on_read_returns_status_without_db_write(self, db):
         """get_results_by_batch() fallback: rows with status=None but valid normalized_value_si
         should return computed status in-memory, without committing to DB."""
-        from app.core.security import create_access_token
 
         patient_id = _make_patient(db)
         batch_id = _make_batch(db, patient_id)
@@ -490,6 +492,7 @@ class TestClassifyOnReadFallback:
         # Use get_results_by_batch without committing a backfill first.
         # Reload the DB session to ensure we start clean.
         from app.core.database import SessionLocal
+
         db2 = SessionLocal()
         try:
             results = get_results_by_batch(db2, batch_id=batch_id, patient_id=patient_id)
@@ -505,17 +508,16 @@ class TestClassifyOnReadFallback:
             db2.close()
 
         # Verify original DB row was NOT committed (status still None).
-        from sqlalchemy import select as _select
-        from app.models.clinical import LabResult as _LR
         from app.core.database import SessionLocal as SL
+        from app.models.clinical import LabResult as _LR
+        from sqlalchemy import select as _select
+
         db3 = SL()
         try:
             persisted = db3.execute(_select(_LR).where(_LR.id == row_id)).scalar_one_or_none()
             assert persisted is not None
             # The classify-on-read fallback must NOT have written to DB.
-            assert persisted.status is None, (
-                "classify-on-read fallback must NOT commit to DB"
-            )
+            assert persisted.status is None, "classify-on-read fallback must NOT commit to DB"
         finally:
             db3.close()
 
@@ -523,6 +525,7 @@ class TestClassifyOnReadFallback:
 # ---------------------------------------------------------------------------
 # Normalization from original_value + original_unit
 # ---------------------------------------------------------------------------
+
 
 class TestNormalizationFromOriginal:
     def test_normalizes_from_original_when_si_null(self, db):

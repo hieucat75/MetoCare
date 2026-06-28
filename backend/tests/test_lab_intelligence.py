@@ -67,26 +67,57 @@ def test_clinical_rule_critical():
 
 
 def test_pattern_dyslipidemia():
-    patterns = detect_patterns({"findings": {"hdl": {"status": "low"}, "triglyceride": {}}, "derived": {"ldl_friedewald": 4.0}})
+    patterns = detect_patterns(
+        {
+            "findings": {"hdl": {"status": "low"}, "triglyceride": {}},
+            "derived": {"ldl_friedewald": 4.0},
+        }
+    )
     assert any(p.pattern_id == "dyslipidemia" for p in patterns)
 
 
 def test_pattern_insulin_resistance():
-    patterns = detect_patterns({"findings": {"fasting_glucose": {}, "triglyceride": {}, "hdl": {}}, "derived": {"tyg_index": 9.1}})
+    patterns = detect_patterns(
+        {
+            "findings": {"fasting_glucose": {}, "triglyceride": {}, "hdl": {}},
+            "derived": {"tyg_index": 9.1},
+        }
+    )
     assert any(p.pattern_id == "insulin_resistance" for p in patterns)
 
 
 def test_trend_improving():
     class R:
         def __init__(self, d, v):
-            self.verified_by_user = True; self.verified_by_doctor = False; self.canonical_name = "fasting_glucose"; self.value = v; self.unit = "mg/dL"; self.normalized_value_si = None; self.test_date = d
-    t = compute_trends([R(__import__('datetime').date(2024,1,1),120),R(__import__('datetime').date(2024,2,1),110),R(__import__('datetime').date(2024,3,1),100)], "fasting_glucose")
+            self.verified_by_user = True
+            self.verified_by_doctor = False
+            self.canonical_name = "fasting_glucose"
+            self.value = v
+            self.unit = "mg/dL"
+            self.normalized_value_si = None
+            self.test_date = d
+
+    t = compute_trends(
+        [
+            R(__import__("datetime").date(2024, 1, 1), 120),
+            R(__import__("datetime").date(2024, 2, 1), 110),
+            R(__import__("datetime").date(2024, 3, 1), 100),
+        ],
+        "fasting_glucose",
+    )
     assert t.trend in {"improving", "stable", "worsening"}
 
 
 def test_trend_insufficient():
     class R:
         def __init__(self, d, v):
-            self.verified_by_user = True; self.verified_by_doctor = False; self.canonical_name = "fasting_glucose"; self.value = v; self.unit = "mg/dL"; self.normalized_value_si = None; self.test_date = d
-    t = compute_trends([R(__import__('datetime').date(2024,1,1),120)], "fasting_glucose")
+            self.verified_by_user = True
+            self.verified_by_doctor = False
+            self.canonical_name = "fasting_glucose"
+            self.value = v
+            self.unit = "mg/dL"
+            self.normalized_value_si = None
+            self.test_date = d
+
+    t = compute_trends([R(__import__("datetime").date(2024, 1, 1), 120)], "fasting_glucose")
     assert t.trend == "insufficient_data"

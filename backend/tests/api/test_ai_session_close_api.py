@@ -131,9 +131,7 @@ def test_closed_session_not_returned_by_get(client, patient_setup, patient_sessi
     assert r2.status_code == 404, r2.text
 
 
-def test_patient_cannot_close_other_patients_session(
-    client, patient_setup, other_patient_session
-):
+def test_patient_cannot_close_other_patients_session(client, patient_setup, other_patient_session):
     """T18A-SC03: Patient cannot close another patient's session."""
     r = client.post(
         f"/api/v1/ai_sessions/{other_patient_session.id}/close",

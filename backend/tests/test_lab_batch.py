@@ -32,7 +32,7 @@ _TODAY = dt.date.today()
 _BIOMARKERS = [
     {"test_name": "AST (GOT)", "value": 25.37, "unit": "U/L"},
     {"test_name": "ALT (GPT)", "value": 51.63, "unit": "U/L"},
-    {"test_name": "Glucose",   "value": 5.73,  "unit": "mmol/L"},
+    {"test_name": "Glucose", "value": 5.73, "unit": "mmol/L"},
 ]
 
 
@@ -68,12 +68,16 @@ def _save_batch(db, patient_id, user_id, test_date=None):
         test_date=test_date or _TODAY,
         results=_BIOMARKERS,
     )
-    batch = db.execute(
-        select(LabUploadBatch).where(
-            LabUploadBatch.patient_id == patient_id,
-            LabUploadBatch.deleted_at.is_(None),
+    batch = (
+        db.execute(
+            select(LabUploadBatch).where(
+                LabUploadBatch.patient_id == patient_id,
+                LabUploadBatch.deleted_at.is_(None),
+            )
         )
-    ).scalars().first()
+        .scalars()
+        .first()
+    )
     return batch, rows
 
 
@@ -150,12 +154,16 @@ class TestSaveAsNew:
         )
         assert resp.status_code == 201
 
-        live_batches = db.execute(
-            select(LabUploadBatch).where(
-                LabUploadBatch.patient_id == p["patient_id"],
-                LabUploadBatch.deleted_at.is_(None),
+        live_batches = (
+            db.execute(
+                select(LabUploadBatch).where(
+                    LabUploadBatch.patient_id == p["patient_id"],
+                    LabUploadBatch.deleted_at.is_(None),
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         assert len(live_batches) == 2
 
 
@@ -192,12 +200,16 @@ class TestOverwrite:
             ).scalars():
                 assert m.deleted_at is not None
 
-        live = db.execute(
-            select(LabUploadBatch).where(
-                LabUploadBatch.patient_id == p["patient_id"],
-                LabUploadBatch.deleted_at.is_(None),
+        live = (
+            db.execute(
+                select(LabUploadBatch).where(
+                    LabUploadBatch.patient_id == p["patient_id"],
+                    LabUploadBatch.deleted_at.is_(None),
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         assert len(live) == 1
         assert live[0].id != old_batch_id
 
@@ -218,20 +230,28 @@ class TestDeleteBatchCascade:
         )
         db.expire_all()
 
-        live_results = db.execute(
-            select(LabResult).where(
-                LabResult.patient_id == p["patient_id"],
-                LabResult.deleted_at.is_(None),
+        live_results = (
+            db.execute(
+                select(LabResult).where(
+                    LabResult.patient_id == p["patient_id"],
+                    LabResult.deleted_at.is_(None),
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         assert live_results == []
 
-        live_metrics = db.execute(
-            select(HealthMetric).where(
-                HealthMetric.patient_id == p["patient_id"],
-                HealthMetric.deleted_at.is_(None),
+        live_metrics = (
+            db.execute(
+                select(HealthMetric).where(
+                    HealthMetric.patient_id == p["patient_id"],
+                    HealthMetric.deleted_at.is_(None),
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         assert live_metrics == []
 
     def test_api_delete_returns_204(self, db):
@@ -309,17 +329,24 @@ class TestAuditLog:
         batch, _ = _save_batch(db, p["patient_id"], p["user_id"])
 
         lab_batch.delete_batch(
-            db, batch_id=batch.id, deleted_by_user_id=p["user_id"],
-            reason="user requested", patient_id=p["patient_id"],
+            db,
+            batch_id=batch.id,
+            deleted_by_user_id=p["user_id"],
+            reason="user requested",
+            patient_id=p["patient_id"],
         )
 
-        entry = db.execute(
-            select(AuditLog).where(
-                AuditLog.resource_type == "lab_upload_batch",
-                AuditLog.resource_id == batch.id,
-                AuditLog.action == "delete_lab_batch",
+        entry = (
+            db.execute(
+                select(AuditLog).where(
+                    AuditLog.resource_type == "lab_upload_batch",
+                    AuditLog.resource_id == batch.id,
+                    AuditLog.action == "delete_lab_batch",
+                )
             )
-        ).scalars().first()
+            .scalars()
+            .first()
+        )
         assert entry is not None
         assert entry.actor_id == p["user_id"]
 
@@ -328,8 +355,11 @@ class TestAuditLog:
         batch, _ = _save_batch(db, p["patient_id"], p["user_id"])
 
         lab_batch.delete_batch(
-            db, batch_id=batch.id, deleted_by_user_id=p["user_id"],
-            reason="cleanup test", patient_id=p["patient_id"],
+            db,
+            batch_id=batch.id,
+            deleted_by_user_id=p["user_id"],
+            reason="cleanup test",
+            patient_id=p["patient_id"],
         )
         db.expire_all()
 
@@ -371,12 +401,16 @@ class TestDashboardRecalculates:
         )
         db.expire_all()
 
-        live = db.execute(
-            select(HealthMetric).where(
-                HealthMetric.patient_id == p["patient_id"],
-                HealthMetric.deleted_at.is_(None),
+        live = (
+            db.execute(
+                select(HealthMetric).where(
+                    HealthMetric.patient_id == p["patient_id"],
+                    HealthMetric.deleted_at.is_(None),
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         assert live == []
 
         score = compute_live_score(db, patient_id=p["patient_id"])
@@ -384,6 +418,7 @@ class TestDashboardRecalculates:
 
 
 # ── Test 9: list lab-results rejects limit > 100 (regression: frontend sent 200) ──
+
 
 class TestListLabResultsLimitValidation:
     """Regression: frontend bug sent limit=200 which exceeds backend le=100 constraint.
@@ -424,6 +459,7 @@ class TestListLabResultsLimitValidation:
 
 # ── Test 10: P0 clinical safety — glucose mmol/L must be converted to mg/dL ────
 
+
 class TestGlucoseMmolConversion:
     """
     P0 Patient Safety Regression:
@@ -446,17 +482,20 @@ class TestGlucoseMmolConversion:
     def _create_glucose_entry(self, db, patient_id, user_id, mmol_value):
         """Create a manual lab entry with glucose in mmol/L."""
         from app.services.lab import create_manual_entry
+
         doc, rows = create_manual_entry(
             db,
             patient_id=patient_id,
             requester_id=user_id,
             lab_name="TEST_LAB",
             test_date=_TODAY,
-            results=[{
-                "test_name": "fasting_glucose",
-                "value": mmol_value,
-                "unit": "mmol/L",
-            }],
+            results=[
+                {
+                    "test_name": "fasting_glucose",
+                    "value": mmol_value,
+                    "unit": "mmol/L",
+                }
+            ],
         )
         return rows
 
@@ -480,6 +519,7 @@ class TestGlucoseMmolConversion:
     def test_5_7_mmol_not_classified_as_critical(self, db):
         """5.7 mmol/L is borderline/prediabetes — must NOT be critical or low."""
         from app.domain.clinical_rules import assess_biomarker
+
         p = _make_patient(db)
         rows = self._create_glucose_entry(db, p["patient_id"], p["user_id"], 5.7)
         assert len(rows) == 1
@@ -497,6 +537,7 @@ class TestGlucoseMmolConversion:
     def test_2_8_mmol_is_critical(self, db):
         """2.8 mmol/L = ~50.5 mg/dL — critical hypoglycemia."""
         from app.domain.clinical_rules import assess_biomarker
+
         p = _make_patient(db)
         rows = self._create_glucose_entry(db, p["patient_id"], p["user_id"], 2.8)
         assert len(rows) == 1
@@ -511,6 +552,7 @@ class TestGlucoseMmolConversion:
     def test_3_5_mmol_is_low(self, db):
         """3.5 mmol/L = ~63.1 mg/dL — below ref_low=70, status low."""
         from app.domain.clinical_rules import assess_biomarker
+
         p = _make_patient(db)
         rows = self._create_glucose_entry(db, p["patient_id"], p["user_id"], 3.5)
         assert len(rows) == 1
@@ -525,6 +567,7 @@ class TestGlucoseMmolConversion:
     def test_4_8_mmol_is_normal(self, db):
         """4.8 mmol/L = ~86.5 mg/dL — normal range 70–99."""
         from app.domain.clinical_rules import assess_biomarker
+
         p = _make_patient(db)
         rows = self._create_glucose_entry(db, p["patient_id"], p["user_id"], 4.8)
         assert len(rows) == 1
@@ -539,6 +582,7 @@ class TestGlucoseMmolConversion:
     def test_7_2_mmol_is_high(self, db):
         """7.2 mmol/L = ~129.7 mg/dL — diabetic range (126–299)."""
         from app.domain.clinical_rules import assess_biomarker
+
         p = _make_patient(db)
         rows = self._create_glucose_entry(db, p["patient_id"], p["user_id"], 7.2)
         assert len(rows) == 1
@@ -553,6 +597,7 @@ class TestGlucoseMmolConversion:
     def test_11_1_mmol_is_high(self, db):
         """11.1 mmol/L = ~200 mg/dL — clearly diabetic, high (not critical yet, <300)."""
         from app.domain.clinical_rules import assess_biomarker
+
         p = _make_patient(db)
         rows = self._create_glucose_entry(db, p["patient_id"], p["user_id"], 11.1)
         assert len(rows) == 1
@@ -567,6 +612,7 @@ class TestGlucoseMmolConversion:
     def test_mgdl_input_unchanged(self, db):
         """Input already in mg/dL (e.g. 102.7) must NOT be double-converted."""
         from app.services.lab import create_manual_entry
+
         p = _make_patient(db)
         doc, rows = create_manual_entry(
             db,
@@ -574,11 +620,13 @@ class TestGlucoseMmolConversion:
             requester_id=p["user_id"],
             lab_name="TEST_LAB",
             test_date=_TODAY,
-            results=[{
-                "test_name": "fasting_glucose",
-                "value": 102.7,
-                "unit": "mg/dL",
-            }],
+            results=[
+                {
+                    "test_name": "fasting_glucose",
+                    "value": 102.7,
+                    "unit": "mg/dL",
+                }
+            ],
         )
         assert len(rows) == 1
         assert abs(rows[0].value - 102.7) < 0.5, (

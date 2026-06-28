@@ -29,13 +29,15 @@ from app.services import audit
 router = APIRouter(prefix="/care_plans", tags=["care_plans"])
 
 # Statuses that non-doctor callers (including AI) may NEVER set
-_DOCTOR_ONLY_STATUSES = frozenset({
-    CarePlanStatus.PENDING_REVIEW,
-    CarePlanStatus.APPROVED,
-    CarePlanStatus.ACTIVE,
-    CarePlanStatus.SUPERSEDED,
-    CarePlanStatus.ARCHIVED,
-})
+_DOCTOR_ONLY_STATUSES = frozenset(
+    {
+        CarePlanStatus.PENDING_REVIEW,
+        CarePlanStatus.APPROVED,
+        CarePlanStatus.ACTIVE,
+        CarePlanStatus.SUPERSEDED,
+        CarePlanStatus.ARCHIVED,
+    }
+)
 
 _DOCTOR_ROLES = frozenset({UserRole.DOCTOR, UserRole.INTERNAL_ADMIN, UserRole.SUPER_ADMIN})
 
@@ -290,9 +292,7 @@ def approve_care_plan(
     # 1. Load CarePlan; 404 if not found or soft-deleted
     plan = db.get(CarePlan, care_plan_id)
     if plan is None or plan.deleted_at is not None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Care plan not found."
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Care plan not found.")
 
     # 2. 409 if plan already APPROVED or ARCHIVED
     if plan.status in (CarePlanStatus.APPROVED, CarePlanStatus.ARCHIVED):
@@ -356,4 +356,3 @@ def approve_care_plan(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
         ) from e
-

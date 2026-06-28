@@ -10,6 +10,7 @@ Matching strategy (priority order):
 Value match: within VALUE_TOLERANCE_ABS (0.005) or VALUE_TOLERANCE_REL (0.5%).
 Unit match: normalized lower-case after collapsing µ/u variants.
 """
+
 from __future__ import annotations
 
 import re
@@ -48,8 +49,8 @@ def _name_score(extracted: dict, corrected: dict) -> float:
 
     e_name = (extracted.get("original_test_name") or "").strip().lower()
     c_name = (
-        corrected.get("original_test_name") or corrected.get("test_name") or ""
-    ).strip().lower()
+        (corrected.get("original_test_name") or corrected.get("test_name") or "").strip().lower()
+    )
     if e_name and c_name and len(e_name) >= 4 and len(c_name) >= 4:
         if e_name[:4] == c_name[:4]:
             return 0.5
@@ -109,11 +110,21 @@ def compute_gap(
     """Compare OCR draft rows against user-corrected rows. Pure — no side effects."""
     if not extracted_rows and not corrected_rows:
         return GapReport(
-            total_extracted_rows=0, total_corrected_rows=0, matched_rows=0,
-            missing_rows=0, false_positive_rows=0, biomarker_mismatches=0,
-            value_mismatches=0, unit_mismatches=0, corrected_rows_count=0,
-            editing_rate=0.0, row_accuracy=0.0, value_accuracy=0.0,
-            unit_accuracy=0.0, biomarker_accuracy=0.0, overall_accuracy=0.0,
+            total_extracted_rows=0,
+            total_corrected_rows=0,
+            matched_rows=0,
+            missing_rows=0,
+            false_positive_rows=0,
+            biomarker_mismatches=0,
+            value_mismatches=0,
+            unit_mismatches=0,
+            corrected_rows_count=0,
+            editing_rate=0.0,
+            row_accuracy=0.0,
+            value_accuracy=0.0,
+            unit_accuracy=0.0,
+            biomarker_accuracy=0.0,
+            overall_accuracy=0.0,
         )
 
     unmatched_corrected: list[tuple[int, dict]] = list(enumerate(corrected_rows))

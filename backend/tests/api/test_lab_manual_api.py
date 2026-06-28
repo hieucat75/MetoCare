@@ -92,7 +92,9 @@ def test_list_lab_results_returns_entered(client, patient_setup):
 def test_patient_cannot_read_another_patients_results(client, patient_setup, db):
     other = User(
         email=f"other-{os.urandom(4).hex()}@example.com",
-        password_hash="x", role=UserRole.PATIENT, full_name="Other",
+        password_hash="x",
+        role=UserRole.PATIENT,
+        full_name="Other",
     )
     db.add(other)
     db.flush()

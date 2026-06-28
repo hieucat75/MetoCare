@@ -6,24 +6,22 @@ preservation for all unit-dependent biomarkers.
 Run:
     cd backend && python -m pytest tests/test_clinical_safety.py -v
 """
+
 from __future__ import annotations
 
-import pytest
-
+from app.domain.clinical_rules import assess_biomarker
 from app.domain.lab_interpreter import (
+    _ALIAS_INDEX,
     BiomarkerSpec,
     LabStatus,
     classify_value,
-    normalize_biomarker,
-    _ALIAS_INDEX,
 )
-from app.domain.lab_normalization import normalize_value_to_si, classify_status
-from app.domain.clinical_rules import assess_biomarker
-
+from app.domain.lab_normalization import normalize_value_to_si
 
 # ---------------------------------------------------------------------------
 # Conversion helpers
 # ---------------------------------------------------------------------------
+
 
 def _convert(value: float, unit: str, canonical: str) -> tuple[float, str]:
     """Convenience wrapper."""
@@ -33,6 +31,7 @@ def _convert(value: float, unit: str, canonical: str) -> tuple[float, str]:
 # ---------------------------------------------------------------------------
 # Phase 1 — Conversion paths
 # ---------------------------------------------------------------------------
+
 
 class TestGlucoseConversion:
     def test_glucose_mmol_slightly_high(self):
@@ -61,9 +60,7 @@ class TestGlucoseConversion:
         assert abs(converted - 502.0) < 0.001
         assert unit == "mg/dL"
         status = classify_value("fasting_glucose", converted)
-        assert status == LabStatus.CRITICAL, (
-            f"502 mg/dL expected CRITICAL, got {status}"
-        )
+        assert status == LabStatus.CRITICAL, f"502 mg/dL expected CRITICAL, got {status}"
 
     def test_glucose_equivalent_units(self):
         """5.7 mmol/L and 102.7 mg/dL must give same clinical status."""
@@ -71,17 +68,13 @@ class TestGlucoseConversion:
         from_mgdl, _ = _convert(102.7, "mg/dL", "fasting_glucose")
         status_mmol = classify_value("fasting_glucose", from_mmol)
         status_mgdl = classify_value("fasting_glucose", from_mgdl)
-        assert status_mmol == status_mgdl, (
-            f"mmol/L→{status_mmol} ≠ mg/dL→{status_mgdl}"
-        )
+        assert status_mmol == status_mgdl, f"mmol/L→{status_mmol} ≠ mg/dL→{status_mgdl}"
 
     def test_glucose_not_critical_at_300(self):
         """300 mg/dL is no longer the critical threshold (raised to 500)."""
         status = classify_value("fasting_glucose", 300.0)
         # 300 > ref_high=99, so HIGH (not CRITICAL since critical_high=500)
-        assert status == LabStatus.HIGH, (
-            f"300 mg/dL expected HIGH, got {status}"
-        )
+        assert status == LabStatus.HIGH, f"300 mg/dL expected HIGH, got {status}"
 
     def test_glucose_critical_low_boundary(self):
         """54 mg/dL → CRITICAL (critical_low=54)."""
@@ -109,8 +102,9 @@ class TestCholesterolConversion:
         """6.2 mmol/L and 239.7 mg/dL → same status."""
         from_mmol, _ = _convert(6.2, "mmol/L", "total_cholesterol")
         from_mgdl, _ = _convert(239.7, "mg/dL", "total_cholesterol")
-        assert classify_value("total_cholesterol", from_mmol) == \
-               classify_value("total_cholesterol", from_mgdl)
+        assert classify_value("total_cholesterol", from_mmol) == classify_value(
+            "total_cholesterol", from_mgdl
+        )
 
     def test_cholesterol_normal_mgdl(self):
         """185 mg/dL → NORMAL."""
@@ -174,9 +168,7 @@ class TestTriglycerideConversion:
         converted, unit = _convert(502.0, "mg/dL", "triglyceride")
         assert abs(converted - 502.0) < 0.001
         status = classify_value("triglyceride", converted)
-        assert status == LabStatus.CRITICAL, (
-            f"502 mg/dL TG expected CRITICAL (≥500), got {status}"
-        )
+        assert status == LabStatus.CRITICAL, f"502 mg/dL TG expected CRITICAL (≥500), got {status}"
 
     def test_triglycerides_clinical_rules_mgdl_threshold(self):
         """clinical_rules TG threshold must be 500 mg/dL, not 5.6 mmol/L."""
@@ -185,8 +177,7 @@ class TestTriglycerideConversion:
         finding_very_high = assess_biomarker("triglyceride", 502.0)
         assert finding_low is not None
         assert finding_low.status == "normal", (
-            f"TG=5.6 mg/dL must be 'normal', got '{finding_low.status}' "
-            f"(old mmol/L threshold bug)"
+            f"TG=5.6 mg/dL must be 'normal', got '{finding_low.status}' (old mmol/L threshold bug)"
         )
         assert finding_very_high is not None
         assert finding_very_high.status == "high", (
@@ -292,9 +283,7 @@ class TestEnzymeNoConversion:
         """ALT 45 U/L stays 45. confirm assess_biomarker agrees."""
         finding = assess_biomarker("alt", 45.0)
         assert finding is not None
-        assert finding.status == "normal", (
-            f"ALT=45 U/L expected normal, got {finding.status}"
-        )
+        assert finding.status == "normal", f"ALT=45 U/L expected normal, got {finding.status}"
 
 
 class TestHbA1c:
@@ -329,6 +318,7 @@ class TestHbA1c:
 # ---------------------------------------------------------------------------
 # Phase 2 — Original value preservation
 # ---------------------------------------------------------------------------
+
 
 class TestOriginalValuePreservation:
     """normalize_value_to_si must never mutate original_value / original_unit.
@@ -375,6 +365,7 @@ class TestOriginalValuePreservation:
 # Phase 3 — Threshold correctness matrix
 # ---------------------------------------------------------------------------
 
+
 class TestThresholdMatrix:
     """Validate ref_low, ref_high, critical_low, critical_high for all biomarkers."""
 
@@ -397,11 +388,11 @@ class TestThresholdMatrix:
 
     def test_ldl_thresholds(self):
         spec = self._spec("ldl")
-        assert spec.ref_high == 99   # optimal <100 mg/dL
+        assert spec.ref_high == 99  # optimal <100 mg/dL
 
     def test_hdl_thresholds(self):
         spec = self._spec("hdl")
-        assert spec.ref_low == 40    # low for male
+        assert spec.ref_low == 40  # low for male
         assert spec.critical_low == 20
 
     def test_triglyceride_thresholds(self):
@@ -445,6 +436,7 @@ class TestThresholdMatrix:
 # ---------------------------------------------------------------------------
 # Phase 4 — Clinical rules use mg/dL (not mmol/L residual thresholds)
 # ---------------------------------------------------------------------------
+
 
 class TestClinicalRulesMgDl:
     def test_glucose_prediabetes_clinical_rule(self):

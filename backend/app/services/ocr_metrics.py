@@ -1,4 +1,5 @@
 """OCR pipeline metrics (internal only - not exposed to patient API)."""
+
 from __future__ import annotations
 
 import logging

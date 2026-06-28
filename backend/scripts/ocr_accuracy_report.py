@@ -7,6 +7,7 @@ Usage:
 Reads DB URL from DATABASE_URL env var (or .env). Prints a table of:
     hospital | cases | row_acc | val_acc | unit_acc | edit_rate | avg_review_s
 """
+
 from __future__ import annotations
 
 import argparse
@@ -23,6 +24,7 @@ from sqlalchemy.orm import Session
 
 def _engine():
     from dotenv import load_dotenv
+
     load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
     url = os.environ.get("DATABASE_URL", "")
     if not url:
@@ -33,6 +35,7 @@ def _engine():
 
 def report(*, days: int | None, hospital_filter: str | None) -> None:
     from sqlalchemy import select
+
     engine = _engine()
     with Session(engine) as db:
         stmt = select(OCRCase).where(OCRCase.accuracy_score.is_not(None))

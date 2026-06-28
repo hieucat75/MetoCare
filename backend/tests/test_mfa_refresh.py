@@ -21,6 +21,7 @@ def _register(client, email=None, password="password123", role="patient"):
 # Refresh tokens
 # --------------------------------------------------------------------------- #
 
+
 def test_refresh_rotation_chain(client):
     _, _, tok = _register(client)
     t0 = tok["refresh_token"]
@@ -60,6 +61,7 @@ def test_refresh_rejects_garbage(client):
 # --------------------------------------------------------------------------- #
 # MFA (TOTP)
 # --------------------------------------------------------------------------- #
+
 
 def _enroll_mfa(client, access_token):
     headers = {"Authorization": f"Bearer {access_token}"}
@@ -123,6 +125,7 @@ def test_invalid_totp_at_verify_rejected(client):
 # --------------------------------------------------------------------------- #
 # MFA gate on sensitive (admin) endpoints
 # --------------------------------------------------------------------------- #
+
 
 def test_admin_endpoint_requires_mfa(client, token_for):
     no_mfa = client.get(

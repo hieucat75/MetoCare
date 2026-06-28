@@ -141,6 +141,7 @@ def consent_for_doctor(db, patient_setup, doctor_setup):
 # Helper
 # ---------------------------------------------------------------------------
 
+
 def _profile_url(patient_id: str) -> str:
     return f"/api/v1/patients/{patient_id}/profile"
 
@@ -242,9 +243,7 @@ def test_patient_cannot_update_another_patients_profile(
     assert r.status_code == 403, r.text
 
 
-def test_doctor_updates_patient_profile(
-    client: TestClient, patient_setup, doctor_setup
-):
+def test_doctor_updates_patient_profile(client: TestClient, patient_setup, doctor_setup):
     """DOCTOR can PATCH any patient's profile — 200."""
     r = client.patch(
         _profile_url(patient_setup["patient_id"]),
@@ -287,9 +286,7 @@ def test_partial_update_preserves_other_fields(client: TestClient, patient_setup
     assert body["height_cm"] == original_height
 
 
-def test_update_profile_creates_audit_record(
-    client: TestClient, db, patient_setup
-):
+def test_update_profile_creates_audit_record(client: TestClient, db, patient_setup):
     """Every successful PATCH must produce an AuditLog row with action='update_profile'."""
     r = client.patch(
         _profile_url(patient_setup["patient_id"]),

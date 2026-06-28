@@ -60,9 +60,7 @@ def list_logs(
     limit = min(limit, 100)
 
     total: int = db.execute(
-        select(func.count()).select_from(NutritionLog).where(
-            NutritionLog.patient_id == patient_id
-        )
+        select(func.count()).select_from(NutritionLog).where(NutritionLog.patient_id == patient_id)
     ).scalar_one()
 
     rows = list(

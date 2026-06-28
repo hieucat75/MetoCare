@@ -146,9 +146,7 @@ def _seed_notification(
 # ---------------------------------------------------------------------------
 
 
-def test_admin_creates_notification_for_patient(
-    client: TestClient, admin_ctx, patient_ctx
-):
+def test_admin_creates_notification_for_patient(client: TestClient, admin_ctx, patient_ctx):
     """INTERNAL_ADMIN POSTs to /notifications → 201 with correct payload."""
     payload = {
         "user_id": patient_ctx["user_id"],
@@ -290,9 +288,7 @@ def test_doctor_lists_own_notifications(client: TestClient, db, doctor_ctx):
 # ---------------------------------------------------------------------------
 
 
-def test_non_admin_cannot_create_notification(
-    client: TestClient, patient_ctx, another_patient_ctx
-):
+def test_non_admin_cannot_create_notification(client: TestClient, patient_ctx, another_patient_ctx):
     """PATIENT POSTs to /notifications → 403 (admin-only operation)."""
     payload = {
         "user_id": another_patient_ctx["user_id"],

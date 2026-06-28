@@ -50,6 +50,7 @@ def enforce_rate_limit(request: Request, action: str) -> None:
             headers={"Retry-After": str(window)},
         )
 
+
 _bearer = HTTPBearer(auto_error=False)
 
 

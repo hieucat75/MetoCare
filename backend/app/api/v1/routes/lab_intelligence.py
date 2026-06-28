@@ -36,12 +36,16 @@ def lab_intelligence(
     patient_id: str,
     body: LabIntelligenceRequest,
     db: Session = Depends(get_session),
-    user: CurrentUser = Depends(require_roles(UserRole.PATIENT, UserRole.DOCTOR, UserRole.INTERNAL_ADMIN)),  # noqa: E501
+    user: CurrentUser = Depends(
+        require_roles(UserRole.PATIENT, UserRole.DOCTOR, UserRole.INTERNAL_ADMIN)
+    ),  # noqa: E501
 ):
     if user.role == UserRole.PATIENT.value:
         profile = db.get(PatientProfile, patient_id)
         if profile is None or profile.user_id != user.id:
-            raise HTTPException(status_code=403, detail="Patients may only access their own records.")  # noqa: E501
+            raise HTTPException(
+                status_code=403, detail="Patients may only access their own records."
+            )  # noqa: E501
     else:
         consent.require_access(db, patient_id=patient_id, requester_id=user.id, scope="lab")
 
@@ -54,7 +58,7 @@ def lab_intelligence(
     if not verified:
         return {
             "patient_id": patient_id,
-            "analysis_timestamp": dt.datetime.now(dt.timezone.utc).isoformat(),
+            "analysis_timestamp": dt.datetime.now(dt.UTC).isoformat(),
             "records_analyzed": 0,
             "unverified_excluded": excluded,
             "biomarker_findings": [],
@@ -88,19 +92,34 @@ def lab_intelligence(
             continue
 
         raw_inputs[r.canonical_name] = norm_si
-        f = assess_biomarker(r.canonical_name, norm_si, age_years=body.age_years, is_male=body.is_male)  # noqa: E501
+        f = assess_biomarker(
+            r.canonical_name, norm_si, age_years=body.age_years, is_male=body.is_male
+        )  # noqa: E501
         if f:
             findings.append(f)
             biomarker_findings.append(f.__dict__)
 
     derived = []
     if body.include_derived:
-        for dr in compute_all_derived(raw_inputs, age_years=body.age_years, is_male=body.is_male, waist_cm=body.waist_cm):  # noqa: E501
+        for dr in compute_all_derived(
+            raw_inputs, age_years=body.age_years, is_male=body.is_male, waist_cm=body.waist_cm
+        ):  # noqa: E501
             derived.append(dr.__dict__)
 
     derived_map = {d["canonical"]: d for d in derived}
     if body.include_patterns:
-        patterns = [p.__dict__ for p in detect_patterns({"findings": {f.canonical: f.__dict__ for f in findings}, "derived": {k: v.get("value") if isinstance(v, dict) else v for k, v in derived_map.items()}})]  # noqa: E501
+        patterns = [
+            p.__dict__
+            for p in detect_patterns(
+                {
+                    "findings": {f.canonical: f.__dict__ for f in findings},
+                    "derived": {
+                        k: v.get("value") if isinstance(v, dict) else v
+                        for k, v in derived_map.items()
+                    },
+                }
+            )
+        ]  # noqa: E501
     else:
         patterns = []
 
@@ -114,7 +133,7 @@ def lab_intelligence(
 
     return {
         "patient_id": patient_id,
-        "analysis_timestamp": dt.datetime.now(dt.timezone.utc).isoformat(),
+        "analysis_timestamp": dt.datetime.now(dt.UTC).isoformat(),
         "records_analyzed": len(verified),
         "unverified_excluded": excluded,
         "biomarker_findings": biomarker_findings,

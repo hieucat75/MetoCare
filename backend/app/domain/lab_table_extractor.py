@@ -56,13 +56,13 @@ class OcrTableRow:
     No clinical mapping, no conversion applied at this stage.
     """
 
-    original_test_name: str        # raw test name as printed, e.g. "Glucose (máu) (Cobas C502)"
-    display_test_name: str         # cleaned for alias matching (machine suffixes stripped)
-    original_value_str: str        # raw numeric string as printed, e.g. "4.78"
-    original_unit: str | None      # as printed, e.g. "mmol/L"; None when cell absent
+    original_test_name: str  # raw test name as printed, e.g. "Glucose (máu) (Cobas C502)"
+    display_test_name: str  # cleaned for alias matching (machine suffixes stripped)
+    original_value_str: str  # raw numeric string as printed, e.g. "4.78"
+    original_unit: str | None  # as printed, e.g. "mmol/L"; None when cell absent
     original_reference_range: str | None  # as printed, e.g. "3.9–6.1"; None when absent
     raw_cells: list[str] = field(default_factory=list)  # all cells in row (for debug)
-    row_confidence: float = 0.95   # Azure table cells don't report per-row confidence
+    row_confidence: float = 0.95  # Azure table cells don't report per-row confidence
     page_number: int = 0
     source: str = "azure_table"
     # P0 safety flag: True when value_str looks like a machine model number
@@ -76,62 +76,151 @@ class OcrTableRow:
 # Accent-stripped lowercase match.
 # NOTE: "method" columns are detected and explicitly EXCLUDED from value_col.
 _COL_ROLE_KEYWORDS: dict[str, frozenset[str]] = {
-    "stt": frozenset({
-        "stt", "no", "no.", "tt", "so thu tu", "order", "#", "sn",
-    }),
-    "test_name": frozenset({
-        "ten xet nghiem", "ten chi so", "xet nghiem", "chi so",
-        "test name", "analyte", "parameter",
-        "examination",
-        "chi so xet nghiem", "ten xet nghiem ky thuat",
-        # Vinmec: "Chỉ định" ("chi dinh" / "chi đinh" — "đ" doesn't decompose under NFD)
-        "chi dinh", "chi đinh",
-        # Medlatec: "Danh mục khám"
-        "danh muc kham", "danh muc",
-    }),
-    "value": frozenset({
-        "ket qua", "gia tri", "result", "value", "so lieu",
-        "nong do", "ham luong", "ket qua do", "concentration",
-        "level", "measurement",
-    }),
-    "unit": frozenset({
-        "don vi", "unit", "dv", "units",
-        # "Đơn vị" normalizes to "đon vi" (not "don vi") because "đ" ≠ "d" under NFD.
-        "đon vi",
-    }),
-    "reference": frozenset({
-        "gia tri bt", "gia tri binh thuong", "khoang tham chieu",
-        "tham chieu", "reference", "normal", "normal range",
-        "reference range", "binh thuong", "gia tri tham chieu",
-        "khoang binh thuong", "khoang chuan", "giai han binh thuong",
-        "reference interval",
-    }),
+    "stt": frozenset(
+        {
+            "stt",
+            "no",
+            "no.",
+            "tt",
+            "so thu tu",
+            "order",
+            "#",
+            "sn",
+        }
+    ),
+    "test_name": frozenset(
+        {
+            "ten xet nghiem",
+            "ten chi so",
+            "xet nghiem",
+            "chi so",
+            "test name",
+            "analyte",
+            "parameter",
+            "examination",
+            "chi so xet nghiem",
+            "ten xet nghiem ky thuat",
+            # Vinmec: "Chỉ định" ("chi dinh" / "chi đinh" — "đ" doesn't decompose under NFD)
+            "chi dinh",
+            "chi đinh",
+            # Medlatec: "Danh mục khám"
+            "danh muc kham",
+            "danh muc",
+        }
+    ),
+    "value": frozenset(
+        {
+            "ket qua",
+            "gia tri",
+            "result",
+            "value",
+            "so lieu",
+            "nong do",
+            "ham luong",
+            "ket qua do",
+            "concentration",
+            "level",
+            "measurement",
+        }
+    ),
+    "unit": frozenset(
+        {
+            "don vi",
+            "unit",
+            "dv",
+            "units",
+            # "Đơn vị" normalizes to "đon vi" (not "don vi") because "đ" ≠ "d" under NFD.
+            "đon vi",
+        }
+    ),
+    "reference": frozenset(
+        {
+            "gia tri bt",
+            "gia tri binh thuong",
+            "khoang tham chieu",
+            "tham chieu",
+            "reference",
+            "normal",
+            "normal range",
+            "reference range",
+            "binh thuong",
+            "gia tri tham chieu",
+            "khoang binh thuong",
+            "khoang chuan",
+            "giai han binh thuong",
+            "reference interval",
+        }
+    ),
     # Columns typed as "method" or "instrument" must NEVER be used as value_col.
-    "method": frozenset({
-        "phuong phap", "may xet nghiem", "may", "method", "instrument",
-        "analyzer", "thiet bi", "thiet bi do", "machine", "he thong",
-        "cobas", "may do", "phuong phap may", "phuong phap / may",
-        "pp/may", "pp / may",
-    }),
+    "method": frozenset(
+        {
+            "phuong phap",
+            "may xet nghiem",
+            "may",
+            "method",
+            "instrument",
+            "analyzer",
+            "thiet bi",
+            "thiet bi do",
+            "machine",
+            "he thong",
+            "cobas",
+            "may do",
+            "phuong phap may",
+            "phuong phap / may",
+            "pp/may",
+            "pp / may",
+        }
+    ),
     # Price columns must NEVER be used as value_col (Medlatec: "Đơn giá").
-    "price": frozenset({
-        "don gia", "gia tien", "phi", "thanh tien", "price", "cost",
-        "tien", "phi dich vu",
-    }),
+    "price": frozenset(
+        {
+            "don gia",
+            "gia tien",
+            "phi",
+            "thanh tien",
+            "price",
+            "cost",
+            "tien",
+            "phi dich vu",
+        }
+    ),
     # Note/comment columns contain abnormal flags like "Tăng", "Giảm" — not values.
-    "note": frozenset({
-        "ghi chu", "ghi chu ket qua", "nhan xet", "note", "comment",
-        "ket luan", "canh bao", "tang", "giam",
-    }),
+    "note": frozenset(
+        {
+            "ghi chu",
+            "ghi chu ket qua",
+            "nhan xet",
+            "note",
+            "comment",
+            "ket luan",
+            "canh bao",
+            "tang",
+            "giam",
+        }
+    ),
     # Vinmec: "Quy trình" (procedure/method name) — not a result.
-    "procedure": frozenset({
-        "quy trinh", "procedure", "method name", "ten quy trinh",
-    }),
+    "procedure": frozenset(
+        {
+            "quy trinh",
+            "procedure",
+            "method name",
+            "ten quy trinh",
+        }
+    ),
     # Vinmec: "Thiết bị" (device/analyzer) — must NEVER map to value_col.
-    "device": frozenset({
-        "thiet bi", "device", "may do", "analyzer", "instrument",
-        "cobas pro", "cobas", "sysmex",
-    }),
+    "device": frozenset(
+        {
+            "thiet bi",
+            "device",
+            "may do",
+            "analyzer",
+            "instrument",
+            "cobas pro",
+            "cobas",
+            "sysmex",
+        }
+    ),
 }
 
 # ──────────────────────────────────────────── Instrument name blocklist ─────
@@ -139,12 +228,29 @@ _COL_ROLE_KEYWORDS: dict[str, frozenset[str]] = {
 # Machine/instrument identifiers that appear in hospital lab report columns
 # (e.g. Medlatec "Phương pháp / Máy" column).  These strings must NEVER be
 # parsed as numeric result values.  Case-insensitive match after accent strip.
-_INSTRUMENT_NAME_BLOCKLIST: frozenset[str] = frozenset({
-    "cobas", "cobas c502", "cobas c702", "cobas e601", "cobas 8000",
-    "architect", "sysmex", "beckman", "coulter", "siemens",
-    "roche", "abbott", "olympus", "hitachi",
-    "c502", "c702", "e601", "au480", "au680",
-})
+_INSTRUMENT_NAME_BLOCKLIST: frozenset[str] = frozenset(
+    {
+        "cobas",
+        "cobas c502",
+        "cobas c702",
+        "cobas e601",
+        "cobas 8000",
+        "architect",
+        "sysmex",
+        "beckman",
+        "coulter",
+        "siemens",
+        "roche",
+        "abbott",
+        "olympus",
+        "hitachi",
+        "c502",
+        "c702",
+        "e601",
+        "au480",
+        "au680",
+    }
+)
 
 # Regex to detect a 3-4 digit numeric suffix that is part of a model name,
 # e.g. the "502" in "Cobas C502" or "8000" in "Cobas 8000".
@@ -267,8 +373,7 @@ _GREATER_THAN_RE = re.compile(r">\s*(\d[0-9.,]*)")
 
 def _strip_accents_lower(s: str) -> str:
     return "".join(
-        c for c in unicodedata.normalize("NFD", s.lower())
-        if unicodedata.category(c) != "Mn"
+        c for c in unicodedata.normalize("NFD", s.lower()) if unicodedata.category(c) != "Mn"
     )
 
 
@@ -296,7 +401,7 @@ def _parse_value_cell(text: str) -> tuple[str, str | None]:
     if not m:
         return text, None
     value_str = m.group()
-    after = text[m.end():].strip()
+    after = text[m.end() :].strip()
     um = _UNIT_RE.match(after)
     return value_str, (um.group().strip() if um else None)
 
@@ -331,9 +436,16 @@ def _infer_column_roles_positional(max_col: int) -> dict[str, int | None]:
 
 
 # Column roles that must NEVER be used as value_col.
-_NON_VALUE_ROLES: frozenset[str] = frozenset({
-    "method", "price", "note", "procedure", "device", "stt",
-})
+_NON_VALUE_ROLES: frozenset[str] = frozenset(
+    {
+        "method",
+        "price",
+        "note",
+        "procedure",
+        "device",
+        "stt",
+    }
+)
 
 
 def _detect_column_roles(
@@ -342,9 +454,16 @@ def _detect_column_roles(
     max_col: int,
 ) -> dict[str, int | None]:
     roles: dict[str, int | None] = {
-        "stt": None, "test_name": None, "value": None,
-        "unit": None, "reference": None, "method": None,
-        "price": None, "note": None, "procedure": None, "device": None,
+        "stt": None,
+        "test_name": None,
+        "value": None,
+        "unit": None,
+        "reference": None,
+        "method": None,
+        "price": None,
+        "note": None,
+        "procedure": None,
+        "device": None,
     }
     for cell in cells_raw:
         ri = cell.get("rowIndex", 0)
@@ -388,7 +507,8 @@ def _detect_column_roles(
             inferred_method_col = ci
             _logger.debug(
                 "table_extractor_method_col_majority_vote col=%d ratio=%.2f",
-                ci, ratio,
+                ci,
+                ratio,
             )
             break
 
@@ -406,9 +526,7 @@ def _detect_column_roles(
 
     # Safety: if value_col ended up on a non-value column (method, price, device,
     # procedure, note), fall back to positional heuristics for value_col.
-    non_value_cols: set[int] = {
-        roles[r] for r in _NON_VALUE_ROLES if roles.get(r) is not None
-    }
+    non_value_cols: set[int] = {roles[r] for r in _NON_VALUE_ROLES if roles.get(r) is not None}
     non_value_cols.discard(None)  # type: ignore[arg-type]
     if roles["value"] in non_value_cols:
         bad_col = roles["value"]
@@ -441,7 +559,8 @@ def _detect_column_roles(
         _logger.warning(
             "table_extractor_value_col_left_of_test_name "
             "value_col=%d test_name_col=%d — shifting right",
-            roles["value"], roles["test_name"],
+            roles["value"],
+            roles["test_name"],
         )
         bad_val = roles["value"]
         test_col = roles["test_name"]
@@ -453,7 +572,8 @@ def _detect_column_roles(
                 break
         _logger.debug(
             "table_extractor_value_col_corrected old=%d new=%s",
-            bad_val, roles.get("value"),
+            bad_val,
+            roles.get("value"),
         )
 
     return roles
@@ -473,7 +593,7 @@ def extract_table_rows(
     stripping of machine suffixes (e.g. "(Cobas C502)") before alias matching.
     """
     rows: list[OcrTableRow] = []
-    for table in (analyze_result.get("tables") or []):
+    for table in analyze_result.get("tables") or []:
         cells_raw = table.get("cells") or []
         if not cells_raw:
             continue
@@ -492,7 +612,8 @@ def extract_table_rows(
         max_row = max(ri for ri, _ in cell_map)
 
         header_row_indices: set[int] = {
-            cell.get("rowIndex", 0) for cell in cells_raw
+            cell.get("rowIndex", 0)
+            for cell in cells_raw
             if (cell.get("kind") or "").lower() == "columnheader"
         }
         if not header_row_indices:
@@ -539,12 +660,9 @@ def extract_table_rows(
                 )
                 # If the declared unit column's header looks like a reference column,
                 # the table has a different layout — unit is likely embedded in value.
-                _unit_col_ok = (
-                    not _unit_header
-                    or not any(
-                        kw in _unit_header or _unit_header in kw
-                        for kw in _COL_ROLE_KEYWORDS["reference"]
-                    )
+                _unit_col_ok = not _unit_header or not any(
+                    kw in _unit_header or _unit_header in kw
+                    for kw in _COL_ROLE_KEYWORDS["reference"]
                 )
                 if _test_name_ok and _value_not_name_col and _unit_col_ok:
                     _use_column_map = True
@@ -553,8 +671,13 @@ def extract_table_rows(
                         "table_extractor_column_map_incompatible hospital=%s "
                         "test_name_col=%d header=%r value_col=%d value_header=%r "
                         "unit_col=%s unit_header=%r — falling back to heuristics",
-                        profile.hospital_id, cm.test_name, _test_name_header,
-                        cm.value, _value_header, cm.unit, _unit_header,
+                        profile.hospital_id,
+                        cm.test_name,
+                        _test_name_header,
+                        cm.value,
+                        _value_header,
+                        cm.unit,
+                        _unit_header,
                     )
 
         if _use_column_map and profile is not None and profile.column_map is not None:
@@ -579,7 +702,8 @@ def extract_table_rows(
                 # If more than one skip col, they'll be handled by non_value_cols check below
             _logger.debug(
                 "table_extractor_profile_column_map hospital=%s roles=%s",
-                profile.hospital_id, roles,
+                profile.hospital_id,
+                roles,
             )
         else:
             roles = _detect_column_roles(cells_raw, header_row_indices, max_col)
@@ -591,7 +715,8 @@ def extract_table_rows(
                 _logger.error(
                     "table_extractor_profile_column_map value_col=%d is in skip_cols=%s "
                     "— profile misconfigured",
-                    roles["value"], profile.column_map.skip_cols,
+                    roles["value"],
+                    profile.column_map.skip_cols,
                 )
                 # Fall back to heuristic detection
                 roles = _detect_column_roles(cells_raw, header_row_indices, max_col)
@@ -611,9 +736,7 @@ def extract_table_rows(
             for ri_check in range(max_row + 1):
                 if ri_check in header_row_indices:
                     continue
-                row_text = " ".join(
-                    cell_map.get((ri_check, ci), "") for ci in range(max_col + 1)
-                )
+                row_text = " ".join(cell_map.get((ri_check, ci), "") for ci in range(max_col + 1))
                 row_norm = _strip_accents_lower(row_text)
                 if any(fp in row_norm for fp in profile.footer_patterns):
                     footer_rows.add(ri_check)
@@ -678,7 +801,9 @@ def extract_table_rows(
                                 _logger.warning(
                                     "table_extractor_suspect_machine_id "
                                     "row=%d value=%s matched model suffix in cell %r",
-                                    ri, value_str, cell_text,
+                                    ri,
+                                    value_str,
+                                    cell_text,
                                 )
                                 break
             except (ValueError, OverflowError):
@@ -690,7 +815,8 @@ def extract_table_rows(
                 suspect_machine_id = True
                 _logger.warning(
                     "table_extractor_instrument_in_value_cell row=%d cell=%r",
-                    ri, value_raw,
+                    ri,
+                    value_raw,
                 )
 
             row_confidence = 0.0 if suspect_machine_id else 0.95
@@ -712,17 +838,19 @@ def extract_table_rows(
                 suspect_machine_id,
             )
 
-            rows.append(OcrTableRow(
-                original_test_name=test_name,
-                display_test_name=test_name_clean,
-                original_value_str=value_str,
-                original_unit=unit_str,
-                original_reference_range=ref_str,
-                raw_cells=raw_cells,
-                row_confidence=row_confidence,
-                source="azure_table",
-                suspect_machine_id=suspect_machine_id,
-            ))
+            rows.append(
+                OcrTableRow(
+                    original_test_name=test_name,
+                    display_test_name=test_name_clean,
+                    original_value_str=value_str,
+                    original_unit=unit_str,
+                    original_reference_range=ref_str,
+                    raw_cells=raw_cells,
+                    row_confidence=row_confidence,
+                    source="azure_table",
+                    suspect_machine_id=suspect_machine_id,
+                )
+            )
 
     return rows
 
@@ -770,7 +898,8 @@ def _match_test_name(name_noacc_lc: str) -> tuple[BiomarkerSpec, int] | None:
 
     for alias, spec in _ALIAS_INDEX.items():
         a = "".join(
-            c for c in unicodedata.normalize("NFD", alias.lower())
+            c
+            for c in unicodedata.normalize("NFD", alias.lower())
             if unicodedata.category(c) != "Mn"
         )
         if not a:
@@ -836,7 +965,8 @@ def map_table_rows_to_raw_values(
             _logger.warning(
                 "table_extractor_blocked_suspect_machine_id "
                 "test=%r value=%r — row excluded from clean output",
-                row.original_test_name, row.original_value_str,
+                row.original_test_name,
+                row.original_value_str,
             )
             continue
 
@@ -912,13 +1042,17 @@ def map_table_rows_to_raw_values(
         )
         reasons: list[str] = [
             engine_note,
-            "✓ OCR: trích xuất từ ô bảng (table-first)" if orig_unit
+            "✓ OCR: trích xuất từ ô bảng (table-first)"
+            if orig_unit
             else "⚠ OCR: ô đơn vị trống trong bảng",
             "✓ Ánh xạ: chỉ số được nhận diện chính xác",
-            "⚠ Chuyển đổi: đơn vị không phù hợp lâm sàng" if conv_conf == 0.0
-            else "⚠ Chuyển đổi: đơn vị cần xác nhận" if conv_conf < 1.0
+            "⚠ Chuyển đổi: đơn vị không phù hợp lâm sàng"
+            if conv_conf == 0.0
+            else "⚠ Chuyển đổi: đơn vị cần xác nhận"
+            if conv_conf < 1.0
             else "✓ Chuyển đổi: đơn vị khớp hoặc đã quy đổi thành công",
-            "⚠ Lâm sàng: giá trị ngoài khoảng sinh lý" if clin_conf == 0.0
+            "⚠ Lâm sàng: giá trị ngoài khoảng sinh lý"
+            if clin_conf == 0.0
             else "✓ Lâm sàng: giá trị trong khoảng sinh lý",
         ]
 
@@ -1024,7 +1158,8 @@ def extract_and_map(
     if hospital_id:
         _logger.info(
             "table_extractor_hospital_detected hospital_id=%s confidence=%.2f",
-            hospital_id, detection.confidence,
+            hospital_id,
+            detection.confidence,
         )
     else:
         _logger.info(
@@ -1036,11 +1171,16 @@ def extract_and_map(
     if not table_rows:
         return []
     raw_values = map_table_rows_to_raw_values(
-        table_rows, ocr_conf=ocr_conf, hospital_id=hospital_id,
+        table_rows,
+        ocr_conf=ocr_conf,
+        hospital_id=hospital_id,
         detection_confidence=detection.confidence,
     )
     _logger.info(
         "table_extractor rows_extracted=%d rows_mapped=%d conf=%.2f hospital=%s",
-        len(table_rows), len(raw_values), ocr_conf, hospital_id or "unknown",
+        len(table_rows),
+        len(raw_values),
+        ocr_conf,
+        hospital_id or "unknown",
     )
     return raw_values

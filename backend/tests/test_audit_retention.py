@@ -32,10 +32,10 @@ def test_purge_expired_by_category(db):
             )
         )
 
-    add("read", 800)    # data_access, TTL 730 -> purge
-    add("read", 10)     # data_access, recent -> keep
-    add("login", 400)   # auth, TTL 365 -> purge
-    add("login", 30)    # auth, recent -> keep
+    add("read", 800)  # data_access, TTL 730 -> purge
+    add("read", 10)  # data_access, recent -> keep
+    add("login", 400)  # auth, TTL 365 -> purge
+    add("login", 30)  # auth, recent -> keep
     add("admin_read", 2000)  # admin, TTL 1095 -> purge
     db.commit()
 

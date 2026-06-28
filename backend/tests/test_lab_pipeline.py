@@ -37,6 +37,7 @@ def _make_doc(db, patient, storage_key="mock://lab/doc-ok.pdf"):
 # State machine
 # --------------------------------------------------------------------------- #
 
+
 def test_transition_valid_and_invalid():
     doc = LabDocument(patient_id="p", storage_key="k", status="uploaded")
     _transition(doc, LabDocStatus.OCR_PENDING)
@@ -57,6 +58,7 @@ def test_register_document_starts_uploaded(db, patient):
 # Idempotent enqueue
 # --------------------------------------------------------------------------- #
 
+
 def test_enqueue_is_idempotent(db, patient):
     doc = _make_doc(db, patient)
     worker = get_worker()
@@ -76,6 +78,7 @@ def test_enqueue_missing_document(db, patient):
 # --------------------------------------------------------------------------- #
 # Happy path E2E
 # --------------------------------------------------------------------------- #
+
 
 def test_pipeline_happy_path(db, patient):
     doc = _make_doc(db, patient, storage_key="mock://lab/doc-ok.pdf")
@@ -111,6 +114,7 @@ def test_pipeline_reenqueue_after_done_is_noop(db, patient):
 # Failure path
 # --------------------------------------------------------------------------- #
 
+
 def test_pipeline_ocr_failure(db, patient):
     doc = _make_doc(db, patient, storage_key="mock://lab/doc-FAIL.pdf")
     worker = get_worker()
@@ -123,9 +127,7 @@ def test_pipeline_ocr_failure(db, patient):
     assert doc.ocr_status == "failed"
 
     audits = db.scalars(
-        select(AuditLog).where(
-            AuditLog.resource_id == doc.id, AuditLog.action == "ocr_extract"
-        )
+        select(AuditLog).where(AuditLog.resource_id == doc.id, AuditLog.action == "ocr_extract")
     ).all()
     assert audits and audits[0].outcome == "failure"
     assert audits[0].severity == "warning"
@@ -138,6 +140,7 @@ def test_pipeline_ocr_failure(db, patient):
 # Process is a no-op when not pending
 # --------------------------------------------------------------------------- #
 
+
 def test_process_document_noop_when_not_pending(db, patient):
     doc = _make_doc(db, patient)  # status uploaded, never enqueued
     result = process_document(db, document_id=doc.id)
@@ -147,6 +150,7 @@ def test_process_document_noop_when_not_pending(db, patient):
 # --------------------------------------------------------------------------- #
 # Async worker drains the queue
 # --------------------------------------------------------------------------- #
+
 
 def test_async_worker_drains_queue(db, patient):
     doc = _make_doc(db, patient)
@@ -172,6 +176,7 @@ def test_async_worker_drains_queue(db, patient):
 # --------------------------------------------------------------------------- #
 # HTTP endpoints
 # --------------------------------------------------------------------------- #
+
 
 def test_process_endpoint_enqueues(client, patient):
     headers = {"Authorization": f"Bearer {patient['token']}"}

@@ -53,7 +53,19 @@ def test_access_log_is_json_with_no_phi(client):
     assert "request_id" in rec
     # Only safe metadata fields are present.
     assert set(rec).issubset(
-        {"ts", "level", "logger", "message", "request_id", "user_id",
-         "method", "path", "status_code", "duration_ms", "action",
-         "resource_type", "event"}
+        {
+            "ts",
+            "level",
+            "logger",
+            "message",
+            "request_id",
+            "user_id",
+            "method",
+            "path",
+            "status_code",
+            "duration_ms",
+            "action",
+            "resource_type",
+            "event",
+        }
     )

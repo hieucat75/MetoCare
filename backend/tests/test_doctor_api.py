@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 # Token helpers
 # ---------------------------------------------------------------------------
 
+
 def _doctor_token(user_id: str, *, mfa: bool = True) -> dict:
     token = create_access_token(subject=user_id, role="doctor", mfa=mfa)
     return {"Authorization": f"Bearer {token}"}
@@ -49,10 +50,12 @@ def _internal_admin_token(user_id: str) -> dict:
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def doctor_user(db: Session):
     """Active Doctor User + Doctor row."""
     import os
+
     uid = os.urandom(4).hex()
     user = User(
         email=f"dr-{uid}@clinic.vn",
@@ -80,6 +83,7 @@ def doctor_user(db: Session):
 def doctor_user2(db: Session):
     """Second doctor for cross-access isolation tests."""
     import os
+
     uid = os.urandom(4).hex()
     user = User(
         email=f"dr2-{uid}@clinic.vn",
@@ -101,6 +105,7 @@ def doctor_user2(db: Session):
 def patient_user(db: Session):
     """Patient with PatientProfile (risk_segment=high)."""
     import os
+
     uid = os.urandom(4).hex()
     user = User(
         email=f"pt-{uid}@example.vn",
@@ -133,35 +138,54 @@ def _grant_consent(db: Session, patient_id: str, doctor_user_id: str) -> Consent
 # GET /doctors/me
 # ---------------------------------------------------------------------------
 
+
 class TestGetMyProfile:
     def test_no_token_returns_401(self, client):
         assert client.get("/api/v1/doctors/me").status_code == 401
 
     def test_patient_token_returns_403(self, client, patient_user):
-        assert client.get(
-            "/api/v1/doctors/me", headers=_patient_token(patient_user["user"].id)
-        ).status_code == 403
+        assert (
+            client.get(
+                "/api/v1/doctors/me", headers=_patient_token(patient_user["user"].id)
+            ).status_code
+            == 403
+        )
 
     def test_internal_admin_returns_403(self, client):
-        assert client.get(
-            "/api/v1/doctors/me", headers=_internal_admin_token("ia-id")
-        ).status_code == 403
+        assert (
+            client.get("/api/v1/doctors/me", headers=_internal_admin_token("ia-id")).status_code
+            == 403
+        )
 
     def test_doctor_without_mfa_returns_403(self, client, doctor_user):
-        r = client.get("/api/v1/doctors/me", headers=_doctor_token(doctor_user["user"].id, mfa=False))  # noqa: E501
+        r = client.get(
+            "/api/v1/doctors/me", headers=_doctor_token(doctor_user["user"].id, mfa=False)
+        )  # noqa: E501
         assert r.status_code == 403
         assert "MFA" in r.json()["detail"]
 
     def test_doctor_with_no_doctor_row_returns_404(self, client, db):
         import os
-        orphan = User(email=f"orphan-{os.urandom(3).hex()}@x.com", password_hash="x", role=UserRole.DOCTOR, is_active=True)  # noqa: E501
+
+        orphan = User(
+            email=f"orphan-{os.urandom(3).hex()}@x.com",
+            password_hash="x",
+            role=UserRole.DOCTOR,
+            is_active=True,
+        )  # noqa: E501
         db.add(orphan)
         db.commit()
         assert client.get("/api/v1/doctors/me", headers=_doctor_token(orphan.id)).status_code == 404
 
     def test_inactive_doctor_returns_403(self, client, db):
         import os
-        user = User(email=f"inact-{os.urandom(3).hex()}@x.com", password_hash="x", role=UserRole.DOCTOR, is_active=True)  # noqa: E501
+
+        user = User(
+            email=f"inact-{os.urandom(3).hex()}@x.com",
+            password_hash="x",
+            role=UserRole.DOCTOR,
+            is_active=True,
+        )  # noqa: E501
         db.add(user)
         db.flush()
         db.add(Doctor(user_id=user.id, full_name="Inactive Dr", is_active=False))
@@ -181,6 +205,7 @@ class TestGetMyProfile:
 # ---------------------------------------------------------------------------
 # PATCH /doctors/me
 # ---------------------------------------------------------------------------
+
 
 class TestPatchMyProfile:
     def test_update_bio_and_specialty(self, client, doctor_user):
@@ -234,6 +259,7 @@ class TestPatchMyProfile:
 # GET /doctors/me/patients
 # ---------------------------------------------------------------------------
 
+
 class TestListMyPatients:
     def test_empty_for_new_doctor(self, client, doctor_user):
         r = client.get("/api/v1/doctors/me/patients", headers=_doctor_token(doctor_user["user"].id))
@@ -248,6 +274,7 @@ class TestListMyPatients:
 
     def test_revoked_consent_excluded(self, client, db, doctor_user, patient_user):
         from app.core.clock import utcnow
+
         c = _grant_consent(db, patient_user["profile"].id, doctor_user["user"].id)
         c.revoked_at = utcnow()
         db.commit()
@@ -266,7 +293,9 @@ class TestListMyPatients:
         r = client.get("/api/v1/doctors/me/patients", headers=_doctor_token(doctor_user["user"].id))
         assert any(p["patient_id"] == patient_user["profile"].id for p in r.json())
 
-    def test_no_cross_access_between_doctors(self, client, db, doctor_user, doctor_user2, patient_user):  # noqa: E501
+    def test_no_cross_access_between_doctors(
+        self, client, db, doctor_user, doctor_user2, patient_user
+    ):  # noqa: E501
         """Patient consented to doctor2 must NOT appear in doctor1's list."""
         _grant_consent(db, patient_user["profile"].id, doctor_user2["user"].id)
         r = client.get("/api/v1/doctors/me/patients", headers=_doctor_token(doctor_user["user"].id))
@@ -274,18 +303,27 @@ class TestListMyPatients:
 
     def test_risk_filter_high(self, client, db, doctor_user, patient_user):
         _grant_consent(db, patient_user["profile"].id, doctor_user["user"].id)
-        r = client.get("/api/v1/doctors/me/patients?risk=high", headers=_doctor_token(doctor_user["user"].id))  # noqa: E501
+        r = client.get(
+            "/api/v1/doctors/me/patients?risk=high", headers=_doctor_token(doctor_user["user"].id)
+        )  # noqa: E501
         assert any(p["patient_id"] == patient_user["profile"].id for p in r.json())
 
     def test_risk_filter_low_excludes_high_patient(self, client, db, doctor_user, patient_user):
         _grant_consent(db, patient_user["profile"].id, doctor_user["user"].id)
-        r = client.get("/api/v1/doctors/me/patients?risk=low", headers=_doctor_token(doctor_user["user"].id))  # noqa: E501
+        r = client.get(
+            "/api/v1/doctors/me/patients?risk=low", headers=_doctor_token(doctor_user["user"].id)
+        )  # noqa: E501
         assert not any(p["patient_id"] == patient_user["profile"].id for p in r.json())
 
     def test_inactive_patient_excluded(self, client, db, doctor_user):
         import os
-        inact_user = User(email=f"inact-pt-{os.urandom(3).hex()}@x.com", password_hash="x",
-                          role=UserRole.PATIENT, is_active=False)
+
+        inact_user = User(
+            email=f"inact-pt-{os.urandom(3).hex()}@x.com",
+            password_hash="x",
+            role=UserRole.PATIENT,
+            is_active=False,
+        )
         db.add(inact_user)
         db.flush()
         inact_profile = PatientProfile(user_id=inact_user.id, full_name="Gone")
@@ -296,24 +334,33 @@ class TestListMyPatients:
         assert not any(p["patient_id"] == inact_profile.id for p in r.json())
 
     def test_patient_token_returns_403(self, client, patient_user):
-        assert client.get(
-            "/api/v1/doctors/me/patients", headers=_patient_token(patient_user["user"].id)
-        ).status_code == 403
+        assert (
+            client.get(
+                "/api/v1/doctors/me/patients", headers=_patient_token(patient_user["user"].id)
+            ).status_code
+            == 403
+        )
 
     def test_no_mfa_returns_403(self, client, doctor_user):
-        assert client.get(
-            "/api/v1/doctors/me/patients",
-            headers=_doctor_token(doctor_user["user"].id, mfa=False),
-        ).status_code == 403
+        assert (
+            client.get(
+                "/api/v1/doctors/me/patients",
+                headers=_doctor_token(doctor_user["user"].id, mfa=False),
+            ).status_code
+            == 403
+        )
 
 
 # ---------------------------------------------------------------------------
 # GET /doctors/me/dashboard
 # ---------------------------------------------------------------------------
 
+
 class TestGetMyDashboard:
     def test_zero_baseline_for_new_doctor(self, client, doctor_user):
-        r = client.get("/api/v1/doctors/me/dashboard", headers=_doctor_token(doctor_user["user"].id))  # noqa: E501
+        r = client.get(
+            "/api/v1/doctors/me/dashboard", headers=_doctor_token(doctor_user["user"].id)
+        )  # noqa: E501
         assert r.status_code == 200
         body = r.json()
         assert body["appointments_today"] == 0
@@ -324,31 +371,42 @@ class TestGetMyDashboard:
 
     def test_total_patients_counts_consented(self, client, db, doctor_user, patient_user):
         _grant_consent(db, patient_user["profile"].id, doctor_user["user"].id)
-        r = client.get("/api/v1/doctors/me/dashboard", headers=_doctor_token(doctor_user["user"].id))  # noqa: E501
+        r = client.get(
+            "/api/v1/doctors/me/dashboard", headers=_doctor_token(doctor_user["user"].id)
+        )  # noqa: E501
         assert r.json()["total_patients"] == 1
 
     def test_high_risk_patient_in_alerts(self, client, db, doctor_user, patient_user):
         _grant_consent(db, patient_user["profile"].id, doctor_user["user"].id)
-        r = client.get("/api/v1/doctors/me/dashboard", headers=_doctor_token(doctor_user["user"].id))  # noqa: E501
+        r = client.get(
+            "/api/v1/doctors/me/dashboard", headers=_doctor_token(doctor_user["user"].id)
+        )  # noqa: E501
         alerts = r.json()["recent_alerts"]
         assert any(a["patient_id"] == patient_user["profile"].id for a in alerts)
 
     def test_no_mfa_returns_403(self, client, doctor_user):
-        assert client.get(
-            "/api/v1/doctors/me/dashboard",
-            headers=_doctor_token(doctor_user["user"].id, mfa=False),
-        ).status_code == 403
+        assert (
+            client.get(
+                "/api/v1/doctors/me/dashboard",
+                headers=_doctor_token(doctor_user["user"].id, mfa=False),
+            ).status_code
+            == 403
+        )
 
     def test_patient_token_returns_403(self, client, patient_user):
-        assert client.get(
-            "/api/v1/doctors/me/dashboard",
-            headers=_patient_token(patient_user["user"].id),
-        ).status_code == 403
+        assert (
+            client.get(
+                "/api/v1/doctors/me/dashboard",
+                headers=_patient_token(patient_user["user"].id),
+            ).status_code
+            == 403
+        )
 
 
 # ---------------------------------------------------------------------------
 # POST /admin/doctors
 # ---------------------------------------------------------------------------
+
 
 class TestAdminCreateDoctor:
     def _payload(self, suffix: str) -> dict:
@@ -418,7 +476,9 @@ class TestAdminCreateDoctor:
     def test_duplicate_email_returns_409(self, client):
         payload = self._payload("dup")
         client.post("/api/v1/admin/doctors", json=payload, headers=_super_admin_token("sa-dup"))
-        r2 = client.post("/api/v1/admin/doctors", json=payload, headers=_super_admin_token("sa-dup"))  # noqa: E501
+        r2 = client.post(
+            "/api/v1/admin/doctors", json=payload, headers=_super_admin_token("sa-dup")
+        )  # noqa: E501
         assert r2.status_code == 409
 
     def test_missing_required_fields_returns_422(self, client):
@@ -445,6 +505,7 @@ class TestAdminCreateDoctor:
 # ---------------------------------------------------------------------------
 # POST /patients/{pid}/consents — FK validation (AC-11)
 # ---------------------------------------------------------------------------
+
 
 class TestConsentFKValidation:
     def test_nonexistent_doctor_id_returns_400(self, client, patient_user):

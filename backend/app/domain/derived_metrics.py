@@ -25,20 +25,20 @@ from dataclasses import dataclass
 @dataclass
 class DerivedMetricInput:
     canonical: str
-    value: float   # in SI/canonical unit as stored in LabResult
+    value: float  # in SI/canonical unit as stored in LabResult
 
 
 @dataclass
 class DerivedMetricResult:
     canonical: str
     display_name_vi: str
-    value: float | None          # None when insufficient data
+    value: float | None  # None when insufficient data
     unit: str
-    status: str                  # normal / borderline / abnormal / insufficient_data
-    formula: str                 # human-readable formula
-    inputs_used: list[str]       # canonical names that were used
-    missing_inputs: list[str]    # canonical names that were absent or invalid
-    note_vi: str | None = None   # brief Vietnamese note
+    status: str  # normal / borderline / abnormal / insufficient_data
+    formula: str  # human-readable formula
+    inputs_used: list[str]  # canonical names that were used
+    missing_inputs: list[str]  # canonical names that were absent or invalid
+    note_vi: str | None = None  # brief Vietnamese note
 
 
 def _lookup(inputs: dict[str, float], *keys: str) -> tuple[float | None, list[str]]:
@@ -64,6 +64,7 @@ def _lookup_multi(
 # ---------------------------------------------------------------------------
 # eGFR — CKD-EPI 2021 Race-free equation
 # ---------------------------------------------------------------------------
+
 
 def compute_egfr(
     creatinine_umol_l: float,
@@ -93,7 +94,7 @@ def compute_egfr(
         142.0
         * (min(ratio, 1.0) ** alpha)
         * (max(ratio, 1.0) ** -1.200)
-        * (0.9938 ** age_years)
+        * (0.9938**age_years)
         * sex_factor
     )
     egfr = round(egfr, 1)
@@ -101,13 +102,13 @@ def compute_egfr(
     if egfr >= 90:
         status = "normal"
     elif egfr >= 60:
-        status = "borderline"   # mildly reduced
+        status = "borderline"  # mildly reduced
     elif egfr >= 30:
-        status = "abnormal"     # moderately reduced
+        status = "abnormal"  # moderately reduced
     elif egfr >= 15:
-        status = "abnormal"     # severely reduced
+        status = "abnormal"  # severely reduced
     else:
-        status = "abnormal"     # kidney failure
+        status = "abnormal"  # kidney failure
 
     note = (
         "eGFR <60 mL/min/1.73m² kéo dài ≥3 tháng là tiêu chí CKD. "
@@ -164,6 +165,7 @@ def compute_egfr_from_inputs(
 # ---------------------------------------------------------------------------
 # Non-HDL Cholesterol
 # ---------------------------------------------------------------------------
+
 
 def compute_non_hdl(
     total_cholesterol_mmol_l: float,
@@ -224,6 +226,7 @@ def compute_non_hdl_from_inputs(inputs: dict[str, float]) -> DerivedMetricResult
 # ---------------------------------------------------------------------------
 # LDL (Friedewald)
 # ---------------------------------------------------------------------------
+
 
 def compute_ldl_friedewald(
     total_cholesterol_mmol_l: float,
@@ -301,6 +304,7 @@ def compute_ldl_friedewald_from_inputs(inputs: dict[str, float]) -> DerivedMetri
 # TyG Index (Triglyceride-Glucose Index)
 # ---------------------------------------------------------------------------
 
+
 def compute_tyg(
     fasting_glucose_mg_dl: float,
     triglyceride_mg_dl: float,
@@ -322,11 +326,11 @@ def compute_tyg(
     tyg = round(math.log(product), 4)
 
     if tyg < 8.5:
-        status = "normal"           # low_risk
+        status = "normal"  # low_risk
     elif tyg <= 9.0:
-        status = "borderline"       # intermediate
+        status = "borderline"  # intermediate
     else:
-        status = "abnormal"         # high_insulin_resistance
+        status = "abnormal"  # high_insulin_resistance
 
     return DerivedMetricResult(
         canonical="tyg_index",
@@ -370,6 +374,7 @@ def compute_tyg_from_inputs(inputs: dict[str, float]) -> DerivedMetricResult:
 # FIB-4 Score (Liver fibrosis)
 # ---------------------------------------------------------------------------
 
+
 def compute_fib4(
     age_years: int,
     ast_u_l: float,
@@ -392,11 +397,11 @@ def compute_fib4(
     fib4 = round((age_years * ast_u_l) / (platelet_10_9_l * math.sqrt(alt_u_l)), 4)
 
     if fib4 < 1.3:
-        status = "normal"           # low_risk
+        status = "normal"  # low_risk
     elif fib4 <= 2.67:
-        status = "borderline"       # indeterminate
+        status = "borderline"  # indeterminate
     else:
-        status = "abnormal"         # high_risk
+        status = "abnormal"  # high_risk
 
     return DerivedMetricResult(
         canonical="fib4_score",
@@ -445,6 +450,7 @@ def compute_fib4_from_inputs(
 # Metabolic Syndrome (IDF/AHA 2009 harmonized criteria)
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class MetabolicSyndromeResult:
     canonical: str
@@ -452,7 +458,7 @@ class MetabolicSyndromeResult:
     met_criteria: list[str]
     unmet_criteria: list[str]
     criteria_count: int
-    status: str   # "meets_criteria" | "does_not_meet" | "insufficient_data"
+    status: str  # "meets_criteria" | "does_not_meet" | "insufficient_data"
     formula: str
     inputs_used: list[str]
     missing_inputs: list[str]
@@ -573,6 +579,7 @@ def compute_metabolic_syndrome(
 # ---------------------------------------------------------------------------
 # Registry — compute all applicable derived metrics from a flat inputs dict
 # ---------------------------------------------------------------------------
+
 
 def compute_all_derived(
     inputs: dict[str, float],

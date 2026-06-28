@@ -145,9 +145,7 @@ def test_patient_logs_nutrition(client: TestClient, patient_a):
 
 
 # 2
-def test_patient_cannot_log_for_another_patient(
-    client: TestClient, patient_a, patient_b
-):
+def test_patient_cannot_log_for_another_patient(client: TestClient, patient_a, patient_b):
     """PATIENT cannot log nutrition on another patient's record — 403."""
     r = client.post(
         _nutrition_url(patient_b["patient_id"]),
@@ -174,9 +172,7 @@ def test_doctor_logs_with_consent(
 # 4
 def test_ai_service_cannot_log_nutrition(client: TestClient, patient_a):
     """AI_SERVICE role must be blocked (403) — safety check."""
-    ai_token = create_access_token(
-        subject=f"ai-{os.urandom(4).hex()}", role="ai_service"
-    )
+    ai_token = create_access_token(subject=f"ai-{os.urandom(4).hex()}", role="ai_service")
     r = client.post(
         _nutrition_url(patient_a["patient_id"]),
         headers={"Authorization": f"Bearer {ai_token}"},
@@ -300,12 +296,11 @@ def test_pagination_limit(client: TestClient, patient_a):
     assert len(body["items"]) == 3
     assert body["total"] >= 5
 
+
 # 11
 def test_ai_service_cannot_list_nutrition(client: TestClient, patient_a):
     """AI_SERVICE must be blocked from GET /nutrition — 403 (P2 coverage fix)."""
-    ai_token = create_access_token(
-        subject=f"ai-{os.urandom(4).hex()}", role="ai_service"
-    )
+    ai_token = create_access_token(subject=f"ai-{os.urandom(4).hex()}", role="ai_service")
     r = client.get(
         _nutrition_url(patient_a["patient_id"]),
         headers={"Authorization": f"Bearer {ai_token}"},

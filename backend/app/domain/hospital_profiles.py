@@ -9,6 +9,7 @@ to tuples of extra accent-stripped lowercase alias strings that are specific to
 that hospital's report format.  Hospital name / header OCR variants belong in
 ``hospital_name_variants`` instead.
 """
+
 from __future__ import annotations
 
 import unicodedata
@@ -113,11 +114,7 @@ class HospitalDetector:
                 for line_idx, line_norm in enumerate(stripped_lines):
                     if pattern in line_norm:
                         line_num = line_idx + 1
-                        confidence = (
-                            0.9 if line_num <= 10
-                            else 0.7 if line_num <= 30
-                            else 0.5
-                        )
+                        confidence = 0.9 if line_num <= 10 else 0.7 if line_num <= 30 else 0.5
                         is_better = (
                             confidence > best_confidence
                             or (confidence == best_confidence and line_idx < best_line_idx)
@@ -140,10 +137,7 @@ class HospitalDetector:
 
 
 def _strip_accents(s: str) -> str:
-    return "".join(
-        c for c in unicodedata.normalize("NFD", s)
-        if unicodedata.category(c) != "Mn"
-    )
+    return "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn")
 
 
 HOSPITAL_PROFILES: tuple[HospitalProfile, ...] = (

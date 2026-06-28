@@ -25,8 +25,13 @@ def test_create_and_list_metric(client, patient):
     r = client.post(
         f"/api/v1/patients/{patient['patient_id']}/metrics",
         headers=_auth(patient),
-        json={"metric_type": "fasting_glucose", "value": 95, "unit": "mg/dL",
-              "normal_range_min": 70, "normal_range_max": 99},
+        json={
+            "metric_type": "fasting_glucose",
+            "value": 95,
+            "unit": "mg/dL",
+            "normal_range_min": 70,
+            "normal_range_max": 99,
+        },
     )
     assert r.status_code == 201, r.text
     assert r.json()["status"] == "normal"
@@ -142,8 +147,10 @@ def test_consent_grant_and_revoke_via_api(client, patient, token_for, db):
     # granted_to must be a real active Doctor user (AC-11).
     from app.models.care import Doctor
     from app.models.user import User, UserRole
-    dr_user = User(email="consent-test-dr@clinic.vn", password_hash="x",
-                   role=UserRole.DOCTOR, is_active=True)
+
+    dr_user = User(
+        email="consent-test-dr@clinic.vn", password_hash="x", role=UserRole.DOCTOR, is_active=True
+    )
     db.add(dr_user)
     db.flush()
     db.add(Doctor(user_id=dr_user.id, full_name="Dr Consent Test", is_active=True))

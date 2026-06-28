@@ -65,6 +65,7 @@ def _enforce_patient_ownership(
 # Routes
 # ---------------------------------------------------------------------------
 
+
 @router.post("", response_model=MetricOut, status_code=201)
 def create_metric(
     patient_id: str,

@@ -9,9 +9,7 @@ from app.models.governance import AuditLog
 
 def _register(client):
     email = f"reuse-{os.urandom(4).hex()}@example.com"
-    r = client.post(
-        "/api/v1/auth/register", json={"email": email, "password": "password123"}
-    )
+    r = client.post("/api/v1/auth/register", json={"email": email, "password": "password123"})
     assert r.status_code == 201
     return r.json()
 

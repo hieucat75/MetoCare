@@ -21,17 +21,21 @@ from app.models.care import Doctor, DoctorClinic
 from app.models.user import UserRole
 
 # Roles that may bypass scope checks for read access
-_ADMIN_ROLES = frozenset({
-    UserRole.INTERNAL_ADMIN,
-    UserRole.SUPER_ADMIN,
-    UserRole.MEDICAL_REVIEWER,
-})
+_ADMIN_ROLES = frozenset(
+    {
+        UserRole.INTERNAL_ADMIN,
+        UserRole.SUPER_ADMIN,
+        UserRole.MEDICAL_REVIEWER,
+    }
+)
 
 # Roles that may bypass scope checks for both read and write
-_WRITE_ADMIN_ROLES = frozenset({
-    UserRole.INTERNAL_ADMIN,
-    UserRole.SUPER_ADMIN,
-})
+_WRITE_ADMIN_ROLES = frozenset(
+    {
+        UserRole.INTERNAL_ADMIN,
+        UserRole.SUPER_ADMIN,
+    }
+)
 
 
 def _is_admin(role: str) -> bool:

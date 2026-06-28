@@ -103,15 +103,11 @@ def doctor_setup(db):
     db.add(d_user)
     db.flush()
 
-    doctor = Doctor(
-        user_id=d_user.id, clinic_id=clinic.id, full_name="Dr. Health", is_active=True
-    )
+    doctor = Doctor(user_id=d_user.id, clinic_id=clinic.id, full_name="Dr. Health", is_active=True)
     db.add(doctor)
     db.flush()
 
-    link = DoctorClinic(
-        doctor_id=doctor.id, clinic_id=clinic.id, is_primary=True, is_active=True
-    )
+    link = DoctorClinic(doctor_id=doctor.id, clinic_id=clinic.id, is_primary=True, is_active=True)
     db.add(link)
     db.commit()
 
