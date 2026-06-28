@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import datetime
 from dataclasses import dataclass, field
+from typing import Any
 
 from .clinical_patterns import PatternDetection
 from .clinical_rules import ClinicalFinding
@@ -124,6 +125,12 @@ class PatientInsightReport:
     patterns_v3: list = field(default_factory=list)          # list[ClinicalPattern]
     context_completeness: float = 0.0
     missing_context: list[str] = field(default_factory=list)
+
+    # v3 Phase 2A — preventive intelligence
+    preventive_risk_domains: list = field(default_factory=list)   # list[PreventiveRiskDomain]
+    next_best_action: Any | None = None                           # NextBestAction | None
+    secondary_actions: list = field(default_factory=list)         # list[NextBestAction]
+    recommendation_ranking_explanation_vi: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -672,9 +679,15 @@ def generate_patient_insight(
     priorities: list = []
     context_completeness: float = 0.0
     missing_context_list: list[str] = []
+    _risk_domains: list = []
+    _next_best_action: Any = None
+    _secondary_actions: list = []
+    _ranking_explanation: str = ""
 
     if ctx is not None:
         from .clinical_patterns_v3 import detect_patterns_v3
+        from .next_best_action import NextBestActionEngine
+        from .preventive_risk import PreventiveRiskEngine
         from .priority_engine import PriorityEngine
 
         findings_dict = {  # noqa: E501
@@ -691,6 +704,15 @@ def generate_patient_insight(
         priorities = PriorityEngine().rank(insights, patterns_v3, urgent_alerts, ctx)
         context_completeness = ctx.context_completeness
         missing_context_list = ctx.missing_context
+
+        # Phase 2A: E14 + E15
+        _risk_domains = PreventiveRiskEngine().assess(findings_dict, derived_dict, ctx)
+        nba_result = NextBestActionEngine().generate(
+            findings_dict, derived_dict, ctx, _risk_domains, urgent_alerts
+        )
+        _next_best_action = nba_result.primary
+        _secondary_actions = nba_result.secondary
+        _ranking_explanation = nba_result.ranking_explanation_vi
 
     return PatientInsightReport(
         patient_id=patient_id,
@@ -709,4 +731,8 @@ def generate_patient_insight(
         patterns_v3=patterns_v3,
         context_completeness=context_completeness,
         missing_context=missing_context_list,
+        preventive_risk_domains=_risk_domains,
+        next_best_action=_next_best_action,
+        secondary_actions=_secondary_actions,
+        recommendation_ranking_explanation_vi=_ranking_explanation,
     )
