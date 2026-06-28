@@ -1,0 +1,75 @@
+knowledge_id: alt_elevated
+knowledge_type: biomarker
+version: "1.0"
+language: vi
+status: internal_review
+last_reviewed: "2026-06-28"
+reviewer: "auto_generated_ckp_v1"
+medical_specialty: general
+evidence_level: moderate
+confidence: 0.82
+future_review_due: "2027-06-28"
+display_name_vi: "ALT (men gan) tăng"
+short_summary_vi: "ALT là enzyme đặc hiệu cho gan hơn AST — khi ALT tăng, nguồn gan được gợi ý nhiều; thường liên quan nhất đến gan nhiễm mỡ, đặc biệt khi kèm theo đề kháng insulin."
+tags:
+  - alt_elevated
+  - men_gan
+  - gan
+  - hepatology
+  - gan_nhiem_mo
+related_cards:
+  - ast_elevated
+  - insulin_resistance
+  - glucose_elevated
+  - triglyceride_elevated
+sections:
+  definition: >
+    ALT (Alanine Aminotransferase) là enzyme chủ yếu có trong tế bào gan (hepatocyte). Mức độ đặc hiệu cho gan của ALT cao hơn AST — khi ALT tăng, khả năng nguồn gốc từ gan lớn hơn nhiều so với AST đơn thuần. Khi tế bào gan bị tổn thương hay viêm, ALT thoát ra vào máu. ALT là một trong những marker nhạy nhất để phát hiện tổn thương tế bào gan.
+
+  normal_physiology: >
+    ALT tham gia vào quá trình chuyển hóa amino acid, đặc biệt chuyển đổi alanine thành pyruvate — bước quan trọng trong tổng hợp glucose (gluconeogenesis) tại gan. Trong điều kiện bình thường, lượng nhỏ ALT được giải phóng từ quá trình tế bào tự nhiên (turnover). Ngưỡng bình thường: thường 7-56 U/L (nam cao hơn nữ; tùy theo phòng xét nghiệm). Một số chuyên gia gần đây đề xuất ngưỡng "bình thường" nên thấp hơn để phát hiện sớm gan nhiễm mỡ.
+
+  causes_of_abnormality: >
+    Nguyên nhân phổ biến nhất ở người không uống rượu: gan nhiễm mỡ không do rượu (NAFLD — Non-Alcoholic Fatty Liver Disease), thường đi kèm với thừa cân, đề kháng insulin và hội chứng chuyển hóa. Các nguyên nhân khác: uống rượu, viêm gan virus (B, C), thuốc gây độc gan, viêm gan tự miễn, bệnh celiac, bệnh Wilson, ứ đọng sắt (hemochromatosis). ALT thường tăng nhiều hơn AST trong bệnh lý tế bào gan không liên quan rượu.
+
+  clinical_significance: >
+    ALT tăng dai dẳng (qua nhiều lần xét nghiệm) đáng được đánh giá nguyên nhân hơn là một lần tăng đơn lẻ. Khi ALT tăng cùng với các marker đề kháng insulin (triglyceride cao, HDL thấp, đường huyết tăng), gan nhiễm mỡ (NAFLD/NASH) là chẩn đoán cần nghĩ đến. Mức độ tăng ALT liên quan đến mức độ viêm gan — ALT rất cao (>10 lần giới hạn) gợi ý tổn thương cấp nặng. ALT bình thường không loại trừ xơ gan giai đoạn muộn.
+
+  limitations: >
+    ALT có thể dao động từ ngày sang ngày — một lần cao không kết luận được. ALT bình thường không đảm bảo gan hoàn toàn bình thường (xơ gan sớm có thể có ALT gần bình thường). Ngưỡng "bình thường" hiện tại có thể quá cao — nhiều người bị gan nhiễm mỡ có ALT chỉ nhẹ nhẹ trên giới hạn. Cần xem xét cùng siêu âm gan, GGT, và bối cảnh lâm sàng để đánh giá toàn diện.
+
+  related_biomarkers:
+    - ast
+    - ggt
+    - bilirubin
+    - albumin
+    - platelet
+
+  derived_indicators:
+    - "AST/ALT ratio"
+    - "FIB-4 index (đánh giá xơ hóa gan)"
+
+  patient_explanation: >
+    Nếu AST là "cảnh báo chung" cho nhiều tế bào, thì ALT là "cảnh báo chuyên dụng" cho gan. Khi ALT tăng, khả năng gan đang gửi tín hiệu rằng nó đang chịu áp lực. Nguyên nhân phổ biến nhất hiện nay ở người không uống rượu là mỡ tích tụ trong gan (gan nhiễm mỡ) — thường đi cùng với thừa cân và đường huyết không ổn định. Tin tốt: gan là cơ quan có khả năng tự phục hồi tốt nhất trong cơ thể khi nguyên nhân được giải quyết.
+
+  common_questions:
+    - "ALT tăng có nghĩa là gan tôi bị bệnh không?"
+    - "Gan nhiễm mỡ có thể chữa khỏi không?"
+    - "ALT và AST cái nào quan trọng hơn?"
+    - "Tôi có cần sinh thiết gan không?"
+    - "Thuốc bổ gan có giúp giảm ALT không?"
+
+  lifestyle_relevance: >
+    Giảm cân nếu thừa cân là cách hiệu quả nhất để giảm men gan do gan nhiễm mỡ — giảm 7-10% cân nặng có thể giảm đáng kể ALT. Giảm đường và carbohydrate tinh chế (đặc biệt fructose từ nước ngọt và đồ ngọt) vì fructose chuyển hóa trực tiếp tại gan. Bỏ rượu hoặc giảm tối thiểu. Vận động thể chất — cải thiện đề kháng insulin cũng giảm tải cho gan. Hạn chế thuốc không cần thiết (kể cả thực phẩm chức năng chưa được kiểm chứng).
+
+  doctor_discussion_topics:
+    - "ALT của tôi tăng có thể do gan nhiễm mỡ không?"
+    - "Tôi có cần siêu âm gan hoặc FibroScan không?"
+    - "FIB-4 index của tôi là bao nhiêu?"
+    - "Thuốc tôi đang dùng có thể ảnh hưởng đến ALT không?"
+
+  guideline_notes: >
+    Gan nhiễm mỡ không do rượu (NAFLD) hiện là nguyên nhân phổ biến nhất gây tăng men gan mạn tính toàn cầu. Không có thuốc điều trị đặc hiệu được phê duyệt — can thiệp lối sống (giảm cân, vận động, chế độ ăn) là trụ cột chính. Đánh giá xơ hóa gan (FIB-4, elastography) ngày càng quan trọng để phân tầng nguy cơ tiến triển thành xơ gan.
+
+  references:
+    - "Tóm tắt từ tài liệu y khoa chuẩn về men gan ALT, NAFLD và bệnh lý gan (nội dung tổng hợp, không trích dẫn nguyên văn hướng dẫn bản quyền)"

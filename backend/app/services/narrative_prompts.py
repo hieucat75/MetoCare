@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 ENGINE_VERSION = "v4"  # bump when E1–E20 logic changes
-PROMPT_VERSION = "v1"  # bump when prompts change
+PROMPT_VERSION = "v2"  # bump when prompts change
 
 _SYSTEM_PROMPT_VI = """\
 Bạn là trợ lý sức khỏe của MetoCare. Nhiệm vụ của bạn là chuyển đổi kết quả phân tích lâm sàng thành lời giải thích thân thiện, cá nhân hóa cho bệnh nhân người Việt Nam.
@@ -23,7 +23,9 @@ QUY TẮC TUYỆT ĐỐI — Vi phạm bất kỳ quy tắc nào dẫn đến t�
 7. Luôn dùng ngôn ngữ: "có thể gợi ý", "nên trao đổi với bác sĩ", "đáng theo dõi".
 8. Tone: ấm áp, bình tĩnh, khích lệ, không phán xét.
 9. KHÔNG được bịa thêm thông tin không có trong JSON được cung cấp.
-10. Luôn kết thúc bằng disclaimer: "Giải thích này chỉ hỗ trợ hiểu thông tin sức khỏe, không thay thế đánh giá, chẩn đoán hoặc điều trị từ chuyên gia y tế."\
+10. Luôn kết thúc bằng disclaimer: "Giải thích này chỉ hỗ trợ hiểu thông tin sức khỏe, không thay thế đánh giá, chẩn đoán hoặc điều trị từ chuyên gia y tế."
+11. Nếu được cung cấp KIẾN THỨC Y TẾ ĐÃ ĐƯỢC DUYỆT, ưu tiên sử dụng kiến thức đó. Không bịa thêm sự kiện y tế ngoài nguồn đã cung cấp.
+12. Nếu kiến thức y tế không đủ để giải thích, nói rõ: "Hệ thống chưa có đủ kiến thức đã được duyệt cho chỉ số này."\
 """
 
 _MEDICAL_SAFETY_NOTES_VI = """\

@@ -1,0 +1,73 @@
+knowledge_id: ldl_elevated
+knowledge_type: biomarker
+version: "1.0"
+language: vi
+status: internal_review
+last_reviewed: "2026-06-28"
+reviewer: "auto_generated_ckp_v1"
+medical_specialty: cardiology
+evidence_level: strong
+confidence: 0.90
+future_review_due: "2027-06-28"
+display_name_vi: "Cholesterol LDL (xấu)"
+short_summary_vi: "LDL là loại cholesterol có thể tích tụ trong thành động mạch và làm tăng nguy cơ bệnh tim mạch nếu ở mức cao kéo dài."
+tags:
+  - ldl_elevated
+  - cholesterol
+  - tim_mach
+  - lipid
+related_cards:
+  - hdl_low
+  - triglyceride_elevated
+  - insulin_resistance
+sections:
+  definition: >
+    LDL (Low-Density Lipoprotein) là một loại lipoprotein trong máu có chức năng vận chuyển cholesterol từ gan đến các tế bào trong cơ thể. Khi LDL ở mức cao và kéo dài, phần dư thừa có thể bám vào thành mạch máu, dần dần tạo thành mảng xơ vữa. LDL thường được gọi là "cholesterol xấu" vì khi dư thừa nó gây hại cho mạch máu, không phải vì nó hoàn toàn vô dụng.
+
+  normal_physiology: >
+    Cơ thể cần một lượng LDL nhất định để vận chuyển cholesterol — một thành phần quan trọng để tạo màng tế bào, sản xuất hormone steroid và vitamin D. Gan điều tiết nồng độ LDL thông qua các thụ thể LDL (LDL receptors) — khi thụ thể hoạt động tốt, gan hấp thu LDL dư thừa và xử lý. Khi chế độ ăn hoặc yếu tố gene ảnh hưởng đến quá trình này, LDL trong máu có thể tăng cao.
+
+  causes_of_abnormality: >
+    Các nguyên nhân phổ biến khiến LDL tăng cao bao gồm: chế độ ăn nhiều chất béo bão hòa (thịt đỏ mỡ, bơ, phô mai béo) và chất béo chuyển hóa (đồ ăn nhanh, bánh ngọt công nghiệp), ít vận động, thừa cân hoặc béo phì, tiểu đường không được kiểm soát tốt, suy giáp, bệnh thận mạn, hoặc yếu tố di truyền (rối loạn lipid máu gia đình). Một số thuốc như corticosteroid, thuốc lợi tiểu thiazide cũng có thể làm tăng LDL.
+
+  clinical_significance: >
+    LDL cao kéo dài có thể gợi ý nguy cơ tích tụ mảng xơ vữa trong lòng mạch máu — một quá trình diễn ra từ từ trong nhiều năm. Bác sĩ thường xem xét LDL cùng với các yếu tố khác như tuổi, huyết áp, tiểu đường, hút thuốc lá và tiền sử gia đình để đánh giá nguy cơ tim mạch tổng thể. Không nên đánh giá LDL đơn lẻ mà không có bức tranh toàn cảnh về sức khỏe tim mạch.
+
+  limitations: >
+    LDL đơn thuần không phải yếu tố quyết định duy nhất về nguy cơ tim mạch. Một số người có LDL cao nhưng nguy cơ thực sự thấp (do có HDL tốt, không có các yếu tố nguy cơ khác). Ngược lại, LDL "bình thường" không loại trừ nguy cơ nếu các yếu tố khác bất lợi. Khi triglyceride >4.5 mmol/L, công thức Friedewald tính LDL có thể kém chính xác — nên đo LDL trực tiếp. Non-HDL và ApoB đôi khi phản ánh nguy cơ chính xác hơn LDL đơn thuần.
+
+  related_biomarkers:
+    - hdl
+    - triglyceride
+    - total_cholesterol
+    - non_hdl
+
+  derived_indicators:
+    - "LDL/HDL ratio"
+    - "TC/HDL ratio"
+    - "Non-HDL cholesterol"
+
+  patient_explanation: >
+    Hãy hình dung mạch máu như một đường ống nước. LDL giống như cặn bùn — ở mức vừa phải thì ổn, nhưng nếu quá nhiều, theo thời gian nó có thể bám vào thành ống và làm hẹp dần lòng mạch. Điều tốt là LDL có thể cải thiện được qua thay đổi lối sống và — nếu cần — điều trị y tế. Cơ thể bạn không bị hỏng; đây là tín hiệu sớm để hành động, không phải để lo lắng.
+
+  common_questions:
+    - "LDL của tôi cao bao nhiêu là nguy hiểm?"
+    - "Ăn kiêng có giảm được LDL không?"
+    - "Tôi có cần uống thuốc để hạ LDL không?"
+    - "LDL cao có triệu chứng gì không?"
+    - "LDL và cholesterol toàn phần khác nhau như thế nào?"
+
+  lifestyle_relevance: >
+    Chế độ ăn ảnh hưởng trực tiếp đến LDL: giảm chất béo bão hòa (thịt đỏ mỡ, bơ, phô mai béo), tăng chất xơ hòa tan (yến mạch, rau củ, đậu), bổ sung omega-3 (cá hồi, hạt lanh, hạt chia) có thể giúp giảm LDL. Vận động thể chất đều đặn (ít nhất 150 phút/tuần cường độ vừa như đi bộ nhanh) và duy trì cân nặng hợp lý cũng góp phần đáng kể. Không hút thuốc lá vì nicotine làm tổn thương thành mạch và làm giảm HDL.
+
+  doctor_discussion_topics:
+    - "Mục tiêu LDL phù hợp với nguy cơ tim mạch của tôi là bao nhiêu?"
+    - "Tôi có cần đánh giá nguy cơ tim mạch 10 năm không?"
+    - "Thay đổi lối sống trong bao lâu sẽ thấy hiệu quả trên xét nghiệm?"
+    - "Khi nào tôi cần cân nhắc điều trị bằng thuốc?"
+
+  guideline_notes: >
+    Các hướng dẫn lâm sàng hiện tại đánh giá nguy cơ tim mạch dựa trên nhiều yếu tố tổng hợp, không chỉ dựa vào một chỉ số LDL đơn lẻ. Mục tiêu LDL khác nhau tùy theo mức độ nguy cơ tim mạch của từng cá nhân — người có tiền sử bệnh tim mạch hoặc nguy cơ cao có mục tiêu LDL nghiêm ngặt hơn so với người khỏe mạnh không có yếu tố nguy cơ. Can thiệp lối sống được khuyến nghị trước tiên đối với hầu hết trường hợp LDL tăng nhẹ đến trung bình.
+
+  references:
+    - "Tóm tắt từ tài liệu y khoa chuẩn về lipid máu và nguy cơ tim mạch (nội dung tổng hợp, không trích dẫn nguyên văn hướng dẫn bản quyền)"

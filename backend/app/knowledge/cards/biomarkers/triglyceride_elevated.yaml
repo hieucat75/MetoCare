@@ -1,0 +1,75 @@
+knowledge_id: triglyceride_elevated
+knowledge_type: biomarker
+version: "1.0"
+language: vi
+status: internal_review
+last_reviewed: "2026-06-28"
+reviewer: "auto_generated_ckp_v1"
+medical_specialty: cardiology
+evidence_level: moderate
+confidence: 0.85
+future_review_due: "2027-06-28"
+display_name_vi: "Triglyceride (mỡ máu) cao"
+short_summary_vi: "Triglyceride cao thường phản ánh chế độ ăn nhiều đường và carbohydrate tinh chế, có liên quan đến đề kháng insulin và tăng nguy cơ tim mạch khi kết hợp với bất thường lipid khác."
+tags:
+  - triglyceride_elevated
+  - mo_mau
+  - tim_mach
+  - lipid
+  - chuyen_hoa
+related_cards:
+  - ldl_elevated
+  - hdl_low
+  - glucose_elevated
+  - insulin_resistance
+sections:
+  definition: >
+    Triglyceride là dạng chất béo (lipid) chính được lưu trữ trong mô mỡ và lưu thông trong máu. Chúng là nguồn năng lượng dự trữ quan trọng của cơ thể. Khi ăn vào nhiều calo hơn cần thiết — đặc biệt từ đường và carbohydrate tinh chế — gan chuyển đổi phần dư thừa thành triglyceride và đưa vào máu.
+
+  normal_physiology: >
+    Sau bữa ăn, triglyceride tăng sinh lý — cơ thể hấp thu chất béo từ thực phẩm và vận chuyển chúng qua máu. Giữa các bữa ăn, triglyceride trong máu hạ xuống vì cơ thể lấy chúng ra khỏi kho để cung cấp năng lượng. Xét nghiệm triglyceride nên thực hiện sau nhịn ăn ít nhất 8-12 giờ để phản ánh mức nền chính xác.
+
+  causes_of_abnormality: >
+    Nguyên nhân phổ biến bao gồm: ăn nhiều đường, bánh kẹo, nước ngọt, cơm trắng, mì trắng; uống nhiều rượu bia; thừa cân béo phì; tiểu đường không kiểm soát tốt; đề kháng insulin; suy giáp; bệnh thận; một số thuốc (corticosteroid, thuốc tránh thai estrogen liều cao, thuốc hạ áp nhóm beta-blocker). Yếu tố di truyền cũng đóng vai trò trong một số trường hợp triglyceride rất cao.
+
+  clinical_significance: >
+    Triglyceride cao kéo dài có thể gợi ý tình trạng đề kháng insulin và là một thành phần của hội chứng chuyển hóa. Khi kết hợp với HDL thấp, tỷ lệ TG/HDL tăng cao — đây là marker gián tiếp của đề kháng insulin. Triglyceride rất cao (>5.6 mmol/L) có thể tăng nguy cơ viêm tụy cấp — một tình trạng nghiêm trọng. Triglyceride cao vừa phải thường được kiểm soát tốt bằng thay đổi lối sống.
+
+  limitations: >
+    Triglyceride dao động rất nhiều tùy theo bữa ăn gần nhất, lượng rượu uống hôm trước, và mức độ stress. Một kết quả cao đơn lẻ không đủ để kết luận — cần xem xét trong bối cảnh toàn bộ bảng lipid và lối sống. Khi triglyceride >4.5 mmol/L, công thức Friedewald tính LDL trở nên kém chính xác.
+
+  related_biomarkers:
+    - hdl
+    - ldl
+    - glucose
+    - insulin
+
+  derived_indicators:
+    - "TG/HDL ratio (marker đề kháng insulin)"
+    - "Non-HDL cholesterol"
+    - "VLDL estimate"
+
+  patient_explanation: >
+    Triglyceride là mỡ dự trữ trong máu. Hãy nghĩ về nó như "nhiên liệu dự phòng" — cơ thể tạo ra từ đường và calo dư thừa bạn ăn vào. Khi ăn quá nhiều tinh bột, đường hay uống nhiều rượu, gan chuyển phần dư thừa thành triglyceride đưa vào máu. Tin tốt: triglyceride thường phản ứng rất nhanh với thay đổi chế độ ăn — có thể giảm đáng kể trong vài tuần nếu cắt giảm đường và rượu.
+
+  common_questions:
+    - "Triglyceride cao có khác gì mỡ máu (cholesterol) cao không?"
+    - "Tôi nhịn ăn trước xét nghiệm chưa — có ảnh hưởng đến kết quả không?"
+    - "Uống rượu bia ảnh hưởng triglyceride như thế nào?"
+    - "Tỷ lệ TG/HDL của tôi có ý nghĩa gì?"
+    - "Triglyceride rất cao có nguy hiểm ngay không?"
+
+  lifestyle_relevance: >
+    Giảm đường và carbohydrate tinh chế (cơm trắng, bánh mì, nước ngọt, đồ ngọt) là cách hiệu quả nhất để hạ triglyceride. Giảm hoặc bỏ rượu bia — ngay cả một lượng nhỏ rượu cũng làm tăng triglyceride đáng kể ở một số người. Tăng chất xơ (rau, đậu, ngũ cốc nguyên hạt), omega-3 (cá béo). Vận động aerobic đều đặn giúp cơ thể đốt triglyceride tốt hơn.
+
+  doctor_discussion_topics:
+    - "Mức triglyceride nào thì tôi cần điều trị bằng thuốc?"
+    - "Tỷ lệ TG/HDL của tôi gợi ý gì về đề kháng insulin?"
+    - "Tôi có nên làm thêm xét nghiệm insulin lúc đói không?"
+    - "Sau bao lâu thay đổi lối sống thì xét nghiệm lại?"
+
+  guideline_notes: >
+    Các hướng dẫn lâm sàng phân loại triglyceride theo mức: bình thường (<1.7 mmol/L), cao giới hạn (1.7-2.3), cao (2.3-5.6), rất cao (>5.6 mmol/L). Can thiệp lối sống được ưu tiên cho triglyceride tăng vừa phải. Thuốc (fibrate, omega-3 liều cao theo toa) được cân nhắc khi triglyceride rất cao hoặc có nguy cơ viêm tụy.
+
+  references:
+    - "Tóm tắt từ tài liệu y khoa chuẩn về triglyceride, hội chứng chuyển hóa và đề kháng insulin (nội dung tổng hợp, không trích dẫn nguyên văn hướng dẫn bản quyền)"

@@ -1,0 +1,70 @@
+knowledge_id: glucose_elevated
+knowledge_type: biomarker
+version: "1.0"
+language: vi
+status: internal_review
+last_reviewed: "2026-06-28"
+reviewer: "auto_generated_ckp_v1"
+medical_specialty: endocrinology
+evidence_level: strong
+confidence: 0.88
+future_review_due: "2027-06-28"
+display_name_vi: "Đường huyết lúc đói tăng"
+short_summary_vi: "Đường huyết lúc đói cao hơn ngưỡng bình thường có thể gợi ý đề kháng insulin hoặc giai đoạn tiền tiểu đường — cần xem xét trong bối cảnh lối sống và xét nghiệm bổ sung."
+tags:
+  - glucose_elevated
+  - duong_huyet
+  - tien_tieu_duong
+  - chuyen_hoa
+  - noi_tiet
+related_cards:
+  - insulin_resistance
+sections:
+  definition: >
+    Glucose máu lúc đói là nồng độ đường trong máu sau khi nhịn ăn ít nhất 8 giờ. Đường huyết lúc đói tăng (thường định nghĩa là ≥5.6 mmol/L hoặc ≥100 mg/dL theo các hướng dẫn khác nhau) có thể phản ánh tình trạng cơ thể đang gặp khó khăn trong việc điều tiết glucose — có thể do đề kháng insulin hoặc giảm chức năng tế bào beta tụy.
+
+  normal_physiology: >
+    Cơ thể duy trì mức đường huyết trong khoảng hẹp (khoảng 3.9-5.5 mmol/L lúc đói) thông qua sự phối hợp giữa insulin (từ tụy, hạ đường huyết) và glucagon (từ tụy, tăng đường huyết). Sau bữa ăn, đường huyết tăng và insulin được bài tiết để đưa glucose vào tế bào. Giữa các bữa ăn, gan giải phóng glucose từ glycogen để duy trì năng lượng cho não và các cơ quan.
+
+  causes_of_abnormality: >
+    Đường huyết lúc đói tăng có thể do: đề kháng insulin (tế bào không đáp ứng tốt với insulin), chế độ ăn nhiều đường và carbohydrate tinh chế, ít vận động, thừa cân đặc biệt là mỡ bụng, tiền sử gia đình có tiểu đường týp 2, tuổi tác, stress mạn tính (cortisol cao làm tăng đường huyết), thiếu ngủ, một số thuốc (corticosteroid). Đây thường là quá trình diễn tiến dần dần.
+
+  clinical_significance: >
+    Đường huyết lúc đói tăng nhẹ (5.6-6.9 mmol/L) được gọi là "đường huyết lúc đói rối loạn" (IFG) — giai đoạn có thể đảo ngược được với thay đổi lối sống. Khi đường huyết lúc đói ≥7.0 mmol/L trong hai lần xét nghiệm riêng biệt, cần đánh giá thêm để loại trừ tiểu đường. Quan trọng: một kết quả cao đơn lẻ không đủ để chẩn đoán — cần xem xét trong bối cảnh đầy đủ và thường cần HbA1c để có bức tranh toàn diện hơn.
+
+  limitations: >
+    Một kết quả đường huyết cao đơn lẻ có thể do nhiều yếu tố không bệnh lý: nhịn ăn không đủ 8 giờ, stress cấp tính, bệnh cấp tính, dùng thuốc. Đường huyết lúc đói chỉ phản ánh một thời điểm — không nắm bắt được đường huyết sau bữa ăn (đường huyết 2 giờ sau ăn) hay mức đường huyết trung bình 3 tháng (HbA1c). Chẩn đoán tiểu đường không thể dựa vào một xét nghiệm đơn lẻ.
+
+  related_biomarkers:
+    - hba1c
+    - insulin_fasting
+    - glucose_2h_postprandial
+
+  derived_indicators:
+    - "HOMA-IR (nếu có insulin lúc đói)"
+    - "TyG index"
+
+  patient_explanation: >
+    Đường huyết là lượng đường (glucose) trong máu của bạn — nguồn nhiên liệu chính cho não và các cơ quan. Khi con số này cao hơn bình thường lúc đói, cơ thể đang gửi tín hiệu rằng quá trình điều tiết đường đang bị căng thẳng. Điều quan trọng cần biết: giai đoạn này thường có thể cải thiện được. Đây không phải chẩn đoán tiểu đường — mà là dấu hiệu sớm để bạn có cơ hội hành động.
+
+  common_questions:
+    - "Đường huyết của tôi cao như vậy có phải tiểu đường không?"
+    - "Tôi cần làm thêm xét nghiệm gì để biết chính xác hơn?"
+    - "Thay đổi ăn uống trong bao lâu thì đường huyết cải thiện?"
+    - "HbA1c khác gì đường huyết lúc đói?"
+    - "Đường huyết cao ảnh hưởng đến các cơ quan nào?"
+
+  lifestyle_relevance: >
+    Thay đổi lối sống có thể ảnh hưởng đáng kể đến đường huyết: giảm đường và carbohydrate tinh chế (cơm trắng, bánh mì trắng, nước ngọt, đồ ngọt), tăng chất xơ giúp làm chậm hấp thu đường, vận động sau bữa ăn (đi bộ 15-20 phút) giúp cơ bắp hấp thu glucose. Kiểm soát cân nặng — đặc biệt mỡ bụng — cải thiện độ nhạy insulin. Ngủ đủ giấc (7-8 giờ) và giảm stress cũng ảnh hưởng đến đường huyết.
+
+  doctor_discussion_topics:
+    - "Tôi có cần làm HbA1c hoặc nghiệm pháp dung nạp glucose không?"
+    - "Đường huyết của tôi ở giai đoạn tiền tiểu đường hay trong ngưỡng bình thường cao?"
+    - "Tôi có yếu tố nguy cơ tiểu đường týp 2 nào cần chú ý?"
+    - "Bao lâu thì tôi nên xét nghiệm lại để theo dõi?"
+
+  guideline_notes: >
+    Các hướng dẫn lâm sàng phân loại đường huyết lúc đói thành: bình thường (<5.6 mmol/L), rối loạn đường huyết lúc đói - IFG (5.6-6.9 mmol/L), và gợi ý tiểu đường (≥7.0 mmol/L — cần xác nhận). HbA1c là xét nghiệm bổ sung quan trọng cho bức tranh toàn diện. Phòng ngừa tiến triển từ tiền tiểu đường sang tiểu đường có thể thực hiện hiệu quả bằng thay đổi lối sống.
+
+  references:
+    - "Tóm tắt từ tài liệu y khoa chuẩn về đường huyết, tiền tiểu đường và tiểu đường týp 2 (nội dung tổng hợp, không trích dẫn nguyên văn hướng dẫn bản quyền)"

@@ -21,9 +21,11 @@ from __future__ import annotations
 import json
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
+from app.knowledge.memory import format_memory_context, load_narrative_memory, save_narrative_memory
+from app.knowledge.registry import get_registry
 from app.services.claude_client import ANTHROPIC_API_KEY, ANTHROPIC_MODEL, get_client
 from app.services.narrative_cache import (
     get_cached_narrative,
@@ -61,6 +63,8 @@ class NarrativeResult:
     latency_ms: int = 0
     prompt_tokens: int = 0
     completion_tokens: int = 0
+    knowledge_cards_used: list[str] = field(default_factory=list)
+    narrative_memory_used: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -223,6 +227,30 @@ def _get_overall_status(report: Any) -> str:
     return getattr(report, "overall_status", "attention")
 
 
+def _format_knowledge_cards_for_prompt(cards: list) -> str:
+    """Format KnowledgeCards into a compact text block for Claude prompt.
+    Max ~1000 tokens to keep total prompt bounded."""
+    if not cards:
+        return ""
+    lines = [
+        "\n\nKI\u1ebcN TH\u1ee8C Y T\u1ebe \u0110\u00c3 \u0110\u01af\u1ee2C DUY\u1ec6T "
+        "(d\u00f9ng l\u00e0m c\u01a1 s\u1edf gi\u1ea3i th\u00edch \u2014 kh\u00f4ng "
+        "\u0111\u01b0\u1ee3c b\u1ecba th\u00eam ngo\u00e0i ngu\u1ed3n n\u00e0y):"
+    ]
+    for card in cards[:5]:
+        lines.append(f"\n--- {card.display_name_vi} ---")
+        lines.append(f"\u0110\u1ecbnh ngh\u0129a: {card.sections.definition[:300]}")
+        if card.sections.patient_explanation:
+            lines.append(
+                f"Gi\u1ea3i th\u00edch cho b\u1ec7nh nh\u00e2n: {card.sections.patient_explanation[:300]}"
+            )
+        if card.sections.lifestyle_relevance:
+            lines.append(
+                f"L\u1ed1i s\u1ed1ng: {card.sections.lifestyle_relevance[:200]}"
+            )
+    return "\n".join(lines)
+
+
 # ---------------------------------------------------------------------------
 # Main generator
 # ---------------------------------------------------------------------------
@@ -274,6 +302,8 @@ def generate_narrative(
                 latency_ms=latency_ms,
                 prompt_tokens=cached_data.get("prompt_tokens", 0),
                 completion_tokens=cached_data.get("completion_tokens", 0),
+                knowledge_cards_used=[],
+                narrative_memory_used=False,
             )
 
     # Step 3: check API key before calling
@@ -294,10 +324,22 @@ def generate_narrative(
             quality_score=quality,
             validation_passed=True,
             latency_ms=int((time.monotonic() - t0) * 1000),
+            knowledge_cards_used=[],
+            narrative_memory_used=False,
         )
 
     # Step 4: build narrative input
     narrative_input = build_narrative_input(report, language=NARRATIVE_LANGUAGE)
+
+    # CKP: Load relevant knowledge cards
+    registry = get_registry()
+    knowledge_cards = registry.cards_for_patient_report(report)
+    knowledge_cards_used = [c.knowledge_id for c in knowledge_cards]
+
+    # CKP: Load narrative memory for continuity
+    memory = load_narrative_memory(patient_id)
+    memory_context = format_memory_context(memory)
+    narrative_memory_used = memory is not None
 
     # Step 5: get prompt
     prompt = PromptRegistry.current()
@@ -306,8 +348,13 @@ def generate_narrative(
     try:
         client = get_client()
 
-        user_content = prompt.user_template.format(
-            report_json=json.dumps(narrative_input, ensure_ascii=False, indent=2)
+        knowledge_context = _format_knowledge_cards_for_prompt(knowledge_cards)
+        user_content = (
+            prompt.user_template.format(
+                report_json=json.dumps(narrative_input, ensure_ascii=False, indent=2)
+            )
+            + knowledge_context
+            + memory_context
         )
 
         response = client.messages.create(
@@ -357,6 +404,8 @@ def generate_narrative(
                 latency_ms=int((time.monotonic() - t0) * 1000),
                 prompt_tokens=prompt_tokens,
                 completion_tokens=completion_tokens,
+                knowledge_cards_used=[],
+                narrative_memory_used=False,
             )
 
         # Step 9: score
@@ -375,6 +424,12 @@ def generate_narrative(
             "completion_tokens": completion_tokens,
         }
         save_narrative(cache_key, cache_payload)
+
+        # CKP: Save narrative memory for continuity on next call
+        try:
+            save_narrative_memory(patient_id, parsed, narrative_input)
+        except Exception:
+            pass  # non-fatal
 
         logger.info(
             "narrative generated: patient=%s batch=%s latency=%dms tokens=%d+%d quality=%.2f",
@@ -402,6 +457,8 @@ def generate_narrative(
             latency_ms=latency_ms,
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
+            knowledge_cards_used=knowledge_cards_used,
+            narrative_memory_used=narrative_memory_used,
         )
 
     except Exception as exc:
@@ -426,6 +483,8 @@ def generate_narrative(
             quality_score=quality,
             validation_passed=True,
             latency_ms=int((time.monotonic() - t0) * 1000),
+            knowledge_cards_used=[],
+            narrative_memory_used=False,
         )
 
 

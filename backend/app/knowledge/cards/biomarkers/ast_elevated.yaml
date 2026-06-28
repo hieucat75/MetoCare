@@ -1,0 +1,70 @@
+knowledge_id: ast_elevated
+knowledge_type: biomarker
+version: "1.0"
+language: vi
+status: internal_review
+last_reviewed: "2026-06-28"
+reviewer: "auto_generated_ckp_v1"
+medical_specialty: general
+evidence_level: moderate
+confidence: 0.80
+future_review_due: "2027-06-28"
+display_name_vi: "AST (men gan) tăng"
+short_summary_vi: "AST tăng có thể gợi ý căng thẳng tế bào gan hoặc cơ, nhưng cần xem xét cùng với ALT và bối cảnh lâm sàng — AST không đặc hiệu cho gan vì cơ bắp cũng là nguồn quan trọng."
+tags:
+  - ast_elevated
+  - men_gan
+  - gan
+  - hepatology
+related_cards:
+  - alt_elevated
+sections:
+  definition: >
+    AST (Aspartate Aminotransferase) là enzyme có trong nhiều mô của cơ thể, đặc biệt là gan, cơ tim, cơ xương, thận và não. Khi các tế bào này bị tổn thương hoặc căng thẳng, AST được giải phóng vào máu làm tăng mức đo được. Không giống ALT (chủ yếu từ gan), AST không đặc hiệu cho gan — điều này làm phức tạp việc giải thích kết quả.
+
+  normal_physiology: >
+    AST tham gia vào quá trình chuyển hóa amino acid, đặc biệt trong chu trình urea và tổng hợp glucose từ amino acid (gluconeogenesis). Ở trạng thái bình thường, AST được giải phóng với lượng nhỏ vào máu từ quá trình tế bào bình thường. Mức AST trong máu phản ánh sự cân bằng giữa lượng giải phóng từ các mô và tốc độ đào thải. Ngưỡng bình thường thường là 10-40 U/L (tùy phòng xét nghiệm).
+
+  causes_of_abnormality: >
+    Nguyên nhân gan: viêm gan virus (A, B, C), gan nhiễm mỡ (NAFLD/NASH), tổn thương do rượu, thuốc gây độc gan (paracetamol liều cao, một số kháng sinh, statin hiếm gặp), viêm gan tự miễn, tắc mật. Nguyên nhân ngoài gan (quan trọng): vận động thể chất cường độ cao (gym, chạy marathon) làm tăng AST từ cơ xương đáng kể; nhồi máu cơ tim; tiêu cơ (rhabdomyolysis); bệnh cơ. Đây là lý do tỷ lệ AST/ALT quan trọng hơn AST đơn thuần.
+
+  clinical_significance: >
+    AST tăng nhẹ đến vừa (dưới 3-5 lần giới hạn trên) thường không đặc hiệu và cần bối cảnh lâm sàng để giải thích. Khi AST tăng kết hợp với ALT tăng (đặc biệt ALT cao hơn AST), nguồn gan được gợi ý nhiều hơn. Tỷ lệ AST/ALT >2 thường gợi ý tổn thương liên quan rượu. AST rất cao (>10 lần giới hạn trên) gợi ý tổn thương gan cấp nặng và cần đánh giá ngay.
+
+  limitations: >
+    AST không đặc hiệu cho gan — cơ bắp, tim và các mô khác cũng là nguồn. Người tập gym hoặc vận động nặng có thể có AST cao hoàn toàn bình thường do cơ. AST đơn lẻ không đủ để đánh giá chức năng gan — cần xem cùng ALT, GGT, bilirubin, albumin và thời gian prothrombin để có bức tranh đầy đủ. Một lần tăng đơn lẻ không thể kết luận — cần theo dõi.
+
+  related_biomarkers:
+    - alt
+    - ggt
+    - bilirubin
+    - albumin
+    - ck_creatine_kinase
+
+  derived_indicators:
+    - "AST/ALT ratio (De Ritis ratio)"
+
+  patient_explanation: >
+    AST là enzyme tồn tại trong gan, cơ tim và cơ xương. Khi bất kỳ tế bào nào trong số này bị kích thích hoặc tổn thương nhẹ, AST thoát ra vào máu. Vì vậy, AST tăng không tự động có nghĩa là gan bị bệnh — tập thể dục nặng ngày hôm trước cũng có thể làm tăng AST. Bác sĩ thường xem AST cùng với ALT (enzyme đặc hiệu gan hơn) để hiểu rõ hơn nguồn gốc và ý nghĩa.
+
+  common_questions:
+    - "AST cao có nghĩa là gan tôi bị bệnh không?"
+    - "Tập gym có làm tăng AST không?"
+    - "AST và ALT khác nhau như thế nào?"
+    - "Tỷ lệ AST/ALT có ý nghĩa gì?"
+    - "Tôi cần làm thêm xét nghiệm gì để đánh giá gan?"
+
+  lifestyle_relevance: >
+    Hạn chế rượu bia — đây là nguyên nhân phổ biến nhất của tổn thương gan có thể phòng ngừa được. Tránh lạm dụng thuốc giảm đau không kê toa (paracetamol liều cao, NSAID). Giảm cân nếu thừa cân vì gan nhiễm mỡ (NAFLD) là nguyên nhân phổ biến nhất của men gan tăng nhẹ ở người không uống rượu. Chế độ ăn ít đường và chất béo bão hòa. Không sử dụng thực phẩm chức năng gan không có bằng chứng khoa học và chưa được bác sĩ tư vấn.
+
+  doctor_discussion_topics:
+    - "Tỷ lệ AST/ALT của tôi gợi ý nguồn gốc nào?"
+    - "Tôi có cần siêu âm gan không?"
+    - "Thuốc tôi đang dùng có thể ảnh hưởng đến men gan không?"
+    - "Tôi nên xét nghiệm lại sau bao lâu?"
+
+  guideline_notes: >
+    Đánh giá men gan tăng cần xem xét bối cảnh lâm sàng đầy đủ: tiền sử rượu, thuốc, vận động, triệu chứng, và kết hợp với các xét nghiệm gan khác. AST tăng nhẹ đơn lẻ (dưới 2-3 lần giới hạn trên) thường được theo dõi lại trước khi làm thêm xét nghiệm chuyên sâu. Siêu âm gan thường được chỉ định khi men gan tăng dai dẳng không giải thích được.
+
+  references:
+    - "Tóm tắt từ tài liệu y khoa chuẩn về men gan AST/ALT và bệnh lý gan (nội dung tổng hợp, không trích dẫn nguyên văn hướng dẫn bản quyền)"

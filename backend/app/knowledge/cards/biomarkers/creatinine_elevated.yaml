@@ -1,0 +1,69 @@
+knowledge_id: creatinine_elevated
+knowledge_type: biomarker
+version: "1.0"
+language: vi
+status: internal_review
+last_reviewed: "2026-06-28"
+reviewer: "auto_generated_ckp_v1"
+medical_specialty: nephrology
+evidence_level: strong
+confidence: 0.85
+future_review_due: "2027-06-28"
+display_name_vi: "Creatinine (chức năng thận) tăng"
+short_summary_vi: "Creatinine cao có thể gợi ý thận đang hoạt động kém hiệu quả hơn, nhưng cần xem trong bối cảnh toàn diện — khối cơ, mức độ mất nước, và xu hướng theo thời gian đều ảnh hưởng đến chỉ số này."
+tags:
+  - creatinine_elevated
+  - than
+  - chuc_nang_than
+  - than_tiet_nieu
+related_cards: []
+sections:
+  definition: >
+    Creatinine là sản phẩm thải của quá trình chuyển hóa creatine trong cơ bắp. Thận có trách nhiệm lọc creatinine ra khỏi máu và đào thải qua nước tiểu. Khi chức năng thận suy giảm, thận lọc ít creatinine hơn → creatinine tích tụ trong máu → mức đo được tăng cao. Đây là lý do creatinine máu được dùng như chỉ số gián tiếp đánh giá chức năng thận.
+
+  normal_physiology: >
+    Thận có khoảng 1 triệu đơn vị lọc (nephron). Mỗi ngày, thận lọc khoảng 180 lít huyết tương và tái hấp thu phần lớn về lại máu, chỉ đào thải khoảng 1.5-2 lít nước tiểu. Creatinine được lọc tự do qua cầu thận và không được tái hấp thu đáng kể — vì vậy nó là marker ổn định để ước tính mức lọc cầu thận (GFR). Thận có khả năng bù đắp lớn — chức năng thận có thể giảm đến 50% trước khi creatinine tăng rõ ràng.
+
+  causes_of_abnormality: >
+    Creatinine máu tăng có thể do: mất nước / thiếu nước (làm giảm lưu lượng máu đến thận), sử dụng thuốc ảnh hưởng đến thận (NSAID như ibuprofen, một số kháng sinh, thuốc cản quang), bệnh thận cấp tính hoặc mạn tính, bệnh lý làm giảm tưới máu thận (suy tim, huyết áp thấp). Đặc biệt: người có khối cơ lớn (vận động viên) có thể có creatinine cao bình thường. Ăn nhiều thịt đỏ trước xét nghiệm cũng có thể tăng creatinine tạm thời.
+
+  clinical_significance: >
+    Creatinine tăng đơn lẻ không đủ để kết luận — xu hướng theo thời gian (trend) quan trọng hơn một giá trị đơn. Bác sĩ thường tính eGFR (estimated Glomerular Filtration Rate — mức lọc cầu thận ước tính) từ creatinine kết hợp tuổi, giới tính và chủng tộc — đây là chỉ số phản ánh chức năng thận chính xác hơn creatinine đơn thuần. Creatinine tăng cao đột ngột (tổn thương thận cấp) cần đánh giá khẩn cấp.
+
+  limitations: >
+    Creatinine bị ảnh hưởng nhiều bởi khối cơ — người cao, cơ bắp nhiều có creatinine "bình thường" cao hơn người nhỏ tuổi, ít cơ. Người cao tuổi và phụ nữ thường có creatinine thấp hơn dù chức năng thận tương đương. Một giá trị creatinine trong ngưỡng "bình thường" vẫn có thể che giấu mức lọc thận thấp ở người ít cơ. eGFR bổ sung cho điểm yếu này. Cystatin C là marker thay thế ít bị ảnh hưởng bởi khối cơ hơn.
+
+  related_biomarkers:
+    - egfr
+    - bun
+    - uric_acid
+    - cystatin_c
+
+  derived_indicators:
+    - "eGFR (CKD-EPI formula)"
+    - "BUN/Creatinine ratio"
+
+  patient_explanation: >
+    Hãy nghĩ thận như hệ thống lọc nước của cơ thể. Creatinine là "cặn bẩn" mà thận phải lọc ra mỗi ngày. Khi thận hoạt động tốt, nó loại bỏ creatinine hiệu quả → mức trong máu thấp. Khi thận gặp khó khăn, creatinine tích lại → mức tăng cao. Nhưng có một điều quan trọng: một lần đo cao không nói lên tất cả — mất nước, thuốc, hay cơ bắp nhiều đều ảnh hưởng. Bác sĩ sẽ xem xét xu hướng và eGFR để hiểu rõ hơn.
+
+  common_questions:
+    - "Creatinine cao có nghĩa là thận tôi bị hỏng không?"
+    - "eGFR là gì và tại sao quan trọng hơn creatinine?"
+    - "Tôi uống nhiều nước có giúp hạ creatinine không?"
+    - "Thuốc giảm đau (ibuprofen) có hại cho thận không?"
+    - "Creatinine cao có triệu chứng gì không?"
+
+  lifestyle_relevance: >
+    Uống đủ nước (khoảng 2 lít/ngày với điều kiện thông thường) giúp thận hoạt động tốt và tránh creatinine tăng do mất nước. Hạn chế NSAID (thuốc giảm đau không kê toa như ibuprofen, naproxen) — dùng thường xuyên có hại cho thận. Kiểm soát huyết áp và đường huyết là cách bảo vệ thận lâu dài — tăng huyết áp và tiểu đường là nguyên nhân hàng đầu của bệnh thận mạn. Không nên ăn quá nhiều protein (đặc biệt từ thịt đỏ) nếu chức năng thận đang theo dõi.
+
+  doctor_discussion_topics:
+    - "eGFR của tôi là bao nhiêu và ở giai đoạn nào của thang CKD?"
+    - "Tôi có cần xét nghiệm nước tiểu (protein niệu) không?"
+    - "Thuốc tôi đang dùng có ảnh hưởng đến thận không?"
+    - "Tôi nên theo dõi creatinine bao lâu một lần?"
+
+  guideline_notes: >
+    Bệnh thận mạn (CKD) được phân loại theo eGFR: G1 (≥90), G2 (60-89), G3a (45-59), G3b (30-44), G4 (15-29), G5 (<15 ml/phút/1.73m²). Đánh giá chức năng thận toàn diện cần kết hợp eGFR + xét nghiệm nước tiểu (albumin/creatinine ratio). Xu hướng eGFR theo thời gian quan trọng hơn một giá trị đơn lẻ.
+
+  references:
+    - "Tóm tắt từ tài liệu y khoa chuẩn về chức năng thận, creatinine và eGFR (nội dung tổng hợp, không trích dẫn nguyên văn hướng dẫn bản quyền)"

@@ -1,0 +1,75 @@
+knowledge_id: insulin_resistance
+knowledge_type: pattern
+version: "1.0"
+language: vi
+status: internal_review
+last_reviewed: "2026-06-28"
+reviewer: "auto_generated_ckp_v1"
+medical_specialty: endocrinology
+evidence_level: moderate
+confidence: 0.82
+future_review_due: "2027-06-28"
+display_name_vi: "Mẫu hình đề kháng insulin"
+short_summary_vi: "Đề kháng insulin là tình trạng tế bào cơ thể phản ứng kém với insulin, thường được nhận biết qua sự kết hợp của triglyceride cao, HDL thấp và đường huyết tăng — không phải một xét nghiệm đơn lẻ."
+tags:
+  - insulin_resistance
+  - de_khang_insulin
+  - hoi_chung_chuyen_hoa
+  - chuyen_hoa
+  - noi_tiet
+related_cards:
+  - glucose_elevated
+  - triglyceride_elevated
+  - hdl_low
+sections:
+  definition: >
+    Đề kháng insulin (insulin resistance) là tình trạng tế bào cơ, gan và mỡ không đáp ứng bình thường với hormone insulin. Khi tế bào "kháng" lại insulin, tụy phải bài tiết nhiều insulin hơn để duy trì đường huyết bình thường. Theo thời gian, tụy có thể không theo kịp nhu cầu, dẫn đến đường huyết tăng dần. Đây là cơ chế trung tâm trong tiền tiểu đường và tiểu đường týp 2, đồng thời liên quan mật thiết đến hội chứng chuyển hóa.
+
+  normal_physiology: >
+    Insulin là "chìa khóa" mở cửa tế bào cho glucose vào. Khi ăn, đường huyết tăng → tụy bài tiết insulin → insulin gắn vào thụ thể trên tế bào → tế bào hấp thu glucose → đường huyết hạ. Trong trạng thái bình thường, một lượng insulin nhỏ đủ để làm việc này. Khi đề kháng insulin xảy ra, cần nhiều insulin hơn để cùng hiệu quả — giống như cần quẹt thẻ nhiều lần mới mở được cửa.
+
+  causes_of_abnormality: >
+    Mỡ nội tạng (mỡ bụng sâu) là nguyên nhân hàng đầu gây đề kháng insulin — mỡ nội tạng tiết ra các chất viêm làm giảm độ nhạy insulin. Các yếu tố góp phần: ít vận động, chế độ ăn nhiều đường và carbohydrate tinh chế, thừa cân, thiếu ngủ mạn tính, stress mạn tính (cortisol cao), hút thuốc lá, tuổi tác. Một số người có yếu tố di truyền làm tăng nguy cơ.
+
+  clinical_significance: >
+    Đề kháng insulin không phải là một xét nghiệm đơn lẻ mà là một mẫu hình lâm sàng — thường được nhận biết qua sự kết hợp: triglyceride cao + HDL thấp + đường huyết lúc đói tăng + vòng bụng lớn. Đây là nền tảng của hội chứng chuyển hóa và là giai đoạn có thể đảo ngược được trước khi tiến triển thành tiểu đường týp 2 hoặc bệnh tim mạch. Can thiệp sớm ở giai đoạn này có tác động lớn nhất.
+
+  limitations: >
+    Đề kháng insulin không thể chẩn đoán chính xác mà không có xét nghiệm insulin lúc đói kết hợp với glucose (tính HOMA-IR). Chỉ số TG/HDL ratio thường được dùng như marker gián tiếp nhưng không phải tiêu chuẩn vàng. Một người có thể có mẫu hình lipid gợi ý đề kháng insulin nhưng thực tế nhạy insulin bình thường. Cần đánh giá bởi bác sĩ để kết luận.
+
+  related_biomarkers:
+    - glucose_fasting
+    - insulin_fasting
+    - triglyceride
+    - hdl
+    - hba1c
+
+  derived_indicators:
+    - "HOMA-IR (cần insulin lúc đói)"
+    - "TyG index = ln(TG mg/dL × glucose mg/dL / 2)"
+    - "TG/HDL ratio"
+
+  patient_explanation: >
+    Hãy nghĩ đề kháng insulin như tình trạng "khóa cửa bị rỉ" — insulin (chìa khóa) vẫn có nhưng tế bào (cái khóa) không mở tốt nữa. Tụy cố gắng bù bằng cách sản xuất nhiều insulin hơn. Điều tốt là đây thường là tình trạng có thể đảo ngược được — cơ thể bạn không phải đã "hỏng hẳn". Vận động thể chất và giảm cân vừa phải là hai can thiệp mạnh mẽ nhất để cải thiện độ nhạy insulin.
+
+  common_questions:
+    - "Đề kháng insulin có phải là tiểu đường không?"
+    - "Tôi có thể biết tôi có đề kháng insulin mà không cần xét nghiệm đặc biệt không?"
+    - "Ăn ít tinh bột có đảo ngược được đề kháng insulin không?"
+    - "HOMA-IR là gì và tôi có cần xét nghiệm không?"
+    - "Đề kháng insulin ảnh hưởng đến tất cả các cơ quan như thế nào?"
+
+  lifestyle_relevance: >
+    Vận động thể chất là can thiệp hiệu quả nhất để cải thiện độ nhạy insulin — cơ bắp hấp thu glucose trong khi vận động ngay cả khi không có insulin. Giảm cân 5-10% (nếu thừa cân) cải thiện đáng kể đề kháng insulin. Chế độ ăn ít đường, ít carbohydrate tinh chế và nhiều chất xơ giúp giảm tải cho hệ thống insulin. Ngủ đủ 7-8 giờ/đêm — thiếu ngủ làm giảm độ nhạy insulin đáng kể.
+
+  doctor_discussion_topics:
+    - "Tôi có nên làm xét nghiệm insulin lúc đói để tính HOMA-IR không?"
+    - "Mẫu hình xét nghiệm của tôi có gợi ý hội chứng chuyển hóa không?"
+    - "Tôi cần thay đổi lối sống gì là ưu tiên nhất?"
+    - "Metformin có phù hợp với tình trạng của tôi không?"
+
+  guideline_notes: >
+    Hội chứng chuyển hóa (có thành phần đề kháng insulin) được chẩn đoán khi có ít nhất 3 trong 5 tiêu chí: vòng bụng lớn, triglyceride cao, HDL thấp, huyết áp cao, đường huyết lúc đói tăng. Can thiệp lối sống (vận động + chế độ ăn + giảm cân) là biện pháp đầu tay và có thể đảo ngược tình trạng ở nhiều người. Thuốc (metformin, GLP-1 agonist) được cân nhắc khi lối sống không đủ hoặc nguy cơ cao.
+
+  references:
+    - "Tóm tắt từ tài liệu y khoa chuẩn về đề kháng insulin, hội chứng chuyển hóa và tiền tiểu đường (nội dung tổng hợp, không trích dẫn nguyên văn hướng dẫn bản quyền)"

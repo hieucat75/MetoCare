@@ -1,0 +1,72 @@
+knowledge_id: blood_pressure_elevated
+knowledge_type: biomarker
+version: "1.0"
+language: vi
+status: internal_review
+last_reviewed: "2026-06-28"
+reviewer: "auto_generated_ckp_v1"
+medical_specialty: cardiology
+evidence_level: strong
+confidence: 0.87
+future_review_due: "2027-06-28"
+display_name_vi: "Huyết áp cao"
+short_summary_vi: "Huyết áp cao kéo dài làm tăng gánh nặng cho tim và mạch máu — nhưng một lần đo cao không đủ để kết luận; cần đo nhiều lần trong nhiều ngày để đánh giá chính xác."
+tags:
+  - blood_pressure_elevated
+  - huyet_ap
+  - tang_huyet_ap
+  - tim_mach
+related_cards:
+  - ldl_elevated
+  - glucose_elevated
+  - creatinine_elevated
+sections:
+  definition: >
+    Huyết áp là lực mà máu tác động lên thành mạch khi tim bơm máu. Được biểu diễn bằng hai chỉ số: huyết áp tâm thu (systolic — khi tim co bóp, số trên) và huyết áp tâm trương (diastolic — khi tim giãn, số dưới), đơn vị mmHg. Huyết áp bình thường thường được định nghĩa <120/80 mmHg. Tăng huyết áp (hypertension) thường được xác nhận khi đo nhiều lần ≥140/90 mmHg (hoặc ≥130/80 mmHg theo một số hướng dẫn mới hơn).
+
+  normal_physiology: >
+    Tim đập khoảng 60-100 lần/phút, tạo ra áp lực đẩy máu qua hệ thống mạch máu dài hàng nghìn km. Huyết áp thay đổi tự nhiên trong ngày — thấp nhất khi ngủ, cao hơn khi thức, tăng khi vận động hoặc căng thẳng. Mạch máu khỏe mạnh co giãn linh hoạt để điều hòa áp lực. Hệ thần kinh, hormone (renin-angiotensin), thận và trái tim phối hợp để duy trì huyết áp trong khoảng an toàn.
+
+  causes_of_abnormality: >
+    Nguyên nhân phổ biến của tăng huyết áp bao gồm: ăn nhiều muối natri, thừa cân béo phì (đặc biệt mỡ bụng), ít vận động, stress mạn tính, uống nhiều rượu, hút thuốc lá, thiếu ngủ, ngưng thở khi ngủ (sleep apnea), tuổi tác (mạch máu cứng dần), tiền sử gia đình. Trong 90-95% trường hợp là tăng huyết áp nguyên phát (không tìm được nguyên nhân cụ thể). Một số ít do bệnh thận, cường aldosterone hay thuốc.
+
+  clinical_significance: >
+    Tăng huyết áp kéo dài là yếu tố nguy cơ lớn cho đột quỵ, nhồi máu cơ tim, suy tim, bệnh thận mạn và mù lòa. Nó thường không có triệu chứng ("kẻ giết người thầm lặng") — phần lớn người bệnh không biết mình bị tăng huyết áp. Kiểm soát huyết áp tốt giảm đáng kể nguy cơ các biến chứng này. Huyết áp cần được đánh giá kết hợp với các yếu tố nguy cơ tim mạch khác.
+
+  limitations: >
+    Một lần đo huyết áp cao không đủ để chẩn đoán tăng huyết áp. Huyết áp dao động nhiều: stress, lo âu khi gặp bác sĩ (hiệu ứng "áo trắng" / white coat hypertension), vừa vận động, uống cà phê, bàng quang đầy, tư thế đo sai đều ảnh hưởng. Cần đo nhiều lần trong nhiều ngày, ở trạng thái nghỉ ngơi. Đo tại nhà (home blood pressure monitoring) thường phản ánh thực tế hơn đo tại phòng khám.
+
+  related_biomarkers:
+    - sodium
+    - potassium
+    - creatinine
+    - aldosterone
+
+  derived_indicators:
+    - "Pulse pressure (HA tâm thu - HA tâm trương)"
+    - "MAP — Mean Arterial Pressure"
+
+  patient_explanation: >
+    Hãy hình dung hệ thống tuần hoàn như hệ thống ống nước trong nhà. Huyết áp là áp lực nước trong đường ống — quá cao sẽ làm căng thành ống và có thể gây rò rỉ hay vỡ ống theo thời gian. Nhưng một lần đo cao không nói lên tất cả — giống như nước có thể áp lực cao nhất thiết lúc bạn dùng nhiều vòi cùng lúc. Điều quan trọng là mức trung bình theo thời gian, không phải một thời điểm.
+
+  common_questions:
+    - "Huyết áp bao nhiêu là cần uống thuốc?"
+    - "Hiệu ứng áo trắng là gì — tôi có bị không?"
+    - "Tôi có thể tự đo huyết áp tại nhà không?"
+    - "Ăn ít muối có giúp giảm huyết áp bao nhiêu?"
+    - "Huyết áp cao có triệu chứng gì không?"
+
+  lifestyle_relevance: >
+    Giảm muối natri trong chế độ ăn (dưới 5g/ngày — tương đương 1 muỗng cà phê) là một trong những biện pháp hiệu quả nhất hạ huyết áp. Vận động aerobic đều đặn (30 phút/ngày, hầu hết các ngày) giúp giảm 4-9 mmHg. Giảm cân nếu thừa cân, hạn chế rượu bia, bỏ thuốc lá, kỹ thuật thư giãn và kiểm soát stress cũng có tác dụng rõ ràng. Ăn nhiều rau quả tươi, kali (chuối, khoai lang) hỗ trợ huyết áp.
+
+  doctor_discussion_topics:
+    - "Tôi nên tự theo dõi huyết áp tại nhà như thế nào?"
+    - "Mục tiêu huyết áp phù hợp với tôi là bao nhiêu?"
+    - "Huyết áp của tôi có cần điều trị bằng thuốc không?"
+    - "Tôi có dấu hiệu tổn thương cơ quan đích (tim, thận, mắt) không?"
+
+  guideline_notes: >
+    Các hướng dẫn lâm sàng phân loại huyết áp khác nhau theo từng tổ chức — phổ biến nhất: bình thường (<120/80), tăng giới hạn (120-129/<80), tăng huyết áp độ 1 (130-139/80-89), tăng huyết áp độ 2 (≥140/90). Quyết định điều trị bằng thuốc phụ thuộc vào mức huyết áp VÀ nguy cơ tim mạch tổng thể, không chỉ con số đơn lẻ. Thay đổi lối sống được khuyến nghị cho mọi người có huyết áp tăng.
+
+  references:
+    - "Tóm tắt từ tài liệu y khoa chuẩn về tăng huyết áp và nguy cơ tim mạch (nội dung tổng hợp, không trích dẫn nguyên văn hướng dẫn bản quyền)"

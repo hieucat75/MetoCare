@@ -1,0 +1,73 @@
+knowledge_id: hdl_low
+knowledge_type: biomarker
+version: "1.0"
+language: vi
+status: internal_review
+last_reviewed: "2026-06-28"
+reviewer: "auto_generated_ckp_v1"
+medical_specialty: cardiology
+evidence_level: strong
+confidence: 0.88
+future_review_due: "2027-06-28"
+display_name_vi: "Cholesterol HDL (tốt) thấp"
+short_summary_vi: "HDL thấp có nghĩa là cơ thể có ít 'xe dọn dẹp' cholesterol hơn — điều này có thể liên quan đến tăng nguy cơ tim mạch, đặc biệt khi kết hợp với LDL cao hoặc triglyceride cao."
+tags:
+  - hdl_low
+  - cholesterol
+  - tim_mach
+  - lipid
+related_cards:
+  - ldl_elevated
+  - triglyceride_elevated
+  - insulin_resistance
+sections:
+  definition: >
+    HDL (High-Density Lipoprotein) là loại lipoprotein có tỷ trọng cao, thường được gọi là "cholesterol tốt". HDL có chức năng vận chuyển cholesterol dư thừa từ các mô và thành mạch máu trở về gan để xử lý và đào thải. Khi HDL ở mức thấp, quá trình dọn dẹp cholesterol này bị suy giảm, có thể làm tăng nguy cơ tích tụ xơ vữa động mạch.
+
+  normal_physiology: >
+    HDL hoạt động như một hệ thống thu gom ngược (reverse cholesterol transport) — lấy cholesterol từ thành mạch và các mô ngoại vi mang về gan. Ngoài ra, HDL còn có các tác dụng bảo vệ khác như kháng viêm, kháng oxy hóa và bảo vệ nội mạc mạch. Mức HDL tự nhiên phụ thuộc vào cả yếu tố di truyền lẫn lối sống.
+
+  causes_of_abnormality: >
+    Các nguyên nhân phổ biến khiến HDL thấp bao gồm: ít vận động thể chất, thừa cân hoặc béo phì, hút thuốc lá, chế độ ăn nhiều carbohydrate tinh chế và đường, tiểu đường týp 2 hoặc đề kháng insulin, yếu tố di truyền (một số người có HDL thấp do gene). Triglyceride cao thường đi kèm với HDL thấp — đây là mẫu hình phổ biến trong rối loạn lipid máu sinh xơ vữa.
+
+  clinical_significance: >
+    HDL thấp là một trong các yếu tố cấu thành hội chứng chuyển hóa và là yếu tố nguy cơ tim mạch độc lập. Khi HDL thấp kết hợp với LDL cao và/hoặc triglyceride cao, nguy cơ tim mạch tăng rõ rệt. Bác sĩ xem xét tỷ lệ TC/HDL hoặc LDL/HDL để đánh giá nguy cơ toàn diện hơn là chỉ xem HDL đơn lẻ.
+
+  limitations: >
+    Mức HDL "bình thường" không đảm bảo không có nguy cơ tim mạch — chức năng của HDL (HDL functionality) quan trọng hơn nồng độ đơn thuần. Một số nghiên cứu cho thấy tăng HDL nhân tạo bằng thuốc không luôn mang lại lợi ích tim mạch như tăng HDL tự nhiên qua lối sống. Ngưỡng HDL thấp cũng khác nhau theo giới tính: nam <1.0 mmol/L, nữ <1.3 mmol/L.
+
+  related_biomarkers:
+    - ldl
+    - triglyceride
+    - total_cholesterol
+    - non_hdl
+
+  derived_indicators:
+    - "TC/HDL ratio"
+    - "LDL/HDL ratio"
+    - "TG/HDL ratio (marker đề kháng insulin)"
+
+  patient_explanation: >
+    Hãy nghĩ HDL như đội xe thu gom rác trong cơ thể — chuyên nhặt cholesterol dư thừa từ thành mạch mang về gan để xử lý. Khi đội xe này ít (HDL thấp), cholesterol có thể tích tụ lại. Tin tốt: HDL là một trong số ít chỉ số sức khỏe có thể cải thiện đáng kể qua lối sống — đặc biệt là vận động thể chất đều đặn và bỏ thuốc lá.
+
+  common_questions:
+    - "HDL thấp có nguy hiểm không nếu LDL của tôi ổn?"
+    - "Tôi có thể tăng HDL bằng cách nào?"
+    - "Uống rượu nhẹ có thực sự tăng HDL không?"
+    - "HDL thấp có liên quan đến đề kháng insulin không?"
+    - "Bao lâu thì HDL tăng sau khi thay đổi lối sống?"
+
+  lifestyle_relevance: >
+    Vận động thể chất aerobic đều đặn (đi bộ nhanh, bơi lội, đạp xe) là cách hiệu quả nhất để tăng HDL — có thể tăng 5-10% sau vài tháng. Bỏ thuốc lá cũng làm tăng HDL đáng kể. Giảm cân ở người thừa cân giúp cải thiện HDL. Chất béo không bão hòa đơn (dầu ô liu, quả bơ) có lợi cho HDL hơn chế độ ăn ít chất béo thuần túy.
+
+  doctor_discussion_topics:
+    - "HDL của tôi thấp ở mức nào thì cần điều trị?"
+    - "Tỷ lệ TC/HDL hay LDL/HDL của tôi là bao nhiêu?"
+    - "Tôi có dấu hiệu hội chứng chuyển hóa không?"
+    - "Vận động thể chất loại nào hiệu quả nhất để tăng HDL?"
+
+  guideline_notes: >
+    HDL thấp là một thành phần của tiêu chí chẩn đoán hội chứng chuyển hóa. Các hướng dẫn lâm sàng hiện tại nhấn mạnh rằng thay đổi lối sống (vận động, bỏ thuốc, giảm cân) là biện pháp chính để cải thiện HDL thấp, vì chưa có bằng chứng đủ mạnh rằng thuốc tăng HDL đơn thuần giảm được nguy cơ tim mạch.
+
+  references:
+    - "Tóm tắt từ tài liệu y khoa chuẩn về HDL, lipid và hội chứng chuyển hóa (nội dung tổng hợp, không trích dẫn nguyên văn hướng dẫn bản quyền)"
