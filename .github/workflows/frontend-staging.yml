@@ -11,7 +11,7 @@
 # is `az containerapp update -n ca-metocare-frontend --image <previous-tag>`
 # (or shift 100% traffic back to the previous revision).
 #
-# Manual only (workflow_dispatch). DigitalOcean production is NOT touched.
+# Manual only (workflow_dispatch). DigitalOcean is LEGACY/DEPRECATED — Azure ACA is the active target.
 # The full backend+frontend pipeline remains in azure-staging.yml (untouched).
 # =============================================================================
 name: Frontend-only Staging Deploy

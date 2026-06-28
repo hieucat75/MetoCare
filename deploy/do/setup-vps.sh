@@ -1,4 +1,5 @@
 #!/bin/bash
+# [LEGACY — DEPRECATED 2026-06-28] DigitalOcean VPS bootstrap. Retained for archive only.
 # MetoCare VPS bootstrap — run once on fresh Ubuntu 24.04 as root
 # Usage: curl -sL <url>/setup-vps.sh | bash
 # Or: scp setup-vps.sh root@<ip>:~ && ssh root@<ip> bash setup-vps.sh

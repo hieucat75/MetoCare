@@ -12,14 +12,14 @@
 
 | Platform | Role | Status | Deploy |
 |---|---|---|---|
-| **DigitalOcean VPS** | **PRIMARY PRODUCTION** | Live, untouched | `deploy-do.yml` (opt-in `[deploy-do]` / manual) |
+| **DigitalOcean VPS** | ~~PRIMARY PRODUCTION~~ **[LEGACY]** | Deprecated 2026-06-28 | `deploy-do.yml` (archive only) |
 | **Azure Container Apps** | **SECONDARY STAGING** | **Live** | `azure-staging.yml` (`workflow_dispatch`) |
 | ~~Azure App Service~~ | Deprecated | Archived | `.github/workflows/_archived/main_metocare.yml.archived` |
 
 **Hard rules:**
 - ❌ **Do NOT merge the two approaches.** DigitalOcean (Docker Compose + self-managed PostgreSQL/TimescaleDB on a VPS) and Azure ACA (managed PG Flexible + serverless containers) are independent stacks with independent migration behavior. Keep them separate.
 - ❌ **Do NOT continue / reactivate the App Service path.** Azure staging is Container Apps only.
-- ✅ DigitalOcean production is PRIMARY and must not be disturbed by staging work.
+- ✅ DigitalOcean VPS is **[LEGACY — DEPRECATED 2026-06-28]**. Azure ACA is now the sole active deployment target.
 
 ---
 

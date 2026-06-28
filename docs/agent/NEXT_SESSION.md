@@ -86,7 +86,7 @@ tsh             0 - 500    mIU/L
 - AI coach confirm-action (missing backend fields: causes, outcome)
 
 ## SECURITY CONSTRAINTS (non-negotiable)
-- Do NOT touch DigitalOcean production or Azure infra config
+- Do NOT touch DigitalOcean VPS (LEGACY — deprecated 2026-06-28, server still running)
 - Do NOT seed admin accounts
 - Azure DI key = secretref:doc-intel-key only, never hardcoded
 - No logging raw medical image content (bytes/base64)

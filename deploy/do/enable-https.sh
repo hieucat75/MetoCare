@@ -1,4 +1,5 @@
 #!/bin/bash
+# [LEGACY — DEPRECATED 2026-06-28] DigitalOcean HTTPS setup. Retained for archive only.
 # enable-https.sh — activate TLS via Let's Encrypt certbot
 # Run AFTER DNS A record points to this VPS IP (146.190.83.230)
 # Usage: ./enable-https.sh yourdomain.com admin@yourdomain.com

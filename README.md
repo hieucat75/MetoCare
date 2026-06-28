@@ -22,9 +22,11 @@ Nền tảng chăm sóc sức khỏe chuyển hóa (tiền tiểu đường, r�
 
 | Platform | Role | Deploy |
 |---|---|---|
-| **DigitalOcean VPS** | **PRIMARY PRODUCTION** | `.github/workflows/deploy-do.yml` — opt-in (`[deploy-do]` commit tag hoặc manual dispatch) |
+| **DigitalOcean VPS** | ~~PRIMARY PRODUCTION~~ **[LEGACY — DEPRECATED 2026-06-28]** | `.github/workflows/deploy-do.yml` — opt-in (`[deploy-do]` commit tag hoặc manual dispatch) |
 | **Azure Container Apps** | **SECONDARY STAGING** | `.github/workflows/azure-staging.yml` — manual `workflow_dispatch`, OIDC-only |
 | ~~Azure App Service~~ | Deprecated | archived → `.github/workflows/_archived/` |
+
+> ⚠️ **2026-06-28:** DigitalOcean VPS has been deprecated. Azure Container Apps (staging → production path) is the sole active deployment target. See [docs/LEGACY_DIGITALOCEAN.md](docs/LEGACY_DIGITALOCEAN.md).
 
 - ❌ **KHÔNG merge 2 approach** (DigitalOcean self-managed PG/TimescaleDB-TSL vs Azure managed PG-Flexible-Apache là 2 stack độc lập) · ❌ **KHÔNG reactivate App Service path**.
 - Chi tiết staging: [`docs/agent/AZURE_ACA_STAGING_REPORT.md`](docs/agent/AZURE_ACA_STAGING_REPORT.md).

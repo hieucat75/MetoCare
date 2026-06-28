@@ -1,4 +1,5 @@
 #!/bin/bash
+# [LEGACY — DEPRECATED 2026-06-28] DigitalOcean deploy script. Retained for archive only.
 # MetoCare deploy script — run on VPS at /opt/metocare
 # Usage: ./deploy.sh [image_tag]
 # Pulls latest image, runs alembic upgrade head, restarts backend

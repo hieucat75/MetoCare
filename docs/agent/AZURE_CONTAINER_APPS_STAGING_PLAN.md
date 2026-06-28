@@ -1,8 +1,8 @@
 # MetoCare — Azure Container Apps STAGING — Implementation Plan
 
 > **Plan-only.** Chưa provision resource, chưa sửa app code, chưa commit.
-> **HARD CONSTRAINT:** DigitalOcean = PRODUCTION chính, **TUYỆT ĐỐI không đụng**.
-> Azure = staging / platform-validation thứ cấp. Không share secret/DB string với DO.
+> **HARD CONSTRAINT (2026-06-28 UPDATE):** DigitalOcean = **[LEGACY — DEPRECATED 2026-06-28]**, không đụng.
+> Azure ACA = deployment target duy nhất. Không share secret/DB string với DO.
 
 **Chốt từ PTH:** ACA (không App Service) · Region Singapore (`southeastasia`) · REAL staging (Postgres+Timescale, **Alembic only**, không SQLite, không `create_all` runtime) · Budget **≤ $20/mo** · RG `rg-metocare-staging` · ACA default ingress/TLS · LLM/OCR mock-disabled.
 
@@ -16,13 +16,13 @@ Deliverables liên quan:
 
 | Platform | Role | Status |
 |---|---|---|
-| **DigitalOcean VPS** | **PRIMARY PRODUCTION** | Live — không đụng |
+| **DigitalOcean VPS** | ~~PRIMARY PRODUCTION~~ **[LEGACY]** | **DEPRECATED 2026-06-28** |
 | **Azure Container Apps** | **SECONDARY STAGING** | **LIVE** (`azure-staging.yml`, `workflow_dispatch`) |
 | ~~Azure App Service~~ | Deprecated | Archived → `.github/workflows/_archived/main_metocare.yml.archived` |
 
 - ❌ **KHÔNG merge cả 2 approach.** DigitalOcean (Docker Compose + self-managed PostgreSQL/TimescaleDB TSL) và Azure ACA (managed PG Flexible Apache + serverless containers) là 2 stack độc lập, migration behavior khác nhau (TSL full CAGG vs Apache skip CAGG). Giữ tách biệt.
 - ❌ **KHÔNG continue / reactivate App Service path.** Azure staging chỉ dùng Container Apps.
-- ✅ DigitalOcean = PRIMARY, không bị staging làm phiền (merge main dùng `[skip ci]` hoặc opt-in `[deploy-do]` tag).
+- ✅ DigitalOcean = **[LEGACY — DEPRECATED 2026-06-28]**. Azure ACA là deployment target duy nhất (2026-06-28).
 
 > Báo cáo deploy đầy đủ: [`AZURE_ACA_STAGING_REPORT.md`](./AZURE_ACA_STAGING_REPORT.md).
 

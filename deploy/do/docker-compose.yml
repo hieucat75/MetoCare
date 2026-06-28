@@ -1,6 +1,7 @@
 version: "3.9"
 
 # MetoCare — DigitalOcean VPS production stack
+# [LEGACY — DEPRECATED 2026-06-28] This stack is no longer active production.
 # Services: backend (FastAPI/Gunicorn), postgres, redis, nginx
 # All secrets injected via .env file (never committed to git)
 

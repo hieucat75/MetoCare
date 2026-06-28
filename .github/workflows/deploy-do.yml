@@ -1,4 +1,10 @@
-# MetoCare — Deploy to DigitalOcean VPS (PRIMARY PRODUCTION)
+# [LEGACY — DEPRECATED 2026-06-28]
+# MetoCare — Deploy to DigitalOcean VPS
+# STATUS: DEPRECATED. Azure Container Apps is the sole active deploy target.
+# This workflow is retained for archive/rollback reference only.
+# DO NOT trigger this workflow without explicit PTH approval.
+# Original header preserved below:
+# MetoCare — Deploy to DigitalOcean VPS (was PRIMARY PRODUCTION)
 # Trigger: OPT-IN only —
 #   • push to main whose HEAD commit message contains `[deploy-do]`, OR
 #   • manual workflow_dispatch.

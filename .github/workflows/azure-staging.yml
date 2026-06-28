@@ -4,7 +4,7 @@
 # Migrations: Alembic one-shot Container Apps Job (NO runtime create_all).
 # Secrets: read from Key Vault via OIDC az, injected as ACA secrets.
 #
-# Manual only (workflow_dispatch). DigitalOcean production is NOT touched here.
+# Manual only (workflow_dispatch). DigitalOcean is LEGACY/DEPRECATED — Azure ACA is the active target.
 # Requires PR #4 (license-aware migration) merged to main before first run.
 # =============================================================================
 name: Azure Staging Deploy
@@ -181,8 +181,7 @@ jobs:
           # fallback, called ONLY when local confidence is low OR zero biomarkers were
           # parsed. MCP_FEATURE_OCR_CLOUD_FALLBACK=true + MCP_OCR_CLOUD_PROVIDER=azure +
           # AZURE_DOC_INTEL_ENDPOINT/KEY enable it. No ANTHROPIC_API_KEY is provisioned.
-          # STAGING only — production enablement is a separate decision (DigitalOcean
-          # untouched, its OCR flags stay default-off).
+          # Azure ACA is both staging and production path. DigitalOcean is LEGACY (deprecated 2026-06-28).
           COMMON_ENV="MCP_ENV=staging MCP_DEBUG=false \
             MCP_DATABASE_URL=secretref:db-url MCP_SECRET_KEY=secretref:secret-key \
             MCP_ENCRYPTION_KEYS=secretref:enc-keys \

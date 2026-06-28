@@ -2,7 +2,7 @@
 
 Metabolic care platform. **Backend:** FastAPI + SQLAlchemy/Alembic (`backend/`, Python).
 **Frontend:** Next.js 14 + Tailwind + Radix (`frontend/`, TypeScript/React).
-Deploy: Azure Container Apps (staging) + DigitalOcean. See `docs/` and `infra/`.
+Deploy: Azure Container Apps (active). DigitalOcean = LEGACY (deprecated 2026-06-28). See `docs/LEGACY_DIGITALOCEAN.md`.
 
 ## ECC operator layer (installed globally)
 
@@ -37,7 +37,7 @@ Tune via ECC env vars / `configure-ecc` skill if a gate is unwanted. Opt-in hook
 
 ## Project guardrails (pre-existing — keep)
 
-- Do **not** touch DigitalOcean production, Azure infra workflow/config, or the Postgres
+- Do **not** touch DigitalOcean VPS (legacy — server still running, do not modify without PTH approval). Do not touch Azure infra workflow/config or the Postgres
   firewall as part of unrelated work.
 - Do not seed admin accounts.
 - CI policy: production-affecting commits use `[skip ci]` where appropriate (see git history).
