@@ -68,6 +68,8 @@ class PatientInsightRequest(BaseModel):
     sex: str | None = None  # "male" | "female" | None
     age: int | None = None  # years
     waist_cm: float | None = None
+    # Narrative: include AI narrative in response (additive, default False)
+    include_narrative: bool = False
 
 
 @router.post("/patients/{patient_id}/patient-insight")
@@ -233,4 +235,18 @@ def patient_insight(
         ctx=patient_ctx,
     )
 
-    return dataclasses.asdict(report)
+    result = dataclasses.asdict(report)
+
+    # Optionally include narrative if requested (additive — never fails main response)
+    if body.include_narrative:
+        try:
+            from app.services.medical_narrative import generate_narrative  # noqa: PLC0415
+            narrative_result = generate_narrative(report, patient_id, body.batch_id)
+            if hasattr(narrative_result, "__dataclass_fields__"):
+                result["narrative"] = dataclasses.asdict(narrative_result)
+            else:
+                result["narrative"] = vars(narrative_result)
+        except Exception:  # narrative is additive; never fail the main response
+            pass
+
+    return result

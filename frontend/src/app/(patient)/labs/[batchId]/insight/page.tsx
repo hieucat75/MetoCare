@@ -29,6 +29,7 @@ import {
   TimelineRow,
   PositiveReinforcementBanner,
 } from '@/components/patient/LabInsightCards'
+import { NarrativeSection } from '@/components/patient/NarrativeSection'
 
 // ── Skeleton ───────────────────────────────────────────────────────────────────
 
@@ -207,7 +208,12 @@ export default function LabInsightPage() {
             </NeuCard>
           )}
 
-          {/* 7. Full disclaimer */}
+          {/* 7. Narrative AI — additive, never fails the page */}
+          {patientId && (
+            <NarrativeSection patientId={patientId} batchId={batchId} />
+          )}
+
+          {/* 8. Full disclaimer */}
           <div
             className="rounded-[14px] border border-[#F59E0B]/30 bg-[rgba(245,158,11,0.06)] p-4"
             role="note"
