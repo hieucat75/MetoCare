@@ -26,11 +26,13 @@ from app.schemas.lab import (
     LabDocumentStatusOut,
     LabManualEntryCreate,
     LabResultCorrectionIn,
+    LabResultEditIn,
     LabResultListResponse,
     LabResultOut,
     LabUploadBatchOut,
 )
 from app.services import consent, lab, lab_batch
+from app.services import narrative_cache as nc
 from app.services.lab_pipeline import get_worker
 
 router = APIRouter(tags=["lab"])
@@ -547,6 +549,83 @@ def correct_lab_result(
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return LabResultOut.model_validate(row)
+
+
+@router.patch(
+    "/patients/{patient_id}/lab-results/{result_id}",
+    response_model=LabResultOut,
+    summary="Partial-edit a lab result (metadata + value/unit)",
+)
+def edit_lab_result(
+    patient_id: str,
+    result_id: str,
+    payload: LabResultEditIn,
+    user: CurrentUser = Depends(
+        require_roles(
+            UserRole.PATIENT,
+            UserRole.DOCTOR,
+            UserRole.INTERNAL_ADMIN,
+            UserRole.SUPER_ADMIN,
+        )
+    ),
+    db: Session = Depends(get_session),
+) -> LabResultOut:
+    """Extended partial-update for a LabResult.
+
+    Applies any provided fields.  When value or unit changes, re-runs
+    normalize_and_classify() and updates status, normalized_value_si, etc.
+    Preserves id, created_at, patient_id.
+    """
+    _require_patient_ownership(db, patient_id=patient_id, user=user)
+    try:
+        row = lab.edit_lab_result(
+            db,
+            result_id=result_id,
+            patient_id=patient_id,
+            requester_id=user.id,
+            **payload.model_dump(exclude_none=True),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    nc.invalidate_patient(patient_id)
+    return LabResultOut.model_validate(row)
+
+
+_DELETE_LAB_RESULT_ROLES = (
+    UserRole.PATIENT,
+    UserRole.DOCTOR,
+    UserRole.INTERNAL_ADMIN,
+    UserRole.SUPER_ADMIN,
+)
+
+
+@router.delete(
+    "/patients/{patient_id}/lab-results/{result_id}",
+    status_code=204,
+    summary="Soft-delete a single lab result",
+)
+def delete_lab_result(
+    patient_id: str,
+    result_id: str,
+    user: CurrentUser = Depends(require_roles(*_DELETE_LAB_RESULT_ROLES)),
+    db: Session = Depends(get_session),
+) -> None:
+    """Soft-delete a single LabResult (sets deleted_at / deleted_by, never hard-deletes).
+
+    Ownership: PATIENT may only delete their own results.
+    After deletion, invalidates the narrative cache for this patient.
+    """
+    _require_patient_ownership(db, patient_id=patient_id, user=user)
+    try:
+        lab.delete_lab_result(
+            db,
+            result_id=result_id,
+            patient_id=patient_id,
+            requester_id=user.id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    nc.invalidate_patient(patient_id)
 
 
 # ---------------------------------------------------------------------------

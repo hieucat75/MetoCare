@@ -43,15 +43,51 @@ def get_cached_narrative(key: str) -> dict | None:
     return None
 
 
-def save_narrative(key: str, data: dict) -> None:
-    """Persist narrative to cache. Errors are non-fatal."""
+def save_narrative(key: str, data: dict, *, patient_id: str | None = None) -> None:
+    """Persist narrative to cache. Errors are non-fatal.
+
+    *patient_id* is stored inside the JSON payload so that
+    :func:`invalidate_patient` can locate and delete all files for a given
+    patient without relying on file-name patterns.
+    """
     os.makedirs(NARRATIVE_CACHE_DIR, exist_ok=True)
     payload = {**data, "cached_at": datetime.utcnow().isoformat()}
+    if patient_id is not None:
+        payload.setdefault("patient_id", patient_id)
     try:
         with open(_cache_path(key), "w", encoding="utf-8") as f:
             json.dump(payload, f, ensure_ascii=False, indent=2)
     except OSError:
         pass  # Cache write failures are non-fatal
+
+
+def invalidate_patient(patient_id: str) -> int:
+    """Delete all cached narrative files for *patient_id*.
+
+    Scans NARRATIVE_CACHE_DIR for JSON files whose stored ``patient_id`` field
+    matches.  Safe: no-op if dir missing or no matching files.  Never raises.
+
+    Returns count of ``.json`` files deleted.
+    """
+    count = 0
+    try:
+        if not os.path.isdir(NARRATIVE_CACHE_DIR):
+            return 0
+        for fname in os.listdir(NARRATIVE_CACHE_DIR):
+            if not fname.endswith(".json"):
+                continue
+            fpath = os.path.join(NARRATIVE_CACHE_DIR, fname)
+            try:
+                with open(fpath, encoding="utf-8") as f:
+                    data = json.load(f)
+                if data.get("patient_id") == patient_id:
+                    os.remove(fpath)
+                    count += 1
+            except (OSError, json.JSONDecodeError, KeyError):
+                continue
+    except OSError:
+        pass
+    return count
 
 
 def invalidate_narrative(key: str) -> bool:

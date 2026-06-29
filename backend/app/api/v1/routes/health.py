@@ -19,8 +19,9 @@ from sqlalchemy.orm import Session
 from app.api.deps import CurrentUser, get_session, require_roles
 from app.models.patient import PatientProfile
 from app.models.user import UserRole
-from app.schemas.health import MetricCreate, MetricOut, TrendOut
+from app.schemas.health import MetricCreate, MetricOut, MetricUpdate, TrendOut
 from app.services import health_metrics
+from app.services import narrative_cache as nc
 
 router = APIRouter(prefix="/patients/{patient_id}/metrics", tags=["health-tracking"])
 
@@ -101,6 +102,59 @@ def list_metrics(
         db, patient_id=patient_id, requester_id=user.id, metric_type=metric_type
     )
     return [MetricOut.model_validate(r) for r in rows]
+
+
+@router.patch("/{metric_id}", response_model=MetricOut)
+def update_metric(
+    patient_id: str,
+    metric_id: str,
+    payload: MetricUpdate,
+    user: CurrentUser = Depends(require_roles(*_WRITE_ROLES)),
+    db: Session = Depends(get_session),
+) -> MetricOut:
+    """Partial-update an existing HealthMetric (PATCH semantics).
+
+    Only the fields present in *payload* are applied.  id and created_at are
+    never modified.  status is re-derived from the updated value + ranges.
+    """
+    _enforce_patient_ownership(patient_id, user, db)
+    try:
+        metric = health_metrics.update_metric(
+            db,
+            metric_id=metric_id,
+            patient_id=patient_id,
+            requester_id=user.id,
+            **payload.model_dump(exclude_none=True),
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return MetricOut.model_validate(metric)
+
+
+@router.delete("/{metric_id}", status_code=204)
+def delete_metric(
+    patient_id: str,
+    metric_id: str,
+    user: CurrentUser = Depends(require_roles(*_WRITE_ROLES)),
+    db: Session = Depends(get_session),
+) -> None:
+    """Soft-delete a HealthMetric (sets deleted_at / deleted_by, never hard-deletes)."""
+    _enforce_patient_ownership(patient_id, user, db)
+    try:
+        health_metrics.delete_metric(
+            db,
+            metric_id=metric_id,
+            patient_id=patient_id,
+            requester_id=user.id,
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    # Invalidate narrative cache so AI copilot reflects the deletion
+    nc.invalidate_patient(patient_id)
 
 
 @router.get("/trend", response_model=TrendOut)

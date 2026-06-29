@@ -1000,3 +1000,69 @@ export async function getConsents(patientId: string): Promise<Consent[]> {
 export async function revokeConsent(patientId: string, consentId: string): Promise<void> {
   return api.del(`/patients/${patientId}/consents/${consentId}`)
 }
+
+// ── Health Metric Edit / Delete (P0) ────────────────────────────────────────────────
+
+/** Partial update payload for PATCH /patients/{id}/metrics/{metricId}. */
+export interface MetricUpdateInput {
+  metric_type?: string
+  value?: number
+  unit?: string
+  measured_at?: string
+  source?: string
+  normal_range_min?: number
+  normal_range_max?: number
+}
+
+/**
+ * Partial-update a HealthMetric (PATCH semantics).
+ * Only provided fields are applied; id and created_at are preserved.
+ */
+export async function updateMetric(
+  patientId: string,
+  metricId: string,
+  data: MetricUpdateInput
+): Promise<HealthMetric> {
+  const raw = await api.patch<HealthMetric>(
+    `/patients/${patientId}/metrics/${metricId}`,
+    data
+  )
+  return { ...raw, recorded_at: raw.measured_at ?? '' }
+}
+
+/** Soft-delete a HealthMetric (backend sets deleted_at, never hard-deletes). */
+export async function deleteMetric(patientId: string, metricId: string): Promise<void> {
+  await api.del(`/patients/${patientId}/metrics/${metricId}`)
+}
+
+// ── Lab Result Edit / Delete (P0) ───────────────────────────────────────────────
+
+/** Partial update payload for PATCH /patients/{id}/lab-results/{resultId}. */
+export interface LabResultUpdateInput {
+  value?: number
+  unit?: string
+  test_name?: string
+  reference_range?: string
+  test_date?: string
+  source_type?: string
+}
+
+/**
+ * Partial-edit a LabResult (extended PATCH).
+ * When value or unit change, backend re-runs normalize_and_classify().
+ */
+export async function updateLabResult(
+  patientId: string,
+  resultId: string,
+  data: LabResultUpdateInput
+): Promise<LabResultEntry> {
+  return api.patch<LabResultEntry>(
+    `/patients/${patientId}/lab-results/${resultId}`,
+    data
+  )
+}
+
+/** Soft-delete a single LabResult. */
+export async function deleteLabResult(patientId: string, resultId: string): Promise<void> {
+  await api.del(`/patients/${patientId}/lab-results/${resultId}`)
+}

@@ -916,3 +916,124 @@ def correct_lab_result(
     db.commit()
     db.refresh(row)
     return row
+
+
+def edit_lab_result(
+    db: Session,
+    *,
+    result_id: str,
+    patient_id: str,
+    requester_id: str,
+    value: float | None = None,
+    unit: str | None = None,
+    test_name: str | None = None,
+    reference_range: str | None = None,
+    test_date=None,
+    source_type: str | None = None,
+) -> LabResult:
+    """Extended partial-update for a LabResult.
+
+    Applies any provided fields.  When value or unit changes, re-runs
+    normalize_and_classify() just like correct_lab_result().
+    """
+    import json as _json
+
+    consent.require_access(db, patient_id=patient_id, requester_id=requester_id, scope="lab")
+
+    row = db.execute(
+        select(LabResult).where(
+            LabResult.id == result_id,
+            LabResult.patient_id == patient_id,
+            LabResult.deleted_at.is_(None),
+        )
+    ).scalar_one_or_none()
+
+    if row is None:
+        raise ValueError(f"LabResult {result_id!r} not found for patient {patient_id!r}")
+
+    # Metadata fields
+    if test_name is not None:
+        row.test_name = test_name
+    if reference_range is not None:
+        row.reference_range = reference_range
+    if test_date is not None:
+        row.test_date = test_date
+
+    # Value / unit change → re-classify (mirrors correct_lab_result logic)
+    if value is not None or unit is not None:
+        new_value = value if value is not None else row.original_value
+        new_unit = unit if unit is not None else (row.original_unit or "")
+
+        # Store provenance
+        history = _json.loads(row.correction_history_json) if row.correction_history_json else []
+        history.append(
+            {
+                "timestamp": utcnow().isoformat(),
+                "old_value": row.original_value,
+                "old_unit": row.original_unit,
+                "corrected_by": "user",
+            }
+        )
+        row.correction_history_json = _json.dumps(history)
+
+        row.original_value = new_value
+        row.original_unit = new_unit
+
+        classification = normalize_and_classify(row.canonical_name, new_value, new_unit)
+        row.normalized_value_si = classification.get("normalized_value_si")
+        row.normalized_unit_si = classification.get("normalized_unit_si")
+        row.status = classification.get("status")
+
+        canonical_value = classification.get("normalized_value_si")
+        canonical_unit = classification.get("normalized_unit_si")
+        row.value = canonical_value if canonical_value is not None else new_value
+        row.unit = canonical_unit if canonical_unit is not None else new_unit
+
+    audit.record(
+        db,
+        actor_type="user",
+        actor_id=requester_id,
+        action="edit_lab_result",
+        resource_type="lab_result",
+        resource_id=row.id,
+    )
+
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def delete_lab_result(
+    db: Session,
+    *,
+    result_id: str,
+    patient_id: str,
+    requester_id: str,
+) -> None:
+    """Soft-delete a single LabResult (sets deleted_at / deleted_by)."""
+    consent.require_access(db, patient_id=patient_id, requester_id=requester_id, scope="lab")
+
+    row = db.execute(
+        select(LabResult).where(
+            LabResult.id == result_id,
+            LabResult.patient_id == patient_id,
+            LabResult.deleted_at.is_(None),
+        )
+    ).scalar_one_or_none()
+
+    if row is None:
+        raise ValueError(f"LabResult {result_id!r} not found for patient {patient_id!r}")
+
+    row.deleted_at = utcnow()
+    row.deleted_by = requester_id
+
+    audit.record(
+        db,
+        actor_type="user",
+        actor_id=requester_id,
+        action="delete",
+        resource_type="lab_result",
+        resource_id=result_id,
+    )
+
+    db.commit()

@@ -110,6 +110,93 @@ def list_metrics(
     return rows
 
 
+def update_metric(
+    db: Session,
+    *,
+    metric_id: str,
+    patient_id: str,
+    requester_id: str,
+    **fields,
+) -> HealthMetric:
+    """Partial-update a HealthMetric row.
+
+    Allowed fields: metric_type, value, unit, measured_at, source,
+    normal_range_min, normal_range_max.
+    Preserves: id, created_at.
+    Re-runs classify_status() after any change to value / ranges.
+    """
+    consent.require_access(
+        db, patient_id=patient_id, requester_id=requester_id, scope="health_metric"
+    )
+    metric = db.get(HealthMetric, metric_id)
+    if metric is None or metric.deleted_at is not None:
+        raise ValueError(f"HealthMetric {metric_id} not found.")
+    if metric.patient_id != patient_id:
+        raise PermissionError(f"HealthMetric {metric_id} does not belong to patient {patient_id}.")
+
+    _ALLOWED = {
+        "metric_type", "value", "unit", "measured_at",
+        "source", "normal_range_min", "normal_range_max",
+    }
+    for k, v in fields.items():
+        if k not in _ALLOWED:
+            continue
+        if k == "measured_at" and v is not None:
+            v = as_naive_utc(v)
+        setattr(metric, k, v)
+
+    # Re-classify after update
+    metric.status = classify_status(
+        metric.metric_type,
+        metric.value,
+        metric.normal_range_min,
+        metric.normal_range_max,
+    )
+
+    db.flush()
+    audit.record(
+        db,
+        actor_type="user",
+        actor_id=requester_id,
+        action="update",
+        resource_type="health_metric",
+        resource_id=metric.id,
+    )
+    db.commit()
+    return metric
+
+
+def delete_metric(
+    db: Session,
+    *,
+    metric_id: str,
+    patient_id: str,
+    requester_id: str,
+) -> None:
+    """Soft-delete a HealthMetric row (sets deleted_at / deleted_by)."""
+    consent.require_access(
+        db, patient_id=patient_id, requester_id=requester_id, scope="health_metric"
+    )
+    metric = db.get(HealthMetric, metric_id)
+    if metric is None or metric.deleted_at is not None:
+        raise ValueError(f"HealthMetric {metric_id} not found.")
+    if metric.patient_id != patient_id:
+        raise PermissionError(f"HealthMetric {metric_id} does not belong to patient {patient_id}.")
+
+    metric.deleted_at = utcnow()
+    metric.deleted_by = requester_id
+    db.flush()
+    audit.record(
+        db,
+        actor_type="user",
+        actor_id=requester_id,
+        action="delete",
+        resource_type="health_metric",
+        resource_id=metric_id,
+    )
+    db.commit()
+
+
 def trend(
     db: Session,
     *,

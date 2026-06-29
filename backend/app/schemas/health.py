@@ -7,6 +7,21 @@ import datetime as dt
 from pydantic import BaseModel, Field, model_validator
 
 
+class MetricUpdate(BaseModel):
+    """Partial-update payload for PATCH /metrics/{metric_id}.
+
+    All fields are optional — only provided fields are applied.
+    """
+
+    metric_type: str | None = None
+    value: float | None = None
+    unit: str | None = None
+    measured_at: dt.datetime | None = None
+    source: str | None = None
+    normal_range_min: float | None = None
+    normal_range_max: float | None = None
+
+
 class MetricCreate(BaseModel):
     metric_type: str = Field(..., examples=["fasting_glucose"])
     value: float

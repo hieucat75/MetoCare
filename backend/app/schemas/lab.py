@@ -244,3 +244,18 @@ class LabResultCorrectionIn(BaseModel):
 
     value: float
     unit: str = ""
+
+
+class LabResultEditIn(BaseModel):
+    """Extended partial-update payload for PATCH /patients/{id}/lab-results/{id}.
+
+    All fields optional — only provided fields are applied.
+    Extends the existing /correct endpoint’s scope to include metadata fields.
+    """
+
+    value: float | None = None
+    unit: str | None = None
+    test_name: str | None = Field(None, max_length=128)
+    reference_range: str | None = Field(None, max_length=128)
+    test_date: dt.date | None = None
+    source_type: str | None = Field(None, max_length=64)
