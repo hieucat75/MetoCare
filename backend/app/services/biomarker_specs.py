@@ -204,10 +204,28 @@ def check_plausibility(biomarker_name: str, value: float, unit: str) -> dict:
 
     Rules:
     - If biomarker not in BIOMARKER_PLAUSIBILITY → plausible=True (unknown — skip)
+    - If unit is in BiomarkerSpec.incompatible_units → overall=0.0, suspicious=True
     - If value is within [min, max] for the claimed unit → plausible=True
     - If value is outside claimed-unit range but within other-unit range → suspicious
     - If value is outside all known ranges → plausible=False, suspicious=False
     """
+    # Check incompatible units FIRST — before physiological bounds
+    from app.domain import lab_interpreter as _lab_interpreter  # noqa: PLC0415
+    spec_obj = _lab_interpreter._ALIAS_INDEX.get(biomarker_name)
+    if spec_obj and unit in spec_obj.incompatible_units:
+        return {
+            "plausible": False,
+            "suspicious": True,
+            "reason": (
+                f"Unit {unit!r} is incompatible with {biomarker_name} "
+                f"(expected {spec_obj.unit} or {spec_obj.si_unit})"
+            ),
+            "action": "flag",
+            "conv_conf": 0.0,
+            "clin_conf": 0.0,
+            "overall": 0.0,
+        }
+
     spec = BIOMARKER_PLAUSIBILITY.get(biomarker_name)
     if spec is None:
         return {

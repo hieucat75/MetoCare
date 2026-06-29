@@ -645,23 +645,28 @@ from app.services.explanation_cache import invalidate_cached_explanation  # noqa
 def _clean_reference_range(raw: str | None, display_unit: str) -> str:
     """Strip unit suffix from reference range string if it duplicates display_unit or is garbled.
 
+    Only strips trailing tokens that look like measurement units (contain '/').
+    Preserves qualitative references: "Âm tính", "Bình thường", "Negative", "< 200".
+
     Examples::
 
-        "0.6–1.3 mg/dL"  + display_unit "mg/dL"  → "0.6–1.3"
-        "0.6–1.3 mg/dL pmol/L" + any             → "0.6–1.3"
-        "2.76–8.07 mg/dL mg/dL" + any            → "2.76–8.07"
-        "< 200"            + any                  → "< 200"
-        "70–99"            + "mg/dL"              → "70–99"
+        "0.6–1.3 mg/dL"     → "0.6–1.3"
+        "53–115 µmol/L"     → "53–115"
+        "0.6–1.3 mg/dL mg/dL" → "0.6–1.3"
+        "Âm tính"           → "Âm tính"  (preserved)
+        "Bình thường"       → "Bình thường"  (preserved)
+        "< 200"             → "< 200"
+        "70–99"             → "70–99"
     """
-    import re  # noqa: PLC0415
+    import re as _re  # noqa: PLC0415
 
     if not raw:
         return ""
-    # Remove trailing unit-like tokens (word chars + /dL, µmol/L, etc.) that
-    # appear after the numeric range portion.
-    cleaned = re.sub(r"\s+[A-Za-zµμ%/·\·]+.*$", "", raw.strip())
-    return cleaned.strip()
-
+    # Only strip trailing tokens that look like units (must contain '/')
+    # Pattern: whitespace + token-with-slash (e.g. mg/dL, µmol/L, IU/L)
+    # Allow multiple such tokens at end (e.g. "mg/dL pmol/L")
+    cleaned = _re.sub(r'(\s+\S+/\S+)+\s*$', '', raw.strip())
+    return cleaned.strip() or raw.strip()  # fallback to raw if result is empty
 
 def _build_clinical_input(row: LabResult) -> dict:
     """Convert a LabResult ORM row into the clinical_input dict for the explanation layer.

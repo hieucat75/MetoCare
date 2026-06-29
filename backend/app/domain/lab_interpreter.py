@@ -223,6 +223,9 @@ BIOMARKERS: tuple[BiomarkerSpec, ...] = (
         si_factor=0.011312,  # 1/88.42 µmol/L → mg/dL
         physiological_min=0.1,
         physiological_max=30,
+        incompatible_units=(
+            "pmol/L", "nmol/L", "mmol/L", "IU/L", "U/L", "mIU/L", "ng/mL", "µIU/mL"
+        ),
     ),
     BiomarkerSpec(
         "egfr",

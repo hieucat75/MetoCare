@@ -468,6 +468,8 @@ export interface LabResultEntry {
   original_test_name: string | null
   normalized_value_si: number | null
   normalized_unit_si: string | null
+  /** Backend quality flag: 'flag' means suspicious value/unit, needs user verification. */
+  data_quality_flag?: string | null
   created_at: string
 }
 

@@ -375,6 +375,16 @@ export default function BiomarkerDetailPage() {
           </span>
         </div>
 
+        {/* Data quality warning — surfaced when OCR detected suspicious value/unit */}
+        {result.data_quality_flag === 'flag' && (
+          <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 flex items-start gap-2">
+            <span className="text-amber-500 mt-0.5 shrink-0">⚠️</span>
+            <p className="text-sm text-amber-800 leading-snug">
+              Giá trị hoặc đơn vị có thể chưa chính xác (phát hiện bất thường khi đọc). Vui lòng kiểm tra lại với bác sĩ hoặc tự chỉnh sửa.
+            </p>
+          </div>
+        )}
+
         {/* Reference range text — backend already strips unit suffix; no double-unit */}
         {result.reference_range && (
           <p className="mt-3 text-[16px] text-neu-muted">

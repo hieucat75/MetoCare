@@ -396,3 +396,28 @@ class TestValidateExplanationCompatibility:
         assert "231.6333000000" not in prompt
         # The formatted value should be present
         assert "232" in prompt
+
+
+# ---------------------------------------------------------------------------
+# Regression guard: _clean_reference_range must preserve qualitative strings
+# (regression guard for b4f27b6 partial fix)
+# ---------------------------------------------------------------------------
+
+def test_clean_reference_range_preserves_qualitative():
+    """Qualitative reference values must not be stripped by _clean_reference_range.
+
+    Regression guard: prior regex (r'\\s+[A-Za-zµμ%/·]+.*$') was too greedy and
+    would strip text from values like 'Âm tính', 'Bình thường', 'Negative'.
+    """
+    from app.api.v1.routes.lab import _clean_reference_range
+
+    # Vietnamese qualitative — must be fully preserved
+    assert _clean_reference_range("Âm tính", "U/L") == "Âm tính"
+    assert _clean_reference_range("Bình thường", "U/L") == "Bình thường"
+    # English qualitative — must be fully preserved
+    assert _clean_reference_range("Negative", "mg/dL") == "Negative"
+    # Numeric with unit — unit suffix must be stripped
+    assert _clean_reference_range("0.6–1.3 mg/dL", "mg/dL") == "0.6–1.3"
+    # Pure numeric — must be preserved
+    assert _clean_reference_range("< 200", "mg/dL") == "< 200"
+    assert _clean_reference_range("70–99", "mg/dL") == "70–99"

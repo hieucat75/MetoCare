@@ -114,6 +114,7 @@ class LabResultOut(BaseModel):
     # SI-normalized fields
     normalized_value_si: float | None = None
     normalized_unit_si: str | None = None
+    data_quality_flag: str | None = None
     created_at: dt.datetime
 
     @model_validator(mode="after")
