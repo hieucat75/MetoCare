@@ -6,6 +6,7 @@ import {
   Activity,
   Bell,
   ChevronRight,
+  FlaskConical,
   Lock,
   LogOut,
   Pencil,
@@ -501,6 +502,29 @@ export default function ProfilePage() {
               </p>
             </NeuCard>
           )}
+
+          {/* Labs — personal health records */}
+          <NeuCard className="!px-4 !py-1">
+            <LinkRow
+              icon={<FlaskConical className="size-5" />}
+              color="#0F9C6E"
+              label="Đọc kết quả bằng AI"
+              onClick={() => router.push('/labs/upload')}
+            />
+            <LinkRow
+              icon={<Activity className="size-5" />}
+              color="#2563EB"
+              label="Lịch sử xét nghiệm"
+              onClick={() => router.push('/labs')}
+            />
+            <LinkRow
+              icon={<Pencil className="size-5" />}
+              color="#6D3FBE"
+              label="Nhập thủ công"
+              onClick={() => router.push('/labs/upload?manual=1')}
+              last
+            />
+          </NeuCard>
 
           {/* Quick links — existing routes only */}
           <NeuCard className="!px-4 !py-1">

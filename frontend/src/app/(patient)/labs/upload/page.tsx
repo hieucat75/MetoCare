@@ -126,6 +126,7 @@ export default function LabUploadPage() {
   const catalog = useLabReference()
 
   const [mode, setMode] = React.useState<Mode>('camera')
+  const [progressStep, setProgressStep] = React.useState<string | null>(null)
   const [file, setFile] = React.useState<File | null>(null)
   const [url, setUrl] = React.useState('')
   const [submitting, setSubmitting] = React.useState(false)
@@ -166,32 +167,56 @@ export default function LabUploadPage() {
     setFile(f)
   }
 
+  React.useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search)
+      if (params.get('manual') === '1') handleManualEntry()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   async function submitForDraft() {
     setError(null)
     setOcrFailed(false)
     setSubmitting(true)
+    setProgressStep('Đang tải ảnh...')
+    const t1 = setTimeout(() => setProgressStep('AI đang đọc xét nghiệm...'), 600)
+    const t2 = setTimeout(() => setProgressStep('Đang chuẩn hóa chỉ số...'), 2200)
     try {
       const input = mode === 'url' ? { url: url.trim() } : file ? { file } : null
       if (!input || (mode === 'url' && !url.trim())) {
         setError(mode === 'url' ? 'Vui lòng dán đường link.' : 'Vui lòng chọn tệp.')
         setSubmitting(false)
+        setProgressStep(null)
+        clearTimeout(t1)
+        clearTimeout(t2)
         return
       }
       if (!catalog) {
         setError('Đang tải danh mục. Vui lòng thử lại.')
         setSubmitting(false)
+        setProgressStep(null)
+        clearTimeout(t1)
+        clearTimeout(t2)
         return
       }
       const d = await uploadLabDraft(input)
+      clearTimeout(t1)
+      clearTimeout(t2)
+      setProgressStep('Chuẩn bị màn hình kiểm tra...')
+      await new Promise((r) => setTimeout(r, 250))
       setDraft(d)
-      saveStartRef.current = Date.now() // start review timer for review_time_seconds
+      saveStartRef.current = Date.now()
       setTestDate(isoToDisplayDate(d.extracted_test_date))
       setTestDateAuto(Boolean(d.extracted_test_date))
       const mapped: OcrRow[] = d.parsed_values.map((v) => buildOcrRow(catalog, v))
       setRows(mapped.length ? mapped : [makeEmptyOcrRow()])
     } catch {
+      clearTimeout(t1)
+      clearTimeout(t2)
       setOcrFailed(true)
     } finally {
+      setProgressStep(null)
       setSubmitting(false)
     }
   }
@@ -459,10 +484,10 @@ export default function LabUploadPage() {
               onClick={submitForDraft}
             >
               {submitting
-                ? 'Đang xử lý...'
+                ? (progressStep ?? 'Đang xử lý...')
                 : !catalog
                   ? 'Đang tải danh mục...'
-                  : 'Tải lên & đọc kết quả'}
+                  : 'Phân tích bằng AI'}
             </NeuButton>
           </>
         )}
@@ -702,9 +727,14 @@ function FilePicker({
         <span className="neu-pressed flex size-16 items-center justify-center rounded-full">
           {icon}
         </span>
-        <span className="text-[15px] font-semibold text-neu-text">
-          {file ? file.name : 'Chạm để chọn'}
+        <span className="max-w-[200px] truncate text-[15px] font-semibold text-neu-text">
+          {file ? `1 ảnh đã chọn` : 'Chạm để chọn'}
         </span>
+        {file && (
+          <span className="max-w-[220px] truncate px-2 text-[12px] text-neu-subtle">
+            {file.name}
+          </span>
+        )}
         <span className="px-6 text-center text-[13px] text-neu-subtle">{hint}</span>
       </button>
       <input

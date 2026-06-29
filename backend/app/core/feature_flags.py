@@ -1,6 +1,12 @@
 import enum
 import os
 
+from dotenv import load_dotenv
+
+# Populate os.environ from .env so os.getenv() calls below see local-dev overrides.
+# load_dotenv() never overrides existing OS env vars — safe in production.
+load_dotenv()
+
 
 class FeatureFlag(enum.StrEnum):
     AI_TRIAGE = "ai_triage"  # DISABLED until Medical Board approval

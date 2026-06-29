@@ -127,6 +127,42 @@ class TesseractEngine:
 
 
 # --------------------------------------------------------------------------- #
+# Mock engine (local dev / CI; activated when settings.ocr_provider == "mock")
+# --------------------------------------------------------------------------- #
+
+_MOCK_TEXT = """\
+PHIẾU KẾT QUẢ XÉT NGHIỆM (DEV MOCK)
+Ngày xét nghiệm: 15/06/2026
+Glucose đói: 5.6 mmol/L [3.9-6.1]
+Triglyceride: 1.8 mmol/L [<1.7]
+Cholesterol: 4.5 mmol/L [<5.2]
+HDL Cholesterol: 1.2 mmol/L [>1.0]
+LDL Cholesterol: 2.8 mmol/L [<3.4]
+Creatinine: 85 µmol/L [62-106]
+Ure: 5.2 mmol/L [2.5-7.5]
+AST: 28 U/L [<40]
+ALT: 22 U/L [<40]
+Hồng cầu: 4.8 T/L [4.2-5.4]
+Bạch cầu: 7.2 G/L [4.0-10.0]
+Tiểu cầu: 230 G/L [150-400]
+Hemoglobin: 140 g/L [130-170]
+HbA1c: 5.8 % [<5.7]
+"""
+
+
+class MockOcrEngine:
+    name = "mock"
+
+    def run(self, image_bytes: bytes, mime: str) -> OcrTextResult:  # noqa: ARG002
+        return OcrTextResult(
+            text=_MOCK_TEXT,
+            confidence=0.98,
+            provider=self.name,
+            warnings=["[DEV] Mock OCR — dữ liệu mẫu để kiểm thử, không phải kết quả thật."],
+        )
+
+
+# --------------------------------------------------------------------------- #
 # Cloud fallback adapters (opt-in; never called unless flag ON + key present)
 # --------------------------------------------------------------------------- #
 
@@ -419,26 +455,27 @@ def run_cloud_ocr_if_permitted(image_bytes: bytes, mime: str) -> OcrTextResult |
 
 
 def run_ocr(image_bytes: bytes, mime: str) -> OcrTextResult:
-    """Azure DI is primary when credentials present; Tesseract is local-only fallback.
+    """Engine selection: Azure (if credentials present) → Tesseract (if binary available) → Mock.
 
-    When Azure is configured, its result is returned directly — no silent degradation
-    to Tesseract so misconfiguration surfaces immediately rather than being masked by
-    a lower-quality result.
-
-    Without Azure credentials (local dev / CI without keys), Tesseract runs and a
-    low-confidence warning is appended when confidence is below threshold.
+    Mock is the last-resort fallback for local dev / CI when neither Azure credentials
+    nor a Tesseract binary are present, and settings.ocr_provider == "mock" (the default).
+    This ordering ensures real-provider tests work without patching get_settings().
     """
     if AzureDocIntelEngine.configured():
         return AzureDocIntelEngine().run(image_bytes, mime)
 
-    if not TesseractEngine.available():
-        raise OcrEngineError(
-            "OCR không khả dụng: cần cấu hình Azure Document Intelligence "
-            "(AZURE_DOC_INTEL_KEY + AZURE_DOC_INTEL_ENDPOINT) hoặc cài Tesseract."
-        )
-    local = TesseractEngine().run(image_bytes)
-    if local.confidence < OCR_CONFIDENCE_THRESHOLD:
-        local.warnings.append(
-            "Độ tin cậy OCR thấp — vui lòng kiểm tra lại các chỉ số trước khi lưu."
-        )
-    return local
+    if TesseractEngine.available():
+        local = TesseractEngine().run(image_bytes)
+        if local.confidence < OCR_CONFIDENCE_THRESHOLD:
+            local.warnings.append(
+                "Độ tin cậy OCR thấp — vui lòng kiểm tra lại các chỉ số trước khi lưu."
+            )
+        return local
+
+    if get_settings().ocr_provider == "mock":
+        return MockOcrEngine().run(image_bytes, mime)
+
+    raise OcrEngineError(
+        "OCR không khả dụng: cần cấu hình Azure Document Intelligence "
+        "(AZURE_DOC_INTEL_KEY + AZURE_DOC_INTEL_ENDPOINT) hoặc cài Tesseract."
+    )

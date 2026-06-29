@@ -3,131 +3,13 @@
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
 import { Plus, LineChart } from 'lucide-react'
-import { GlassModal } from '@/components/patient/modal'
-import { NeuButton } from '@/components/patient/neu'
 import { PatientErrorState } from '@/components/patient/states'
 import { PatientEmptyState } from '@/components/patient'
 import { MetricCategoryGroup } from '@/components/patient/metrics/MetricCategoryGroup'
 import { useAuth } from '@/lib/auth/context'
-import {
-  getMetrics,
-  logMetric,
-  METRIC_LABELS,
-  METRIC_UNITS,
-  type MetricType,
-  type HealthMetric,
-} from '@/lib/api/patient'
+import { getMetrics, type HealthMetric } from '@/lib/api/patient'
 import { useLabReference } from '@/lib/api/labReference'
 import { groupMetricsByCategory } from '@/lib/metrics/kpi'
-
-const NEU_INPUT =
-  'w-full rounded-[12px] border border-[#C8D8D4] bg-white/60 px-3 py-2.5 text-[15px] text-neu-text placeholder:text-neu-subtle focus:border-[#0F9C6E] focus:outline-none focus:ring-2 focus:ring-[#0F9C6E]/20 transition-colors'
-
-const METRIC_OPTIONS: { value: MetricType; label: string }[] = (
-  Object.keys(METRIC_LABELS) as MetricType[]
-).map((t) => ({ value: t, label: METRIC_LABELS[t] }))
-
-function getUnit(type: MetricType): string {
-  return METRIC_UNITS[type] ?? ''
-}
-
-// ─── Log metric modal (quick self-report) ─────────────────────────────────────
-
-type LogModalProps = {
-  open: boolean
-  onClose: () => void
-  onSuccess: () => void
-  patientId: string
-}
-
-function LogMetricModal({ open, onClose, onSuccess, patientId }: LogModalProps) {
-  const [metricType, setMetricType] = React.useState<MetricType>('fasting_glucose')
-  const [value, setValue] = React.useState('')
-  const [submitting, setSubmitting] = React.useState(false)
-  const [submitError, setSubmitError] = React.useState<string | null>(null)
-
-  const selectedUnit = getUnit(metricType)
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    const numValue = parseFloat(value)
-    if (isNaN(numValue)) {
-      setSubmitError('Vui lòng nhập giá trị hợp lệ')
-      return
-    }
-    setSubmitting(true)
-    setSubmitError(null)
-    try {
-      await logMetric(patientId, {
-        metric_type: metricType,
-        value: numValue,
-        unit: selectedUnit,
-        source: 'manual',
-      })
-      setValue('')
-      onSuccess()
-      onClose()
-    } catch (err: unknown) {
-      setSubmitError(err instanceof Error ? err.message : 'Ghi chỉ số thất bại')
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  return (
-    <GlassModal
-      open={open}
-      onOpenChange={(o) => !o && onClose()}
-      title="Ghi chỉ số mới"
-      footer={
-        <>
-          <NeuButton variant="secondary" onClick={onClose} disabled={submitting} className="flex-1">
-            Hủy
-          </NeuButton>
-          <NeuButton type="submit" form="log-metric-form" disabled={submitting} className="flex-1">
-            {submitting ? 'Đang lưu...' : 'Lưu'}
-          </NeuButton>
-        </>
-      }
-    >
-      <form id="log-metric-form" onSubmit={handleSubmit} className="space-y-4">
-        {submitError && (
-          <div role="alert" className="rounded-[14px] bg-[#FEF2F2] border border-[#DC2626]/20 p-3">
-            <p className="text-[13px] font-semibold text-[#991B1B]">{submitError}</p>
-          </div>
-        )}
-        <div className="space-y-1.5">
-          <label className="block text-[13px] font-semibold text-neu-muted">Loại chỉ số</label>
-          <select
-            className={NEU_INPUT}
-            value={metricType}
-            onChange={(e) => setMetricType(e.target.value as MetricType)}
-          >
-            {METRIC_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="space-y-1.5">
-          <label className="block text-[13px] font-semibold text-neu-muted">
-            {selectedUnit ? `Giá trị (${selectedUnit})` : 'Giá trị'}
-          </label>
-          <input
-            type="number"
-            step="any"
-            className={NEU_INPUT}
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            placeholder={selectedUnit ? `Nhập giá trị (${selectedUnit})` : 'Nhập giá trị'}
-            required
-          />
-        </div>
-      </form>
-    </GlassModal>
-  )
-}
 
 // ─── Metrics page (KPI cards grouped by category) ─────────────────────────────
 
@@ -157,8 +39,6 @@ export default function MetricsPage() {
   const [allMetrics, setAllMetrics] = React.useState<HealthMetric[]>([])
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
-  const [modalOpen, setModalOpen] = React.useState(false)
-
   const fetchMetrics = React.useCallback(() => {
     if (!patientId) {
       setLoading(false)
@@ -212,7 +92,7 @@ export default function MetricsPage() {
             icon={<LineChart />}
             title="Chưa có chỉ số nào"
             description="Ghi chỉ số sức khỏe hoặc tải kết quả xét nghiệm để theo dõi theo thời gian."
-            cta={{ label: 'Ghi chỉ số', onClick: () => setModalOpen(true) }}
+            cta={{ label: 'Ghi chỉ số', onClick: () => router.push('/metrics/log/fasting_glucose') }}
           />
         )}
 
@@ -232,18 +112,11 @@ export default function MetricsPage() {
       <button
         type="button"
         aria-label="Ghi chỉ số mới"
-        onClick={() => setModalOpen(true)}
+        onClick={() => router.push('/metrics/log/fasting_glucose')}
         className="fixed bottom-28 right-5 z-30 flex size-14 items-center justify-center rounded-full text-white neu-btn-primary !min-h-0 !p-0"
       >
         <Plus className="size-7" aria-hidden="true" />
       </button>
-
-      <LogMetricModal
-        open={modalOpen}
-        onClose={() => setModalOpen(false)}
-        onSuccess={fetchMetrics}
-        patientId={patientId}
-      />
     </>
   )
 }
