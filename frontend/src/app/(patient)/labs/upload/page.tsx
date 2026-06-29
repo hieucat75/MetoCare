@@ -79,6 +79,44 @@ function ModeTabs({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => void 
   )
 }
 
+// ── OCR error card ─────────────────────────────────────────────────────────────
+
+function OcrErrorCard({
+  onRetry,
+  onManualEntry,
+}: {
+  onRetry: () => void
+  onManualEntry: () => void
+}) {
+  return (
+    <div
+      role="alert"
+      className="rounded-[14px] bg-[#FEF9EC] border border-[#E0A92E]/30 p-4 space-y-3"
+    >
+      <p className="text-[14px] font-bold text-[#8B6400]">Chưa đọc được ảnh xét nghiệm</p>
+      <p className="text-[13px] text-[#8B6400]/80">
+        Hiện chưa thể đọc ảnh xét nghiệm. Bạn có thể thử lại hoặc nhập kết quả thủ công.
+      </p>
+      <div className="flex gap-2.5 pt-1">
+        <button
+          type="button"
+          onClick={onRetry}
+          className="flex-1 rounded-[14px] border border-[#E0A92E]/50 py-2.5 text-[14px] font-semibold text-[#8B6400]"
+        >
+          Thử lại
+        </button>
+        <button
+          type="button"
+          onClick={onManualEntry}
+          className="flex-1 rounded-[14px] bg-[#17AE7B] py-2.5 text-[14px] font-semibold text-white"
+        >
+          Nhập thủ công
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 export default function LabUploadPage() {
@@ -92,6 +130,7 @@ export default function LabUploadPage() {
   const [url, setUrl] = React.useState('')
   const [submitting, setSubmitting] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
+  const [ocrFailed, setOcrFailed] = React.useState(false)
 
   const [draft, setDraft] = React.useState<LabUploadDraft | null>(null)
   const [rows, setRows] = React.useState<OcrRow[]>([])
@@ -114,6 +153,7 @@ export default function LabUploadPage() {
 
   function pickFile(f: File | null) {
     setError(null)
+    setOcrFailed(false)
     if (!f) return
     if (!ACCEPT.includes(f.type)) {
       setError('Chỉ chấp nhận ảnh JPG/PNG hoặc tệp PDF.')
@@ -128,6 +168,7 @@ export default function LabUploadPage() {
 
   async function submitForDraft() {
     setError(null)
+    setOcrFailed(false)
     setSubmitting(true)
     try {
       const input = mode === 'url' ? { url: url.trim() } : file ? { file } : null
@@ -148,11 +189,31 @@ export default function LabUploadPage() {
       setTestDateAuto(Boolean(d.extracted_test_date))
       const mapped: OcrRow[] = d.parsed_values.map((v) => buildOcrRow(catalog, v))
       setRows(mapped.length ? mapped : [makeEmptyOcrRow()])
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Không xử lý được tệp. Vui lòng thử lại.')
+    } catch {
+      setOcrFailed(true)
     } finally {
       setSubmitting(false)
     }
+  }
+
+  function handleManualEntry() {
+    setOcrFailed(false)
+    const syntheticDraft: LabUploadDraft = {
+      provider_used: 'manual',
+      confidence_avg: 0,
+      parsed_values: [],
+      warnings: [],
+      raw_text_sha256: '',
+      low_confidence: false,
+      manual_fallback: true,
+      extracted_test_date: null,
+      test_date_label: null,
+      test_date_confidence: 0,
+      ocr_case_id: null,
+    }
+    setDraft(syntheticDraft)
+    setRows([makeEmptyOcrRow()])
+    saveStartRef.current = Date.now()
   }
 
   function buildResults(): ManualLabItem[] {
@@ -336,7 +397,11 @@ export default function LabUploadPage() {
           }
         />
 
-        {error && <PatientErrorState title="Lỗi" message={error} onRetry={() => setError(null)} />}
+        {ocrFailed ? (
+          <OcrErrorCard onRetry={() => setOcrFailed(false)} onManualEntry={handleManualEntry} />
+        ) : (
+          error && <PatientErrorState title="Lỗi" message={error} onRetry={() => setError(null)} />
+        )}
 
         {step === 'input' && (
           <>
@@ -345,6 +410,7 @@ export default function LabUploadPage() {
               onChange={(m) => {
                 setMode(m)
                 setError(null)
+                setOcrFailed(false)
               }}
             />
 

@@ -6,7 +6,8 @@
  * feature-flag gate that hides the OCR upload entry.
  */
 import * as React from 'react'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import '@testing-library/jest-dom'
 import LabsPage from '../page'
 import LabUploadPage from '../upload/page'
@@ -78,7 +79,7 @@ jest.mock('@/components/patient/LabResultRow', () => ({
 }))
 
 jest.mock('@/lib/api/labReference', () => ({
-  useLabReference: () => null, // catalog still loading — upload form still renders
+  useLabReference: jest.fn().mockReturnValue(null), // catalog still loading — upload form still renders
   formatRefRange: jest.fn().mockReturnValue(''),
 }))
 
@@ -153,6 +154,61 @@ describe('test_labs_ocr_flag_false_does_not_hide_cta', () => {
     render(<LabsPage />)
     await screen.findByText('Đọc kết quả xét nghiệm bằng AI')
     expect(screen.getByText(/Chụp ảnh.*Tải ảnh\/PDF.*Dán link/i)).toBeInTheDocument()
+  })
+})
+
+// ── /labs/upload page — OCR failure shows patient-friendly error UX ──────────
+
+describe('test_labs_upload_ocr_error_ux', () => {
+  const mockCatalog = { biomarkers: {}, categories: {} }
+
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { useLabReference } = require('@/lib/api/labReference') as {
+    useLabReference: jest.Mock
+  }
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { uploadLabDraft } = require('@/lib/api/patient') as {
+    uploadLabDraft: jest.Mock
+  }
+
+  beforeEach(() => {
+    useLabReference.mockReturnValue(mockCatalog)
+    uploadLabDraft.mockRejectedValue(new Error('OCR service unavailable'))
+  })
+
+  afterEach(() => {
+    useLabReference.mockReturnValue(null)
+    uploadLabDraft.mockReset()
+  })
+
+  async function renderAndTriggerUpload() {
+    const user = userEvent.setup()
+    render(<LabUploadPage />)
+    await user.click(screen.getByRole('tab', { name: 'Dán link' }))
+    await user.type(screen.getByPlaceholderText('https://...'), 'https://example.com/lab.jpg')
+    await user.click(screen.getByRole('button', { name: 'Tải lên & đọc kết quả' }))
+    return screen.findByText(/Hiện chưa thể đọc ảnh xét nghiệm/)
+  }
+
+  it('shows patient-friendly message when upload fails', async () => {
+    await renderAndTriggerUpload()
+    expect(screen.getByText(/Hiện chưa thể đọc ảnh xét nghiệm/)).toBeInTheDocument()
+  })
+
+  it('shows Thử lại action button on OCR failure', async () => {
+    await renderAndTriggerUpload()
+    expect(screen.getByRole('button', { name: 'Thử lại' })).toBeInTheDocument()
+  })
+
+  it('shows Nhập thủ công action button on OCR failure', async () => {
+    await renderAndTriggerUpload()
+    expect(screen.getByRole('button', { name: 'Nhập thủ công' })).toBeInTheDocument()
+  })
+
+  it('does not expose technical error text to the patient', async () => {
+    await renderAndTriggerUpload()
+    expect(screen.queryByText(/OCR service unavailable/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/OCR đang tắt/)).not.toBeInTheDocument()
   })
 })
 
