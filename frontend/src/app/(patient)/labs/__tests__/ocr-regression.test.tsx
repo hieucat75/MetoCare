@@ -179,9 +179,6 @@ describe('test_labs_upload_renders_without_coming_soon', () => {
 
   it('"Chụp ảnh" tab is selected by default', () => {
     render(<LabUploadPage />)
-    expect(screen.getByRole('tab', { name: 'Chụp ảnh' })).toHaveAttribute(
-      'aria-selected',
-      'true'
-    )
+    expect(screen.getByRole('tab', { name: 'Chụp ảnh' })).toHaveAttribute('aria-selected', 'true')
   })
 })

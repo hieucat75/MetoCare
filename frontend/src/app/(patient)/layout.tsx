@@ -2,21 +2,7 @@
 
 import * as React from 'react'
 import { useRouter, usePathname } from 'next/navigation'
-import {
-  LayoutDashboard,
-  Activity,
-  FlaskConical,
-  Pill,
-  MessageSquare,
-  Bell,
-  User,
-  Settings,
-  ClipboardList,
-  Utensils,
-  LogOut,
-  FileText,
-  Accessibility,
-} from 'lucide-react'
+import { Home, Bot, Heart, Pill, User, LogOut } from 'lucide-react'
 import { AppShell, Sidebar, TopNav, PageLoading } from '@/design-system'
 import type { NavItem } from '@/design-system'
 import { useAuth } from '@/lib/auth/context'
@@ -25,76 +11,61 @@ import { getRoleHomePath } from '@/lib/api/auth'
 import { useFeatureFlags } from '@/lib/api/features'
 import { BrandLogo, BrandMark } from '@/components/brand'
 
-// ── Nav items (sidebar for desktop) ──────────────────────────────────────────
+// ── Nav items (sidebar for desktop) — 5 primary destinations ─────────────────
+// Secondary routes (labs, settings, report, etc.) remain accessible via their
+// direct URLs; the sidebar highlights the parent destination via ROUTE_ALIASES.
 
 const NAV_ITEMS: NavItem[] = [
   {
     id: 'dashboard',
-    label: 'Tổng quan',
-    icon: <LayoutDashboard className="w-5 h-5" />,
+    label: 'Hôm nay',
+    icon: <Home className="w-5 h-5" />,
     href: '/dashboard',
   },
   {
-    id: 'metrics',
-    label: 'Chỉ số sức khỏe',
-    icon: <Activity className="w-5 h-5" />,
+    id: 'ai-copilot',
+    label: 'AI Copilot',
+    icon: <Bot className="w-5 h-5" />,
+    href: '/ai-copilot',
+  },
+  {
+    id: 'health',
+    label: 'Sức khoẻ',
+    icon: <Heart className="w-5 h-5" />,
     href: '/metrics',
   },
-  { id: 'labs', label: 'Xét nghiệm', icon: <FlaskConical className="w-5 h-5" />, href: '/labs' },
   { id: 'medications', label: 'Thuốc', icon: <Pill className="w-5 h-5" />, href: '/medications' },
-  {
-    id: 'nutrition',
-    label: 'Dinh dưỡng',
-    icon: <Utensils className="w-5 h-5" />,
-    href: '/nutrition',
-  },
-  {
-    id: 'care-plan',
-    label: 'Kế hoạch điều trị',
-    icon: <ClipboardList className="w-5 h-5" />,
-    href: '/care-plan',
-  },
-  {
-    id: 'ai-assistant',
-    label: 'Trợ lý AI',
-    icon: <MessageSquare className="w-5 h-5" />,
-    href: '/ai-assistant',
-  },
-  {
-    id: 'notifications',
-    label: 'Thông báo',
-    icon: <Bell className="w-5 h-5" />,
-    href: '/notifications',
-  },
-  {
-    id: 'report',
-    label: 'Báo cáo',
-    icon: <FileText className="w-5 h-5" />,
-    href: '/report',
-  },
-  {
-    id: 'accessibility',
-    label: 'Trợ năng',
-    icon: <Accessibility className="w-5 h-5" />,
-    href: '/accessibility',
-  },
-  { id: 'profile', label: 'Hồ sơ', icon: <User className="w-5 h-5" />, href: '/profile' },
-  { id: 'settings', label: 'Cài đặt', icon: <Settings className="w-5 h-5" />, href: '/settings' },
+  { id: 'profile', label: 'Tôi', icon: <User className="w-5 h-5" />, href: '/profile' },
 ]
+
+// Secondary routes that aren't in the sidebar still need a highlighted parent.
+const ROUTE_ALIASES: Record<string, string> = {
+  '/labs': 'health',
+  '/nutrition': 'health',
+  '/care-plan': 'health',
+  '/devices': 'health',
+  '/health-story': 'health',
+  '/notifications': 'profile',
+  '/report': 'profile',
+  '/settings': 'profile',
+  '/accessibility': 'profile',
+  '/consents': 'profile',
+}
 
 // ── Route → page title map (mobile top bar) ───────────────────────────────────
 
 const PAGE_TITLES: Record<string, string> = {
-  '/dashboard': 'Tổng quan',
-  '/metrics': 'Chỉ số sức khỏe',
+  '/dashboard': 'Hôm nay',
+  '/metrics': 'Sức khoẻ',
   '/metrics/log': 'Ghi chỉ số',
   '/labs': 'Xét nghiệm',
   '/medications': 'Thuốc',
   '/nutrition': 'Dinh dưỡng',
   '/care-plan': 'Kế hoạch điều trị',
   '/ai-assistant': 'Trợ lý AI',
+  '/ai-copilot': 'AI Copilot',
   '/notifications': 'Thông báo',
-  '/profile': 'Hồ sơ cá nhân',
+  '/profile': 'Tôi',
   '/settings': 'Cài đặt',
   '/devices': 'Kết nối thiết bị',
   '/consents': 'Đồng ý chia sẻ',
@@ -114,6 +85,10 @@ function getPageTitle(pathname: string): string {
 }
 
 function getActiveId(pathname: string): string {
+  // Secondary routes map to a primary nav item for sidebar highlight
+  for (const [prefix, id] of Object.entries(ROUTE_ALIASES)) {
+    if (pathname === prefix || pathname.startsWith(prefix + '/')) return id
+  }
   const sorted = [...NAV_ITEMS].sort((a, b) => b.href.length - a.href.length)
   for (const item of sorted) {
     if (pathname === item.href || pathname.startsWith(item.href + '/')) return item.id
@@ -130,11 +105,8 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
   const flags = useFeatureFlags()
   const [sidebarCollapsed, setSidebarCollapsed] = React.useState(false)
 
-  // Hide the AI assistant nav entry unless the feature flag is enabled (MVP: OFF).
-  const navItems = React.useMemo(
-    () => NAV_ITEMS.filter((it) => it.id !== 'ai-assistant' || flags?.ai_assistant),
-    [flags]
-  )
+  // Stable reference: flags only controlled ai-assistant which is gone from primary nav now.
+  const navItems = React.useMemo(() => NAV_ITEMS, [flags])
 
   React.useEffect(() => {
     if (isLoading) return
@@ -175,13 +147,19 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
     '/settings',
     '/devices',
     '/ai-assistant',
+    '/ai-copilot',
     '/nutrition',
     '/consents',
     '/accessibility',
     '/report',
   ])
+  const isAiCopilotPage = pathname.startsWith('/ai-copilot')
   const hideMobileTopBar =
-    NEU_TOPBAR_HIDDEN.has(pathname) || isMetricDetail || isMedicationDetail || isDeviceDetail
+    NEU_TOPBAR_HIDDEN.has(pathname) ||
+    isMetricDetail ||
+    isMedicationDetail ||
+    isDeviceDetail ||
+    isAiCopilotPage
 
   const handleNavItem = (item: NavItem) => router.push(item.href)
 

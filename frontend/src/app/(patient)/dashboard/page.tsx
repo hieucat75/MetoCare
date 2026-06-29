@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
-import { Activity, Bell, Bot, Droplet, Heart, Pill, Plus, Scale } from 'lucide-react'
+import { Activity, Bell, Bot, ChevronRight, Droplet, Heart, Pill, Plus, Scale } from 'lucide-react'
 import Link from 'next/link'
 import { PatientErrorState, PatientSkeleton } from '@/components/patient/states'
 import { NeuCard, NeuButton, NeuIconButton, NeuBadge } from '@/components/patient/neu'
@@ -210,10 +210,7 @@ export default function PatientDashboardPage() {
 
       {hasAnyData ? (
         <>
-          {/* ── Priority health signals ── */}
-          <HeroSummaryCard summary={summary} healthSummary={healthSummary} />
-
-          {/* ── Medication adherence reminder ── */}
+          {/* ── Medication reminder — primary daily action, shown before analytics ── */}
           {adherenceSummary && adherenceSummary.today_medications.length > 0 && (
             <AdherenceReminderSection
               adherenceSummary={adherenceSummary}
@@ -222,11 +219,9 @@ export default function PatientDashboardPage() {
             />
           )}
 
-          {/* ── 2×2 metric tiles ── */}
-          <MetricTileGrid
-            series={series}
+          {/* ── Health alerts — max 3 abnormal markers, links to full metric detail ── */}
+          <HealthAlertsSection
             summary={summary}
-            profile={data.profile}
             onOpen={(metricType) => router.push(`/metrics/${metricType}`)}
           />
         </>
@@ -863,6 +858,50 @@ function Sparkline({ values, color }: { values: number[]; color: string }) {
         vectorEffect="non-scaling-stroke"
       />
     </svg>
+  )
+}
+
+// ─── Health alerts — compact, max 3 abnormal markers ────────────────────────
+
+function HealthAlertsSection({
+  summary,
+  onOpen,
+}: {
+  summary: DashboardSummary
+  onOpen: (metricType: string) => void
+}) {
+  const alerts = summary.concerns.filter((c) => c.severity !== 'normal').slice(0, 3)
+  if (alerts.length === 0) return null
+
+  return (
+    <section aria-label="Chỉ số cần chú ý" className="space-y-2.5">
+      <p className="px-1 text-[12px] font-bold uppercase tracking-wider text-neu-muted">
+        Chỉ số cần chú ý
+      </p>
+      {alerts.map((concern) => (
+        <button
+          key={concern.metricType}
+          type="button"
+          onClick={() => onOpen(concern.metricType)}
+          className="neu-card w-full !p-4 text-left transition-transform active:scale-[0.98]"
+        >
+          <div className="flex items-center gap-3">
+            <span
+              className="size-2 shrink-0 rounded-full"
+              style={{
+                background: concern.severity === 'danger' ? '#E05C6A' : '#F5A623',
+              }}
+              aria-hidden="true"
+            />
+            <span className="flex-1 text-[15px] font-semibold text-neu-text">{concern.label}</span>
+            <NeuBadge tone={concern.severity === 'danger' ? 'alert' : 'watch'} className="!text-[11px]">
+              {concern.statusLabel}
+            </NeuBadge>
+            <ChevronRight className="size-4 shrink-0 text-neu-muted" aria-hidden="true" />
+          </div>
+        </button>
+      ))}
+    </section>
   )
 }
 
