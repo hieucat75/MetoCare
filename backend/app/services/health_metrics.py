@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.core.clock import as_naive_utc, utcnow
 from app.domain import policies
+from app.domain.lab_interpreter import classify_value as _classify_value_lab
 from app.models.clinical import HealthMetric
 from app.services import audit, consent
 
@@ -145,13 +146,22 @@ def update_metric(
             v = as_naive_utc(v)
         setattr(metric, k, v)
 
-    # Re-classify after update
-    metric.status = classify_status(
-        metric.metric_type,
-        metric.value,
-        metric.normal_range_min,
-        metric.normal_range_max,
-    )
+    # Re-classify after update.
+    # Prefer classify_value (lab_interpreter) which knows critical_high/critical_low
+    # thresholds for all biomarkers. Fall back to classify_status for types not in
+    # the lab catalog (manual vitals, blood pressure, BMI, etc.).
+    if metric.value is not None:
+        _lab_status = _classify_value_lab(metric.metric_type, metric.value)
+        metric.status = (
+            _lab_status.value
+            if _lab_status is not None and _lab_status.value != "unknown"
+            else classify_status(
+                metric.metric_type,
+                metric.value,
+                metric.normal_range_min,
+                metric.normal_range_max,
+            )
+        )
 
     db.flush()
     audit.record(

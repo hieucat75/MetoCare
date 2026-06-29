@@ -10,13 +10,17 @@ Validates:
 
 from __future__ import annotations
 
-# ---------------------------------------------------------------------------
-# Helpers / imports
-# ---------------------------------------------------------------------------
 from app.api.v1.routes.lab import _clean_reference_range
 from app.domain.lab_interpreter import _ALIAS_INDEX, classify_value
 from app.domain.lab_normalization import normalize_value_to_si
+from app.models.clinical import LabResult, LabUploadBatch
 from app.services.biomarker_specs import check_plausibility
+from app.services.lab import normalize_and_classify
+
+# ---------------------------------------------------------------------------
+# Helpers / imports
+# ---------------------------------------------------------------------------
+from sqlalchemy import select
 
 # ---------------------------------------------------------------------------
 # Test 1: creatinine 88 µmol/L normalises to ≈0.995 mg/dL → normal
@@ -191,4 +195,188 @@ def test_data_quality_flag_in_schema():
     # Should be Optional[str] — default None
     assert field.default is None or field.is_required() is False, (
         "data_quality_flag should be optional (default None)"
+    )
+
+
+# ---------------------------------------------------------------------------
+# HealthMetric promotion severity tests — fix(metrics): preserve critical severity
+# ---------------------------------------------------------------------------
+
+def test_promoted_health_metric_from_creatinine_88_mgdl_is_critical(db, patient):
+    """HealthMetric promoted from creatinine 88 mg/dL must have status=critical."""
+    import datetime as _dt
+
+    from app.services.lab import _promote_row
+
+    batch = LabUploadBatch(patient_id=patient["patient_id"], lab_name="Lab", test_date=_dt.date(2024, 1, 1))
+    db.add(batch)
+    db.flush()
+
+    row = LabResult(
+        patient_id=patient["patient_id"],
+        batch_id=batch.id,
+        test_name="Creatinine",
+        canonical_name="creatinine",
+        value=88.0,
+        unit="mg/dL",
+        normalized_value_si=88.0,
+        normalized_unit_si="mg/dL",
+        status="critical",
+        source_type="manual",
+        verified_by_user=True,
+        original_value=88.0,
+        original_unit="mg/dL",
+    )
+    db.add(row)
+    db.flush()
+
+    _promote_row(db, row, _dt.datetime(2024, 1, 1, 8, 0))
+    db.flush()
+
+    from app.models.clinical import HealthMetric as HM
+    metric = db.execute(
+        select(HM).where(HM.source_ref == row.id, HM.deleted_at.is_(None))
+    ).scalar_one()
+    assert metric.status == "critical", (
+        f"Promoted HealthMetric from creatinine 88 mg/dL must be critical, got {metric.status}"
+    )
+
+
+def test_promoted_health_metric_from_creatinine_88_umol_is_normal(db, patient):
+    """HealthMetric promoted from creatinine 88 µmol/L (≈0.995 mg/dL) must be normal."""
+    import datetime as _dt
+
+    from app.services.lab import _promote_row
+
+    clf = normalize_and_classify("creatinine", 88.0, "µmol/L")
+    norm_val = clf["normalized_value_si"]
+    norm_unit = clf["normalized_unit_si"]
+
+    batch = LabUploadBatch(patient_id=patient["patient_id"], lab_name="Lab2", test_date=_dt.date(2024, 2, 1))
+    db.add(batch)
+    db.flush()
+
+    row = LabResult(
+        patient_id=patient["patient_id"],
+        batch_id=batch.id,
+        test_name="Creatinine",
+        canonical_name="creatinine",
+        value=88.0,
+        unit="µmol/L",
+        normalized_value_si=norm_val,
+        normalized_unit_si=norm_unit,
+        status="normal",
+        source_type="manual",
+        verified_by_user=True,
+        original_value=88.0,
+        original_unit="µmol/L",
+    )
+    db.add(row)
+    db.flush()
+
+    _promote_row(db, row, _dt.datetime(2024, 2, 1, 8, 0))
+    db.flush()
+
+    from app.models.clinical import HealthMetric as HM
+    metric = db.execute(
+        select(HM).where(HM.source_ref == row.id, HM.deleted_at.is_(None))
+    ).scalar_one()
+    assert metric.status == "normal", (
+        f"Promoted HealthMetric from creatinine 88 µmol/L must be normal, got {metric.status}"
+    )
+
+
+def test_correcting_creatinine_88mgdl_to_88umol_changes_metric_to_normal(db, patient):
+    """Correcting creatinine 88 mg/dL → 88 µmol/L must change HealthMetric critical→normal."""
+    import datetime as _dt
+
+    from app.services.lab import _promote_row, correct_lab_result
+
+    batch = LabUploadBatch(patient_id=patient["patient_id"], lab_name="Lab3", test_date=_dt.date(2024, 3, 1))
+    db.add(batch)
+    db.flush()
+
+    row = LabResult(
+        patient_id=patient["patient_id"],
+        batch_id=batch.id,
+        test_name="Creatinine",
+        canonical_name="creatinine",
+        value=88.0,
+        unit="mg/dL",
+        normalized_value_si=88.0,
+        normalized_unit_si="mg/dL",
+        status="critical",
+        source_type="ocr_upload",
+        verified_by_user=True,
+        original_value=88.0,
+        original_unit="mg/dL",
+    )
+    db.add(row)
+    db.flush()
+    _promote_row(db, row, _dt.datetime(2024, 3, 1))
+    db.flush()
+
+    from app.models.clinical import HealthMetric as HM
+    metric = db.execute(
+        select(HM).where(HM.source_ref == row.id, HM.deleted_at.is_(None))
+    ).scalar_one()
+    assert metric.status == "critical"
+
+    # Correct to 88 µmol/L
+    correct_lab_result(db, result_id=row.id, patient_id=patient["patient_id"],
+                       requester_id=patient["user_id"], new_value=88.0, new_unit="µmol/L")
+
+    db.expire(metric)
+    db.refresh(metric)
+    assert metric.status == "normal", (
+        f"After correcting to 88 µmol/L, HealthMetric must be normal, got {metric.status}"
+    )
+
+
+def test_correcting_creatinine_88umol_to_88mgdl_changes_metric_to_critical(db, patient):
+    """Correcting creatinine 88 µmol/L → 88 mg/dL must change HealthMetric normal→critical."""
+    import datetime as _dt
+
+    from app.services.lab import _promote_row, correct_lab_result
+
+    clf = normalize_and_classify("creatinine", 88.0, "µmol/L")
+
+    batch = LabUploadBatch(patient_id=patient["patient_id"], lab_name="Lab4", test_date=_dt.date(2024, 4, 1))
+    db.add(batch)
+    db.flush()
+
+    row = LabResult(
+        patient_id=patient["patient_id"],
+        batch_id=batch.id,
+        test_name="Creatinine",
+        canonical_name="creatinine",
+        value=88.0,
+        unit="µmol/L",
+        normalized_value_si=clf["normalized_value_si"],
+        normalized_unit_si=clf["normalized_unit_si"],
+        status="normal",
+        source_type="ocr_upload",
+        verified_by_user=True,
+        original_value=88.0,
+        original_unit="µmol/L",
+    )
+    db.add(row)
+    db.flush()
+    _promote_row(db, row, _dt.datetime(2024, 4, 1))
+    db.flush()
+
+    from app.models.clinical import HealthMetric as HM
+    metric = db.execute(
+        select(HM).where(HM.source_ref == row.id, HM.deleted_at.is_(None))
+    ).scalar_one()
+    assert metric.status == "normal"
+
+    # Correct to 88 mg/dL (wrong unit entered)
+    correct_lab_result(db, result_id=row.id, patient_id=patient["patient_id"],
+                       requester_id=patient["user_id"], new_value=88.0, new_unit="mg/dL")
+
+    db.expire(metric)
+    db.refresh(metric)
+    assert metric.status == "critical", (
+        f"After correcting to 88 mg/dL, HealthMetric must be critical, got {metric.status}"
     )

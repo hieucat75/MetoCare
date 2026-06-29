@@ -235,7 +235,14 @@ def _promote_row(db: Session, row: LabResult, measured_at: dt.datetime) -> bool:
             source_ref=row.id,
             normal_range_min=nmin,
             normal_range_max=nmax,
-            status=classify_status(canonical, promote_value, nmin, nmax),
+            # Use classify_value (knows critical_high/critical_low thresholds)
+            # instead of classify_status (only uses RED_FLAG_VITAL_THRESHOLDS + ref range).
+            # This ensures HealthMetric critical severity matches LabResult classification.
+            status=(
+                classify_value(canonical, promote_value).value
+                if classify_value(canonical, promote_value) is not None
+                else classify_status(canonical, promote_value, nmin, nmax)
+            ),
         )
     )
     db.flush()  # session is autoflush=False — make the row visible to the next lookup

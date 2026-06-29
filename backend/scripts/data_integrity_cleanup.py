@@ -92,16 +92,30 @@ def _norm_unit(u: str) -> str:
     return (u or "").replace("µ", "u").replace("μ", "u").replace("mc", "u").strip().lower()
 
 
-def run_cleanup(dry_run: bool = True) -> dict:
+def run_cleanup(dry_run: bool = True, _db=None) -> dict:  # noqa: ANN001
+    """Run the data integrity cleanup.
+
+    Parameters
+    ----------
+    dry_run:
+        When True, no changes are written to the DB.
+    _db:
+        Optional SQLAlchemy Session. When supplied, the caller owns the
+        session lifecycle (useful for tests). When None, a fresh
+        SessionLocal() is opened and closed by this function.
+    """
     from app.core.database import SessionLocal, create_all
     from app.models.clinical import HealthMetric, LabResult
 
-    try:
-        create_all()
-    except Exception as exc:
-        _log.debug("create_all skipped (expected in production): %s", exc)
-
-    db = SessionLocal()
+    _owns_session = _db is None
+    if _owns_session:
+        try:
+            create_all()
+        except Exception as exc:
+            _log.debug("create_all skipped (expected in production): %s", exc)
+        db = SessionLocal()
+    else:
+        db = _db
     summary = {
         "dry_run": dry_run,
         "patterns": [],
@@ -322,7 +336,8 @@ def run_cleanup(dry_run: bool = True) -> dict:
                 summary["total_flagged"] = 0
 
     finally:
-        db.close()
+        if _owns_session:
+            db.close()
 
     return summary
 
