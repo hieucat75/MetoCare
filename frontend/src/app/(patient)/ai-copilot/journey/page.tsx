@@ -66,7 +66,6 @@ export default function JourneyPage() {
 
   return (
     <div className="px-4 pb-8 pt-4 max-w-md mx-auto">
-
       {/* Journey summary stats */}
       <div className="mb-4">
         <h2 className="text-xl font-bold text-gray-900 mb-1">Hành trình của bạn</h2>
@@ -114,8 +113,7 @@ export default function JourneyPage() {
         <div className="space-y-5">
           {visible.map((event) => {
             const isMilestone = !!event.tag || event.category === 'win'
-            const accentClass =
-              CATEGORY_ACCENT[event.category] ?? 'border-l-gray-200 bg-white'
+            const accentClass = CATEGORY_ACCENT[event.category] ?? 'border-l-gray-200 bg-white'
 
             return (
               <div key={event.id} className="relative flex gap-4">
@@ -167,9 +165,7 @@ export default function JourneyPage() {
                         <div className="w-5 h-5 rounded-full bg-white/25 flex items-center justify-center flex-shrink-0 mt-0.5">
                           <span className="text-[10px] font-bold text-white">AI</span>
                         </div>
-                        <p className="text-sm text-white leading-relaxed">
-                          {event.ai}
-                        </p>
+                        <p className="text-sm text-white leading-relaxed">{event.ai}</p>
                       </div>
                     </div>
                   )}
@@ -183,7 +179,8 @@ export default function JourneyPage() {
       {/* Bottom message */}
       <div className="mt-6 text-center">
         <p className="text-sm text-gray-400 leading-relaxed">
-          Hành trình của bạn là duy nhất.<br />
+          Hành trình của bạn là duy nhất.
+          <br />
           Mỗi bước nhỏ đều có ý nghĩa.
         </p>
       </div>

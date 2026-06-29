@@ -56,11 +56,7 @@ export function NetworkGraph({ nodes, edges, selectedNode, onNodeSelect, filter 
         const key = `${edge.from}-${edge.to}`
         const isActive = activeEdgeKeys.has(key)
         const opacity = !hasSelection ? 1 : isActive ? 1 : 0.12
-        const stroke = isActive
-          ? TEAL
-          : edge.strength === 'strong'
-          ? '#94A3B8'
-          : '#CBD5E1'
+        const stroke = isActive ? TEAL : edge.strength === 'strong' ? '#94A3B8' : '#CBD5E1'
         const strokeWidth = isActive ? 2.5 : edge.strength === 'strong' ? 2 : 1
 
         return (

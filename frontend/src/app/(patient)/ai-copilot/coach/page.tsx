@@ -59,7 +59,6 @@ export default function CoachPage() {
 
   return (
     <div className="px-4 pb-8 pt-4 max-w-md mx-auto space-y-4">
-
       {/* Greeting card */}
       <div className="bg-gradient-to-br from-teal-600 to-teal-800 rounded-2xl p-5 text-white">
         <p className="text-xl font-bold mb-1">{getGreeting(d.patientName)}</p>

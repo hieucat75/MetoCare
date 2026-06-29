@@ -1433,7 +1433,8 @@ export const mockCoachData: CoachData = {
   patientName: 'Anh Minh',
   motivation:
     '3 tháng qua anh đã làm rất tốt — glucose giảm đều. Hôm nay chỉ cần giữ nhịp, đừng bỏ buổi đi bộ nhé!',
-  yesterdayHighlight: 'Đi bộ 28 phút sau bữa tối — chuỗi 12 ngày liên tiếp! Glucose hôm nay giảm đáng kể.',
+  yesterdayHighlight:
+    'Đi bộ 28 phút sau bữa tối — chuỗi 12 ngày liên tiếp! Glucose hôm nay giảm đáng kể.',
   tasks: [
     { id: 'c1', text: 'Đi bộ 25 phút sau bữa tối', sub: 'Ưu tiên cao' },
     { id: 'c2', text: 'Uống đủ 2 lít nước', sub: 'Thay cho nước ngọt' },

@@ -64,7 +64,9 @@ export default function BiomarkerDetailPage() {
             </Link>
             <div className="flex-1 min-w-0">
               <h1 className="text-lg font-bold text-gray-900 leading-tight">{bio.name}</h1>
-              <p className="text-sm text-gray-400">Phạm vi bình thường: {bio.range} {bio.unit}</p>
+              <p className="text-sm text-gray-400">
+                Phạm vi bình thường: {bio.range} {bio.unit}
+              </p>
             </div>
           </div>
 
@@ -75,7 +77,9 @@ export default function BiomarkerDetailPage() {
               <span className="text-lg text-gray-400 mb-1">{bio.unit}</span>
             </div>
             <div className="flex flex-col items-end gap-1.5">
-              <span className={`text-sm font-semibold px-3 py-1 rounded-full ${STATUS_PILL[bio.status]}`}>
+              <span
+                className={`text-sm font-semibold px-3 py-1 rounded-full ${STATUS_PILL[bio.status]}`}
+              >
                 {bio.riskText}
               </span>
               {bio.prev && (
@@ -85,7 +89,9 @@ export default function BiomarkerDetailPage() {
                   ) : (
                     <TrendingUp size={14} className="text-red-500" />
                   )}
-                  <span className="text-gray-400">Trước: {bio.prev} {bio.unit}</span>
+                  <span className="text-gray-400">
+                    Trước: {bio.prev} {bio.unit}
+                  </span>
                 </div>
               )}
             </div>
@@ -99,23 +105,28 @@ export default function BiomarkerDetailPage() {
           />
           <div className="flex justify-between mt-1 text-xs text-gray-400">
             <span>Tối ưu</span>
-            <span>Mục tiêu: {bio.target} {bio.unit}</span>
+            <span>
+              Mục tiêu: {bio.target} {bio.unit}
+            </span>
           </div>
         </div>
 
         {/* Tab bar */}
-        <div className="flex px-4 pb-3 gap-1.5 overflow-x-auto scrollbar-hide">
+        <div className="flex pl-4 pb-3 gap-1.5 overflow-x-auto scrollbar-hide">
           {TABS.map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
               className={`flex-shrink-0 h-9 px-4 text-sm font-semibold rounded-full transition-all duration-200 ${
-                tab === t ? 'bg-teal-600 text-white shadow-sm' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                tab === t
+                  ? 'bg-teal-600 text-white shadow-sm'
+                  : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
               }`}
             >
               {t}
             </button>
           ))}
+          <div className="flex-shrink-0 w-4" />
         </div>
       </div>
 
@@ -178,7 +189,9 @@ export default function BiomarkerDetailPage() {
                 <div className="space-y-2">
                   {bio.chain.map((c, i) => (
                     <div key={i} className="flex items-center gap-3">
-                      <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${STATUS_BG[c.status]}`} />
+                      <div
+                        className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${STATUS_BG[c.status]}`}
+                      />
                       <div className="flex-1 min-w-0">
                         <span className="text-sm font-semibold text-gray-800">{c.short}</span>
                         <span className="text-sm text-gray-400 ml-2">{c.note}</span>
@@ -204,7 +217,9 @@ export default function BiomarkerDetailPage() {
                       key={i}
                       className={`rounded-xl p-4 border ${TONE_STYLE[f.tone].bg} ${TONE_STYLE[f.tone].border}`}
                     >
-                      <p className={`text-xs font-bold uppercase tracking-wide mb-1 ${TONE_STYLE[f.tone].text}`}>
+                      <p
+                        className={`text-xs font-bold uppercase tracking-wide mb-1 ${TONE_STYLE[f.tone].text}`}
+                      >
                         {f.when}
                       </p>
                       <p className="text-sm text-gray-700 leading-snug">{f.text}</p>
@@ -244,11 +259,17 @@ export default function BiomarkerDetailPage() {
               <div className="flex items-center justify-between mb-4">
                 <div>
                   <p className="text-sm font-semibold text-gray-700">Hiện tại</p>
-                  <p className="text-2xl font-bold text-gray-900">{bio.value} <span className="text-base font-normal text-gray-400">{bio.unit}</span></p>
+                  <p className="text-2xl font-bold text-gray-900">
+                    {bio.value}{' '}
+                    <span className="text-base font-normal text-gray-400">{bio.unit}</span>
+                  </p>
                 </div>
                 <div className="text-right">
                   <p className="text-sm font-semibold text-gray-700">Mục tiêu</p>
-                  <p className="text-2xl font-bold text-teal-600">{bio.target} <span className="text-base font-normal text-gray-400">{bio.unit}</span></p>
+                  <p className="text-2xl font-bold text-teal-600">
+                    {bio.target}{' '}
+                    <span className="text-base font-normal text-gray-400">{bio.unit}</span>
+                  </p>
                 </div>
               </div>
               <MetricLineChart
@@ -262,7 +283,9 @@ export default function BiomarkerDetailPage() {
               />
               <div className="flex justify-between mt-2">
                 {bio.trendLabels.map((label, i) => (
-                  <span key={i} className="text-xs text-gray-400">{label}</span>
+                  <span key={i} className="text-xs text-gray-400">
+                    {label}
+                  </span>
                 ))}
               </div>
             </div>
@@ -275,13 +298,14 @@ export default function BiomarkerDetailPage() {
                     <div key={rt.short} className="flex items-center gap-3">
                       <div className="flex-1">
                         <p className="text-sm font-semibold text-gray-800">{rt.short}</p>
-                        <p className="text-sm text-gray-400">{rt.from} → {rt.to} {rt.unit}</p>
+                        <p className="text-sm text-gray-400">
+                          {rt.from} → {rt.to} {rt.unit}
+                        </p>
                       </div>
-                      <div className={`flex items-center gap-1 ${rt.good ? 'text-green-600' : 'text-red-600'}`}>
-                        {rt.dir === 'down'
-                          ? <TrendingDown size={16} />
-                          : <TrendingUp size={16} />
-                        }
+                      <div
+                        className={`flex items-center gap-1 ${rt.good ? 'text-green-600' : 'text-red-600'}`}
+                      >
+                        {rt.dir === 'down' ? <TrendingDown size={16} /> : <TrendingUp size={16} />}
                         <span className="text-sm font-bold">{rt.dir === 'down' ? '↓' : '↑'}</span>
                       </div>
                     </div>
@@ -299,7 +323,9 @@ export default function BiomarkerDetailPage() {
           <>
             {/* Lead with today's action */}
             <div className="bg-amber-50 border-l-4 border-amber-400 rounded-2xl p-5">
-              <p className="text-xs font-bold uppercase tracking-wider text-amber-600 mb-2">Hành động hôm nay</p>
+              <p className="text-xs font-bold uppercase tracking-wider text-amber-600 mb-2">
+                Hành động hôm nay
+              </p>
               <p className="text-lg font-bold text-gray-900 leading-snug">{bio.today.title}</p>
               <p className="text-sm text-gray-600 mt-2 leading-relaxed">{bio.today.why}</p>
             </div>
@@ -344,7 +370,9 @@ export default function BiomarkerDetailPage() {
                 <div className="space-y-3">
                   {bio.doctorQs.map((q, i) => (
                     <div key={i} className="flex gap-3 items-start">
-                      <span className="text-teal-500 font-bold text-sm flex-shrink-0">{i + 1}.</span>
+                      <span className="text-teal-500 font-bold text-sm flex-shrink-0">
+                        {i + 1}.
+                      </span>
                       <p className="text-sm text-gray-700 leading-snug">{q}</p>
                     </div>
                   ))}
@@ -378,7 +406,9 @@ export default function BiomarkerDetailPage() {
         {/* Disclaimer — always visible */}
         <div className="text-center pt-2 pb-4">
           <p className="text-xs text-gray-400 leading-snug">
-            AI Copilot chỉ mang tính tham khảo giáo dục.<br />Không thay thế chẩn đoán và điều trị của bác sĩ.
+            AI Copilot chỉ mang tính tham khảo giáo dục.
+            <br />
+            Không thay thế chẩn đoán và điều trị của bác sĩ.
           </p>
         </div>
       </div>

@@ -174,7 +174,7 @@ export default function PatientDashboardPage() {
     )
   }
 
-  const { summary, series, healthSummary, adherenceSummary } = data
+  const { summary, series, healthSummary, adherenceSummary, liveScore } = data
   const hasAnyData = summary.totalTracked > 0
   const displayName = user.full_name ?? user.email ?? 'Bạn'
 
@@ -205,9 +205,12 @@ export default function PatientDashboardPage() {
         </NeuIconButton>
       </header>
 
+      {/* ── AI Copilot — flagship, first viewport ── */}
+      <AiCopilotCard summary={summary} healthSummary={healthSummary} liveScore={liveScore} />
+
       {hasAnyData ? (
         <>
-          {/* ── Daily summary (green hero) ── */}
+          {/* ── Priority health signals ── */}
           <HeroSummaryCard summary={summary} healthSummary={healthSummary} />
 
           {/* ── Medication adherence reminder ── */}
@@ -231,27 +234,6 @@ export default function PatientDashboardPage() {
         <EmptyDashboard onLog={() => router.push('/metrics/log')} />
       )}
 
-      {/* ── AI Copilot entry card ── */}
-      <Link
-        href="/ai-copilot/overview"
-        className="block bg-gradient-to-r from-teal-600 to-teal-700 rounded-2xl p-4 text-white shadow-md hover:shadow-lg transition-shadow"
-      >
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
-            <Bot className="size-5" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-bold leading-snug">AI Copilot</p>
-            <p className="text-xs opacity-80 mt-0.5 leading-snug">
-              Nhận định sức khỏe toàn diện từ xét nghiệm, lịch sử và thói quen của bạn.
-            </p>
-          </div>
-          <span className="text-xs font-semibold bg-white/20 px-2.5 py-1 rounded-full flex-shrink-0 whitespace-nowrap">
-            Xem nhận định AI
-          </span>
-        </div>
-      </Link>
-
       {/* ── FAB ── */}
       <button
         type="button"
@@ -262,6 +244,154 @@ export default function PatientDashboardPage() {
         <Plus className="size-7" aria-hidden="true" />
       </button>
     </div>
+  )
+}
+
+// ─── AI Copilot card — Liquid Glass surface ──────────────────────────────────
+
+const AI_GLASS_BG = 'linear-gradient(155deg, rgba(22,168,122,0.91) 0%, rgba(9,96,69,0.95) 100%)'
+const AI_GLASS_SHADOW =
+  'inset 0 1.5px 0 rgba(255,255,255,0.42), inset 0 -1px 0 rgba(0,0,0,0.06), 0 24px 48px -14px rgba(9,96,69,0.68), 0 4px 14px -6px rgba(9,96,69,0.22)'
+const AI_CHIP_STYLE: React.CSSProperties = {
+  background: 'rgba(255,255,255,0.14)',
+  border: '1px solid rgba(255,255,255,0.13)',
+}
+const AI_CTA_STYLE: React.CSSProperties = {
+  background: 'rgba(255,255,255,0.22)',
+  border: '1px solid rgba(255,255,255,0.30)',
+  boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.42)',
+}
+
+function AiCopilotCard({
+  summary,
+  healthSummary,
+  liveScore,
+}: {
+  summary: DashboardSummary
+  healthSummary: HealthSummary | null
+  liveScore: LiveMetabolicScore | null
+}) {
+  const topConcern = summary.concerns.find((c) => c.severity !== 'normal') ?? summary.concerns[0]
+  // Only show a positive that isn't already a displayed concern label.
+  const concernLabels = new Set(summary.concerns.map((c) => c.label))
+  const rawPositive = healthSummary?.positives?.find((p) => !concernLabels.has(p)) ?? null
+  const topPositive = rawPositive ?? null
+  const topAction = healthSummary?.top_action ?? null
+  const score = liveScore?.available && liveScore.score != null ? Math.round(liveScore.score) : null
+
+  // Only use the API focus line when it reads as a sentence (contains a space and verb-like length).
+  const apiFocus = healthSummary?.focus?.[0]
+  const focusIsReadable = apiFocus != null && apiFocus.length > 30
+  const focusLine = focusIsReadable
+    ? apiFocus
+    : topConcern
+      ? `${topConcern.label} đang ở mức ${topConcern.statusLabel.toLowerCase()} — cần theo dõi`
+      : summary.totalTracked > 0
+        ? `${summary.totalTracked} chỉ số đang được AI giám sát`
+        : 'Ghi chỉ số để AI phân tích sức khoẻ của bạn'
+
+  return (
+    <Link
+      href="/ai-copilot/overview"
+      className="block rounded-[28px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+    >
+      <div
+        className="relative overflow-hidden rounded-[28px] p-5 text-white"
+        style={{
+          background: AI_GLASS_BG,
+          backdropFilter: 'blur(24px) saturate(180%)',
+          WebkitBackdropFilter: 'blur(24px) saturate(180%)',
+          border: '1px solid rgba(255,255,255,0.26)',
+          boxShadow: AI_GLASS_SHADOW,
+        }}
+      >
+        {/* Inner shine strip */}
+        <div
+          className="pointer-events-none absolute inset-x-10 top-0 h-px"
+          style={{
+            background: 'linear-gradient(90deg,transparent,rgba(255,255,255,0.70),transparent)',
+          }}
+          aria-hidden="true"
+        />
+
+        {/* Label row */}
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <div
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px]"
+              style={{
+                background: 'rgba(255,255,255,0.20)',
+                boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.42)',
+              }}
+            >
+              <Bot className="size-4" aria-hidden="true" />
+            </div>
+            <span className="text-[12px] font-bold uppercase tracking-widest text-white/75">
+              AI Copilot
+            </span>
+          </div>
+          {score != null && (
+            <div
+              className="flex items-baseline gap-0.5 rounded-full px-3 py-1"
+              style={{
+                background: 'rgba(255,255,255,0.18)',
+                boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.30)',
+              }}
+            >
+              <span className="text-[20px] font-extrabold leading-none">{score}</span>
+              <span className="text-[11px] text-white/65">/100</span>
+            </div>
+          )}
+        </div>
+
+        {/* Focus line */}
+        <p className="mb-3.5 text-[15px] font-semibold leading-[1.4]">{focusLine}</p>
+
+        {/* Concern + improvement chips */}
+        {(topConcern || topPositive) && (
+          <div className="mb-3.5 flex gap-2">
+            {topConcern && (
+              <div className="flex-1 rounded-[14px] px-3 py-2.5" style={AI_CHIP_STYLE}>
+                <p className="mb-0.5 text-[10px] font-bold uppercase tracking-wider text-white/55">
+                  Cần chú ý
+                </p>
+                <p className="text-[13px] font-bold leading-tight">{topConcern.label}</p>
+                <p className="mt-0.5 text-[11px] text-white/65">{topConcern.statusLabel}</p>
+              </div>
+            )}
+            {topPositive && (
+              <div className="flex-1 rounded-[14px] px-3 py-2.5" style={AI_CHIP_STYLE}>
+                <p className="mb-0.5 text-[10px] font-bold uppercase tracking-wider text-white/55">
+                  Tiến triển
+                </p>
+                <p className="line-clamp-2 text-[13px] font-bold leading-tight">{topPositive}</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Today's action */}
+        {topAction && (
+          <div
+            className="mb-4 rounded-[14px] px-3.5 py-2.5"
+            style={{ background: 'rgba(0,0,0,0.12)', border: '1px solid rgba(255,255,255,0.07)' }}
+          >
+            <p className="mb-0.5 text-[10px] font-bold uppercase tracking-wider text-white/55">
+              Việc quan trọng hôm nay
+            </p>
+            <p className="text-[13px] leading-snug">{topAction}</p>
+          </div>
+        )}
+
+        {/* CTA */}
+        <div
+          className="flex min-h-[48px] items-center justify-center rounded-[14px]"
+          style={AI_CTA_STYLE}
+        >
+          <span className="text-[15px] font-bold">Xem nhận định AI →</span>
+        </div>
+      </div>
+    </Link>
   )
 }
 

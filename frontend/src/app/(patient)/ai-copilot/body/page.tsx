@@ -141,10 +141,7 @@ export default function BodyPage() {
                 {/* 2 — Marker list */}
                 <div className="space-y-3">
                   {sys.markers.map((m) => (
-                    <div
-                      key={m.short}
-                      className="flex items-center gap-3 min-h-[36px]"
-                    >
+                    <div key={m.short} className="flex items-center gap-3 min-h-[36px]">
                       <div
                         className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${STATUS_DOT[m.status]}`}
                       />
@@ -152,7 +149,9 @@ export default function BodyPage() {
                       <span className="text-sm font-bold text-gray-900">
                         {m.value} <span className="font-normal text-gray-400">{m.unit}</span>
                       </span>
-                      <span className={`text-sm font-semibold w-20 text-right ${STATUS_TEXT[m.status]}`}>
+                      <span
+                        className={`text-sm font-semibold w-20 text-right ${STATUS_TEXT[m.status]}`}
+                      >
                         {STATUS_LABEL_MAP[m.status]}
                       </span>
                       {m.bioKey && (
