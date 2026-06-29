@@ -186,7 +186,7 @@ describe('test_labs_upload_ocr_error_ux', () => {
     render(<LabUploadPage />)
     await user.click(screen.getByRole('tab', { name: 'Dán link' }))
     await user.type(screen.getByPlaceholderText('https://...'), 'https://example.com/lab.jpg')
-    await user.click(screen.getByRole('button', { name: 'Tải lên & đọc kết quả' }))
+    await user.click(screen.getByRole('button', { name: 'Phân tích bằng AI' }))
     return screen.findByText(/Hiện chưa thể đọc ảnh xét nghiệm/)
   }
 
