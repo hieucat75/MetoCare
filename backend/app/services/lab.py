@@ -11,6 +11,7 @@ import datetime as dt
 import logging
 
 from sqlalchemy import select
+from sqlalchemy import update as sql_update
 from sqlalchemy.orm import Session
 
 from app.core.clock import as_naive_utc, utcnow
@@ -1034,6 +1035,14 @@ def delete_lab_result(
         action="delete",
         resource_type="lab_result",
         resource_id=result_id,
+    )
+
+    # Cascade soft-delete to any HealthMetric rows promoted from this lab result
+    db.execute(
+        sql_update(HealthMetric)
+        .where(HealthMetric.source_ref == result_id)
+        .where(HealthMetric.deleted_at.is_(None))
+        .values(deleted_at=utcnow(), deleted_by=requester_id)
     )
 
     db.commit()

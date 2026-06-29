@@ -130,6 +130,8 @@ def update_metric(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    # Invalidate narrative cache so AI copilot reflects the edit
+    nc.invalidate_patient(patient_id)
     return MetricOut.model_validate(metric)
 
 

@@ -11,6 +11,7 @@ Covers:
 
 from __future__ import annotations
 
+import datetime as dt
 import json
 import os
 
@@ -419,3 +420,109 @@ def test_delete_lab_result_requires_auth(client, db, pat):
     _, result = _seed_lab_result(db, pat["patient_id"])
     resp = client.delete(f"/api/v1/patients/{pat['patient_id']}/lab-results/{result.id}")
     assert resp.status_code == 401
+
+# ---------------------------------------------------------------------------
+# 7. PATCH metric calls cache invalidation (Fix 2)
+# ---------------------------------------------------------------------------
+
+def test_patch_metric_calls_cache_invalidation(client, db, pat, monkeypatch):
+    """PATCH /metrics/{id} must invalidate the narrative cache for the patient."""
+    calls: list[str] = []
+
+    def _fake_invalidate(patient_id: str) -> int:
+        calls.append(patient_id)
+        return 0
+
+    from app.api.v1.routes import health as health_routes
+    monkeypatch.setattr(health_routes.nc, "invalidate_patient", _fake_invalidate)
+
+    m = _seed_metric(db, pat["patient_id"])
+    headers = _mint(pat["user_id"])
+    resp = client.patch(
+        f"/api/v1/patients/{pat['patient_id']}/metrics/{m.id}",
+        json={"value": 85.0},
+        headers=headers,
+    )
+    assert resp.status_code == 200
+    assert pat["patient_id"] in calls, "invalidate_patient must be called with correct patient_id"
+
+
+# ---------------------------------------------------------------------------
+# 8. DELETE lab result cascades to HealthMetric (Fix 3)
+# ---------------------------------------------------------------------------
+
+def test_delete_lab_result_cascades_to_health_metric(client, db, pat):
+    """Soft-deleting a LabResult must also soft-delete promoted HealthMetric rows."""
+    _, lab_result = _seed_lab_result(db, pat["patient_id"])
+
+    # Create a HealthMetric that was promoted from this LabResult
+    promoted = HealthMetric(
+        patient_id=pat["patient_id"],
+        metric_type="fasting_glucose",
+        value=110.0,
+        unit="mg/dL",
+        measured_at=dt.datetime(2024, 1, 10, 8, 0),
+        source="lab_result",
+        source_ref=lab_result.id,
+        status="high",
+    )
+    db.add(promoted)
+    db.commit()
+    db.refresh(promoted)
+
+    headers = _mint(pat["user_id"])
+
+    # Verify metric is visible before delete
+    r_before = client.get(f"/api/v1/patients/{pat['patient_id']}/metrics", headers=headers)
+    assert r_before.status_code == 200
+    ids_before = [item["id"] for item in r_before.json()]
+    assert promoted.id in ids_before
+
+    # Delete the lab result
+    resp = client.delete(
+        f"/api/v1/patients/{pat['patient_id']}/lab-results/{lab_result.id}",
+        headers=headers,
+    )
+    assert resp.status_code == 204
+
+    # The promoted HealthMetric must be soft-deleted too
+    db.expire(promoted)
+    db.refresh(promoted)
+    assert promoted.deleted_at is not None, "HealthMetric cascade soft-delete must set deleted_at"
+
+    # Must not appear in GET /metrics
+    r_after = client.get(f"/api/v1/patients/{pat['patient_id']}/metrics", headers=headers)
+    assert r_after.status_code == 200
+    ids_after = [item["id"] for item in r_after.json()]
+    assert promoted.id not in ids_after, "Cascaded metric must not appear in list after delete"
+
+
+# ---------------------------------------------------------------------------
+# 9. save_narrative stores patient_id so invalidate_patient can find the file (Fix 2)
+# ---------------------------------------------------------------------------
+
+def test_narrative_cache_invalidation_stores_patient_id(tmp_path, monkeypatch):
+    """save_narrative with patient_id kwarg must store patient_id in the JSON so
+    invalidate_patient can locate and delete the file."""
+    monkeypatch.setattr(narrative_cache, "NARRATIVE_CACHE_DIR", str(tmp_path))
+
+    patient_id = "patient-xyz-test"
+    cache_key = "test-key-123"
+    payload = {
+        "narrative": {"summary": "test"},
+        "prompt_version": "1",
+    }
+
+    # save_narrative with patient_id kwarg
+    narrative_cache.save_narrative(cache_key, payload, patient_id=patient_id)
+
+    # File should exist and contain patient_id
+    cache_files = list(tmp_path.glob("*.json"))
+    assert len(cache_files) == 1, "Expected exactly one cache file"
+    data = json.loads(cache_files[0].read_text())
+    assert data.get("patient_id") == patient_id, "patient_id must be stored in cache file"
+
+    # invalidate_patient should find and delete this file
+    count = narrative_cache.invalidate_patient(patient_id)
+    assert count == 1, "invalidate_patient must delete the cache file"
+    assert not cache_files[0].exists(), "Cache file must be deleted after invalidation"

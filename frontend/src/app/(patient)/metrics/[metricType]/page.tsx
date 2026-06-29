@@ -27,6 +27,10 @@ import {
   metricIcon,
   type NeuTone,
 } from '@/components/patient/metrics/metricVisuals'
+import { RecordActions } from '@/components/records/RecordActions'
+import { EditMetricModal } from '@/components/records/EditMetricModal'
+import { DeleteConfirmDialog } from '@/components/records/DeleteConfirmDialog'
+import { deleteMetric } from '@/lib/api/patient'
 
 // ─── Period segmented control ─────────────────────────────────────────────────
 
@@ -58,6 +62,9 @@ export default function MetricDetailPage() {
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
   const [period, setPeriod] = React.useState<PeriodKey>('week')
+  const [editTarget, setEditTarget] = React.useState<HealthMetric | null>(null)
+  const [deleteTarget, setDeleteTarget] = React.useState<HealthMetric | null>(null)
+  const [deleting, setDeleting] = React.useState(false)
 
   const load = React.useCallback(() => {
     if (!patientId || !catalog) return
@@ -133,7 +140,14 @@ export default function MetricDetailPage() {
       )}
 
       {series ? (
-        <MetricDetailBody series={series} accent={accent} period={period} onPeriod={setPeriod} />
+        <MetricDetailBody
+          series={series}
+          accent={accent}
+          period={period}
+          onPeriod={setPeriod}
+          onEdit={setEditTarget}
+          onDelete={setDeleteTarget}
+        />
       ) : (
         <NeuCard size="lg" className="text-center">
           <h2 className="text-[18px] font-bold text-neu-text">Chưa có dữ liệu</h2>
@@ -141,6 +155,37 @@ export default function MetricDetailPage() {
             Chưa có bản ghi nào cho chỉ số này. Hãy ghi giá trị đầu tiên.
           </p>
         </NeuCard>
+      )}
+
+      {/* Edit modal */}
+      {patientId && editTarget && (
+        <EditMetricModal
+          metric={editTarget}
+          isOpen={!!editTarget}
+          onClose={() => setEditTarget(null)}
+          onSuccess={() => { setEditTarget(null); load() }}
+          patientId={patientId}
+        />
+      )}
+
+      {/* Delete confirm dialog */}
+      {patientId && (
+        <DeleteConfirmDialog
+          isOpen={!!deleteTarget}
+          loading={deleting}
+          onCancel={() => setDeleteTarget(null)}
+          onConfirm={async () => {
+            if (!deleteTarget || !patientId) return
+            setDeleting(true)
+            try {
+              await deleteMetric(patientId, deleteTarget.id)
+              setDeleteTarget(null)
+              load()
+            } finally {
+              setDeleting(false)
+            }
+          }}
+        />
       )}
 
       <button
@@ -162,11 +207,15 @@ function MetricDetailBody({
   accent,
   period,
   onPeriod,
+  onEdit,
+  onDelete,
 }: {
   series: MetricSeries
   accent: string
   period: PeriodKey
   onPeriod: (p: PeriodKey) => void
+  onEdit: (m: HealthMetric) => void
+  onDelete: (m: HealthMetric) => void
 }) {
   const { history, unit, higherIsBetter, metricType, latest } = series
   const unitLabel = latest.unit || metricUnit(metricType as MetricType)
@@ -257,6 +306,8 @@ function MetricDetailBody({
               metric={m}
               unitLabel={unitLabel}
               last={i === rows.length - 1}
+              onEdit={() => onEdit(m)}
+              onDelete={() => onDelete(m)}
             />
           ))}
         </NeuCard>
@@ -354,10 +405,14 @@ function HistoryRow({
   metric,
   unitLabel,
   last,
+  onEdit,
+  onDelete,
 }: {
   metric: HealthMetric
   unitLabel: string
   last: boolean
+  onEdit: () => void
+  onDelete: () => void
 }) {
   // Use ONLY canonical status from backend API — never local threshold comparisons.
   // The backend MetricOut._populate_clinical_message validator unit-normalizes
@@ -389,6 +444,7 @@ function HistoryRow({
           {status.label}
         </NeuBadge>
       )}
+      <RecordActions onEdit={onEdit} onDelete={onDelete} label={metricUnit(metric.metric_type as MetricType) ?? metric.metric_type} />
     </div>
   )
 }

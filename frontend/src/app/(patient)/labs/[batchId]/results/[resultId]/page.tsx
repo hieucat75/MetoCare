@@ -14,7 +14,8 @@ import * as React from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { ArrowLeft, ChevronDown, ChevronUp, TrendingDown, TrendingUp, Minus } from 'lucide-react'
 import { useAuth } from '@/lib/auth/context'
-import { getLabResults, getLabResultExplanation, type LabResultEntry, type LabExplanation } from '@/lib/api/patient'
+import { getLabResults, getLabResultExplanation, deleteLabResult, type LabResultEntry, type LabExplanation } from '@/lib/api/patient'
+import { DeleteConfirmDialog } from '@/components/records/DeleteConfirmDialog'
 import { ExplanationSection } from '@/components/labs/ExplanationSection'
 import { getPatientInsight, type PatientInsightReport } from '@/lib/api/labInsight'
 import { NeuCard } from '@/components/patient/neu'
@@ -141,6 +142,10 @@ export default function BiomarkerDetailPage() {
   const [insight, setInsight] = React.useState<PatientInsightReport | null>(null)
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
+
+  // Delete state
+  const [showDelete, setShowDelete] = React.useState(false)
+  const [deleting, setDeleting] = React.useState(false)
 
   // Claude explanation state
   const [explanation, setExplanation] = React.useState<LabExplanation | null>(null)
@@ -294,15 +299,45 @@ export default function BiomarkerDetailPage() {
 
   return (
     <div className="p-4 max-w-md mx-auto pb-12 space-y-5">
-      {/* Back button */}
-      <button
-        type="button"
-        onClick={() => router.back()}
-        className="flex items-center gap-2 text-[16px] text-neu-green font-medium"
-      >
-        <ArrowLeft className="size-5" aria-hidden="true" />
-        Quay lại
-      </button>
+      {/* Back + Delete header row */}
+      <div className="flex items-center justify-between">
+        <button
+          type="button"
+          onClick={() => router.back()}
+          className="flex items-center gap-2 text-[16px] text-neu-green font-medium"
+        >
+          <ArrowLeft className="size-5" aria-hidden="true" />
+          Quay lại
+        </button>
+        <button
+          type="button"
+          onClick={() => setShowDelete(true)}
+          className="flex items-center gap-1.5 rounded-[10px] px-3 py-1.5 text-[14px] font-semibold text-[#D92D20] hover:bg-[rgba(217,45,32,0.08)] transition-colors"
+          aria-label="Xóa kết quả xét nghiệm"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+          Xóa
+        </button>
+      </div>
+
+      <DeleteConfirmDialog
+        isOpen={showDelete}
+        loading={deleting}
+        title="Xóa kết quả xét nghiệm này?"
+        description="Kết quả này sẽ bị ẩn. Thao tác này không thể hoàn tác."
+        onCancel={() => setShowDelete(false)}
+        onConfirm={async () => {
+          if (!patientId) return
+          setDeleting(true)
+          try {
+            await deleteLabResult(patientId, resultId)
+            router.push(`/labs/${batchId}/results`)
+          } catch {
+            setDeleting(false)
+            setShowDelete(false)
+          }
+        }}
+      />
 
       {/* ── Section 1: Current Value ─────────────────────────────────────────── */}
       <NeuCard className="!p-5">

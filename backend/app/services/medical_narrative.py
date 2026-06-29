@@ -423,7 +423,7 @@ def generate_narrative(
             "prompt_tokens": prompt_tokens,
             "completion_tokens": completion_tokens,
         }
-        save_narrative(cache_key, cache_payload)
+        save_narrative(cache_key, cache_payload, patient_id=patient_id)
 
         # CKP: Save narrative memory for continuity on next call
         try:
