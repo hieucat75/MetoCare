@@ -82,10 +82,7 @@ function BatchCard({
 
           <div className="flex-1 min-w-0">
             {/* Hospital name — large */}
-            <p
-              className="font-bold text-neu-text leading-snug"
-              style={{ fontSize: '18px' }}
-            >
+            <p className="font-bold text-neu-text leading-snug" style={{ fontSize: '18px' }}>
               {batch.lab_name ?? 'Phòng xét nghiệm'}
             </p>
             {/* Test date — large, green */}
@@ -103,9 +100,7 @@ function BatchCard({
               <NeuBadge tone="ok" className="!text-[12px]">
                 {batch.result_count} chỉ số
               </NeuBadge>
-              <p className="text-[12px] text-neu-muted">
-                Tải lên {formatDate(batch.created_at)}
-              </p>
+              <p className="text-[12px] text-neu-muted">Tải lên {formatDate(batch.created_at)}</p>
             </div>
           </div>
 
@@ -136,7 +131,6 @@ function BatchCard({
             </button>
           </div>
         </div>
-
       </div>
 
       {/* Expanded biomarker rows */}
@@ -160,9 +154,7 @@ function BatchCard({
             </div>
           )}
           {!resultsLoading && !resultsError && results !== null && results.length === 0 && (
-            <p className="px-4 py-4 text-[15px] text-neu-muted text-center">
-              Không có kết quả
-            </p>
+            <p className="px-4 py-4 text-[15px] text-neu-muted text-center">Không có kết quả</p>
           )}
           {!resultsLoading && !resultsError && results !== null && results.length > 0 && (
             <div className="divide-y divide-black/[0.05]">
@@ -232,8 +224,8 @@ function DeleteBatchModal({
         <div>
           <p className="text-[18px] font-extrabold text-neu-text">Xoá phiếu xét nghiệm?</p>
           <p className="mt-1.5 text-[15px] text-neu-muted">
-            Xóa phiếu xét nghiệm này sẽ xóa các chỉ số sức khỏe được tạo từ phiếu này. Bạn có
-            chắc không?
+            Xóa phiếu xét nghiệm này sẽ xóa các chỉ số sức khỏe được tạo từ phiếu này. Bạn có chắc
+            không?
           </p>
         </div>
         <div className="flex gap-2.5">

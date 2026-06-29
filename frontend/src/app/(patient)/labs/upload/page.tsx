@@ -213,7 +213,10 @@ export default function LabUploadPage() {
         // Parse structured VALIDATION_ERROR detail from backend
         let msg: string
         try {
-          const body = JSON.parse(e.detail) as { code?: string; detail?: Array<{ field: string; message: string; received: string }> }
+          const body = JSON.parse(e.detail) as {
+            code?: string
+            detail?: Array<{ field: string; message: string; received: string }>
+          }
           if (body?.code === 'VALIDATION_ERROR' && Array.isArray(body.detail)) {
             msg = body.detail
               .map((err) => `${err.field}: ${err.message} (nhận được: "${err.received}")`)
