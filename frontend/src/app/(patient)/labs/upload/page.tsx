@@ -16,7 +16,6 @@ import { PatientErrorState } from '@/components/patient/states'
 import { PatientInput } from '@/components/patient'
 import { NeuCard, NeuButton, NeuBadge } from '@/components/patient/neu'
 import { useAuth } from '@/lib/auth/context'
-import { useFeatureFlags } from '@/lib/api/features'
 import {
   checkDuplicate,
   createManualLabResults,
@@ -86,7 +85,6 @@ export default function LabUploadPage() {
   const router = useRouter()
   const { user } = useAuth()
   const patientId = user?.patient_profile_id
-  const flags = useFeatureFlags()
   const catalog = useLabReference()
 
   const [mode, setMode] = React.useState<Mode>('camera')
@@ -313,25 +311,6 @@ export default function LabUploadPage() {
             Tài khoản chưa được liên kết với hồ sơ bệnh nhân. Vui lòng liên hệ hỗ trợ.
           </p>
         </div>
-      </div>
-    )
-  }
-
-  // Feature flag off → tell the patient it is coming soon (route may be opened directly).
-  if (flags && !flags.ocr) {
-    return (
-      <div className="p-4 max-w-md mx-auto space-y-4">
-        <PageHeaderNeu title="Tải lên kết quả" onBack={() => router.push('/labs')} />
-        <div className="rounded-[14px] bg-[#EEF4FB] border border-[#2563EB]/20 p-4">
-          <p className="text-[14px] font-bold text-[#1E4DA1]">Sắp ra mắt</p>
-          <p className="text-[13px] text-[#1E4DA1]/80 mt-1">
-            Tính năng tự động đọc kết quả xét nghiệm đang được hoàn thiện. Bạn có thể nhập tay kết
-            quả ở trang Xét nghiệm.
-          </p>
-        </div>
-        <NeuButton variant="secondary" onClick={() => router.push('/labs')}>
-          Về trang xét nghiệm
-        </NeuButton>
       </div>
     )
   }

@@ -1,6 +1,6 @@
 'use client'
 
-import { PatientEmptyState, LabEntryModal } from '@/components/patient'
+import { LabEntryModal } from '@/components/patient'
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -24,7 +24,6 @@ import {
   type LabUploadBatch,
   type LabResultEntry,
 } from '@/lib/api/patient'
-import { useFeatureFlags } from '@/lib/api/features'
 import { formatDate } from '@/lib/utils'
 import { LabResultRow } from '@/components/patient/LabResultRow'
 
@@ -261,8 +260,6 @@ export default function LabsPage() {
   const router = useRouter()
   const { user } = useAuth()
   const patientId = user?.patient_profile_id
-  const flags = useFeatureFlags()
-
   const [batches, setBatches] = React.useState<LabUploadBatch[]>([])
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
@@ -342,46 +339,31 @@ export default function LabsPage() {
           Xét nghiệm
         </h1>
 
-        {/* OCR upload — real CTA when the OCR flag is on; otherwise a "coming soon" hint. */}
-        {flags && flags.ocr && (
-          <button
-            type="button"
-            onClick={() => router.push('/labs/upload')}
-            className="flex w-full items-center justify-between gap-3 rounded-[20px] px-5 py-4 text-left text-white"
-            style={{
-              background: HERO_GRADIENT,
-              boxShadow: '0 14px 26px -12px rgba(11,107,77,0.6)',
-            }}
-          >
-            <div className="flex min-w-0 items-center gap-3">
-              <span className="grid size-11 shrink-0 place-items-center rounded-[14px] bg-white/20">
-                <Upload className="size-5" aria-hidden="true" />
-              </span>
-              <div className="min-w-0">
-                <span className="block text-[17px] font-bold">Tải lên kết quả xét nghiệm</span>
-                <span className="block text-[14px] text-white/85">
-                  Chụp ảnh, tải tệp hoặc dán link — tự động đọc
-                </span>
-              </div>
-            </div>
-            <span aria-hidden="true" className="text-[20px]">
-              →
+        {/* OCR upload — primary entry point, always available. */}
+        <button
+          type="button"
+          onClick={() => router.push('/labs/upload')}
+          className="flex w-full items-center justify-between gap-3 rounded-[20px] px-5 py-4 text-left text-white"
+          style={{
+            background: HERO_GRADIENT,
+            boxShadow: '0 14px 26px -12px rgba(11,107,77,0.6)',
+          }}
+        >
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="grid size-11 shrink-0 place-items-center rounded-[14px] bg-white/20">
+              <Upload className="size-5" aria-hidden="true" />
             </span>
-          </button>
-        )}
-        {flags && !flags.ocr && (
-          <NeuCard className="!p-4">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2 text-neu-muted">
-                <Upload className="size-4" aria-hidden="true" />
-                <span className="text-[15px]">Tải ảnh/PDF và tự động đọc kết quả</span>
-              </div>
-              <NeuBadge tone="watch" className="!text-[11px] !px-2.5 !py-0.5 before:!hidden">
-                Sắp ra mắt
-              </NeuBadge>
+            <div className="min-w-0">
+              <span className="block text-[17px] font-bold">Đọc kết quả xét nghiệm bằng AI</span>
+              <span className="block text-[13px] text-white/80 mt-0.5">
+                Chụp ảnh · Tải ảnh/PDF · Dán link kết quả
+              </span>
             </div>
-          </NeuCard>
-        )}
+          </div>
+          <span aria-hidden="true" className="text-[20px] shrink-0">
+            →
+          </span>
+        </button>
 
         {error && !loading && (
           <PatientErrorState title="Lỗi tải xét nghiệm" message={error} onRetry={load} />
@@ -390,12 +372,34 @@ export default function LabsPage() {
         {loading && <LabsSkeleton />}
 
         {!loading && !error && batches.length === 0 && (
-          <PatientEmptyState
-            icon={<FlaskConical />}
-            title="Chưa có kết quả xét nghiệm"
-            description="Nhập kết quả xét nghiệm của bạn để theo dõi theo thời gian."
-            cta={{ label: 'Nhập kết quả', onClick: () => setModalOpen(true) }}
-          />
+          <div className="space-y-2.5">
+            <NeuCard className="!p-5 text-center">
+              <div className="mx-auto mb-3 grid size-[52px] place-items-center rounded-[16px] bg-[rgba(23,174,123,0.1)]">
+                <FlaskConical className="size-6 text-neu-green" aria-hidden="true" />
+              </div>
+              <p className="text-[16px] font-bold text-neu-text">Chưa có kết quả xét nghiệm</p>
+              <p className="mt-1.5 text-[14px] text-neu-muted leading-relaxed">
+                Dùng AI để tự động đọc phiếu xét nghiệm, hoặc nhập tay từng chỉ số.
+              </p>
+              <button
+                type="button"
+                onClick={() => router.push('/labs/upload')}
+                className="mt-4 flex w-full items-center justify-center gap-2 rounded-[14px] py-3 text-[15px] font-bold text-white"
+                style={{ background: HERO_GRADIENT }}
+              >
+                <Upload className="size-4" aria-hidden="true" />
+                Đọc kết quả xét nghiệm bằng AI
+              </button>
+              <button
+                type="button"
+                onClick={() => setModalOpen(true)}
+                className="mt-2.5 flex w-full items-center justify-center gap-2 rounded-[14px] border border-[rgba(16,48,44,0.12)] py-3 text-[14px] font-semibold text-neu-text hover:bg-gray-50 transition-colors"
+              >
+                <Plus className="size-4 text-neu-green" aria-hidden="true" />
+                Nhập thủ công
+              </button>
+            </NeuCard>
+          </div>
         )}
 
         {!loading && !error && batches.length > 0 && (
