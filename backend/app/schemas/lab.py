@@ -166,9 +166,14 @@ class LabResultOut(BaseModel):
             # possible in the canonical unit, it must be expressed in the SI unit.
             if spec.si_unit and spec.physiological_max is not None:
                 unit_norm = (raw_unit or "").strip().lower().replace("µ", "u").replace("μ", "u")
-                si_norm = spec.si_unit.strip().lower().replace("µ", "u").replace("μ", "u")
-                already_si = unit_norm == si_norm
-                if not already_si and raw_value > spec.physiological_max:
+                # Guard: check if already in CANONICAL unit (not SI unit).
+                # For creatinine: canonical='mg/dL', si='µmol/L'.
+                # If raw_unit IS mg/dL, already_canonical=True → skip heuristic.
+                # If raw_unit is µmol/L (old mis-stored row), already_canonical=False
+                # and value 88 > physiological_max 30 → re-treat as SI unit → correct.
+                canonical_norm = spec.unit.strip().lower().replace("µ", "u").replace("μ", "u")
+                already_canonical = unit_norm == canonical_norm
+                if not already_canonical and raw_value > spec.physiological_max:
                     # Value is physiologically impossible in canonical unit → must be SI unit.
                     raw_unit = spec.si_unit
 
