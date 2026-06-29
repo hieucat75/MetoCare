@@ -29,6 +29,12 @@ function makeResult(overrides: Partial<LabResultEntry> = {}): LabResultEntry {
     status: 'high',
     test_date: '2026-06-01T00:00:00Z',
     verified_by_user: false,
+    original_value: 6.5,
+    original_unit: 'mmol/L',
+    original_reference_range: '3.9 – 5.6',
+    original_test_name: 'Đường huyết đói',
+    normalized_value_si: 117.0,
+    normalized_unit_si: 'mg/dL',
     created_at: '2026-06-01T00:00:00Z',
     ...overrides,
   }
