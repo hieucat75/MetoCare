@@ -1,7 +1,15 @@
-"use client"
+'use client'
 
 import { useState } from 'react'
-import { type LucideIcon, Footprints, Droplets, Salad, Star, TrendingDown, Flame } from 'lucide-react'
+import {
+  type LucideIcon,
+  Footprints,
+  Droplets,
+  Salad,
+  Star,
+  TrendingDown,
+  Flame,
+} from 'lucide-react'
 import { mockCoachData } from '@/lib/mock/aiCopilotData'
 
 const ICON_MAP: Record<string, LucideIcon> = {
@@ -13,9 +21,24 @@ const ICON_MAP: Record<string, LucideIcon> = {
   Flame,
 }
 
-function DynIcon({ name, size = 16, style }: { name: string; size?: number; style?: React.CSSProperties }) {
+function DynIcon({
+  name,
+  size = 16,
+  style,
+}: {
+  name: string
+  size?: number
+  style?: React.CSSProperties
+}) {
   const Icon = ICON_MAP[name]
   return Icon ? <Icon size={size} style={style} /> : null
+}
+
+function getGreeting(name: string): string {
+  const hour = new Date().getHours()
+  if (hour < 12) return `Chào buổi sáng, ${name} 👋`
+  if (hour < 18) return `Chào buổi chiều, ${name}`
+  return `Chào buổi tối, ${name}`
 }
 
 export default function CoachPage() {
@@ -31,14 +54,31 @@ export default function CoachPage() {
     })
   }
 
+  const completedCount = checkedTasks.size
+  const totalCount = d.tasks.length
+
   return (
     <div className="px-4 pb-8 pt-4 max-w-md mx-auto space-y-4">
-      <h2 className="text-base font-bold text-gray-800">Kế hoạch & Huấn luyện</h2>
 
-      {/* Motivation */}
+      {/* Greeting card */}
       <div className="bg-gradient-to-br from-teal-600 to-teal-800 rounded-2xl p-5 text-white">
-        <p className="text-sm leading-relaxed italic opacity-90">{d.motivation}</p>
+        <p className="text-xl font-bold mb-1">{getGreeting(d.patientName)}</p>
+        <p className="text-sm leading-relaxed opacity-90">{d.motivation}</p>
+        {completedCount > 0 && (
+          <div className="mt-3 bg-white/15 rounded-xl px-3 py-2">
+            <p className="text-sm font-semibold">
+              Hôm nay: {completedCount}/{totalCount} việc hoàn thành 🎯
+            </p>
+          </div>
+        )}
       </div>
+
+      {d.yesterdayHighlight && (
+        <div className="bg-green-50 border border-green-200 rounded-2xl p-4">
+          <p className="text-xs font-bold uppercase tracking-wide text-green-600 mb-1">Hôm qua</p>
+          <p className="text-sm text-gray-700 leading-snug">{d.yesterdayHighlight}</p>
+        </div>
+      )}
 
       {/* Today's tasks */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">

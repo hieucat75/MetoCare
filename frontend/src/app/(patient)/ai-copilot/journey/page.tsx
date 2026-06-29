@@ -1,4 +1,4 @@
-"use client"
+'use client'
 
 import { useState } from 'react'
 import {
@@ -28,7 +28,15 @@ const ICON_MAP: Record<string, LucideIcon> = {
   Droplets,
 }
 
-function DynIcon({ name, size = 16, style }: { name: string; size?: number; style?: React.CSSProperties }) {
+function DynIcon({
+  name,
+  size = 16,
+  style,
+}: {
+  name: string
+  size?: number
+  style?: React.CSSProperties
+}) {
   const Icon = ICON_MAP[name]
   return Icon ? <Icon size={size} style={style} /> : null
 }

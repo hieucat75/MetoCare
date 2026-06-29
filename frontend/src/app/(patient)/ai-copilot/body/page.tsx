@@ -1,4 +1,4 @@
-"use client"
+'use client'
 
 import { useState } from 'react'
 import Link from 'next/link'
@@ -28,7 +28,15 @@ const ICON_MAP: Record<string, LucideIcon> = {
   Activity,
 }
 
-function DynIcon({ name, size = 16, style }: { name: string; size?: number; style?: React.CSSProperties }) {
+function DynIcon({
+  name,
+  size = 16,
+  style,
+}: {
+  name: string
+  size?: number
+  style?: React.CSSProperties
+}) {
   const Icon = ICON_MAP[name]
   return Icon ? <Icon size={size} style={style} /> : null
 }
@@ -116,7 +124,9 @@ export default function BodyPage() {
                 <div className="space-y-2">
                   {sys.markers.map((m) => (
                     <div key={m.short} className="flex items-center gap-2">
-                      <div className={`w-2 h-2 rounded-full flex-shrink-0 ${STATUS_DOT[m.status]}`} />
+                      <div
+                        className={`w-2 h-2 rounded-full flex-shrink-0 ${STATUS_DOT[m.status]}`}
+                      />
                       <span className="text-xs font-medium text-gray-700 flex-1">{m.short}</span>
                       <span className="text-xs font-semibold text-gray-800">
                         {m.value} {m.unit}
@@ -125,7 +135,10 @@ export default function BodyPage() {
                         {STATUS_LABEL_MAP[m.status]}
                       </span>
                       {m.bioKey && (
-                        <Link href={`/ai-copilot/biomarker/${m.bioKey}`} aria-label={`Chi tiết ${m.short}`}>
+                        <Link
+                          href={`/ai-copilot/biomarker/${m.bioKey}`}
+                          aria-label={`Chi tiết ${m.short}`}
+                        >
                           <ChevronRight size={13} className="text-gray-300" />
                         </Link>
                       )}

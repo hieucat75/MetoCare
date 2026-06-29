@@ -464,8 +464,7 @@ export const mockBiomarkers: Record<string, Biomarker> = {
       { name: 'HOMA-IR (ước tính)', val: '2.9', note: 'Vượt ngưỡng 2.5' },
     ],
     confidence: 82,
-    confidenceNote:
-      'Độ tin cậy khá cao. Sẽ tăng lên ~92% nếu có thêm HbA1c và insulin lúc đói.',
+    confidenceNote: 'Độ tin cậy khá cao. Sẽ tăng lên ~92% nếu có thêm HbA1c và insulin lúc đói.',
     evidence:
       'Theo ADA 2025, glucose lúc đói 5.6–6.9 mmol/L được xếp vào nhóm tiền tiểu đường, cần can thiệp lối sống sớm.',
     limitations: [
@@ -1072,9 +1071,7 @@ export const mockBiomarkers: Record<string, Biomarker> = {
       { name: 'HbA1c 5.7%', weight: 65, note: 'Ngay ranh giới tiền tiểu đường' },
       { name: 'Glucose lúc đói 5.8', weight: 60, note: 'Nhất quán với HbA1c' },
     ],
-    derived: [
-      { name: 'eAG (đường TB ước tính)', val: '6.5', note: 'mmol/L — tương ứng HbA1c' },
-    ],
+    derived: [{ name: 'eAG (đường TB ước tính)', val: '6.5', note: 'mmol/L — tương ứng HbA1c' }],
     confidence: 88,
     confidenceNote: 'Độ tin cậy cao vì HbA1c ổn định và nhất quán với glucose của bạn.',
     evidence: 'Theo ADA, HbA1c 5.7–6.4% là tiền tiểu đường; ≥ 6.5% là tiểu đường.',
@@ -1422,7 +1419,9 @@ export interface CoachWin {
 }
 
 export interface CoachData {
+  patientName: string
   motivation: string
+  yesterdayHighlight?: string
   tasks: CoachTask[]
   streaks: CoachStreak[]
   goals: CoachGoal[]
@@ -1431,8 +1430,10 @@ export interface CoachData {
 }
 
 export const mockCoachData: CoachData = {
+  patientName: 'Anh Minh',
   motivation:
-    '"Anh Minh, 3 tháng qua anh đã làm rất tốt — glucose giảm đều. Hôm nay chỉ cần giữ nhịp, đừng bỏ buổi đi bộ nhé!"',
+    '3 tháng qua anh đã làm rất tốt — glucose giảm đều. Hôm nay chỉ cần giữ nhịp, đừng bỏ buổi đi bộ nhé!',
+  yesterdayHighlight: 'Đi bộ 28 phút sau bữa tối — chuỗi 12 ngày liên tiếp! Glucose hôm nay giảm đáng kể.',
   tasks: [
     { id: 'c1', text: 'Đi bộ 25 phút sau bữa tối', sub: 'Ưu tiên cao' },
     { id: 'c2', text: 'Uống đủ 2 lít nước', sub: 'Thay cho nước ngọt' },

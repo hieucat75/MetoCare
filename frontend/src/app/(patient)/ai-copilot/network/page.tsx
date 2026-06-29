@@ -1,4 +1,4 @@
-"use client"
+'use client'
 
 import { useState } from 'react'
 import { mockNetworkNodes, mockNetworkEdges, mockNetworkInfo } from '@/lib/mock/aiCopilotData'
