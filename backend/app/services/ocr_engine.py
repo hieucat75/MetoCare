@@ -454,13 +454,40 @@ def run_cloud_ocr_if_permitted(image_bytes: bytes, mime: str) -> OcrTextResult |
 # --------------------------------------------------------------------------- #
 
 
-def run_ocr(image_bytes: bytes, mime: str) -> OcrTextResult:
-    """Engine selection: Azure (if credentials present) → Tesseract (if binary available) → Mock.
+def _is_mock_explicitly_allowed() -> bool:
+    """Mock OCR is only permitted with an explicit opt-in env var — never as a silent fallback."""
+    return (
+        os.getenv("MCP_OCR_PROVIDER", "").strip().lower() == "mock"
+        or os.getenv("MCP_ENABLE_MOCK_OCR", "").strip().lower() in ("true", "1", "yes")
+    )
 
-    Mock is the last-resort fallback for local dev / CI when neither Azure credentials
-    nor a Tesseract binary are present, and settings.ocr_provider == "mock" (the default).
-    This ordering ensures real-provider tests work without patching get_settings().
+
+def _assert_mock_not_in_prod() -> None:
+    """Raise OcrEngineError if the current environment forbids mock OCR.
+
+    Reads MCP_ENV directly (not via the lru_cache'd get_settings()) so that
+    monkeypatch.setenv works correctly in tests and live env-var changes take effect.
     """
+    env = (os.getenv("MCP_ENV") or get_settings().env or "dev").lower().strip()
+    if env in ("staging", "production", "prod"):
+        raise OcrEngineError(
+            f"MockOcrEngine bị cấm trong môi trường '{env}'. "
+            "Cần cấu hình Azure Document Intelligence hoặc Tesseract."
+        )
+
+
+def run_ocr(image_bytes: bytes, mime: str) -> OcrTextResult:
+    """Engine selection: explicit-mock-only → Azure → Tesseract → error.
+
+    Mock runs ONLY when MCP_OCR_PROVIDER=mock or MCP_ENABLE_MOCK_OCR=true is set,
+    and is hard-blocked in staging/production environments. There is NO implicit
+    mock fallback: if no real provider is configured, OcrEngineError is raised so
+    the upload route returns a patient-friendly "try again or enter manually" 503.
+    """
+    if _is_mock_explicitly_allowed():
+        _assert_mock_not_in_prod()
+        return MockOcrEngine().run(image_bytes, mime)
+
     if AzureDocIntelEngine.configured():
         return AzureDocIntelEngine().run(image_bytes, mime)
 
@@ -471,9 +498,6 @@ def run_ocr(image_bytes: bytes, mime: str) -> OcrTextResult:
                 "Độ tin cậy OCR thấp — vui lòng kiểm tra lại các chỉ số trước khi lưu."
             )
         return local
-
-    if get_settings().ocr_provider == "mock":
-        return MockOcrEngine().run(image_bytes, mime)
 
     raise OcrEngineError(
         "OCR không khả dụng: cần cấu hình Azure Document Intelligence "

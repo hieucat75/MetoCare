@@ -1298,3 +1298,97 @@ class TestCodexP1Fixes:
         pattern, replacement = _GLOBAL_OCR_CORRECTIONS_RE[0]
         result = pattern.sub(replacement, "CREATININ 82.2 mol/L")
         assert "µmol/L" in result, f"Standalone mol/L was not rewritten: '{result}'"
+
+
+# --------------------------------------------------------------------------- #
+# Mock OCR guard — explicit opt-in only, forbidden in staging/production
+# --------------------------------------------------------------------------- #
+
+
+def test_mock_not_used_when_azure_configured_no_explicit_flag(monkeypatch):
+    """Azure configured + no explicit mock flag → Azure used, MockOcrEngine never called."""
+    monkeypatch.setenv("AZURE_DOC_INTEL_KEY", "k")
+    monkeypatch.setenv("AZURE_DOC_INTEL_ENDPOINT", "https://docintel.example.com")
+    monkeypatch.delenv("MCP_OCR_PROVIDER", raising=False)
+    monkeypatch.delenv("MCP_ENABLE_MOCK_OCR", raising=False)
+    from app.services import ocr_engine
+
+    mock_called = []
+
+    def _boom(self, data, mime):
+        mock_called.append(True)
+        raise AssertionError("MockOcrEngine must NOT be called when Azure is configured")
+
+    monkeypatch.setattr(ocr_engine.MockOcrEngine, "run", _boom)
+    monkeypatch.setattr(
+        ocr_engine.AzureDocIntelEngine,
+        "run",
+        lambda self, data, mime: OcrTextResult(
+            text="Glucose 99 mg/dL", confidence=0.96, provider="azure"
+        ),
+    )
+    res = ocr_engine.run_ocr(b"x", "image/png")
+    assert res.provider == "azure"
+    assert not mock_called
+
+
+def test_azure_failure_raises_no_mock_fallback(monkeypatch):
+    """When Azure is configured but fails, OcrEngineError propagates — no mock fallback."""
+    monkeypatch.setenv("AZURE_DOC_INTEL_KEY", "k")
+    monkeypatch.setenv("AZURE_DOC_INTEL_ENDPOINT", "https://docintel.example.com")
+    monkeypatch.delenv("MCP_OCR_PROVIDER", raising=False)
+    monkeypatch.delenv("MCP_ENABLE_MOCK_OCR", raising=False)
+    from app.services import ocr_engine
+
+    def _fail(self, data, mime):
+        raise ocr_engine.OcrEngineError("Azure timeout")
+
+    monkeypatch.setattr(ocr_engine.AzureDocIntelEngine, "run", _fail)
+    with pytest.raises(ocr_engine.OcrEngineError, match="Azure timeout"):
+        ocr_engine.run_ocr(b"x", "image/png")
+
+
+def test_mock_allowed_with_MCP_OCR_PROVIDER(monkeypatch):
+    """MCP_OCR_PROVIDER=mock enables mock when Azure/Tesseract are absent."""
+    monkeypatch.setenv("MCP_OCR_PROVIDER", "mock")
+    monkeypatch.setenv("MCP_ENV", "dev")
+    monkeypatch.delenv("AZURE_DOC_INTEL_KEY", raising=False)
+    monkeypatch.delenv("AZURE_DOC_INTEL_ENDPOINT", raising=False)
+    from app.services import ocr_engine
+
+    monkeypatch.setattr(ocr_engine.TesseractEngine, "available", staticmethod(lambda: False))
+    res = ocr_engine.run_ocr(b"x", "image/png")
+    assert res.provider == "mock"
+
+
+def test_mock_allowed_with_MCP_ENABLE_MOCK_OCR(monkeypatch):
+    """MCP_ENABLE_MOCK_OCR=true enables mock when Azure/Tesseract are absent."""
+    monkeypatch.setenv("MCP_ENABLE_MOCK_OCR", "true")
+    monkeypatch.setenv("MCP_ENV", "dev")
+    monkeypatch.delenv("AZURE_DOC_INTEL_KEY", raising=False)
+    monkeypatch.delenv("AZURE_DOC_INTEL_ENDPOINT", raising=False)
+    from app.services import ocr_engine
+
+    monkeypatch.setattr(ocr_engine.TesseractEngine, "available", staticmethod(lambda: False))
+    res = ocr_engine.run_ocr(b"x", "image/png")
+    assert res.provider == "mock"
+
+
+def test_mock_forbidden_in_staging(monkeypatch):
+    """MCP_ENABLE_MOCK_OCR=true raises OcrEngineError when env=staging."""
+    monkeypatch.setenv("MCP_ENABLE_MOCK_OCR", "true")
+    monkeypatch.setenv("MCP_ENV", "staging")
+    from app.services import ocr_engine
+
+    with pytest.raises(ocr_engine.OcrEngineError, match="staging"):
+        ocr_engine.run_ocr(b"x", "image/png")
+
+
+def test_mock_forbidden_in_production(monkeypatch):
+    """MCP_OCR_PROVIDER=mock raises OcrEngineError when env=production."""
+    monkeypatch.setenv("MCP_OCR_PROVIDER", "mock")
+    monkeypatch.setenv("MCP_ENV", "production")
+    from app.services import ocr_engine
+
+    with pytest.raises(ocr_engine.OcrEngineError, match="production"):
+        ocr_engine.run_ocr(b"x", "image/png")

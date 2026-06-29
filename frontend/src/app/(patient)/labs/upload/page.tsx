@@ -151,6 +151,11 @@ export default function LabUploadPage() {
   const saveStartRef = React.useRef<number>(Date.now())
 
   const step: 'input' | 'review' = draft ? 'review' : 'input'
+  // Mock OCR guard: provider_used==='mock' is only valid when explicitly opted-in via
+  // MCP_OCR_PROVIDER=mock or MCP_ENABLE_MOCK_OCR=true. In production builds, block save
+  // entirely so synthetic biomarkers can never be written to real patient records.
+  const isMockOcrResult = Boolean(draft && draft.provider_used === 'mock' && !draft.manual_fallback)
+  const isMockSaveBlocked = isMockOcrResult && process.env.NODE_ENV !== 'development'
 
   function pickFile(f: File | null) {
     setError(null)
@@ -323,6 +328,10 @@ export default function LabUploadPage() {
 
   async function confirmSave() {
     if (!patientId) return
+    if (isMockSaveBlocked) {
+      setError('Kết quả OCR mẫu không hợp lệ — không thể lưu dữ liệu mẫu.')
+      return
+    }
     const dateErr = validateExamDate(testDate)
     if (dateErr) {
       setError(dateErr)
@@ -494,6 +503,22 @@ export default function LabUploadPage() {
 
         {step === 'review' && draft && catalog && (
           <>
+            {isMockSaveBlocked && (
+              <div role="alert" className="rounded-[14px] bg-[#FEF2F2] border border-[#DC2626]/30 p-4">
+                <p className="text-[14px] font-bold text-[#991B1B]">Lỗi cấu hình OCR</p>
+                <p className="text-[13px] text-[#991B1B]/80 mt-1">
+                  Kết quả OCR mẫu không được phép lưu. Vui lòng liên hệ hỗ trợ kỹ thuật.
+                </p>
+              </div>
+            )}
+            {isMockOcrResult && !isMockSaveBlocked && (
+              <div role="alert" className="rounded-[14px] bg-[#FFF7ED] border border-[#F59E0B]/40 p-4">
+                <p className="text-[13px] font-bold text-[#92400E]">[DEV] Dữ liệu OCR mẫu</p>
+                <p className="text-[12px] text-[#92400E]/80 mt-0.5">
+                  MCP_OCR_PROVIDER=mock hoặc MCP_ENABLE_MOCK_OCR=true đang bật — kết quả này không phải từ ảnh thật.
+                </p>
+              </div>
+            )}
             {draft.manual_fallback ? (
               <div className="rounded-[14px] bg-[#EEF4FB] border border-[#2563EB]/20 p-4">
                 <p className="text-[14px] font-bold text-[#1E4DA1]">Chưa nhận diện được chỉ số</p>
@@ -620,7 +645,7 @@ export default function LabUploadPage() {
               </NeuButton>
             </div>
 
-            <NeuButton disabled={saving} onClick={confirmSave}>
+            <NeuButton disabled={saving || isMockSaveBlocked} onClick={confirmSave}>
               {saving ? 'Đang lưu...' : 'Xác nhận & lưu vào hồ sơ'}
             </NeuButton>
             <p className="text-center text-[13px] text-neu-subtle">
