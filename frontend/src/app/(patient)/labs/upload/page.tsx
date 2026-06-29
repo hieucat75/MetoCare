@@ -240,6 +240,7 @@ export default function LabUploadPage() {
       test_date_label: null,
       test_date_confidence: 0,
       ocr_case_id: null,
+      date_needs_confirmation: false,
     }
     setDraft(syntheticDraft)
     setRows([makeEmptyOcrRow()])
@@ -504,7 +505,10 @@ export default function LabUploadPage() {
         {step === 'review' && draft && catalog && (
           <>
             {isMockSaveBlocked && (
-              <div role="alert" className="rounded-[14px] bg-[#FEF2F2] border border-[#DC2626]/30 p-4">
+              <div
+                role="alert"
+                className="rounded-[14px] bg-[#FEF2F2] border border-[#DC2626]/30 p-4"
+              >
                 <p className="text-[14px] font-bold text-[#991B1B]">Lỗi cấu hình OCR</p>
                 <p className="text-[13px] text-[#991B1B]/80 mt-1">
                   Kết quả OCR mẫu không được phép lưu. Vui lòng liên hệ hỗ trợ kỹ thuật.
@@ -512,10 +516,14 @@ export default function LabUploadPage() {
               </div>
             )}
             {isMockOcrResult && !isMockSaveBlocked && (
-              <div role="alert" className="rounded-[14px] bg-[#FFF7ED] border border-[#F59E0B]/40 p-4">
+              <div
+                role="alert"
+                className="rounded-[14px] bg-[#FFF7ED] border border-[#F59E0B]/40 p-4"
+              >
                 <p className="text-[13px] font-bold text-[#92400E]">[DEV] Dữ liệu OCR mẫu</p>
                 <p className="text-[12px] text-[#92400E]/80 mt-0.5">
-                  MCP_OCR_PROVIDER=mock hoặc MCP_ENABLE_MOCK_OCR=true đang bật — kết quả này không phải từ ảnh thật.
+                  MCP_OCR_PROVIDER=mock hoặc MCP_ENABLE_MOCK_OCR=true đang bật — kết quả này không
+                  phải từ ảnh thật.
                 </p>
               </div>
             )}
@@ -545,6 +553,25 @@ export default function LabUploadPage() {
               </div>
             )}
 
+            {/* Date needs confirmation — amber WARNING, not an error */}
+            {draft.date_needs_confirmation && (
+              <div
+                role="alert"
+                aria-label="date-confirmation-warning"
+                className="flex items-start gap-2.5 rounded-[14px] bg-amber-50 border border-amber-300 px-4 py-3"
+              >
+                <AlertTriangle className="size-5 mt-0.5 shrink-0 text-amber-500" />
+                <div>
+                  <p className="text-[14px] font-bold text-amber-800">
+                    Ngày xét nghiệm cần xác nhận
+                  </p>
+                  <p className="text-[13px] text-amber-700 mt-0.5">
+                    Hệ thống không xác định được ngày xét nghiệm rõ ràng. Vui lòng kiểm tra và nhập ngày đúng bên dưới.
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* Persistent review reminder */}
             <div
               role="note"
@@ -555,19 +582,38 @@ export default function LabUploadPage() {
               </p>
             </div>
 
-            {/* Backend warnings: no-date detected, cloud-fallback used, OCR issues */}
-            {draft.warnings.length > 0 && (
+            {/* Backend warnings: cloud-fallback, OCR issues, etc.
+                Date-specific warnings are surfaced via the date_needs_confirmation
+                banner above; filter them here to avoid duplicate messages. */}
+            {draft.warnings.filter(
+              (w) => !(
+                // Suppress warnings already shown in date_needs_confirmation banner.
+                draft.date_needs_confirmation &&
+                (w.includes('ngày xét nghiệm cần xác nhận') ||
+                  w.includes('ngày sinh') ||
+                  w.includes('độ tin cậy thấp') && w.includes('ngày'))
+              )
+            ).length > 0 && (
               <div className="space-y-1.5">
-                {draft.warnings.map((w, i) => (
-                  <div
-                    key={i}
-                    role="alert"
-                    className="flex items-start gap-2 rounded-[12px] bg-[#FEF9EC] border border-[#E0A92E]/30 px-3 py-2.5"
-                  >
-                    <AlertTriangle className="size-4 mt-0.5 shrink-0 text-[#E0A92E]" />
-                    <p className="text-[13px] text-[#8B6400]">{w}</p>
-                  </div>
-                ))}
+                {draft.warnings
+                  .filter(
+                    (w) => !(
+                      draft.date_needs_confirmation &&
+                      (w.includes('ngày xét nghiệm cần xác nhận') ||
+                        w.includes('ngày sinh') ||
+                        (w.includes('độ tin cậy thấp') && w.includes('ngày')))
+                    )
+                  )
+                  .map((w, i) => (
+                    <div
+                      key={i}
+                      role="alert"
+                      className="flex items-start gap-2 rounded-[12px] bg-[#FEF9EC] border border-[#E0A92E]/30 px-3 py-2.5"
+                    >
+                      <AlertTriangle className="size-4 mt-0.5 shrink-0 text-[#E0A92E]" />
+                      <p className="text-[13px] text-[#8B6400]">{w}</p>
+                    </div>
+                  ))}
               </div>
             )}
 

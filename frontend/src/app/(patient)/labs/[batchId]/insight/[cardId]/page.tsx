@@ -39,6 +39,7 @@ import {
 import { useAuth } from '@/lib/auth/context'
 import { getPatientInsight, type InsightCard } from '@/lib/api/labInsight'
 import { NeuCard } from '@/components/patient/neu'
+import { formatLabValue } from '@/lib/utils/formatLabValue'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -159,7 +160,7 @@ function DerivedIndicatorCard({
       <div className="flex items-center justify-between">
         <span className="text-[14px] font-bold text-neu-text">{indicator.display_name}</span>
         <span className="text-[13px] font-semibold" style={{ color }}>
-          {indicator.patient_value.toFixed(2)} {indicator.unit}
+          {formatLabValue(indicator.patient_value, indicator.unit)} {indicator.unit}
         </span>
       </div>
       <div className="text-[12px] text-neu-muted font-mono">{indicator.formula}</div>

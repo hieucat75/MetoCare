@@ -33,6 +33,7 @@ import {
 import { groupMetricsByCategory, type MetricSeries } from '@/lib/metrics/kpi'
 import { useLabReference } from '@/lib/api/labReference'
 import { cn } from '@/lib/utils'
+import { formatLabValue } from '@/lib/utils/formatLabValue'
 
 // ─── Data model ───────────────────────────────────────────────────────────────
 
@@ -659,14 +660,15 @@ function MetricTileGrid({
 
   // Glucose — fasting_glucose
   const glucose = findSeries(series, 'fasting_glucose')
+  const glucoseUnit = glucose?.unit?.label ?? glucose?.latest.unit ?? 'mg/dL'
   tiles.push(
     glucose
       ? {
           key: 'glucose',
           metricType: 'fasting_glucose',
           label: 'Đường huyết',
-          value: fmt(glucose.latest.value),
-          unit: glucose.unit?.label ?? glucose.latest.unit ?? 'mg/dL',
+          value: formatLabValue(glucose.latest.value, glucoseUnit),
+          unit: glucoseUnit,
           ...toneFor('fasting_glucose'),
           history: histValues(glucose),
         }
@@ -682,7 +684,9 @@ function MetricTileGrid({
           key: 'bp',
           metricType: 'blood_pressure_systolic',
           label: 'Huyết áp',
-          value: dia ? `${fmt(sys.latest.value)}/${fmt(dia.latest.value)}` : fmt(sys.latest.value),
+          value: dia
+            ? `${formatLabValue(sys.latest.value, 'mmHg')}/${formatLabValue(dia.latest.value, 'mmHg')}`
+            : formatLabValue(sys.latest.value, 'mmHg'),
           unit: 'mmHg',
           ...mergeTone(toneFor('blood_pressure_systolic'), toneFor('blood_pressure_diastolic')),
           history: histValues(sys),
@@ -692,14 +696,15 @@ function MetricTileGrid({
 
   // Weight
   const weight = findSeries(series, 'weight')
+  const weightUnit = weight?.unit?.label ?? weight?.latest.unit ?? 'kg'
   tiles.push(
     weight
       ? {
           key: 'weight',
           metricType: 'weight',
           label: 'Cân nặng',
-          value: fmt(weight.latest.value),
-          unit: weight.unit?.label ?? weight.latest.unit ?? 'kg',
+          value: formatLabValue(weight.latest.value, weightUnit),
+          unit: weightUnit,
           ...toneFor('weight'),
           history: histValues(weight),
         }
@@ -712,7 +717,7 @@ function MetricTileGrid({
     key: 'bmi',
     metricType: null,
     label: 'BMI',
-    value: bmi != null ? fmt(bmi) : null,
+    value: bmi != null ? formatLabValue(bmi, 'kg/m²') : null,
     unit: bmi != null ? 'kg/m²' : null,
     ...bmiTone(bmi),
     history: [],
@@ -894,7 +899,10 @@ function HealthAlertsSection({
               aria-hidden="true"
             />
             <span className="flex-1 text-[15px] font-semibold text-neu-text">{concern.label}</span>
-            <NeuBadge tone={concern.severity === 'danger' ? 'alert' : 'watch'} className="!text-[11px]">
+            <NeuBadge
+              tone={concern.severity === 'danger' ? 'alert' : 'watch'}
+              className="!text-[11px]"
+            >
               {concern.statusLabel}
             </NeuBadge>
             <ChevronRight className="size-4 shrink-0 text-neu-muted" aria-hidden="true" />
@@ -947,10 +955,6 @@ const VN_WEEKDAY = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7']
 
 function formatVnDate(d: Date): string {
   return `${VN_WEEKDAY[d.getDay()]}, ${d.getDate()} Thg ${d.getMonth() + 1}`
-}
-
-function fmt(n: number): string {
-  return Number.isInteger(n) ? String(n) : n.toFixed(1)
 }
 
 function histValues(s: MetricSeries): number[] {

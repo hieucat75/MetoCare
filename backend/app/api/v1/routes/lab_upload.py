@@ -163,4 +163,5 @@ async def create_lab_upload_draft(
         test_date_label=draft.test_date_label,
         test_date_confidence=draft.test_date_confidence,
         ocr_case_id=ocr_case_id,
+        date_needs_confirmation=draft.date_needs_confirmation,
     )

@@ -5,6 +5,7 @@ import { useParams, notFound } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, ChevronRight, TrendingDown, TrendingUp, Minus } from 'lucide-react'
 import { mockBiomarkers } from '@/lib/mock/aiCopilotData'
+import { formatLabValue } from '@/lib/utils/formatLabValue'
 import type { StatusLevel } from '@/lib/mock/aiCopilotData'
 import { GaugeBar } from '@/components/patient/ai-copilot/GaugeBar'
 import { MetricLineChart } from '@/components/patient/metrics/MetricLineChart'
@@ -73,7 +74,7 @@ export default function BiomarkerDetailPage() {
           {/* Value + Status row */}
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-end gap-2">
-              <span className="text-5xl font-bold text-gray-900 leading-none">{bio.value}</span>
+              <span className="text-5xl font-bold text-gray-900 leading-none">{formatLabValue(bio.value, bio.unit)}</span>
               <span className="text-lg text-gray-400 mb-1">{bio.unit}</span>
             </div>
             <div className="flex flex-col items-end gap-1.5">
@@ -90,7 +91,7 @@ export default function BiomarkerDetailPage() {
                     <TrendingUp size={14} className="text-red-500" />
                   )}
                   <span className="text-gray-400">
-                    Trước: {bio.prev} {bio.unit}
+                    Trước: {formatLabValue(bio.prev, bio.unit)} {bio.unit}
                   </span>
                 </div>
               )}
@@ -106,7 +107,7 @@ export default function BiomarkerDetailPage() {
           <div className="flex justify-between mt-1 text-xs text-gray-400">
             <span>Tối ưu</span>
             <span>
-              Mục tiêu: {bio.target} {bio.unit}
+              Mục tiêu: {formatLabValue(bio.target, bio.unit)} {bio.unit}
             </span>
           </div>
         </div>
@@ -260,14 +261,14 @@ export default function BiomarkerDetailPage() {
                 <div>
                   <p className="text-sm font-semibold text-gray-700">Hiện tại</p>
                   <p className="text-2xl font-bold text-gray-900">
-                    {bio.value}{' '}
+                    {formatLabValue(bio.value, bio.unit)}{' '}
                     <span className="text-base font-normal text-gray-400">{bio.unit}</span>
                   </p>
                 </div>
                 <div className="text-right">
                   <p className="text-sm font-semibold text-gray-700">Mục tiêu</p>
                   <p className="text-2xl font-bold text-teal-600">
-                    {bio.target}{' '}
+                    {formatLabValue(bio.target, bio.unit)}{' '}
                     <span className="text-base font-normal text-gray-400">{bio.unit}</span>
                   </p>
                 </div>

@@ -15,6 +15,7 @@
 import * as React from 'react'
 import { ChevronRight, TrendingDown, TrendingUp, Minus } from 'lucide-react'
 import type { LabResultEntry } from '@/lib/api/patient'
+import { formatLabValue } from '@/lib/formatNumber'
 
 // ── Status helpers ─────────────────────────────────────────────────────────────
 
@@ -171,9 +172,9 @@ export function LabResultRow({ result, batchId, changePct, onNavigate }: LabResu
             color: borderColor,
             lineHeight: 1.1,
           }}
-          aria-label={`Giá trị: ${displayValue}`}
+          aria-label={`Giá trị: ${formatLabValue(displayValue, displayUnit)}`}
         >
-          {displayValue != null ? displayValue : '—'}
+          {formatLabValue(displayValue, displayUnit)}
         </span>
         {displayUnit && (
           <span

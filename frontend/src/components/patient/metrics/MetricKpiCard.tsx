@@ -4,6 +4,7 @@ import type { CategoryTheme, MetricSeries } from '@/lib/metrics/kpi'
 import { NeuBadge } from '@/components/patient/neu'
 import { Sparkline } from './Sparkline'
 import { metricIcon, labToneToNeu, healthMetricStatus, type NeuTone } from './metricVisuals'
+import { formatLabValue } from '@/lib/utils/formatLabValue'
 
 type Props = {
   series: MetricSeries
@@ -49,7 +50,7 @@ export function MetricKpiCard({ series, theme, onOpen }: Props) {
       <p className="mt-3 text-[13px] text-neu-muted">{label}</p>
       <p className="mt-0.5 flex items-baseline gap-1">
         <span className="text-[26px] font-extrabold leading-none tracking-[-0.02em] text-neu-text">
-          {latest.value}
+          {formatLabValue(latest.value, unitLabel)}
         </span>
         <span className="text-[13px] font-medium text-neu-muted">{unitLabel}</span>
       </p>

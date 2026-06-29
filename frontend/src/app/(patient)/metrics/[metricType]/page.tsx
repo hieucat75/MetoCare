@@ -15,6 +15,7 @@ import {
   type MetricType,
 } from '@/lib/api/patient'
 import { formatRefRange, useLabReference } from '@/lib/api/labReference'
+import { formatLabValue } from '@/lib/utils/formatLabValue'
 import {
   groupMetricsByCategory,
   computeTrend,
@@ -213,7 +214,7 @@ function MetricDetailBody({
           <div>
             <p className="text-[11.5px] text-neu-muted">Trung bình {periodLabel}</p>
             <p className="mt-0.5">
-              <span className="text-[24px] font-extrabold text-neu-text">{round1(avg)}</span>
+              <span className="text-[24px] font-extrabold text-neu-text">{formatLabValue(avg, unitLabel)}</span>
               <span className="ml-1 text-[12px] font-semibold text-neu-muted">{unitLabel}</span>
             </p>
           </div>
@@ -238,8 +239,8 @@ function MetricDetailBody({
 
       {/* Min / Max / Count chips */}
       <div className="grid grid-cols-3 gap-2.5">
-        <StatChip label="Thấp nhất" value={round1(lo)} tint="#E3F5EC" color="#15915A" />
-        <StatChip label="Cao nhất" value={round1(hi)} tint="#FCEFC9" color="#C77A06" />
+        <StatChip label="Thấp nhất" value={formatLabValue(lo, unitLabel)} tint="#E3F5EC" color="#15915A" />
+        <StatChip label="Cao nhất" value={formatLabValue(hi, unitLabel)} tint="#FCEFC9" color="#C77A06" />
         <StatChip label="Lần đo" value={rows.length} tint="#E8EEF7" color="#2563EB" />
       </div>
 
@@ -379,7 +380,7 @@ function HistoryRow({
       />
       <div className="min-w-0 flex-1">
         <p className="text-[14px] font-bold text-neu-text">
-          {metric.value} <span className="text-[11px] font-medium text-neu-muted">{unitLabel}</span>
+          {formatLabValue(metric.value, unitLabel)} <span className="text-[11px] font-medium text-neu-muted">{unitLabel}</span>
         </p>
         <p className="mt-0.5 text-[11.5px] text-neu-muted">{formatWhen(metric.measured_at)}</p>
       </div>
@@ -394,9 +395,6 @@ function HistoryRow({
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function round1(n: number): number {
-  return Math.round(n * 10) / 10
-}
 
 function formatWhen(iso: string): string {
   const d = new Date(iso)

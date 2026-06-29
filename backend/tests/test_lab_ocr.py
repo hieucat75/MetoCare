@@ -332,6 +332,8 @@ def _force_local(monkeypatch, confidence):
 
 def test_cloud_not_called_when_flag_off(monkeypatch):
     monkeypatch.delenv("MCP_FEATURE_OCR_CLOUD_FALLBACK", raising=False)
+    monkeypatch.delenv("AZURE_DOC_INTEL_KEY", raising=False)
+    monkeypatch.delenv("AZURE_DOC_INTEL_ENDPOINT", raising=False)
     ocr_engine = _force_local(monkeypatch, confidence=0.3)  # low -> would escalate
 
     def _boom(*a, **k):
@@ -362,6 +364,8 @@ def test_tesseract_no_cloud_escalation_on_low_confidence(monkeypatch):
 def test_cloud_flag_on_but_no_key_falls_through(monkeypatch):
     monkeypatch.setenv("MCP_FEATURE_OCR_CLOUD_FALLBACK", "true")
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("AZURE_DOC_INTEL_KEY", raising=False)
+    monkeypatch.delenv("AZURE_DOC_INTEL_ENDPOINT", raising=False)
     ocr_engine = _force_local(monkeypatch, confidence=0.3)
     monkeypatch.setattr(
         ocr_engine,
@@ -636,6 +640,10 @@ def test_real_tesseract_roundtrip(monkeypatch, ocr_on):
 
     if not TesseractEngine.available():
         pytest.skip("tesseract binary not installed")
+    # This test exercises the Tesseract path specifically — clear Azure creds so
+    # build_draft() routes through _extract_text() → TesseractEngine.
+    monkeypatch.delenv("AZURE_DOC_INTEL_KEY", raising=False)
+    monkeypatch.delenv("AZURE_DOC_INTEL_ENDPOINT", raising=False)
     from PIL import Image, ImageDraw
 
     img = Image.new("RGB", (520, 140), "white")

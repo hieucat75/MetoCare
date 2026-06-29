@@ -19,6 +19,7 @@ import { ExplanationSection } from '@/components/labs/ExplanationSection'
 import { getPatientInsight, type PatientInsightReport } from '@/lib/api/labInsight'
 import { NeuCard } from '@/components/patient/neu'
 import { statusColor, statusLabel, resolveDisplayValueUnit } from '@/components/patient/LabResultRow'
+import { formatLabValue } from '@/lib/formatNumber'
 import { MetricLineChart } from '@/components/patient/metrics/MetricLineChart'
 
 // ── Simple inline gauge (no external deps) ─────────────────────────────────────
@@ -318,9 +319,9 @@ export default function BiomarkerDetailPage() {
           <span
             className="font-extrabold tabular-nums leading-none"
             style={{ fontSize: '48px', color: valueColor }}
-            aria-label={`Giá trị: ${displayValue}`}
+            aria-label={`Giá trị: ${formatLabValue(displayValue, displayUnit)}`}
           >
-            {displayValue != null ? displayValue : '—'}
+            {formatLabValue(displayValue, displayUnit)}
           </span>
           {displayUnit && (
             <span className="text-neu-muted" style={{ fontSize: '20px' }}>
@@ -464,7 +465,7 @@ export default function BiomarkerDetailPage() {
                         className="font-bold tabular-nums"
                         style={{ fontSize: '18px', color: statusColor(r.status) }}
                       >
-                        {dv} {du ?? ''}
+                        {formatLabValue(dv, du)}{du ? ` ${du}` : ''}
                       </span>
                     </div>
                   )

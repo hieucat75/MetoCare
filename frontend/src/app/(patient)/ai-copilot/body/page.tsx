@@ -16,6 +16,7 @@ import {
   ChevronRight,
 } from 'lucide-react'
 import { mockBodySystems } from '@/lib/mock/aiCopilotData'
+import { formatLabValue } from '@/lib/utils/formatLabValue'
 import type { StatusLevel } from '@/lib/mock/aiCopilotData'
 
 const ICON_MAP: Record<string, LucideIcon> = {
@@ -147,7 +148,7 @@ export default function BodyPage() {
                       />
                       <span className="text-sm font-medium text-gray-700 flex-1">{m.short}</span>
                       <span className="text-sm font-bold text-gray-900">
-                        {m.value} <span className="font-normal text-gray-400">{m.unit}</span>
+                        {formatLabValue(m.value, m.unit)} <span className="font-normal text-gray-400">{m.unit}</span>
                       </span>
                       <span
                         className={`text-sm font-semibold w-20 text-right ${STATUS_TEXT[m.status]}`}

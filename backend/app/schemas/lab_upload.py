@@ -42,3 +42,6 @@ class LabUploadDraftOut(BaseModel):
     test_date_confidence: float = 0.0
     # OCRCase id — frontend passes this to POST /patients/{id}/lab-results to link gap analysis.
     ocr_case_id: str | None = None
+    # True when the resolver cannot confidently identify a non-DOB exam date.
+    # Frontend shows an amber warning banner and prompts user confirmation.
+    date_needs_confirmation: bool = False

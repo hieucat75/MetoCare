@@ -25,6 +25,7 @@ from app.domain import lab_interpreter
 from app.domain.hospital_profiles import UNKNOWN_PROFILE, detect_hospital_result
 from app.domain.lab_interpreter import ConfidenceDetail
 from app.domain.lab_table_extractor import extract_and_map as _extract_table_and_map
+from app.domain.ocr_date_resolver import OcrDateResolver
 from app.services import lab_parser
 from app.services.ocr_engine import (
     AzureDocIntelEngine,
@@ -98,6 +99,8 @@ class LabUploadDraft:
     # Hospital detection (populated by build_draft; used by route to create OCRCase).
     hospital_id: str | None = None
     hospital_confidence: float = 0.0
+    # Date resolver output — True when user should confirm the exam date.
+    date_needs_confirmation: bool = False
 
 
 def sniff_mime(data: bytes) -> str | None:
@@ -133,23 +136,13 @@ def validate_upload(data: bytes, *, declared_mime: str | None = None) -> str:
 
 
 def _extract_pdf_text(data: bytes) -> tuple[str, float, str, list[str]]:
-    """PDF: Azure DI primary (table-aware, handles scanned printouts); text layer
-    second (zero-cost for digital PDFs); rasterize+Tesseract last resort. Never
-    raises — falls back to empty text so upload always succeeds."""
+    """PDF extraction: text layer first (free, instant for digital reports);
+    Azure DI fallback for scanned/image PDFs; rasterize+Tesseract last resort.
+    Never raises — falls back to empty text so upload always succeeds."""
     warnings: list[str] = []
     settings = get_settings()
 
-    # 0) Azure Document Intelligence handles PDFs natively — submit raw bytes so the
-    #    service reconstructs lab tables without rasterization cost or quality loss.
-    if AzureDocIntelEngine.configured():
-        try:
-            res = AzureDocIntelEngine().run(data, PDF)
-            return res.text, res.confidence, res.provider, list(res.warnings)
-        except OcrEngineError as exc:
-            warnings.append(str(exc))
-            # Fall through to text-layer extraction.
-
-    # 1) Text layer (pypdf) — works for digital lab reports, no OCR needed.
+    # 0) Text layer (pypdf) — zero cost for digital lab reports; try first.
     try:
         import io
 
@@ -162,6 +155,14 @@ def _extract_pdf_text(data: bytes) -> tuple[str, float, str, list[str]]:
             return text, 0.95, "pdf_text", warnings
     except Exception:
         logger.info("pdf_text_layer_unavailable")
+
+    # 1) Azure Document Intelligence — table-aware OCR for scanned printouts.
+    if AzureDocIntelEngine.configured():
+        try:
+            res = AzureDocIntelEngine().run(data, PDF)
+            return res.text, res.confidence, res.provider, list(res.warnings)
+        except OcrEngineError as exc:
+            warnings.append(str(exc))
 
     # 2) Rasterize + OCR (needs poppler + tesseract). Optional.
     try:
@@ -222,8 +223,10 @@ def build_draft(data: bytes, mime: str) -> LabUploadDraft:
     azure_succeeded = False
 
     # Table-first path: Azure DI → extract_table_rows → map_table_rows_to_raw_values.
-    # Falls through to text+regex when Azure is not configured or tables are empty.
-    if AzureDocIntelEngine.configured():
+    # PDFs route through _extract_text (text layer first, then Azure) so that
+    # digital lab reports use the free text-layer path and hospital parsers apply.
+    # Azure table-first is for image uploads only.
+    if AzureDocIntelEngine.configured() and mime != PDF:
         try:
             engine = AzureDocIntelEngine()
             analyze_result = engine.analyze_raw(data, mime)
@@ -259,6 +262,33 @@ def build_draft(data: bytes, mime: str) -> LabUploadDraft:
 
     raw_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()[:16] if text else ""
     detected_date = lab_parser.parse_test_date(text)
+
+    # Run detected date through OCR Date Resolver to guard against DOB misclassification.
+    date_needs_confirmation = False
+    date_resolver = OcrDateResolver()
+    if detected_date is not None:
+        raw_dates = [
+            {
+                "value": detected_date.iso,
+                "label": detected_date.raw_label or "",
+                "confidence": round(detected_date.confidence, 4),
+            }
+        ]
+        resolved_dates = date_resolver.resolve(raw_dates)
+        best_date = date_resolver.best_exam_date(resolved_dates)
+        date_needs_confirmation = date_resolver.needs_user_confirmation(resolved_dates)
+        # If resolver determines the detected date is a DOB, discard it.
+        if best_date is None:
+            detected_date = None
+            warnings.append(
+                "Ngày phát hiện có thể là ngày sinh — vui lòng nhập ngày xét nghiệm thủ công."
+            )
+        elif date_needs_confirmation:
+            warnings.append(
+                "Ngày xét nghiệm cần xác nhận — độ tin cậy thấp hoặc không rõ nguồn gốc."
+            )
+    elif detected_date is None:
+        date_needs_confirmation = False
 
     hospital_detection = detect_hospital_result(text) if text else None
     hospital_id: str | None = None
@@ -325,7 +355,9 @@ def build_draft(data: bytes, mime: str) -> LabUploadDraft:
         warnings.append("Một số chỉ số có độ tin cậy thấp — vui lòng kiểm tra lại trước khi lưu.")
     if manual_fallback:
         warnings.append("Chưa nhận diện được chỉ số nào — bạn có thể nhập tay kết quả xét nghiệm.")
-    if detected_date is None:
+    if detected_date is None and not any(
+        "ngày" in w.lower() and "sinh" in w.lower() for w in warnings
+    ):
         warnings.append(
             "Chưa nhận diện được ngày xét nghiệm — vui lòng chọn ngày khám trước khi lưu."
         )
@@ -343,6 +375,7 @@ def build_draft(data: bytes, mime: str) -> LabUploadDraft:
         test_date_confidence=round(detected_date.confidence, 4) if detected_date else 0.0,
         hospital_id=hospital_id,
         hospital_confidence=hospital_confidence,
+        date_needs_confirmation=date_needs_confirmation,
     )
 
 

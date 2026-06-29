@@ -76,8 +76,7 @@ export default function AiCopilotConsultationPage() {
     })
   }, [patientId])
 
-  const score =
-    liveScore?.available && liveScore.score != null ? Math.round(liveScore.score) : null
+  const score = liveScore?.available && liveScore.score != null ? Math.round(liveScore.score) : null
   const band = liveScore?.band ?? 'fair'
   const scoreLabel = SCORE_LABEL[band] ?? 'Đang phân tích'
   const scoreColor = SCORE_COLOR[band] ?? '#17AE7B'
@@ -294,8 +293,8 @@ export default function AiCopilotConsultationPage() {
           <NeuCard className="!p-4 pl-5">
             <p className="text-[14px] leading-relaxed text-neu-text">
               Đường huyết duy trì cao kéo dài làm tăng nguy cơ tiền tiểu đường trong 2–5 năm tới,
-              đồng thời gây thêm áp lực lên thận và mắt. Xét nghiệm HbA1c trong 3 tháng tới là
-              bước cụ thể nhất để ngăn tiến triển.
+              đồng thời gây thêm áp lực lên thận và mắt. Xét nghiệm HbA1c trong 3 tháng tới là bước
+              cụ thể nhất để ngăn tiến triển.
             </p>
           </NeuCard>
         </div>
@@ -313,10 +312,7 @@ export default function AiCopilotConsultationPage() {
           />
           <NeuCard className="!p-4 pl-5">
             <div className="flex items-start gap-3">
-              <TrendingUp
-                className="mt-0.5 size-5 shrink-0 text-neu-green"
-                aria-hidden="true"
-              />
+              <TrendingUp className="mt-0.5 size-5 shrink-0 text-neu-green" aria-hidden="true" />
               <p className="text-[14px] leading-relaxed text-neu-text">
                 {d.monthlyFocus.content} Nếu duy trì đi bộ 20–30 phút mỗi ngày sau bữa tối, đường
                 huyết thường giảm 10–15% trong 6–8 tuần, đồng thời huyết áp cũng cải thiện nhẹ.

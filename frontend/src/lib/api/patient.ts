@@ -549,6 +549,9 @@ export interface LabUploadDraft {
   test_date_confidence: number
   // OCR case id — pass back to POST /patients/{id}/lab-results to close gap analysis loop.
   ocr_case_id: string | null
+  // True when resolver cannot confidently identify a non-DOB exam date.
+  // Frontend shows an amber warning banner and prompts user to confirm / enter the date.
+  date_needs_confirmation?: boolean
 }
 
 /**

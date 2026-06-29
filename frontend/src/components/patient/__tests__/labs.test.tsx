@@ -163,9 +163,9 @@ describe('test_empty_state_shows_message', () => {
   it('renders placeholder when value is null', () => {
     const navigate = jest.fn()
     render(<LabResultRow result={makeResult({ value: null })} batchId="b1" onNavigate={navigate} />)
-    // Should show em-dash placeholder
-    expect(screen.getByLabelText(/Giá trị: null/)).toBeInTheDocument()
-    expect(screen.getByLabelText(/Giá trị: null/).textContent).toBe('—')
+    // Should show em-dash placeholder (formatLabValue(null) → '—')
+    expect(screen.getByLabelText(/Giá trị: —/)).toBeInTheDocument()
+    expect(screen.getByLabelText(/Giá trị: —/).textContent).toBe('—')
   })
 })
 

@@ -92,7 +92,10 @@ export default function MetricsPage() {
             icon={<LineChart />}
             title="Chưa có chỉ số nào"
             description="Ghi chỉ số sức khỏe hoặc tải kết quả xét nghiệm để theo dõi theo thời gian."
-            cta={{ label: 'Ghi chỉ số', onClick: () => router.push('/metrics/log/fasting_glucose') }}
+            cta={{
+              label: 'Ghi chỉ số',
+              onClick: () => router.push('/metrics/log/fasting_glucose'),
+            }}
           />
         )}
 
