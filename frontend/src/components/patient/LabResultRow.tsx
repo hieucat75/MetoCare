@@ -21,31 +21,29 @@ import { formatLabValue } from '@/lib/formatNumber'
 
 export function statusLabel(status: string | null): string {
   switch (status) {
-    case 'normal':
-      return 'Bình thường'
-    case 'low':
-      return 'Thấp'
-    case 'high':
-      return 'Cao'
-    case 'critical':
-      return 'Nguy hiểm'
-    default:
-      return 'Chưa rõ'
+    case 'normal':          return 'Bình thường'
+    case 'low':             return 'Thấp'
+    case 'borderline':      return 'Hơi cao'
+    case 'high':            return 'Cao'
+    case 'very_high':       return 'Rất cao'      // defensive
+    case 'critical':        return 'Nguy hiểm'
+    case 'critical_high':   return 'Nguy hiểm'   // defensive
+    case 'critical_low':    return 'Nguy hiểm'   // defensive
+    default:                return 'Chưa rõ'
   }
 }
 
 export function statusColor(status: string | null): string {
   switch (status) {
-    case 'normal':
-      return '#17AE7B'
-    case 'low':
-      return '#3B82F6'
-    case 'high':
-      return '#F59E0B'
-    case 'critical':
-      return '#D92D20'
-    default:
-      return '#52706A'
+    case 'normal':          return '#17AE7B'
+    case 'low':             return '#3B82F6'
+    case 'borderline':      return '#F59E0B'
+    case 'high':            return '#F59E0B'
+    case 'very_high':       return '#DC6803'
+    case 'critical':        return '#D92D20'
+    case 'critical_high':   return '#D92D20'
+    case 'critical_low':    return '#D92D20'
+    default:                return '#52706A'
   }
 }
 
@@ -154,7 +152,7 @@ export function LabResultRow({ result, batchId, changePct, onNavigate }: LabResu
         </p>
         {result.reference_range && (
           <p className="mt-0.5 text-neu-muted" style={{ fontSize: '13px' }}>
-            Bình thường: {result.reference_range}{displayUnit ? ` ${displayUnit}` : ''}
+            Bình thường: {result.reference_range}
           </p>
         )}
         <div className="mt-1 flex items-center gap-2 flex-wrap">

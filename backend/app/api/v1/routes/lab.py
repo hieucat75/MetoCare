@@ -642,12 +642,40 @@ from app.services.clinical_explanation import generate_explanation  # noqa: E402
 from app.services.explanation_cache import invalidate_cached_explanation  # noqa: E402
 
 
+def _clean_reference_range(raw: str | None, display_unit: str) -> str:
+    """Strip unit suffix from reference range string if it duplicates display_unit or is garbled.
+
+    Examples::
+
+        "0.6–1.3 mg/dL"  + display_unit "mg/dL"  → "0.6–1.3"
+        "0.6–1.3 mg/dL pmol/L" + any             → "0.6–1.3"
+        "2.76–8.07 mg/dL mg/dL" + any            → "2.76–8.07"
+        "< 200"            + any                  → "< 200"
+        "70–99"            + "mg/dL"              → "70–99"
+    """
+    import re  # noqa: PLC0415
+
+    if not raw:
+        return ""
+    # Remove trailing unit-like tokens (word chars + /dL, µmol/L, etc.) that
+    # appear after the numeric range portion.
+    cleaned = re.sub(r"\s+[A-Za-zµμ%/·\·]+.*$", "", raw.strip())
+    return cleaned.strip()
+
+
 def _build_clinical_input(row: LabResult) -> dict:
     """Convert a LabResult ORM row into the clinical_input dict for the explanation layer.
 
     canonical_status is derived from row.status (the stored classification).
     We map the existing engine's status vocabulary to the explanation layer's
     canonical_status vocabulary.
+
+    SINGLE SOURCE OF TRUTH:
+    - ``normalized_value`` / ``normalized_unit`` → display values (original OCR value/unit)
+      so what Claude says matches exactly what the patient sees on screen.
+    - ``canonical_value_si`` / ``canonical_unit_si`` → SI-normalised values for
+      status classification and risk scoring (NOT sent to Claude for narrative).
+    - ``reference_range`` → cleaned string with no appended unit suffix.
     """
     # Map existing status values → canonical_status understood by explanation layer
     STATUS_MAP: dict[str | None, str] = {
@@ -674,6 +702,7 @@ def _build_clinical_input(row: LabResult) -> dict:
 
     # Vietnamese display name from canonical name
     from app.domain.patient_insight import _display_vi  # noqa: PLC0415
+    from app.utils.number_format import format_lab_value as _fmt  # noqa: PLC0415
 
     display_name = (
         _display_vi(row.canonical_name or "")
@@ -681,16 +710,33 @@ def _build_clinical_input(row: LabResult) -> dict:
         else (row.test_name or "xét nghiệm")
     )
 
+    # --- Display value = what patient sees on screen (original OCR value/unit) ---
+    # Falls back to normalized_value_si only when original is absent.
+    display_value = (
+        row.original_value if row.original_value is not None else row.normalized_value_si
+    )
+    display_unit = (
+        (row.original_unit or "").strip()
+        if row.original_unit
+        else (row.normalized_unit_si or row.unit or "")
+    )
+
+    # Format to string — eliminates float artifacts (231.63330000000002 → "232")
+    display_value_str = _fmt(display_value, display_unit) if display_value is not None else "—"
+
+    # Clean reference range: strip embedded unit suffix to prevent double-unit display.
+    ref_range = _clean_reference_range(row.reference_range, display_unit)
+
     return {
         "biomarker_name": row.canonical_name or row.test_name or "unknown",
         "biomarker_display_name": display_name,
-        "normalized_value": row.normalized_value_si
-        if row.normalized_value_si is not None
-        else row.value,
-        "normalized_unit": row.normalized_unit_si or row.unit or "",
-        "original_value": row.original_value,
-        "original_unit": row.original_unit,
-        "reference_range": row.reference_range,
+        "normalized_value": display_value_str,      # formatted display string (no float artifact)
+        "normalized_unit": display_unit,             # original OCR unit (what patient sees)
+        "canonical_value_si": (
+            round(row.normalized_value_si, 4) if row.normalized_value_si is not None else None
+        ),
+        "canonical_unit_si": row.normalized_unit_si or row.unit or "",
+        "reference_range": ref_range,                # cleaned — no trailing unit suffix
         "canonical_status": canonical_status,
         "canonical_severity": canonical_severity,
         "canonical_priority": "urgent" if doctor_required else "routine",

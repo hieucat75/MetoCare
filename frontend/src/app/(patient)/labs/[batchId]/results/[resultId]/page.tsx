@@ -375,12 +375,12 @@ export default function BiomarkerDetailPage() {
           </span>
         </div>
 
-        {/* Reference range text */}
+        {/* Reference range text — backend already strips unit suffix; no double-unit */}
         {result.reference_range && (
           <p className="mt-3 text-[16px] text-neu-muted">
             Bình thường:{' '}
             <span className="font-semibold text-[#17AE7B]">
-              {result.reference_range} {displayUnit ?? ''}
+              {result.reference_range}
             </span>
           </p>
         )}
