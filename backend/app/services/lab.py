@@ -841,6 +841,42 @@ def reclassify_lab_results(
     return {"updated": updated, "skipped": skipped, "errors": errors}
 
 
+
+def _sync_linked_health_metrics(
+    db: Session,
+    *,
+    result_id: str,
+    canonical_value: float | None,
+    canonical_unit: str | None,
+    new_status: str | None,
+    requester_id: str,
+) -> int:
+    """Sync all live HealthMetric rows promoted from a LabResult after a correction.
+
+    Updates value, unit, status for every live metric with source_ref == result_id.
+    No-op when no linked metric exists. Returns count of rows updated.
+    """
+    if canonical_value is None:
+        return 0
+    metrics = db.execute(
+        select(HealthMetric).where(
+            HealthMetric.source_ref == result_id,
+            HealthMetric.deleted_at.is_(None),
+        )
+    ).scalars().all()
+    for m in metrics:
+        m.value = canonical_value
+        if canonical_unit is not None:
+            m.unit = canonical_unit
+        if new_status is not None:
+            m.status = new_status
+        spec = lab_interpreter._ALIAS_INDEX.get(m.metric_type)
+        if spec is not None:
+            m.normal_range_min = spec.ref_low
+            m.normal_range_max = spec.ref_high
+    db.flush()
+    return len(metrics)
+
 def correct_lab_result(
     db: Session,
     *,
@@ -904,6 +940,16 @@ def correct_lab_result(
     canonical_unit = classification.get("normalized_unit_si")
     row.value = canonical_value if canonical_value is not None else new_value
     row.unit = canonical_unit if canonical_unit is not None else new_unit
+
+    # Sync linked HealthMetric rows so dashboard/charts reflect the correction.
+    _sync_linked_health_metrics(
+        db,
+        result_id=row.id,
+        canonical_value=canonical_value if canonical_value is not None else new_value,
+        canonical_unit=canonical_unit if canonical_unit is not None else new_unit,
+        new_status=classification.get("status"),
+        requester_id=requester_id,
+    )
 
     audit.record(
         db,
@@ -989,6 +1035,16 @@ def edit_lab_result(
         canonical_unit = classification.get("normalized_unit_si")
         row.value = canonical_value if canonical_value is not None else new_value
         row.unit = canonical_unit if canonical_unit is not None else new_unit
+
+        # Sync linked HealthMetric rows so dashboard/charts reflect the edit.
+        _sync_linked_health_metrics(
+            db,
+            result_id=row.id,
+            canonical_value=canonical_value if canonical_value is not None else new_value,
+            canonical_unit=canonical_unit if canonical_unit is not None else new_unit,
+            new_status=classification.get("status"),
+            requester_id=requester_id,
+        )
 
     audit.record(
         db,
