@@ -2,7 +2,8 @@
 
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
-import { Activity, Bell, Droplet, Heart, Pill, Plus, Scale } from 'lucide-react'
+import { Activity, Bell, Bot, Droplet, Heart, Pill, Plus, Scale } from 'lucide-react'
+import Link from 'next/link'
 import { PatientErrorState, PatientSkeleton } from '@/components/patient/states'
 import { NeuCard, NeuButton, NeuIconButton, NeuBadge } from '@/components/patient/neu'
 import { useAuth } from '@/lib/auth/context'
@@ -229,6 +230,27 @@ export default function PatientDashboardPage() {
       ) : (
         <EmptyDashboard onLog={() => router.push('/metrics/log')} />
       )}
+
+      {/* ── AI Copilot entry card ── */}
+      <Link
+        href="/ai-copilot/overview"
+        className="block bg-gradient-to-r from-teal-600 to-teal-700 rounded-2xl p-4 text-white shadow-md hover:shadow-lg transition-shadow"
+      >
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
+            <Bot className="size-5" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-bold leading-snug">AI Copilot</p>
+            <p className="text-xs opacity-80 mt-0.5 leading-snug">
+              Nhận định sức khỏe toàn diện từ xét nghiệm, lịch sử và thói quen của bạn.
+            </p>
+          </div>
+          <span className="text-xs font-semibold bg-white/20 px-2.5 py-1 rounded-full flex-shrink-0 whitespace-nowrap">
+            Xem nhận định AI
+          </span>
+        </div>
+      </Link>
 
       {/* ── FAB ── */}
       <button
