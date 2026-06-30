@@ -114,6 +114,12 @@ function targetText(series: MetricSeries): string {
 function fmtDelta(series: MetricSeries): { text: string; color: string } | null {
   const trend = computeTrend(series.history, series.higherIsBetter)
   if (!trend.hasPrevious || trend.direction === 'flat') return null
+  // Suppress when consecutive entries are in different units — cross-unit subtraction is meaningless
+  if (series.history.length >= 2) {
+    const u0 = series.history[0].unit
+    const u1 = series.history[1].unit
+    if (u0 && u1 && u0 !== u1) return null
+  }
   const arrow = trend.direction === 'up' ? '↑' : '↓'
   const abs = Math.abs(trend.delta)
   const formatted = abs % 1 === 0 ? String(abs) : abs.toFixed(1)
@@ -141,11 +147,14 @@ export function MetricRowItem({ series, expanded, onToggle }: Props) {
 
   const sparkValues = series.history.slice(0, 8).map((m) => m.value)
 
-  const histRows = series.history.slice(0, 4).map((m) => ({
-    key: `${m.measured_at}-${m.value}`,
-    date: fmtDate(m.measured_at),
-    val: `${formatLabValue(m.value, unitLabel)} ${unitLabel}`.trim(),
-  }))
+  const histRows = series.history.slice(0, 4).map((m) => {
+    const rowUnit = m.unit ?? unitLabel
+    return {
+      key: `${m.measured_at}-${m.value}`,
+      date: fmtDate(m.measured_at),
+      val: `${formatLabValue(m.value, rowUnit)} ${rowUnit}`.trim(),
+    }
+  })
 
   const StatusIcon = tone === 'mint' ? CheckCircle : TriangleAlert
 
