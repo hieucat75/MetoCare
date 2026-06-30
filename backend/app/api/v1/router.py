@@ -22,6 +22,7 @@ from .routes import (
     lab_reference,
     lab_upload,
     medications,
+    meto,
     narrative,
     notifications,
     patient_insight,
@@ -52,3 +53,4 @@ api_router.include_router(patient_insight.router)
 api_router.include_router(narrative.router)
 api_router.include_router(medications.router)
 api_router.include_router(doctor.router)
+api_router.include_router(meto.router)

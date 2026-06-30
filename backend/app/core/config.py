@@ -41,6 +41,19 @@ class Settings(BaseSettings):
     # Default SQLite so the stack runs with zero infra in dev/test.
     database_url: str = "sqlite:///./data/mcp_dev.sqlite3"
 
+    # ---- Meto AI — provider configuration ----
+    # Primary provider for Meto conversational AI (always use meto_* prefix)
+    meto_primary_provider: str = "claude"
+    meto_fallback_provider: str = "openai"
+    # API keys (injected via secret manager in prod; empty = provider disabled)
+    anthropic_api_key: str = ""
+    openai_api_key: str = ""
+    # Generation settings
+    meto_max_tokens: int = 2048
+    meto_timeout_seconds: int = 30
+    meto_enable_streaming: bool = True
+    meto_temperature: float = 0.3
+
     # ---- AI / OCR / Storage modes (mock by default = no external calls) ----
     ai_mode: str = "mock"  # mock | gateway
     llm_gateway_url: str = ""

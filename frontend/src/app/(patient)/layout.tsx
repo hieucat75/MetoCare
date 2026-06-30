@@ -10,6 +10,7 @@ import { PatientBottomNav } from '@/components/nav/PatientBottomNav'
 import { getRoleHomePath } from '@/lib/api/auth'
 import { useFeatureFlags } from '@/lib/api/features'
 import { BrandLogo, BrandMark } from '@/components/brand'
+import { FloatingMetoButton } from '@/components/patient/meto'
 
 // ── Nav items (sidebar for desktop) — 5 primary destinations ─────────────────
 // Secondary routes (labs, settings, report, etc.) remain accessible via their
@@ -161,6 +162,18 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
     isDeviceDetail ||
     isAiCopilotPage
 
+  // Detect screenId from current pathname for Meto context
+  const screenId = React.useMemo(() => {
+    if (pathname.startsWith('/dashboard')) return 'dashboard'
+    if (pathname.startsWith('/labs')) return 'labs'
+    if (pathname.startsWith('/medications')) return 'medications'
+    if (pathname.startsWith('/metrics')) return 'metrics'
+    if (pathname.startsWith('/nutrition')) return 'nutrition'
+    if (pathname.startsWith('/care-plan')) return 'care-plan'
+    if (pathname.startsWith('/profile')) return 'profile'
+    return 'dashboard'
+  }, [pathname])
+
   const handleNavItem = (item: NavItem) => router.push(item.href)
 
   const handleLogout = async () => {
@@ -236,6 +249,7 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
         <main className="flex-1 overflow-auto pb-24">{children}</main>
 
         <PatientBottomNav />
+        <FloatingMetoButton screenId={screenId} />
       </div>
 
       {/* ── Desktop (≥ lg): AppShell with sidebar ── */}
@@ -254,6 +268,7 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
           onSidebarToggle={() => setSidebarCollapsed((p) => !p)}
         >
           {children}
+          <FloatingMetoButton screenId={screenId} />
         </AppShell>
       </div>
     </>

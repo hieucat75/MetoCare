@@ -551,3 +551,20 @@
 .patient-app .bottomnav-btn span:not([aria-hidden]) {
   font-size: 13px !important;  /* bumped from 10px — still fits 5-tab bar */
 }
+
+/* ── Meto Aura animations ──────────────────────────────────────────────────── */
+@keyframes meto-breathe {
+  0%, 100% { transform: scale(1); opacity: 0.9; }
+  50% { transform: scale(1.05); opacity: 1; }
+}
+@keyframes meto-pulse {
+  0%, 100% { opacity: 0.6; transform: scale(0.97); }
+  50% { opacity: 1; transform: scale(1.03); }
+}
+@keyframes meto-glow {
+  0%, 100% { box-shadow: 0 0 12px 2px rgba(15,156,110,0.3); }
+  50% { box-shadow: 0 0 24px 8px rgba(15,156,110,0.5); }
+}
+.meto-breathe { animation: meto-breathe 3s ease-in-out infinite; }
+.meto-pulse   { animation: meto-pulse 0.9s ease-in-out infinite; }
+.meto-glow    { animation: meto-glow 1.5s ease-in-out infinite; }

@@ -21,7 +21,7 @@ select = ["E", "F", "I", "UP", "B"]
 ignore = ["B008"]  # FastAPI Depends() in defaults is idiomatic
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["B011", "E402", "E501"]
+"tests/*" = ["B011", "B017", "E402", "E501"]
 "scripts/*" = ["E501"]
 "app/services/clinical_explanation.py" = ["E501"]  # Long Vietnamese prompt strings
 "app/domain/insight_detail_content.py" = ["E501"]  # Long Vietnamese content strings
@@ -35,3 +35,9 @@ ignore = ["B008"]  # FastAPI Depends() in defaults is idiomatic
 "app/services/narrative_cache.py" = ["E501"]        # Long cache key construction
 "app/api/v1/routes/narrative.py" = ["E501"]         # Long inline query strings
 "app/api/v1/routes/health_timeline.py" = ["E501"]    # Long Vietnamese strings in route
+"app/ai/context/builder.py" = ["E501"]              # Long context builder strings
+"app/ai/exceptions.py" = ["E501"]                   # Long error message strings
+"app/ai/prompt/assembler.py" = ["E501"]             # Long prompt strings
+"app/ai/prompt/safety.py" = ["E501"]               # Long safety prompt strings
+"app/services/meto_chat.py" = ["E501"]             # Long Meto service strings
+"app/ai/registry.py" = ["E501", "B018"]            # Registry internals

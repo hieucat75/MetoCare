@@ -27,6 +27,7 @@ from .clinical import (
 )
 from .drug_catalog import DrugEntry
 from .governance import AuditLog, Consent
+from .meto import MetoAuditLog, MetoConsent, MetoConversation, MetoMessage
 from .notification import Notification
 from .nutrition import NutritionLog
 from .ocr_case import OCRCase
@@ -35,6 +36,10 @@ from .triage_log import TriageLog
 from .user import User, UserRole
 
 __all__ = [
+    "MetoAuditLog",
+    "MetoConsent",
+    "MetoConversation",
+    "MetoMessage",
     "AIClinicalRecommendation",
     "AIConversation",
     "AISession",
