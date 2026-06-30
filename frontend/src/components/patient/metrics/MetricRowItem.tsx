@@ -40,8 +40,7 @@ function resolveStatus(series: MetricSeries): { tone: StatusKey; label: string }
     return { tone: s.tone, label: s.label }
   }
   const s = healthMetricStatus(series.latest)
-  const tone: StatusKey =
-    s?.tone === 'alert' ? 'danger' : s?.tone === 'watch' ? 'warning' : 'mint'
+  const tone: StatusKey = s?.tone === 'alert' ? 'danger' : s?.tone === 'watch' ? 'warning' : 'mint'
   return { tone, label: s?.label ?? 'Chưa rõ' }
 }
 
@@ -105,25 +104,30 @@ function relDate(iso: string): string {
 function targetText(series: MetricSeries): string {
   if (!series.unit) return ''
   const { low, high } = series.unit.ref_range
-  if (series.higherIsBetter && low > 0) return `Mục tiêu > ${low}`
-  if (!series.higherIsBetter && high > 0 && low <= 0) return `Mục tiêu < ${high}`
-  if (low > 0 && high > 0) return `${low}–${high} ${series.unit.label}`
+  const u = series.unit.label
+  if (series.higherIsBetter && low > 0) return `Mục tiêu > ${low} ${u}`
+  if (!series.higherIsBetter && high > 0 && low <= 0) return `Mục tiêu < ${high} ${u}`
+  if (low > 0 && high > 0) return `${low}–${high} ${u}`
   return ''
 }
 
 function fmtDelta(series: MetricSeries): { text: string; color: string } | null {
-  const trend = computeTrend(series.history, series.higherIsBetter)
-  if (!trend.hasPrevious || trend.direction === 'flat') return null
-  // Suppress when consecutive entries are in different units — cross-unit subtraction is meaningless
-  if (series.history.length >= 2) {
-    const u0 = series.history[0].unit
-    const u1 = series.history[1].unit
-    if (u0 && u1 && u0 !== u1) return null
-  }
-  const arrow = trend.direction === 'up' ? '↑' : '↓'
-  const abs = Math.abs(trend.delta)
+  if (series.history.length < 2) return null
+  const latest = series.history[0]
+  const latestUnit = latest.unit
+  // Find the closest previous entry whose unit matches (skip cross-unit entries)
+  const prev = series.history.slice(1).find(
+    (m) => !latestUnit || !m.unit || m.unit === latestUnit,
+  )
+  if (!prev) return null
+  const delta = latest.value - prev.value
+  if (Math.abs(delta) < 0.001) return null
+  const direction = delta > 0 ? 'up' : 'down'
+  const good = series.higherIsBetter ? direction === 'up' : direction === 'down'
+  const arrow = direction === 'up' ? '↑' : '↓'
+  const abs = Math.abs(delta)
   const formatted = abs % 1 === 0 ? String(abs) : abs.toFixed(1)
-  const color = trend.good === true ? '#15915A' : trend.good === false ? '#C0231A' : '#5A736D'
+  const color = good ? '#15915A' : '#C0221A'
   return { text: `${arrow} ${formatted} so với lần trước`, color }
 }
 
@@ -190,17 +194,13 @@ export function MetricRowItem({ series, expanded, onToggle }: Props) {
             className="inline-flex items-center gap-[5px] shrink-0 rounded-[9px] px-[9px] py-[5px] text-[12px] font-bold"
             style={{ background: st.bg, border: `1px solid ${st.border}`, color: st.text }}
           >
-            <StatusIcon
-              className="size-[13px]"
-              style={{ color: st.text }}
-              aria-hidden="true"
-            />
+            <StatusIcon className="size-[13px]" style={{ color: st.text }} aria-hidden="true" />
             {statusLabel}
           </span>
         </div>
 
         {/* Value row */}
-        <div className="flex items-end gap-[10px]">
+        <div className="flex flex-col gap-[4px]">
           <div className="flex items-baseline gap-[5px]">
             <span
               className="font-bold leading-[0.9] tracking-[-0.01em]"
@@ -213,20 +213,27 @@ export function MetricRowItem({ series, expanded, onToggle }: Props) {
               {value}
             </span>
             {unitLabel && (
-              <span className="text-[12.5px] font-semibold text-[#5A736D]">{unitLabel}</span>
+              <span className="text-[13px] font-semibold text-[#5A736D]">{unitLabel}</span>
             )}
           </div>
-          <div className="flex-1" />
-          <div className="text-right">
-            {target && (
-              <div className="text-[11.5px] font-semibold text-[#5A736D]">{target}</div>
-            )}
-            {delta && (
-              <div className="text-[11.5px] font-bold mt-[3px]" style={{ color: delta.color }}>
-                {delta.text}
-              </div>
-            )}
-          </div>
+          {(target || delta) && (
+            <div className="flex flex-wrap items-baseline gap-x-[5px] gap-y-[1px]">
+              {target && (
+                <span className="text-[13px] font-medium text-[#5A736D]">{target}</span>
+              )}
+              {target && delta && (
+                <span className="text-[13px] text-[#B2C0BB]" aria-hidden="true">·</span>
+              )}
+              {delta && (
+                <span
+                  className="text-[15px] font-semibold leading-tight"
+                  style={{ color: delta.color }}
+                >
+                  {delta.text}
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
         {/* 3-zone reference bar */}
@@ -279,8 +286,7 @@ export function MetricRowItem({ series, expanded, onToggle }: Props) {
             <div className="flex items-center gap-[6px]">
               <Clock className="size-[13px] text-[#7C9089]" aria-hidden="true" />
               <span className="text-[11px] text-[#7C9089]">
-                Đo ngày {fmtDate(series.latest.measured_at)} ·{' '}
-                {relDate(series.latest.measured_at)}
+                Đo ngày {fmtDate(series.latest.measured_at)} · {relDate(series.latest.measured_at)}
               </span>
             </div>
           </div>
