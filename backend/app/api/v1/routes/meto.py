@@ -204,6 +204,30 @@ async def update_consent(
 
 
 # ---------------------------------------------------------------------------
+# Health / Readiness
+# ---------------------------------------------------------------------------
+
+@router.get("/meto/health")
+async def meto_health(
+    current_user=Depends(_patient_required),
+) -> dict:
+    """Meto readiness health check. Patient-auth required."""
+    from app.ai.readiness import MetoReadinessChecker
+    checker = MetoReadinessChecker()
+    report = await checker.check_all(fast=True)
+    return {
+        "status": "ready" if report.deploy_allowed else "not_ready",
+        "score": report.score,
+        "mode": report.mode,
+        "summary": report.summary,
+        "gates": [
+            {"gate": g.gate, "passed": g.passed, "latency_ms": g.latency_ms}
+            for g in report.gates
+        ],
+    }
+
+
+# ---------------------------------------------------------------------------
 # Quick prompts
 # ---------------------------------------------------------------------------
 

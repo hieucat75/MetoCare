@@ -260,3 +260,129 @@ class TestCircuitBreaker:
         cb.is_available("claude")  # Trigger half-open
         cb.record_failure("claude")  # Fail in half-open
         assert cb.get_state("claude") == CircuitState.OPEN
+
+
+# ---------------------------------------------------------------------------
+# Tests: NineRouterProvider
+# ---------------------------------------------------------------------------
+
+class TestNineRouterProvider:
+    """Unit tests for NineRouterProvider."""
+
+    def test_nine_router_provider_implements_interface(self):
+        """NineRouterProvider is a ConversationProvider."""
+        from app.ai.providers.nine_router import NineRouterProvider
+
+        assert issubclass(NineRouterProvider, ConversationProvider)
+
+    def test_nine_router_provider_name_default(self):
+        """Default provider_name contains 'nine_router'."""
+        from app.ai.providers.nine_router import NineRouterProvider
+
+        p = NineRouterProvider(
+            base_url="http://localhost:9999",
+            api_key="test",
+            model="cc/test-model",
+        )
+        assert "nine_router" in p.provider_name
+
+    def test_nine_router_provider_name_custom(self):
+        """Custom provider_name is accepted."""
+        from app.ai.providers.nine_router import NineRouterProvider
+
+        p = NineRouterProvider(
+            base_url="http://localhost:9999",
+            api_key="test",
+            model="cc/claude-sonnet-4-6",
+            provider_name="nine_router_claude",
+        )
+        assert p.provider_name == "nine_router_claude"
+
+    def test_nine_router_model_name(self):
+        """model_name returns the configured model."""
+        from app.ai.providers.nine_router import NineRouterProvider
+
+        p = NineRouterProvider(
+            base_url="http://localhost:9999",
+            api_key="test",
+            model="cc/claude-sonnet-4-6",
+        )
+        assert p.model_name == "cc/claude-sonnet-4-6"
+
+    def test_nine_router_capabilities(self):
+        """Reports correct capabilities."""
+        from app.ai.providers.nine_router import NineRouterProvider
+
+        p = NineRouterProvider(
+            base_url="http://localhost:9999",
+            api_key="test",
+            model="cc/test",
+        )
+        assert p.max_context_tokens == 200_000
+        assert p.supports_streaming is True
+        assert p.supports_tool_use is True
+
+    def test_nine_router_health_check_initial(self):
+        """Health check starts healthy."""
+        from app.ai.providers.nine_router import NineRouterProvider
+
+        p = NineRouterProvider(
+            base_url="http://localhost:9999",
+            api_key="test",
+            model="cc/test",
+        )
+        health = p.health_check()
+        assert health.provider in p.provider_name or p.provider_name in health.provider
+        assert health.is_alive is True
+
+    def test_nine_router_registered_when_key_present(self, monkeypatch):
+        """NineRouter providers appear in registry when key is manually registered."""
+        from app.ai import registry as reg_module
+        from app.ai.providers.nine_router import NineRouterProvider
+
+        # Create a fresh registry and register NineRouterProvider directly
+        # (simulates what init_registry_from_settings does when the key is set)
+        fresh_registry = reg_module.ProviderRegistry()
+        fresh_registry.register(
+            NineRouterProvider(
+                base_url="http://localhost:9999",
+                api_key="test-key-for-registry",
+                model="cc/claude-sonnet-4-6",
+                provider_name="nine_router_claude",
+            )
+        )
+        fresh_registry.register(
+            NineRouterProvider(
+                base_url="http://localhost:9999",
+                api_key="test-key-for-registry",
+                model="cx/gpt-5.4-mini",
+                provider_name="nine_router_gpt",
+            )
+        )
+
+        providers = fresh_registry.get_available_providers("chat_simple")
+        names = [p.provider_name for p in providers]
+        assert any("nine_router" in n for n in names), (
+            f"Expected nine_router providers in {names!r}"
+        )
+
+    def test_nine_router_routing_preference(self, monkeypatch):
+        """nine_router_claude is listed first in routing chain for chat_simple."""
+        from app.ai.registry import RoutingPolicy
+
+        policy = RoutingPolicy()
+        chain = policy.get_provider_chain("chat_simple")
+        assert chain[0] == "nine_router_claude", (
+            f"nine_router_claude must be first in chat_simple chain. Got: {chain}"
+        )
+
+    def test_nine_router_fallback_in_routing_chain(self):
+        """nine_router_gpt is listed as second-priority fallback."""
+        from app.ai.registry import RoutingPolicy
+
+        policy = RoutingPolicy()
+        chain = policy.get_provider_chain("chat_simple")
+        assert "nine_router_gpt" in chain, f"nine_router_gpt not in chain: {chain}"
+        assert chain.index("nine_router_gpt") < chain.index("claude"), (
+            f"nine_router_gpt should come before claude. Chain: {chain}"
+        )

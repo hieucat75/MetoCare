@@ -48,6 +48,15 @@ class Settings(BaseSettings):
     # API keys (injected via secret manager in prod; empty = provider disabled)
     anthropic_api_key: str = ""
     openai_api_key: str = ""
+
+    # ---- 9Router — local OpenAI-compatible proxy (preferred for staging/prod) ----
+    # 9Router manages billing, rate-limiting, and model routing centrally.
+    # Set MCP_NINE_ROUTER_API_KEY to enable. All traffic goes through
+    # http://127.0.0.1:20128/v1 by default (override via MCP_NINE_ROUTER_BASE_URL).
+    nine_router_api_key: str = ""        # MCP_NINE_ROUTER_API_KEY
+    nine_router_base_url: str = "http://127.0.0.1:20128/v1"  # MCP_NINE_ROUTER_BASE_URL
+    nine_router_primary_model: str = "cc/claude-sonnet-4-6"  # MCP_NINE_ROUTER_PRIMARY_MODEL
+    nine_router_fallback_model: str = "cx/gpt-5.4-mini"     # MCP_NINE_ROUTER_FALLBACK_MODEL
     # Generation settings
     meto_max_tokens: int = 2048
     meto_timeout_seconds: int = 30

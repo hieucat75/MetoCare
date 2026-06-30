@@ -30,6 +30,7 @@ ignore = ["B008"]  # FastAPI Depends() in defaults is idiomatic
 "app/domain/priority_engine.py" = ["E501"]         # Long Vietnamese content strings
 "app/api/v1/routes/patient_insight.py" = ["E501"]  # Long Vietnamese strings in route
 "app/domain/health_timeline.py" = ["E501"]           # Long Vietnamese content strings
+"app/ai/readiness.py" = ["E501"]                      # Long error detail strings in f-expressions
 "app/services/narrative_prompts.py" = ["E501"]      # Long Vietnamese prompt strings
 "app/services/medical_narrative.py" = ["E501"]      # Long Vietnamese fallback strings
 "app/services/narrative_cache.py" = ["E501"]        # Long cache key construction

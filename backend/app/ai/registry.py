@@ -79,13 +79,13 @@ class RoutingPolicy:
     """Rules-based routing: task type → provider selection order."""
 
     TASK_TYPE_RULES: dict[str, list[str]] = {
-        "chat_simple": ["claude", "openai"],
-        "chat_complex_reasoning": ["claude", "openai"],
-        "chat_tool_use": ["claude", "openai"],
-        "clinical_reasoning": ["claude", "openai"],
-        "content_moderation": ["openai", "claude"],
-        "medical_scope_check": ["claude"],
-        "simple_qa": ["claude", "openai"],
+        "chat_simple": ["nine_router_claude", "nine_router_gpt", "claude", "openai"],
+        "chat_complex_reasoning": ["nine_router_claude", "nine_router_gpt", "claude", "openai"],
+        "chat_tool_use": ["nine_router_claude", "nine_router_gpt", "claude", "openai"],
+        "clinical_reasoning": ["nine_router_claude", "nine_router_gpt", "claude", "openai"],
+        "content_moderation": ["nine_router_gpt", "nine_router_claude", "openai", "claude"],
+        "medical_scope_check": ["nine_router_claude", "claude"],
+        "simple_qa": ["nine_router_claude", "nine_router_gpt", "claude", "openai"],
     }
 
     def get_provider_chain(self, task_type: str) -> list[str]:
@@ -296,5 +296,40 @@ def init_registry_from_settings() -> ProviderRegistry:
         logger.info("OpenAI provider registered")
     else:
         logger.warning("OPENAI_API_KEY not set — OpenAI provider not registered")
+
+    # Register 9Router providers if API key is configured
+    # 9Router is preferred: Claude and GPT are both available through it,
+    # and it handles billing, rate-limiting, and routing centrally.
+    if settings.nine_router_api_key:
+        from app.ai.providers.nine_router import NineRouterProvider
+
+        # Primary: Claude via 9Router
+        registry.register(
+            NineRouterProvider(
+                base_url=settings.nine_router_base_url,
+                api_key=settings.nine_router_api_key,
+                model=settings.nine_router_primary_model,
+                provider_name="nine_router_claude",
+            )
+        )
+        # Fallback: GPT via 9Router
+        registry.register(
+            NineRouterProvider(
+                base_url=settings.nine_router_base_url,
+                api_key=settings.nine_router_api_key,
+                model=settings.nine_router_fallback_model,
+                provider_name="nine_router_gpt",
+            )
+        )
+        logger.info(
+            "9Router providers registered (primary=%s, fallback=%s)",
+            settings.nine_router_primary_model,
+            settings.nine_router_fallback_model,
+        )
+    else:
+        logger.warning(
+            "MCP_NINE_ROUTER_API_KEY not set — 9Router providers not registered; "
+            "falling back to direct Claude/OpenAI"
+        )
 
     return registry
