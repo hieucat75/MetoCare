@@ -559,7 +559,7 @@ function AdherenceReminderSection({
               <Pill className="size-6" />
             </span>
             {/* a11y: all taken message — 18px (was 15px) */}
-          <p className="text-[18px] font-bold text-neu-green">Đã uống hôm nay ✓</p>
+            <p className="text-[18px] font-bold text-neu-green">Đã uống hôm nay ✓</p>
           </div>
         </NeuCard>
       ) : (
@@ -769,11 +769,16 @@ function MetricTile({ tile, onOpen }: { tile: TileModel; onOpen: (metricType: st
         <>
           <p className="mt-0.5 flex items-baseline gap-1">
             {/* a11y: metric tile value — 40px (was 28px) */}
-          <span className="font-extrabold leading-none tracking-[-0.02em] text-neu-text" style={{ fontSize: '40px' }}>
+            <span
+              className="font-extrabold leading-none tracking-[-0.02em] text-neu-text"
+              style={{ fontSize: '40px' }}
+            >
               {tile.value}
             </span>
             {tile.unit && (
-              <span className="font-medium text-neu-muted" style={{ fontSize: '18px' }}>{tile.unit}</span>
+              <span className="font-medium text-neu-muted" style={{ fontSize: '18px' }}>
+                {tile.unit}
+              </span>
             )}
           </p>
           <div className="mt-3">
@@ -906,7 +911,7 @@ function HealthAlertsSection({
               aria-hidden="true"
             />
             {/* a11y: alert label — 18px (was 15px) */}
-      <span className="flex-1 text-[18px] font-semibold text-neu-text">{concern.label}</span>
+            <span className="flex-1 text-[18px] font-semibold text-neu-text">{concern.label}</span>
             <NeuBadge
               tone={concern.severity === 'danger' ? 'alert' : 'watch'}
               className="!text-[11px]"
