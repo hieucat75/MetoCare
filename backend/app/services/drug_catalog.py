@@ -11,6 +11,7 @@ Design constraints
 
 from __future__ import annotations
 
+import datetime as dt
 import re
 import unicodedata
 from dataclasses import dataclass
@@ -870,12 +871,18 @@ def seed_catalog(db: Session) -> int:
         row.generic_name.lower()
         for row in db.query(DrugEntry.generic_name).all()
     }
+    # Set timestamps explicitly rather than rely on the column server_default:
+    # the t9_m1 migration created drug_catalog without one, so an ORM insert that
+    # omits them would violate NOT NULL on an Alembic-built database (staging).
+    now = dt.datetime.now(dt.UTC)
     inserted = 0
     for spec in _SEED:
         key = spec["generic_name"].lower()
         if key in existing:
             continue
         entry = DrugEntry(
+            created_at=now,
+            updated_at=now,
             generic_name=spec["generic_name"],
             brand_names=spec.get("brand_names", []),
             vietnamese_common_names=spec.get("vietnamese_common_names", []),
