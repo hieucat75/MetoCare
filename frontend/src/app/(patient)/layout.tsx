@@ -109,6 +109,19 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
   // Stable reference: flags only controlled ai-assistant which is gone from primary nav now.
   const navItems = React.useMemo(() => NAV_ITEMS, [flags])
 
+  // Detect screenId from current pathname for Meto context
+  // Must be declared before any early returns (Rules of Hooks)
+  const screenId = React.useMemo(() => {
+    if (pathname.startsWith('/dashboard')) return 'dashboard'
+    if (pathname.startsWith('/labs')) return 'labs'
+    if (pathname.startsWith('/medications')) return 'medications'
+    if (pathname.startsWith('/metrics')) return 'metrics'
+    if (pathname.startsWith('/nutrition')) return 'nutrition'
+    if (pathname.startsWith('/care-plan')) return 'care-plan'
+    if (pathname.startsWith('/profile')) return 'profile'
+    return 'dashboard'
+  }, [pathname])
+
   React.useEffect(() => {
     if (isLoading) return
     if (!isAuthenticated) {
@@ -161,18 +174,6 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
     isMedicationDetail ||
     isDeviceDetail ||
     isAiCopilotPage
-
-  // Detect screenId from current pathname for Meto context
-  const screenId = React.useMemo(() => {
-    if (pathname.startsWith('/dashboard')) return 'dashboard'
-    if (pathname.startsWith('/labs')) return 'labs'
-    if (pathname.startsWith('/medications')) return 'medications'
-    if (pathname.startsWith('/metrics')) return 'metrics'
-    if (pathname.startsWith('/nutrition')) return 'nutrition'
-    if (pathname.startsWith('/care-plan')) return 'care-plan'
-    if (pathname.startsWith('/profile')) return 'profile'
-    return 'dashboard'
-  }, [pathname])
 
   const handleNavItem = (item: NavItem) => router.push(item.href)
 
