@@ -352,12 +352,11 @@ async def test_stream_chat_no_provider_name_in_chunks(db, patient):
 
 @pytest.mark.asyncio
 async def test_stream_chat_fallback_during_stream(db, patient):
-    """Primary provider fails at stream start; fallback provider succeeds.
+    """Primary provider fails; fallback provider succeeds and done chunk has fallback_used=True.
 
-    Note: MetoChatService.stream_chat uses get_available_providers()[0] directly
-    (not call_with_fallback). So we test that when provider[0] fails, the error
-    path yields an error chunk — the stream service logs the error and yields
-    type='error'. Fallback for streaming requires the caller to retry.
+    Now that stream_chat iterates ALL providers with fallback logic,
+    we can test the real fallback path: primary fails → fallback yields chunks
+    → done chunk has fallback_used: True.
     """
     from app.ai.prompt.safety import SafetyResult
     from app.services.meto_chat import MetoChatService
@@ -371,7 +370,25 @@ async def test_stream_chat_fallback_during_stream(db, patient):
     primary.provider_name = "primary_mock"
     primary.chat_stream = _primary_fail
 
-    registry = _make_registry_with_provider(primary)
+    # Fallback provider: yields chunks successfully
+    fallback_chunks = [
+        ChatStreamChunk(delta="Fallback ", is_final=False),
+        ChatStreamChunk(delta="đang hoạt động.", is_final=False),
+        ChatStreamChunk(delta="", is_final=True, total_tokens=20),
+    ]
+
+    async def _fallback_stream(*args, **kwargs):
+        for c in fallback_chunks:
+            yield c
+
+    fallback = MagicMock()
+    fallback.provider_name = "fallback_mock"
+    fallback.chat_stream = _fallback_stream
+
+    # Registry returns BOTH providers so fallback logic kicks in
+    registry = ProviderRegistry()
+    registry.get_available_providers = MagicMock(return_value=[primary, fallback])
+
     svc = MetoChatService(registry)
 
     with (
@@ -404,14 +421,14 @@ async def test_stream_chat_fallback_during_stream(db, patient):
             )
         )
 
-    # Stream must have completed (no unhandled exception)
-    # Stream error path: yields type='error' (graceful degradation)
-    event_types = [c.get("type") for c in collected]
-    assert len(collected) >= 1, "Must yield at least one SSE event"
+    # Primary failed, fallback succeeded → chunks from fallback
+    chunk_events = [c for c in collected if c.get("type") == "chunk"]
+    assert len(chunk_events) >= 1, f"Expected chunks from fallback provider, got: {collected}"
 
-    # The stream error handler yields type='error', then a done
-    # Both paths are acceptable: error or done (empty response after error)
-    has_terminal = any(t in ("error", "done") for t in event_types)
-    assert has_terminal, (
-        f"Stream must yield 'error' or 'done' event after provider failure. Got types: {event_types}"
+    # done chunk must have fallback_used=True
+    done_events = [c for c in collected if c.get("type") == "done"]
+    assert len(done_events) == 1, f"Expected exactly one done event, got: {collected}"
+    assert done_events[0].get("fallback_used") is True, (
+        f"done chunk must have fallback_used=True when fallback was used. Got: {done_events[0]}"
     )
+    assert done_events[0].get("conversation_id"), "done event must include conversation_id"

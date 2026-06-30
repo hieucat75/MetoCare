@@ -48,6 +48,15 @@ async def chat(
     db: Session = Depends(get_session),
 ) -> MetaChatResponse:
     """Non-streaming Meto chat."""
+    from app.ai.readiness import check_provider_readiness
+
+    readiness = check_provider_readiness()
+    if not readiness["any_ready"]:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Meto đang được cấu hình. Vui lòng thử lại sau.",
+        )
+
     svc = _get_chat_service()
     screen = ScreenContext(
         screen_id=req.screen_id,

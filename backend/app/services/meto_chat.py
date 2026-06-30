@@ -224,40 +224,59 @@ class MetoChatService:
             provider=None, fallback_used=False,
         )
 
-        # Stream from provider
+        # Stream from provider WITH fallback
         full_content = ""
         provider_used = "meto"
         fallback_used = False
         input_tokens = 0
         output_tokens = 0
 
-        try:
-            providers = self._registry.get_available_providers("chat_simple")
-            if not providers:
-                raise MetoAIError("No providers available")
+        providers = self._registry.get_available_providers("chat_simple")
+        if not providers:
+            yield f"data: {json.dumps({'type': 'error', 'message': 'Meto tạm thời không khả dụng. Vui lòng thử lại.'})}\n\n"
+            return
 
-            settings = _get_settings()
-            provider = providers[0]
-            fallback_used = provider.provider_name != (providers[0].provider_name if providers else "claude")
+        settings = _get_settings()
 
-            async for chunk in provider.chat_stream(
-                messages=messages,
-                system_prompt=system_prompt,
-                max_tokens=settings.meto_max_tokens,
-                temperature=settings.meto_temperature,
-            ):
-                if chunk.is_final:
-                    output_tokens = chunk.total_tokens or 0
-                    break
-                if chunk.delta:
-                    full_content += chunk.delta
-                    yield f"data: {json.dumps({'type': 'chunk', 'delta': chunk.delta})}\n\n"
+        for provider_idx, provider in enumerate(providers):
+            pname = provider.provider_name
+            try:
+                chunks_received = 0
+                async for chunk in provider.chat_stream(
+                    messages=messages,
+                    system_prompt=system_prompt,
+                    max_tokens=settings.meto_max_tokens,
+                    temperature=settings.meto_temperature,
+                ):
+                    if chunk.is_final:
+                        output_tokens = chunk.total_tokens or 0
+                        break
+                    if chunk.delta:
+                        full_content += chunk.delta
+                        chunks_received += 1
+                        yield f"data: {json.dumps({'type': 'chunk', 'delta': chunk.delta})}\n\n"
 
-        except Exception as exc:
-            logger.error("Stream error for user %s: %s", user_id, exc)
-            error_msg = "Meto gặp lỗi kỹ thuật. Vui lòng thử lại."
-            yield f"data: {json.dumps({'type': 'error', 'message': error_msg})}\n\n"
-            full_content = error_msg
+                # Success
+                self._registry.circuit_breaker().record_success(pname)
+                provider_used = pname
+                fallback_used = provider_idx > 0
+                break
+
+            except Exception as exc:
+                self._registry.circuit_breaker().record_failure(pname)
+                logger.warning("Stream failed on provider %s (idx=%d): %s", pname, provider_idx, exc)
+
+                if provider_idx < len(providers) - 1:
+                    # More providers available — try next (seamless fallback)
+                    logger.info("Falling back to next stream provider")
+                    full_content = ""  # reset — will re-stream from fallback
+                    continue
+                else:
+                    # All providers exhausted
+                    logger.error("All stream providers failed for user %s", user_id)
+                    error_msg = "Meto gặp lỗi kỹ thuật. Vui lòng thử lại."
+                    yield f"data: {json.dumps({'type': 'error', 'message': error_msg})}\n\n"
+                    full_content = error_msg
 
         # Save assistant message
         latency_ms = int((time.monotonic() - request_start) * 1000)
@@ -294,7 +313,7 @@ class MetoChatService:
         )
 
         yield (
-            f"data: {json.dumps({'type': 'done', 'conversation_id': str(conversation.id), 'message_id': str(assistant_msg_id)})}\n\n"
+            f"data: {json.dumps({'type': 'done', 'conversation_id': str(conversation.id), 'message_id': str(assistant_msg_id), 'fallback_used': fallback_used})}\n\n"
         )
 
     def get_conversation(
