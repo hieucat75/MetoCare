@@ -188,6 +188,7 @@ jobs:
             APPLICATIONINSIGHTS_CONNECTION_STRING=secretref:appi \
             MCP_CORS_ALLOWED_ORIGINS=https://${FRONTEND_FQDN},https://app.metocare.me \
             MCP_AI_MODE=mock MCP_LLM_PROVIDER=mock MCP_OCR_MODE=mock \
+            FEATURE_AI_ASSISTANT=true \
             MCP_OCR_WORKER_ENABLED=false MCP_RAG_ENABLED=false \
             MCP_STORAGE_MODE=local MCP_RATELIMIT_BACKEND=memory \
             MCP_METRICS_ENABLED=true MCP_ENABLE_DOCS=false \

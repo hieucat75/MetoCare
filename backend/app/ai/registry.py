@@ -332,4 +332,12 @@ def init_registry_from_settings() -> ProviderRegistry:
             "falling back to direct Claude/OpenAI"
         )
 
+    # Fallback: register mock provider when no real provider is available
+    # This ensures MCP_AI_MODE=mock always has a working provider in the registry.
+    import os
+    if os.environ.get("MCP_AI_MODE", "") == "mock" and not registry._providers:
+        from app.ai.providers.mock import MockConversationProvider
+        registry.register(MockConversationProvider())
+        logger.info("Mock provider registered (MCP_AI_MODE=mock, no real providers configured)")
+
     return registry
