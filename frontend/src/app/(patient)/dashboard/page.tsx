@@ -322,7 +322,7 @@ function AiCopilotCard({
             >
               <Bot className="size-4" aria-hidden="true" />
             </div>
-            <span className="text-[12px] font-bold uppercase tracking-widest text-white/75">
+            <span className="text-[15px] font-bold uppercase tracking-widest text-white/75">
               AI Copilot
             </span>
           </div>
@@ -341,27 +341,26 @@ function AiCopilotCard({
         </div>
 
         {/* Focus line */}
-        {/* a11y: AI focus line — 18px (was 15px) */}
-        <p className="mb-3.5 text-[18px] font-semibold leading-[1.5]">{focusLine}</p>
+        <p className="mb-3.5 text-[19px] font-bold leading-[1.5]">{focusLine}</p>
 
         {/* Concern + improvement chips */}
         {(topConcern || topPositive) && (
           <div className="mb-3.5 flex gap-2">
             {topConcern && (
               <div className="flex-1 rounded-[14px] px-3 py-2.5" style={AI_CHIP_STYLE}>
-                <p className="mb-0.5 text-[10px] font-bold uppercase tracking-wider text-white/55">
+                <p className="mb-0.5 text-[12px] font-bold uppercase tracking-wider text-white/55">
                   Cần chú ý
                 </p>
-                <p className="text-[13px] font-bold leading-tight">{topConcern.label}</p>
-                <p className="mt-0.5 text-[11px] text-white/65">{topConcern.statusLabel}</p>
+                <p className="text-[15px] font-bold leading-tight">{topConcern.label}</p>
+                <p className="mt-0.5 text-[13px] text-white/65">{topConcern.statusLabel}</p>
               </div>
             )}
             {topPositive && (
               <div className="flex-1 rounded-[14px] px-3 py-2.5" style={AI_CHIP_STYLE}>
-                <p className="mb-0.5 text-[10px] font-bold uppercase tracking-wider text-white/55">
+                <p className="mb-0.5 text-[12px] font-bold uppercase tracking-wider text-white/55">
                   Tiến triển
                 </p>
-                <p className="line-clamp-2 text-[13px] font-bold leading-tight">{topPositive}</p>
+                <p className="line-clamp-2 text-[15px] font-bold leading-tight">{topPositive}</p>
               </div>
             )}
           </div>
@@ -373,10 +372,10 @@ function AiCopilotCard({
             className="mb-4 rounded-[14px] px-3.5 py-2.5"
             style={{ background: 'rgba(0,0,0,0.12)', border: '1px solid rgba(255,255,255,0.07)' }}
           >
-            <p className="mb-0.5 text-[10px] font-bold uppercase tracking-wider text-white/55">
+            <p className="mb-0.5 text-[12px] font-bold uppercase tracking-wider text-white/55">
               Việc quan trọng hôm nay
             </p>
-            <p className="text-[13px] leading-snug">{topAction}</p>
+            <p className="text-[16px] leading-[1.5]">{topAction}</p>
           </div>
         )}
 
