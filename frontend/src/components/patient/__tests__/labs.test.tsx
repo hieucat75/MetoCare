@@ -168,7 +168,15 @@ describe('test_ai_summary_route_exists', () => {
 describe('test_empty_state_shows_message', () => {
   it('renders placeholder when value is null', () => {
     const navigate = jest.fn()
-    render(<LabResultRow result={makeResult({ value: null })} batchId="b1" onNavigate={navigate} />)
+    // Null out both canonical and original values — Option B arch prefers original_value
+    // when non-null, so we must null both to reach the em-dash display path.
+    render(
+      <LabResultRow
+        result={makeResult({ value: null, original_value: null, original_unit: null })}
+        batchId="b1"
+        onNavigate={navigate}
+      />
+    )
     // Should show em-dash placeholder (formatLabValue(null) → '—')
     expect(screen.getByLabelText(/Giá trị: —/)).toBeInTheDocument()
     expect(screen.getByLabelText(/Giá trị: —/).textContent).toBe('—')
