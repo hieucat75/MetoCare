@@ -424,9 +424,9 @@ class ContextBuilder:
         try:
             rows = db.execute(
                 text("""
-                    SELECT name, dosage, frequency, route, start_date
+                    SELECT name, dose, frequency, note, created_at
                     FROM medications
-                    WHERE patient_id = :uid AND is_active = 1
+                    WHERE patient_id = :uid AND deleted_at IS NULL
                     ORDER BY created_at DESC
                     LIMIT :limit
                 """),
@@ -441,8 +441,8 @@ class ContextBuilder:
                     "name": r[0],
                     "dosage": r[1] or "",
                     "frequency": r[2] or "",
-                    "route": r[3] or "oral",
-                    "start_date": str(r[4]) if r[4] else None,
+                    "note": r[3] or "",
+                    "start_date": str(r[4])[:10] if r[4] else None,
                 }
                 for r in rows
             ]
@@ -453,22 +453,24 @@ class ContextBuilder:
     def _build_recent_labs(self, db: Session, user_id: str) -> list | None:
         """Build recent_labs block. Consumes DB execute #6."""
         try:
-            cutoff = (
-                dt.datetime.now(dt.UTC) - dt.timedelta(days=_LABS_LOOKBACK_DAYS)
+            cutoff_date = (
+                dt.date.today() - dt.timedelta(days=_LABS_LOOKBACK_DAYS)
             ).isoformat()
 
             rows = db.execute(
                 text("""
-                    SELECT lr.analyte_name, lr.value, lr.unit,
-                           lr.reference_range, lr.status, lr.collected_at
+                    SELECT lr.test_name, lr.value, lr.unit,
+                           lr.reference_range, lr.status, lub.test_date
                     FROM lab_results lr
                     JOIN lab_upload_batches lub ON lub.id = lr.batch_id
                     WHERE lub.patient_id = :uid
-                      AND lr.collected_at >= :cutoff
-                    ORDER BY lr.collected_at DESC
+                      AND lr.deleted_at IS NULL
+                      AND lub.deleted_at IS NULL
+                      AND (lub.test_date IS NULL OR lub.test_date >= :cutoff_date)
+                    ORDER BY lub.test_date DESC, lr.created_at DESC
                     LIMIT :limit
                 """),
-                {"uid": user_id, "cutoff": cutoff, "limit": _MAX_LABS},
+                {"uid": user_id, "cutoff_date": cutoff_date, "limit": _MAX_LABS},
             ).fetchall()
 
             if not rows:
@@ -498,12 +500,12 @@ class ContextBuilder:
 
             rows = db.execute(
                 text("""
-                    SELECT metric_type, value, unit, recorded_at, status
+                    SELECT metric_type, value, unit, measured_at, status
                     FROM health_metrics
                     WHERE patient_id = :uid
-                      AND recorded_at >= :cutoff
+                      AND measured_at >= :cutoff
                       AND deleted_at IS NULL
-                    ORDER BY recorded_at DESC
+                    ORDER BY measured_at DESC
                     LIMIT 50
                 """),
                 {"uid": user_id, "cutoff": cutoff},
