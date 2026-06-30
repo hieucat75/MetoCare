@@ -25,6 +25,7 @@ from .clinical import (
     RiskScore,
     SymptomLog,
 )
+from .drug_catalog import DrugEntry
 from .governance import AuditLog, Consent
 from .notification import Notification
 from .nutrition import NutritionLog
@@ -61,6 +62,7 @@ __all__ = [
     "NutritionLog",
     "OCRCase",
     "SymptomLog",
+    "DrugEntry",
     "TriageLog",
     "User",
     "UserRole",
