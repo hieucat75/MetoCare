@@ -18,7 +18,12 @@ import {
   type MedicationInput,
   type AdherenceSummary,
   type TodayMedication,
+  type DrugSuggestItem,
 } from '@/lib/api/patient'
+import {
+  MedicationNameAutocomplete,
+  MEDICATION_SAFETY_NOTICE,
+} from '@/components/patient/medications/MedicationNameAutocomplete'
 import {
   AdherenceSummaryCard,
   AdherenceSummarySkeleton,
@@ -240,6 +245,18 @@ function MedModal({
     }
   }, [open, editing, deleteMode])
 
+  // Picking a catalog suggestion fills the name with the display label. When the
+  // chosen entry is a brand (display differs from generic), record the canonical
+  // generic in the note field — non-destructively, only when note is still empty.
+  function handleDrugSelect(item: DrugSuggestItem) {
+    const isBrand =
+      item.generic_name &&
+      item.display_name.trim().toLowerCase() !== item.generic_name.trim().toLowerCase()
+    if (isBrand) {
+      setNote((prev) => (prev.trim() ? prev : `Hoạt chất: ${item.generic_name}`))
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!name.trim()) {
@@ -322,13 +339,15 @@ function MedModal({
               <label className="block text-[13px] font-semibold text-neu-muted uppercase tracking-wide">
                 Tên thuốc <span className="text-[#D92D20]">*</span>
               </label>
-              <input
+              <MedicationNameAutocomplete
                 value={name}
-                onChange={(e) => setName(e.target.value)}
+                onChange={setName}
+                onSelect={handleDrugSelect}
                 placeholder="VD: Metformin"
-                className={inputClass}
+                inputClassName={inputClass}
                 required
               />
+              <p className="text-[13px] text-neu-muted">Chỉ dùng thuốc theo chỉ định của bác sĩ.</p>
             </div>
 
             <div className="space-y-1.5">
@@ -366,6 +385,10 @@ function MedModal({
                 className={textareaClass}
               />
             </div>
+
+            <p className="rounded-[12px] bg-[#F2F8F6] px-4 py-3 text-[13px] leading-relaxed text-neu-muted">
+              {MEDICATION_SAFETY_NOTICE}
+            </p>
           </form>
 
           {/* Delete confirmation inline */}
