@@ -32,8 +32,7 @@ export function MetricGroupCard({ bucket }: Props) {
         backdropFilter: 'blur(16px)',
         WebkitBackdropFilter: 'blur(16px)',
         border: '1px solid rgba(255,255,255,0.85)',
-        boxShadow:
-          '0 20px 44px -28px rgba(16,48,44,0.5), inset 0 1px 0 rgba(255,255,255,0.9)',
+        boxShadow: '0 20px 44px -28px rgba(16,48,44,0.5), inset 0 1px 0 rgba(255,255,255,0.9)',
       }}
       aria-label={`Nhóm ${theme.label}`}
     >
@@ -44,9 +43,7 @@ export function MetricGroupCard({ bucket }: Props) {
           style={{ background: theme.accent }}
           aria-hidden="true"
         />
-        <h2 className="flex-1 text-[14px] font-bold text-[#0E2A33] leading-snug">
-          {theme.label}
-        </h2>
+        <h2 className="flex-1 text-[14px] font-bold text-[#0E2A33] leading-snug">{theme.label}</h2>
         {abnormalCount > 0 && (
           <span
             className="text-[11px] font-bold px-[8px] py-[3px] rounded-full"

@@ -116,7 +116,9 @@ export default function BiomarkerDetailPage() {
           {/* Value + Status row */}
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-end gap-2">
-              <span className="text-5xl font-bold text-gray-900 leading-none">{formatLabValue(bio.value, bio.unit)}</span>
+              <span className="text-5xl font-bold text-gray-900 leading-none">
+                {formatLabValue(bio.value, bio.unit)}
+              </span>
               <span className="text-lg text-gray-400 mb-1">{bio.unit}</span>
             </div>
             <div className="flex flex-col items-end gap-1.5">
@@ -365,7 +367,9 @@ export default function BiomarkerDetailPage() {
                         className={`flex items-center gap-1 ${rt.good ? 'text-green-600' : 'text-red-600'}`}
                       >
                         {rt.dir === 'down' ? <TrendingDown size={16} /> : <TrendingUp size={16} />}
-                        <span className="text-[16px] font-bold">{rt.dir === 'down' ? '↓' : '↑'}</span>
+                        <span className="text-[16px] font-bold">
+                          {rt.dir === 'down' ? '↓' : '↑'}
+                        </span>
                       </div>
                     </div>
                   ))}

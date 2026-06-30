@@ -1144,12 +1144,19 @@ export const mockBiomarkers: Record<string, Biomarker> = {
     gaugePosition: 72,
     gaugeTarget: 40,
     riskText: 'Cao bình thường',
-    conclusion: 'TSH của bạn ở mức cao bình thường. Tuyến giáp đang hoạt động ổn định nhưng cần theo dõi nếu có triệu chứng mệt mỏi, tăng cân hoặc lạnh tay chân.',
-    doesWhat: 'TSH là hormone do tuyến yên sản xuất, điều khiển tuyến giáp tiết T3 và T4 — các hormone điều hòa tốc độ chuyển hóa toàn cơ thể. TSH cao thường gợi ý tuyến giáp hoạt động chậm hơn bình thường.',
-    analogy: 'Hãy hình dung TSH như "tín hiệu ga" từ não gửi xuống tuyến giáp. TSH cao nghĩa là não đang đạp ga mạnh hơn vì tuyến giáp chưa cung cấp đủ hormone.',
+    conclusion:
+      'TSH của bạn ở mức cao bình thường. Tuyến giáp đang hoạt động ổn định nhưng cần theo dõi nếu có triệu chứng mệt mỏi, tăng cân hoặc lạnh tay chân.',
+    doesWhat:
+      'TSH là hormone do tuyến yên sản xuất, điều khiển tuyến giáp tiết T3 và T4 — các hormone điều hòa tốc độ chuyển hóa toàn cơ thể. TSH cao thường gợi ý tuyến giáp hoạt động chậm hơn bình thường.',
+    analogy:
+      'Hãy hình dung TSH như "tín hiệu ga" từ não gửi xuống tuyến giáp. TSH cao nghĩa là não đang đạp ga mạnh hơn vì tuyến giáp chưa cung cấp đủ hormone.',
     analogyIcon: 'Gauge',
     why: [
-      { icon: 'User', label: 'Nam · 52 tuổi', note: 'Chức năng tuyến giáp có thể thay đổi theo tuổi' },
+      {
+        icon: 'User',
+        label: 'Nam · 52 tuổi',
+        note: 'Chức năng tuyến giáp có thể thay đổi theo tuổi',
+      },
       { icon: 'Scale', label: 'BMI 27', note: 'Thừa cân nhẹ có thể ảnh hưởng đến nồng độ TSH' },
     ],
     today: {
@@ -1157,10 +1164,14 @@ export const mockBiomarkers: Record<string, Biomarker> = {
       why: 'Lưu lại dấu hiệu như mệt mỏi bất thường, lạnh tay chân, tăng cân không rõ nguyên nhân để cung cấp cho bác sĩ khi tái khám.',
     },
     plan: [
-      { text: 'Kiểm tra TSH + FT4 sau 3–6 tháng', sub: 'Theo dõi xu hướng, không cần điều trị nếu không có triệu chứng' },
+      {
+        text: 'Kiểm tra TSH + FT4 sau 3–6 tháng',
+        sub: 'Theo dõi xu hướng, không cần điều trị nếu không có triệu chứng',
+      },
       { text: 'Ghi nhận triệu chứng hàng ngày', sub: 'Mệt mỏi, lạnh, tăng cân, khô da, táo bón' },
     ],
-    reasonIntro: 'TSH 3.8 ở mức cao bình thường (ngưỡng trên 4.0). Chưa cần điều trị nhưng cần theo dõi xu hướng.',
+    reasonIntro:
+      'TSH 3.8 ở mức cao bình thường (ngưỡng trên 4.0). Chưa cần điều trị nhưng cần theo dõi xu hướng.',
     contributors: [
       { name: 'TSH 3.8 mIU/L', weight: 80, note: 'Gần ngưỡng trên của bình thường' },
       { name: 'FT4 14.2 pmol/L', weight: 40, note: 'FT4 thấp bình thường, phù hợp với TSH cao' },
@@ -1168,14 +1179,23 @@ export const mockBiomarkers: Record<string, Biomarker> = {
     derived: [],
     confidence: 72,
     confidenceNote: 'Cần thêm FT3 và Anti-TPO để đánh giá đầy đủ chức năng tuyến giáp.',
-    evidence: 'Theo ATA 2023, TSH 3.8 thuộc ngưỡng bình thường. Suy giáp cận lâm sàng chỉ chẩn đoán khi TSH > 4.5 mIU/L kết hợp với triệu chứng.',
+    evidence:
+      'Theo ATA 2023, TSH 3.8 thuộc ngưỡng bình thường. Suy giáp cận lâm sàng chỉ chẩn đoán khi TSH > 4.5 mIU/L kết hợp với triệu chứng.',
     limitations: [
       'AI không thể chẩn đoán bệnh tuyến giáp từ TSH đơn lẻ',
       'Kết quả có thể thay đổi tùy giờ lấy máu và thuốc đang dùng',
     ],
     futures: [
-      { when: 'Nếu TSH tiếp tục tăng', text: 'Nguy cơ suy giáp cận lâm sàng — nên tư vấn chuyên khoa nội tiết.', tone: 'med' },
-      { when: 'Nếu TSH ổn định', text: 'Không cần can thiệp, tiếp tục theo dõi định kỳ hàng năm.', tone: 'good' },
+      {
+        when: 'Nếu TSH tiếp tục tăng',
+        text: 'Nguy cơ suy giáp cận lâm sàng — nên tư vấn chuyên khoa nội tiết.',
+        tone: 'med',
+      },
+      {
+        when: 'Nếu TSH ổn định',
+        text: 'Không cần can thiệp, tiếp tục theo dõi định kỳ hàng năm.',
+        tone: 'good',
+      },
     ],
     needs: [
       { title: 'Anti-TPO', why: 'Kháng thể tuyến giáp giúp phát hiện nguyên nhân tự miễn' },
@@ -1187,19 +1207,24 @@ export const mockBiomarkers: Record<string, Biomarker> = {
       'Bao lâu nên kiểm tra lại TSH một lần?',
     ],
     knowledge: [
-      { q: 'TSH là gì?', a: 'TSH (Thyroid-Stimulating Hormone) là hormone tuyến yên điều khiển tuyến giáp sản xuất T3 và T4.' },
-      { q: 'TSH cao nghĩa là gì?', a: 'TSH cao thường gợi ý tuyến giáp hoạt động kém (suy giáp), nhưng cần kết hợp với FT4 và triệu chứng để xác định.' },
+      {
+        q: 'TSH là gì?',
+        a: 'TSH (Thyroid-Stimulating Hormone) là hormone tuyến yên điều khiển tuyến giáp sản xuất T3 và T4.',
+      },
+      {
+        q: 'TSH cao nghĩa là gì?',
+        a: 'TSH cao thường gợi ý tuyến giáp hoạt động kém (suy giáp), nhưng cần kết hợp với FT4 và triệu chứng để xác định.',
+      },
     ],
-    chain: [
-      { short: 'FT4', note: 'Hormone tuyến giáp thực tế', status: 'good', bioKey: 'ft4' },
-    ],
+    chain: [{ short: 'FT4', note: 'Hormone tuyến giáp thực tế', status: 'good', bioKey: 'ft4' }],
     trendData: [3.2, 3.4, 3.5, 3.6, 3.7, 3.8],
     trendLabels: ['01/25', '02/25', '03/25', '04/25', '05/25', '06/25'],
     trendBandLow: 0.4,
     trendBandHigh: 4.0,
     trendMin: 0,
     trendMax: 5,
-    trendComment: 'TSH có xu hướng tăng nhẹ trong 6 tháng qua. Chưa vượt ngưỡng bình thường nhưng đáng chú ý.',
+    trendComment:
+      'TSH có xu hướng tăng nhẹ trong 6 tháng qua. Chưa vượt ngưỡng bình thường nhưng đáng chú ý.',
     relatedTrends: [
       { short: 'FT4', from: '15.1', to: '14.2', unit: 'pmol/L', dir: 'down', good: false },
     ],
@@ -1219,46 +1244,70 @@ export const mockBiomarkers: Record<string, Biomarker> = {
     gaugePosition: 22,
     gaugeTarget: 45,
     riskText: 'Bình thường',
-    conclusion: 'FT4 trong giới hạn bình thường, tuyến giáp đang sản xuất đủ hormone. Khi đọc cùng TSH 3.8, chức năng tuyến giáp hiện ổn định.',
-    doesWhat: 'FT4 là dạng thyroxine tự do trong máu — hormone tuyến giáp trực tiếp ảnh hưởng đến nhịp tim, nhiệt độ cơ thể, tốc độ chuyển hóa và năng lượng. Đây là chỉ số phản ánh chức năng tuyến giáp thực tế.',
-    analogy: 'Nếu TSH là tín hiệu ga thì FT4 là xăng thực tế được bơm vào động cơ. FT4 bình thường nghĩa là động cơ vẫn đang chạy đủ nhiên liệu.',
+    conclusion:
+      'FT4 trong giới hạn bình thường, tuyến giáp đang sản xuất đủ hormone. Khi đọc cùng TSH 3.8, chức năng tuyến giáp hiện ổn định.',
+    doesWhat:
+      'FT4 là dạng thyroxine tự do trong máu — hormone tuyến giáp trực tiếp ảnh hưởng đến nhịp tim, nhiệt độ cơ thể, tốc độ chuyển hóa và năng lượng. Đây là chỉ số phản ánh chức năng tuyến giáp thực tế.',
+    analogy:
+      'Nếu TSH là tín hiệu ga thì FT4 là xăng thực tế được bơm vào động cơ. FT4 bình thường nghĩa là động cơ vẫn đang chạy đủ nhiên liệu.',
     analogyIcon: 'Zap',
     why: [
-      { icon: 'Activity', label: 'Chức năng tuyến giáp', note: 'FT4 phản ánh lượng hormone tuyến giáp thực tế đang hoạt động trong cơ thể' },
+      {
+        icon: 'Activity',
+        label: 'Chức năng tuyến giáp',
+        note: 'FT4 phản ánh lượng hormone tuyến giáp thực tế đang hoạt động trong cơ thể',
+      },
     ],
     today: {
       title: 'Không cần hành động ngay',
       why: 'FT4 bình thường — tuyến giáp đang hoạt động đủ. Tiếp tục theo dõi định kỳ theo lịch bác sĩ.',
     },
     plan: [
-      { text: 'Kiểm tra lại FT4 + TSH sau 6 tháng', sub: 'Theo dõi cùng với TSH để đánh giá xu hướng' },
+      {
+        text: 'Kiểm tra lại FT4 + TSH sau 6 tháng',
+        sub: 'Theo dõi cùng với TSH để đánh giá xu hướng',
+      },
     ],
-    reasonIntro: 'FT4 14.2 pmol/L ở mức thấp bình thường. Kết hợp TSH 3.8 (cao bình thường) gợi ý tuyến giáp bù trừ nhẹ, cần theo dõi.',
+    reasonIntro:
+      'FT4 14.2 pmol/L ở mức thấp bình thường. Kết hợp TSH 3.8 (cao bình thường) gợi ý tuyến giáp bù trừ nhẹ, cần theo dõi.',
     contributors: [
       { name: 'FT4 14.2 pmol/L', weight: 70, note: 'Thấp bình thường trong khoảng 12–22' },
     ],
     derived: [],
     confidence: 68,
     confidenceNote: 'Cần thêm TSH, FT3 và Anti-TPO để đánh giá toàn diện.',
-    evidence: 'Theo ETA 2023, FT4 trong khoảng 12–22 pmol/L là bình thường. Chẩn đoán bệnh tuyến giáp cần kết hợp TSH, FT4, FT3 và triệu chứng lâm sàng.',
+    evidence:
+      'Theo ETA 2023, FT4 trong khoảng 12–22 pmol/L là bình thường. Chẩn đoán bệnh tuyến giáp cần kết hợp TSH, FT4, FT3 và triệu chứng lâm sàng.',
     limitations: [
       'FT4 đơn lẻ không đủ để chẩn đoán bệnh tuyến giáp',
       'Một số thuốc (biotin, heparin) có thể ảnh hưởng kết quả',
     ],
     futures: [
-      { when: 'Nếu FT4 tiếp tục giảm', text: 'Nguy cơ suy giáp cần điều trị thay thế hormone.', tone: 'med' },
-      { when: 'Nếu FT4 ổn định', text: 'Tiếp tục theo dõi định kỳ, không cần can thiệp.', tone: 'good' },
+      {
+        when: 'Nếu FT4 tiếp tục giảm',
+        text: 'Nguy cơ suy giáp cần điều trị thay thế hormone.',
+        tone: 'med',
+      },
+      {
+        when: 'Nếu FT4 ổn định',
+        text: 'Tiếp tục theo dõi định kỳ, không cần can thiệp.',
+        tone: 'good',
+      },
     ],
-    needs: [
-      { title: 'FT3', why: 'Đánh giá đầy đủ chức năng tuyến giáp' },
-    ],
+    needs: [{ title: 'FT3', why: 'Đánh giá đầy đủ chức năng tuyến giáp' }],
     doctorQs: [
       'FT4 14.2 kết hợp với TSH 3.8 có đáng lo không?',
       'Tôi có cần xét nghiệm Anti-TPO không?',
     ],
     knowledge: [
-      { q: 'FT4 khác T4 thế nào?', a: 'T4 là tổng thyroxine gắn protein; FT4 là phần tự do thực sự có hoạt tính sinh học. FT4 phản ánh chính xác hơn chức năng tuyến giáp.' },
-      { q: 'FT4 thấp có nghĩa gì?', a: 'FT4 thấp (dưới 12 pmol/L) kết hợp TSH cao là dấu hiệu của suy giáp thực sự cần điều trị.' },
+      {
+        q: 'FT4 khác T4 thế nào?',
+        a: 'T4 là tổng thyroxine gắn protein; FT4 là phần tự do thực sự có hoạt tính sinh học. FT4 phản ánh chính xác hơn chức năng tuyến giáp.',
+      },
+      {
+        q: 'FT4 thấp có nghĩa gì?',
+        a: 'FT4 thấp (dưới 12 pmol/L) kết hợp TSH cao là dấu hiệu của suy giáp thực sự cần điều trị.',
+      },
     ],
     chain: [
       { short: 'TSH', note: 'Tín hiệu điều khiển từ tuyến yên', status: 'norm', bioKey: 'tsh' },
@@ -1269,7 +1318,8 @@ export const mockBiomarkers: Record<string, Biomarker> = {
     trendBandHigh: 22,
     trendMin: 10,
     trendMax: 25,
-    trendComment: 'FT4 giảm nhẹ nhưng vẫn trong giới hạn bình thường. Xu hướng này đáng theo dõi cùng với TSH.',
+    trendComment:
+      'FT4 giảm nhẹ nhưng vẫn trong giới hạn bình thường. Xu hướng này đáng theo dõi cùng với TSH.',
     relatedTrends: [
       { short: 'TSH', from: '3.2', to: '3.8', unit: 'mIU/L', dir: 'up', good: false },
     ],
@@ -1289,48 +1339,59 @@ export const mockBiomarkers: Record<string, Biomarker> = {
     gaugePosition: 34,
     gaugeTarget: 18,
     riskText: 'Bình thường',
-    conclusion: 'Thyroglobulin trong giới hạn bình thường, không gợi ý bệnh lý tuyến giáp đang hoạt động. Cần theo dõi xu hướng qua các lần xét nghiệm tiếp theo.',
-    doesWhat: 'Thyroglobulin là protein do tế bào tuyến giáp sản xuất. Nồng độ cao có thể gợi ý bệnh lý tuyến giáp (viêm, nhân, ung thư). Ở người đã phẫu thuật tuyến giáp, Tg là chỉ số theo dõi tái phát quan trọng.',
-    analogy: 'Thyroglobulin như "dấu vết" tuyến giáp để lại trong máu. Ở người bình thường, một lượng nhỏ là bình thường; mức tăng cao đột ngột cần điều tra thêm.',
+    conclusion:
+      'Thyroglobulin trong giới hạn bình thường, không gợi ý bệnh lý tuyến giáp đang hoạt động. Cần theo dõi xu hướng qua các lần xét nghiệm tiếp theo.',
+    doesWhat:
+      'Thyroglobulin là protein do tế bào tuyến giáp sản xuất. Nồng độ cao có thể gợi ý bệnh lý tuyến giáp (viêm, nhân, ung thư). Ở người đã phẫu thuật tuyến giáp, Tg là chỉ số theo dõi tái phát quan trọng.',
+    analogy:
+      'Thyroglobulin như "dấu vết" tuyến giáp để lại trong máu. Ở người bình thường, một lượng nhỏ là bình thường; mức tăng cao đột ngột cần điều tra thêm.',
     analogyIcon: 'Search',
     why: [
-      { icon: 'Activity', label: 'Sức khỏe tuyến giáp', note: 'Thyroglobulin phản ánh hoạt động của mô tuyến giáp' },
+      {
+        icon: 'Activity',
+        label: 'Sức khỏe tuyến giáp',
+        note: 'Thyroglobulin phản ánh hoạt động của mô tuyến giáp',
+      },
     ],
     today: {
       title: 'Không cần hành động ngay',
       why: 'Thyroglobulin bình thường. Tiếp tục theo dõi định kỳ theo chỉ định bác sĩ.',
     },
-    plan: [
-      { text: 'Kiểm tra Tg định kỳ hàng năm', sub: 'Theo dõi xu hướng qua thời gian' },
-    ],
-    reasonIntro: 'Thyroglobulin 18.5 ng/mL dưới ngưỡng bình thường 55 ng/mL. Không có dấu hiệu bệnh lý đáng lo ngại.',
+    plan: [{ text: 'Kiểm tra Tg định kỳ hàng năm', sub: 'Theo dõi xu hướng qua thời gian' }],
+    reasonIntro:
+      'Thyroglobulin 18.5 ng/mL dưới ngưỡng bình thường 55 ng/mL. Không có dấu hiệu bệnh lý đáng lo ngại.',
     contributors: [
       { name: 'Thyroglobulin 18.5 ng/mL', weight: 60, note: 'Trong giới hạn bình thường' },
     ],
     derived: [],
     confidence: 60,
-    confidenceNote: 'Ý nghĩa của Thyroglobulin phụ thuộc nhiều vào bối cảnh lâm sàng (có phẫu thuật tuyến giáp không, có kháng thể Anti-Tg không).',
-    evidence: 'Theo ATA 2023, Thyroglobulin < 55 ng/mL là bình thường ở người không phẫu thuật tuyến giáp. Ở người sau phẫu thuật, mọi Tg đo được đều đáng chú ý.',
+    confidenceNote:
+      'Ý nghĩa của Thyroglobulin phụ thuộc nhiều vào bối cảnh lâm sàng (có phẫu thuật tuyến giáp không, có kháng thể Anti-Tg không).',
+    evidence:
+      'Theo ATA 2023, Thyroglobulin < 55 ng/mL là bình thường ở người không phẫu thuật tuyến giáp. Ở người sau phẫu thuật, mọi Tg đo được đều đáng chú ý.',
     limitations: [
       'Kháng thể Anti-Tg có thể làm sai lệch kết quả',
       'Giá trị bình thường thay đổi tùy phương pháp xét nghiệm',
     ],
     futures: [
-      { when: 'Nếu Tg tăng cao', text: 'Cần siêu âm tuyến giáp và tư vấn chuyên khoa.', tone: 'med' },
+      {
+        when: 'Nếu Tg tăng cao',
+        text: 'Cần siêu âm tuyến giáp và tư vấn chuyên khoa.',
+        tone: 'med',
+      },
     ],
-    needs: [
-      { title: 'Anti-Tg (kháng thể Thyroglobulin)', why: 'Loại trừ nhiễu khi đo Tg' },
-    ],
+    needs: [{ title: 'Anti-Tg (kháng thể Thyroglobulin)', why: 'Loại trừ nhiễu khi đo Tg' }],
     doctorQs: [
       'Thyroglobulin 18.5 của tôi có cần theo dõi gì đặc biệt không?',
       'Tôi có cần xét nghiệm Anti-Tg không?',
     ],
     knowledge: [
-      { q: 'Thyroglobulin dùng để làm gì?', a: 'Thường dùng để theo dõi tái phát ở người đã phẫu thuật ung thư tuyến giáp. Ở người bình thường, nồng độ thấp là bình thường.' },
+      {
+        q: 'Thyroglobulin dùng để làm gì?',
+        a: 'Thường dùng để theo dõi tái phát ở người đã phẫu thuật ung thư tuyến giáp. Ở người bình thường, nồng độ thấp là bình thường.',
+      },
     ],
-    chain: [
-      { short: 'TSH', note: 'Điều hòa tuyến giáp', status: 'norm', bioKey: 'tsh' },
-    ],
+    chain: [{ short: 'TSH', note: 'Điều hòa tuyến giáp', status: 'norm', bioKey: 'tsh' }],
     trendData: [20, 19.5, 19.2, 18.8, 18.6, 18.5],
     trendLabels: ['01/25', '02/25', '03/25', '04/25', '05/25', '06/25'],
     trendBandLow: 0,
@@ -1355,9 +1416,12 @@ export const mockBiomarkers: Record<string, Biomarker> = {
     gaugePosition: 76,
     gaugeTarget: 55,
     riskText: 'Cao',
-    conclusion: 'Cholesterol toàn phần cao hơn ngưỡng khuyến cáo. Kết hợp với LDL cao và HDL thấp, nguy cơ tim mạch của bạn đang ở mức trung bình và cần can thiệp lối sống.',
-    doesWhat: 'Cholesterol toàn phần là tổng của LDL, HDL và VLDL trong máu. Mức quá cao làm tăng nguy cơ xơ vữa động mạch — nguyên nhân chính của nhồi máu cơ tim và đột quỵ.',
-    analogy: 'Cholesterol như một "đội giao hàng" trong máu — vừa cần thiết vừa nguy hiểm nếu quá nhiều. LDL giao hàng đến tế bào (nhưng để lại mảng bám); HDL thu gom "rác" về gan xử lý.',
+    conclusion:
+      'Cholesterol toàn phần cao hơn ngưỡng khuyến cáo. Kết hợp với LDL cao và HDL thấp, nguy cơ tim mạch của bạn đang ở mức trung bình và cần can thiệp lối sống.',
+    doesWhat:
+      'Cholesterol toàn phần là tổng của LDL, HDL và VLDL trong máu. Mức quá cao làm tăng nguy cơ xơ vữa động mạch — nguyên nhân chính của nhồi máu cơ tim và đột quỵ.',
+    analogy:
+      'Cholesterol như một "đội giao hàng" trong máu — vừa cần thiết vừa nguy hiểm nếu quá nhiều. LDL giao hàng đến tế bào (nhưng để lại mảng bám); HDL thu gom "rác" về gan xử lý.',
     analogyIcon: 'Truck',
     why: [
       { icon: 'User', label: 'Nam · 52 tuổi', note: 'Nguy cơ tim mạch tăng dần sau 45 tuổi ở nam' },
@@ -1370,28 +1434,44 @@ export const mockBiomarkers: Record<string, Biomarker> = {
     },
     plan: [
       { text: 'Giảm chất béo bão hòa', sub: 'Hạn chế mỡ động vật, thức ăn chiên rán, phô mai' },
-      { text: 'Tăng chất xơ hòa tan', sub: 'Yến mạch, đậu, táo — liên kết cholesterol và đào thải ra ngoài' },
+      {
+        text: 'Tăng chất xơ hòa tan',
+        sub: 'Yến mạch, đậu, táo — liên kết cholesterol và đào thải ra ngoài',
+      },
       { text: 'Vận động 150 phút/tuần', sub: 'Đi bộ, bơi lội giúp tăng HDL và hạ LDL' },
-      { text: 'Tái xét nghiệm sau 3 tháng', sub: 'Đánh giá hiệu quả thay đổi lối sống trước khi cân nhắc thuốc' },
+      {
+        text: 'Tái xét nghiệm sau 3 tháng',
+        sub: 'Đánh giá hiệu quả thay đổi lối sống trước khi cân nhắc thuốc',
+      },
     ],
-    reasonIntro: 'Cholesterol toàn phần 5.9 vượt ngưỡng 5.2 mmol/L. Kết hợp với LDL 3.6 và HDL thấp cho thấy rối loạn lipid máu cần can thiệp.',
+    reasonIntro:
+      'Cholesterol toàn phần 5.9 vượt ngưỡng 5.2 mmol/L. Kết hợp với LDL 3.6 và HDL thấp cho thấy rối loạn lipid máu cần can thiệp.',
     contributors: [
       { name: 'LDL 3.6 mmol/L', weight: 75, note: 'Đóng góp lớn nhất vào cholesterol toàn phần' },
       { name: 'Triglyceride 2.1 mmol/L', weight: 50, note: 'VLDL cao từ triglyceride' },
-      { name: 'HDL 1.05 mmol/L', weight: 45, note: 'HDL thấp làm giảm khả năng dọn dẹp cholesterol' },
+      {
+        name: 'HDL 1.05 mmol/L',
+        weight: 45,
+        note: 'HDL thấp làm giảm khả năng dọn dẹp cholesterol',
+      },
     ],
-    derived: [
-      { name: 'Tỷ lệ LDL/HDL', val: '3.4', note: 'Lý tưởng < 3.0 — nguy cơ trung bình' },
-    ],
+    derived: [{ name: 'Tỷ lệ LDL/HDL', val: '3.4', note: 'Lý tưởng < 3.0 — nguy cơ trung bình' }],
     confidence: 80,
     confidenceNote: 'Đánh giá đầy đủ cần thêm Apolipoprotein B và non-HDL cholesterol.',
-    evidence: 'Theo ACC/AHA 2023, cholesterol toàn phần < 5.2 mmol/L là mục tiêu lý tưởng. Mức 5.9 cần can thiệp lối sống tích cực.',
-    limitations: [
-      'Cholesterol toàn phần đơn lẻ kém dự báo nguy cơ tim mạch hơn LDL và non-HDL',
-    ],
+    evidence:
+      'Theo ACC/AHA 2023, cholesterol toàn phần < 5.2 mmol/L là mục tiêu lý tưởng. Mức 5.9 cần can thiệp lối sống tích cực.',
+    limitations: ['Cholesterol toàn phần đơn lẻ kém dự báo nguy cơ tim mạch hơn LDL và non-HDL'],
     futures: [
-      { when: 'Nếu không thay đổi · 2 năm', text: 'Nguy cơ xơ vữa động mạch tăng, có thể cần điều trị bằng statin.', tone: 'high' },
-      { when: 'Nếu thay đổi lối sống · 3 tháng', text: 'Có thể giảm 10–15% cholesterol toàn phần chỉ qua chế độ ăn và vận động.', tone: 'good' },
+      {
+        when: 'Nếu không thay đổi · 2 năm',
+        text: 'Nguy cơ xơ vữa động mạch tăng, có thể cần điều trị bằng statin.',
+        tone: 'high',
+      },
+      {
+        when: 'Nếu thay đổi lối sống · 3 tháng',
+        text: 'Có thể giảm 10–15% cholesterol toàn phần chỉ qua chế độ ăn và vận động.',
+        tone: 'good',
+      },
     ],
     needs: [],
     doctorQs: [
@@ -1400,8 +1480,14 @@ export const mockBiomarkers: Record<string, Biomarker> = {
       'Chế độ ăn nào hiệu quả nhất để hạ cholesterol của tôi?',
     ],
     knowledge: [
-      { q: 'Cholesterol toàn phần bao nhiêu là cao?', a: '> 5.2 mmol/L là cao; > 6.2 mmol/L là rất cao theo khuyến cáo hiện hành.' },
-      { q: 'Cholesterol có hoàn toàn xấu không?', a: 'Không — cơ thể cần cholesterol để tạo hormone, vitamin D và màng tế bào. Vấn đề là khi LDL quá nhiều và HDL quá ít.' },
+      {
+        q: 'Cholesterol toàn phần bao nhiêu là cao?',
+        a: '> 5.2 mmol/L là cao; > 6.2 mmol/L là rất cao theo khuyến cáo hiện hành.',
+      },
+      {
+        q: 'Cholesterol có hoàn toàn xấu không?',
+        a: 'Không — cơ thể cần cholesterol để tạo hormone, vitamin D và màng tế bào. Vấn đề là khi LDL quá nhiều và HDL quá ít.',
+      },
     ],
     chain: [
       { short: 'LDL-C', note: 'Thành phần chính gây nguy cơ', status: 'high', bioKey: 'ldl' },
@@ -1414,7 +1500,8 @@ export const mockBiomarkers: Record<string, Biomarker> = {
     trendBandHigh: 5.2,
     trendMin: 3,
     trendMax: 7,
-    trendComment: 'Cholesterol toàn phần đang giảm nhẹ nhưng vẫn cao hơn mục tiêu. Cần tiếp tục duy trì thay đổi lối sống.',
+    trendComment:
+      'Cholesterol toàn phần đang giảm nhẹ nhưng vẫn cao hơn mục tiêu. Cần tiếp tục duy trì thay đổi lối sống.',
     relatedTrends: [
       { short: 'LDL', from: '3.9', to: '3.6', unit: 'mmol/L', dir: 'down', good: true },
     ],
@@ -1434,12 +1521,19 @@ export const mockBiomarkers: Record<string, Biomarker> = {
     gaugePosition: 65,
     gaugeTarget: 45,
     riskText: 'Bình thường',
-    conclusion: 'ALT trong giới hạn bình thường. Gan không có dấu hiệu tổn thương cấp tính. Tuy nhiên cần lưu ý nguy cơ gan nhiễm mỡ do chuyển hóa khi kết hợp với triglyceride cao.',
-    doesWhat: 'ALT là enzyme chủ yếu trong tế bào gan. Khi tế bào gan bị tổn thương, ALT rò rỉ vào máu và tăng cao. Đây là chỉ số nhạy cảm nhất để phát hiện viêm gan và tổn thương gan.',
-    analogy: 'Hãy hình dung ALT như "báo động khói" trong tế bào gan. Khi có "đám cháy" (tổn thương), báo động kêu (ALT tăng). Không có báo động nghĩa là gan đang yên tĩnh.',
+    conclusion:
+      'ALT trong giới hạn bình thường. Gan không có dấu hiệu tổn thương cấp tính. Tuy nhiên cần lưu ý nguy cơ gan nhiễm mỡ do chuyển hóa khi kết hợp với triglyceride cao.',
+    doesWhat:
+      'ALT là enzyme chủ yếu trong tế bào gan. Khi tế bào gan bị tổn thương, ALT rò rỉ vào máu và tăng cao. Đây là chỉ số nhạy cảm nhất để phát hiện viêm gan và tổn thương gan.',
+    analogy:
+      'Hãy hình dung ALT như "báo động khói" trong tế bào gan. Khi có "đám cháy" (tổn thương), báo động kêu (ALT tăng). Không có báo động nghĩa là gan đang yên tĩnh.',
     analogyIcon: 'Shield',
     why: [
-      { icon: 'Droplets', label: 'Triglyceride cao', note: 'Mỡ máu cao kết hợp với thừa cân làm tăng nguy cơ gan nhiễm mỡ' },
+      {
+        icon: 'Droplets',
+        label: 'Triglyceride cao',
+        note: 'Mỡ máu cao kết hợp với thừa cân làm tăng nguy cơ gan nhiễm mỡ',
+      },
     ],
     today: {
       title: 'Hạn chế rượu bia và thức ăn nhiều dầu mỡ',
@@ -1450,32 +1544,44 @@ export const mockBiomarkers: Record<string, Biomarker> = {
       { text: 'Giảm cân nếu thừa cân', sub: 'Giảm 5–10% cân nặng cải thiện đáng kể men gan' },
       { text: 'Kiểm tra ALT + AST sau 6 tháng', sub: 'Theo dõi xu hướng men gan' },
     ],
-    reasonIntro: 'ALT 32 U/L nằm trong giới hạn bình thường (< 40). Không có dấu hiệu tổn thương gan cấp tính.',
-    contributors: [
-      { name: 'ALT 32 U/L', weight: 60, note: 'Trong giới hạn bình thường' },
-    ],
+    reasonIntro:
+      'ALT 32 U/L nằm trong giới hạn bình thường (< 40). Không có dấu hiệu tổn thương gan cấp tính.',
+    contributors: [{ name: 'ALT 32 U/L', weight: 60, note: 'Trong giới hạn bình thường' }],
     derived: [],
     confidence: 70,
     confidenceNote: 'Đánh giá toàn diện cần AST, GGT, siêu âm gan và bilirubin.',
-    evidence: 'Theo EASL 2023, ALT bình thường không loại trừ gan nhiễm mỡ — tới 25% bệnh nhân có ALT bình thường vẫn có gan nhiễm mỡ trên siêu âm.',
+    evidence:
+      'Theo EASL 2023, ALT bình thường không loại trừ gan nhiễm mỡ — tới 25% bệnh nhân có ALT bình thường vẫn có gan nhiễm mỡ trên siêu âm.',
     limitations: [
       'ALT bình thường không đồng nghĩa gan hoàn toàn khỏe mạnh',
       'Một số thuốc (statin, paracetamol liều cao) có thể nâng ALT',
     ],
     futures: [
-      { when: 'Nếu ALT tăng trên 3× bình thường', text: 'Cần xét nghiệm bổ sung và tư vấn chuyên khoa gan mật.', tone: 'high' },
-      { when: 'Nếu duy trì lối sống lành mạnh', text: 'ALT có thể cải thiện về mức tối ưu < 25 U/L.', tone: 'good' },
+      {
+        when: 'Nếu ALT tăng trên 3× bình thường',
+        text: 'Cần xét nghiệm bổ sung và tư vấn chuyên khoa gan mật.',
+        tone: 'high',
+      },
+      {
+        when: 'Nếu duy trì lối sống lành mạnh',
+        text: 'ALT có thể cải thiện về mức tối ưu < 25 U/L.',
+        tone: 'good',
+      },
     ],
-    needs: [
-      { title: 'Siêu âm gan', why: 'Phát hiện gan nhiễm mỡ ngay cả khi ALT bình thường' },
-    ],
+    needs: [{ title: 'Siêu âm gan', why: 'Phát hiện gan nhiễm mỡ ngay cả khi ALT bình thường' }],
     doctorQs: [
       'ALT 32 kết hợp triglyceride cao có nguy cơ gan nhiễm mỡ không?',
       'Tôi có cần siêu âm gan để kiểm tra thêm không?',
     ],
     knowledge: [
-      { q: 'ALT bao nhiêu là cao?', a: '> 40 U/L ở nam (hoặc > 35 U/L ở nữ) cần xem xét nguyên nhân. > 3× giới hạn trên là dấu hiệu tổn thương gan đáng kể.' },
-      { q: 'ALT và AST khác nhau thế nào?', a: 'ALT chủ yếu có trong gan (đặc hiệu hơn); AST có trong nhiều cơ quan hơn (gan, tim, cơ). Tỷ lệ AST/ALT giúp phân biệt nguyên nhân.' },
+      {
+        q: 'ALT bao nhiêu là cao?',
+        a: '> 40 U/L ở nam (hoặc > 35 U/L ở nữ) cần xem xét nguyên nhân. > 3× giới hạn trên là dấu hiệu tổn thương gan đáng kể.',
+      },
+      {
+        q: 'ALT và AST khác nhau thế nào?',
+        a: 'ALT chủ yếu có trong gan (đặc hiệu hơn); AST có trong nhiều cơ quan hơn (gan, tim, cơ). Tỷ lệ AST/ALT giúp phân biệt nguyên nhân.',
+      },
     ],
     chain: [
       { short: 'AST', note: 'Men gan bổ trợ', status: 'good', bioKey: 'ast' },
@@ -1488,9 +1594,7 @@ export const mockBiomarkers: Record<string, Biomarker> = {
     trendMin: 0,
     trendMax: 50,
     trendComment: 'ALT đang giảm dần — tín hiệu tốt. Tiếp tục duy trì thói quen sống lành mạnh.',
-    relatedTrends: [
-      { short: 'AST', from: '33', to: '28', unit: 'U/L', dir: 'down', good: true },
-    ],
+    relatedTrends: [{ short: 'AST', from: '33', to: '28', unit: 'U/L', dir: 'down', good: true }],
   },
 
   ast: {
@@ -1507,12 +1611,19 @@ export const mockBiomarkers: Record<string, Biomarker> = {
     gaugePosition: 45,
     gaugeTarget: 50,
     riskText: 'Bình thường',
-    conclusion: 'AST trong giới hạn bình thường. Cùng với ALT 32, không có dấu hiệu tổn thương gan hay tim đáng kể. Tỷ lệ AST/ALT 0.88 gợi ý nguyên nhân không phải do rượu.',
-    doesWhat: 'AST là enzyme có trong gan, cơ tim và cơ xương. Khác với ALT, AST tăng không chỉ do gan mà còn do tổn thương tim, cơ. Xét cùng ALT giúp phân biệt nguyên nhân.',
-    analogy: 'AST như "hệ thống cảnh báo rộng" — nhạy hơn với nhiều cơ quan hơn ALT. Khi AST và ALT đều tăng, vấn đề thường ở gan; khi chỉ AST tăng, nên nghĩ đến tim hoặc cơ.',
+    conclusion:
+      'AST trong giới hạn bình thường. Cùng với ALT 32, không có dấu hiệu tổn thương gan hay tim đáng kể. Tỷ lệ AST/ALT 0.88 gợi ý nguyên nhân không phải do rượu.',
+    doesWhat:
+      'AST là enzyme có trong gan, cơ tim và cơ xương. Khác với ALT, AST tăng không chỉ do gan mà còn do tổn thương tim, cơ. Xét cùng ALT giúp phân biệt nguyên nhân.',
+    analogy:
+      'AST như "hệ thống cảnh báo rộng" — nhạy hơn với nhiều cơ quan hơn ALT. Khi AST và ALT đều tăng, vấn đề thường ở gan; khi chỉ AST tăng, nên nghĩ đến tim hoặc cơ.',
     analogyIcon: 'Shield',
     why: [
-      { icon: 'Activity', label: 'Sức khỏe tổng thể', note: 'AST bình thường gợi ý gan và tim không có tổn thương cấp' },
+      {
+        icon: 'Activity',
+        label: 'Sức khỏe tổng thể',
+        note: 'AST bình thường gợi ý gan và tim không có tổn thương cấp',
+      },
     ],
     today: {
       title: 'Duy trì lối sống lành mạnh hiện tại',
@@ -1520,24 +1631,35 @@ export const mockBiomarkers: Record<string, Biomarker> = {
     },
     plan: [
       { text: 'Hạn chế rượu bia', sub: 'Rượu là nguyên nhân hàng đầu tăng AST' },
-      { text: 'Theo dõi AST/ALT cùng nhau', sub: 'Đánh giá tỷ lệ AST/ALT giúp phân biệt nguyên nhân' },
+      {
+        text: 'Theo dõi AST/ALT cùng nhau',
+        sub: 'Đánh giá tỷ lệ AST/ALT giúp phân biệt nguyên nhân',
+      },
     ],
-    reasonIntro: 'AST 28 U/L trong giới hạn bình thường. Tỷ lệ AST/ALT = 0.88 gợi ý không có bệnh gan do rượu (thường > 2.0).',
-    contributors: [
-      { name: 'AST 28 U/L', weight: 60, note: 'Trong giới hạn bình thường' },
-    ],
+    reasonIntro:
+      'AST 28 U/L trong giới hạn bình thường. Tỷ lệ AST/ALT = 0.88 gợi ý không có bệnh gan do rượu (thường > 2.0).',
+    contributors: [{ name: 'AST 28 U/L', weight: 60, note: 'Trong giới hạn bình thường' }],
     derived: [
-      { name: 'Tỷ lệ AST/ALT', val: '0.88', note: 'Bình thường — dưới 1.0 gợi ý nguyên nhân không do rượu' },
+      {
+        name: 'Tỷ lệ AST/ALT',
+        val: '0.88',
+        note: 'Bình thường — dưới 1.0 gợi ý nguyên nhân không do rượu',
+      },
     ],
     confidence: 72,
     confidenceNote: 'Đánh giá đầy đủ cần ALT, GGT, bilirubin và siêu âm gan.',
-    evidence: 'Tỷ lệ AST/ALT > 2.0 là dấu hiệu kinh điển của bệnh gan do rượu (De Ritis ratio). Tỷ lệ < 1.0 thường gặp trong viêm gan virus và gan nhiễm mỡ không do rượu.',
+    evidence:
+      'Tỷ lệ AST/ALT > 2.0 là dấu hiệu kinh điển của bệnh gan do rượu (De Ritis ratio). Tỷ lệ < 1.0 thường gặp trong viêm gan virus và gan nhiễm mỡ không do rượu.',
     limitations: [
       'AST tăng có thể do nguyên nhân ngoài gan (nhồi máu cơ tim, tiêu cơ vân)',
       'Tập luyện thể lực nặng trước khi lấy máu có thể nâng AST',
     ],
     futures: [
-      { when: 'Nếu AST và ALT đồng thời tăng', text: 'Cần đánh giá chức năng gan đầy đủ và xem xét nguyên nhân.', tone: 'med' },
+      {
+        when: 'Nếu AST và ALT đồng thời tăng',
+        text: 'Cần đánh giá chức năng gan đầy đủ và xem xét nguyên nhân.',
+        tone: 'med',
+      },
     ],
     needs: [],
     doctorQs: [
@@ -1545,7 +1667,10 @@ export const mockBiomarkers: Record<string, Biomarker> = {
       'AST và ALT cùng bình thường nhưng triglyceride cao — gan có ổn không?',
     ],
     knowledge: [
-      { q: 'AST/ALT ratio là gì?', a: 'Là tỷ lệ giữa hai men gan giúp phân biệt nguyên nhân: > 2.0 gợi ý rượu; 1.0–2.0 xơ gan; < 1.0 viêm gan virus hoặc gan nhiễm mỡ.' },
+      {
+        q: 'AST/ALT ratio là gì?',
+        a: 'Là tỷ lệ giữa hai men gan giúp phân biệt nguyên nhân: > 2.0 gợi ý rượu; 1.0–2.0 xơ gan; < 1.0 viêm gan virus hoặc gan nhiễm mỡ.',
+      },
     ],
     chain: [
       { short: 'ALT', note: 'Men gan đặc hiệu hơn', status: 'good', bioKey: 'alt' },
@@ -1558,9 +1683,7 @@ export const mockBiomarkers: Record<string, Biomarker> = {
     trendMin: 0,
     trendMax: 50,
     trendComment: 'AST giảm tốt trong 6 tháng qua — phản ánh cải thiện chức năng gan.',
-    relatedTrends: [
-      { short: 'ALT', from: '38', to: '32', unit: 'U/L', dir: 'down', good: true },
-    ],
+    relatedTrends: [{ short: 'ALT', from: '38', to: '32', unit: 'U/L', dir: 'down', good: true }],
   },
 
   ggt: {
@@ -1577,12 +1700,19 @@ export const mockBiomarkers: Record<string, Biomarker> = {
     gaugePosition: 68,
     gaugeTarget: 48,
     riskText: 'Cao bình thường',
-    conclusion: 'GGT ở mức cao bình thường — gần giới hạn trên. Kết hợp với triglyceride cao, điều này gợi ý nguy cơ gan nhiễm mỡ không do rượu (NAFLD) cần theo dõi.',
-    doesWhat: 'GGT là enzyme nhạy cảm nhất với tổn thương gan do rượu, thuốc và tắc mật. GGT tăng có thể xuất hiện trước ALT và AST trong bệnh lý gan sớm.',
-    analogy: 'GGT như "đầu dò thính nhạy" — phát hiện vấn đề gan sớm hơn ALT và AST. Nhưng nó cũng phản ứng với nhiều thứ khác (rượu, thuốc, hút thuốc), nên cần đọc kèm các chỉ số khác.',
+    conclusion:
+      'GGT ở mức cao bình thường — gần giới hạn trên. Kết hợp với triglyceride cao, điều này gợi ý nguy cơ gan nhiễm mỡ không do rượu (NAFLD) cần theo dõi.',
+    doesWhat:
+      'GGT là enzyme nhạy cảm nhất với tổn thương gan do rượu, thuốc và tắc mật. GGT tăng có thể xuất hiện trước ALT và AST trong bệnh lý gan sớm.',
+    analogy:
+      'GGT như "đầu dò thính nhạy" — phát hiện vấn đề gan sớm hơn ALT và AST. Nhưng nó cũng phản ứng với nhiều thứ khác (rượu, thuốc, hút thuốc), nên cần đọc kèm các chỉ số khác.',
     analogyIcon: 'Radio',
     why: [
-      { icon: 'Droplets', label: 'Triglyceride 2.1', note: 'Mỡ máu cao liên quan đến gan nhiễm mỡ và GGT cao' },
+      {
+        icon: 'Droplets',
+        label: 'Triglyceride 2.1',
+        note: 'Mỡ máu cao liên quan đến gan nhiễm mỡ và GGT cao',
+      },
       { icon: 'Scale', label: 'BMI 27', note: 'Thừa cân là yếu tố nguy cơ hàng đầu của NAFLD' },
     ],
     today: {
@@ -1594,7 +1724,8 @@ export const mockBiomarkers: Record<string, Biomarker> = {
       { text: 'Giảm cân 5–10%', sub: 'Giảm mỡ gan và GGT hiệu quả' },
       { text: 'Tái xét nghiệm sau 3 tháng', sub: 'GGT phản ứng nhanh với thay đổi lối sống' },
     ],
-    reasonIntro: 'GGT 41 U/L gần giới hạn trên 48. Kết hợp với triglyceride cao và BMI 27, nguy cơ NAFLD đáng theo dõi.',
+    reasonIntro:
+      'GGT 41 U/L gần giới hạn trên 48. Kết hợp với triglyceride cao và BMI 27, nguy cơ NAFLD đáng theo dõi.',
     contributors: [
       { name: 'GGT 41 U/L', weight: 65, note: 'Gần giới hạn trên bình thường' },
       { name: 'Triglyceride 2.1', weight: 50, note: 'Mỡ máu cao liên quan đến gan nhiễm mỡ' },
@@ -1602,25 +1733,38 @@ export const mockBiomarkers: Record<string, Biomarker> = {
     derived: [],
     confidence: 68,
     confidenceNote: 'GGT nhạy nhưng không đặc hiệu — cần đọc kèm ALT, AST và bối cảnh lâm sàng.',
-    evidence: 'Theo EASL 2023, GGT > 30 U/L là yếu tố nguy cơ độc lập cho bệnh tim mạch và tiểu đường type 2, ngay cả khi trong giới hạn bình thường theo phòng xét nghiệm.',
+    evidence:
+      'Theo EASL 2023, GGT > 30 U/L là yếu tố nguy cơ độc lập cho bệnh tim mạch và tiểu đường type 2, ngay cả khi trong giới hạn bình thường theo phòng xét nghiệm.',
     limitations: [
       'GGT tăng do nhiều nguyên nhân ngoài gan (thuốc, béo phì, tiểu đường)',
       'Một số thuốc (phenytoin, barbiturat) làm tăng GGT đáng kể',
     ],
     futures: [
-      { when: 'Nếu GGT vượt 48 U/L', text: 'Cần siêu âm gan và xem xét nguyên nhân (rượu, thuốc, NAFLD).', tone: 'med' },
-      { when: 'Nếu giảm rượu và giảm cân', text: 'GGT có thể giảm về dưới 25 U/L trong 3 tháng.', tone: 'good' },
+      {
+        when: 'Nếu GGT vượt 48 U/L',
+        text: 'Cần siêu âm gan và xem xét nguyên nhân (rượu, thuốc, NAFLD).',
+        tone: 'med',
+      },
+      {
+        when: 'Nếu giảm rượu và giảm cân',
+        text: 'GGT có thể giảm về dưới 25 U/L trong 3 tháng.',
+        tone: 'good',
+      },
     ],
-    needs: [
-      { title: 'Siêu âm gan', why: 'Đánh giá mức độ gan nhiễm mỡ' },
-    ],
+    needs: [{ title: 'Siêu âm gan', why: 'Đánh giá mức độ gan nhiễm mỡ' }],
     doctorQs: [
       'GGT 41 gần ngưỡng trên có nguy cơ gan nhiễm mỡ không?',
       'Tôi có cần siêu âm gan không khi GGT, ALT và triglyceride đều tăng?',
     ],
     knowledge: [
-      { q: 'GGT bao nhiêu là đáng lo?', a: '> 48 U/L (nam) hoặc > 36 U/L (nữ) cần điều tra. Ngay cả mức "bình thường cao" > 30 U/L cũng liên quan đến nguy cơ tim mạch.' },
-      { q: 'GGT có thể bình thường hóa không?', a: 'Có — hạn chế rượu bia và giảm cân thường hạ GGT hiệu quả trong 2–12 tuần.' },
+      {
+        q: 'GGT bao nhiêu là đáng lo?',
+        a: '> 48 U/L (nam) hoặc > 36 U/L (nữ) cần điều tra. Ngay cả mức "bình thường cao" > 30 U/L cũng liên quan đến nguy cơ tim mạch.',
+      },
+      {
+        q: 'GGT có thể bình thường hóa không?',
+        a: 'Có — hạn chế rượu bia và giảm cân thường hạ GGT hiệu quả trong 2–12 tuần.',
+      },
     ],
     chain: [
       { short: 'ALT', note: 'Men gan đặc hiệu hơn cho tổn thương', status: 'good', bioKey: 'alt' },
@@ -1632,10 +1776,9 @@ export const mockBiomarkers: Record<string, Biomarker> = {
     trendBandHigh: 48,
     trendMin: 0,
     trendMax: 60,
-    trendComment: 'GGT giảm dần trong 6 tháng qua — phản ánh cải thiện chức năng gan. Tiếp tục duy trì.',
-    relatedTrends: [
-      { short: 'ALT', from: '38', to: '32', unit: 'U/L', dir: 'down', good: true },
-    ],
+    trendComment:
+      'GGT giảm dần trong 6 tháng qua — phản ánh cải thiện chức năng gan. Tiếp tục duy trì.',
+    relatedTrends: [{ short: 'ALT', from: '38', to: '32', unit: 'U/L', dir: 'down', good: true }],
   },
 
   creatinine: {
@@ -1652,12 +1795,19 @@ export const mockBiomarkers: Record<string, Biomarker> = {
     gaugePosition: 37,
     gaugeTarget: 42,
     riskText: 'Bình thường',
-    conclusion: 'Creatinine bình thường — thận đang lọc tốt. Đây là tín hiệu khích lệ khi bạn đang có tiền sử đường huyết cao, vốn là nguyên nhân hàng đầu gây bệnh thận mạn.',
-    doesWhat: 'Creatinine là sản phẩm chuyển hóa của cơ bắp, được thận lọc và thải qua nước tiểu. Khi thận suy yếu, creatinine tích tụ trong máu và tăng cao. Đây là một trong những chỉ số cơ bản nhất để đánh giá chức năng thận.',
-    analogy: 'Creatinine như "rác thải cơ bắp" cần thận dọn. Khi thận khỏe, rác được dọn sạch (creatinine bình thường). Khi thận yếu, rác tích tụ (creatinine tăng).',
+    conclusion:
+      'Creatinine bình thường — thận đang lọc tốt. Đây là tín hiệu khích lệ khi bạn đang có tiền sử đường huyết cao, vốn là nguyên nhân hàng đầu gây bệnh thận mạn.',
+    doesWhat:
+      'Creatinine là sản phẩm chuyển hóa của cơ bắp, được thận lọc và thải qua nước tiểu. Khi thận suy yếu, creatinine tích tụ trong máu và tăng cao. Đây là một trong những chỉ số cơ bản nhất để đánh giá chức năng thận.',
+    analogy:
+      'Creatinine như "rác thải cơ bắp" cần thận dọn. Khi thận khỏe, rác được dọn sạch (creatinine bình thường). Khi thận yếu, rác tích tụ (creatinine tăng).',
     analogyIcon: 'Droplets',
     why: [
-      { icon: 'Armchair', label: 'Lối sống ít vận động', note: 'Khối cơ ít hơn → creatinine tạo ra ít hơn, kết quả thường thấp hơn nam giới lao động' },
+      {
+        icon: 'Armchair',
+        label: 'Lối sống ít vận động',
+        note: 'Khối cơ ít hơn → creatinine tạo ra ít hơn, kết quả thường thấp hơn nam giới lao động',
+      },
     ],
     today: {
       title: 'Uống đủ 1.5–2 lít nước mỗi ngày',
@@ -1667,37 +1817,65 @@ export const mockBiomarkers: Record<string, Biomarker> = {
       { text: 'Uống đủ nước mỗi ngày', sub: '1.5–2 lít, tránh uống quá nhiều một lúc' },
       { text: 'Kiểm soát đường huyết', sub: 'Đường huyết ổn định bảo vệ thận hiệu quả nhất' },
       { text: 'Kiểm soát huyết áp', sub: 'Huyết áp < 130/80 mmHg bảo vệ thận khỏi tổn thương' },
-      { text: 'Xét nghiệm creatinine hàng năm', sub: 'Phát hiện sớm biến chứng thận do tiểu đường' },
+      {
+        text: 'Xét nghiệm creatinine hàng năm',
+        sub: 'Phát hiện sớm biến chứng thận do tiểu đường',
+      },
     ],
-    reasonIntro: 'Creatinine 84 µmol/L trong giới hạn bình thường. Cần theo dõi định kỳ do nguy cơ biến chứng thận từ tiền tiểu đường.',
+    reasonIntro:
+      'Creatinine 84 µmol/L trong giới hạn bình thường. Cần theo dõi định kỳ do nguy cơ biến chứng thận từ tiền tiểu đường.',
     contributors: [
       { name: 'Creatinine 84 µmol/L', weight: 70, note: 'Bình thường, thận đang hoạt động tốt' },
     ],
     derived: [],
     confidence: 78,
-    confidenceNote: 'Đánh giá đầy đủ cần eGFR và đạm niệu (albumin nước tiểu) để xác định giai đoạn bệnh thận.',
-    evidence: 'Theo KDIGO 2023, creatinine bình thường không loại trừ bệnh thận mạn nếu có albumin niệu. Người tiền tiểu đường nên kiểm tra creatinine + eGFR + albumin/creatinine niệu hàng năm.',
+    confidenceNote:
+      'Đánh giá đầy đủ cần eGFR và đạm niệu (albumin nước tiểu) để xác định giai đoạn bệnh thận.',
+    evidence:
+      'Theo KDIGO 2023, creatinine bình thường không loại trừ bệnh thận mạn nếu có albumin niệu. Người tiền tiểu đường nên kiểm tra creatinine + eGFR + albumin/creatinine niệu hàng năm.',
     limitations: [
       'Creatinine thay đổi theo khối cơ — người ít cơ (người già, nữ) có creatinine thấp hơn nhưng thận vẫn có thể suy',
       'Ăn nhiều thịt đỏ trước xét nghiệm có thể nâng creatinine tạm thời',
     ],
     futures: [
-      { when: 'Nếu đường huyết không kiểm soát · 5 năm', text: 'Nguy cơ bệnh thận mạn giai đoạn sớm (eGFR giảm, albumin niệu tăng).', tone: 'high' },
-      { when: 'Nếu kiểm soát tốt đường huyết và huyết áp', text: 'Thận có thể duy trì chức năng bình thường hàng chục năm.', tone: 'good' },
+      {
+        when: 'Nếu đường huyết không kiểm soát · 5 năm',
+        text: 'Nguy cơ bệnh thận mạn giai đoạn sớm (eGFR giảm, albumin niệu tăng).',
+        tone: 'high',
+      },
+      {
+        when: 'Nếu kiểm soát tốt đường huyết và huyết áp',
+        text: 'Thận có thể duy trì chức năng bình thường hàng chục năm.',
+        tone: 'good',
+      },
     ],
     needs: [
-      { title: 'Albumin/Creatinine niệu (ACR)', why: 'Phát hiện tổn thương thận sớm trước khi creatinine tăng' },
+      {
+        title: 'Albumin/Creatinine niệu (ACR)',
+        why: 'Phát hiện tổn thương thận sớm trước khi creatinine tăng',
+      },
     ],
     doctorQs: [
       'Với tiền tiểu đường, tôi có cần xét nghiệm albumin niệu hàng năm không?',
       'Huyết áp bao nhiêu là tối ưu để bảo vệ thận của tôi?',
     ],
     knowledge: [
-      { q: 'Creatinine cao bao nhiêu là nguy hiểm?', a: '> 115 µmol/L ở nam cần chú ý. > 177 µmol/L thường gợi ý suy thận rõ ràng cần xử lý ngay.' },
-      { q: 'Creatinine và eGFR liên quan gì nhau?', a: 'eGFR được tính từ creatinine (cùng tuổi, giới, chủng tộc). eGFR < 60 mL/phút/1.73m² = bệnh thận mạn.' },
+      {
+        q: 'Creatinine cao bao nhiêu là nguy hiểm?',
+        a: '> 115 µmol/L ở nam cần chú ý. > 177 µmol/L thường gợi ý suy thận rõ ràng cần xử lý ngay.',
+      },
+      {
+        q: 'Creatinine và eGFR liên quan gì nhau?',
+        a: 'eGFR được tính từ creatinine (cùng tuổi, giới, chủng tộc). eGFR < 60 mL/phút/1.73m² = bệnh thận mạn.',
+      },
     ],
     chain: [
-      { short: 'eGFR', note: 'Tính từ creatinine, phản ánh tốc độ lọc', status: 'good', bioKey: 'egfr' },
+      {
+        short: 'eGFR',
+        note: 'Tính từ creatinine, phản ánh tốc độ lọc',
+        status: 'good',
+        bioKey: 'egfr',
+      },
     ],
     trendData: [86, 86, 85, 85, 84, 84],
     trendLabels: ['01/25', '02/25', '03/25', '04/25', '05/25', '06/25'],
@@ -1705,7 +1883,8 @@ export const mockBiomarkers: Record<string, Biomarker> = {
     trendBandHigh: 115,
     trendMin: 40,
     trendMax: 130,
-    trendComment: 'Creatinine ổn định trong 6 tháng — thận duy trì chức năng tốt. Tiếp tục kiểm soát đường huyết.',
+    trendComment:
+      'Creatinine ổn định trong 6 tháng — thận duy trì chức năng tốt. Tiếp tục kiểm soát đường huyết.',
     relatedTrends: [
       { short: 'eGFR', from: '91', to: '92', unit: 'mL/phút', dir: 'up', good: true },
     ],
@@ -1725,49 +1904,83 @@ export const mockBiomarkers: Record<string, Biomarker> = {
     gaugePosition: 20,
     gaugeTarget: 15,
     riskText: 'Bình thường',
-    conclusion: 'eGFR bình thường — thận đang lọc tốt ở mức 92% so với người trẻ khỏe mạnh. Với tiền sử đường huyết cao, duy trì eGFR > 90 là mục tiêu quan trọng.',
-    doesWhat: 'eGFR (Estimated Glomerular Filtration Rate) đo tốc độ thận lọc máu mỗi phút. Đây là chỉ số vàng để đánh giá giai đoạn bệnh thận mạn. eGFR giảm dần theo tuổi là bình thường, nhưng giảm nhanh gợi ý bệnh lý.',
-    analogy: 'eGFR như "công suất lọc" của thận. 92 mL/phút nghĩa là thận đang lọc gần 140 lít máu mỗi ngày — hiệu suất rất tốt. Khi thận suy, con số này giảm dần.',
+    conclusion:
+      'eGFR bình thường — thận đang lọc tốt ở mức 92% so với người trẻ khỏe mạnh. Với tiền sử đường huyết cao, duy trì eGFR > 90 là mục tiêu quan trọng.',
+    doesWhat:
+      'eGFR (Estimated Glomerular Filtration Rate) đo tốc độ thận lọc máu mỗi phút. Đây là chỉ số vàng để đánh giá giai đoạn bệnh thận mạn. eGFR giảm dần theo tuổi là bình thường, nhưng giảm nhanh gợi ý bệnh lý.',
+    analogy:
+      'eGFR như "công suất lọc" của thận. 92 mL/phút nghĩa là thận đang lọc gần 140 lít máu mỗi ngày — hiệu suất rất tốt. Khi thận suy, con số này giảm dần.',
     analogyIcon: 'Filter',
     why: [
-      { icon: 'User', label: 'Nam · 52 tuổi', note: 'eGFR giảm tự nhiên ~1 mL/phút/năm sau 40 tuổi' },
-      { icon: 'Droplet', label: 'Đường huyết cao', note: 'Kiểm soát đường huyết kém là nguyên nhân hàng đầu làm giảm eGFR' },
+      {
+        icon: 'User',
+        label: 'Nam · 52 tuổi',
+        note: 'eGFR giảm tự nhiên ~1 mL/phút/năm sau 40 tuổi',
+      },
+      {
+        icon: 'Droplet',
+        label: 'Đường huyết cao',
+        note: 'Kiểm soát đường huyết kém là nguyên nhân hàng đầu làm giảm eGFR',
+      },
     ],
     today: {
       title: 'Kiểm soát đường huyết — bảo vệ thận số 1',
       why: 'Mỗi đơn vị HbA1c giảm tương ứng giảm 40% nguy cơ biến chứng thận. Đây là biện pháp hiệu quả nhất để duy trì eGFR.',
     },
     plan: [
-      { text: 'Kiểm soát đường huyết chặt', sub: 'HbA1c < 7% giảm nguy cơ biến chứng thận đáng kể' },
+      {
+        text: 'Kiểm soát đường huyết chặt',
+        sub: 'HbA1c < 7% giảm nguy cơ biến chứng thận đáng kể',
+      },
       { text: 'Huyết áp < 130/80 mmHg', sub: 'Huyết áp cao là đòn thứ hai tấn công thận' },
       { text: 'Xét nghiệm eGFR + ACR hàng năm', sub: 'Phát hiện sớm biến chứng thận tiểu đường' },
     ],
-    reasonIntro: 'eGFR 92 mL/phút/1.73m² trong giới hạn bình thường (G1: > 90). Không có bệnh thận mạn giai đoạn nào.',
+    reasonIntro:
+      'eGFR 92 mL/phút/1.73m² trong giới hạn bình thường (G1: > 90). Không có bệnh thận mạn giai đoạn nào.',
     contributors: [
       { name: 'eGFR 92', weight: 80, note: 'Thận lọc bình thường, không suy giảm chức năng' },
     ],
     derived: [],
     confidence: 82,
-    confidenceNote: 'Đánh giá hoàn chỉnh cần thêm albumin niệu (ACR) để xác định bệnh thận mạn ngay cả khi eGFR bình thường.',
-    evidence: 'Theo KDIGO 2023, eGFR ≥ 90 với không có albumin niệu = bình thường (G1). Bệnh thận mạn chẩn đoán khi eGFR < 60 HOẶC có albumin niệu, kéo dài > 3 tháng.',
+    confidenceNote:
+      'Đánh giá hoàn chỉnh cần thêm albumin niệu (ACR) để xác định bệnh thận mạn ngay cả khi eGFR bình thường.',
+    evidence:
+      'Theo KDIGO 2023, eGFR ≥ 90 với không có albumin niệu = bình thường (G1). Bệnh thận mạn chẩn đoán khi eGFR < 60 HOẶC có albumin niệu, kéo dài > 3 tháng.',
     limitations: [
       'eGFR ước tính từ creatinine — kém chính xác ở người có khối cơ cực cao hoặc cực thấp',
       'eGFR bình thường không loại trừ bệnh thận nếu có albumin niệu',
     ],
     futures: [
-      { when: 'Nếu đường huyết không kiểm soát', text: 'eGFR có thể giảm 5–10 mL/phút/năm thay vì 1–2 bình thường.', tone: 'high' },
-      { when: 'Nếu kiểm soát tốt đường huyết + huyết áp', text: 'eGFR có thể duy trì > 60 hàng chục năm tới.', tone: 'good' },
+      {
+        when: 'Nếu đường huyết không kiểm soát',
+        text: 'eGFR có thể giảm 5–10 mL/phút/năm thay vì 1–2 bình thường.',
+        tone: 'high',
+      },
+      {
+        when: 'Nếu kiểm soát tốt đường huyết + huyết áp',
+        text: 'eGFR có thể duy trì > 60 hàng chục năm tới.',
+        tone: 'good',
+      },
     ],
     needs: [
-      { title: 'Albumin/Creatinine niệu (ACR)', why: 'Phát hiện tổn thương thận sớm ngay cả khi eGFR bình thường' },
+      {
+        title: 'Albumin/Creatinine niệu (ACR)',
+        why: 'Phát hiện tổn thương thận sớm ngay cả khi eGFR bình thường',
+      },
     ],
     doctorQs: [
       'eGFR 92 với đường huyết cao — tôi có cần xét nghiệm albumin niệu không?',
       'eGFR của tôi có nguy cơ giảm nhanh không với tiền tiểu đường?',
     ],
     knowledge: [
-      { q: 'eGFR bao nhiêu là suy thận?', a: 'eGFR 60–89: G2 (giảm nhẹ); 45–59: G3a; 30–44: G3b; 15–29: G4; < 15: G5 (suy thận giai đoạn cuối).' },
-      { q: 'eGFR có thể cải thiện không?', a: 'Có — kiểm soát tốt đường huyết, huyết áp và bỏ thuốc lá có thể làm chậm hoặc ổn định eGFR. Hiếm khi cải thiện đáng kể nếu đã < 60.' },
+      {
+        q: 'eGFR bao nhiêu là suy thận?',
+        a: 'eGFR 60–89: G2 (giảm nhẹ); 45–59: G3a; 30–44: G3b; 15–29: G4; < 15: G5 (suy thận giai đoạn cuối).',
+      },
+      {
+        q: 'eGFR có thể cải thiện không?',
+        a: 'Có — kiểm soát tốt đường huyết, huyết áp và bỏ thuốc lá có thể làm chậm hoặc ổn định eGFR. Hiếm khi cải thiện đáng kể nếu đã < 60.',
+      },
     ],
     chain: [
       { short: 'Creatinine', note: 'Nguồn tính eGFR', status: 'good', bioKey: 'creatinine' },
@@ -1779,7 +1992,8 @@ export const mockBiomarkers: Record<string, Biomarker> = {
     trendBandHigh: 120,
     trendMin: 60,
     trendMax: 130,
-    trendComment: 'eGFR duy trì ổn định trên 90 trong 6 tháng — thận đang hoạt động tốt. Tiếp tục kiểm soát đường huyết.',
+    trendComment:
+      'eGFR duy trì ổn định trên 90 trong 6 tháng — thận đang hoạt động tốt. Tiếp tục kiểm soát đường huyết.',
     relatedTrends: [
       { short: 'Creatinine', from: '86', to: '84', unit: 'µmol/L', dir: 'down', good: true },
     ],
@@ -1799,12 +2013,19 @@ export const mockBiomarkers: Record<string, Biomarker> = {
     gaugePosition: 16,
     gaugeTarget: 17,
     riskText: 'Thấp bình thường',
-    conclusion: 'Ferritin thấp bình thường — dự trữ sắt của bạn đang ở mức tối thiểu. Dù chưa thiếu máu, mức này có thể gây mệt mỏi, giảm sức tập trung và ảnh hưởng đến năng lượng.',
-    doesWhat: 'Ferritin là protein lưu trữ sắt trong cơ thể. Đây là chỉ số phản ánh "kho sắt" tổng thể — giảm trước cả hemoglobin khi thiếu sắt. Sắt cần thiết để vận chuyển oxy và tạo năng lượng trong tế bào.',
-    analogy: 'Ferritin như "bồn chứa sắt" của cơ thể. Bồn ở mức thấp có nghĩa là dự trữ ít — cơ thể đang "sống nhờ lượng tồn" mà không có đệm an toàn nếu nhu cầu tăng đột ngột.',
+    conclusion:
+      'Ferritin thấp bình thường — dự trữ sắt của bạn đang ở mức tối thiểu. Dù chưa thiếu máu, mức này có thể gây mệt mỏi, giảm sức tập trung và ảnh hưởng đến năng lượng.',
+    doesWhat:
+      'Ferritin là protein lưu trữ sắt trong cơ thể. Đây là chỉ số phản ánh "kho sắt" tổng thể — giảm trước cả hemoglobin khi thiếu sắt. Sắt cần thiết để vận chuyển oxy và tạo năng lượng trong tế bào.',
+    analogy:
+      'Ferritin như "bồn chứa sắt" của cơ thể. Bồn ở mức thấp có nghĩa là dự trữ ít — cơ thể đang "sống nhờ lượng tồn" mà không có đệm an toàn nếu nhu cầu tăng đột ngột.',
     analogyIcon: 'Battery',
     why: [
-      { icon: 'Apple', label: 'Chế độ ăn ít sắt', note: 'Thiếu thịt đỏ, rau xanh đậm hoặc đậu trong khẩu phần' },
+      {
+        icon: 'Apple',
+        label: 'Chế độ ăn ít sắt',
+        note: 'Thiếu thịt đỏ, rau xanh đậm hoặc đậu trong khẩu phần',
+      },
       { icon: 'Armchair', label: 'Ít vận động', note: 'Luyện tập thể thao tăng nhu cầu sắt' },
     ],
     today: {
@@ -1812,26 +2033,47 @@ export const mockBiomarkers: Record<string, Biomarker> = {
       why: 'Thịt đỏ (2–3 lần/tuần), gan, đậu lăng, rau bina và hạt bí ngô là những nguồn sắt dồi dào. Ăn kèm vitamin C giúp hấp thu sắt tốt hơn.',
     },
     plan: [
-      { text: 'Tăng thực phẩm giàu sắt heme', sub: 'Thịt đỏ, gan, hải sản — hấp thu hiệu quả hơn sắt thực vật' },
-      { text: 'Bổ sung sắt từ thực vật', sub: 'Đậu lăng, rau bina, hạt bí ngô — ăn với vitamin C để tăng hấp thu' },
+      {
+        text: 'Tăng thực phẩm giàu sắt heme',
+        sub: 'Thịt đỏ, gan, hải sản — hấp thu hiệu quả hơn sắt thực vật',
+      },
+      {
+        text: 'Bổ sung sắt từ thực vật',
+        sub: 'Đậu lăng, rau bina, hạt bí ngô — ăn với vitamin C để tăng hấp thu',
+      },
       { text: 'Hạn chế cà phê, trà gần bữa ăn', sub: 'Tanin trong trà/cà phê ức chế hấp thu sắt' },
       { text: 'Kiểm tra lại Ferritin sau 3 tháng', sub: 'Đánh giá hiệu quả điều chỉnh chế độ ăn' },
     ],
-    reasonIntro: 'Ferritin 48 ng/mL ở mức thấp bình thường. Dự trữ sắt đủ để tránh thiếu máu nhưng chưa tối ưu cho năng lượng và sức tập trung.',
+    reasonIntro:
+      'Ferritin 48 ng/mL ở mức thấp bình thường. Dự trữ sắt đủ để tránh thiếu máu nhưng chưa tối ưu cho năng lượng và sức tập trung.',
     contributors: [
-      { name: 'Ferritin 48 ng/mL', weight: 70, note: 'Thấp bình thường, cách ngưỡng thiếu sắt (< 22) không xa' },
+      {
+        name: 'Ferritin 48 ng/mL',
+        weight: 70,
+        note: 'Thấp bình thường, cách ngưỡng thiếu sắt (< 22) không xa',
+      },
     ],
     derived: [],
     confidence: 70,
-    confidenceNote: 'Cần thêm huyết đồ (CBC), sắt huyết thanh và TIBC để đánh giá đầy đủ tình trạng sắt.',
-    evidence: 'Theo WHO 2023, ferritin < 30 ng/mL là thiếu sắt; 30–50 ng/mL là dự trữ thấp. Nhiều chuyên gia khuyến nghị ferritin > 50–100 ng/mL cho sức khỏe tối ưu ở nam giới.',
+    confidenceNote:
+      'Cần thêm huyết đồ (CBC), sắt huyết thanh và TIBC để đánh giá đầy đủ tình trạng sắt.',
+    evidence:
+      'Theo WHO 2023, ferritin < 30 ng/mL là thiếu sắt; 30–50 ng/mL là dự trữ thấp. Nhiều chuyên gia khuyến nghị ferritin > 50–100 ng/mL cho sức khỏe tối ưu ở nam giới.',
     limitations: [
       'Ferritin là protein viêm — tăng giả tạo khi cơ thể đang viêm hoặc nhiễm trùng',
       'Ferritin bình thường không loại trừ thiếu sắt chức năng trong giai đoạn đầu',
     ],
     futures: [
-      { when: 'Nếu không bổ sung sắt', text: 'Ferritin có thể tiếp tục giảm về mức thiếu sắt (< 22 ng/mL), gây thiếu máu và mệt mỏi.', tone: 'med' },
-      { when: 'Nếu điều chỉnh chế độ ăn', text: 'Ferritin có thể tăng về mức tối ưu > 80 ng/mL trong 3–6 tháng.', tone: 'good' },
+      {
+        when: 'Nếu không bổ sung sắt',
+        text: 'Ferritin có thể tiếp tục giảm về mức thiếu sắt (< 22 ng/mL), gây thiếu máu và mệt mỏi.',
+        tone: 'med',
+      },
+      {
+        when: 'Nếu điều chỉnh chế độ ăn',
+        text: 'Ferritin có thể tăng về mức tối ưu > 80 ng/mL trong 3–6 tháng.',
+        tone: 'good',
+      },
     ],
     needs: [
       { title: 'CBC (huyết đồ toàn phần)', why: 'Xác định có thiếu máu thiếu sắt hay không' },
@@ -1841,8 +2083,14 @@ export const mockBiomarkers: Record<string, Biomarker> = {
       'Mệt mỏi của tôi có liên quan đến mức ferritin thấp không?',
     ],
     knowledge: [
-      { q: 'Ferritin khác sắt huyết thanh thế nào?', a: 'Sắt huyết thanh là sắt đang lưu thông trong máu; Ferritin là sắt dự trữ trong tế bào. Ferritin giảm trước khi sắt huyết thanh và hemoglobin giảm.' },
-      { q: 'Thực phẩm nào giàu sắt nhất?', a: 'Sắt heme (hấp thu tốt hơn): gan, thịt đỏ, hải sản. Sắt non-heme (thực vật): đậu lăng, rau bina, hạt bí ngô — cần vitamin C đi kèm.' },
+      {
+        q: 'Ferritin khác sắt huyết thanh thế nào?',
+        a: 'Sắt huyết thanh là sắt đang lưu thông trong máu; Ferritin là sắt dự trữ trong tế bào. Ferritin giảm trước khi sắt huyết thanh và hemoglobin giảm.',
+      },
+      {
+        q: 'Thực phẩm nào giàu sắt nhất?',
+        a: 'Sắt heme (hấp thu tốt hơn): gan, thịt đỏ, hải sản. Sắt non-heme (thực vật): đậu lăng, rau bina, hạt bí ngô — cần vitamin C đi kèm.',
+      },
     ],
     chain: [
       { short: 'Vitamin D', note: 'Cùng nhóm vi chất hay thiếu', status: 'low', bioKey: 'vitd' },
@@ -1853,7 +2101,8 @@ export const mockBiomarkers: Record<string, Biomarker> = {
     trendBandHigh: 322,
     trendMin: 0,
     trendMax: 150,
-    trendComment: 'Ferritin tăng nhẹ trong 6 tháng qua — có thể do điều chỉnh chế độ ăn. Tiếp tục bổ sung thực phẩm giàu sắt.',
+    trendComment:
+      'Ferritin tăng nhẹ trong 6 tháng qua — có thể do điều chỉnh chế độ ăn. Tiếp tục bổ sung thực phẩm giàu sắt.',
     relatedTrends: [],
   },
 
@@ -1871,13 +2120,24 @@ export const mockBiomarkers: Record<string, Biomarker> = {
     gaugePosition: 30,
     gaugeTarget: 28,
     riskText: 'Bình thường',
-    conclusion: 'Vitamin B12 trong giới hạn bình thường và đang cải thiện. Bạn đang dùng Metformin — loại thuốc này có thể làm giảm hấp thu B12 lâu dài, nên tiếp tục theo dõi.',
-    doesWhat: 'Vitamin B12 thiết yếu cho hệ thần kinh, tạo máu và tổng hợp DNA. Thiếu B12 gây thiếu máu hồng cầu to, tổn thương thần kinh ngoại biên (tê bì tay chân) và giảm nhận thức.',
-    analogy: 'B12 như "điện" cho hệ thần kinh và nhà máy tạo máu. Thiếu điện, nhà máy chạy chậm lại và các dây điện (dây thần kinh) dần bị ảnh hưởng — đó là lúc bạn thấy tê bì và mệt mỏi.',
+    conclusion:
+      'Vitamin B12 trong giới hạn bình thường và đang cải thiện. Bạn đang dùng Metformin — loại thuốc này có thể làm giảm hấp thu B12 lâu dài, nên tiếp tục theo dõi.',
+    doesWhat:
+      'Vitamin B12 thiết yếu cho hệ thần kinh, tạo máu và tổng hợp DNA. Thiếu B12 gây thiếu máu hồng cầu to, tổn thương thần kinh ngoại biên (tê bì tay chân) và giảm nhận thức.',
+    analogy:
+      'B12 như "điện" cho hệ thần kinh và nhà máy tạo máu. Thiếu điện, nhà máy chạy chậm lại và các dây điện (dây thần kinh) dần bị ảnh hưởng — đó là lúc bạn thấy tê bì và mệt mỏi.',
     analogyIcon: 'Zap',
     why: [
-      { icon: 'Pill', label: 'Dùng Metformin', note: 'Metformin ức chế hấp thu B12 qua đường tiêu hóa sau khi dùng lâu dài (> 4 năm)' },
-      { icon: 'User', label: 'Nam · 52 tuổi', note: 'Hấp thu B12 giảm tự nhiên theo tuổi do giảm yếu tố nội tại dạ dày' },
+      {
+        icon: 'Pill',
+        label: 'Dùng Metformin',
+        note: 'Metformin ức chế hấp thu B12 qua đường tiêu hóa sau khi dùng lâu dài (> 4 năm)',
+      },
+      {
+        icon: 'User',
+        label: 'Nam · 52 tuổi',
+        note: 'Hấp thu B12 giảm tự nhiên theo tuổi do giảm yếu tố nội tại dạ dày',
+      },
     ],
     today: {
       title: 'Bổ sung thực phẩm giàu B12',
@@ -1888,36 +2148,69 @@ export const mockBiomarkers: Record<string, Biomarker> = {
       { text: 'Hỏi bác sĩ về bổ sung B12', sub: 'Đặc biệt quan trọng khi dùng Metformin > 4 năm' },
       { text: 'Theo dõi B12 hàng năm', sub: 'Phát hiện sớm xu hướng giảm do Metformin' },
     ],
-    reasonIntro: 'B12 410 pg/mL ở mức bình thường thấp. Xu hướng cải thiện tốt. Tuy nhiên với Metformin, cần theo dõi chặt hơn so với người bình thường.',
+    reasonIntro:
+      'B12 410 pg/mL ở mức bình thường thấp. Xu hướng cải thiện tốt. Tuy nhiên với Metformin, cần theo dõi chặt hơn so với người bình thường.',
     contributors: [
-      { name: 'B12 410 pg/mL', weight: 65, note: 'Bình thường nhưng thấp trong giới hạn tham chiếu' },
-      { name: 'Dùng Metformin', weight: 55, note: 'Metformin ức chế hấp thu B12 — nguy cơ tích lũy theo thời gian' },
+      {
+        name: 'B12 410 pg/mL',
+        weight: 65,
+        note: 'Bình thường nhưng thấp trong giới hạn tham chiếu',
+      },
+      {
+        name: 'Dùng Metformin',
+        weight: 55,
+        note: 'Metformin ức chế hấp thu B12 — nguy cơ tích lũy theo thời gian',
+      },
     ],
     derived: [],
     confidence: 72,
-    confidenceNote: 'Nên đánh giá thêm axit methylmalonic (MMA) hoặc homocysteine để xác nhận trạng thái B12 chức năng.',
-    evidence: 'Theo ADA 2024, người dùng Metformin nên kiểm tra B12 định kỳ hàng năm. Nghiên cứu cho thấy 30% người dùng Metformin > 4 năm có thiếu hụt B12 ở các mức độ khác nhau.',
+    confidenceNote:
+      'Nên đánh giá thêm axit methylmalonic (MMA) hoặc homocysteine để xác nhận trạng thái B12 chức năng.',
+    evidence:
+      'Theo ADA 2024, người dùng Metformin nên kiểm tra B12 định kỳ hàng năm. Nghiên cứu cho thấy 30% người dùng Metformin > 4 năm có thiếu hụt B12 ở các mức độ khác nhau.',
     limitations: [
       'B12 huyết thanh có thể bình thường nhưng thiếu hụt chức năng vẫn xảy ra',
       'Bổ sung B12 dạng cyanocobalamin có thể cho kết quả cao giả tạo trong 24 giờ',
     ],
     futures: [
-      { when: 'Nếu B12 tiếp tục giảm · 1 năm', text: 'Nguy cơ tê bì tay chân và mệt mỏi liên quan thiếu hụt B12 thần kinh.', tone: 'med' },
-      { when: 'Nếu bổ sung và theo dõi', text: 'B12 có thể duy trì > 400 pg/mL ổn định dài hạn.', tone: 'good' },
+      {
+        when: 'Nếu B12 tiếp tục giảm · 1 năm',
+        text: 'Nguy cơ tê bì tay chân và mệt mỏi liên quan thiếu hụt B12 thần kinh.',
+        tone: 'med',
+      },
+      {
+        when: 'Nếu bổ sung và theo dõi',
+        text: 'B12 có thể duy trì > 400 pg/mL ổn định dài hạn.',
+        tone: 'good',
+      },
     ],
     needs: [
-      { title: 'Homocysteine', why: 'Tăng khi thiếu B12 chức năng, ngay cả khi B12 huyết thanh bình thường' },
+      {
+        title: 'Homocysteine',
+        why: 'Tăng khi thiếu B12 chức năng, ngay cả khi B12 huyết thanh bình thường',
+      },
     ],
     doctorQs: [
       'Với Metformin tôi đang dùng, B12 410 có cần bổ sung thêm không?',
       'Tê bì tay chân của tôi có thể do thiếu B12 hay do biến chứng thần kinh tiểu đường không?',
     ],
     knowledge: [
-      { q: 'B12 bao nhiêu là thiếu hụt?', a: '< 200 pg/mL là thiếu rõ ràng; 200–300 pg/mL là giới hạn cần theo dõi; > 300 pg/mL thường đủ nhưng ngưỡng tối ưu có thể > 400–500 pg/mL.' },
-      { q: 'Metformin ảnh hưởng B12 thế nào?', a: 'Metformin ức chế hấp thu B12 qua đường tiêu hóa bằng cách cạnh tranh với yếu tố nội tại. Liều cao và dùng lâu làm tăng nguy cơ thiếu hụt.' },
+      {
+        q: 'B12 bao nhiêu là thiếu hụt?',
+        a: '< 200 pg/mL là thiếu rõ ràng; 200–300 pg/mL là giới hạn cần theo dõi; > 300 pg/mL thường đủ nhưng ngưỡng tối ưu có thể > 400–500 pg/mL.',
+      },
+      {
+        q: 'Metformin ảnh hưởng B12 thế nào?',
+        a: 'Metformin ức chế hấp thu B12 qua đường tiêu hóa bằng cách cạnh tranh với yếu tố nội tại. Liều cao và dùng lâu làm tăng nguy cơ thiếu hụt.',
+      },
     ],
     chain: [
-      { short: 'Ferritin', note: 'Cùng nhóm vi chất quan trọng', status: 'norm', bioKey: 'ferritin' },
+      {
+        short: 'Ferritin',
+        note: 'Cùng nhóm vi chất quan trọng',
+        status: 'norm',
+        bioKey: 'ferritin',
+      },
     ],
     trendData: [370, 375, 385, 390, 400, 410],
     trendLabels: ['01/25', '02/25', '03/25', '04/25', '05/25', '06/25'],
@@ -1925,7 +2218,8 @@ export const mockBiomarkers: Record<string, Biomarker> = {
     trendBandHigh: 900,
     trendMin: 150,
     trendMax: 600,
-    trendComment: 'B12 cải thiện tốt trong 6 tháng — có thể do điều chỉnh chế độ ăn. Tiếp tục duy trì và theo dõi với Metformin.',
+    trendComment:
+      'B12 cải thiện tốt trong 6 tháng — có thể do điều chỉnh chế độ ăn. Tiếp tục duy trì và theo dõi với Metformin.',
     relatedTrends: [],
   },
 
@@ -1943,12 +2237,19 @@ export const mockBiomarkers: Record<string, Biomarker> = {
     gaugePosition: 30,
     gaugeTarget: 20,
     riskText: 'Nguy cơ trung bình thấp',
-    conclusion: 'hs-CRP ở mức nguy cơ trung bình thấp (1.0–3.0 mg/L) và đang cải thiện tốt so với lần trước. Đây là tín hiệu tích cực — viêm nhiễm hệ thống đang giảm, bảo vệ tim mạch của bạn.',
-    doesWhat: 'hs-CRP là protein viêm được gan sản xuất khi có viêm trong cơ thể. Ở mức "độ nhạy cao", hs-CRP phản ánh viêm mạn tính âm thầm — nguy cơ quan trọng cho bệnh tim mạch, tiểu đường và ung thư.',
-    analogy: 'hs-CRP như "nhiệt kế viêm" đo lửa bên trong cơ thể. Lửa nhỏ âm ỉ (hs-CRP 1–3) làm tổn thương dần thành mạch máu theo năm tháng — ngay cả khi bạn chưa cảm thấy gì.',
+    conclusion:
+      'hs-CRP ở mức nguy cơ trung bình thấp (1.0–3.0 mg/L) và đang cải thiện tốt so với lần trước. Đây là tín hiệu tích cực — viêm nhiễm hệ thống đang giảm, bảo vệ tim mạch của bạn.',
+    doesWhat:
+      'hs-CRP là protein viêm được gan sản xuất khi có viêm trong cơ thể. Ở mức "độ nhạy cao", hs-CRP phản ánh viêm mạn tính âm thầm — nguy cơ quan trọng cho bệnh tim mạch, tiểu đường và ung thư.',
+    analogy:
+      'hs-CRP như "nhiệt kế viêm" đo lửa bên trong cơ thể. Lửa nhỏ âm ỉ (hs-CRP 1–3) làm tổn thương dần thành mạch máu theo năm tháng — ngay cả khi bạn chưa cảm thấy gì.',
     analogyIcon: 'Flame',
     why: [
-      { icon: 'Scale', label: 'BMI 27 · mỡ bụng', note: 'Mô mỡ, đặc biệt mỡ tạng, sản xuất cytokine viêm liên tục' },
+      {
+        icon: 'Scale',
+        label: 'BMI 27 · mỡ bụng',
+        note: 'Mô mỡ, đặc biệt mỡ tạng, sản xuất cytokine viêm liên tục',
+      },
       { icon: 'Armchair', label: 'Ít vận động', note: 'Lối sống tĩnh tại thúc đẩy viêm mạn tính' },
     ],
     today: {
@@ -1956,28 +2257,49 @@ export const mockBiomarkers: Record<string, Biomarker> = {
       why: 'Vận động thể lực là biện pháp chống viêm mạnh nhất không cần thuốc. Chỉ 20 phút đi bộ có thể giảm cytokine viêm trong vài giờ.',
     },
     plan: [
-      { text: 'Vận động ít nhất 150 phút/tuần', sub: 'Đi bộ, đạp xe, bơi lội — chống viêm hiệu quả nhất' },
+      {
+        text: 'Vận động ít nhất 150 phút/tuần',
+        sub: 'Đi bộ, đạp xe, bơi lội — chống viêm hiệu quả nhất',
+      },
       { text: 'Chế độ ăn chống viêm', sub: 'Ưu tiên cá béo, ô liu, nghệ, gừng, rau xanh lá đậm' },
-      { text: 'Giảm cân nếu thừa cân', sub: 'Mỡ tạng là nguồn viêm lớn nhất — giảm 5–10% cân nặng cải thiện CRP rõ rệt' },
+      {
+        text: 'Giảm cân nếu thừa cân',
+        sub: 'Mỡ tạng là nguồn viêm lớn nhất — giảm 5–10% cân nặng cải thiện CRP rõ rệt',
+      },
       { text: 'Ngủ đủ 7–8 tiếng', sub: 'Thiếu ngủ tăng IL-6 và CRP lên 40–60%' },
     ],
-    reasonIntro: 'hs-CRP 1.1 mg/L trong vùng nguy cơ tim mạch trung bình (1–3 mg/L). Cải thiện tốt từ 1.8 nhưng chưa đạt mục tiêu < 1.0.',
+    reasonIntro:
+      'hs-CRP 1.1 mg/L trong vùng nguy cơ tim mạch trung bình (1–3 mg/L). Cải thiện tốt từ 1.8 nhưng chưa đạt mục tiêu < 1.0.',
     contributors: [
       { name: 'hs-CRP 1.1 mg/L', weight: 65, note: 'Viêm mạn tính mức thấp' },
-      { name: 'Mỡ bụng (vòng eo 94cm)', weight: 55, note: 'Mô mỡ tạng liên tục tiết cytokine viêm' },
+      {
+        name: 'Mỡ bụng (vòng eo 94cm)',
+        weight: 55,
+        note: 'Mô mỡ tạng liên tục tiết cytokine viêm',
+      },
       { name: 'Glucose cao', weight: 40, note: 'Đường huyết cao thúc đẩy viêm mạch máu' },
     ],
     derived: [],
     confidence: 74,
-    confidenceNote: 'Cần loại trừ nhiễm trùng cấp (cúm, viêm, chấn thương) trước khi diễn giải hs-CRP.',
-    evidence: 'Theo AHA/CDC 2022, hs-CRP < 1.0 mg/L = nguy cơ thấp; 1.0–3.0 mg/L = nguy cơ trung bình; > 3.0 mg/L = nguy cơ cao. Giảm hs-CRP 1 mg/L giảm nguy cơ tim mạch ~15–20%.',
+    confidenceNote:
+      'Cần loại trừ nhiễm trùng cấp (cúm, viêm, chấn thương) trước khi diễn giải hs-CRP.',
+    evidence:
+      'Theo AHA/CDC 2022, hs-CRP < 1.0 mg/L = nguy cơ thấp; 1.0–3.0 mg/L = nguy cơ trung bình; > 3.0 mg/L = nguy cơ cao. Giảm hs-CRP 1 mg/L giảm nguy cơ tim mạch ~15–20%.',
     limitations: [
       'hs-CRP tăng cao đột ngột khi nhiễm trùng, chấn thương hoặc dùng thuốc tránh thai',
       'Không đặc hiệu — cần loại trừ nhiễm trùng trước khi diễn giải',
     ],
     futures: [
-      { when: 'Nếu hs-CRP > 3.0 mg/L', text: 'Nguy cơ tim mạch cao — cần đánh giá toàn diện và can thiệp tích cực hơn.', tone: 'high' },
-      { when: 'Nếu tiếp tục vận động và giảm cân', text: 'hs-CRP có thể về < 1.0 mg/L trong 3–6 tháng tới.', tone: 'good' },
+      {
+        when: 'Nếu hs-CRP > 3.0 mg/L',
+        text: 'Nguy cơ tim mạch cao — cần đánh giá toàn diện và can thiệp tích cực hơn.',
+        tone: 'high',
+      },
+      {
+        when: 'Nếu tiếp tục vận động và giảm cân',
+        text: 'hs-CRP có thể về < 1.0 mg/L trong 3–6 tháng tới.',
+        tone: 'good',
+      },
     ],
     needs: [],
     doctorQs: [
@@ -1985,8 +2307,14 @@ export const mockBiomarkers: Record<string, Biomarker> = {
       'Vận động và chế độ ăn có đủ để hạ hs-CRP xuống < 1.0 không?',
     ],
     knowledge: [
-      { q: 'hs-CRP và CRP thông thường khác nhau thế nào?', a: 'CRP thông thường đo khi nghi ngờ viêm/nhiễm trùng cấp (> 10 mg/L là quan trọng). hs-CRP đo mức viêm mạn tính âm thầm trong khoảng 0.1–10 mg/L để đánh giá nguy cơ tim mạch.' },
-      { q: 'Làm gì để hạ hs-CRP?', a: 'Vận động đều, chế độ ăn chống viêm (ít đường, ít chất béo bão hòa, nhiều omega-3), giảm cân, bỏ thuốc lá và ngủ đủ giấc là cách hiệu quả nhất.' },
+      {
+        q: 'hs-CRP và CRP thông thường khác nhau thế nào?',
+        a: 'CRP thông thường đo khi nghi ngờ viêm/nhiễm trùng cấp (> 10 mg/L là quan trọng). hs-CRP đo mức viêm mạn tính âm thầm trong khoảng 0.1–10 mg/L để đánh giá nguy cơ tim mạch.',
+      },
+      {
+        q: 'Làm gì để hạ hs-CRP?',
+        a: 'Vận động đều, chế độ ăn chống viêm (ít đường, ít chất béo bão hòa, nhiều omega-3), giảm cân, bỏ thuốc lá và ngủ đủ giấc là cách hiệu quả nhất.',
+      },
     ],
     chain: [
       { short: 'LDL-C', note: 'Kết hợp với viêm gây xơ vữa', status: 'high', bioKey: 'ldl' },
@@ -1998,7 +2326,8 @@ export const mockBiomarkers: Record<string, Biomarker> = {
     trendBandHigh: 1.0,
     trendMin: 0,
     trendMax: 4,
-    trendComment: 'hs-CRP giảm đều đặn từ 1.8 về 1.1 — tín hiệu rất tích cực. Tiếp tục vận động và chế độ ăn chống viêm.',
+    trendComment:
+      'hs-CRP giảm đều đặn từ 1.8 về 1.1 — tín hiệu rất tích cực. Tiếp tục vận động và chế độ ăn chống viêm.',
     relatedTrends: [
       { short: 'Triglyceride', from: '2.3', to: '2.1', unit: 'mmol/L', dir: 'down', good: true },
     ],

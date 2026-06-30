@@ -12,6 +12,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import JSON
 
 from app.core.database import Base
+
 from ._mixins import TimestampMixin, UUIDPrimaryKey
 
 

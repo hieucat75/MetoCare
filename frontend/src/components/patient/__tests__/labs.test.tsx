@@ -130,7 +130,9 @@ describe('test_batch_expand_shows_results', () => {
 describe('test_biomarker_row_navigates_to_detail', () => {
   it('calls onNavigate with correct batchId and resultId on click', () => {
     const navigate = jest.fn()
-    render(<LabResultRow result={makeResult({ id: 'r42' })} batchId="batch99" onNavigate={navigate} />)
+    render(
+      <LabResultRow result={makeResult({ id: 'r42' })} batchId="batch99" onNavigate={navigate} />
+    )
     fireEvent.click(screen.getByRole('button'))
     expect(navigate).toHaveBeenCalledTimes(1)
     expect(navigate).toHaveBeenCalledWith('batch99', 'r42')
@@ -138,7 +140,13 @@ describe('test_biomarker_row_navigates_to_detail', () => {
 
   it('aria-label includes biomarker name', () => {
     const navigate = jest.fn()
-    render(<LabResultRow result={makeResult({ test_name: 'HbA1c' })} batchId="b1" onNavigate={navigate} />)
+    render(
+      <LabResultRow
+        result={makeResult({ test_name: 'HbA1c' })}
+        batchId="b1"
+        onNavigate={navigate}
+      />
+    )
     expect(screen.getByLabelText(/Xem chi tiết HbA1c/)).toBeInTheDocument()
   })
 })

@@ -114,10 +114,24 @@ describe('All 18 required slugs resolve to mockBiomarkers entries', () => {
 
 describe('mockBiomarkers completeness', () => {
   const ALL_EXPECTED_KEYS = [
-    'glucose', 'hba1c', 'ldl', 'hdl', 'tg', 'vitd',
-    'tsh', 'ft4', 'thyroglobulin', 'total-cholesterol',
-    'alt', 'ast', 'ggt', 'creatinine', 'egfr',
-    'ferritin', 'b12', 'hs-crp',
+    'glucose',
+    'hba1c',
+    'ldl',
+    'hdl',
+    'tg',
+    'vitd',
+    'tsh',
+    'ft4',
+    'thyroglobulin',
+    'total-cholesterol',
+    'alt',
+    'ast',
+    'ggt',
+    'creatinine',
+    'egfr',
+    'ferritin',
+    'b12',
+    'hs-crp',
   ]
 
   test.each(ALL_EXPECTED_KEYS)('mockBiomarkers has entry for key "%s"', (key) => {

@@ -116,9 +116,7 @@ function fmtDelta(series: MetricSeries): { text: string; color: string } | null 
   const latest = series.history[0]
   const latestUnit = latest.unit
   // Find the closest previous entry whose unit matches (skip cross-unit entries)
-  const prev = series.history.slice(1).find(
-    (m) => !latestUnit || !m.unit || m.unit === latestUnit,
-  )
+  const prev = series.history.slice(1).find((m) => !latestUnit || !m.unit || m.unit === latestUnit)
   if (!prev) return null
   const delta = latest.value - prev.value
   if (Math.abs(delta) < 0.001) return null
@@ -218,11 +216,11 @@ export function MetricRowItem({ series, expanded, onToggle }: Props) {
           </div>
           {(target || delta) && (
             <div className="flex flex-wrap items-baseline gap-x-[5px] gap-y-[1px]">
-              {target && (
-                <span className="text-[13px] font-medium text-[#5A736D]">{target}</span>
-              )}
+              {target && <span className="text-[13px] font-medium text-[#5A736D]">{target}</span>}
               {target && delta && (
-                <span className="text-[13px] text-[#B2C0BB]" aria-hidden="true">·</span>
+                <span className="text-[13px] text-[#B2C0BB]" aria-hidden="true">
+                  ·
+                </span>
               )}
               {delta && (
                 <span
