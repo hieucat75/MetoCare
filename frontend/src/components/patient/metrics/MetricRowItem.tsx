@@ -58,7 +58,7 @@ function ThreeZoneBar({ series, hue }: { series: MetricSeries; hue: string }) {
   const s2w = normalEndPct - normalStartPct
   const s3w = 100 - normalEndPct
 
-  const [c1, c2, c3] = series.higherIsBetter
+  const [c1, c2, c3] = series.higherIsBetter === true
     ? [ZONE_RED, ZONE_GREEN, ZONE_GREEN]
     : s1w < 2
       ? [ZONE_GREEN, ZONE_GREEN, ZONE_RED]
@@ -105,8 +105,8 @@ function targetText(series: MetricSeries): string {
   if (!series.unit) return ''
   const { low, high } = series.unit.ref_range
   const u = series.unit.label
-  if (series.higherIsBetter && low > 0) return `Mục tiêu > ${low} ${u}`
-  if (!series.higherIsBetter && high > 0 && low <= 0) return `Mục tiêu < ${high} ${u}`
+  if (series.higherIsBetter === true && low > 0) return `Mục tiêu > ${low} ${u}`
+  if (series.higherIsBetter === false && high > 0 && low <= 0) return `Mục tiêu < ${high} ${u}`
   if (low > 0 && high > 0) return `${low}–${high} ${u}`
   return ''
 }
@@ -121,7 +121,7 @@ function fmtDelta(series: MetricSeries): { text: string; color: string } | null 
   const delta = latest.value - prev.value
   if (Math.abs(delta) < 0.001) return null
   const direction = delta > 0 ? 'up' : 'down'
-  const good = series.higherIsBetter ? direction === 'up' : direction === 'down'
+  const good = series.higherIsBetter === null ? null : series.higherIsBetter === (direction === 'up')
   const arrow = direction === 'up' ? '↑' : '↓'
   const abs = Math.abs(delta)
   const formatted = abs % 1 === 0 ? String(abs) : abs.toFixed(1)

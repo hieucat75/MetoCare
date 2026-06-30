@@ -399,6 +399,8 @@ export interface Biomarker {
   trendMax: number
   trendComment: string
   relatedTrends: RelatedTrend[]
+  /** Explains why this biomarker appears in the dashboard attention list. */
+  attentionReason?: string
 }
 
 export const mockBiomarkers: Record<string, Biomarker> = {
@@ -557,6 +559,8 @@ export const mockBiomarkers: Record<string, Biomarker> = {
       },
       { short: 'HOMA-IR', from: '3.2', to: '2.9', unit: '', dir: 'down', good: true },
     ],
+    attentionReason:
+      'Đường huyết lúc đói đang cao hơn mục tiêu (<5.6 mmol/L). Cần theo dõi kiểm soát đường huyết để tránh tiến triển sang tiền tiểu đường.',
   },
   ldl: {
     key: 'ldl',
@@ -1228,6 +1232,8 @@ export const mockBiomarkers: Record<string, Biomarker> = {
     relatedTrends: [
       { short: 'FT4', from: '15.1', to: '14.2', unit: 'pmol/L', dir: 'down', good: false },
     ],
+    attentionReason:
+      'TSH đang thấp hơn ngưỡng bình thường (0.4–4.0 mIU/L), có thể gợi ý liều hormone tuyến giáp đang cao hơn nhu cầu hoặc cần đánh giá cùng FT4. Không điều chỉnh thuốc trước khi gặp bác sĩ.',
   },
 
   ft4: {
@@ -1400,6 +1406,8 @@ export const mockBiomarkers: Record<string, Biomarker> = {
     trendMax: 60,
     trendComment: 'Thyroglobulin ổn định và trong giới hạn bình thường trong 6 tháng qua.',
     relatedTrends: [],
+    attentionReason:
+      'Chỉ số này được theo dõi định kỳ sau điều trị tuyến giáp — mục tiêu là phát hiện sớm nếu tế bào tuyến giáp hoạt động trở lại. Giá trị thấp thường là tốt. Cần xem xu hướng qua nhiều lần xét nghiệm cùng Anti-Tg.',
   },
 
   'total-cholesterol': {

@@ -183,6 +183,16 @@ export default function BiomarkerDetailPage() {
            ══════════════════════════════════════════ */}
         {tab === 'Câu chuyện' && (
           <>
+            {/* 0 — Why attention (shown when this biomarker is in the dashboard concern list) */}
+            {bio.attentionReason && (
+              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5">
+                <p className="text-[14px] font-bold uppercase tracking-wider text-amber-600 mb-2">
+                  Vì sao chỉ số này được chú ý?
+                </p>
+                <p className="text-[17px] text-gray-800 leading-relaxed">{bio.attentionReason}</p>
+              </div>
+            )}
+
             {/* 1 — AI Conclusion: the ONE thing */}
             <div className="bg-teal-600 rounded-2xl p-5 text-white">
               <p className="text-[15px] font-semibold uppercase tracking-wider text-teal-200 mb-2">

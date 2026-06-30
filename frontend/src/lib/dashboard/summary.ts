@@ -20,6 +20,7 @@ import {
   type MetricSeries,
   type MetricTrend,
 } from '@/lib/metrics/kpi'
+import type { LabStatusKey, LabUnit } from '@/lib/api/labReference'
 
 export type ConcernSeverity = 'normal' | 'warning' | 'danger'
 export type OverallStatus = 'no_data' | 'stable' | 'attention' | 'at_risk'
@@ -32,6 +33,8 @@ export interface IndicatorConcern {
   severity: ConcernSeverity
   statusLabel: string
   trend: MetricTrend
+  /** Short reason for the patient, e.g. "Cao hơn mục tiêu 3.9–5.6 mmol/L" */
+  reason: string
 }
 
 export interface TrendMover {
@@ -77,10 +80,29 @@ const SEVERITY_LABEL: Record<ConcernSeverity, string> = {
   danger: 'Cần chú ý',
 }
 
+function computeAttentionReason(
+  statusKey: LabStatusKey,
+  unit: LabUnit,
+  higherIsBetter: boolean | null,
+): string {
+  const { low, high } = unit.ref_range
+  const lbl = unit.label
+  if (statusKey === 'high' || statusKey === 'very_high') {
+    return low > 0 ? `Cao hơn mục tiêu ${low}–${high} ${lbl}` : `Cao hơn mục tiêu ≤${high} ${lbl}`
+  }
+  if (statusKey === 'low' || statusKey === 'very_low') {
+    return higherIsBetter === true
+      ? `Thấp hơn mục tiêu ≥${low} ${lbl}`
+      : `Thấp hơn mục tiêu ${low}–${high} ${lbl}`
+  }
+  return ''
+}
+
 /** Classify a single series' latest reading the same way the metrics page does. */
 function classifySeries(series: MetricSeries): {
   severity: ConcernSeverity
   statusLabel: string
+  reason: string
 } {
   // Lab biomarker with a catalog-matched unit → use the unit's reference range.
   if (series.unit) {
@@ -91,11 +113,15 @@ function classifySeries(series: MetricSeries): {
     )
     const severity: ConcernSeverity =
       status.tone === 'danger' ? 'danger' : status.tone === 'warning' ? 'warning' : 'normal'
-    return { severity, statusLabel: status.label }
+    const reason =
+      severity !== 'normal'
+        ? computeAttentionReason(status.key, series.unit, series.higherIsBetter)
+        : ''
+    return { severity, statusLabel: status.label, reason }
   }
   // Self-report metric (no catalog entry) → fall back to backend status.
   const severity = statusToSeverity(series.latest.status)
-  return { severity, statusLabel: SEVERITY_LABEL[severity] }
+  return { severity, statusLabel: SEVERITY_LABEL[severity], reason: '' }
 }
 
 export function buildDashboardSummary(
@@ -134,7 +160,7 @@ export function buildDashboardSummary(
       movers.push({ metricType: series.metricType, label, value: series.latest.value, unit, trend })
     }
 
-    const { severity, statusLabel } = classifySeries(series)
+    const { severity, statusLabel, reason } = classifySeries(series)
     if (severity === 'normal') continue
 
     concerns.push({
@@ -145,6 +171,7 @@ export function buildDashboardSummary(
       severity,
       statusLabel,
       trend,
+      reason,
     })
   }
 

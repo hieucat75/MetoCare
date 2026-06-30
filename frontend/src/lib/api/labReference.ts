@@ -19,7 +19,7 @@ export interface LabBiomarker {
   units: LabUnit[]
   value_precision: number
   notes: string
-  higher_is_better: boolean
+  higher_is_better: boolean | null
 }
 
 export interface LabCategory {
@@ -104,20 +104,26 @@ const STATUS_TONE: Record<LabStatusKey, 'mint' | 'warning' | 'danger'> = {
 export function classifyLabValue(
   value: number,
   unit: LabUnit,
-  higherIsBetter: boolean,
+  higherIsBetter: boolean | null,
 ): LabStatus {
   const { low, high } = unit.ref_range
   let key: LabStatusKey = 'normal'
 
-  if (higherIsBetter) {
+  if (higherIsBetter === true) {
     // Only a LOW value is a concern (e.g. HDL, eGFR).
     if (value < low * 0.6) key = 'very_low'
     else if (value < low) key = 'low'
-  } else {
+  } else if (higherIsBetter === false) {
+    // Both high AND low values are concerns.
     if (value > high * 1.5) key = 'very_high'
     else if (value > high) key = 'high'
     else if (low > 0 && value < low * 0.6) key = 'very_low'
     else if (low > 0 && value < low) key = 'low'
+  } else {
+    // null = context-dependent (e.g. Thyroglobulin surveillance after thyroidectomy).
+    // Low values are not penalised — only flag genuinely HIGH values.
+    if (value > high * 1.5) key = 'very_high'
+    else if (value > high) key = 'high'
   }
 
   const implausible =
@@ -127,9 +133,9 @@ export function classifyLabValue(
 }
 
 /** Human-readable reference range for a unit, respecting one-sided bounds. */
-export function formatRefRange(unit: LabUnit, higherIsBetter: boolean): string {
+export function formatRefRange(unit: LabUnit, higherIsBetter: boolean | null): string {
   const { low, high } = unit.ref_range
-  if (higherIsBetter) return `≥ ${low} ${unit.label}`
+  if (higherIsBetter === true) return `≥ ${low} ${unit.label}`
   if (low <= 0) return `≤ ${high} ${unit.label}`
   return `${low}–${high} ${unit.label}`
 }

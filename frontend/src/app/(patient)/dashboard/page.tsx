@@ -895,7 +895,6 @@ function HealthAlertsSection({
 
   return (
     <section aria-label="Chỉ số cần chú ý" className="space-y-2.5">
-      {/* a11y: section header — 15px (was 12px) */}
       <p className="px-1 text-[15px] font-bold uppercase tracking-wider text-neu-muted">
         Chỉ số cần chú ý
       </p>
@@ -904,26 +903,37 @@ function HealthAlertsSection({
           key={concern.metricType}
           type="button"
           onClick={() => onOpen(concern.metricType)}
-          className="neu-card w-full !p-4 text-left transition-transform active:scale-[0.98]"
+          className="neu-card w-full !p-4 text-left transition-transform active:scale-[0.98] min-h-[56px]"
+          aria-label={`${concern.label} ${concern.value} ${concern.unit} ${concern.statusLabel}`}
         >
-          <div className="flex items-center gap-3">
+          {/* Top row: severity dot | name | value unit | status badge | chevron */}
+          <div className="flex items-center gap-2.5">
             <span
               className="size-2 shrink-0 rounded-full"
-              style={{
-                background: concern.severity === 'danger' ? '#E05C6A' : '#F5A623',
-              }}
+              style={{ background: concern.severity === 'danger' ? '#E05C6A' : '#F5A623' }}
               aria-hidden="true"
             />
-            {/* a11y: alert label — 18px (was 15px) */}
-            <span className="flex-1 text-[18px] font-semibold text-neu-text">{concern.label}</span>
+            <span className="flex-1 min-w-0 text-[18px] font-semibold text-neu-text truncate">
+              {concern.label}
+            </span>
+            <span className="shrink-0 tabular-nums text-[20px] font-bold text-neu-text">
+              {concern.value}
+              <span className="text-[14px] font-normal text-neu-muted ml-0.5">{concern.unit}</span>
+            </span>
             <NeuBadge
               tone={concern.severity === 'danger' ? 'alert' : 'watch'}
-              className="!text-[11px]"
+              className="!text-[13px] shrink-0"
             >
               {concern.statusLabel}
             </NeuBadge>
             <ChevronRight className="size-4 shrink-0 text-neu-muted" aria-hidden="true" />
           </div>
+          {/* Bottom row: reason text */}
+          {concern.reason && (
+            <p className="mt-1.5 pl-[18px] text-[15px] text-neu-muted leading-snug">
+              {concern.reason}
+            </p>
+          )}
         </button>
       ))}
     </section>

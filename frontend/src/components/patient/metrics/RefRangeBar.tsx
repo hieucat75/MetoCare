@@ -4,7 +4,7 @@ import type { LabUnit } from '@/lib/api/labReference'
 type Props = {
   value: number
   unit: LabUnit
-  higherIsBetter: boolean
+  higherIsBetter: boolean | null
   accent: string
 }
 
@@ -38,8 +38,8 @@ export function RefRangeBar({ value, unit, higherIsBetter, accent }: Props) {
       </div>
       {/* a11y: reference range labels — 15px (was 11px) */}
       <div className="mt-1 flex justify-between text-[15px] text-text-subtle">
-        <span>{higherIsBetter ? `≥ ${unit.ref_range.low}` : unit.ref_range.low > 0 ? unit.ref_range.low : 0}</span>
-        <span>{higherIsBetter ? '' : `${unit.ref_range.high}`}</span>
+        <span>{higherIsBetter === true ? `≥ ${unit.ref_range.low}` : unit.ref_range.low > 0 ? unit.ref_range.low : 0}</span>
+        <span>{higherIsBetter === true ? '' : `${unit.ref_range.high}`}</span>
       </div>
     </div>
   )

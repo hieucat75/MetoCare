@@ -43,7 +43,7 @@ export interface MetricTrend {
   good: boolean | null
 }
 
-export function computeTrend(history: HealthMetric[], higherIsBetter: boolean): MetricTrend {
+export function computeTrend(history: HealthMetric[], higherIsBetter: boolean | null): MetricTrend {
   if (history.length < 2) {
     return { hasPrevious: false, direction: 'flat', delta: 0, pct: null, good: null }
   }
@@ -52,7 +52,11 @@ export function computeTrend(history: HealthMetric[], higherIsBetter: boolean): 
   const delta = Number((latest - prev).toFixed(2))
   const pct = prev !== 0 ? Number(((delta / Math.abs(prev)) * 100).toFixed(1)) : null
   const direction: TrendDirection = delta > 0 ? 'up' : delta < 0 ? 'down' : 'flat'
-  const good = direction === 'flat' ? null : (direction === 'up') === higherIsBetter
+  // null = context-dependent biomarker; trend direction cannot be judged good/bad.
+  const good =
+    higherIsBetter === null || direction === 'flat'
+      ? null
+      : (direction === 'up') === higherIsBetter
   return { hasPrevious: true, direction, delta, pct, good }
 }
 
@@ -64,7 +68,7 @@ export interface MetricSeries {
   latest: HealthMetric
   /** matched catalog unit (by the latest entry's unit label), else primary. */
   unit: LabUnit | null
-  higherIsBetter: boolean
+  higherIsBetter: boolean | null
   labelVn: string | null
 }
 
@@ -106,7 +110,7 @@ export function groupMetricsByCategory(
       history,
       latest: history[0],
       unit: matchUnit(catalog, metricType, history[0]),
-      higherIsBetter: bm?.higher_is_better ?? false,
+      higherIsBetter: bm?.higher_is_better ?? null,
       labelVn: bm?.name_vn ?? null,
     }
     const arr = buckets.get(categoryKey) ?? []
@@ -138,7 +142,11 @@ export interface RefBarGeometry {
   inRange: boolean
 }
 
-export function refBarGeometry(value: number, unit: LabUnit, higherIsBetter: boolean): RefBarGeometry {
+export function refBarGeometry(
+  value: number,
+  unit: LabUnit,
+  higherIsBetter: boolean | null,
+): RefBarGeometry {
   const { low, high } = unit.ref_range
   const scaleMin = low > 0 ? Math.max(0, low * 0.4) : 0
   const scaleMax = Math.max(high * 1.4, value * 1.15, high > 0 ? high : value * 1.4)
@@ -147,7 +155,8 @@ export function refBarGeometry(value: number, unit: LabUnit, higherIsBetter: boo
   const pos = (x: number): number => clamp(((x - scaleMin) / span) * 100)
   const aboveHigh = value > high
   const belowLow = low > 0 && value < low
-  const inRange = higherIsBetter ? !belowLow : !aboveHigh && !belowLow
+  // null: two-sided range (in-range if within low–high).
+  const inRange = higherIsBetter === true ? !belowLow : !aboveHigh && !belowLow
   return {
     valuePct: pos(value),
     normalStartPct: pos(low),
