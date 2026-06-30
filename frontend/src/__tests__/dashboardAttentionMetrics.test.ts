@@ -37,7 +37,7 @@ function makeMetric(
   metric_type: string,
   value: number,
   unit: string,
-  status: HealthMetric['status'] = 'normal',
+  status: HealthMetric['status'] = 'normal'
 ): HealthMetric {
   return {
     id: `${metric_type}-1`,
