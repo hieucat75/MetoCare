@@ -238,3 +238,18 @@ jobs:
           done
           echo "::error::backend unhealthy — ACA keeps previous healthy revision (auto-rollback)"
           exit 1
+
+      - name: CORS guard — ensure app.metocare.me is always allowed
+        run: |
+          CURRENT=$(az containerapp show -g "$RG" -n "$BACKEND_APP" \
+            --query "properties.template.containers[0].env[?name=='MCP_CORS_ALLOWED_ORIGINS'].value" \
+            -o tsv)
+          if echo "$CURRENT" | grep -q "app.metocare.me"; then
+            echo "✅ CORS already contains app.metocare.me: $CURRENT"
+          else
+            echo "⚠️ app.metocare.me missing from CORS ($CURRENT) — patching..."
+            az containerapp update -g "$RG" -n "$BACKEND_APP" \
+              --set-env-vars "MCP_CORS_ALLOWED_ORIGINS=${CURRENT},https://app.metocare.me" \
+              -o none
+            echo "✅ CORS patched"
+          fi
