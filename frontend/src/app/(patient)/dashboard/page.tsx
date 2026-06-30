@@ -30,6 +30,7 @@ import {
   type DashboardSummary,
   type IndicatorConcern,
 } from '@/lib/dashboard/summary'
+import { METRIC_TYPE_TO_SLUG } from '@/lib/ai-copilot/slugMap'
 import { groupMetricsByCategory, type MetricSeries } from '@/lib/metrics/kpi'
 import { useLabReference } from '@/lib/api/labReference'
 import { cn } from '@/lib/utils'
@@ -220,10 +221,13 @@ export default function PatientDashboardPage() {
             />
           )}
 
-          {/* ── Health alerts — max 3 abnormal markers, links to full metric detail ── */}
+          {/* ── Health alerts — max 3 abnormal markers, deep-links to AI Copilot biomarker detail ── */}
           <HealthAlertsSection
             summary={summary}
-            onOpen={(metricType) => router.push(`/metrics/${metricType}`)}
+            onOpen={(metricType) => {
+              const slug = METRIC_TYPE_TO_SLUG[metricType]
+              router.push(slug ? `/ai-copilot/biomarker/${slug}` : `/metrics/${metricType}`)
+            }}
           />
         </>
       ) : (

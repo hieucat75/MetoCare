@@ -1,10 +1,11 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useParams, notFound } from 'next/navigation'
+import { useParams } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, ChevronRight, TrendingDown, TrendingUp, Minus } from 'lucide-react'
+import { ArrowLeft, ChevronRight, TrendingDown, TrendingUp } from 'lucide-react'
 import { mockBiomarkers } from '@/lib/mock/aiCopilotData'
+import { resolveSlug } from '@/lib/ai-copilot/slugMap'
 import { formatLabValue } from '@/lib/utils/formatLabValue'
 import type { StatusLevel } from '@/lib/mock/aiCopilotData'
 import { GaugeBar } from '@/components/patient/ai-copilot/GaugeBar'
@@ -33,9 +34,48 @@ const TONE_STYLE = {
   high: { bar: '#EF4444', bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-200' },
 } as const
 
+function BiomarkerNotFound({ slug }: { slug: string }) {
+  return (
+    <div className="pb-24 max-w-md mx-auto px-4 pt-8">
+      <Link
+        href="/ai-copilot/body"
+        className="inline-flex items-center gap-2 text-gray-500 mb-8 hover:text-gray-700 transition-colors min-h-[44px]"
+      >
+        <ArrowLeft size={18} />
+        <span className="text-[16px]">Quay lại hệ thống cơ thể</span>
+      </Link>
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 text-center">
+        <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-4">
+          <span className="text-3xl">🔬</span>
+        </div>
+        <h1 className="text-[22px] font-bold text-gray-900 mb-2">Chưa có thông tin giải thích</h1>
+        <p className="text-[16px] text-gray-500 leading-relaxed mb-6">
+          AI Copilot chưa có nội dung giải thích cho chỉ số{' '}
+          <span className="font-semibold text-gray-700">{slug.toUpperCase()}</span>. Nội dung đang
+          được cập nhật trong thời gian tới.
+        </p>
+        <Link
+          href="/ai-copilot/body"
+          className="inline-flex items-center justify-center gap-2 bg-teal-600 text-white rounded-full px-6 py-3 text-[16px] font-semibold min-h-[48px] hover:bg-teal-700 transition-colors"
+        >
+          Xem hệ thống cơ thể
+        </Link>
+      </div>
+      <div className="mt-6 text-center">
+        <p className="text-[14px] text-gray-400">
+          AI Copilot chỉ mang tính tham khảo giáo dục.
+          <br />
+          Không thay thế chẩn đoán và điều trị của bác sĩ.
+        </p>
+      </div>
+    </div>
+  )
+}
+
 export default function BiomarkerDetailPage() {
   const { key } = useParams<{ key: string }>()
-  const bio = mockBiomarkers[key]
+  const bioKey = resolveSlug(key)
+  const bio = mockBiomarkers[bioKey]
   const [tab, setTab] = useState<Tab>('Câu chuyện')
   const [mounted, setMounted] = useState(false)
 
@@ -44,7 +84,7 @@ export default function BiomarkerDetailPage() {
     return () => clearTimeout(t)
   }, [])
 
-  if (!bio) return notFound()
+  if (!bio) return <BiomarkerNotFound slug={key} />
 
   const gaugeColor =
     bio.gaugePosition < 40 ? '#22C55E' : bio.gaugePosition < 65 ? '#F59E0B' : '#EF4444'
