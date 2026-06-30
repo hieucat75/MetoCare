@@ -5,11 +5,17 @@ import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, ChevronRight, TrendingDown, TrendingUp } from 'lucide-react'
 import { mockBiomarkers } from '@/lib/mock/aiCopilotData'
-import { resolveSlug } from '@/lib/ai-copilot/slugMap'
+import { resolveSlug, BIOMARKER_KEY_TO_METRIC_TYPE } from '@/lib/ai-copilot/slugMap'
 import { formatLabValue } from '@/lib/utils/formatLabValue'
 import type { StatusLevel } from '@/lib/mock/aiCopilotData'
 import { GaugeBar } from '@/components/patient/ai-copilot/GaugeBar'
 import { MetricLineChart } from '@/components/patient/metrics/MetricLineChart'
+import { useAuth } from '@/lib/auth/context'
+import { getMetrics } from '@/lib/api/patient'
+import { getLabReference, classifyLabValue } from '@/lib/api/labReference'
+import { refBarGeometry } from '@/lib/metrics/kpi'
+import { computeAttentionReason } from '@/lib/dashboard/summary'
+import type { LabStatusKey, LabUnit } from '@/lib/api/labReference'
 
 const TABS = ['Câu chuyện', 'Xu hướng', 'Kế hoạch', 'Kiến thức'] as const
 type Tab = (typeof TABS)[number]
@@ -72,24 +78,117 @@ function BiomarkerNotFound({ slug }: { slug: string }) {
   )
 }
 
+// ── Live biomarker data (from patient API + lab catalog) ─────────────────────
+
+interface LiveBioData {
+  value: number
+  unitLabel: string
+  range: string
+  prev: number | null
+  statusKey: LabStatusKey
+  statusLevel: StatusLevel
+  riskText: string
+  gaugePosition: number
+  attentionReason: string
+  unit: LabUnit
+  higherIsBetter: boolean | null
+}
+
+const STATUS_KEY_TO_LEVEL: Record<LabStatusKey, StatusLevel> = {
+  normal: 'norm',
+  low: 'low',
+  very_low: 'low',
+  high: 'high',
+  very_high: 'high',
+}
+
 export default function BiomarkerDetailPage() {
   const { key } = useParams<{ key: string }>()
   const bioKey = resolveSlug(key)
   const bio = mockBiomarkers[bioKey]
+  const { user } = useAuth()
+  const patientId = user?.patient_profile_id
   const [tab, setTab] = useState<Tab>('Câu chuyện')
   const [mounted, setMounted] = useState(false)
+  const [liveData, setLiveData] = useState<LiveBioData | null>(null)
 
   useEffect(() => {
     const t = setTimeout(() => setMounted(true), 100)
     return () => clearTimeout(t)
   }, [])
 
+  useEffect(() => {
+    const metricType = BIOMARKER_KEY_TO_METRIC_TYPE[bioKey]
+    if (!metricType || !patientId) return
+    let alive = true
+    Promise.all([getMetrics(patientId, { limit: 300 }), getLabReference()])
+      .then(([metricsResp, catalog]) => {
+        if (!alive) return
+        const history = metricsResp.items
+          .filter((m) => m.metric_type === metricType)
+          .sort((a, b) => new Date(b.measured_at).getTime() - new Date(a.measured_at).getTime())
+        if (history.length === 0) return
+        const latest = history[0]
+        const bm = catalog.biomarkers[metricType]
+        if (!bm) return
+        const unit =
+          bm.units.find((u) => u.label === latest.unit) ??
+          bm.units.find((u) => u.is_primary) ??
+          bm.units[0]
+        if (!unit) return
+        const higherIsBetter = bm.higher_is_better
+        const status = classifyLabValue(latest.value, unit, higherIsBetter)
+        const geo = refBarGeometry(latest.value, unit, higherIsBetter)
+        const range =
+          unit.ref_range.low > 0
+            ? `${unit.ref_range.low} – ${unit.ref_range.high}`
+            : `≤ ${unit.ref_range.high}`
+        const attentionReason =
+          status.key !== 'normal'
+            ? computeAttentionReason(status.key, unit, higherIsBetter)
+            : ''
+        setLiveData({
+          value: latest.value,
+          unitLabel: unit.label,
+          range,
+          prev: history.length > 1 ? history[1].value : null,
+          statusKey: status.key,
+          statusLevel: STATUS_KEY_TO_LEVEL[status.key],
+          riskText: status.label,
+          gaugePosition: geo.valuePct,
+          attentionReason,
+          unit,
+          higherIsBetter,
+        })
+      })
+      .catch(() => {/* silently fall back to mock */})
+    return () => {
+      alive = false
+    }
+  }, [bioKey, patientId])
+
   if (!bio) return <BiomarkerNotFound slug={key} />
 
-  const gaugeColor =
-    bio.gaugePosition < 40 ? '#22C55E' : bio.gaugePosition < 65 ? '#F59E0B' : '#EF4444'
+  // Resolved display values — live data takes precedence over mock fallbacks.
+  const displayValue = liveData !== null ? liveData.value : parseFloat(bio.value)
+  const displayUnit = liveData !== null ? liveData.unitLabel : bio.unit
+  const displayRange = liveData !== null ? liveData.range : bio.range
+  const displayStatus = liveData !== null ? liveData.statusLevel : bio.status
+  const displayRiskText = liveData !== null ? liveData.riskText : bio.riskText
+  const displayGaugePosition = liveData !== null ? liveData.gaugePosition : bio.gaugePosition
+  const displayPrev = liveData !== null ? liveData.prev : (bio.prev ? parseFloat(bio.prev) : null)
+  const displayConclusion =
+    liveData !== null && bio.conclusionByStatus
+      ? (bio.conclusionByStatus[liveData.statusKey] ?? bio.conclusion)
+      : bio.conclusion
+  const displayAttentionReason =
+    liveData !== null ? liveData.attentionReason : (bio.attentionReason ?? '')
 
-  const prevDir = bio.prev && parseFloat(bio.prev) < parseFloat(bio.value) ? 'up' : 'down'
+  const gaugeColor =
+    displayGaugePosition < 40 ? '#22C55E' : displayGaugePosition < 65 ? '#F59E0B' : '#EF4444'
+
+  const prevDir =
+    displayPrev !== null && displayPrev < displayValue ? 'up' : 'down'
 
   return (
     <div className="pb-24 max-w-md mx-auto">
@@ -108,7 +207,7 @@ export default function BiomarkerDetailPage() {
               <h1 className="text-[22px] font-bold text-gray-900 leading-tight">{bio.name}</h1>
               {/* a11y: range label — 16px (was 14px) */}
               <p className="text-[16px] text-gray-400">
-                Phạm vi bình thường: {bio.range} {bio.unit}
+                Phạm vi bình thường: {displayRange} {displayUnit}
               </p>
             </div>
           </div>
@@ -117,18 +216,18 @@ export default function BiomarkerDetailPage() {
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-end gap-2">
               <span className="text-5xl font-bold text-gray-900 leading-none">
-                {formatLabValue(bio.value, bio.unit)}
+                {formatLabValue(displayValue, displayUnit)}
               </span>
-              <span className="text-lg text-gray-400 mb-1">{bio.unit}</span>
+              <span className="text-lg text-gray-400 mb-1">{displayUnit}</span>
             </div>
             <div className="flex flex-col items-end gap-1.5">
               {/* a11y: status pill — 16px (was 14px) */}
               <span
-                className={`text-[16px] font-semibold px-3 py-1 rounded-full ${STATUS_PILL[bio.status]}`}
+                className={`text-[16px] font-semibold px-3 py-1 rounded-full ${STATUS_PILL[displayStatus]}`}
               >
-                {bio.riskText}
+                {displayRiskText}
               </span>
-              {bio.prev && (
+              {displayPrev !== null && (
                 <div className="flex items-center gap-1 text-[15px]">
                   {prevDir === 'down' ? (
                     <TrendingDown size={14} className="text-green-500" />
@@ -136,7 +235,7 @@ export default function BiomarkerDetailPage() {
                     <TrendingUp size={14} className="text-red-500" />
                   )}
                   <span className="text-gray-400">
-                    Trước: {formatLabValue(bio.prev, bio.unit)} {bio.unit}
+                    Trước: {formatLabValue(displayPrev, displayUnit)} {displayUnit}
                   </span>
                 </div>
               )}
@@ -145,7 +244,7 @@ export default function BiomarkerDetailPage() {
 
           {/* Animated gauge */}
           <GaugeBar
-            position={mounted ? bio.gaugePosition : 0}
+            position={mounted ? displayGaugePosition : 0}
             targetPosition={bio.gaugeTarget}
             color={gaugeColor}
           />
@@ -183,13 +282,15 @@ export default function BiomarkerDetailPage() {
            ══════════════════════════════════════════ */}
         {tab === 'Câu chuyện' && (
           <>
-            {/* 0 — Why attention (shown when this biomarker is in the dashboard concern list) */}
-            {bio.attentionReason && (
+            {/* 0 — Why attention (shown only when the biomarker is out of normal range) */}
+            {displayAttentionReason && (
               <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5">
                 <p className="text-[14px] font-bold uppercase tracking-wider text-amber-600 mb-2">
                   Vì sao chỉ số này được chú ý?
                 </p>
-                <p className="text-[17px] text-gray-800 leading-relaxed">{bio.attentionReason}</p>
+                <p className="text-[17px] text-gray-800 leading-relaxed">
+                  {displayAttentionReason}
+                </p>
               </div>
             )}
 
@@ -199,7 +300,7 @@ export default function BiomarkerDetailPage() {
                 AI nhận định
               </p>
               {/* a11y: AI conclusion — 18px (was 16px) */}
-              <p className="text-[18px] leading-relaxed font-medium">{bio.conclusion}</p>
+              <p className="text-[18px] leading-relaxed font-medium">{displayConclusion}</p>
             </div>
 
             {/* 2 — Why yours specifically */}
@@ -329,8 +430,8 @@ export default function BiomarkerDetailPage() {
                   <p className="text-[16px] font-semibold text-gray-700">Hiện tại</p>
                   {/* a11y: current value — 32px (was 24px) */}
                   <p className="text-[32px] font-bold text-gray-900">
-                    {formatLabValue(bio.value, bio.unit)}{' '}
-                    <span className="text-[17px] font-normal text-gray-400">{bio.unit}</span>
+                    {formatLabValue(displayValue, displayUnit)}{' '}
+                    <span className="text-[17px] font-normal text-gray-400">{displayUnit}</span>
                   </p>
                 </div>
                 <div className="text-right">

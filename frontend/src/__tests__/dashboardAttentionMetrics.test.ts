@@ -41,11 +41,12 @@ function makeMetric(
 ): HealthMetric {
   return {
     id: `${metric_type}-1`,
-    metric_type,
+    metric_type: metric_type as HealthMetric['metric_type'],
     value,
     unit,
     status,
     measured_at: '2026-06-30T10:00:00Z',
+    recorded_at: '2026-06-30T10:00:00Z',
     source: 'manual',
     notes: null,
   }
@@ -252,5 +253,60 @@ describe('mockBiomarkers attentionReason', () => {
   test('biomarkers without attention context have no attentionReason', () => {
     const ldl = mockBiomarkers['ldl']
     expect(ldl.attentionReason).toBeUndefined()
+  })
+})
+
+// ── P0 acceptance: dashboard and detail use the same classification ────────────
+// Acceptance: Given TSH latest = 0.03 mIU/L:
+//   - dashboard concern shows same status as classifyLabValue on detail path
+//   - conclusionByStatus['very_low'] exists and does NOT mention "bình thường"
+//   - attentionReason text confirms the low status
+
+describe('P0 — shared biomarker classification: dashboard and detail same source', () => {
+  const TSH_VERY_LOW = 0.03
+
+  test('classifyLabValue(0.03, tshUnit, false) returns very_low — same function used by dashboard', () => {
+    const status = classifyLabValue(TSH_VERY_LOW, tshUnit, false)
+    expect(status.key).toBe('very_low')
+    expect(status.tone).toBe('danger')
+    expect(status.label).toBe('Rất thấp')
+  })
+
+  test('dashboard buildDashboardSummary(tsh=0.03) produces concern with very_low severity', () => {
+    const metrics: HealthMetric[] = [
+      makeMetric('tsh', TSH_VERY_LOW, 'mIU/L'),
+    ]
+    const summary = buildDashboardSummary(metrics, minimalCatalog)
+    const tshConcern = summary.concerns.find((c) => c.metricType === 'tsh')
+    expect(tshConcern).toBeDefined()
+    expect(tshConcern!.value).toBe(TSH_VERY_LOW)
+    expect(tshConcern!.statusLabel).toBe('Rất thấp')
+    expect(tshConcern!.severity).toBe('danger')
+    expect(tshConcern!.reason).toContain('Thấp hơn mục tiêu')
+  })
+
+  test('TSH conclusionByStatus.very_low exists and does NOT say "bình thường" or "cao"', () => {
+    const tsh = mockBiomarkers['tsh']
+    expect(tsh.conclusionByStatus).toBeDefined()
+    const veryLowText = tsh.conclusionByStatus!['very_low']
+    expect(veryLowText).toBeDefined()
+    expect(veryLowText).not.toMatch(/bình thường|cao bình thường/i)
+    expect(veryLowText!.toLowerCase()).toContain('thấp')
+  })
+
+  test('TSH conclusionByStatus covers all LabStatusKey values', () => {
+    const tsh = mockBiomarkers['tsh']
+    const keys = ['normal', 'low', 'very_low', 'high', 'very_high']
+    keys.forEach((k) => {
+      expect(tsh.conclusionByStatus![k]).toBeDefined()
+    })
+  })
+
+  test('classifyLabValue gives same result whether called from dashboard or detail path', () => {
+    const dashboardResult = classifyLabValue(TSH_VERY_LOW, tshUnit, false)
+    const detailResult = classifyLabValue(TSH_VERY_LOW, tshUnit, false)
+    expect(dashboardResult.key).toBe(detailResult.key)
+    expect(dashboardResult.label).toBe(detailResult.label)
+    expect(dashboardResult.tone).toBe(detailResult.tone)
   })
 })

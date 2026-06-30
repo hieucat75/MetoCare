@@ -401,6 +401,13 @@ export interface Biomarker {
   relatedTrends: RelatedTrend[]
   /** Explains why this biomarker appears in the dashboard attention list. */
   attentionReason?: string
+  /**
+   * Status-adaptive AI conclusion text. Keyed by LabStatusKey
+   * ('normal'|'low'|'very_low'|'high'|'very_high').
+   * The detail page uses the entry matching the patient's live status,
+   * falling back to `conclusion` when not present.
+   */
+  conclusionByStatus?: Partial<Record<string, string>>
 }
 
 export const mockBiomarkers: Record<string, Biomarker> = {
@@ -1234,6 +1241,16 @@ export const mockBiomarkers: Record<string, Biomarker> = {
     ],
     attentionReason:
       'TSH đang thấp hơn ngưỡng bình thường (0.4–4.0 mIU/L), có thể gợi ý liều hormone tuyến giáp đang cao hơn nhu cầu hoặc cần đánh giá cùng FT4. Không điều chỉnh thuốc trước khi gặp bác sĩ.',
+    conclusionByStatus: {
+      very_low:
+        'TSH của bạn rất thấp — đây là dấu hiệu tuyến giáp đang hoạt động quá mức hoặc liều hormone thay thế đang cao hơn nhu cầu. Cần tái khám bác sĩ sớm để điều chỉnh; không tự ý thay đổi thuốc.',
+      low: 'TSH của bạn thấp hơn bình thường — tuyến giáp có thể đang hoạt động hơi nhiều, hoặc liều levothyroxine cần xem lại. Cần trao đổi với bác sĩ trước khi điều chỉnh bất kỳ điều gì.',
+      normal:
+        'TSH của bạn ở mức cao bình thường. Tuyến giáp đang hoạt động ổn định nhưng cần theo dõi nếu có triệu chứng mệt mỏi, tăng cân hoặc lạnh tay chân.',
+      high: 'TSH của bạn cao hơn ngưỡng bình thường — có thể là dấu hiệu tuyến giáp đang hoạt động kém (suy giáp). Nên trao đổi với bác sĩ về việc điều chỉnh liều thuốc hoặc đánh giá thêm.',
+      very_high:
+        'TSH của bạn rất cao — dấu hiệu suy giáp đáng kể. Cần tái khám bác sĩ nội tiết sớm để đánh giá và điều chỉnh điều trị.',
+    },
   },
 
   ft4: {
