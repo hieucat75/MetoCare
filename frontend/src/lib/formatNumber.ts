@@ -16,7 +16,7 @@
  * | µmol/L              | Integer                         | 45       |
  * | g/dL                | 2 decimals                      | 14.50    |
  * | IU/L                | Integer                         | 32       |
- * | mIU/L               | 1 decimal                       | 2.5      |
+ * | mIU/L               | 2 decimals                      | 2.50     |
  * | Default (unknown)   | 2 decimals, trailing zeros trim | 1.23     |
  */
 
@@ -51,7 +51,7 @@ const UNIT_RULES: Rule[] = [
   [/meq\/l/i, 1],                     // mEq/L: electrolytes
   [/pmol\/l/i, 1],                    // pmol/L: thyroid (T3, T4)
   [/nmol\/l/i, 1],                    // nmol/L: vitamin D, cortisol
-  [/miu\/l|miu\/ml/i, 1],            // mIU/L: TSH, FSH, LH, β-hCG
+  [/miu\/l|miu\/ml/i, 2],            // mIU/L: TSH, FSH, LH, β-hCG (2 dp: 0.03 not 0.0)
   [/iu\/ml\b/i, 1],                   // IU/mL: antibody titres
 ]
 
