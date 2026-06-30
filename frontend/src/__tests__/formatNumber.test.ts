@@ -158,13 +158,17 @@ describe('formatLabValue — IU/L (integer)', () => {
   })
 })
 
-describe('formatLabValue — mIU/L (1 decimal)', () => {
-  test('TSH mIU/L', () => {
-    expect(formatLabValue(2.543, 'mIU/L')).toBe('2.5')
+describe('formatLabValue — mIU/L (2 decimals)', () => {
+  test('TSH mIU/L typical value', () => {
+    expect(formatLabValue(2.543, 'mIU/L')).toBe('2.54')
+  })
+
+  test('TSH mIU/L very small value (0.03 must not collapse to 0.0)', () => {
+    expect(formatLabValue(0.03, 'mIU/L')).toBe('0.03')
   })
 
   test('case-insensitive miu/l', () => {
-    expect(formatLabValue(2.543, 'miu/l')).toBe('2.5')
+    expect(formatLabValue(2.543, 'miu/l')).toBe('2.54')
   })
 })
 
