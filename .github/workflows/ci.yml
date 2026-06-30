@@ -139,9 +139,11 @@ jobs:
           MCP_DATABASE_URL: "sqlite:///tmp/gate_test.sqlite3"
           MCP_AI_MODE: "mock"
           FEATURE_AI_ASSISTANT: "true"
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          METO_GATE_STRICT: "false"   # Gates 6-7 skip if key absent, don't block
+          # 9Router is local-only (127.0.0.1:20128) — not reachable from GitHub-hosted runners.
+          # Gates 6+7 (live provider ping) run in mock/simulated mode in CI.
+          # Live gate validation must be run locally before deploy using: python scripts/meto_gate.py
+          MCP_NINE_ROUTER_API_KEY: ${{ secrets.MCP_NINE_ROUTER_API_KEY }}
+          METO_GATE_STRICT: "false"
           METO_GATE_THRESHOLD: "80"
           PYTHONPATH: backend
         run: |

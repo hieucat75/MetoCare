@@ -328,6 +328,7 @@ async def test_gate_api_keys_no_keys():
         "MCP_AI_MODE": "",
         "ANTHROPIC_API_KEY": "",
         "OPENAI_API_KEY": "",
+        "MCP_NINE_ROUTER_API_KEY": "",
     }
     with patch.dict(os.environ, env_override, clear=False):
         importlib.reload(meto_gate_mod)  # pick up cleared MCP_AI_MODE
@@ -339,22 +340,23 @@ async def test_gate_api_keys_no_keys():
 
 @pytest.mark.asyncio
 async def test_gate_api_keys_claude_present():
-    """gate_api_keys passes when ANTHROPIC_API_KEY is set."""
+    """gate_api_keys passes when MCP_NINE_ROUTER_API_KEY is set."""
     import importlib
 
     import scripts.meto_gate as meto_gate_mod
 
     env_override = {
         "MCP_AI_MODE": "",
-        "ANTHROPIC_API_KEY": "sk-test-key-12345",
+        "ANTHROPIC_API_KEY": "",
         "OPENAI_API_KEY": "",
+        "MCP_NINE_ROUTER_API_KEY": "sk-test-nine-router-key",
     }
     with patch.dict(os.environ, env_override, clear=False):
         importlib.reload(meto_gate_mod)  # pick up cleared MCP_AI_MODE
         result = await meto_gate_mod.gate_api_keys()
 
     assert result.passed is True
-    assert "claude=yes" in result.detail
+    assert "9router=yes" in result.detail
 
 
 # ---------------------------------------------------------------------------

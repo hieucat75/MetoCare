@@ -148,19 +148,24 @@ async def gate_api_keys() -> GateResult:
     if current_ai_mode == "mock":
         return GateResult(1, "API Keys Present", True, 0, "mock mode — keys not required")
 
+    # 9Router is the preferred provider — one key covers both Claude and OpenAI
+    nine_router = _has_key("MCP_NINE_ROUTER_API_KEY")
     claude = _has_key("ANTHROPIC_API_KEY")
     openai = _has_key("OPENAI_API_KEY")
     ms = int((time.monotonic() - t0) * 1000)
 
     parts = []
-    parts.append("claude=yes" if claude else "claude=missing")
-    parts.append("openai=yes" if openai else "openai=missing")
+    if nine_router:
+        parts.append("9router=yes (covers claude+openai)")
+    else:
+        parts.append("claude=yes" if claude else "claude=missing")
+        parts.append("openai=yes" if openai else "openai=missing")
 
-    passed = claude or openai
+    passed = nine_router or claude or openai
     return GateResult(
         1, "API Keys Present", passed, ms,
         f"({', '.join(parts)})",
-        error=None if passed else "No API keys set",
+        error=None if passed else "No API keys set (need MCP_NINE_ROUTER_API_KEY or ANTHROPIC_API_KEY)",
     )
 
 
@@ -342,30 +347,47 @@ async def gate_live_claude_ping() -> GateResult:
     if current_ai_mode == "mock":
         return GateResult(6, "Live Claude Ping", True, 150, "mock mode — simulated 150ms")
 
+    # Prefer 9Router; fallback to direct ANTHROPIC_API_KEY
+    nine_key = _get_nine_router_key()
     claude_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
-    if not claude_key:
+
+    if not nine_key and not claude_key:
         if GATE_STRICT:
-            return GateResult(6, "Live Claude Ping", False, 0, "ANTHROPIC_API_KEY not set", error="key absent")
+            return GateResult(6, "Live Claude Ping", False, 0, "No Claude key (need MCP_NINE_ROUTER_API_KEY or ANTHROPIC_API_KEY)", error="key absent")
         return GateResult(
             6, "Live Claude Ping", False, 0,
-            "ANTHROPIC_API_KEY not set — skipped (GATE_STRICT=false)",
+            "No Claude key — skipped (GATE_STRICT=false)",
             skipped=True,
         )
 
     try:
-        import anthropic
-        client = anthropic.AsyncAnthropic(api_key=claude_key)
+        import openai as openai_lib
+        if nine_key:
+            nine_base = os.environ.get("MCP_NINE_ROUTER_BASE_URL", "http://127.0.0.1:20128/v1")
+            client = openai_lib.AsyncOpenAI(base_url=nine_base, api_key=nine_key)
+            model = "cc/claude-sonnet-4-6"
+            provider_label = "9Router→Claude"
+        else:
+            import anthropic
+            a_client = anthropic.AsyncAnthropic(api_key=claude_key)
+            call_start = time.monotonic()
+            msg = await a_client.messages.create(model="claude-haiku-4-5", max_tokens=10, messages=[{"role": "user", "content": "ping"}])
+            call_ms = int((time.monotonic() - call_start) * 1000)
+            total_ms = int((time.monotonic() - t0) * 1000)
+            if msg.content:
+                return GateResult(6, "Live Claude Ping", True, total_ms, f"direct Anthropic latency: {call_ms}ms")
+            return GateResult(6, "Live Claude Ping", False, total_ms, "empty response", error="no content")
+
         call_start = time.monotonic()
-        msg = await client.messages.create(
-            model="claude-haiku-4-5",
-            max_tokens=10,
+        resp = await client.chat.completions.create(
+            model=model, max_tokens=10,
             messages=[{"role": "user", "content": "ping"}],
         )
         call_ms = int((time.monotonic() - call_start) * 1000)
         total_ms = int((time.monotonic() - t0) * 1000)
-        if msg.content:
-            return GateResult(6, "Live Claude Ping", True, total_ms, f"latency: {call_ms}ms")
-        return GateResult(6, "Live Claude Ping", False, total_ms, "empty response", error="no content")
+        if resp.choices:
+            return GateResult(6, "Live Claude Ping", True, total_ms, f"{provider_label} latency: {call_ms}ms")
+        return GateResult(6, "Live Claude Ping", False, total_ms, "empty response", error="no choices")
     except Exception as exc:
         ms = int((time.monotonic() - t0) * 1000)
         return GateResult(6, "Live Claude Ping", False, ms, f"{type(exc).__name__}: {exc!s:.80}", error=str(exc))
@@ -383,29 +405,40 @@ async def gate_live_openai_ping() -> GateResult:
     if current_ai_mode == "mock":
         return GateResult(7, "Live OpenAI Ping", True, 120, "mock mode — simulated 120ms")
 
+    # Prefer 9Router; fallback to direct OPENAI_API_KEY
+    nine_key = _get_nine_router_key()
     openai_key = os.environ.get("OPENAI_API_KEY", "").strip()
-    if not openai_key:
+
+    if not nine_key and not openai_key:
         if GATE_STRICT:
-            return GateResult(7, "Live OpenAI Ping", False, 0, "OPENAI_API_KEY not set", error="key absent")
+            return GateResult(7, "Live OpenAI Ping", False, 0, "No OpenAI key (need MCP_NINE_ROUTER_API_KEY or OPENAI_API_KEY)", error="key absent")
         return GateResult(
             7, "Live OpenAI Ping", False, 0,
-            "OPENAI_API_KEY not set — skipped (GATE_STRICT=false)",
+            "No OpenAI key — skipped (GATE_STRICT=false)",
             skipped=True,
         )
 
     try:
         import openai as openai_lib
-        client = openai_lib.AsyncOpenAI(api_key=openai_key)
+        if nine_key:
+            nine_base = os.environ.get("MCP_NINE_ROUTER_BASE_URL", "http://127.0.0.1:20128/v1")
+            client = openai_lib.AsyncOpenAI(base_url=nine_base, api_key=nine_key)
+            model = "cx/gpt-5.4-mini"
+            provider_label = "9Router→GPT"
+        else:
+            client = openai_lib.AsyncOpenAI(api_key=openai_key)
+            model = "gpt-4o-mini"
+            provider_label = "direct OpenAI"
+
         call_start = time.monotonic()
         resp = await client.chat.completions.create(
-            model="gpt-4o-mini",
-            max_tokens=10,
+            model=model, max_tokens=10,
             messages=[{"role": "user", "content": "ping"}],
         )
         call_ms = int((time.monotonic() - call_start) * 1000)
         total_ms = int((time.monotonic() - t0) * 1000)
         if resp.choices:
-            return GateResult(7, "Live OpenAI Ping", True, total_ms, f"latency: {call_ms}ms")
+            return GateResult(7, "Live OpenAI Ping", True, total_ms, f"{provider_label} latency: {call_ms}ms")
         return GateResult(7, "Live OpenAI Ping", False, total_ms, "empty response", error="no choices")
     except Exception as exc:
         ms = int((time.monotonic() - t0) * 1000)
