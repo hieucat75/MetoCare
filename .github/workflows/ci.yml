@@ -253,7 +253,7 @@ jobs:
             MCP_DATABASE_URL=secretref:db-url MCP_SECRET_KEY=secretref:secret-key \
             MCP_ENCRYPTION_KEYS=secretref:enc-keys \
             APPLICATIONINSIGHTS_CONNECTION_STRING=secretref:appi \
-            MCP_CORS_ALLOWED_ORIGINS=https://${FRONTEND_FQDN} \
+            MCP_CORS_ALLOWED_ORIGINS=https://${FRONTEND_FQDN},https://app.metocare.me \
             MCP_AI_MODE=mock MCP_LLM_PROVIDER=mock MCP_OCR_MODE=mock \
             MCP_OCR_WORKER_ENABLED=false MCP_RAG_ENABLED=false \
             MCP_STORAGE_MODE=local MCP_RATELIMIT_BACKEND=memory \
@@ -292,6 +292,22 @@ jobs:
               --min-replicas 1 --max-replicas 1 --cpu 0.25 --memory 0.5Gi \
               --revision-suffix "$SUFFIX" \
               --env-vars "NEXT_PUBLIC_API_URL=$API_URL" -o none
+          fi
+
+      # ── CORS guard — ensure app.metocare.me survives every deploy ─────────
+      - name: CORS guard
+        run: |
+          CURRENT=$(az containerapp show -g "$RG" -n "$BACKEND_APP" \
+            --query "properties.template.containers[0].env[?name=='MCP_CORS_ALLOWED_ORIGINS'].value" \
+            -o tsv)
+          if echo "$CURRENT" | grep -q "app.metocare.me"; then
+            echo "✅ CORS OK: $CURRENT"
+          else
+            echo "⚠️ Patching CORS: $CURRENT"
+            az containerapp update -g "$RG" -n "$BACKEND_APP" \
+              --set-env-vars "MCP_CORS_ALLOWED_ORIGINS=${CURRENT},https://app.metocare.me" \
+              -o none
+            echo "✅ CORS patched"
           fi
 
       # ── Health gate — wait for backend ready ──────────────────────────────
