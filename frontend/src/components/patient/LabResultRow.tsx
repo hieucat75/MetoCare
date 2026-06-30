@@ -51,8 +51,9 @@ function StatusBadge({ status }: { status: string | null }) {
   const color = statusColor(status)
   const label = statusLabel(status)
   return (
+    // a11y: badge text — 14px (was 12px)
     <span
-      className="inline-block rounded-full px-2.5 py-0.5 text-[12px] font-semibold text-white"
+      className="inline-block rounded-full px-2.5 py-0.5 text-[14px] font-semibold text-white"
       style={{ background: color }}
       aria-label={`Trạng thái: ${label}`}
     >
@@ -151,7 +152,8 @@ export function LabResultRow({ result, batchId, changePct, onNavigate }: LabResu
           {result.test_name}
         </p>
         {result.reference_range && (
-          <p className="mt-0.5 text-neu-muted" style={{ fontSize: '13px' }}>
+          /* a11y: reference range text — 16px (was 13px) */
+          <p className="mt-0.5 text-neu-muted" style={{ fontSize: '16px' }}>
             Bình thường: {result.reference_range}
           </p>
         )}

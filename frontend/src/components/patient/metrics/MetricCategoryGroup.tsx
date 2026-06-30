@@ -16,8 +16,9 @@ export function MetricCategoryGroup({ bucket, onOpen }: Props) {
           style={{ backgroundColor: theme.accent }}
           aria-hidden="true"
         />
-        <h2 className="text-[15px] font-bold text-neu-text">{theme.label}</h2>
-        <span className="text-[13px] text-neu-muted">({series.length})</span>
+        {/* a11y: category heading — 20px (was 15px) */}
+        <h2 className="text-[20px] font-bold text-neu-text">{theme.label}</h2>
+        <span className="text-[16px] text-neu-muted">({series.length})</span>
       </div>
       <div className="grid grid-cols-2 gap-3">
         {series.map((s) => (

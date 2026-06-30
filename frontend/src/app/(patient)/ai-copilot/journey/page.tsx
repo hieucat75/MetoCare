@@ -68,22 +68,24 @@ export default function JourneyPage() {
     <div className="px-4 pb-8 pt-4 max-w-md mx-auto">
       {/* Journey summary stats */}
       <div className="mb-4">
-        <h2 className="text-xl font-bold text-gray-900 mb-1">Hành trình của bạn</h2>
-        <p className="text-sm text-gray-500 mb-4">
+        {/* a11y: heading — 24px (was 20px) */}
+        <h2 className="text-[24px] font-bold text-gray-900 mb-1">Hành trình của bạn</h2>
+        {/* a11y: subtitle — 17px (was 14px) */}
+        <p className="text-[17px] text-gray-500 mb-4">
           Mỗi xét nghiệm, mỗi bước đi là một phần câu chuyện sức khỏe của bạn.
         </p>
         <div className="grid grid-cols-2 gap-3">
           <div className="bg-green-50 border border-green-100 rounded-2xl p-4 text-center">
-            <p className="text-xs font-semibold text-green-600 mb-1">Cân nặng hiện tại</p>
-            <p className="text-3xl font-bold text-green-700 leading-none">{weightCurrent}</p>
-            <p className="text-sm text-green-600 mt-1">kg</p>
-            <p className="text-xs text-green-500 mt-0.5">{weightDelta} kg so với ban đầu</p>
+            <p className="text-[15px] font-semibold text-green-600 mb-1">Cân nặng hiện tại</p>
+            <p className="text-[40px] font-bold text-green-700 leading-none">{weightCurrent}</p>
+            <p className="text-[17px] text-green-600 mt-1">kg</p>
+            <p className="text-[14px] text-green-500 mt-0.5">{weightDelta} kg so với ban đầu</p>
           </div>
           <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 text-center">
-            <p className="text-xs font-semibold text-blue-600 mb-1">Huyết áp gần nhất</p>
-            <p className="text-3xl font-bold text-blue-700 leading-none">{bpCurrent}</p>
-            <p className="text-sm text-blue-600 mt-1">mmHg</p>
-            <p className="text-xs text-blue-500 mt-0.5">Đang theo dõi</p>
+            <p className="text-[15px] font-semibold text-blue-600 mb-1">Huyết áp gần nhất</p>
+            <p className="text-[40px] font-bold text-blue-700 leading-none">{bpCurrent}</p>
+            <p className="text-[17px] text-blue-600 mt-1">mmHg</p>
+            <p className="text-[14px] text-blue-500 mt-0.5">Đang theo dõi</p>
           </div>
         </div>
       </div>
@@ -142,21 +144,22 @@ export default function JourneyPage() {
                     <p
                       className={`leading-snug ${
                         isMilestone
-                          ? 'text-base font-bold text-gray-900'
-                          : 'text-sm font-semibold text-gray-800'
+                          ? 'text-[18px] font-bold text-gray-900'
+                          : 'text-[17px] font-semibold text-gray-800'
                       }`}
                     >
                       {event.title}
                     </p>
                     {event.tag && (
-                      <span className="text-xs font-bold px-2 py-1 bg-teal-100 text-teal-700 rounded-full flex-shrink-0 whitespace-nowrap">
+                      <span className="text-[14px] font-bold px-2 py-1 bg-teal-100 text-teal-700 rounded-full flex-shrink-0 whitespace-nowrap">
                         {event.tag}
                       </span>
                     )}
                   </div>
 
-                  <p className="text-xs text-gray-400 mb-2">{event.date}</p>
-                  <p className="text-sm text-gray-600 leading-relaxed">{event.desc}</p>
+                  <p className="text-[14px] text-gray-400 mb-2">{event.date}</p>
+                  {/* a11y: event description — 17px (was 14px) */}
+                  <p className="text-[17px] text-gray-600 leading-relaxed">{event.desc}</p>
 
                   {/* AI annotation — prominent, large text */}
                   {event.ai && (
@@ -165,7 +168,7 @@ export default function JourneyPage() {
                         <div className="w-5 h-5 rounded-full bg-white/25 flex items-center justify-center flex-shrink-0 mt-0.5">
                           <span className="text-[10px] font-bold text-white">AI</span>
                         </div>
-                        <p className="text-sm text-white leading-relaxed">{event.ai}</p>
+                        <p className="text-[17px] text-white leading-relaxed">{event.ai}</p>
                       </div>
                     </div>
                   )}
@@ -178,7 +181,7 @@ export default function JourneyPage() {
 
       {/* Bottom message */}
       <div className="mt-6 text-center">
-        <p className="text-sm text-gray-400 leading-relaxed">
+        <p className="text-[17px] text-gray-400 leading-relaxed">
           Hành trình của bạn là duy nhất.
           <br />
           Mỗi bước nhỏ đều có ý nghĩa.

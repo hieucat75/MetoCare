@@ -97,10 +97,12 @@ function BatchCard({
             )}
             {/* Upload date + count — smaller, muted */}
             <div className="mt-1 flex items-center gap-2">
-              <NeuBadge tone="ok" className="!text-[12px]">
+              {/* a11y: badge text — 14px (was 12px) */}
+              <NeuBadge tone="ok" className="!text-[14px]">
                 {batch.result_count} chỉ số
               </NeuBadge>
-              <p className="text-[12px] text-neu-muted">Tải lên {formatDate(batch.created_at)}</p>
+              {/* a11y: upload date — 15px (was 12px) */}
+              <p className="text-[15px] text-neu-muted">Tải lên {formatDate(batch.created_at)}</p>
             </div>
           </div>
 

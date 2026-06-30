@@ -61,11 +61,13 @@ export default function CoachPage() {
     <div className="px-4 pb-8 pt-4 max-w-md mx-auto space-y-4">
       {/* Greeting card */}
       <div className="bg-gradient-to-br from-teal-600 to-teal-800 rounded-2xl p-5 text-white">
-        <p className="text-xl font-bold mb-1">{getGreeting(d.patientName)}</p>
-        <p className="text-sm leading-relaxed opacity-90">{d.motivation}</p>
+        {/* a11y: greeting — 22px (was 20px) */}
+        <p className="text-[22px] font-bold mb-1">{getGreeting(d.patientName)}</p>
+        {/* a11y: motivation — 18px (was 14px) */}
+        <p className="text-[18px] leading-relaxed opacity-90">{d.motivation}</p>
         {completedCount > 0 && (
           <div className="mt-3 bg-white/15 rounded-xl px-3 py-2">
-            <p className="text-sm font-semibold">
+            <p className="text-[17px] font-semibold">
               Hôm nay: {completedCount}/{totalCount} việc hoàn thành 🎯
             </p>
           </div>
@@ -74,14 +76,14 @@ export default function CoachPage() {
 
       {d.yesterdayHighlight && (
         <div className="bg-green-50 border border-green-200 rounded-2xl p-4">
-          <p className="text-xs font-bold uppercase tracking-wide text-green-600 mb-1">Hôm qua</p>
-          <p className="text-sm text-gray-700 leading-snug">{d.yesterdayHighlight}</p>
+          <p className="text-[14px] font-bold uppercase tracking-wide text-green-600 mb-1">Hôm qua</p>
+          <p className="text-[17px] text-gray-700 leading-relaxed">{d.yesterdayHighlight}</p>
         </div>
       )}
 
       {/* Today's tasks */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
-        <p className="text-sm font-semibold text-gray-700 mb-3">Hôm nay</p>
+        <p className="text-[18px] font-semibold text-gray-700 mb-3">Hôm nay</p>
         <div className="space-y-3">
           {d.tasks.map((task) => {
             const done = checkedTasks.has(task.id)
@@ -110,14 +112,15 @@ export default function CoachPage() {
                   )}
                 </div>
                 <div className="flex-1 text-left">
+                  {/* a11y: task text — 17px (was 14px), sub — 15px (was 12px) */}
                   <p
-                    className={`text-sm font-medium transition-colors ${
+                    className={`text-[17px] font-medium transition-colors ${
                       done ? 'text-gray-400 line-through' : 'text-gray-800'
                     }`}
                   >
                     {task.text}
                   </p>
-                  <p className="text-xs text-gray-400">{task.sub}</p>
+                  <p className="text-[15px] text-gray-400">{task.sub}</p>
                 </div>
               </button>
             )
@@ -127,7 +130,7 @@ export default function CoachPage() {
 
       {/* Streaks */}
       <div>
-        <p className="text-sm font-semibold text-gray-700 mb-2">Chuỗi ngày</p>
+        <p className="text-[18px] font-semibold text-gray-700 mb-2">Chuỗi ngày</p>
         <div className="grid grid-cols-3 gap-2">
           {d.streaks.map((s) => (
             <div
@@ -140,10 +143,11 @@ export default function CoachPage() {
               >
                 <DynIcon name={s.icon} size={15} style={{ color: s.color }} />
               </div>
-              <p className="text-lg font-bold" style={{ color: s.color }}>
+              {/* a11y: streak days — 20px (was 18px), streak label — 13px (was 10px) */}
+              <p className="text-[20px] font-bold" style={{ color: s.color }}>
                 {s.days}
               </p>
-              <p className="text-[10px] text-gray-400 leading-tight">{s.label}</p>
+              <p className="text-[13px] text-gray-400 leading-tight">{s.label}</p>
             </div>
           ))}
         </div>
@@ -151,13 +155,14 @@ export default function CoachPage() {
 
       {/* Goals */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
-        <p className="text-sm font-semibold text-gray-700 mb-3">Mục tiêu</p>
+        <p className="text-[18px] font-semibold text-gray-700 mb-3">Mục tiêu</p>
         <div className="space-y-3">
           {d.goals.map((g) => (
             <div key={g.name}>
               <div className="flex justify-between items-center mb-1">
-                <p className="text-xs font-medium text-gray-700">{g.name}</p>
-                <p className="text-xs font-bold" style={{ color: g.color }}>
+                {/* a11y: goal name — 15px (was 12px) */}
+              <p className="text-[15px] font-medium text-gray-700">{g.name}</p>
+                <p className="text-[15px] font-bold" style={{ color: g.color }}>
                   {g.pct}%
                 </p>
               </div>
@@ -174,13 +179,14 @@ export default function CoachPage() {
 
       {/* Week summary */}
       <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-        <p className="text-xs font-semibold text-amber-700 mb-1">Tổng kết tuần</p>
-        <p className="text-xs text-gray-600 leading-relaxed">{d.weekSummary}</p>
+        <p className="text-[15px] font-semibold text-amber-700 mb-1">Tổng kết tuần</p>
+        {/* a11y: week summary — 16px (was 12px) */}
+        <p className="text-[16px] text-gray-600 leading-relaxed">{d.weekSummary}</p>
       </div>
 
       {/* Wins */}
       <div>
-        <p className="text-sm font-semibold text-gray-700 mb-2">Thành tựu gần đây</p>
+        <p className="text-[18px] font-semibold text-gray-700 mb-2">Thành tựu gần đây</p>
         <div className="flex gap-2 flex-wrap">
           {d.wins.map((w) => (
             <div
@@ -188,7 +194,7 @@ export default function CoachPage() {
               className="flex items-center gap-1.5 bg-white rounded-xl border border-gray-100 shadow-sm px-3 py-2"
             >
               <DynIcon name={w.icon} size={14} style={{ color: '#0E6E66' }} />
-              <p className="text-xs font-medium text-gray-700">{w.label}</p>
+              <p className="text-[15px] font-medium text-gray-700">{w.label}</p>
             </div>
           ))}
         </div>

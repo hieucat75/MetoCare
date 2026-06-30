@@ -98,23 +98,27 @@ function EntryItem({ entry }: { entry: NutritionEntry }) {
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between gap-2">
             <div className="min-w-0">
-              <span className="text-[13px] font-semibold text-neu-green">{label}</span>
-              <p className="text-[15px] font-medium text-neu-text truncate">{entry.description}</p>
+              {/* a11y: meal type label — 15px (was 13px) */}
+              <span className="text-[15px] font-semibold text-neu-green">{label}</span>
+              {/* a11y: description — 18px (was 15px) */}
+              <p className="text-[18px] font-medium text-neu-text truncate">{entry.description}</p>
             </div>
             <div className="text-right shrink-0">
               {entry.calories_kcal != null && (
-                <p className="text-[16px] font-bold text-neu-text">
+                <p className="text-[18px] font-bold text-neu-text">
                   {entry.calories_kcal}{' '}
-                  <span className="text-[12px] font-normal text-neu-muted">kcal</span>
+                  <span className="text-[14px] font-normal text-neu-muted">kcal</span>
                 </p>
               )}
-              <p className="text-[12px] text-neu-muted">{formatTime(entry.logged_at)}</p>
+              {/* a11y: time — 14px (was 12px) */}
+              <p className="text-[14px] text-neu-muted">{formatTime(entry.logged_at)}</p>
             </div>
           </div>
 
           {/* Macros */}
+          {/* a11y: macros text — 15px (was 13px) */}
           {(entry.carbs_g != null || entry.protein_g != null || entry.fat_g != null) && (
-            <p className="text-[13px] text-neu-muted mt-0.5">
+            <p className="text-[15px] text-neu-muted mt-0.5">
               {[
                 entry.carbs_g != null && `Carb ${entry.carbs_g}g`,
                 entry.protein_g != null && `Đạm ${entry.protein_g}g`,
@@ -132,7 +136,8 @@ function EntryItem({ entry }: { entry: NutritionEntry }) {
         <div className="mt-2 ml-12">
           <div className="flex items-start gap-2 rounded-[12px] bg-[rgba(245,230,195,0.7)] border border-[rgba(196,136,24,0.25)] p-2.5">
             <Bot className="size-4 text-[#C77A06] shrink-0 mt-0.5" aria-hidden="true" />
-            <p className="text-[13px] text-[#7a4f06]">
+            {/* a11y: AI tip text — 16px (was 13px) */}
+            <p className="text-[16px] text-[#7a4f06]">
               <span className="font-semibold">Gợi ý AI:</span> {entry.ai_coaching}
               <span className="block text-[#a0680a] mt-0.5">
                 (AI - không thay thế tư vấn dinh dưỡng)

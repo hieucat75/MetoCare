@@ -172,21 +172,23 @@ export default function AiCopilotConsultationPage() {
             </svg>
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-[13px] text-neu-muted capitalize">{dateLabel}</p>
-            <p className="mt-0.5 text-[16px] font-bold text-neu-text leading-snug">
+            {/* a11y: date label — 16px (was 13px) */}
+            <p className="text-[16px] text-neu-muted capitalize">{dateLabel}</p>
+            {/* a11y: summary text — 18px bold (was 16px) */}
+            <p className="mt-0.5 text-[18px] font-bold text-neu-text leading-snug">
               {abnormalCount > 0
                 ? `AI phát hiện ${abnormalCount} điều cần chú ý`
                 : 'Sức khoẻ của bạn ổn định'}
             </p>
             {score != null && (
-              <NeuBadge tone={tone} className="mt-2 !text-[12px]">
+              <NeuBadge tone={tone} className="mt-2 !text-[14px]">
                 {scoreLabel}
               </NeuBadge>
             )}
           </div>
         </div>
         {focusLine && (
-          <p className="mt-4 border-t border-neu-border pt-3 text-[14px] leading-relaxed text-neu-secondary">
+          <p className="mt-4 border-t border-neu-border pt-3 text-[18px] leading-relaxed text-neu-secondary">
             {focusLine}
           </p>
         )}
@@ -195,7 +197,7 @@ export default function AiCopilotConsultationPage() {
       {/* ── 2. Điều AI lo nhất ── */}
       {topPriority && (
         <div>
-          <p className="mb-2 px-1 text-[12px] font-bold uppercase tracking-wider text-neu-muted">
+          <p className="mb-2 px-1 text-[15px] font-bold uppercase tracking-wider text-neu-muted">
             Điều AI lo nhất
           </p>
           <NeuCard className="!p-5">
@@ -211,8 +213,10 @@ export default function AiCopilotConsultationPage() {
                 <AlertTriangle className="size-5" />
               </span>
               <div className="min-w-0 flex-1">
-                <p className="text-[16px] font-bold text-neu-text">{topPriority.name}</p>
-                <p className="mt-0.5 text-[13px] text-neu-muted">{topPriority.sub}</p>
+                {/* a11y: priority name — 18px (was 16px) */}
+              <p className="text-[18px] font-bold text-neu-text">{topPriority.name}</p>
+                {/* a11y: sub text — 16px (was 13px) */}
+                <p className="mt-0.5 text-[16px] text-neu-muted">{topPriority.sub}</p>
               </div>
               <NeuBadge tone="alert" className="shrink-0 !text-[12px]">
                 {topPriority.badge}
@@ -221,7 +225,7 @@ export default function AiCopilotConsultationPage() {
 
             {/* Personalised WHY */}
             <div className="mt-4 space-y-2">
-              <p className="text-[12px] font-bold uppercase tracking-wider text-neu-muted">
+              <p className="text-[15px] font-bold uppercase tracking-wider text-neu-muted">
                 Tại sao điều này quan trọng với bạn?
               </p>
               {[
@@ -234,7 +238,8 @@ export default function AiCopilotConsultationPage() {
                     className="mt-[5px] size-1.5 shrink-0 rounded-full bg-neu-green"
                     aria-hidden="true"
                   />
-                  <p className="text-[13.5px] leading-snug text-neu-text">{reason}</p>
+                  {/* a11y: reason text — 17px (was 13.5px) */}
+                  <p className="text-[17px] leading-relaxed text-neu-text">{reason}</p>
                 </div>
               ))}
             </div>
@@ -254,7 +259,7 @@ export default function AiCopilotConsultationPage() {
 
       {/* ── 3. Việc quan trọng hôm nay ── */}
       <div>
-        <p className="mb-2 px-1 text-[12px] font-bold uppercase tracking-wider text-neu-muted">
+        <p className="mb-2 px-1 text-[15px] font-bold uppercase tracking-wider text-neu-muted">
           Việc quan trọng hôm nay
         </p>
         <div
@@ -272,8 +277,10 @@ export default function AiCopilotConsultationPage() {
               <Footprints className="size-5" />
             </span>
             <div>
-              <p className="text-[17px] font-extrabold leading-snug">{topAction}</p>
-              <p className="mt-2 text-[13px] leading-relaxed text-white/80">{d.todayAction.why}</p>
+              {/* a11y: today action — 20px (was 17px) */}
+            <p className="text-[20px] font-extrabold leading-snug">{topAction}</p>
+              {/* a11y: why text — 17px (was 13px) */}
+              <p className="mt-2 text-[17px] leading-relaxed text-white/80">{d.todayAction.why}</p>
             </div>
           </div>
         </div>
@@ -281,7 +288,7 @@ export default function AiCopilotConsultationPage() {
 
       {/* ── 4. Điều gì xảy ra nếu bỏ qua? ── */}
       <div>
-        <p className="mb-2 px-1 text-[12px] font-bold uppercase tracking-wider text-neu-muted">
+        <p className="mb-2 px-1 text-[15px] font-bold uppercase tracking-wider text-neu-muted">
           Điều gì xảy ra nếu bỏ qua?
         </p>
         <div className="relative">
@@ -291,7 +298,8 @@ export default function AiCopilotConsultationPage() {
             aria-hidden="true"
           />
           <NeuCard className="!p-4 pl-5">
-            <p className="text-[14px] leading-relaxed text-neu-text">
+            {/* a11y: body paragraph — 18px (was 14px) */}
+            <p className="text-[18px] leading-relaxed text-neu-text">
               Đường huyết duy trì cao kéo dài làm tăng nguy cơ tiền tiểu đường trong 2–5 năm tới,
               đồng thời gây thêm áp lực lên thận và mắt. Xét nghiệm HbA1c trong 3 tháng tới là bước
               cụ thể nhất để ngăn tiến triển.
@@ -302,7 +310,7 @@ export default function AiCopilotConsultationPage() {
 
       {/* ── 5. Triển vọng nếu thực hiện ── */}
       <div>
-        <p className="mb-2 px-1 text-[12px] font-bold uppercase tracking-wider text-neu-muted">
+        <p className="mb-2 px-1 text-[15px] font-bold uppercase tracking-wider text-neu-muted">
           Triển vọng nếu thực hiện
         </p>
         <div className="relative">
@@ -313,7 +321,8 @@ export default function AiCopilotConsultationPage() {
           <NeuCard className="!p-4 pl-5">
             <div className="flex items-start gap-3">
               <TrendingUp className="mt-0.5 size-5 shrink-0 text-neu-green" aria-hidden="true" />
-              <p className="text-[14px] leading-relaxed text-neu-text">
+              {/* a11y: outlook paragraph — 18px (was 14px) */}
+              <p className="text-[18px] leading-relaxed text-neu-text">
                 {d.monthlyFocus.content} Nếu duy trì đi bộ 20–30 phút mỗi ngày sau bữa tối, đường
                 huyết thường giảm 10–15% trong 6–8 tuần, đồng thời huyết áp cũng cải thiện nhẹ.
               </p>
@@ -324,7 +333,7 @@ export default function AiCopilotConsultationPage() {
 
       {/* ── 6. Câu hỏi hỏi bác sĩ ── */}
       <div>
-        <p className="mb-2 px-1 text-[12px] font-bold uppercase tracking-wider text-neu-muted">
+        <p className="mb-2 px-1 text-[15px] font-bold uppercase tracking-wider text-neu-muted">
           Câu hỏi hỏi bác sĩ
         </p>
         <NeuCard className="!p-5">
@@ -338,7 +347,8 @@ export default function AiCopilotConsultationPage() {
                 <span className="mt-0.5 grid size-5 shrink-0 place-items-center rounded-full bg-[rgba(23,174,123,0.12)] text-[11px] font-bold text-neu-green">
                   {i + 1}
                 </span>
-                <p className="text-[13.5px] leading-snug text-neu-text">{q}</p>
+                {/* a11y: doctor question — 17px (was 13.5px) */}
+                <p className="text-[17px] leading-relaxed text-neu-text">{q}</p>
               </div>
             ))}
           </div>
@@ -347,7 +357,7 @@ export default function AiCopilotConsultationPage() {
 
       {/* ── 7. Khám phá thêm ── */}
       <div>
-        <p className="mb-2 px-1 text-[12px] font-bold uppercase tracking-wider text-neu-muted">
+        <p className="mb-2 px-1 text-[15px] font-bold uppercase tracking-wider text-neu-muted">
           Khám phá thêm
         </p>
         <div className="grid grid-cols-2 gap-2.5">
@@ -386,8 +396,9 @@ export default function AiCopilotConsultationPage() {
             >
               <Icon className="size-5 text-neu-green" aria-hidden="true" />
               <div>
-                <p className="text-[14px] font-bold text-neu-text">{label}</p>
-                <p className="text-[12px] text-neu-muted">{sub}</p>
+                {/* a11y: explore label — 16px (was 14px), sub — 14px (was 12px) */}
+              <p className="text-[16px] font-bold text-neu-text">{label}</p>
+                <p className="text-[14px] text-neu-muted">{sub}</p>
               </div>
             </Link>
           ))}

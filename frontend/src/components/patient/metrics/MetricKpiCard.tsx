@@ -41,18 +41,21 @@ export function MetricKpiCard({ series, theme, onOpen }: Props) {
           <Icon className="size-5" />
         </span>
         {status && (
-          <NeuBadge tone={status.tone} className="!text-[11px] !px-2.5 !py-1 before:!hidden">
+          <NeuBadge tone={status.tone} className="!text-[13px] !px-2.5 !py-1 before:!hidden">
             {status.label}
           </NeuBadge>
         )}
       </div>
 
-      <p className="mt-3 text-[13px] text-neu-muted">{label}</p>
+      {/* a11y: metric name — 16px (was 13px) */}
+      <p className="mt-3 text-[16px] text-neu-muted">{label}</p>
       <p className="mt-0.5 flex items-baseline gap-1">
-        <span className="text-[26px] font-extrabold leading-none tracking-[-0.02em] text-neu-text">
+        {/* a11y: metric value — 40px bold (was 26px) */}
+        <span className="font-extrabold leading-none tracking-[-0.02em] text-neu-text" style={{ fontSize: '40px' }}>
           {formatLabValue(latest.value, unitLabel)}
         </span>
-        <span className="text-[13px] font-medium text-neu-muted">{unitLabel}</span>
+        {/* a11y: unit — 18px medium (was 13px) */}
+        <span className="font-medium text-neu-muted" style={{ fontSize: '18px' }}>{unitLabel}</span>
       </p>
 
       <div className="mt-3">

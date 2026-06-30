@@ -94,7 +94,8 @@ export function PatientBottomNav() {
               <span className="inline-flex items-center justify-center" aria-hidden="true">
                 {item.icon}
               </span>
-              <span className="text-[10px] font-semibold truncate w-full text-center px-1">
+              {/* a11y: nav label — 13px semibold (was 10px) */}
+              <span className="text-[13px] font-semibold truncate w-full text-center px-1">
                 {item.label}
               </span>
             </button>

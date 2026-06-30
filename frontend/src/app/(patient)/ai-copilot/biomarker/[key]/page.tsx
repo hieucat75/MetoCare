@@ -64,8 +64,10 @@ export default function BiomarkerDetailPage() {
               <ArrowLeft size={18} className="text-gray-600" />
             </Link>
             <div className="flex-1 min-w-0">
-              <h1 className="text-lg font-bold text-gray-900 leading-tight">{bio.name}</h1>
-              <p className="text-sm text-gray-400">
+              {/* a11y: biomarker name — 22px (was 18px) */}
+              <h1 className="text-[22px] font-bold text-gray-900 leading-tight">{bio.name}</h1>
+              {/* a11y: range label — 16px (was 14px) */}
+              <p className="text-[16px] text-gray-400">
                 Phạm vi bình thường: {bio.range} {bio.unit}
               </p>
             </div>
@@ -78,13 +80,14 @@ export default function BiomarkerDetailPage() {
               <span className="text-lg text-gray-400 mb-1">{bio.unit}</span>
             </div>
             <div className="flex flex-col items-end gap-1.5">
+              {/* a11y: status pill — 16px (was 14px) */}
               <span
-                className={`text-sm font-semibold px-3 py-1 rounded-full ${STATUS_PILL[bio.status]}`}
+                className={`text-[16px] font-semibold px-3 py-1 rounded-full ${STATUS_PILL[bio.status]}`}
               >
                 {bio.riskText}
               </span>
               {bio.prev && (
-                <div className="flex items-center gap-1 text-sm">
+                <div className="flex items-center gap-1 text-[15px]">
                   {prevDir === 'down' ? (
                     <TrendingDown size={14} className="text-green-500" />
                   ) : (
@@ -104,7 +107,8 @@ export default function BiomarkerDetailPage() {
             targetPosition={bio.gaugeTarget}
             color={gaugeColor}
           />
-          <div className="flex justify-between mt-1 text-xs text-gray-400">
+          {/* a11y: gauge axis labels — 15px (was xs ~12px) */}
+          <div className="flex justify-between mt-1 text-[15px] text-gray-400">
             <span>Tối ưu</span>
             <span>
               Mục tiêu: {formatLabValue(bio.target, bio.unit)} {bio.unit}
@@ -118,7 +122,7 @@ export default function BiomarkerDetailPage() {
             <button
               key={t}
               onClick={() => setTab(t)}
-              className={`flex-shrink-0 h-9 px-4 text-sm font-semibold rounded-full transition-all duration-200 ${
+              className={`flex-shrink-0 h-9 px-4 text-[15px] font-semibold rounded-full transition-all duration-200 ${
                 tab === t
                   ? 'bg-teal-600 text-white shadow-sm'
                   : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
@@ -139,23 +143,26 @@ export default function BiomarkerDetailPage() {
           <>
             {/* 1 — AI Conclusion: the ONE thing */}
             <div className="bg-teal-600 rounded-2xl p-5 text-white">
-              <p className="text-xs font-semibold uppercase tracking-wider text-teal-200 mb-2">
+              <p className="text-[15px] font-semibold uppercase tracking-wider text-teal-200 mb-2">
                 AI nhận định
               </p>
-              <p className="text-base leading-relaxed font-medium">{bio.conclusion}</p>
+              {/* a11y: AI conclusion — 18px (was 16px) */}
+              <p className="text-[18px] leading-relaxed font-medium">{bio.conclusion}</p>
             </div>
 
             {/* 2 — Why yours specifically */}
             {bio.why.length > 0 && (
               <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm">
-                <p className="text-base font-bold text-gray-900 mb-3">Tại sao với bạn?</p>
+                {/* a11y: card title — 20px (was 16px) */}
+                <p className="text-[20px] font-bold text-gray-900 mb-3">Tại sao với bạn?</p>
                 <div className="space-y-3">
                   {bio.why.map((w, i) => (
                     <div key={i} className="flex gap-3 items-start">
                       <div className="w-2 h-2 rounded-full bg-teal-400 flex-shrink-0 mt-2" />
                       <div>
-                        <p className="text-sm font-semibold text-gray-800">{w.label}</p>
-                        <p className="text-sm text-gray-500 mt-0.5 leading-snug">{w.note}</p>
+                        {/* a11y: why label — 17px, why note — 16px */}
+                        <p className="text-[17px] font-semibold text-gray-800">{w.label}</p>
+                        <p className="text-[16px] text-gray-500 mt-0.5 leading-relaxed">{w.note}</p>
                       </div>
                     </div>
                   ))}
@@ -165,20 +172,25 @@ export default function BiomarkerDetailPage() {
 
             {/* 3 — Today's action: the most important CTA */}
             <div className="bg-amber-50 border-l-4 border-amber-400 rounded-2xl p-5">
-              <p className="text-xs font-bold uppercase tracking-wider text-amber-600 mb-2">
+              <p className="text-[15px] font-bold uppercase tracking-wider text-amber-600 mb-2">
                 Việc làm hôm nay
               </p>
-              <p className="text-lg font-bold text-gray-900 leading-snug">{bio.today.title}</p>
-              <p className="text-sm text-gray-600 mt-2 leading-relaxed">{bio.today.why}</p>
+              {/* a11y: today title — 20px (was 18px) */}
+              <p className="text-[20px] font-bold text-gray-900 leading-snug">{bio.today.title}</p>
+              {/* a11y: today why — 17px (was 14px) */}
+              <p className="text-[17px] text-gray-600 mt-2 leading-relaxed">{bio.today.why}</p>
             </div>
 
             {/* 4 — What this means for your body */}
             <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm">
-              <p className="text-base font-bold text-gray-900 mb-2">{bio.short} là gì?</p>
-              <p className="text-sm text-gray-600 leading-relaxed">{bio.doesWhat}</p>
+              {/* a11y: what is label — 20px (was 16px) */}
+              <p className="text-[20px] font-bold text-gray-900 mb-2">{bio.short} là gì?</p>
+              {/* a11y: doesWhat body — 17px (was 14px) */}
+              <p className="text-[17px] text-gray-600 leading-relaxed">{bio.doesWhat}</p>
               {bio.analogy && (
                 <div className="mt-3 bg-gray-50 rounded-xl p-3">
-                  <p className="text-sm text-gray-500 italic leading-relaxed">{bio.analogy}</p>
+                  {/* a11y: analogy — 16px italic (was 14px) */}
+                  <p className="text-[16px] text-gray-500 italic leading-relaxed">{bio.analogy}</p>
                 </div>
               )}
             </div>
@@ -186,7 +198,7 @@ export default function BiomarkerDetailPage() {
             {/* 5 — Connections: how it links to other markers */}
             {bio.chain.length > 0 && (
               <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm">
-                <p className="text-base font-bold text-gray-900 mb-3">Ảnh hưởng đến gì?</p>
+                <p className="text-[20px] font-bold text-gray-900 mb-3">Ảnh hưởng đến gì?</p>
                 <div className="space-y-2">
                   {bio.chain.map((c, i) => (
                     <div key={i} className="flex items-center gap-3">
@@ -194,8 +206,9 @@ export default function BiomarkerDetailPage() {
                         className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${STATUS_BG[c.status]}`}
                       />
                       <div className="flex-1 min-w-0">
-                        <span className="text-sm font-semibold text-gray-800">{c.short}</span>
-                        <span className="text-sm text-gray-400 ml-2">{c.note}</span>
+                        {/* a11y: chain biomarker name — 17px (was 14px) */}
+                        <span className="text-[17px] font-semibold text-gray-800">{c.short}</span>
+                        <span className="text-[15px] text-gray-400 ml-2">{c.note}</span>
                       </div>
                       {c.bioKey && c.bioKey !== key && (
                         <Link href={`/ai-copilot/biomarker/${c.bioKey}`} className="p-1">
@@ -211,7 +224,7 @@ export default function BiomarkerDetailPage() {
             {/* 6 — Future outlook */}
             {bio.futures.length > 0 && (
               <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm">
-                <p className="text-base font-bold text-gray-900 mb-3">Điều gì sẽ xảy ra?</p>
+                <p className="text-[20px] font-bold text-gray-900 mb-3">Điều gì sẽ xảy ra?</p>
                 <div className="space-y-3">
                   {bio.futures.map((f, i) => (
                     <div
@@ -219,11 +232,12 @@ export default function BiomarkerDetailPage() {
                       className={`rounded-xl p-4 border ${TONE_STYLE[f.tone].bg} ${TONE_STYLE[f.tone].border}`}
                     >
                       <p
-                        className={`text-xs font-bold uppercase tracking-wide mb-1 ${TONE_STYLE[f.tone].text}`}
+                        className={`text-[14px] font-bold uppercase tracking-wide mb-1 ${TONE_STYLE[f.tone].text}`}
                       >
                         {f.when}
                       </p>
-                      <p className="text-sm text-gray-700 leading-snug">{f.text}</p>
+                      {/* a11y: future text — 17px (was 14px) */}
+                      <p className="text-[17px] text-gray-700 leading-relaxed">{f.text}</p>
                     </div>
                   ))}
                 </div>
@@ -238,7 +252,7 @@ export default function BiomarkerDetailPage() {
                   style={{ width: mounted ? `${bio.confidence}%` : '0%' }}
                 />
               </div>
-              <p className="text-xs text-gray-400 flex-shrink-0">
+              <p className="text-[14px] text-gray-400 flex-shrink-0">
                 Độ tin cậy AI: {bio.confidence}%
               </p>
             </div>
@@ -252,24 +266,27 @@ export default function BiomarkerDetailPage() {
           <>
             {/* Trend summary first */}
             <div className="bg-teal-50 rounded-2xl p-5 border border-teal-100">
-              <p className="text-base font-bold text-gray-900 mb-1">Diễn biến 6 tháng</p>
-              <p className="text-sm text-teal-800 leading-relaxed">{bio.trendComment}</p>
+              <p className="text-[20px] font-bold text-gray-900 mb-1">Diễn biến 6 tháng</p>
+              {/* a11y: trend comment — 17px (was 14px) */}
+              <p className="text-[17px] text-teal-800 leading-relaxed">{bio.trendComment}</p>
             </div>
 
             <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm">
               <div className="flex items-center justify-between mb-4">
                 <div>
-                  <p className="text-sm font-semibold text-gray-700">Hiện tại</p>
-                  <p className="text-2xl font-bold text-gray-900">
+                  <p className="text-[16px] font-semibold text-gray-700">Hiện tại</p>
+                  {/* a11y: current value — 32px (was 24px) */}
+                  <p className="text-[32px] font-bold text-gray-900">
                     {formatLabValue(bio.value, bio.unit)}{' '}
-                    <span className="text-base font-normal text-gray-400">{bio.unit}</span>
+                    <span className="text-[17px] font-normal text-gray-400">{bio.unit}</span>
                   </p>
                 </div>
                 <div className="text-right">
-                  <p className="text-sm font-semibold text-gray-700">Mục tiêu</p>
-                  <p className="text-2xl font-bold text-teal-600">
+                  <p className="text-[16px] font-semibold text-gray-700">Mục tiêu</p>
+                  {/* a11y: target value — 32px (was 24px) */}
+                  <p className="text-[32px] font-bold text-teal-600">
                     {formatLabValue(bio.target, bio.unit)}{' '}
-                    <span className="text-base font-normal text-gray-400">{bio.unit}</span>
+                    <span className="text-[17px] font-normal text-gray-400">{bio.unit}</span>
                   </p>
                 </div>
               </div>
@@ -282,9 +299,10 @@ export default function BiomarkerDetailPage() {
                 }
                 color="#0E6E66"
               />
+              {/* a11y: trend date labels — 15px (was 12px) */}
               <div className="flex justify-between mt-2">
                 {bio.trendLabels.map((label, i) => (
-                  <span key={i} className="text-xs text-gray-400">
+                  <span key={i} className="text-[15px] text-gray-400">
                     {label}
                   </span>
                 ))}
@@ -293,13 +311,13 @@ export default function BiomarkerDetailPage() {
 
             {bio.relatedTrends.length > 0 && (
               <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm">
-                <p className="text-base font-bold text-gray-900 mb-3">Chỉ số cùng thay đổi</p>
+                <p className="text-[20px] font-bold text-gray-900 mb-3">Chỉ số cùng thay đổi</p>
                 <div className="space-y-3">
                   {bio.relatedTrends.map((rt) => (
                     <div key={rt.short} className="flex items-center gap-3">
                       <div className="flex-1">
-                        <p className="text-sm font-semibold text-gray-800">{rt.short}</p>
-                        <p className="text-sm text-gray-400">
+                        <p className="text-[17px] font-semibold text-gray-800">{rt.short}</p>
+                        <p className="text-[15px] text-gray-400">
                           {rt.from} → {rt.to} {rt.unit}
                         </p>
                       </div>
@@ -307,7 +325,7 @@ export default function BiomarkerDetailPage() {
                         className={`flex items-center gap-1 ${rt.good ? 'text-green-600' : 'text-red-600'}`}
                       >
                         {rt.dir === 'down' ? <TrendingDown size={16} /> : <TrendingUp size={16} />}
-                        <span className="text-sm font-bold">{rt.dir === 'down' ? '↓' : '↑'}</span>
+                        <span className="text-[16px] font-bold">{rt.dir === 'down' ? '↓' : '↑'}</span>
                       </div>
                     </div>
                   ))}
@@ -324,24 +342,24 @@ export default function BiomarkerDetailPage() {
           <>
             {/* Lead with today's action */}
             <div className="bg-amber-50 border-l-4 border-amber-400 rounded-2xl p-5">
-              <p className="text-xs font-bold uppercase tracking-wider text-amber-600 mb-2">
+              <p className="text-[15px] font-bold uppercase tracking-wider text-amber-600 mb-2">
                 Hành động hôm nay
               </p>
-              <p className="text-lg font-bold text-gray-900 leading-snug">{bio.today.title}</p>
-              <p className="text-sm text-gray-600 mt-2 leading-relaxed">{bio.today.why}</p>
+              <p className="text-[20px] font-bold text-gray-900 leading-snug">{bio.today.title}</p>
+              <p className="text-[17px] text-gray-600 mt-2 leading-relaxed">{bio.today.why}</p>
             </div>
 
             <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm">
-              <p className="text-base font-bold text-gray-900 mb-4">Kế hoạch từng bước</p>
+              <p className="text-[20px] font-bold text-gray-900 mb-4">Kế hoạch từng bước</p>
               <div className="space-y-4">
                 {bio.plan.map((item, i) => (
                   <div key={i} className="flex gap-4">
                     <div className="w-8 h-8 rounded-full bg-teal-100 flex items-center justify-center flex-shrink-0">
-                      <span className="text-sm font-bold text-teal-700">{i + 1}</span>
+                      <span className="text-[16px] font-bold text-teal-700">{i + 1}</span>
                     </div>
                     <div className="flex-1 pt-0.5">
-                      <p className="text-sm font-bold text-gray-900">{item.text}</p>
-                      <p className="text-sm text-gray-500 mt-0.5">{item.sub}</p>
+                      <p className="text-[17px] font-bold text-gray-900">{item.text}</p>
+                      <p className="text-[16px] text-gray-500 mt-0.5">{item.sub}</p>
                     </div>
                   </div>
                 ))}
@@ -350,14 +368,14 @@ export default function BiomarkerDetailPage() {
 
             {bio.needs.length > 0 && (
               <div className="bg-blue-50 rounded-2xl border border-blue-100 p-5">
-                <p className="text-base font-bold text-gray-900 mb-3">Thông tin AI cần thêm</p>
+                <p className="text-[20px] font-bold text-gray-900 mb-3">Thông tin AI cần thêm</p>
                 <div className="space-y-3">
                   {bio.needs.map((n, i) => (
                     <div key={i} className="flex gap-3">
                       <div className="w-2 h-2 rounded-full bg-blue-400 flex-shrink-0 mt-2" />
                       <div>
-                        <p className="text-sm font-semibold text-gray-800">{n.title}</p>
-                        <p className="text-sm text-gray-500">{n.why}</p>
+                        <p className="text-[17px] font-semibold text-gray-800">{n.title}</p>
+                        <p className="text-[16px] text-gray-500">{n.why}</p>
                       </div>
                     </div>
                   ))}
@@ -367,14 +385,14 @@ export default function BiomarkerDetailPage() {
 
             {bio.doctorQs.length > 0 && (
               <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm">
-                <p className="text-base font-bold text-gray-900 mb-3">Hỏi bác sĩ khi gặp</p>
+                <p className="text-[20px] font-bold text-gray-900 mb-3">Hỏi bác sĩ khi gặp</p>
                 <div className="space-y-3">
                   {bio.doctorQs.map((q, i) => (
                     <div key={i} className="flex gap-3 items-start">
-                      <span className="text-teal-500 font-bold text-sm flex-shrink-0">
+                      <span className="text-teal-500 font-bold text-[16px] flex-shrink-0">
                         {i + 1}.
                       </span>
-                      <p className="text-sm text-gray-700 leading-snug">{q}</p>
+                      <p className="text-[17px] text-gray-700 leading-relaxed">{q}</p>
                     </div>
                   ))}
                 </div>
@@ -391,22 +409,22 @@ export default function BiomarkerDetailPage() {
             <div className="space-y-3">
               {bio.knowledge.map((k, i) => (
                 <div key={i} className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm">
-                  <p className="text-base font-bold text-gray-900 mb-2">{k.q}</p>
-                  <p className="text-sm text-gray-600 leading-relaxed">{k.a}</p>
+                  <p className="text-[20px] font-bold text-gray-900 mb-2">{k.q}</p>
+                  <p className="text-[17px] text-gray-600 leading-relaxed">{k.a}</p>
                 </div>
               ))}
             </div>
 
             <div className="bg-gray-50 rounded-2xl border border-gray-100 p-5">
-              <p className="text-sm font-bold text-gray-700 mb-2">Bằng chứng khoa học</p>
-              <p className="text-sm text-gray-500 leading-relaxed">{bio.evidence}</p>
+              <p className="text-[18px] font-bold text-gray-700 mb-2">Bằng chứng khoa học</p>
+              <p className="text-[17px] text-gray-500 leading-relaxed">{bio.evidence}</p>
             </div>
           </>
         )}
 
         {/* Disclaimer — always visible */}
         <div className="text-center pt-2 pb-4">
-          <p className="text-xs text-gray-400 leading-snug">
+          <p className="text-[15px] text-gray-400 leading-relaxed">
             AI Copilot chỉ mang tính tham khảo giáo dục.
             <br />
             Không thay thế chẩn đoán và điều trị của bác sĩ.

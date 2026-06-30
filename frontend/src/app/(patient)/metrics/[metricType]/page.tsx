@@ -130,7 +130,8 @@ export default function MetricDetailPage() {
         >
           <Icon className="size-5" />
         </span>
-        <h1 className="text-[20px] font-extrabold tracking-[-0.02em] text-neu-text truncate">
+        {/* a11y: page title — 24px (was 20px) */}
+        <h1 className="text-[24px] font-extrabold tracking-[-0.02em] text-neu-text truncate">
           {label}
         </h1>
       </header>
@@ -247,8 +248,8 @@ function MetricDetailBody({
               onClick={() => onPeriod(p.key)}
               className={
                 active
-                  ? 'flex-1 rounded-[10px] bg-white py-2 text-[13px] font-bold text-neu-green shadow-sm'
-                  : 'flex-1 rounded-[10px] py-2 text-[13px] font-semibold text-neu-muted'
+                  ? 'flex-1 rounded-[10px] bg-white py-2 text-[15px] font-bold text-neu-green shadow-sm'
+                  : 'flex-1 rounded-[10px] py-2 text-[15px] font-semibold text-neu-muted'
               }
             >
               {p.label}
@@ -261,10 +262,11 @@ function MetricDetailBody({
       <NeuCard className="!p-4">
         <div className="mb-2 flex items-end justify-between">
           <div>
-            <p className="text-[11.5px] text-neu-muted">Trung bình {periodLabel}</p>
+            {/* a11y: avg label — 15px (was 11.5px), avg value — 32px (was 24px) */}
+            <p className="text-[15px] text-neu-muted">Trung bình {periodLabel}</p>
             <p className="mt-0.5">
-              <span className="text-[24px] font-extrabold text-neu-text">{formatLabValue(avg, unitLabel)}</span>
-              <span className="ml-1 text-[12px] font-semibold text-neu-muted">{unitLabel}</span>
+              <span className="text-[32px] font-extrabold text-neu-text">{formatLabValue(avg, unitLabel)}</span>
+              <span className="ml-1 text-[16px] font-semibold text-neu-muted">{unitLabel}</span>
             </p>
           </div>
           <TrendChip trend={trend} />
@@ -279,7 +281,8 @@ function MetricDetailBody({
               style={{ background: 'rgba(21,145,90,0.18)' }}
               aria-hidden="true"
             />
-            <span className="text-[10.5px] text-neu-muted">
+            {/* a11y: chart legend — 15px (was 10.5px) */}
+            <span className="text-[15px] text-neu-muted">
               Vùng mục tiêu {formatRefRange(unit, higherIsBetter)}
             </span>
           </div>
@@ -296,8 +299,9 @@ function MetricDetailBody({
       {/* History list */}
       <section>
         <div className="mb-2 flex items-center justify-between px-1">
-          <h2 className="text-[14px] font-bold text-neu-text">Lịch sử bản ghi</h2>
-          <span className="text-[12px] font-semibold text-neu-green">{history.length} bản ghi</span>
+          {/* a11y: history heading — 18px (was 14px) */}
+          <h2 className="text-[18px] font-bold text-neu-text">Lịch sử bản ghi</h2>
+          <span className="text-[15px] font-semibold text-neu-green">{history.length} bản ghi</span>
         </div>
         <NeuCard className="!p-0 overflow-hidden">
           {rows.map((m, i) => (
@@ -359,8 +363,9 @@ function StatChip({
 }) {
   return (
     <div className="rounded-[14px] p-3 text-center neu-raised" style={{ backgroundColor: tint }}>
-      <p className="text-[10.5px] text-neu-muted">{label}</p>
-      <p className="mt-1 text-[17px] font-extrabold" style={{ color }}>
+      {/* a11y: stat chip label — 14px (was 10.5px), value — 20px (was 17px) */}
+      <p className="text-[14px] text-neu-muted">{label}</p>
+      <p className="mt-1 text-[20px] font-extrabold" style={{ color }}>
         {value}
       </p>
     </div>
@@ -434,13 +439,16 @@ function HistoryRow({
         aria-hidden="true"
       />
       <div className="min-w-0 flex-1">
-        <p className="text-[14px] font-bold text-neu-text">
-          {formatLabValue(metric.value, unitLabel)} <span className="text-[11px] font-medium text-neu-muted">{unitLabel}</span>
+        {/* a11y: history row value — 18px (was 14px), unit — 15px (was 11px) */}
+        <p className="text-[18px] font-bold text-neu-text">
+          {formatLabValue(metric.value, unitLabel)} <span className="text-[15px] font-medium text-neu-muted">{unitLabel}</span>
         </p>
-        <p className="mt-0.5 text-[11.5px] text-neu-muted">{formatWhen(metric.measured_at)}</p>
+        {/* a11y: timestamp — 15px (was 11.5px) */}
+        <p className="mt-0.5 text-[15px] text-neu-muted">{formatWhen(metric.measured_at)}</p>
       </div>
+      {/* a11y: status badge — 13px (was 10.5px) */}
       {status && (
-        <NeuBadge tone={tone} className="!text-[10.5px] !px-2 !py-0.5 before:!hidden">
+        <NeuBadge tone={tone} className="!text-[13px] !px-2 !py-0.5 before:!hidden">
           {status.label}
         </NeuBadge>
       )}

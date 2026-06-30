@@ -99,10 +99,12 @@ function MedRow({ med, todayStatus, onEdit, onDelete, onView, onLogged, patientI
             <Pill className="size-5" />
           </span>
           <span className="min-w-0">
-            <span className="block truncate text-[16px] font-bold text-neu-text">{med.name}</span>
-            {meta && <span className="mt-0.5 block text-[13.5px] text-neu-muted">{meta}</span>}
+            {/* a11y: med name — 18px (was 16px) */}
+            <span className="block truncate text-[18px] font-bold text-neu-text">{med.name}</span>
+            {/* a11y: meta — 16px (was 13.5px) */}
+            {meta && <span className="mt-0.5 block text-[16px] text-neu-muted">{meta}</span>}
             {med.note && (
-              <span className="mt-0.5 block truncate text-[13px] text-neu-subtle">{med.note}</span>
+              <span className="mt-0.5 block truncate text-[15px] text-neu-subtle">{med.note}</span>
             )}
           </span>
         </button>

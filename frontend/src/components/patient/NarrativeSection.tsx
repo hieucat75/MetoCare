@@ -75,7 +75,8 @@ function SectionCard({ title, content, defaultOpen = false }: SectionCardProps) 
         className="w-full flex items-center justify-between p-4 text-left"
         aria-expanded={open}
       >
-        <span className="font-semibold text-[15px] text-neu-text leading-snug pr-2">{title}</span>
+        {/* a11y: section card title — 18px semibold (was 15px) */}
+        <span className="font-semibold text-[18px] text-neu-text leading-snug pr-2">{title}</span>
         {open ? (
           <ChevronUp className="size-4 text-neu-muted shrink-0" aria-hidden="true" />
         ) : (
@@ -90,7 +91,7 @@ function SectionCard({ title, content, defaultOpen = false }: SectionCardProps) 
               {(content as string[]).map((item, idx) => (
                 <li
                   key={idx}
-                  className="flex items-start gap-2 text-[14px] text-neu-muted leading-relaxed"
+                  className="flex items-start gap-2 text-[17px] text-neu-muted leading-relaxed"
                 >
                   <span className="text-neu-green mt-0.5 shrink-0">•</span>
                   <span>{item}</span>
@@ -98,7 +99,7 @@ function SectionCard({ title, content, defaultOpen = false }: SectionCardProps) 
               ))}
             </ul>
           ) : (
-            <p className="text-[14px] text-neu-muted leading-relaxed">{content as string}</p>
+            <p className="text-[17px] text-neu-muted leading-relaxed">{content as string}</p>
           )}
         </div>
       )}
@@ -125,7 +126,8 @@ export function NarrativeDisplay({ narrative, loading }: NarrativeDisplayProps) 
 
   return (
     <div className="space-y-2">
-      <h2 className="px-1 font-bold text-neu-text" style={{ fontSize: '20px' }}>
+      {/* a11y: NarrativeDisplay heading — 24px (was 20px) */}
+      <h2 className="px-1 font-bold text-neu-text" style={{ fontSize: '24px' }}>
         Giải thích AI cá nhân hóa
       </h2>
 
@@ -145,8 +147,9 @@ export function NarrativeDisplay({ narrative, loading }: NarrativeDisplayProps) 
       </div>
 
       {/* Section 10: Disclaimer — always visible, small grey text */}
+      {/* a11y: disclaimer — 15px (was 12px) */}
       {narrative.section_10_disclaimer && (
-        <p className="px-1 pt-2 text-[12px] text-neu-muted leading-relaxed">
+        <p className="px-1 pt-2 text-[15px] text-neu-muted leading-relaxed">
           {narrative.section_10_disclaimer}
         </p>
       )}

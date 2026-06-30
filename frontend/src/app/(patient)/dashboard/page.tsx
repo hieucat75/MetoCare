@@ -341,7 +341,8 @@ function AiCopilotCard({
         </div>
 
         {/* Focus line */}
-        <p className="mb-3.5 text-[15px] font-semibold leading-[1.4]">{focusLine}</p>
+        {/* a11y: AI focus line — 18px (was 15px) */}
+        <p className="mb-3.5 text-[18px] font-semibold leading-[1.5]">{focusLine}</p>
 
         {/* Concern + improvement chips */}
         {(topConcern || topPositive) && (
@@ -384,7 +385,8 @@ function AiCopilotCard({
           className="flex min-h-[48px] items-center justify-center rounded-[14px]"
           style={AI_CTA_STYLE}
         >
-          <span className="text-[15px] font-bold">Xem nhận định AI →</span>
+          {/* a11y: CTA text — 18px (was 15px) */}
+          <span className="text-[18px] font-bold">Xem nhận định AI →</span>
         </div>
       </div>
     </Link>
@@ -493,8 +495,9 @@ function MedicationCard({
           <Pill className="size-6" />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="text-[15px] font-bold text-neu-text">Nhắc uống thuốc</p>
-          {subtitle && <p className="text-[13.5px] text-neu-muted truncate">{subtitle}</p>}
+          {/* a11y: medication card title — 18px (was 15px) */}
+          <p className="text-[18px] font-bold text-neu-text">Nhắc uống thuốc</p>
+          {subtitle && <p className="text-[16px] text-neu-muted truncate">{subtitle}</p>}
         </div>
         <div className="flex flex-col gap-1.5 shrink-0">
           <button
@@ -556,7 +559,8 @@ function AdherenceReminderSection({
             >
               <Pill className="size-6" />
             </span>
-            <p className="text-[15px] font-bold text-neu-green">Đã uống hôm nay ✓</p>
+            {/* a11y: all taken message — 18px (was 15px) */}
+          <p className="text-[18px] font-bold text-neu-green">Đã uống hôm nay ✓</p>
           </div>
         </NeuCard>
       ) : (
@@ -591,8 +595,9 @@ function AdherenceReminderSection({
 function AdherenceStat({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex flex-col items-center gap-0.5">
-      <p className="text-[16px] font-extrabold text-neu-text">{value}</p>
-      <p className="text-[11px] text-neu-muted">{label}</p>
+      {/* a11y: adherence stat value — 18px (was 16px), label — 14px (was 11px) */}
+      <p className="text-[18px] font-extrabold text-neu-text">{value}</p>
+      <p className="text-[14px] text-neu-muted">{label}</p>
     </div>
   )
 }
@@ -756,18 +761,20 @@ function MetricTile({ tile, onOpen }: { tile: TileModel; onOpen: (metricType: st
         )}
       </div>
 
-      <p className="mt-3 text-[13px] text-neu-muted">{tile.label}</p>
+      {/* a11y: metric tile label — 16px (was 13px) */}
+      <p className="mt-3 text-[16px] text-neu-muted">{tile.label}</p>
 
       {tile.value == null ? (
         <p className="mt-0.5 text-[13px] text-neu-muted">Chưa có dữ liệu</p>
       ) : (
         <>
           <p className="mt-0.5 flex items-baseline gap-1">
-            <span className="text-[28px] font-extrabold leading-none tracking-[-0.02em] text-neu-text">
+            {/* a11y: metric tile value — 40px (was 28px) */}
+          <span className="font-extrabold leading-none tracking-[-0.02em] text-neu-text" style={{ fontSize: '40px' }}>
               {tile.value}
             </span>
             {tile.unit && (
-              <span className="text-[13px] font-medium text-neu-muted">{tile.unit}</span>
+              <span className="font-medium text-neu-muted" style={{ fontSize: '18px' }}>{tile.unit}</span>
             )}
           </p>
           <div className="mt-3">
@@ -880,7 +887,8 @@ function HealthAlertsSection({
 
   return (
     <section aria-label="Chỉ số cần chú ý" className="space-y-2.5">
-      <p className="px-1 text-[12px] font-bold uppercase tracking-wider text-neu-muted">
+      {/* a11y: section header — 15px (was 12px) */}
+      <p className="px-1 text-[15px] font-bold uppercase tracking-wider text-neu-muted">
         Chỉ số cần chú ý
       </p>
       {alerts.map((concern) => (
@@ -898,7 +906,8 @@ function HealthAlertsSection({
               }}
               aria-hidden="true"
             />
-            <span className="flex-1 text-[15px] font-semibold text-neu-text">{concern.label}</span>
+            {/* a11y: alert label — 18px (was 15px) */}
+      <span className="flex-1 text-[18px] font-semibold text-neu-text">{concern.label}</span>
             <NeuBadge
               tone={concern.severity === 'danger' ? 'alert' : 'watch'}
               className="!text-[11px]"

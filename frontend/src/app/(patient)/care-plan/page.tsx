@@ -41,7 +41,7 @@ function CarePlanCard({ plan }: { plan: CarePlan }) {
   return (
     <NeuCard className="p-4 space-y-2">
       <div className="flex items-start justify-between gap-3">
-        <p className="font-bold text-[17px] text-neu-text leading-snug">{plan.title}</p>
+        <p className="font-bold text-[20px] text-neu-text leading-snug">{plan.title}</p>
         <NeuBadge tone={cfg.tone}>{cfg.label}</NeuBadge>
       </div>
 
@@ -67,9 +67,9 @@ function CarePlanCard({ plan }: { plan: CarePlan }) {
 
       {/* Content */}
       {plan.content ? (
-        <p className="text-[15px] text-neu-text whitespace-pre-line pt-1">{plan.content}</p>
+        <p className="text-[18px] text-neu-text whitespace-pre-line pt-1 leading-relaxed">{plan.content}</p>
       ) : (
-        <p className="text-[14px] text-neu-muted italic pt-1">Chưa có nội dung.</p>
+        <p className="text-[16px] text-neu-muted italic pt-1">Chưa có nội dung.</p>
       )}
     </NeuCard>
   )
@@ -132,7 +132,7 @@ export default function CarePlanPage() {
         >
           <ArrowLeft className="size-4" />
         </button>
-        <h1 className="text-[20px] font-bold text-neu-text">Kế hoạch điều trị</h1>
+        <h1 className="text-[24px] font-bold text-neu-text">Kế hoạch điều trị</h1>
       </div>
 
       {loading && (

@@ -135,8 +135,10 @@ export function OverallStatusCard({
           <Icon style={{ width: 26, height: 26, color: cfg.color }} aria-hidden="true" />
         </span>
         <div className="flex-1 min-w-0">
-          <p className="text-[12px] font-medium text-neu-muted">Tình trạng tổng thể</p>
-          <p className="text-[18px] font-extrabold" style={{ color: cfg.color }}>
+          {/* a11y: label — 16px (was 12px) */}
+          <p className="text-[16px] font-medium text-neu-muted">Tình trạng tổng thể</p>
+          {/* a11y: status text — 20px (was 18px) */}
+          <p className="text-[20px] font-extrabold" style={{ color: cfg.color }}>
             {overall_status_text_vi}
           </p>
         </div>
@@ -145,7 +147,7 @@ export function OverallStatusCard({
       <button
         type="button"
         onClick={() => setDisclaimerOpen((v) => !v)}
-        className="mt-3 flex w-full items-center gap-1.5 text-left text-[12px] text-neu-muted"
+        className="mt-3 flex w-full items-center gap-1.5 text-left text-[15px] text-neu-muted"
         aria-expanded={disclaimerOpen}
       >
         <span className="flex-1">⚠️ Lưu ý y tế</span>
@@ -156,7 +158,7 @@ export function OverallStatusCard({
         )}
       </button>
       {disclaimerOpen && (
-        <p className="mt-2 text-[11px] leading-relaxed text-neu-muted">{disclaimer_vi}</p>
+        <p className="mt-2 text-[15px] leading-relaxed text-neu-muted">{disclaimer_vi}</p>
       )}
     </div>
   )
@@ -178,9 +180,10 @@ export function UrgentAlertCard({ alert }: { alert: UrgentAlert }) {
           aria-hidden="true"
         />
         <div className="flex-1 min-w-0">
-          <p className="text-[15px] font-bold text-[#D92D20]">{alert.title_vi}</p>
-          <p className="mt-1 text-[13px] leading-relaxed text-neu-text">{alert.detail_vi}</p>
-          <p className="mt-2 text-[13px] font-bold text-neu-text">{alert.action_vi}</p>
+          {/* a11y: urgent alert — 18px title, 16px detail */}
+          <p className="text-[18px] font-bold text-[#D92D20]">{alert.title_vi}</p>
+          <p className="mt-1 text-[16px] leading-relaxed text-neu-text">{alert.detail_vi}</p>
+          <p className="mt-2 text-[16px] font-bold text-neu-text">{alert.action_vi}</p>
         </div>
       </div>
     </div>
@@ -210,7 +213,8 @@ export function InsightCardItem({ card, batchId }: { card: InsightCard; batchId?
   const cardContent = (
     <NeuCard className="!p-4">
       <div className="flex items-start justify-between gap-2 mb-1.5">
-        <p className="text-[15px] font-bold text-neu-text">{card.title_vi}</p>
+        {/* a11y: insight card title — 18px (was 15px) */}
+        <p className="text-[18px] font-bold text-neu-text">{card.title_vi}</p>
         <div className="flex items-center gap-1 shrink-0">
           <ImportanceDot importance={card.importance} />
           {batchId && (
@@ -219,10 +223,12 @@ export function InsightCardItem({ card, batchId }: { card: InsightCard; batchId?
         </div>
       </div>
 
-      <p className="text-[13px] leading-relaxed text-neu-muted mb-3">{card.explanation_vi}</p>
+      {/* a11y: explanation text — 16px (was 13px) */}
+      <p className="text-[16px] leading-relaxed text-neu-muted mb-3">{card.explanation_vi}</p>
 
       <div className="flex items-center justify-between gap-2">
-        <span className="inline-flex items-center gap-1.5 text-[12px] text-neu-subtle">
+        {/* a11y: trend label — 15px (was 12px) */}
+        <span className="inline-flex items-center gap-1.5 text-[15px] text-neu-subtle">
           <TrendIcon trend={card.trend} size={13} />
           <span>
             {card.trend === 'improving'
@@ -235,8 +241,9 @@ export function InsightCardItem({ card, batchId }: { card: InsightCard; batchId?
           </span>
         </span>
 
+        {/* a11y: action badge — 14px (was 11px) */}
         <span
-          className="inline-block rounded-full px-3 py-1 text-[11px] font-semibold text-white"
+          className="inline-block rounded-full px-3 py-1 text-[14px] font-semibold text-white"
           style={{ background: '#0B7F5B' }}
         >
           {card.action_text_vi}
@@ -266,10 +273,12 @@ export function ActionCardItem({ card }: { card: ActionCard }) {
           <ActionTypeIcon type={card.action_type} />
         </span>
         <div className="flex-1 min-w-0">
-          <p className="text-[14px] font-bold text-neu-text">{card.title_vi}</p>
-          <p className="mt-0.5 text-[13px] leading-relaxed text-neu-muted">{card.detail_vi}</p>
+          {/* a11y: action card title — 17px (was 14px) */}
+          <p className="text-[17px] font-bold text-neu-text">{card.title_vi}</p>
+          {/* a11y: action card detail — 16px (was 13px) */}
+          <p className="mt-0.5 text-[16px] leading-relaxed text-neu-muted">{card.detail_vi}</p>
           {card.interval_days != null && (
-            <p className="mt-1.5 text-[12px] font-semibold text-neu-green">
+            <p className="mt-1.5 text-[15px] font-semibold text-neu-green">
               Sau {card.interval_days} ngày
             </p>
           )}
@@ -288,14 +297,16 @@ export function TimelineRow({ item }: { item: TimelineSummaryItem }) {
   return (
     <div className="flex items-center gap-3 py-2.5 border-b border-black/5 last:border-0">
       <div className="flex-1 min-w-0">
-        <p className="text-[14px] font-semibold text-neu-text truncate">{item.display_name_vi}</p>
+        {/* a11y: timeline display name — 17px (was 14px) */}
+        <p className="text-[17px] font-semibold text-neu-text truncate">{item.display_name_vi}</p>
         <div className="mt-0.5 flex items-center gap-1.5">
-          <TrendIcon trend={item.trend} size={12} />
-          <span className="text-[12px] text-neu-muted">{item.trend_text_vi}</span>
+          <TrendIcon trend={item.trend} size={14} />
+          {/* a11y: trend text — 15px (was 12px) */}
+          <span className="text-[15px] text-neu-muted">{item.trend_text_vi}</span>
         </div>
       </div>
       {item.change_pct != null && (
-        <span className="shrink-0 text-[13px] font-bold" style={{ color: changePctColor }}>
+        <span className="shrink-0 text-[15px] font-bold" style={{ color: changePctColor }}>
           {item.change_pct >= 0 ? '+' : ''}
           {item.change_pct.toFixed(0)}%
         </span>

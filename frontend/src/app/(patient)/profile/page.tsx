@@ -79,12 +79,13 @@ function InfoRow({
         (last ? '' : ' border-b border-[rgba(16,48,44,0.06)]')
       }
     >
-      <span className="shrink-0 text-[14px] text-neu-muted">{label}</span>
+      {/* a11y: info row label — 17px (was 14px) */}
+      <span className="shrink-0 text-[17px] text-neu-muted">{label}</span>
       <span
         className={
           empty
-            ? 'text-right text-[14px] italic text-neu-subtle'
-            : 'text-right text-[14px] font-semibold text-neu-text'
+            ? 'text-right text-[17px] italic text-neu-subtle'
+            : 'text-right text-[17px] font-semibold text-neu-text'
         }
       >
         {empty ? 'Chưa cập nhật' : value}
@@ -120,7 +121,8 @@ function LinkRow({
       <span style={{ color }} aria-hidden="true">
         {icon}
       </span>
-      <span className="flex-1 text-[14.5px] font-semibold text-neu-text">{label}</span>
+      {/* a11y: link row label — 17px (was 14.5px) */}
+      <span className="flex-1 text-[17px] font-semibold text-neu-text">{label}</span>
       <ChevronRight className="size-[18px] text-neu-subtle" aria-hidden="true" />
     </button>
   )

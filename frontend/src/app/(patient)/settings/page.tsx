@@ -201,7 +201,8 @@ export default function SettingsPage() {
         >
           <ArrowLeft className="size-5" />
         </button>
-        <h1 className="text-[20px] font-extrabold tracking-[-0.02em] text-neu-text">Cài đặt</h1>
+        {/* a11y: page title — 24px (was 20px) */}
+        <h1 className="text-[24px] font-extrabold tracking-[-0.02em] text-neu-text">Cài đặt</h1>
       </header>
 
       {/* Success banners */}
@@ -228,8 +229,9 @@ export default function SettingsPage() {
         <NeuCard className="!px-4 !py-1">
           {user.phone && (
             <div className="flex items-center justify-between gap-4 border-b border-[rgba(16,48,44,0.06)] py-3.5">
-              <span className="text-[14px] text-neu-muted">Số điện thoại</span>
-              <span className="text-[14px] font-semibold text-neu-text">{user.phone}</span>
+              {/* a11y: info row labels — 17px (was 14px) */}
+              <span className="text-[17px] text-neu-muted">Số điện thoại</span>
+              <span className="text-[17px] font-semibold text-neu-text">{user.phone}</span>
             </div>
           )}
 
@@ -293,8 +295,8 @@ export default function SettingsPage() {
           </div>
 
           <div className="flex items-center justify-between gap-4 border-b border-[rgba(16,48,44,0.06)] py-3.5">
-            <span className="text-[14px] text-neu-muted">Vai trò</span>
-            <span className="rounded-full bg-[#E3F5EC] px-3 py-1 text-[12px] font-bold text-neu-green">
+            <span className="text-[17px] text-neu-muted">Vai trò</span>
+            <span className="rounded-full bg-[#E3F5EC] px-3 py-1 text-[14px] font-bold text-neu-green">
               Bệnh nhân
             </span>
           </div>
@@ -393,7 +395,8 @@ export default function SettingsPage() {
                 idx < NOTIF_FIELDS.length - 1 ? 'border-b border-[rgba(16,48,44,0.06)]' : ''
               }`}
             >
-              <span className="text-[14px] font-medium text-neu-text">{label}</span>
+              {/* a11y: notification label — 17px (was 14px) */}
+              <span className="text-[17px] font-medium text-neu-text">{label}</span>
               <NeuToggle checked={prefs[key]} onToggle={() => togglePref(key)} />
             </div>
           ))}

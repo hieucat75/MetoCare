@@ -469,7 +469,7 @@
     border-radius: 999px;
     padding: 6px 12px;
     font-weight: 700;
-    font-size: 12px;
+    font-size: 14px;       /* a11y: min 14px (was 12px) */
     background: #d8e8df;
     border: 1px solid rgba(11, 127, 91, 0.25);
     color: #0b6b4d;
@@ -499,7 +499,55 @@
     font-family: 'JetBrains Mono', ui-monospace, monospace;
     text-transform: uppercase;
     letter-spacing: 0.06em;
-    font-size: 10.5px;
+    font-size: 13px;       /* a11y: bumped from 10.5px */
     color: #566e66;
   }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * A11Y LARGE FONT LAYER — min 18px body, 40px+ metric values, 24px headers.
+ * Patient app only (scoped to .patient-app). Doctor/admin portals unchanged.
+ * ──────────────────────────────────────────────────────────────────────── */
+
+/* Base: lift root font so 1rem = 18px; generous line-height everywhere */
+.patient-app {
+  font-size: 18px;
+  line-height: 1.6;
+}
+
+/* Body / paragraph text — ensure 18px minimum */
+.patient-app p,
+.patient-app li,
+.patient-app span:not(.neu-caption):not(.text-override) {
+  line-height: 1.6;
+}
+
+/* Section headers inside patient screens — 24px bold */
+.patient-app h2 {
+  font-size: 1.5rem;   /* 24px */
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+/* Card/sub-section titles — 22px semibold */
+.patient-app h3 {
+  font-size: 1.375rem; /* 22px */
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+/* Reference range labels inside patient screens — min 18px */
+.patient-app .ref-range-label {
+  font-size: 18px;
+}
+
+/* Chart legend + date labels — 17px minimum */
+.patient-app .chart-legend,
+.patient-app .trend-date {
+  font-size: 17px;
+}
+
+/* Navigation label override (PatientBottomNav uses .bottomnav-btn) */
+.patient-app .bottomnav-btn span:not([aria-hidden]) {
+  font-size: 13px !important;  /* bumped from 10px — still fits 5-tab bar */
 }
