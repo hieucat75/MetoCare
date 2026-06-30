@@ -185,14 +185,14 @@ export function MetricRowItem({ series, expanded, onToggle }: Props) {
           >
             <Icon className="size-[19px]" style={{ color: st.hue }} />
           </span>
-          <span className="flex-1 min-w-0 text-[15px] font-bold text-[#0E2A33] leading-snug truncate">
+          <span className="flex-1 min-w-0 text-[17px] font-bold text-[#0E2A33] leading-snug truncate">
             {name}
           </span>
           <span
-            className="inline-flex items-center gap-[5px] shrink-0 rounded-[9px] px-[9px] py-[5px] text-[12px] font-bold"
+            className="inline-flex items-center gap-[5px] shrink-0 rounded-[9px] px-[9px] py-[5px] text-[14px] font-bold"
             style={{ background: st.bg, border: `1px solid ${st.border}`, color: st.text }}
           >
-            <StatusIcon className="size-[13px]" style={{ color: st.text }} aria-hidden="true" />
+            <StatusIcon className="size-[15px]" style={{ color: st.text }} aria-hidden="true" />
             {statusLabel}
           </span>
         </div>
@@ -204,27 +204,27 @@ export function MetricRowItem({ series, expanded, onToggle }: Props) {
               className="font-bold leading-[0.9] tracking-[-0.01em]"
               style={{
                 fontFamily: "'JetBrains Mono', monospace",
-                fontSize: '28px',
+                fontSize: '32px',
                 color: tone === 'mint' ? '#0E2A33' : st.hue,
               }}
             >
               {value}
             </span>
             {unitLabel && (
-              <span className="text-[13px] font-semibold text-[#5A736D]">{unitLabel}</span>
+              <span className="text-[17px] font-semibold text-[#5A736D]">{unitLabel}</span>
             )}
           </div>
           {(target || delta) && (
             <div className="flex flex-wrap items-baseline gap-x-[5px] gap-y-[1px]">
-              {target && <span className="text-[13px] font-medium text-[#5A736D]">{target}</span>}
+              {target && <span className="text-[17px] font-semibold text-[#5A736D]">{target}</span>}
               {target && delta && (
-                <span className="text-[13px] text-[#B2C0BB]" aria-hidden="true">
+                <span className="text-[15px] text-[#B2C0BB]" aria-hidden="true">
                   ·
                 </span>
               )}
               {delta && (
                 <span
-                  className="text-[15px] font-semibold leading-tight"
+                  className="text-[17px] font-semibold leading-tight"
                   style={{ color: delta.color }}
                 >
                   {delta.text}
@@ -251,7 +251,7 @@ export function MetricRowItem({ series, expanded, onToggle }: Props) {
                   border: '1px solid rgba(16,48,44,0.06)',
                 }}
               >
-                <div className="text-[11.5px] font-bold text-[#475C56] mx-[6px] mb-[6px]">
+                <div className="text-[15px] font-bold text-[#475C56] mx-[6px] mb-[6px]">
                   Xu hướng gần đây
                 </div>
                 <Sparkline values={sparkValues} color={st.hue} className="h-[72px] w-full" />
@@ -260,18 +260,18 @@ export function MetricRowItem({ series, expanded, onToggle }: Props) {
 
             {histRows.length > 0 && (
               <div>
-                <div className="text-[11.5px] font-bold text-[#475C56] mx-[2px] mb-[4px]">
+                <div className="text-[15px] font-bold text-[#475C56] mx-[2px] mb-[4px]">
                   Lịch sử đo
                 </div>
                 {histRows.map((h) => (
                   <div
                     key={h.key}
-                    className="flex items-center justify-between py-[7px] px-[4px]"
+                    className="flex items-center justify-between py-[10px] px-[4px]"
                     style={{ borderBottom: '1px solid rgba(16,48,44,0.06)' }}
                   >
-                    <span className="text-[12.5px] text-[#5A736D]">{h.date}</span>
+                    <span className="text-[16px] text-[#5A736D]">{h.date}</span>
                     <span
-                      className="text-[13px] font-semibold text-[#0E2A33]"
+                      className="text-[16px] font-semibold text-[#0E2A33]"
                       style={{ fontFamily: "'JetBrains Mono', monospace" }}
                     >
                       {h.val}
@@ -282,8 +282,8 @@ export function MetricRowItem({ series, expanded, onToggle }: Props) {
             )}
 
             <div className="flex items-center gap-[6px]">
-              <Clock className="size-[13px] text-[#7C9089]" aria-hidden="true" />
-              <span className="text-[11px] text-[#7C9089]">
+              <Clock className="size-[15px] text-[#7C9089]" aria-hidden="true" />
+              <span className="text-[15px] text-[#7C9089]">
                 Đo ngày {fmtDate(series.latest.measured_at)} · {relDate(series.latest.measured_at)}
               </span>
             </div>
