@@ -662,7 +662,11 @@ export interface LabExplanation {
   what_to_monitor: string
   what_to_ask_doctor: string
   next_step: string
-  source: 'claude' | 'deterministic_fallback' | 'fallback_after_validation_failure' | 'fallback_after_error'
+  source:
+    | 'claude'
+    | 'deterministic_fallback'
+    | 'fallback_after_validation_failure'
+    | 'fallback_after_error'
   validated: boolean
   input_hash?: string
 }
@@ -797,6 +801,48 @@ export async function updateMedication(
 
 export async function deleteMedication(patientId: string, medId: string): Promise<void> {
   return api.del(`/patients/${patientId}/medications/${medId}`)
+}
+
+// ── Drug library autocomplete (name lookup only — never prescribing) ─────────────
+
+/** One drug suggestion from the reference catalog. Mirrors backend DrugSuggestItem. */
+export interface DrugSuggestItem {
+  id: string
+  display_name: string
+  generic_name: string
+  matched_name: string
+  brand_names: string[]
+  drug_class: string
+  metric_groups: string[]
+  prescription_required: boolean
+  caution_flags: string[]
+  confidence_score: number
+  safety_notice: string
+}
+
+export interface DrugSuggestResponse {
+  query: string
+  metric_group: string | null
+  results: DrugSuggestItem[]
+  total: number
+}
+
+/**
+ * Autocomplete medication names from the backend drug reference catalog.
+ *
+ * NAME LOOKUP ONLY — the endpoint never returns dosing or treatment advice.
+ * An unknown query returns an empty `results` array (no hallucinated drug).
+ */
+export async function suggestMedications(
+  q: string,
+  params?: { metricGroup?: string; limit?: number; signal?: AbortSignal }
+): Promise<DrugSuggestResponse> {
+  const qs = new URLSearchParams({ q })
+  if (params?.metricGroup) qs.set('metric_group', params.metricGroup)
+  if (params?.limit) qs.set('limit', String(params.limit))
+  return api.get<DrugSuggestResponse>(`/medications/suggest?${qs.toString()}`, {
+    signal: params?.signal,
+  })
 }
 
 // ── Medication Adherence ───────────────────────────────────────────────────────
@@ -1025,10 +1071,7 @@ export async function updateMetric(
   metricId: string,
   data: MetricUpdateInput
 ): Promise<HealthMetric> {
-  const raw = await api.patch<HealthMetric>(
-    `/patients/${patientId}/metrics/${metricId}`,
-    data
-  )
+  const raw = await api.patch<HealthMetric>(`/patients/${patientId}/metrics/${metricId}`, data)
   return { ...raw, recorded_at: raw.measured_at ?? '' }
 }
 
@@ -1058,10 +1101,7 @@ export async function updateLabResult(
   resultId: string,
   data: LabResultUpdateInput
 ): Promise<LabResultEntry> {
-  return api.patch<LabResultEntry>(
-    `/patients/${patientId}/lab-results/${resultId}`,
-    data
-  )
+  return api.patch<LabResultEntry>(`/patients/${patientId}/lab-results/${resultId}`, data)
 }
 
 /** Soft-delete a single LabResult. */
