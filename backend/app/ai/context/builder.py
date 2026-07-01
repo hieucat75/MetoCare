@@ -280,8 +280,7 @@ class ContextBuilder:
         try:
             row = db.execute(
                 text("""
-                    SELECT u.full_name, pp.date_of_birth, pp.gender,
-                           pp.preferred_address
+                    SELECT u.full_name, pp.dob, pp.gender, pp.address
                     FROM users u
                     LEFT JOIN patient_profiles pp ON pp.user_id = u.id
                     WHERE u.id = :uid AND u.is_active = 1
@@ -293,7 +292,7 @@ class ContextBuilder:
             if not row:
                 return None
 
-            dob = row[1]
+            dob = row[1]  # encrypted ISO string or None
             age = None
             if dob:
                 try:
@@ -326,10 +325,12 @@ class ContextBuilder:
     def _build_health_summary(self, db: Session, user_id: str) -> dict | None:
         """Build health summary block. Consumes DB execute #2."""
         try:
+            # Map to actual PatientProfile columns:
+            # known_conditions (encrypted), allergies (encrypted)
+            # No blood_type / primary_conditions / secondary_conditions columns exist.
             row = db.execute(
                 text("""
-                    SELECT primary_conditions, secondary_conditions,
-                           allergies, blood_type, chronic_conditions
+                    SELECT known_conditions, allergies
                     FROM patient_profiles
                     WHERE user_id = :uid
                     LIMIT 1
@@ -355,10 +356,10 @@ class ContextBuilder:
 
             return {
                 "primary_conditions": _parse_list(row[0]),
-                "secondary_conditions": _parse_list(row[1]),
-                "allergies": _parse_list(row[2]),
-                "blood_type": row[3],
-                "chronic_conditions": _parse_list(row[4]),
+                "secondary_conditions": [],
+                "allergies": _parse_list(row[1]),
+                "blood_type": None,
+                "chronic_conditions": [],
             }
         except Exception as exc:
             logger.warning("Error building health_summary for %s: %s", user_id, exc)
