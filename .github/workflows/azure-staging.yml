@@ -125,9 +125,10 @@ jobs:
           # secret (a public FQDN) but kept in KV for one place to manage; key IS secret.
           DOC_INTEL_ENDPOINT=$(az keyvault secret show --vault-name "$KV_NAME" -n azure-doc-intel-endpoint --query value -o tsv)
           DOC_INTEL_KEY=$(az keyvault secret show --vault-name "$KV_NAME" -n azure-doc-intel-key --query value -o tsv)
+          DEEPSEEK_KEY=$(az keyvault secret show --vault-name "$KV_NAME" -n deepseek-api-key --query value -o tsv)
           # Mask + export to later steps via env file (never echoed).
           echo "::add-mask::$DB_URL"; echo "::add-mask::$SECRET_KEY"; echo "::add-mask::$ENC_KEYS"
-          echo "::add-mask::$DOC_INTEL_KEY"
+          echo "::add-mask::$DOC_INTEL_KEY"; echo "::add-mask::$DEEPSEEK_KEY"
           {
             echo "DB_URL<<EOF"; echo "$DB_URL"; echo "EOF"
             echo "SECRET_KEY<<EOF"; echo "$SECRET_KEY"; echo "EOF"
@@ -135,6 +136,7 @@ jobs:
             echo "APPI<<EOF"; echo "$APPI"; echo "EOF"
             echo "DOC_INTEL_ENDPOINT<<EOF"; echo "$DOC_INTEL_ENDPOINT"; echo "EOF"
             echo "DOC_INTEL_KEY<<EOF"; echo "$DOC_INTEL_KEY"; echo "EOF"
+            echo "DEEPSEEK_KEY<<EOF"; echo "$DEEPSEEK_KEY"; echo "EOF"
           } >> "$GITHUB_ENV"
 
       - name: Run Alembic migration (one-shot Container Apps Job)
@@ -171,7 +173,7 @@ jobs:
       - name: Deploy backend Container App
         run: |
           IMG="${REGISTRY}/${{ github.repository_owner }}/metocare-backend:${{ steps.tag.outputs.tag }}"
-          COMMON_SECRETS="db-url=$DB_URL secret-key=$SECRET_KEY enc-keys=$ENC_KEYS appi=$APPI doc-intel-key=$DOC_INTEL_KEY"
+          COMMON_SECRETS="db-url=$DB_URL secret-key=$SECRET_KEY enc-keys=$ENC_KEYS appi=$APPI doc-intel-key=$DOC_INTEL_KEY deepseek-api-key=$DEEPSEEK_KEY"
           # CORS: NEXT_PUBLIC_* and the browser run from the frontend origin, so the
           # backend must allow it. Persisted as an env var here (no manual hotfix).
           # OCR (v1.0.6): MCP_FEATURE_OCR=true enables the lab-upload draft pipeline on
@@ -187,7 +189,7 @@ jobs:
             MCP_ENCRYPTION_KEYS=secretref:enc-keys \
             APPLICATIONINSIGHTS_CONNECTION_STRING=secretref:appi \
             MCP_CORS_ALLOWED_ORIGINS=https://${FRONTEND_FQDN},https://app.metocare.me \
-            MCP_AI_MODE=mock MCP_LLM_PROVIDER=mock MCP_OCR_MODE=mock \
+            MCP_AI_MODE=production MCP_LLM_PROVIDER=deepseek MCP_OCR_MODE=mock \
             FEATURE_AI_ASSISTANT=true \
             MCP_OCR_WORKER_ENABLED=false MCP_RAG_ENABLED=false \
             MCP_STORAGE_MODE=local MCP_RATELIMIT_BACKEND=memory \
@@ -195,7 +197,8 @@ jobs:
             MCP_FEATURE_OCR=true MCP_FEATURE_OCR_CLOUD_FALLBACK=true \
             MCP_OCR_CLOUD_PROVIDER=azure \
             AZURE_DOC_INTEL_ENDPOINT=${DOC_INTEL_ENDPOINT} \
-            AZURE_DOC_INTEL_KEY=secretref:doc-intel-key"
+            AZURE_DOC_INTEL_KEY=secretref:doc-intel-key \
+            MCP_DEEPSEEK_API_KEY=secretref:deepseek-api-key"
           if az containerapp show -g "$RG" -n "$BACKEND_APP" -o none 2>/dev/null; then
             az containerapp secret set -g "$RG" -n "$BACKEND_APP" --secrets $COMMON_SECRETS -o none
             az containerapp update -g "$RG" -n "$BACKEND_APP" --image "$IMG" \
