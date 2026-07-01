@@ -45,6 +45,12 @@ def create_app() -> FastAPI:
         # CI/CD runs `alembic upgrade head` before every container restart.
         # This ensures schema is always migration-tracked and reproducible.
         logger.info("Startup: schema managed by Alembic — no runtime create_all()")
+
+        # Initialize Meto AI provider registry from environment settings.
+        # Must run after settings are validated so API keys are available.
+        from app.ai.registry import init_registry_from_settings
+        init_registry_from_settings()
+
         # Start the async OCR worker (built-in asyncio queue; no Celery/Redis).
         worker = None
         if settings.ocr_worker_enabled:
