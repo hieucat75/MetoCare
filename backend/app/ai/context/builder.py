@@ -388,25 +388,32 @@ class ContextBuilder:
                 {"uid": user_id},
             ).fetchone()
 
+            if not plan:
+                return None
+
+            # care_tasks table may not exist in all environments — skip gracefully
             today_start = dt.datetime.now(dt.UTC).replace(
                 hour=0, minute=0, second=0, microsecond=0
             ).isoformat()
 
-            # Always query tasks (stable DB call order)
-            plan_id = plan[0] if plan else "__no_plan__"
-            tasks = db.execute(
-                text("""
-                    SELECT title, due_date, status, priority
-                    FROM care_tasks
-                    WHERE plan_id = :plan_id AND due_date >= :today
-                    ORDER BY priority DESC, due_date ASC
-                    LIMIT 20
-                """),
-                {"plan_id": plan_id, "today": today_start},
-            ).fetchall()
-
-            if not plan:
-                return None
+            plan_id = plan[0]
+            try:
+                tasks = db.execute(
+                    text("""
+                        SELECT title, due_date, status, priority
+                        FROM care_tasks
+                        WHERE plan_id = :plan_id AND due_date >= :today
+                        ORDER BY priority DESC, due_date ASC
+                        LIMIT 20
+                    """),
+                    {"plan_id": plan_id, "today": today_start},
+                ).fetchall()
+            except Exception:
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
+                tasks = []
 
             task_list = []
             for t in tasks:
