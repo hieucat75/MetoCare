@@ -145,22 +145,23 @@ def test_system_prompt_has_response_length_constraint():
 # D. Consent-required schema field
 # ---------------------------------------------------------------------------
 
-def test_metachat_response_has_consent_required_field():
-    """MetaChatResponse schema must include consent_required and missing_consents."""
+def test_metachat_response_consent_required_schema_fields_exist():
+    """consent_required and missing_consents fields exist in schema (backward-compat).
+    Per product design: T&C covers consent at registration; always False in chat.
+    """
     resp = MetaChatResponse(
         conversation_id="conv-1",
         message_id="msg-1",
         content="Test",
-        consent_required=True,
-        missing_consents=["medications", "labs"],
+        consent_required=False,
+        missing_consents=[],
     )
-    assert resp.consent_required is True
-    assert "medications" in resp.missing_consents
-    assert "labs" in resp.missing_consents
+    assert resp.consent_required is False
+    assert resp.missing_consents == []
 
 
 def test_metachat_response_consent_required_defaults_false():
-    """consent_required defaults to False."""
+    """consent_required always defaults to False — no consent gate in chat."""
     resp = MetaChatResponse(
         conversation_id="conv-1",
         message_id="msg-1",

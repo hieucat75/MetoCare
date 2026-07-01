@@ -21,7 +21,9 @@ export interface MetoChatResponse {
   provider_used: string
   fallback_used: boolean
   quick_follow_ups: string[]
+  /** @deprecated Always false. T&C covers consent at registration. Kept for backward-compat only. */
   consent_required?: boolean
+  /** @deprecated Always empty. Kept for backward-compat only. */
   missing_consents?: string[]
 }
 

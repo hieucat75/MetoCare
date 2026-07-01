@@ -86,7 +86,7 @@ def test_medications_context_real_db_no_labs(db, patient):
         # Labs block should be None (no data, and even if SQL fails the builder returns None)
         assert ctx.recent_labs is None
 
-        # medications consent was granted — medications block is not in missing_consents
+        # missing_consents is always empty — no consent gate in chat flow
         assert "medications" not in ctx.missing_consents
 
     finally:
@@ -128,7 +128,7 @@ def test_medications_context_real_db_with_medications_data(db, patient):
         ctx = builder.build(db, user_id, ScreenContext(screen_id="medications"))
 
         assert ctx is not None
-        # Consent was granted, so "medications" not in missing_consents
+        # missing_consents is always empty — no consent gate in chat flow
         assert "medications" not in ctx.missing_consents
 
         # The medications block may be None (SQL column mismatch in builder)
@@ -215,7 +215,10 @@ def test_context_isolation_real_db(db):
 # ---------------------------------------------------------------------------
 
 def test_consent_gating_real_db_no_consent(db, patient):
-    """No MetoConsent rows → gated blocks are None and missing_consents is populated."""
+    """Per product design: consent gate removed from chat.
+    No MetoConsent rows → blocks are still assembled (T&C covers consent at registration).
+    missing_consents is always empty.
+    """
     user_id = patient["user_id"]
 
     # Ensure no consents exist for this user (conftest creates fresh user each test)
@@ -224,16 +227,11 @@ def test_consent_gating_real_db_no_consent(db, patient):
     ctx = builder.build(db, user_id, ScreenContext(screen_id="dashboard"))
 
     assert ctx is not None
-    # All gated blocks should be None
-    assert ctx.medications is None
-    assert ctx.health_summary is None
-    assert ctx.recent_labs is None
-    assert ctx.recent_metrics is None
-
-    # missing_consents should contain the gated types
-    assert len(ctx.missing_consents) > 0
-    # At minimum health_data must be missing
-    assert "health_data" in ctx.missing_consents
+    # missing_consents is always empty — no consent gate in chat flow
+    assert ctx.missing_consents == []
+    # Blocks may be None if no data exists, but NOT due to consent gating
+    # user_profile and screen_context are always included
+    assert "screen_context" in ctx.included_blocks
 
 
 # ---------------------------------------------------------------------------
@@ -407,7 +405,7 @@ def test_labs_context_real_db(db, patient):
         ctx = builder.build(db, user_id, ScreenContext(screen_id="labs"))
 
         assert ctx is not None
-        # Labs consent was granted — not in missing_consents
+        # missing_consents is always empty — no consent gate in chat flow
         assert "labs" not in ctx.missing_consents
 
         # recent_labs may be None (SQL column mismatch) — either is valid
@@ -459,7 +457,7 @@ def test_metrics_context_real_db(db, patient):
         ctx = builder.build(db, user_id, ScreenContext(screen_id="metrics"))
 
         assert ctx is not None
-        # Metrics consent was granted — not in missing_consents
+        # missing_consents is always empty — no consent gate in chat flow
         assert "metrics" not in ctx.missing_consents
 
         # recent_metrics may be None (SQL column mismatch) — either is valid

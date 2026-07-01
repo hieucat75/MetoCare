@@ -113,32 +113,33 @@ _SAMPLE_METRICS = [
 
 
 # ---------------------------------------------------------------------------
-# Tests: No consent
+# Tests: No consent (behavior changed — no consent gate in chat)
+# Per product design: T&C covers consent at registration.
+# Meto reads health profile by default. Consent management is in Settings only.
 # ---------------------------------------------------------------------------
 
 class TestNoConsent:
-    def test_health_blocks_are_none_without_consent(self):
-        """With no consents, all health-gated blocks must be excluded."""
+    def test_health_blocks_included_without_explicit_consent(self):
+        """No consent gate in chat — all blocks with data are included."""
         ctx = _build_with_patches(
             "dashboard",
-            consent_rows=[],
+            consent_rows=[],  # no explicit consent rows
             user_profile=_SAMPLE_USER_PROFILE,
-            # The patched methods return these values, but the builder
-            # must gate them behind consent checks
+            health_summary=_SAMPLE_HEALTH_SUMMARY,
+            medications=_SAMPLE_MEDICATIONS,
         )
-        # health_summary, medications, recent_labs, recent_metrics are consent-gated
-        assert ctx.health_summary is None
-        assert ctx.medications is None
-        assert ctx.recent_labs is None
-        assert ctx.recent_metrics is None
+        # Blocks are included regardless of consent rows (T&C covers consent)
+        assert ctx.health_summary is not None
+        assert ctx.medications is not None
 
-    def test_missing_consent_types_recorded(self):
+    def test_missing_consents_always_empty(self):
+        """missing_consents must always be empty — no consent gate in chat."""
         ctx = _build_with_patches(
             "dashboard",
             consent_rows=[],
             user_profile=_SAMPLE_USER_PROFILE,
         )
-        assert "health_data" in ctx.missing_consents
+        assert ctx.missing_consents == []
 
     def test_user_profile_included_without_consent(self):
         """user_profile block doesn't require consent."""
@@ -159,10 +160,10 @@ class TestNoConsent:
         assert ctx.screen_context["screen_id"] == "labs"
         assert "screen_context" in ctx.included_blocks
 
-    def test_context_block_is_none_not_missing(self):
-        """Blocks must be None (not missing from schema) when consent absent."""
+    def test_context_block_fields_exist(self):
+        """AssembledContext schema fields always exist (None when no data, not when consent absent)."""
         ctx = _build_with_patches("dashboard", consent_rows=[])
-        # Verify the AssembledContext fields exist as None (not omitted)
+        # Verify the AssembledContext fields exist
         assert hasattr(ctx, "health_summary")
         assert hasattr(ctx, "medications")
         assert hasattr(ctx, "recent_labs")
@@ -235,7 +236,8 @@ class TestWithConsent:
         )
         assert ctx.total_estimated_tokens > 0
 
-    def test_no_missing_consents_with_full_consent(self):
+    def test_no_missing_consents_always(self):
+        """missing_consents is always empty — no consent gate in chat flow."""
         ctx = _build_with_patches(
             "dashboard",
             consent_rows=_all_consents(),

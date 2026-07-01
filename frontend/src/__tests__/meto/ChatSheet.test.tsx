@@ -20,13 +20,6 @@ jest.mock('@/lib/api/meto', () => ({
   sendMetoMessage: (...args: unknown[]) => mockSendMetoMessage(...args),
 }))
 
-// Mock next/navigation for ConsentPrompt
-jest.mock('next/navigation', () => ({
-  useRouter: () => ({
-    push: jest.fn(),
-  }),
-}))
-
 // Default mock response
 const DEFAULT_RESPONSE = {
   conversation_id: 'conv-1',
@@ -83,7 +76,7 @@ describe('ChatSheet', () => {
       'Meto',
     ]
     const messageExists = greetings.some(
-      phrase => screen.queryByText(new RegExp(phrase, 'i')) !== null
+      phrase => screen.queryAllByText(new RegExp(phrase, 'i')).length > 0
     )
     expect(messageExists).toBe(true)
   })
@@ -167,9 +160,11 @@ describe('ChatSheet', () => {
     expect(screen.getByText('Trợ lý sức khỏe AI')).toBeInTheDocument()
   })
 
-  // ── Consent required ──────────────────────────────────────────────────────
+  // ── Consent removed — Meto reads profile by default ─────────────────────────
+  // Per product design: T&C covers consent at registration.
+  // ConsentPrompt is NOT shown in chat. consent_required is always false.
 
-  it('shows ConsentPrompt when consent_required is true', async () => {
+  it('does NOT show ConsentPrompt even when backend returns consent_required=true', async () => {
     mockSendMetoMessage.mockResolvedValueOnce(CONSENT_REQUIRED_RESPONSE)
     renderChatSheet(true)
 
@@ -179,11 +174,14 @@ describe('ChatSheet', () => {
     fireEvent.keyDown(input, { key: 'Enter' })
 
     await waitFor(() => {
-      expect(screen.getByTestId('consent-prompt')).toBeInTheDocument()
+      // Response should be shown as normal message, NOT as ConsentPrompt
+      expect(screen.queryByTestId('consent-prompt')).not.toBeInTheDocument()
+      // The content from backend is shown directly
+      expect(screen.getByText('Để cá nhân hóa, Meto cần quyền đọc dữ liệu.')).toBeInTheDocument()
     })
   })
 
-  it('consent CTA chips are present', async () => {
+  it('consent CTA chips never appear in chat flow', async () => {
     mockSendMetoMessage.mockResolvedValueOnce(CONSENT_REQUIRED_RESPONSE)
     renderChatSheet(true)
 
@@ -192,24 +190,10 @@ describe('ChatSheet', () => {
     fireEvent.keyDown(input, { key: 'Enter' })
 
     await waitFor(() => {
-      expect(screen.getByTestId('consent-open-settings')).toBeInTheDocument()
-      expect(screen.getByTestId('consent-ask-general')).toBeInTheDocument()
-      expect(screen.getByTestId('consent-dismiss')).toBeInTheDocument()
-    })
-  })
-
-  it('consent CTA button text is correct', async () => {
-    mockSendMetoMessage.mockResolvedValueOnce(CONSENT_REQUIRED_RESPONSE)
-    renderChatSheet(true)
-
-    const input = screen.getByPlaceholderText('Nhắn tin cho Meto…')
-    fireEvent.change(input, { target: { value: 'Test' } })
-    fireEvent.keyDown(input, { key: 'Enter' })
-
-    await waitFor(() => {
-      expect(screen.getByText('Mở Quyền riêng tư')).toBeInTheDocument()
-      expect(screen.getByText('Hỏi chung')).toBeInTheDocument()
-      expect(screen.getByText('Để sau')).toBeInTheDocument()
+      // ConsentPrompt CTA chips must NOT appear in chat
+      expect(screen.queryByTestId('consent-open-settings')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('consent-ask-general')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('consent-dismiss')).not.toBeInTheDocument()
     })
   })
 

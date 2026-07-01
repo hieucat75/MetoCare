@@ -188,24 +188,26 @@ describe('Provider identity leakage prevention', () => {
   })
 })
 
-// ── C. Consent-Required Response Shape ───────────────────────────────────────
+// ── C. Consent gate removed — Meto reads profile by default ─────────────────
+// Per product design: T&C covers consent at registration.
+// consent_required is always false; ConsentPrompt never shown in chat.
 
-describe('Consent-required response', () => {
-  it('MetaChatResponse has consent_required field', () => {
+describe('Consent gate removed', () => {
+  it('consent_required is always false/falsy in chat flow', () => {
     const mockResponse: MetaChatResponse = {
       conversation_id: 'conv-1',
       message_id: 'msg-1',
-      content: 'Để cá nhân hóa, Meto cần quyền đọc dữ liệu.',
+      content: 'Meto reads your health profile and answers immediately.',
       safety_flags: [],
       provider_used: 'meto',
       fallback_used: false,
       quick_follow_ups: [],
-      consent_required: true,
-      missing_consents: ['medications', 'labs'],
+      // consent_required should always be false or omitted
+      consent_required: false,
+      missing_consents: [],
     }
-    expect(mockResponse.consent_required).toBe(true)
-    expect(mockResponse.missing_consents).toContain('medications')
-    expect(mockResponse.missing_consents).toContain('labs')
+    expect(mockResponse.consent_required).toBeFalsy()
+    expect(mockResponse.missing_consents).toHaveLength(0)
   })
 
   it('consent_required defaults to undefined/false when not set', () => {

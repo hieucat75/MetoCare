@@ -538,7 +538,7 @@ class MetoChatService:
                 response_time_ms=response_ms,
                 token_count_input=input_tokens,
                 token_count_output=output_tokens,
-                details={"missing_consents": context.missing_consents},
+                details={},
             )
             db.add(log)
             db.commit()
@@ -660,6 +660,8 @@ class MetoChatService:
         screen_id = screen_context.screen_id or "dashboard"
         quick_follow_ups = _PROMPT_ASSEMBLER._get_quick_prompts(screen_id)[:3]
 
+        # Per product design: consent_required is always False.
+        # T&C covers consent at registration; Meto reads profile by default.
         return MetaChatResponse(
             conversation_id=conversation.id,
             message_id=msg_id,
@@ -669,8 +671,8 @@ class MetoChatService:
             provider_used="meto",  # NEVER expose actual provider
             fallback_used=fallback_used,
             quick_follow_ups=quick_follow_ups,
-            consent_required=len(context.missing_consents) > 0 if context else False,
-            missing_consents=context.missing_consents if context else [],
+            consent_required=False,
+            missing_consents=[],
         )
 
 

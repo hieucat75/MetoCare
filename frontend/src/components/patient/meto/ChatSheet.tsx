@@ -4,22 +4,24 @@
  *
  * Implements:
  * - Markdown-safe message rendering (no raw ** or ## leakage)
- * - Time-aware + consent-aware greeting engine
- * - Consent-required CTA chips (ConsentPrompt)
- * - Visual distinction for message types: greeting / normal / safety / consent / missing-data
+ * - Time-aware greeting engine
+ * - Visual distinction for message types: greeting / normal / safety / missing-data
  * - Mobile UX: min 16px font, input above bottom bar, smooth scroll
+ *
+ * NOTE: ConsentPrompt is NOT rendered here. Per product design, T&C covers consent
+ * at registration. Meto reads health profile by default. Consent management is in
+ * Settings > Quyền riêng tư only.
  */
 import * as React from 'react'
 import { X, Send } from 'lucide-react'
 import { MetoAura } from './MetoAura'
 import { QuickPromptChips } from './QuickPromptChips'
-import { ConsentPrompt } from './ConsentPrompt'
 import { MarkdownMessage } from './MarkdownMessage'
 import { sendMetoMessage, type MetoChatResponse } from '@/lib/api/meto'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type MessageType = 'greeting' | 'normal' | 'safety' | 'consent_required' | 'missing_data' | 'error'
+type MessageType = 'greeting' | 'normal' | 'safety' | 'missing_data' | 'error'
 
 type ChatMessage = {
   id: string
@@ -27,8 +29,6 @@ type ChatMessage = {
   content: string
   messageType?: MessageType
   escalation?: MetoChatResponse['escalation']
-  consentRequired?: boolean
-  missingConsents?: string[]
   timestamp: Date
 }
 
@@ -175,13 +175,8 @@ export function ChatSheet({ open, onClose, screenId, entityId, entityType }: Pro
       setConversationId(res.conversation_id)
       setMetoState('answering')
 
-      // Determine message type
-      let messageType: MessageType = 'normal'
-      if (res.consent_required) {
-        messageType = 'consent_required'
-      } else if (res.escalation) {
-        messageType = 'safety'
-      }
+      // Determine message type — consent_required is never true by product design
+      const messageType: MessageType = res.escalation ? 'safety' : 'normal'
 
       setMessages((prev) => [
         ...prev,
@@ -191,8 +186,6 @@ export function ChatSheet({ open, onClose, screenId, entityId, entityType }: Pro
           content: res.content,
           messageType,
           escalation: res.escalation,
-          consentRequired: res.consent_required,
-          missingConsents: res.missing_consents,
           timestamp: new Date(),
         },
       ])
@@ -300,25 +293,8 @@ export function ChatSheet({ open, onClose, screenId, entityId, entityType }: Pro
                   msg.role === 'user' ? 'items-end max-w-[78%]' : 'items-start max-w-[85%]'
                 }`}
               >
-                {/* Bubble — consent_required gets its own component */}
-                {msg.role === 'assistant' && msg.messageType === 'consent_required' ? (
-                  <ConsentPrompt
-                    onAskGeneral={() => void handleSend('Tôi có câu hỏi chung về sức khỏe')}
-                    onDismiss={() => {
-                      // Add a soft dismissal message
-                      setMessages((prev) => [
-                        ...prev,
-                        {
-                          id: 'dismiss-' + Date.now(),
-                          role: 'assistant',
-                          content: 'Được rồi! Bạn có thể bật quyền bất kỳ lúc nào trong Cài đặt > Quyền riêng tư. Meto vẫn có thể trả lời các câu hỏi sức khỏe chung nhé.',
-                          messageType: 'normal',
-                          timestamp: new Date(),
-                        },
-                      ])
-                    }}
-                  />
-                ) : (
+                {/* Bubble */}
+                {(
                   <div
                     className={[
                       'rounded-[18px] px-4 py-3',

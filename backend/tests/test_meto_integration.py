@@ -169,7 +169,7 @@ def _make_full_svc_patches(
         today_context={},
         safety_flags=[],
         total_estimated_tokens=200,
-        missing_consents=[] if consent_rows else ["health_data", "medications", "labs"],
+        missing_consents=[],  # Always empty — no consent gate in chat flow
         included_blocks=["user_profile", "screen_context"],
     )
 
@@ -224,17 +224,23 @@ class TestContextIsolation:
 # ---------------------------------------------------------------------------
 
 class TestConsentGating:
-    def test_consent_gating_no_consent_excludes_medications_block(self):
-        """No medications consent → medications block must be None."""
+    """Per product design: consent gate removed from chat.
+    T&C covers consent at registration. Meto reads profile by default.
+    These tests now verify the new behavior.
+    """
+    def test_no_consent_gate_medications_included_when_data_exists(self):
+        """No consent rows → medications still included (no consent gate)."""
         ctx = _build_with_patches(
             "medications",
-            consent_rows=[],  # no consents at all
+            consent_rows=[],  # no consents — but no gate either
             medications=[{"name": "Metformin", "dosage": "500mg", "frequency": "2x/day"}],
         )
-        assert ctx.medications is None
+        # Medications IS included (data exists + screen matches)
+        assert ctx.medications is not None
+        assert ctx.medications[0]["name"] == "Metformin"
 
-    def test_consent_gating_with_consent_includes_medications_block(self):
-        """With medications consent → medications block populated."""
+    def test_medications_included_with_or_without_consent(self):
+        """Both with and without consent → medications block populated when data exists."""
         ctx = _build_with_patches(
             "medications",
             consent_rows=_consents_for("medications"),
@@ -243,28 +249,26 @@ class TestConsentGating:
         assert ctx.medications is not None
         assert ctx.medications[0]["name"] == "Metformin"
 
-    def test_no_consent_missing_consents_list_populated(self):
-        """missing_consents must include all gated consent types when absent."""
+    def test_missing_consents_always_empty(self):
+        """missing_consents is always empty — no consent gate in chat flow."""
         ctx = _build_with_patches(
             "dashboard",
             consent_rows=[],
         )
-        # health_data is gated; should appear in missing_consents
-        assert "health_data" in ctx.missing_consents
+        assert ctx.missing_consents == []
 
-    def test_selective_consent_only_gates_matching_blocks(self):
-        """Only medications consent → labs and health_data still gated."""
+    def test_all_blocks_included_when_data_exists_regardless_of_consent(self):
+        """All blocks with data are included regardless of consent rows."""
         ctx = _build_with_patches(
             "labs",
-            consent_rows=_consents_for("medications"),
+            consent_rows=[],  # no consent
             medications=[{"name": "Metformin", "dosage": "500mg"}],
             recent_labs=[{"test_name": "HbA1c", "value": "6.5"}],
         )
-        # medications granted → included
+        # Both included — no consent gate
         assert ctx.medications is not None
-        # labs consent NOT granted → excluded
-        assert ctx.recent_labs is None
-        assert "labs" in ctx.missing_consents
+        assert ctx.recent_labs is not None
+        assert ctx.missing_consents == []
 
 
 # ---------------------------------------------------------------------------
@@ -917,33 +921,34 @@ class TestSafetyEmergencyEscalation:
 # ---------------------------------------------------------------------------
 
 class TestNoConsentBehavior:
-    def test_no_consent_meto_says_chua_co_du_lieu(self):
-        """With no consents, assembled context has empty blocks + missing_consents."""
+    """Per product design: consent gate removed. Meto reads profile by default.
+    Tests now verify data IS included and missing_consents is always empty.
+    """
+    def test_no_consent_gate_data_still_included(self):
+        """With no consent rows, data is still included (T&C covers consent at registration)."""
         ctx = _build_with_patches(
             "dashboard",
-            consent_rows=[],  # No consents at all
+            consent_rows=[],  # No explicit consent rows
             user_profile={"display_name": "Test User", "preferred_address": "bạn"},
-            health_summary={"primary_conditions": ["Tiểu đường"]},  # data exists but blocked
-            medications=[{"name": "Metformin"}],  # data exists but blocked
+            health_summary={"primary_conditions": ["Tiểu đường"]},  # data included
+            medications=[{"name": "Metformin"}],  # data included
         )
 
-        # All consent-gated blocks must be None
-        assert ctx.health_summary is None
-        assert ctx.medications is None
-        assert ctx.recent_labs is None
-        assert ctx.recent_metrics is None
+        # Blocks are included — no consent gate
+        assert ctx.health_summary is not None
+        assert ctx.medications is not None
 
-        # missing_consents should be non-empty
-        assert len(ctx.missing_consents) > 0
+        # missing_consents always empty
+        assert ctx.missing_consents == []
 
-    def test_no_consent_missing_consents_not_empty(self):
-        """missing_consents list must be populated when consents absent."""
+    def test_missing_consents_always_empty(self):
+        """missing_consents list must always be empty — no consent gate in chat."""
         ctx = _build_with_patches("dashboard", consent_rows=[])
-        assert ctx.missing_consents, "missing_consents must not be empty when user has no consents"
+        assert ctx.missing_consents == [], "missing_consents must always be empty"
 
     @pytest.mark.asyncio
-    async def test_no_consent_chat_response_reflects_missing_consents(self):
-        """Chat with no-consent context: MetaChatResponse has empty/None health fields."""
+    async def test_chat_response_returns_content_not_consent_gate(self):
+        """Chat response: consent_required always False, content is the AI answer."""
         from app.services.meto_chat import MetoChatService
 
         # Response that mentions consent needed (would be driven by system prompt context)
@@ -961,7 +966,7 @@ class TestNoConsentBehavior:
             patch("app.services.meto_chat._PROMPT_ASSEMBLER") as mock_prompt,
             patch("app.services.meto_chat._get_settings") as mock_settings,
         ):
-            # Context with NO health data (no consent)
+            # Context with health data included (no consent gate)
             mock_ctx.build.return_value = AssembledContext(
                 user_profile={"display_name": "Test", "preferred_address": "bạn"},
                 health_summary=None,
@@ -973,7 +978,7 @@ class TestNoConsentBehavior:
                 today_context={},
                 safety_flags=[],
                 total_estimated_tokens=100,
-                missing_consents=["health_data", "medications", "labs", "metrics", "care_plan"],
+                missing_consents=[],  # Always empty — no consent gate in chat
                 included_blocks=["user_profile", "screen_context"],
             )
 

@@ -56,14 +56,16 @@ _DEFAULT_SCREEN_BLOCKS: set[str] = {
     "recent_labs", "recent_metrics", "today_context",
 }
 
-# Consent keys required per block
+# Consent keys required per block — kept for reference but NO LONGER used as gate.
+# Per product design: T&C covers consent at registration. Meto reads health profile
+# by default. Consent management is only in Settings > Quyền riêng tư.
 _BLOCK_CONSENT: dict[str, str] = {
     "health_summary": "health_data",
     "care_plan": "care_plan",
     "medications": "medications",
     "recent_labs": "labs",
     "recent_metrics": "metrics",
-    "today_context": "care_plan",  # today context is gated by care_plan consent
+    "today_context": "care_plan",
 }
 
 # Approximate token budget per block
@@ -103,11 +105,13 @@ class ContextBuilder:
         screen_id = screen_context.screen_id or "dashboard"
         screen_blocks = _SCREEN_BLOCKS.get(screen_id, _DEFAULT_SCREEN_BLOCKS)
 
-        # 1. Load consent state
-        consents = self._load_consents(db, user_id)
+        # Per product design: T&C covers consent at registration.
+        # Meto reads health profile by default — no consent gate in chat.
+        # Consent management is only in Settings > Quyền riêng tư.
+        # _load_consents is retained for Settings endpoints but NOT used here.
 
         included_blocks: list[str] = []
-        missing_consents: list[str] = []
+        missing_consents: list[str] = []  # Always empty — no consent gate in chat
         total_tokens = 0
 
         # ---------------------------------------------------------------
@@ -142,85 +146,68 @@ class ContextBuilder:
         raw_today_context = self._build_today_context(db, user_id)
 
         # ---------------------------------------------------------------
-        # Now apply consent + screen gating
+        # Apply screen filtering only — NO consent gating.
+        # Per product design: T&C covers consent at registration.
+        # All blocks are included if they have data and are relevant to this screen.
         # ---------------------------------------------------------------
 
-        # user_profile — no consent required
+        # user_profile — always included (no consent required, always was)
         user_profile = None
         if raw_user_profile:
             user_profile = raw_user_profile
             included_blocks.append("user_profile")
             total_tokens += _TOKEN_BUDGET["user_profile"]
 
-        # health_summary
+        # health_summary — include if screen uses it and data exists
         health_summary = None
         if "health_summary" in screen_blocks:
-            if consents.get("health_data"):
-                health_summary = raw_health_summary
-                if health_summary:
-                    included_blocks.append("health_summary")
-                    total_tokens += _TOKEN_BUDGET["health_summary"]
-            else:
-                missing_consents.append("health_data")
+            health_summary = raw_health_summary
+            if health_summary:
+                included_blocks.append("health_summary")
+                total_tokens += _TOKEN_BUDGET["health_summary"]
 
-        # care_plan
+        # care_plan — include if screen uses it and data exists
         care_plan = None
         if "care_plan" in screen_blocks:
-            if consents.get("care_plan"):
-                care_plan = raw_care_plan
-                if care_plan:
-                    included_blocks.append("care_plan")
-                    total_tokens += _TOKEN_BUDGET["care_plan"]
-            else:
-                if "care_plan" not in missing_consents:
-                    missing_consents.append("care_plan")
+            care_plan = raw_care_plan
+            if care_plan:
+                included_blocks.append("care_plan")
+                total_tokens += _TOKEN_BUDGET["care_plan"]
 
-        # medications
+        # medications — include if screen uses it and data exists
         medications = None
         if "medications" in screen_blocks:
-            if consents.get("medications"):
-                medications = raw_medications
-                if medications:
-                    included_blocks.append("medications")
-                    total_tokens += _TOKEN_BUDGET["medications"]
-            else:
-                if "medications" not in missing_consents:
-                    missing_consents.append("medications")
+            medications = raw_medications
+            if medications:
+                included_blocks.append("medications")
+                total_tokens += _TOKEN_BUDGET["medications"]
 
-        # recent_labs
+        # recent_labs — include if screen uses it and data exists
         recent_labs = None
         if "recent_labs" in screen_blocks:
-            if consents.get("labs"):
-                recent_labs = raw_recent_labs
-                if recent_labs:
-                    included_blocks.append("recent_labs")
-                    total_tokens += _TOKEN_BUDGET["recent_labs"]
-            else:
-                if "labs" not in missing_consents:
-                    missing_consents.append("labs")
+            recent_labs = raw_recent_labs
+            if recent_labs:
+                included_blocks.append("recent_labs")
+                total_tokens += _TOKEN_BUDGET["recent_labs"]
 
-        # recent_metrics
+        # recent_metrics — include if screen uses it and data exists
         recent_metrics = None
         if "recent_metrics" in screen_blocks:
-            if consents.get("metrics"):
-                recent_metrics = raw_recent_metrics
-                if recent_metrics:
-                    included_blocks.append("recent_metrics")
-                    total_tokens += _TOKEN_BUDGET["recent_metrics"]
-            else:
-                if "metrics" not in missing_consents:
-                    missing_consents.append("metrics")
+            recent_metrics = raw_recent_metrics
+            if recent_metrics:
+                included_blocks.append("recent_metrics")
+                total_tokens += _TOKEN_BUDGET["recent_metrics"]
 
         # screen context — always, no consent needed
         screen_ctx = self._build_screen_context(screen_context)
         included_blocks.append("screen_context")
         total_tokens += _TOKEN_BUDGET["screen_context"]
 
-        # today_context — include if care_plan or medications consent
+        # today_context — include if screen uses it (no consent gate)
         today_ctx: dict = {}
         if "today_context" in screen_blocks:
-            if consents.get("care_plan") or consents.get("medications"):
-                today_ctx = raw_today_context or {}
+            today_ctx = raw_today_context or {}
+            if today_ctx:
                 included_blocks.append("today_context")
                 total_tokens += _TOKEN_BUDGET["today_context"]
 

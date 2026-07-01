@@ -40,7 +40,9 @@ class MetaChatResponse(BaseModel):
     provider_used: str = "meto"
     fallback_used: bool = False
     quick_follow_ups: list[str] = []
-    # Consent gate: True when user has not granted required consents
+    # Per product design: T&C covers consent at registration.
+    # These fields are kept for backward-compat but always return False/empty.
+    # Consent management is in Settings only, never gates the chat flow.
     consent_required: bool = False
     missing_consents: list[str] = []
 
