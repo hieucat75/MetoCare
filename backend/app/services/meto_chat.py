@@ -669,6 +669,8 @@ class MetoChatService:
             provider_used="meto",  # NEVER expose actual provider
             fallback_used=fallback_used,
             quick_follow_ups=quick_follow_ups,
+            consent_required=len(context.missing_consents) > 0 if context else False,
+            missing_consents=context.missing_consents if context else [],
         )
 
 

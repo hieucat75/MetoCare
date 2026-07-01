@@ -207,7 +207,7 @@ export default function PatientDashboardPage() {
         </NeuIconButton>
       </header>
 
-      {/* ── AI Copilot — flagship, first viewport ── */}
+      {/* ── Meto — flagship, first viewport ── */}
       <AiCopilotCard summary={summary} healthSummary={healthSummary} liveScore={liveScore} />
 
       {hasAnyData ? (
@@ -221,7 +221,7 @@ export default function PatientDashboardPage() {
             />
           )}
 
-          {/* ── Health alerts — max 3 abnormal markers, deep-links to AI Copilot biomarker detail ── */}
+          {/* ── Health alerts — max 3 abnormal markers, deep-links to Meto biomarker detail ── */}
           <HealthAlertsSection
             summary={summary}
             onOpen={(metricType) => {
@@ -247,7 +247,7 @@ export default function PatientDashboardPage() {
   )
 }
 
-// ─── AI Copilot card — Liquid Glass surface ──────────────────────────────────
+// ─── Meto card — Liquid Glass surface ──────────────────────────────────
 
 const AI_GLASS_BG = 'linear-gradient(155deg, rgba(22,168,122,0.91) 0%, rgba(9,96,69,0.95) 100%)'
 const AI_GLASS_SHADOW =
@@ -327,7 +327,7 @@ function AiCopilotCard({
               <Bot className="size-4" aria-hidden="true" />
             </div>
             <span className="text-[15px] font-bold uppercase tracking-widest text-white/75">
-              AI Copilot
+              Meto
             </span>
           </div>
           {score != null && (

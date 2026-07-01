@@ -40,6 +40,9 @@ class MetaChatResponse(BaseModel):
     provider_used: str = "meto"
     fallback_used: bool = False
     quick_follow_ups: list[str] = []
+    # Consent gate: True when user has not granted required consents
+    consent_required: bool = False
+    missing_consents: list[str] = []
 
 
 class ConversationSummary(BaseModel):

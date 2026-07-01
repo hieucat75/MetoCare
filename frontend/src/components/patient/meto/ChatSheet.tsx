@@ -1,15 +1,34 @@
 'use client'
+/**
+ * ChatSheet — Meto AI chat bottom sheet.
+ *
+ * Implements:
+ * - Markdown-safe message rendering (no raw ** or ## leakage)
+ * - Time-aware + consent-aware greeting engine
+ * - Consent-required CTA chips (ConsentPrompt)
+ * - Visual distinction for message types: greeting / normal / safety / consent / missing-data
+ * - Mobile UX: min 16px font, input above bottom bar, smooth scroll
+ */
 import * as React from 'react'
 import { X, Send } from 'lucide-react'
 import { MetoAura } from './MetoAura'
 import { QuickPromptChips } from './QuickPromptChips'
+import { ConsentPrompt } from './ConsentPrompt'
+import { MarkdownMessage } from './MarkdownMessage'
 import { sendMetoMessage, type MetoChatResponse } from '@/lib/api/meto'
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+type MessageType = 'greeting' | 'normal' | 'safety' | 'consent_required' | 'missing_data' | 'error'
 
 type ChatMessage = {
   id: string
   role: 'user' | 'assistant'
   content: string
+  messageType?: MessageType
   escalation?: MetoChatResponse['escalation']
+  consentRequired?: boolean
+  missingConsents?: string[]
   timestamp: Date
 }
 
@@ -20,6 +39,70 @@ type Props = {
   entityId?: string
   entityType?: string
 }
+
+// ── Greeting Engine ───────────────────────────────────────────────────────────
+
+type TimePeriod = 'morning' | 'noon' | 'afternoon' | 'evening' | 'night' | 'late_night'
+
+function getTimePeriod(hour: number): TimePeriod {
+  if (hour >= 5 && hour < 11) return 'morning'
+  if (hour >= 11 && hour < 13) return 'noon'
+  if (hour >= 13 && hour < 18) return 'afternoon'
+  if (hour >= 18 && hour < 21) return 'evening'
+  if (hour >= 21 && hour < 24) return 'night'
+  return 'late_night'
+}
+
+function isWeekend(date: Date): boolean {
+  const day = date.getDay()
+  return day === 0 || day === 6
+}
+
+/**
+ * Generate a time-aware, consent-aware greeting.
+ * Max 1–2 sentences. No long health advice.
+ */
+function generateGreeting(screenId: string): string {
+  const now = new Date()
+  const hour = now.getHours()
+  const period = getTimePeriod(hour)
+  const weekend = isWeekend(now)
+
+  const greetingByPeriod: Record<TimePeriod, string> = {
+    morning: 'Chào buổi sáng! Hôm nay bạn bắt đầu ngày mới thế nào?',
+    noon: 'Chào buổi trưa! Meto có thể giúp gì cho bạn không?',
+    afternoon: 'Chào buổi chiều! Có điều gì Meto giúp được không?',
+    evening: 'Chào buổi tối! Hôm nay bạn thấy thế nào?',
+    night: 'Đêm rồi mà vẫn quan tâm đến sức khỏe — tốt đấy! Meto có thể giúp gì?',
+    late_night: 'Còn thức khuya à? Có chuyện gì Meto giúp được không?',
+  }
+
+  // Weekend variation
+  if (weekend && (period === 'morning' || period === 'afternoon')) {
+    return period === 'morning'
+      ? 'Chào buổi sáng cuối tuần! Meto có thể giúp gì cho bạn hôm nay?'
+      : 'Chiều cuối tuần bình yên nhé! Có gì Meto giúp được không?'
+  }
+
+  // Screen-specific context hints (1 line only, no health advice)
+  const screenHint: Partial<Record<string, string>> = {
+    labs: ' Bạn có muốn Meto giải thích kết quả xét nghiệm không?',
+    medications: ' Bạn cần hỏi về thuốc đang dùng không?',
+    metrics: ' Bạn muốn kiểm tra chỉ số sức khỏe không?',
+    'care-plan': ' Hôm nay bạn còn việc gì chưa làm không?',
+  }
+
+  const base = greetingByPeriod[period]
+  const hint = screenHint[screenId] ?? ''
+
+  // Keep to 1-2 sentences: if we add hint, drop the trailing question from base
+  if (hint && base.endsWith('?')) {
+    return base.slice(0, -1) + '.' + hint
+  }
+  return base
+}
+
+// ── ChatSheet ─────────────────────────────────────────────────────────────────
 
 export function ChatSheet({ open, onClose, screenId, entityId, entityType }: Props) {
   const [messages, setMessages] = React.useState<ChatMessage[]>([])
@@ -35,17 +118,16 @@ export function ChatSheet({ open, onClose, screenId, entityId, entityType }: Pro
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  // Greeting on open
+  // Greeting on open — time-aware + consent-aware
   React.useEffect(() => {
     if (open && messages.length === 0) {
-      const hour = new Date().getHours()
-      const greeting =
-        hour < 12 ? 'Chào buổi sáng' : hour < 18 ? 'Chào buổi chiều' : 'Chào buổi tối'
+      const greeting = generateGreeting(screenId)
       setMessages([
         {
           id: 'greeting',
           role: 'assistant',
-          content: `${greeting}! Meto có thể giúp gì cho bạn hôm nay?`,
+          content: greeting,
+          messageType: 'greeting',
           timestamp: new Date(),
         },
       ])
@@ -62,7 +144,6 @@ export function ChatSheet({ open, onClose, screenId, entityId, entityType }: Pro
   // Reset conversation when closed
   function handleClose() {
     onClose()
-    // Small delay to let the animation finish before resetting
     setTimeout(() => {
       setMessages([])
       setConversationId(undefined)
@@ -93,13 +174,25 @@ export function ChatSheet({ open, onClose, screenId, entityId, entityType }: Pro
       })
       setConversationId(res.conversation_id)
       setMetoState('answering')
+
+      // Determine message type
+      let messageType: MessageType = 'normal'
+      if (res.consent_required) {
+        messageType = 'consent_required'
+      } else if (res.escalation) {
+        messageType = 'safety'
+      }
+
       setMessages((prev) => [
         ...prev,
         {
           id: res.message_id,
           role: 'assistant',
           content: res.content,
+          messageType,
           escalation: res.escalation,
+          consentRequired: res.consent_required,
+          missingConsents: res.missing_consents,
           timestamp: new Date(),
         },
       ])
@@ -110,6 +203,7 @@ export function ChatSheet({ open, onClose, screenId, entityId, entityType }: Pro
           id: 'err-' + Date.now(),
           role: 'assistant',
           content: 'Meto đang gặp sự cố kết nối. Bạn thử lại sau nhé.',
+          messageType: 'error',
           timestamp: new Date(),
         },
       ])
@@ -144,7 +238,12 @@ export function ChatSheet({ open, onClose, screenId, entityId, entityType }: Pro
       {/* Bottom sheet */}
       <div
         className="fixed bottom-0 left-0 right-0 z-[60] flex flex-col rounded-t-[24px] bg-white/95 backdrop-blur-md"
-        style={{ height: '82vh', maxHeight: '82vh' }}
+        style={{
+          height: '82vh',
+          maxHeight: '82vh',
+          // Ensure input stays above mobile browser bottom bar
+          paddingBottom: 'env(safe-area-inset-bottom)',
+        }}
         role="dialog"
         aria-modal="true"
         aria-label="Chat với Meto"
@@ -166,7 +265,7 @@ export function ChatSheet({ open, onClose, screenId, entityId, entityType }: Pro
             type="button"
             onClick={handleClose}
             aria-label="Đóng chat"
-            className="flex items-center justify-center w-9 h-9 rounded-full bg-[#F0F5F3] text-[#6B7E77] transition-transform active:scale-90"
+            className="flex items-center justify-center w-9 h-9 rounded-full bg-[#F0F5F3] text-[#6B7E77] transition-transform active:scale-90 shrink-0"
           >
             <X className="w-5 h-5" />
           </button>
@@ -183,7 +282,7 @@ export function ChatSheet({ open, onClose, screenId, entityId, entityType }: Pro
         )}
 
         {/* ── Message list ── */}
-        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
+        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3 overscroll-contain">
           {messages.map((msg) => (
             <div
               key={msg.id}
@@ -196,26 +295,63 @@ export function ChatSheet({ open, onClose, screenId, entityId, entityType }: Pro
                 </div>
               )}
 
-              <div className={`max-w-[78%] flex flex-col gap-1 ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
-                {/* Bubble */}
-                <div
-                  className={`rounded-[18px] px-4 py-3 text-[15px] leading-relaxed ${
-                    msg.role === 'user'
-                      ? 'rounded-tr-[6px] text-white'
-                      : 'rounded-tl-[6px] bg-[#F0F8F5] text-[#1A2E25]'
-                  }`}
-                  style={
-                    msg.role === 'user'
-                      ? { background: 'linear-gradient(135deg, #0F9C6E 0%, #10B981 100%)' }
-                      : undefined
-                  }
-                >
-                  {msg.content}
-                </div>
+              <div
+                className={`flex flex-col gap-1 ${
+                  msg.role === 'user' ? 'items-end max-w-[78%]' : 'items-start max-w-[85%]'
+                }`}
+              >
+                {/* Bubble — consent_required gets its own component */}
+                {msg.role === 'assistant' && msg.messageType === 'consent_required' ? (
+                  <ConsentPrompt
+                    onAskGeneral={() => void handleSend('Tôi có câu hỏi chung về sức khỏe')}
+                    onDismiss={() => {
+                      // Add a soft dismissal message
+                      setMessages((prev) => [
+                        ...prev,
+                        {
+                          id: 'dismiss-' + Date.now(),
+                          role: 'assistant',
+                          content: 'Được rồi! Bạn có thể bật quyền bất kỳ lúc nào trong Cài đặt > Quyền riêng tư. Meto vẫn có thể trả lời các câu hỏi sức khỏe chung nhé.',
+                          messageType: 'normal',
+                          timestamp: new Date(),
+                        },
+                      ])
+                    }}
+                  />
+                ) : (
+                  <div
+                    className={[
+                      'rounded-[18px] px-4 py-3',
+                      // Font: min 16px per spec
+                      'text-[16px] leading-relaxed',
+                      msg.role === 'user'
+                        ? 'rounded-tr-[6px] text-white'
+                        : msg.messageType === 'greeting'
+                          ? 'rounded-tl-[6px] bg-[#EAF7F2] text-[#1A4A35]'
+                          : msg.messageType === 'safety'
+                            ? 'rounded-tl-[6px] bg-[#FEF9EC] text-[#1A2E25] border border-[#F5A623]/30'
+                            : msg.messageType === 'error'
+                              ? 'rounded-tl-[6px] bg-[#FEF2F2] text-[#D92D20]'
+                              : 'rounded-tl-[6px] bg-[#F0F8F5] text-[#1A2E25]',
+                    ].join(' ')}
+                    style={
+                      msg.role === 'user'
+                        ? { background: 'linear-gradient(135deg, #0F9C6E 0%, #10B981 100%)' }
+                        : undefined
+                    }
+                  >
+                    {msg.role === 'user' ? (
+                      <span>{msg.content}</span>
+                    ) : (
+                      // Use MarkdownMessage to render assistant responses safely
+                      <MarkdownMessage content={msg.content} />
+                    )}
+                  </div>
+                )}
 
-                {/* Escalation banner */}
+                {/* Escalation banner — shown for safety-type messages */}
                 {msg.escalation && (
-                  <div className="rounded-[14px] bg-[#FEF2F2] border border-[#D92D20]/30 px-4 py-3 mt-1">
+                  <div className="rounded-[14px] bg-[#FEF2F2] border border-[#D92D20]/30 px-4 py-3 mt-1 w-full">
                     <p className="text-[13px] font-bold text-[#D92D20] mb-0.5">
                       {msg.escalation.tier === 'emergency' ? '🚨 Khẩn cấp' : '⚠️ Cần chú ý'}
                     </p>
@@ -223,7 +359,7 @@ export function ChatSheet({ open, onClose, screenId, entityId, entityType }: Pro
                     {msg.escalation.emergency_contacts &&
                       msg.escalation.emergency_contacts.length > 0 && (
                         <div className="mt-2 flex flex-wrap gap-2">
-                          {msg.escalation.emergency_contacts.map((contact) => (
+                          {msg.escalation.emergency_contacts.map((contact: string) => (
                             <a
                               key={contact}
                               href={`tel:${contact}`}
@@ -276,8 +412,10 @@ export function ChatSheet({ open, onClose, screenId, entityId, entityType }: Pro
           <div ref={bottomRef} />
         </div>
 
-        {/* ── Input row ── */}
-        <div className="px-4 pb-2 pt-2 border-t border-[#E8F0ED] shrink-0">
+        {/* ── Input row — always above bottom bar ── */}
+        <div
+          className="px-4 pb-2 pt-2 border-t border-[#E8F0ED] shrink-0"
+        >
           <div className="flex items-center gap-2">
             <input
               ref={inputRef}
@@ -287,7 +425,9 @@ export function ChatSheet({ open, onClose, screenId, entityId, entityType }: Pro
               onKeyDown={handleKeyDown}
               placeholder="Nhắn tin cho Meto…"
               disabled={loading}
-              className="flex-1 rounded-full border-2 border-[#C8D8D4] bg-white/70 px-4 py-2.5 text-[15px] text-[#1A2E25] placeholder:text-[#9BACA5] focus:border-[#0F9C6E] focus:outline-none disabled:opacity-60 transition-colors"
+              // Mobile: min 16px to prevent iOS zoom on focus
+              className="flex-1 rounded-full border-2 border-[#C8D8D4] bg-white/70 px-4 py-2.5 text-[16px] text-[#1A2E25] placeholder:text-[#9BACA5] focus:border-[#0F9C6E] focus:outline-none disabled:opacity-60 transition-colors"
+              style={{ fontSize: '16px' }} // Explicit to prevent iOS auto-zoom
             />
             <button
               type="button"
@@ -306,7 +446,7 @@ export function ChatSheet({ open, onClose, screenId, entityId, entityType }: Pro
         </div>
 
         {/* ── Disclaimer ── */}
-        <div className="px-5 pb-5 pt-1 shrink-0">
+        <div className="px-5 pb-4 pt-1 shrink-0">
           <p className="text-center text-[12px] text-[#9BACA5] leading-snug">
             Meto không thay thế bác sĩ. Luôn tham khảo ý kiến bác sĩ của bạn.
           </p>

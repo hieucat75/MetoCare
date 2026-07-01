@@ -56,7 +56,7 @@ function BiomarkerNotFound({ slug }: { slug: string }) {
         </div>
         <h1 className="text-[22px] font-bold text-gray-900 mb-2">Chưa có thông tin giải thích</h1>
         <p className="text-[16px] text-gray-500 leading-relaxed mb-6">
-          AI Copilot chưa có nội dung giải thích cho chỉ số{' '}
+          Meto chưa có nội dung giải thích cho chỉ số{' '}
           <span className="font-semibold text-gray-700">{slug.toUpperCase()}</span>. Nội dung đang
           được cập nhật trong thời gian tới.
         </p>
@@ -69,7 +69,7 @@ function BiomarkerNotFound({ slug }: { slug: string }) {
       </div>
       <div className="mt-6 text-center">
         <p className="text-[14px] text-gray-400">
-          AI Copilot chỉ mang tính tham khảo giáo dục.
+          Meto chỉ mang tính tham khảo giáo dục.
           <br />
           Không thay thế chẩn đoán và điều trị của bác sĩ.
         </p>
@@ -580,7 +580,7 @@ export default function BiomarkerDetailPage() {
         {/* Disclaimer — always visible */}
         <div className="text-center pt-2 pb-4">
           <p className="text-[15px] text-gray-400 leading-relaxed">
-            AI Copilot chỉ mang tính tham khảo giáo dục.
+            Meto chỉ mang tính tham khảo giáo dục.
             <br />
             Không thay thế chẩn đoán và điều trị của bác sĩ.
           </p>

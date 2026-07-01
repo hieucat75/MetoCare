@@ -21,6 +21,8 @@ export interface MetoChatResponse {
   provider_used: string
   fallback_used: boolean
   quick_follow_ups: string[]
+  consent_required?: boolean
+  missing_consents?: string[]
 }
 
 export interface ConversationSummary {

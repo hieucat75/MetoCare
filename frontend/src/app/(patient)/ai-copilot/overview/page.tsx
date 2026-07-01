@@ -115,7 +115,7 @@ export default function AiCopilotConsultationPage() {
           >
             <Bot className="size-5" />
           </span>
-          <h1 className="text-[20px] font-extrabold text-neu-text">AI Copilot</h1>
+          <h1 className="text-[20px] font-extrabold text-neu-text">Meto</h1>
         </div>
       </header>
 

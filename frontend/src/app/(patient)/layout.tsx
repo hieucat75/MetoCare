@@ -25,7 +25,7 @@ const NAV_ITEMS: NavItem[] = [
   },
   {
     id: 'ai-copilot',
-    label: 'AI Copilot',
+    label: 'Meto',
     icon: <Bot className="w-5 h-5" />,
     href: '/ai-copilot',
   },
@@ -64,7 +64,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/nutrition': 'Dinh dưỡng',
   '/care-plan': 'Kế hoạch điều trị',
   '/ai-assistant': 'Trợ lý AI',
-  '/ai-copilot': 'AI Copilot',
+  '/ai-copilot': 'Meto',
   '/notifications': 'Thông báo',
   '/profile': 'Tôi',
   '/settings': 'Cài đặt',

@@ -14,7 +14,7 @@ interface BottomNavItem {
   aliases?: string[]
 }
 
-// 5-tab IA: Hôm nay · AI Copilot · Sức khoẻ · Thuốc · Tôi
+// 5-tab IA: Hôm nay · Meto · Sức khoẻ · Thuốc · Tôi
 // "Sức khoẻ" consolidates metrics + labs. Labs, nutrition, care-plan all
 // light up this tab via the aliases list.
 const BOTTOM_NAV_ITEMS: BottomNavItem[] = [
@@ -26,7 +26,7 @@ const BOTTOM_NAV_ITEMS: BottomNavItem[] = [
   },
   {
     id: 'ai-copilot',
-    label: 'AI Copilot',
+    label: 'Meto',
     icon: <Bot className="w-[22px] h-[22px]" />,
     href: '/ai-copilot',
   },
