@@ -30,6 +30,7 @@ from app.ai.exceptions import MetoAIError
 from app.ai.prompt.assembler import PromptAssembler
 from app.ai.prompt.safety import SafetyGuard, SafetyResult
 from app.ai.registry import ProviderRegistry
+from app.core.database import SessionLocal
 from app.models.meto import MetoAuditLog, MetoConsent, MetoConversation, MetoMessage
 from app.schemas.meto import (
     ConsentStatus,
@@ -65,11 +66,20 @@ class MetoChatService:
         """Non-streaming chat. Runs full pipeline and returns complete response."""
         request_start = time.monotonic()
 
-        # 1. Load or create conversation
-        conversation = self._get_or_create_conversation(db, user_id, screen_context, conversation_id)
+        # 1. Build context using a DEDICATED session so that any SQL errors
+        #    inside the context builder do not poison the main `db` session
+        #    used for conversation create, message write, and audit log.
+        ctx_db = SessionLocal()
+        try:
+            context = _CONTEXT_BUILDER.build(ctx_db, user_id, screen_context)
+        except Exception as ctx_exc:
+            logger.warning("Context build failed for user %s: %s", user_id, ctx_exc)
+            context = AssembledContext()
+        finally:
+            ctx_db.close()
 
-        # 2. Build context
-        context = _CONTEXT_BUILDER.build(db, user_id, screen_context)
+        # 2. Load or create conversation on the clean main session
+        conversation = self._get_or_create_conversation(db, user_id, screen_context, conversation_id)
 
         # 3. Safety check input
         input_safety = _SAFETY_GUARD.check_input(message)
@@ -190,8 +200,17 @@ class MetoChatService:
 
         request_start = time.monotonic()
 
+        # Build context in a dedicated session to isolate SQL errors from main db session
+        ctx_db = SessionLocal()
+        try:
+            context = _CONTEXT_BUILDER.build(ctx_db, user_id, screen_context)
+        except Exception as ctx_exc:
+            logger.warning("Stream context build failed for user %s: %s", user_id, ctx_exc)
+            context = AssembledContext()
+        finally:
+            ctx_db.close()
+
         conversation = self._get_or_create_conversation(db, user_id, screen_context, conversation_id)
-        context = _CONTEXT_BUILDER.build(db, user_id, screen_context)
         input_safety = _SAFETY_GUARD.check_input(message)
 
         if input_safety.escalation_required and input_safety.escalation_tier == "emergency":

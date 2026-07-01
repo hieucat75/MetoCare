@@ -115,26 +115,45 @@ class ContextBuilder:
         # Results are gated afterwards.
         # ---------------------------------------------------------------
 
+        def _safe_build(fn, *args):
+            """Run a _build_* method inside a savepoint.
+
+            If the query raises, rolls back only the savepoint — the outer
+            transaction remains intact so subsequent queries can proceed.
+            """
+            try:
+                nested = db.begin_nested()
+                result = fn(*args)
+                nested.commit()
+                return result
+            except Exception as exc:
+                logger.warning("Context block %s failed for %s: %s", fn.__name__, args[0] if args else "?", exc)
+                try:
+                    nested.rollback()
+                except Exception:
+                    pass
+                return None
+
         # DB call #1: user profile
-        raw_user_profile = self._build_user_profile(db, user_id)
+        raw_user_profile = _safe_build(self._build_user_profile, db, user_id)
 
         # DB call #2: health summary
-        raw_health_summary = self._build_health_summary(db, user_id)
+        raw_health_summary = _safe_build(self._build_health_summary, db, user_id)
 
         # DB calls #3+#4: care plan + tasks (always called together)
-        raw_care_plan = self._build_care_plan(db, user_id)
+        raw_care_plan = _safe_build(self._build_care_plan, db, user_id)
 
         # DB call #5: medications
-        raw_medications = self._build_medications(db, user_id)
+        raw_medications = _safe_build(self._build_medications, db, user_id)
 
         # DB call #6: recent labs
-        raw_recent_labs = self._build_recent_labs(db, user_id)
+        raw_recent_labs = _safe_build(self._build_recent_labs, db, user_id)
 
         # DB call #7: recent metrics
-        raw_recent_metrics = self._build_recent_metrics(db, user_id)
+        raw_recent_metrics = _safe_build(self._build_recent_metrics, db, user_id)
 
         # DB call #8: appointments (for today_context)
-        raw_today_context = self._build_today_context(db, user_id)
+        raw_today_context = _safe_build(self._build_today_context, db, user_id)
 
         # ---------------------------------------------------------------
         # Now apply consent + screen gating
@@ -215,7 +234,7 @@ class ContextBuilder:
         today_ctx: dict = {}
         if "today_context" in screen_blocks:
             if consents.get("care_plan") or consents.get("medications"):
-                today_ctx = raw_today_context
+                today_ctx = raw_today_context or {}
                 included_blocks.append("today_context")
                 total_tokens += _TOKEN_BUDGET["today_context"]
 
@@ -320,10 +339,6 @@ class ContextBuilder:
             }
         except Exception as exc:
             logger.warning("Error building user_profile for %s: %s", user_id, exc)
-            try:
-                db.rollback()
-            except Exception:
-                pass
             return None
 
     def _build_health_summary(self, db: Session, user_id: str) -> dict | None:
@@ -367,10 +382,6 @@ class ContextBuilder:
             }
         except Exception as exc:
             logger.warning("Error building health_summary for %s: %s", user_id, exc)
-            try:
-                db.rollback()
-            except Exception:
-                pass
             return None
 
     def _build_care_plan(self, db: Session, user_id: str) -> dict | None:
@@ -409,10 +420,6 @@ class ContextBuilder:
                     {"plan_id": plan_id, "today": today_start},
                 ).fetchall()
             except Exception:
-                try:
-                    db.rollback()
-                except Exception:
-                    pass
                 tasks = []
 
             task_list = []
@@ -433,10 +440,6 @@ class ContextBuilder:
             }
         except Exception as exc:
             logger.warning("Error building care_plan for %s: %s", user_id, exc)
-            try:
-                db.rollback()
-            except Exception:
-                pass
             return None
 
     def _build_medications(self, db: Session, user_id: str) -> list | None:
@@ -468,10 +471,6 @@ class ContextBuilder:
             ]
         except Exception as exc:
             logger.warning("Error building medications for %s: %s", user_id, exc)
-            try:
-                db.rollback()
-            except Exception:
-                pass
             return None
 
     def _build_recent_labs(self, db: Session, user_id: str) -> list | None:
@@ -513,10 +512,6 @@ class ContextBuilder:
             ]
         except Exception as exc:
             logger.warning("Error building recent_labs for %s: %s", user_id, exc)
-            try:
-                db.rollback()
-            except Exception:
-                pass
             return None
 
     def _build_recent_metrics(self, db: Session, user_id: str) -> list | None:
@@ -563,10 +558,6 @@ class ContextBuilder:
             return result if result else None
         except Exception as exc:
             logger.warning("Error building recent_metrics for %s: %s", user_id, exc)
-            try:
-                db.rollback()
-            except Exception:
-                pass
             return None
 
     def _build_screen_context(self, screen_context: ScreenContext) -> dict:
