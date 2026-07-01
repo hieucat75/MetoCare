@@ -24,6 +24,7 @@ DB call ordering:
 from __future__ import annotations
 
 import datetime as dt
+import json
 import logging
 from typing import Any
 
@@ -32,6 +33,8 @@ from sqlalchemy.orm import Session
 
 from app.ai.context.schemas import AssembledContext, ScreenContext
 from app.models.meto import MetoConsent
+from app.models.patient import PatientProfile
+from app.models.user import User
 
 logger = logging.getLogger(__name__)
 
@@ -268,45 +271,64 @@ class ContextBuilder:
     # -----------------------------------------------------------------------
 
     def _build_user_profile(self, db: Session, user_id: str) -> dict | None:
-        """Build user profile block. Consumes DB execute #1."""
-        try:
-            row = db.execute(
-                text("""
-                    SELECT u.full_name, pp.dob, pp.gender, pp.address
-                    FROM users u
-                    LEFT JOIN patient_profiles pp ON pp.user_id = u.id
-                    WHERE u.id = :uid AND u.is_active = true
-                    LIMIT 1
-                """),
-                {"uid": user_id},
-            ).fetchone()
+        """Build user profile block. Consumes DB execute #1.
 
-            if not row:
+        Uses ORM queries so EncryptedString TypeDecorator auto-decrypts
+        full_name and dob before we read them.
+        """
+        try:
+            # ORM query — auto-decrypts EncryptedString fields (full_name)
+            user = (
+                db.query(User)
+                .filter(User.id == user_id, User.is_active.is_(True))
+                .first()
+            )
+            if not user:
                 return None
 
-            dob = row[1]  # encrypted ISO string or None
+            # ORM query — auto-decrypts EncryptedString fields (dob)
+            profile = (
+                db.query(PatientProfile)
+                .filter(PatientProfile.user_id == user_id)
+                .first()
+            )
+
+            # full_name: ORM decrypts automatically
+            display_name = user.full_name or "Người dùng"
+
+            # Detect residual ciphertext (safety net for rows encrypted before ORM fix)
+            if display_name.startswith("gAAAAAB"):
+                logger.warning(
+                    "user_profile: full_name still looks encrypted for user %s — "
+                    "check FIELD_ENCRYPTION_KEY env var",
+                    user_id,
+                )
+                display_name = "Người dùng"
+
+            # dob: ORM decrypts automatically (stored as ISO date string)
             age = None
-            if dob:
+            if profile and profile.dob:
                 try:
-                    if isinstance(dob, str):
-                        dob_dt = dt.date.fromisoformat(dob[:10])
-                    elif isinstance(dob, dt.date):
-                        dob_dt = dob
-                    else:
-                        dob_dt = None
-                    if dob_dt:
+                    dob_val = profile.dob
+                    if isinstance(dob_val, str) and not dob_val.startswith("gAAAAAB"):
+                        dob_dt = dt.date.fromisoformat(dob_val[:10])
                         today = dt.date.today()
                         age = today.year - dob_dt.year - (
                             (today.month, today.day) < (dob_dt.month, dob_dt.day)
+                        )
+                    elif isinstance(dob_val, dt.date):
+                        today = dt.date.today()
+                        age = today.year - dob_val.year - (
+                            (today.month, today.day) < (dob_val.month, dob_val.day)
                         )
                 except Exception:
                     age = None
 
             return {
-                "display_name": row[0] or "Người dùng",
+                "display_name": display_name,
                 "age": age,
-                "gender": row[2] or "unknown",
-                "preferred_address": row[3] or "bạn",
+                "gender": (profile.gender if profile else None) or "unknown",
+                "preferred_address": "bạn",
                 "language": "vi",
                 "account_type": "patient",
             }
@@ -319,22 +341,20 @@ class ContextBuilder:
             return None
 
     def _build_health_summary(self, db: Session, user_id: str) -> dict | None:
-        """Build health summary block. Consumes DB execute #2."""
-        try:
-            # Map to actual PatientProfile columns:
-            # known_conditions (encrypted), allergies (encrypted)
-            # No blood_type / primary_conditions / secondary_conditions columns exist.
-            row = db.execute(
-                text("""
-                    SELECT known_conditions, allergies
-                    FROM patient_profiles
-                    WHERE user_id = :uid
-                    LIMIT 1
-                """),
-                {"uid": user_id},
-            ).fetchone()
+        """Build health summary block. Consumes DB execute #2.
 
-            if not row:
+        Uses ORM query so EncryptedString TypeDecorator auto-decrypts
+        known_conditions and allergies before we read them.
+        """
+        try:
+            # ORM query — auto-decrypts known_conditions and allergies
+            profile = (
+                db.query(PatientProfile)
+                .filter(PatientProfile.user_id == user_id)
+                .first()
+            )
+
+            if not profile:
                 return None
 
             def _parse_list(val: Any) -> list:
@@ -343,17 +363,31 @@ class ContextBuilder:
                 if isinstance(val, list):
                     return val
                 if isinstance(val, str):
-                    import json
+                    # Guard: if value still looks like ciphertext, return empty
+                    if val.startswith("gAAAAAB"):
+                        logger.warning(
+                            "health_summary: field still looks encrypted for user %s — "
+                            "check FIELD_ENCRYPTION_KEY env var",
+                            user_id,
+                        )
+                        return []
                     try:
                         return json.loads(val)
                     except Exception:
                         return [val] if val.strip() else []
                 return []
 
+            conditions = _parse_list(profile.known_conditions)
+            allergies = _parse_list(profile.allergies)
+
+            # Only return block if there's actual data
+            if not conditions and not allergies:
+                return None
+
             return {
-                "primary_conditions": _parse_list(row[0]),
+                "primary_conditions": conditions,
                 "secondary_conditions": [],
-                "allergies": _parse_list(row[1]),
+                "allergies": allergies,
                 "blood_type": None,
                 "chronic_conditions": [],
             }

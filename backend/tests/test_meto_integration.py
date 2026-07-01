@@ -733,7 +733,12 @@ class TestMissingDataGraceful:
         assert builder._build_medications(db, "user-123") is None
         assert builder._build_recent_labs(db, "user-123") is None
         assert builder._build_recent_metrics(db, "user-123") is None
-        assert builder._build_user_profile(db, "user-123") is None
+
+        # _build_user_profile now uses ORM (db.query) not db.execute.
+        # Make db.query(User).filter(...).first() return None = user not found.
+        db_orm = MagicMock()
+        db_orm.query.return_value.filter.return_value.first.return_value = None
+        assert builder._build_user_profile(db_orm, "user-123") is None
 
 
 # ---------------------------------------------------------------------------

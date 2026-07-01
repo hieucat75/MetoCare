@@ -158,19 +158,30 @@ jobs:
             --replica-timeout 600 --replica-retry-limit 1 \
             --parallelism 1 --replica-completion-count 1 \
             --cpu 0.5 --memory 1.0Gi \
-            --secrets "db-url=$DB_URL" \
-            --env-vars "MCP_DATABASE_URL=secretref:db-url" "MCP_ENV=staging" \
-            --command "alembic" --args "upgrade" "head" \
+            --secrets "db-url=$DB_URL" "enc-keys=$ENC_KEYS" \
+            --env-vars "MCP_DATABASE_URL=secretref:db-url" \
+              "MCP_ENCRYPTION_KEYS=secretref:enc-keys" \
+              "MCP_ENV=staging" \
+            --command "alembic" --args "upgrade head" \
             -o none
-          az containerapp job start -g "$RG" -n "$JOB" -o none
+          # Retry job start up to 3 times — ACA control plane can be briefly busy.
+          for attempt in 1 2 3; do
+            az containerapp job start -g "$RG" -n "$JOB" -o none && break
+            echo "  job start attempt $attempt failed, retrying in 10s..."
+            sleep 10
+          done
+          # Wait a moment for the execution record to appear before polling.
+          sleep 15
           echo "Polling migration job execution..."
           for i in $(seq 1 40); do
             ST=$(az containerapp job execution list -g "$RG" -n "$JOB" \
-              --query "[0].properties.status" -o tsv 2>/dev/null || echo Running)
+              --query "[0].properties.status" -o tsv 2>/dev/null || echo "Running")
+            # Strip whitespace
+            ST="${ST//[$'\t\r\n ']}"
             echo "  $i: $ST"
             [ "$ST" = "Succeeded" ] && break
-            [ "$ST" = "Failed" ] && { echo "::error::migration failed"; exit 1; }
-            sleep 10
+            [ "$ST" = "Failed" ] && { echo "::error::migration failed — check ACA job logs: az containerapp job execution logs -g $RG -n $JOB"; exit 1; }
+            sleep 15
           done
 
       - name: Deploy backend Container App

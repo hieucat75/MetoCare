@@ -255,8 +255,9 @@ class TestMissingData:
     def test_missing_user_profile_is_none(self):
         """Builder returns None for user_profile when no DB row exists."""
         db = _make_db_session(consent_rows=[])
-        # Don't patch _build_user_profile → it calls the real method
-        # but mock db.execute to return no rows
+        # _build_user_profile now uses ORM: db.query(User).filter(...).first() = None
+        # _make_db_session already sets mock_q.filter().first() = None, so no extra
+        # setup needed. Also mock db.execute for the other raw-SQL builders.
         ep = MagicMock()
         ep.fetchone.return_value = None
         ep.fetchall.return_value = []
@@ -303,7 +304,8 @@ class TestMissingData:
         """If DB raises, _build_user_profile returns None (graceful degradation)."""
         builder = ContextBuilder()
         db = MagicMock()
-        db.execute.side_effect = Exception("DB connection lost")
+        # _build_user_profile now uses ORM: make db.query() raise
+        db.query.side_effect = Exception("DB connection lost")
 
         result = builder._build_user_profile(db, "user-123")
         assert result is None
