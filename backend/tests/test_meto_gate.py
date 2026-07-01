@@ -564,7 +564,18 @@ def test_legacy_check_provider_readiness_mock():
 
 def test_legacy_check_provider_readiness_no_keys():
     """check_provider_readiness returns unavailable when no keys."""
-    with patch.dict(os.environ, {"MCP_AI_MODE": "", "ANTHROPIC_API_KEY": "", "OPENAI_API_KEY": ""}, clear=False):
+    with patch.dict(
+        os.environ,
+        {
+            "MCP_AI_MODE": "",
+            "ANTHROPIC_API_KEY": "",
+            "OPENAI_API_KEY": "",
+            "MCP_NINE_ROUTER_API_KEY": "",
+            "MCP_OPENROUTER_API_KEY": "",
+            "MCP_DEEPSEEK_API_KEY": "",
+        },
+        clear=False,
+    ):
         from app.ai.readiness import check_provider_readiness
         result = check_provider_readiness()
 
@@ -574,7 +585,18 @@ def test_legacy_check_provider_readiness_no_keys():
 
 def test_legacy_assert_provider_ready_raises_when_no_keys():
     """assert_provider_ready raises RuntimeError when no keys configured."""
-    with patch.dict(os.environ, {"MCP_AI_MODE": "", "ANTHROPIC_API_KEY": "", "OPENAI_API_KEY": ""}, clear=False):
+    with patch.dict(
+        os.environ,
+        {
+            "MCP_AI_MODE": "",
+            "ANTHROPIC_API_KEY": "",
+            "OPENAI_API_KEY": "",
+            "MCP_NINE_ROUTER_API_KEY": "",
+            "MCP_OPENROUTER_API_KEY": "",
+            "MCP_DEEPSEEK_API_KEY": "",
+        },
+        clear=False,
+    ):
         from app.ai.readiness import assert_provider_ready
         with pytest.raises(RuntimeError, match="no provider configured"):
             assert_provider_ready()

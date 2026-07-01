@@ -79,13 +79,13 @@ class RoutingPolicy:
     """Rules-based routing: task type → provider selection order."""
 
     TASK_TYPE_RULES: dict[str, list[str]] = {
-        "chat_simple": ["nine_router_claude", "nine_router_gpt", "claude", "openai"],
-        "chat_complex_reasoning": ["nine_router_claude", "nine_router_gpt", "claude", "openai"],
-        "chat_tool_use": ["nine_router_claude", "nine_router_gpt", "claude", "openai"],
-        "clinical_reasoning": ["nine_router_claude", "nine_router_gpt", "claude", "openai"],
-        "content_moderation": ["nine_router_gpt", "nine_router_claude", "openai", "claude"],
-        "medical_scope_check": ["nine_router_claude", "claude"],
-        "simple_qa": ["nine_router_claude", "nine_router_gpt", "claude", "openai"],
+        "chat_simple": ["nine_router_claude", "nine_router_gpt", "openrouter_primary", "openrouter_fallback", "deepseek", "claude", "openai"],
+        "chat_complex_reasoning": ["nine_router_claude", "nine_router_gpt", "openrouter_primary", "openrouter_fallback", "deepseek", "claude", "openai"],
+        "chat_tool_use": ["nine_router_claude", "nine_router_gpt", "openrouter_primary", "openrouter_fallback", "deepseek", "claude", "openai"],
+        "clinical_reasoning": ["nine_router_claude", "nine_router_gpt", "openrouter_primary", "openrouter_fallback", "deepseek", "claude", "openai"],
+        "content_moderation": ["nine_router_gpt", "nine_router_claude", "openrouter_primary", "openrouter_fallback", "openai", "claude"],
+        "medical_scope_check": ["nine_router_claude", "openrouter_primary", "deepseek", "claude"],
+        "simple_qa": ["nine_router_claude", "nine_router_gpt", "openrouter_primary", "openrouter_fallback", "deepseek", "claude", "openai"],
     }
 
     def get_provider_chain(self, task_type: str) -> list[str]:
@@ -331,6 +331,55 @@ def init_registry_from_settings() -> ProviderRegistry:
             "MCP_NINE_ROUTER_API_KEY not set — 9Router providers not registered; "
             "falling back to direct Claude/OpenAI"
         )
+
+    # Register OpenRouter providers if API key is configured
+    # OpenRouter is preferred over direct Claude/OpenAI when 9Router is unavailable.
+    if settings.openrouter_api_key:
+        from app.ai.providers.nine_router import NineRouterProvider
+
+        # Primary: e.g. openai/gpt-4o-mini via OpenRouter
+        registry.register(
+            NineRouterProvider(
+                base_url=settings.openrouter_base_url,
+                api_key=settings.openrouter_api_key,
+                model=settings.openrouter_primary_model,
+                provider_name="openrouter_primary",
+            )
+        )
+        # Fallback: e.g. anthropic/claude-haiku via OpenRouter
+        registry.register(
+            NineRouterProvider(
+                base_url=settings.openrouter_base_url,
+                api_key=settings.openrouter_api_key,
+                model=settings.openrouter_fallback_model,
+                provider_name="openrouter_fallback",
+            )
+        )
+        logger.info(
+            "OpenRouter providers registered (primary=%s, fallback=%s)",
+            settings.openrouter_primary_model,
+            settings.openrouter_fallback_model,
+        )
+    else:
+        logger.warning(
+            "MCP_OPENROUTER_API_KEY not set — OpenRouter providers not registered"
+        )
+
+    # Register DeepSeek as low-cost fallback (OpenAI-compatible API)
+    if settings.deepseek_api_key:
+        from app.ai.providers.nine_router import NineRouterProvider
+
+        registry.register(
+            NineRouterProvider(
+                base_url=settings.deepseek_base_url,
+                api_key=settings.deepseek_api_key,
+                model=settings.deepseek_model,
+                provider_name="deepseek",
+            )
+        )
+        logger.info("DeepSeek provider registered (model=%s)", settings.deepseek_model)
+    else:
+        logger.warning("MCP_DEEPSEEK_API_KEY not set — DeepSeek fallback not registered")
 
     # Fallback: register mock provider when no real provider is available
     # This ensures MCP_AI_MODE=mock always has a working provider in the registry.

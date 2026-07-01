@@ -67,20 +67,26 @@ def check_provider_readiness() -> dict:
 
     claude_ready = bool(os.environ.get("ANTHROPIC_API_KEY", "").strip())
     openai_ready = bool(os.environ.get("OPENAI_API_KEY", "").strip())
+    nine_router_ready = bool(os.environ.get("MCP_NINE_ROUTER_API_KEY", "").strip())
+    openrouter_ready = bool(os.environ.get("MCP_OPENROUTER_API_KEY", "").strip())
+    deepseek_ready = bool(os.environ.get("MCP_DEEPSEEK_API_KEY", "").strip())
 
-    if claude_ready and openai_ready:
+    any_ready = claude_ready or openai_ready or nine_router_ready or openrouter_ready or deepseek_ready
+
+    if (claude_ready or nine_router_ready or openrouter_ready) and (openai_ready or deepseek_ready):
         mode = "full"
-    elif claude_ready:
-        mode = "fallback_only"  # only primary, no fallback
-    elif openai_ready:
-        mode = "fallback_only"  # only fallback
+    elif any_ready:
+        mode = "fallback_only"
     else:
         mode = "unavailable"
 
     return {
         "claude": claude_ready,
         "openai": openai_ready,
-        "any_ready": claude_ready or openai_ready,
+        "nine_router": nine_router_ready,
+        "openrouter": openrouter_ready,
+        "deepseek": deepseek_ready,
+        "any_ready": any_ready,
         "mode": mode,
     }
 
