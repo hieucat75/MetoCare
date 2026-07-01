@@ -283,7 +283,7 @@ class ContextBuilder:
                     SELECT u.full_name, pp.dob, pp.gender, pp.address
                     FROM users u
                     LEFT JOIN patient_profiles pp ON pp.user_id = u.id
-                    WHERE u.id = :uid AND u.is_active = 1
+                    WHERE u.id = :uid AND u.is_active = true
                     LIMIT 1
                 """),
                 {"uid": user_id},
@@ -320,6 +320,10 @@ class ContextBuilder:
             }
         except Exception as exc:
             logger.warning("Error building user_profile for %s: %s", user_id, exc)
+            try:
+                db.rollback()
+            except Exception:
+                pass
             return None
 
     def _build_health_summary(self, db: Session, user_id: str) -> dict | None:
@@ -363,6 +367,10 @@ class ContextBuilder:
             }
         except Exception as exc:
             logger.warning("Error building health_summary for %s: %s", user_id, exc)
+            try:
+                db.rollback()
+            except Exception:
+                pass
             return None
 
     def _build_care_plan(self, db: Session, user_id: str) -> dict | None:
@@ -418,6 +426,10 @@ class ContextBuilder:
             }
         except Exception as exc:
             logger.warning("Error building care_plan for %s: %s", user_id, exc)
+            try:
+                db.rollback()
+            except Exception:
+                pass
             return None
 
     def _build_medications(self, db: Session, user_id: str) -> list | None:
@@ -449,6 +461,10 @@ class ContextBuilder:
             ]
         except Exception as exc:
             logger.warning("Error building medications for %s: %s", user_id, exc)
+            try:
+                db.rollback()
+            except Exception:
+                pass
             return None
 
     def _build_recent_labs(self, db: Session, user_id: str) -> list | None:
@@ -490,6 +506,10 @@ class ContextBuilder:
             ]
         except Exception as exc:
             logger.warning("Error building recent_labs for %s: %s", user_id, exc)
+            try:
+                db.rollback()
+            except Exception:
+                pass
             return None
 
     def _build_recent_metrics(self, db: Session, user_id: str) -> list | None:
@@ -536,6 +556,10 @@ class ContextBuilder:
             return result if result else None
         except Exception as exc:
             logger.warning("Error building recent_metrics for %s: %s", user_id, exc)
+            try:
+                db.rollback()
+            except Exception:
+                pass
             return None
 
     def _build_screen_context(self, screen_context: ScreenContext) -> dict:
