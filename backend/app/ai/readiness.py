@@ -200,19 +200,26 @@ class MetoReadinessChecker:
 
         claude_key = bool(os.environ.get("ANTHROPIC_API_KEY", "").strip())
         openai_key = bool(os.environ.get("OPENAI_API_KEY", "").strip())
+        nine_router_key = bool(os.environ.get("MCP_NINE_ROUTER_API_KEY", "").strip())
+        openrouter_key = bool(os.environ.get("MCP_OPENROUTER_API_KEY", "").strip())
+        deepseek_key = bool(os.environ.get("MCP_DEEPSEEK_API_KEY", "").strip())
 
         latency_ms = int((time.monotonic() - t0) * 1000)
 
-        if claude_key or openai_key:
+        any_key = claude_key or openai_key or nine_router_key or openrouter_key or deepseek_key
+
+        if any_key:
             parts = []
             if claude_key:
                 parts.append("claude=yes")
             if openai_key:
                 parts.append("openai=yes")
-            if not claude_key:
-                parts.append("claude=missing")
-            if not openai_key:
-                parts.append("openai=missing")
+            if nine_router_key:
+                parts.append("9router=yes")
+            if openrouter_key:
+                parts.append("openrouter=yes")
+            if deepseek_key:
+                parts.append("deepseek=yes")
             return GateResult(
                 gate="api_keys",
                 passed=True,
@@ -225,7 +232,7 @@ class MetoReadinessChecker:
                 passed=False,
                 latency_ms=latency_ms,
                 detail="no API keys configured",
-                error="ANTHROPIC_API_KEY and OPENAI_API_KEY both absent",
+                error="No provider API keys found (ANTHROPIC_API_KEY, OPENAI_API_KEY, MCP_NINE_ROUTER_API_KEY, MCP_OPENROUTER_API_KEY, MCP_DEEPSEEK_API_KEY all absent)",
             )
 
     async def check_provider_ping(self) -> GateResult:
@@ -326,8 +333,17 @@ class MetoReadinessChecker:
 
         claude_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
         openai_key = os.environ.get("OPENAI_API_KEY", "").strip()
+        nine_router_key = os.environ.get("MCP_NINE_ROUTER_API_KEY", "").strip()
+        openrouter_key = os.environ.get("MCP_OPENROUTER_API_KEY", "").strip()
+        deepseek_key = os.environ.get("MCP_DEEPSEEK_API_KEY", "").strip()
+        deepseek_base_url = os.environ.get("MCP_DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+        deepseek_model = os.environ.get("MCP_DEEPSEEK_MODEL", "deepseek-chat")
+        openrouter_base_url = os.environ.get("MCP_OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+        openrouter_model = os.environ.get("MCP_OPENROUTER_PRIMARY_MODEL", "openai/gpt-4o-mini")
+        nine_router_base_url = os.environ.get("MCP_NINE_ROUTER_BASE_URL", "http://127.0.0.1:20128/v1")
+        nine_router_model = os.environ.get("MCP_NINE_ROUTER_PRIMARY_MODEL", "cc/claude-sonnet-4-6")
 
-        if not claude_key and not openai_key:
+        if not any([claude_key, openai_key, nine_router_key, openrouter_key, deepseek_key]):
             return GateResult(
                 gate="streaming",
                 passed=False,
@@ -414,6 +430,43 @@ class MetoReadinessChecker:
                     error=str(exc),
                 )
 
+        # Try OpenAI-compatible providers: 9Router, OpenRouter, DeepSeek
+        for key, base_url, model, label in [
+            (nine_router_key, nine_router_base_url, nine_router_model, "9router"),
+            (openrouter_key, openrouter_base_url, openrouter_model, "openrouter"),
+            (deepseek_key, deepseek_base_url, deepseek_model, "deepseek"),
+        ]:
+            if not key:
+                continue
+            try:
+                import openai as openai_lib
+                client = openai_lib.AsyncOpenAI(base_url=base_url, api_key=key)
+                chunk_count = 0
+                stream = await client.chat.completions.create(
+                    model=model,
+                    max_tokens=20,
+                    messages=[{"role": "user", "content": "Say hello"}],
+                    stream=True,
+                )
+                async for chunk in stream:
+                    if chunk.choices and chunk.choices[0].delta.content:
+                        chunk_count += 1
+                        if chunk_count >= 1:
+                            break
+
+                latency_ms = int((time.monotonic() - t0) * 1000)
+                passed = chunk_count >= 1
+                return GateResult(
+                    gate="streaming",
+                    passed=passed,
+                    latency_ms=latency_ms,
+                    detail=f"{label} streaming {'ok' if passed else 'failed'} ({chunk_count} chunks)",
+                    error=None if passed else "0 chunks received",
+                )
+            except Exception as exc:
+                logger.warning("%s streaming check failed: %s", label, exc)
+                continue
+
         return GateResult(
             gate="streaming",
             passed=False,
@@ -438,8 +491,17 @@ class MetoReadinessChecker:
 
         claude_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
         openai_key = os.environ.get("OPENAI_API_KEY", "").strip()
+        nine_router_key = os.environ.get("MCP_NINE_ROUTER_API_KEY", "").strip()
+        openrouter_key = os.environ.get("MCP_OPENROUTER_API_KEY", "").strip()
+        deepseek_key = os.environ.get("MCP_DEEPSEEK_API_KEY", "").strip()
+        deepseek_base_url = os.environ.get("MCP_DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+        deepseek_model = os.environ.get("MCP_DEEPSEEK_MODEL", "deepseek-chat")
+        openrouter_base_url = os.environ.get("MCP_OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+        openrouter_model = os.environ.get("MCP_OPENROUTER_PRIMARY_MODEL", "openai/gpt-4o-mini")
+        nine_router_base_url = os.environ.get("MCP_NINE_ROUTER_BASE_URL", "http://127.0.0.1:20128/v1")
+        nine_router_model = os.environ.get("MCP_NINE_ROUTER_PRIMARY_MODEL", "cc/claude-sonnet-4-6")
 
-        if not claude_key and not openai_key:
+        if not any([claude_key, openai_key, nine_router_key, openrouter_key, deepseek_key]):
             return GateResult(
                 gate="latency",
                 passed=False,
@@ -510,6 +572,38 @@ class MetoReadinessChecker:
                     detail=f"openai call failed: {exc!s:.80}",
                     error=str(exc),
                 )
+
+        # Try OpenAI-compatible providers: 9Router, OpenRouter, DeepSeek
+        for key, base_url, model, label in [
+            (nine_router_key, nine_router_base_url, nine_router_model, "9router"),
+            (openrouter_key, openrouter_base_url, openrouter_model, "openrouter"),
+            (deepseek_key, deepseek_base_url, deepseek_model, "deepseek"),
+        ]:
+            if not key:
+                continue
+            try:
+                import openai as openai_lib
+                client = openai_lib.AsyncOpenAI(base_url=base_url, api_key=key)
+                call_start = time.monotonic()
+                await client.chat.completions.create(
+                    model=model,
+                    max_tokens=30,
+                    messages=[{"role": "user", "content": "Reply in one sentence: what is 2+2?"}],
+                )
+                call_ms = int((time.monotonic() - call_start) * 1000)
+                total_ms = int((time.monotonic() - t0) * 1000)
+                passed = call_ms < threshold_ms
+                exceeded = f"latency {call_ms}ms exceeds threshold {threshold_ms}ms"
+                return GateResult(
+                    gate="latency",
+                    passed=passed,
+                    latency_ms=total_ms,
+                    detail=f"{label} round-trip {call_ms}ms (threshold {threshold_ms}ms)",
+                    error=None if passed else exceeded,
+                )
+            except Exception as exc:
+                logger.warning("%s latency check failed: %s", label, exc)
+                continue
 
         return GateResult(
             gate="latency",
