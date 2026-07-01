@@ -283,8 +283,10 @@ jobs:
           DOC_INTEL_ENDPOINT=$(az keyvault secret show --vault-name "$KV_NAME" -n azure-doc-intel-endpoint --query value -o tsv)
           DOC_INTEL_KEY=$(az keyvault secret show --vault-name "$KV_NAME" -n azure-doc-intel-key --query value -o tsv)
           DEEPSEEK_KEY=$(az keyvault secret show --vault-name "$KV_NAME" -n deepseek-api-key --query value -o tsv)
+          # OpenRouter — Meto AI primary gateway (Claude Sonnet 4.5). DeepSeek stays as fallback.
+          OPENROUTER_KEY=$(az keyvault secret show --vault-name "$KV_NAME" -n openrouter-api-key --query value -o tsv)
           echo "::add-mask::$DB_URL"; echo "::add-mask::$SECRET_KEY"
-          echo "::add-mask::$ENC_KEYS"; echo "::add-mask::$DOC_INTEL_KEY"; echo "::add-mask::$DEEPSEEK_KEY"
+          echo "::add-mask::$ENC_KEYS"; echo "::add-mask::$DOC_INTEL_KEY"; echo "::add-mask::$DEEPSEEK_KEY"; echo "::add-mask::$OPENROUTER_KEY"
           {
             echo "DB_URL<<EOF"; echo "$DB_URL"; echo "EOF"
             echo "SECRET_KEY<<EOF"; echo "$SECRET_KEY"; echo "EOF"
@@ -293,6 +295,7 @@ jobs:
             echo "DOC_INTEL_ENDPOINT<<EOF"; echo "$DOC_INTEL_ENDPOINT"; echo "EOF"
             echo "DOC_INTEL_KEY<<EOF"; echo "$DOC_INTEL_KEY"; echo "EOF"
             echo "DEEPSEEK_KEY<<EOF"; echo "$DEEPSEEK_KEY"; echo "EOF"
+            echo "OPENROUTER_KEY<<EOF"; echo "$OPENROUTER_KEY"; echo "EOF"
           } >> "$GITHUB_ENV"
 
       # ── Run Alembic migration (one-shot Container Apps Job) ───────────────
@@ -326,7 +329,7 @@ jobs:
       - name: Deploy backend to ACA
         run: |
           IMG="${REGISTRY}/${{ github.repository_owner }}/metocare-backend:${{ steps.tag.outputs.tag }}"
-          COMMON_SECRETS="db-url=$DB_URL secret-key=$SECRET_KEY enc-keys=$ENC_KEYS appi=$APPI doc-intel-key=$DOC_INTEL_KEY deepseek-api-key=$DEEPSEEK_KEY"
+          COMMON_SECRETS="db-url=$DB_URL secret-key=$SECRET_KEY enc-keys=$ENC_KEYS appi=$APPI doc-intel-key=$DOC_INTEL_KEY deepseek-api-key=$DEEPSEEK_KEY openrouter-api-key=$OPENROUTER_KEY"
           COMMON_ENV="MCP_ENV=staging MCP_DEBUG=false \
             MCP_DATABASE_URL=secretref:db-url MCP_SECRET_KEY=secretref:secret-key \
             MCP_ENCRYPTION_KEYS=secretref:enc-keys \
@@ -340,7 +343,10 @@ jobs:
             MCP_OCR_CLOUD_PROVIDER=azure \
             AZURE_DOC_INTEL_ENDPOINT=${DOC_INTEL_ENDPOINT} \
             AZURE_DOC_INTEL_KEY=secretref:doc-intel-key \
-            MCP_DEEPSEEK_API_KEY=secretref:deepseek-api-key"
+            MCP_DEEPSEEK_API_KEY=secretref:deepseek-api-key \
+            MCP_OPENROUTER_API_KEY=secretref:openrouter-api-key \
+            MCP_OPENROUTER_PRIMARY_MODEL=anthropic/claude-sonnet-4.5 \
+            MCP_OPENROUTER_FALLBACK_MODEL=openai/gpt-4o-mini"
           SUFFIX="be-${{ steps.tag.outputs.sha8 }}-$(date +%s)"
           if az containerapp show -g "$RG" -n "$BACKEND_APP" -o none 2>/dev/null; then
             az containerapp secret set -g "$RG" -n "$BACKEND_APP" --secrets $COMMON_SECRETS -o none

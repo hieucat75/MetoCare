@@ -63,7 +63,7 @@ class Settings(BaseSettings):
     openrouter_api_key: str = ""                             # MCP_OPENROUTER_API_KEY
     openrouter_base_url: str = "https://openrouter.ai/api/v1"  # MCP_OPENROUTER_BASE_URL
     openrouter_primary_model: str = "openai/gpt-4o-mini"    # MCP_OPENROUTER_PRIMARY_MODEL
-    openrouter_fallback_model: str = "anthropic/claude-haiku-4-5"  # MCP_OPENROUTER_FALLBACK_MODEL
+    openrouter_fallback_model: str = "openai/gpt-4o-mini"  # MCP_OPENROUTER_FALLBACK_MODEL
 
     # ---- DeepSeek — low-cost fallback provider (OpenAI-compatible endpoint) ----
     # Set MCP_DEEPSEEK_API_KEY to enable. Routes through https://api.deepseek.com.
