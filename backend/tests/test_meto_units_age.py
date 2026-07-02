@@ -12,8 +12,33 @@ from __future__ import annotations
 import datetime as dt
 
 from app.ai.context.builder import ContextBuilder
-from app.ai.prompt.assembler import SYSTEM_PROMPT
+from app.ai.context.schemas import AssembledContext
+from app.ai.prompt.assembler import SYSTEM_PROMPT, PromptAssembler
 from app.models.patient import PatientProfile
+
+
+class _FakeResult:
+    def __init__(self, rows: list):
+        self._rows = rows
+
+    def fetchall(self) -> list:
+        return self._rows
+
+    def fetchone(self):
+        return self._rows[0] if self._rows else None
+
+
+class _FakeDB:
+    """Minimal stand-in so _build_* row shaping can be tested without a real DB."""
+
+    def __init__(self, rows: list):
+        self._rows = rows
+
+    def execute(self, *args, **kwargs) -> _FakeResult:
+        return _FakeResult(self._rows)
+
+    def rollback(self) -> None:
+        pass
 
 
 def test_system_prompt_forbids_unit_conversion():
@@ -22,6 +47,64 @@ def test_system_prompt_forbids_unit_conversion():
     assert "đơn vị" in SYSTEM_PROMPT
     # Concrete conversion the model must not perform.
     assert "mg/dL" in SYSTEM_PROMPT and "mmol/L" in SYSTEM_PROMPT
+
+
+def test_system_prompt_hard_locks_conversion():
+    """Hard-lock: prompt must ban the conversion arithmetic and pin to `display`."""
+    # The exact failure mode: 5.73 mmol/L × 18 → 103.24 mg/dL. Ban the factor.
+    assert "×18" in SYSTEM_PROMPT
+    # The verbatim token the model must copy instead of recomputing.
+    assert "display" in SYSTEM_PROMPT
+    # A reference_range in a different unit must NOT trigger value conversion.
+    assert "reference_range" in SYSTEM_PROMPT
+
+
+def test_recent_labs_carry_verbatim_display_token():
+    """Lab rows must expose a `display` = exact value + unit, with no conversion."""
+    # Stored in mmol/L; range printed in mg/dL — the exact real-world trap.
+    row = ("Glucose (fasting)", "5.73", "mmol/L", "70 - 100", "high", dt.date(2026, 6, 30))
+    labs = ContextBuilder()._build_recent_labs(_FakeDB([row]), "u1")
+
+    assert labs is not None
+    assert labs[0]["value"] == "5.73"
+    assert labs[0]["unit"] == "mmol/L"
+    assert labs[0]["display"] == "5.73 mmol/L"
+    # The converted number must never be pre-computed into the context.
+    assert "103.24" not in labs[0]["display"]
+    assert "mg/dL" not in labs[0]["display"]
+
+
+def test_recent_metrics_carry_verbatim_display_token():
+    """Metric rows must expose a `display` = exact value + unit."""
+    row = ("blood_glucose", "5.73", "mmol/L", dt.datetime(2026, 6, 30, 8, 0), "high")
+    metrics = ContextBuilder()._build_recent_metrics(_FakeDB([row]), "u1")
+
+    assert metrics is not None
+    assert metrics[0]["latest_value"] == "5.73"
+    assert metrics[0]["display"] == "5.73 mmol/L"
+
+
+def test_assembled_labs_block_has_no_convert_reminder():
+    """The labs section must carry a no-conversion reminder next to the data."""
+    ctx = AssembledContext(
+        recent_labs=[{
+            "test_name": "Glucose (fasting)",
+            "value": "5.73",
+            "unit": "mmol/L",
+            "display": "5.73 mmol/L",
+            "reference_range": "70 - 100",
+            "status": "high",
+            "collected_date": "2026-06-30",
+        }],
+        screen_context={"screen_id": "labs"},
+    )
+    system_prompt, _ = PromptAssembler().assemble(ctx, "đường huyết của tôi thế nào?", [])
+
+    # Verbatim stored value is present; the converted value is never injected by us.
+    assert "5.73 mmol/L" in system_prompt
+    assert "103.24" not in system_prompt
+    # Inline reminder sits in the labs block, not just the far-away system rule.
+    assert "KHÔNG quy đổi" in system_prompt
 
 
 def test_age_is_year_based(db, patient):

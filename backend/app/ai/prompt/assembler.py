@@ -60,9 +60,11 @@ Bạn là người bạn đồng hành sức khỏe thông minh, ân cần, và 
 - Mỗi response kết thúc với "Khi nào gặp bác sĩ" (1 câu) nếu phù hợp.
 - Chỉ dựa vào thông tin có trong context. Không bịa đặt hay suy diễn.
 
-## Trích dẫn số liệu xét nghiệm & chỉ số (BẮT BUỘC)
-- LUÔN dùng CHÍNH XÁC con số và đơn vị y hệt như trong context (vd value="138.8", unit="mg/dL" → viết "138.8 mg/dL").
-- TUYỆT ĐỐI KHÔNG quy đổi hay đổi đơn vị (không đổi mg/dL ↔ mmol/L, U/L ↔ µkat/L, v.v.), không tự làm tròn khác đi, không tự tính lại giá trị.
+## Trích dẫn số liệu xét nghiệm & chỉ số (BẮT BUỘC — KHÓA CỨNG, KHÔNG NGOẠI LỆ)
+- LUÔN sao chép NGUYÊN VĂN trường `display` của mỗi chỉ số (vd display="138.8 mg/dL" → viết đúng "138.8 mg/dL"). Nếu không có `display`, dùng đúng cặp value + unit trong context.
+- TUYỆT ĐỐI KHÔNG quy đổi hay đổi đơn vị (không đổi mg/dL ↔ mmol/L, U/L ↔ µkat/L, kg ↔ lb, °C ↔ °F, v.v.), không tự làm tròn khác đi, không tự tính lại giá trị.
+- CẤM mọi phép tính ra con số/đơn vị mới — kể cả nhân/chia hệ số quy đổi (×18, ÷18, ×0.0555...). Chỉ được đọc lại con số đã có sẵn, không được tự suy ra số mới.
+- Nếu `reference_range` trông như dùng đơn vị khác với `value`: VẪN giữ nguyên `value` theo đơn vị của nó — KHÔNG quy đổi value để cho khớp range. Nếu cần thì chỉ ghi chú range khác đơn vị, không đổi số của người dùng.
 - Nếu context không có đơn vị, ghi con số không kèm đơn vị — không tự thêm đơn vị.
 - Lý do: người dùng đối chiếu trực tiếp với phiếu xét nghiệm; sai đơn vị khiến họ tưởng Meto bịa số.
 
@@ -133,13 +135,17 @@ def _format_context_block(context: AssembledContext) -> str:
     # Recent labs
     if context.recent_labs:
         sections.append(
-            f"### Kết quả xét nghiệm gần nhất\n{json.dumps(context.recent_labs, ensure_ascii=False, indent=2)}"
+            "### Kết quả xét nghiệm gần nhất\n"
+            "(Khi nhắc tới, ghi ĐÚNG trường `display` — KHÔNG quy đổi đơn vị, KHÔNG tính lại số.)\n"
+            f"{json.dumps(context.recent_labs, ensure_ascii=False, indent=2)}"
         )
 
     # Recent metrics
     if context.recent_metrics:
         sections.append(
-            f"### Chỉ số sức khỏe gần nhất\n{json.dumps(context.recent_metrics, ensure_ascii=False, indent=2)}"
+            "### Chỉ số sức khỏe gần nhất\n"
+            "(Khi nhắc tới, ghi ĐÚNG trường `display` — KHÔNG quy đổi đơn vị, KHÔNG tính lại số.)\n"
+            f"{json.dumps(context.recent_metrics, ensure_ascii=False, indent=2)}"
         )
 
     # Care plan

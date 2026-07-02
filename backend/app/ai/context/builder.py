@@ -533,17 +533,21 @@ class ContextBuilder:
             if not rows:
                 return None
 
-            return [
-                {
+            def _lab_row(r: Any) -> dict:
+                value = str(r[1]) if r[1] is not None else ""
+                unit = r[2] or ""
+                return {
                     "test_name": r[0],
-                    "value": str(r[1]) if r[1] is not None else "",
-                    "unit": r[2] or "",
+                    "value": value,
+                    "unit": unit,
+                    # Verbatim token the LLM must quote as-is (never convert/round).
+                    "display": f"{value} {unit}".strip(),
                     "reference_range": r[3] or "",
                     "status": r[4] or "unknown",
                     "collected_date": str(r[5])[:10] if r[5] else None,
                 }
-                for r in rows
-            ]
+
+            return [_lab_row(r) for r in rows]
         except Exception as exc:
             logger.warning("Error building recent_labs for %s: %s", user_id, exc)
             try:
@@ -585,10 +589,14 @@ class ContextBuilder:
                 if metric_type in seen:
                     continue
                 seen.add(metric_type)
+                latest_value = str(r[1]) if r[1] is not None else ""
+                unit = r[2] or ""
                 result.append({
                     "metric_type": metric_type,
-                    "latest_value": str(r[1]) if r[1] is not None else "",
-                    "unit": r[2] or "",
+                    "latest_value": latest_value,
+                    "unit": unit,
+                    # Verbatim token the LLM must quote as-is (never convert/round).
+                    "display": f"{latest_value} {unit}".strip(),
                     "measured_at": str(r[3]) if r[3] else None,
                     "status": r[4] or "unknown",
                 })
