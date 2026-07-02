@@ -20,6 +20,8 @@ class ConsentInput(BaseModel):
     locale: str | None = Field(default=None, max_length=32)
     timezone: str | None = Field(default=None, max_length=64)
     device_platform: str | None = Field(default=None, max_length=64)
+    accepted_source: str | None = Field(default=None, max_length=32)
+    accepted_language: str | None = Field(default=None, max_length=32)
 
 
 class RegisterRequest(BaseModel):
@@ -99,6 +101,8 @@ class UserOut(BaseModel):
     notify_doctor_messages: bool = True
     # Populated for PATIENT role callers; None for all other roles.
     patient_profile_id: str | None = None
+    # Latest Terms version the user has accepted (None if never) — login gate.
+    accepted_terms_version: str | None = None
 
     model_config = {"from_attributes": True}
 

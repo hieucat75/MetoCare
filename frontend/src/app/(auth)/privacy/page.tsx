@@ -42,9 +42,22 @@ const SECTIONS: readonly LegalSection[] = [
     ],
   },
   {
+    heading: 'Lưu giữ dữ liệu',
+    body: [
+      'Chúng tôi lưu giữ dữ liệu của bạn trong thời gian tài khoản còn hoạt động và trong khoảng thời gian cần thiết theo quy định pháp luật.',
+      'Khi bạn yêu cầu xóa tài khoản, dữ liệu cá nhân sẽ được xóa hoặc ẩn danh, trừ phần bắt buộc phải lưu theo luật.',
+    ],
+  },
+  {
+    heading: 'Thay đổi chính sách',
+    body: [
+      'Chính sách này có thể được cập nhật. Khi có thay đổi quan trọng, chúng tôi sẽ thông báo trong ứng dụng và cập nhật số phiên bản.',
+    ],
+  },
+  {
     heading: 'Liên hệ',
     body: [
-      'Nếu có câu hỏi về quyền riêng tư, vui lòng liên hệ bộ phận hỗ trợ của MetoCare.',
+      'Nếu có câu hỏi về quyền riêng tư, vui lòng liên hệ bộ phận hỗ trợ của MetoCare qua email hotro@metocare.vn.',
     ],
   },
 ]

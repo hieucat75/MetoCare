@@ -32,6 +32,9 @@ def upgrade() -> None:
         sa.Column("timezone", sa.String(64), nullable=True),
         sa.Column("ip", sa.String(64), nullable=True),
         sa.Column("device_platform", sa.String(64), nullable=True),
+        sa.Column("accepted_source", sa.String(32), nullable=True),
+        sa.Column("accepted_language", sa.String(32), nullable=True),
+        sa.Column("revoked_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("id", sa.String(36), nullable=False),
         sa.Column(
             "created_at",

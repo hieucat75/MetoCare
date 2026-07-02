@@ -29,6 +29,7 @@ export interface UserResponse {
   notify_lab_results: boolean
   notify_doctor_messages: boolean
   patient_profile_id?: string | null
+  accepted_terms_version?: string | null
 }
 
 export interface AccountUpdate {
@@ -90,6 +91,8 @@ export interface ConsentPayload {
   locale?: string
   timezone?: string
   device_platform?: string
+  accepted_source?: string
+  accepted_language?: string
 }
 
 export async function register(
@@ -117,6 +120,11 @@ export async function logout(refreshToken: string): Promise<void> {
 
 export async function me(): Promise<UserResponse> {
   return api.get<UserResponse>('/auth/me')
+}
+
+/** Record Terms/Privacy acceptance for the logged-in user (version gate). */
+export async function acceptTerms(consent: ConsentPayload): Promise<UserResponse> {
+  return api.post<UserResponse>('/auth/accept-terms', consent)
 }
 
 export async function mfaEnroll(): Promise<MfaEnrollResponse> {

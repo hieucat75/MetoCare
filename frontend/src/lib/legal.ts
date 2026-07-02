@@ -1,9 +1,28 @@
 import type { ConsentPayload } from '@/lib/api/auth'
 
-/** Current legal document versions — keep in sync with backend app/core/legal.py. */
+/**
+ * Current legal document versions.
+ *
+ * Canonical source: repo-root `legal-versions.json`. The frontend Docker build
+ * context is `./frontend` only, so that file can't be imported here at build
+ * time — these literals mirror it and `legalVersions.sync.test.ts` fails if they
+ * ever diverge from the canonical JSON.
+ */
 export const TERMS_VERSION = '1.0'
 export const PRIVACY_VERSION = '1.0'
 export const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION ?? '1.0.0'
+
+/** Where an acceptance came from (audit trail). */
+export type ConsentSource = 'registration' | 'reconsent'
+
+/**
+ * True when the user must (re-)accept the Terms. Versions increase
+ * monotonically, so a missing or non-current accepted version is outdated.
+ */
+export function isTermsOutdated(acceptedTermsVersion: string | null | undefined): boolean {
+  if (!acceptedTermsVersion) return true
+  return acceptedTermsVersion !== TERMS_VERSION
+}
 
 /** Summary bullets shown on the consent screen (not the full legal text). */
 export const CONSENT_SUMMARY: readonly string[] = [
@@ -18,7 +37,10 @@ export const CONSENT_SUMMARY: readonly string[] = [
  * Build the consent payload from the current versions + best-effort client
  * context (locale, timezone, platform). Safe to call on the client only.
  */
-export function buildConsentPayload(accepted: boolean): ConsentPayload {
+export function buildConsentPayload(
+  accepted: boolean,
+  source: ConsentSource = 'registration',
+): ConsentPayload {
   let locale: string | undefined
   let timezone: string | undefined
   try {
@@ -35,5 +57,7 @@ export function buildConsentPayload(accepted: boolean): ConsentPayload {
     locale,
     timezone,
     device_platform: 'web',
+    accepted_source: source,
+    accepted_language: locale ?? 'vi',
   }
 }

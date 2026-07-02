@@ -42,3 +42,8 @@ class TermsConsent(UUIDPrimaryKey, TimestampMixin, Base):
     timezone: Mapped[str | None] = mapped_column(String(64), nullable=True)
     ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
     device_platform: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Where/how the acceptance happened, and the UI language shown at the time.
+    accepted_source: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    accepted_language: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # Future-proofing: set when a user withdraws this consent.
+    revoked_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

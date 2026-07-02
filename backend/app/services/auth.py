@@ -45,6 +45,8 @@ class TermsConsentData:
     timezone: str | None = None
     ip: str | None = None
     device_platform: str | None = None
+    accepted_source: str | None = None
+    accepted_language: str | None = None
 
 
 def register(
@@ -134,8 +136,31 @@ def _record_terms_consent(
             timezone=consent.timezone,
             ip=consent.ip,
             device_platform=consent.device_platform,
+            accepted_source=consent.accepted_source,
+            accepted_language=consent.accepted_language,
         )
     )
+
+
+def accept_terms(db: Session, *, user_id: str, consent: TermsConsentData) -> None:
+    """Record a Terms/Privacy acceptance for an existing (logged-in) user.
+
+    Used by the login/version gate when a user must re-accept an updated Terms
+    version. Idempotent per (user_id, terms_version); commits.
+    """
+    _record_terms_consent(db, user_id=user_id, consent=consent)
+    db.commit()
+
+
+def latest_accepted_terms_version(db: Session, user_id: str) -> str | None:
+    """Return the newest non-revoked Terms version the user has accepted."""
+    row = db.execute(
+        select(TermsConsent.terms_version)
+        .where(TermsConsent.user_id == user_id, TermsConsent.revoked_at.is_(None))
+        .order_by(TermsConsent.accepted_at.desc())
+        .limit(1)
+    ).first()
+    return row[0] if row else None
 
 
 def change_password(db: Session, *, user_id: str, current_password: str, new_password: str) -> User:

@@ -59,8 +59,8 @@ export function LegalDocument({ title, version, updated, intro, sections }: Prop
       </div>
 
       <p className="mt-6 text-[14px] leading-relaxed text-text-subtle dark:text-white/50">
-        Đây là bản tóm tắt phục vụ trải nghiệm sản phẩm và sẽ được rà soát bởi bộ phận pháp lý.
-        Nếu có câu hỏi, vui lòng liên hệ hỗ trợ MetoCare.
+        Nếu bạn có câu hỏi về nội dung này, vui lòng liên hệ bộ phận hỗ trợ MetoCare qua
+        email hotro@metocare.vn.
       </p>
     </article>
   )

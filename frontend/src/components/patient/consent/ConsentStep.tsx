@@ -9,16 +9,25 @@ import { cn } from '@/lib/utils'
 
 type Props = {
   onAccept: () => void
-  onBack: () => void
+  /** When omitted, the "Quay lại" button is hidden (re-consent gate). */
+  onBack?: () => void
   isLoading?: boolean
   error?: string | null
+  /** Primary CTA label. Defaults to the registration wording. */
+  submitLabel?: string
 }
 
 /**
  * Final registration step: Terms of Use + Privacy Policy consent.
  * Large fonts / 48px targets for 45–70yo users, Soft Mint UI, dark-mode aware.
  */
-export function ConsentStep({ onAccept, onBack, isLoading = false, error }: Props) {
+export function ConsentStep({
+  onAccept,
+  onBack,
+  isLoading = false,
+  error,
+  submitLabel = 'Đồng ý và tạo tài khoản',
+}: Props) {
   const [checked, setChecked] = React.useState(false)
   const canContinue = checked && !isLoading
 
@@ -117,18 +126,20 @@ export function ConsentStep({ onAccept, onBack, isLoading = false, error }: Prop
               Đang tạo tài khoản…
             </>
           ) : (
-            'Đồng ý và tạo tài khoản'
+            submitLabel
           )}
         </NeuButton>
 
-        <button
-          type="button"
-          onClick={onBack}
-          disabled={isLoading}
-          className="flex h-[52px] w-full items-center justify-center rounded-xl text-[17px] font-medium text-text-muted transition-colors hover:text-neu-green disabled:opacity-50 dark:text-white/70"
-        >
-          Quay lại
-        </button>
+        {onBack && (
+          <button
+            type="button"
+            onClick={onBack}
+            disabled={isLoading}
+            className="flex h-[52px] w-full items-center justify-center rounded-xl text-[17px] font-medium text-text-muted transition-colors hover:text-neu-green disabled:opacity-50 dark:text-white/70"
+          >
+            Quay lại
+          </button>
+        )}
       </div>
     </form>
   )

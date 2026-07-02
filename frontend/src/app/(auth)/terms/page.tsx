@@ -48,9 +48,30 @@ const SECTIONS: readonly LegalSection[] = [
     ],
   },
   {
+    heading: 'Quyền sở hữu trí tuệ',
+    body: [
+      'Toàn bộ nội dung, giao diện, thương hiệu và phần mềm của MetoCare thuộc quyền sở hữu của MetoCare hoặc các bên cấp phép. Bạn không được sao chép, phân phối hay tạo sản phẩm phái sinh khi chưa được phép.',
+      'Dữ liệu sức khỏe bạn nhập vào vẫn thuộc về bạn; MetoCare chỉ xử lý dữ liệu này để cung cấp dịch vụ theo Chính sách quyền riêng tư.',
+    ],
+  },
+  {
+    heading: 'Giới hạn trách nhiệm',
+    body: [
+      'Trong phạm vi pháp luật cho phép, MetoCare không chịu trách nhiệm với các thiệt hại gián tiếp phát sinh từ việc sử dụng ứng dụng, bao gồm quyết định y tế được đưa ra chỉ dựa trên thông tin tham khảo trong ứng dụng.',
+      'Dịch vụ được cung cấp trên cơ sở "hiện có". Chúng tôi nỗ lực duy trì tính chính xác và sẵn sàng của dịch vụ nhưng không cam kết không gián đoạn.',
+    ],
+  },
+  {
     heading: 'Thay đổi điều khoản',
     body: [
-      'MetoCare có thể cập nhật điều khoản theo thời gian. Khi có thay đổi quan trọng, bạn sẽ được thông báo và có thể cần chấp nhận lại phiên bản mới.',
+      'MetoCare có thể cập nhật điều khoản theo thời gian. Khi có thay đổi quan trọng, bạn sẽ được thông báo và cần chấp nhận lại phiên bản mới trước khi tiếp tục sử dụng.',
+    ],
+  },
+  {
+    heading: 'Luật áp dụng và liên hệ',
+    body: [
+      'Các điều khoản này được điều chỉnh bởi pháp luật Việt Nam.',
+      'Mọi thắc mắc xin liên hệ bộ phận hỗ trợ MetoCare qua email hotro@metocare.vn.',
     ],
   },
 ]

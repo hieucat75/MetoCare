@@ -53,6 +53,71 @@ def test_register_with_consent_writes_row(client, db):
     assert row.ip is not None
 
 
+def test_register_records_accepted_source_and_language(client, db):
+    resp = client.post(
+        "/api/v1/auth/register",
+        json={
+            "phone": _phone(),
+            "password": "supersecret1",
+            "consent": {
+                "accepted": True,
+                "terms_version": "1.0",
+                "privacy_version": "1.0",
+                "accepted_source": "registration",
+                "accepted_language": "vi-VN",
+            },
+        },
+    )
+    assert resp.status_code == 201, resp.text
+    row = db.query(TermsConsent).filter(
+        TermsConsent.user_id == resp.json()["user_id"]
+    ).one()
+    assert row.accepted_source == "registration"
+    assert row.accepted_language == "vi-VN"
+    assert row.revoked_at is None
+
+
+def test_me_exposes_accepted_terms_version(client):
+    """/auth/me reports the accepted version — drives the login/version gate."""
+    token = client.post(
+        "/api/v1/auth/register",
+        json={
+            "phone": _phone(),
+            "password": "supersecret1",
+            "consent": {"accepted": True, "terms_version": "1.0", "privacy_version": "1.0"},
+        },
+    ).json()["access_token"]
+    me = client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
+    assert me.status_code == 200, me.text
+    assert me.json()["accepted_terms_version"] == "1.0"
+
+
+def test_accept_terms_endpoint_records_for_logged_in_user(client):
+    """A user who registered WITHOUT consent can accept later via the gate."""
+    reg = client.post(
+        "/api/v1/auth/register",
+        json={"phone": _phone(), "password": "supersecret1"},
+    ).json()
+    token = reg["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # Before: no accepted version → gate would trigger.
+    assert client.get("/api/v1/auth/me", headers=headers).json()["accepted_terms_version"] is None
+
+    resp = client.post(
+        "/api/v1/auth/accept-terms",
+        headers=headers,
+        json={
+            "accepted": True,
+            "terms_version": "1.0",
+            "privacy_version": "1.0",
+            "accepted_source": "reconsent",
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["accepted_terms_version"] == "1.0"
+
+
 def test_register_without_consent_is_non_breaking(client, db):
     phone = _phone()
     resp = client.post(
