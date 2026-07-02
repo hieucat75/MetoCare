@@ -154,6 +154,11 @@ class Settings(BaseSettings):
     audit_retention_admin_days: int = 1095
     audit_retention_default_days: int = 365
 
+    # ---- Doctor Marketplace (T10) ----
+    # Platform commission rate applied to each consultation price.
+    platform_fee_rate: float = 0.15  # MCP_PLATFORM_FEE_RATE
+    marketplace_currency: str = "VND"  # MCP_MARKETPLACE_CURRENCY
+
     # ---- Rate limiting & account lockout ----
     ratelimit_enabled: bool = True
     ratelimit_backend: str = "memory"  # memory | redis (redis = optional, lazy-imported)
@@ -209,3 +214,27 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+
+
+# ---------------------------------------------------------------------------
+# Doctor Marketplace constants + fee helper (T10)
+# ---------------------------------------------------------------------------
+
+# Legal disclaimer surfaced by consultation/marketplace endpoints and the FE.
+MARKETPLACE_DISCLAIMER = (
+    "MetoCare không thay thế cấp cứu hoặc khám trực tiếp khi có dấu hiệu nguy hiểm."
+)
+
+
+def compute_fees(price: float) -> tuple[float, float]:
+    """Split a consultation *price* into (platform_fee, doctor_payout).
+
+    Pure function: ``platform_fee = round(price * rate)`` and
+    ``doctor_payout = price - platform_fee``. Rate comes from settings
+    (``PLATFORM_FEE_RATE``, default 0.15).
+    """
+    rate = get_settings().platform_fee_rate
+    safe_price = float(price or 0.0)
+    platform_fee = float(round(safe_price * rate))
+    doctor_payout = safe_price - platform_fee
+    return platform_fee, doctor_payout

@@ -25,7 +25,8 @@ from app.schemas.admin import (
     UserRoleUpdate,
 )
 from app.schemas.common import Message
-from app.services import admin_users, audit
+from app.schemas.doctor import DoctorVerificationOut
+from app.services import admin_users, audit, doctor_verification
 from app.services.doctor import create_doctor_account
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -262,3 +263,76 @@ def create_doctor(
         is_active=user.is_active,
         mfa_enabled=user.mfa_enabled,
     )
+
+
+# ---------------------------------------------------------------------------
+# T10 — Doctor verification queue (INTERNAL_ADMIN / SUPER_ADMIN + MFA)
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/doctors",
+    response_model=list[DoctorVerificationOut],
+    summary="List doctors, optionally filtered by verification status",
+)
+def list_doctors_for_verification(
+    status_filter: str | None = Query(default=None, alias="status"),
+    actor: CurrentUser = Depends(_admin_only),
+    _mfa: CurrentUser = Depends(require_mfa),
+    db: Session = Depends(get_session),
+) -> list[DoctorVerificationOut]:
+    doctors = doctor_verification.list_by_status(db, status_filter)
+    audit.record(
+        db,
+        actor_type="admin",
+        actor_id=actor.id,
+        action="admin_read",
+        resource_type="doctor_verification_queue",
+    )
+    db.commit()
+    return [DoctorVerificationOut.model_validate(d) for d in doctors]
+
+
+@router.post(
+    "/doctors/{doctor_id}/verify",
+    response_model=DoctorVerificationOut,
+    summary="Approve a doctor → VERIFIED",
+)
+def verify_doctor(
+    doctor_id: str,
+    actor: CurrentUser = Depends(_admin_only),
+    _mfa: CurrentUser = Depends(require_mfa),
+    db: Session = Depends(get_session),
+) -> DoctorVerificationOut:
+    doctor = doctor_verification.approve(db, doctor_id, actor_id=actor.id)
+    return DoctorVerificationOut.model_validate(doctor)
+
+
+@router.post(
+    "/doctors/{doctor_id}/reject",
+    response_model=DoctorVerificationOut,
+    summary="Reject a doctor → REJECTED",
+)
+def reject_doctor(
+    doctor_id: str,
+    actor: CurrentUser = Depends(_admin_only),
+    _mfa: CurrentUser = Depends(require_mfa),
+    db: Session = Depends(get_session),
+) -> DoctorVerificationOut:
+    doctor = doctor_verification.reject(db, doctor_id, actor_id=actor.id)
+    return DoctorVerificationOut.model_validate(doctor)
+
+
+@router.post(
+    "/doctors/{doctor_id}/suspend",
+    response_model=DoctorVerificationOut,
+    summary="Suspend a doctor → SUSPENDED",
+)
+def suspend_doctor(
+    doctor_id: str,
+    actor: CurrentUser = Depends(_admin_only),
+    _mfa: CurrentUser = Depends(require_mfa),
+    db: Session = Depends(get_session),
+) -> DoctorVerificationOut:
+    doctor = doctor_verification.suspend(db, doctor_id, actor_id=actor.id)
+    return DoctorVerificationOut.model_validate(doctor)

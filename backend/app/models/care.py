@@ -12,6 +12,7 @@ from app.core.crypto import EncryptedString
 from app.core.database import Base
 
 from ._mixins import SoftDeleteMixin, TimestampMixin, UUIDPrimaryKey
+from .consultation import DoctorVerificationStatus
 
 
 class CarePlanStatus(StrEnum):
@@ -84,6 +85,22 @@ class Doctor(UUIDPrimaryKey, TimestampMixin, Base):
     consultation_fee: Mapped[float | None] = mapped_column(Float)
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # ------------------------------------------------------------------ #
+    # Marketplace listing fields (Doctor Marketplace MVP, T10)           #
+    # verification_status is the SOURCE OF TRUTH; is_verified is a legacy #
+    # mirror kept in sync on every verification transition.              #
+    # ------------------------------------------------------------------ #
+    verification_status: Mapped[str] = mapped_column(
+        String(32),
+        default=DoctorVerificationStatus.PENDING_VERIFICATION,
+        nullable=False,
+    )
+    years_experience: Mapped[int | None] = mapped_column(Integer)
+    languages: Mapped[str | None] = mapped_column(String(255))  # comma-separated
+    hospital_name: Mapped[str | None] = mapped_column(String(255))
+    consultation_methods: Mapped[str | None] = mapped_column(String(255))  # e.g. "chat,video"
+    rating_avg: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    rating_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
 
 class DoctorClinic(Base):

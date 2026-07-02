@@ -26,6 +26,18 @@ from .clinical import (
     SymptomLog,
 )
 from .consent import TermsConsent
+from .consultation import (
+    Consultation,
+    ConsultationAccessGrant,
+    ConsultationNote,
+    ConsultationPayment,
+    ConsultationReview,
+    ConsultationStatus,
+    ConsultationType,
+    DoctorVerificationStatus,
+    PaymentProvider,
+    PaymentStatus,
+)
 from .drug_catalog import DrugEntry
 from .governance import AuditLog, Consent
 from .meto import MetoAuditLog, MetoConsent, MetoConversation, MetoMessage
@@ -53,6 +65,16 @@ __all__ = [
     "Clinic",
     "Consent",
     "TermsConsent",
+    "Consultation",
+    "ConsultationAccessGrant",
+    "ConsultationNote",
+    "ConsultationPayment",
+    "ConsultationReview",
+    "ConsultationStatus",
+    "ConsultationType",
+    "DoctorVerificationStatus",
+    "PaymentProvider",
+    "PaymentStatus",
     "Doctor",
     "DoctorAvailability",
     "DoctorClinic",

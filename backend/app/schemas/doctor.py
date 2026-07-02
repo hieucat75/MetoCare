@@ -19,6 +19,14 @@ class DoctorProfileOut(BaseModel):
     is_verified: bool
     is_active: bool
     clinic_id: str | None
+    # Marketplace listing fields (T10)
+    verification_status: str
+    years_experience: int | None = None
+    languages: str | None = None
+    hospital_name: str | None = None
+    consultation_methods: str | None = None
+    rating_avg: float = 0.0
+    rating_count: int = 0
 
     model_config = {"from_attributes": True}
 
@@ -30,6 +38,37 @@ class DoctorProfileUpdate(BaseModel):
     consultation_fee: float | None = Field(default=None, ge=0)
     specialty: str | None = None
     # license_no, clinic_id, user_id are intentionally absent — admin-managed only
+
+
+class DoctorMarketplaceUpdate(BaseModel):
+    """Self-service marketplace listing edits (T10)."""
+
+    full_name: str | None = Field(default=None, min_length=1, max_length=255)
+    bio: str | None = None
+    avatar_url: str | None = None
+    consultation_fee: float | None = Field(default=None, ge=0)
+    specialty: str | None = None
+    years_experience: int | None = Field(default=None, ge=0, le=80)
+    languages: str | None = Field(default=None, max_length=255)
+    hospital_name: str | None = Field(default=None, max_length=255)
+    consultation_methods: str | None = Field(default=None, max_length=255)
+
+
+class DoctorVerificationOut(BaseModel):
+    """Admin verification-queue row (T10)."""
+
+    id: str
+    user_id: str | None
+    full_name: str
+    specialty: str | None
+    license_no: str | None
+    hospital_name: str | None
+    years_experience: int | None
+    verification_status: str
+    is_verified: bool
+    is_active: bool
+
+    model_config = {"from_attributes": True}
 
 
 class DoctorPatientItem(BaseModel):
