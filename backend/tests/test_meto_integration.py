@@ -356,7 +356,7 @@ class TestLabsScreenEntity:
 
 class TestDashboardContextBlocks:
     def test_dashboard_context_includes_correct_blocks(self):
-        """Dashboard must include profile/health_summary/care_plan/meds/metrics/today."""
+        """Dashboard must include profile/health_summary/care_plan/meds/labs/metrics/today."""
         ctx = _build_with_patches(
             "dashboard",
             consent_rows=_all_consents(),
@@ -365,12 +365,13 @@ class TestDashboardContextBlocks:
             care_plan={"plan_name": "Kế hoạch tháng 7", "active_tasks": []},
             medications=[{"name": "Metformin"}],
             recent_metrics=[{"metric_type": "blood_pressure", "latest_value": "120/80"}],
-            recent_labs=None,  # should NOT be in dashboard
+            recent_labs=[{"test_name": "HbA1c", "value": "6.5"}],
         )
 
-        # Per _SCREEN_BLOCKS["dashboard"]: no recent_labs
+        # P0 fix: dashboard now includes recent_labs so Meto can answer questions
+        # like cardiovascular-risk assessment from the home tab (the default screen).
         dashboard_blocks = _SCREEN_BLOCKS["dashboard"]
-        assert "recent_labs" not in dashboard_blocks
+        assert "recent_labs" in dashboard_blocks
 
         # These blocks should be included
         assert ctx.user_profile is not None
@@ -379,18 +380,19 @@ class TestDashboardContextBlocks:
         assert ctx.medications is not None
         assert ctx.recent_metrics is not None
 
-        # recent_labs should NOT appear for dashboard (not in screen blocks)
-        assert ctx.recent_labs is None
+        # recent_labs must now appear for dashboard (P0 fix)
+        assert ctx.recent_labs is not None
 
-    def test_dashboard_does_not_include_recent_labs(self):
-        """Confirm recent_labs excluded from dashboard even with labs consent."""
+    def test_dashboard_includes_recent_labs(self):
+        """P0 fix: recent_labs IS included on dashboard when data exists."""
         ctx = _build_with_patches(
             "dashboard",
             consent_rows=_all_consents(),
             recent_labs=[{"test_name": "HbA1c", "value": "6.5"}],
         )
-        # Even with consent + data, labs not in dashboard screen blocks
-        assert ctx.recent_labs is None
+        # With data present, labs must be exposed on the dashboard screen.
+        assert ctx.recent_labs is not None
+        assert "recent_labs" in ctx.included_blocks
 
 
 # ---------------------------------------------------------------------------

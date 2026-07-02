@@ -45,7 +45,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 _SCREEN_BLOCKS: dict[str, set[str]] = {
-    "dashboard": {"user_profile", "health_summary", "care_plan", "medications", "recent_metrics", "today_context"},
+    "dashboard": {"user_profile", "health_summary", "care_plan", "medications", "recent_labs", "recent_metrics", "today_context"},
     "labs": {"user_profile", "health_summary", "care_plan", "medications", "recent_labs", "recent_metrics", "today_context"},
     "medications": {"user_profile", "health_summary", "care_plan", "medications", "recent_labs", "today_context"},
     "metrics": {"user_profile", "health_summary", "care_plan", "medications", "recent_labs", "recent_metrics", "today_context"},
@@ -468,7 +468,10 @@ class ContextBuilder:
                 text("""
                     SELECT name, dose, frequency, note, created_at
                     FROM medications
-                    WHERE patient_id = :uid AND deleted_at IS NULL
+                    WHERE patient_id = (
+                            SELECT id FROM patient_profiles WHERE user_id = :uid
+                          )
+                      AND deleted_at IS NULL
                     ORDER BY created_at DESC
                     LIMIT :limit
                 """),
@@ -509,7 +512,9 @@ class ContextBuilder:
                            lr.reference_range, lr.status, lub.test_date
                     FROM lab_results lr
                     JOIN lab_upload_batches lub ON lub.id = lr.batch_id
-                    WHERE lub.patient_id = :uid
+                    WHERE lub.patient_id = (
+                            SELECT id FROM patient_profiles WHERE user_id = :uid
+                          )
                       AND lr.deleted_at IS NULL
                       AND lub.deleted_at IS NULL
                       AND (lub.test_date IS NULL OR lub.test_date >= :cutoff_date)
@@ -552,7 +557,9 @@ class ContextBuilder:
                 text("""
                     SELECT metric_type, value, unit, measured_at, status
                     FROM health_metrics
-                    WHERE patient_id = :uid
+                    WHERE patient_id = (
+                            SELECT id FROM patient_profiles WHERE user_id = :uid
+                          )
                       AND measured_at >= :cutoff
                       AND deleted_at IS NULL
                     ORDER BY measured_at DESC
