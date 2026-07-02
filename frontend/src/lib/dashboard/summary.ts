@@ -28,8 +28,13 @@ export type OverallStatus = 'no_data' | 'stable' | 'attention' | 'at_risk'
 export interface IndicatorConcern {
   metricType: string
   label: string
+  /** CANONICAL value/unit — classification only; `value` stays the canonical number. */
   value: number
   unit: string
+  /** ORIGINAL as-recorded value/unit for patient display (P0 clinical integrity). */
+  original_value?: number | null
+  original_unit?: string | null
+  display?: string | null
   severity: ConcernSeverity
   statusLabel: string
   trend: MetricTrend
@@ -42,6 +47,9 @@ export interface TrendMover {
   label: string
   value: number
   unit: string
+  original_value?: number | null
+  original_unit?: string | null
+  display?: string | null
   trend: MetricTrend
 }
 
@@ -152,8 +160,21 @@ export function buildDashboardSummary(
     const unit = series.unit?.label ?? series.latest.unit ?? ''
     const trend = computeTrend(series.history, series.higherIsBetter)
 
+    const original_value = series.latest.original_value ?? null
+    const original_unit = series.latest.original_unit ?? null
+    const display = series.latest.display ?? null
+
     if (trend.hasPrevious) {
-      movers.push({ metricType: series.metricType, label, value: series.latest.value, unit, trend })
+      movers.push({
+        metricType: series.metricType,
+        label,
+        value: series.latest.value,
+        unit,
+        original_value,
+        original_unit,
+        display,
+        trend,
+      })
     }
 
     const { severity, statusLabel, reason } = classifySeries(series)
@@ -164,6 +185,9 @@ export function buildDashboardSummary(
       label,
       value: series.latest.value,
       unit,
+      original_value,
+      original_unit,
+      display,
       severity,
       statusLabel,
       trend,

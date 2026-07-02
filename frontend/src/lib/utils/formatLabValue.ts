@@ -7,4 +7,12 @@
  *
  * @see @/lib/formatNumber
  */
-export { formatLabValue, formatLabDisplay } from '@/lib/formatNumber'
+export {
+  formatLabValue,
+  formatLabDisplay,
+  displayUnitOf,
+  displayValueOf,
+  displayInlineOf,
+  plotValueOf,
+  type DisplayableLabValue,
+} from '@/lib/formatNumber'

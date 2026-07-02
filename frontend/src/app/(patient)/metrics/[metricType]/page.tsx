@@ -16,7 +16,7 @@ import {
   type MetricType,
 } from '@/lib/api/patient'
 import { formatRefRange, useLabReference } from '@/lib/api/labReference'
-import { formatLabValue } from '@/lib/utils/formatLabValue'
+import { formatLabValue, displayValueOf, displayUnitOf, plotValueOf } from '@/lib/utils/formatLabValue'
 import {
   groupMetricsByCategory,
   computeTrend,
@@ -216,7 +216,9 @@ function MetricDetailBody({
   onDelete: (m: HealthMetric) => void
 }) {
   const { history, unit, higherIsBetter, metricType, latest } = series
-  const unitLabel = latest.unit || metricUnit(metricType as MetricType)
+  // Display in the ORIGINAL as-recorded unit; the canonical unit is classification-only.
+  const canonicalUnit = latest.unit || metricUnit(metricType as MetricType)
+  const unitLabel = displayUnitOf(latest, canonicalUnit)
   const periodLabel = PERIODS.find((p) => p.key === period)?.label.toLowerCase() ?? 'tuần'
   const days = PERIODS.find((p) => p.key === period)?.days ?? 7
 
@@ -224,13 +226,19 @@ function MetricDetailBody({
   const cutoff = Date.now() - days * 86_400_000
   const windowed = history.filter((m) => new Date(m.measured_at).getTime() >= cutoff)
   const rows = windowed.length > 0 ? windowed : history.slice(0, 1) // never blank if data exists
-  const values = rows.map((m) => m.value)
+  // Stats + chart plot ORIGINAL values so no canonical/raw float is ever shown.
+  const values = rows.map(plotValueOf)
 
-  const avg = values.length ? values.reduce((a, b) => a + b, 0) / values.length : latest.value
+  const avg = values.length ? values.reduce((a, b) => a + b, 0) / values.length : plotValueOf(latest)
   const lo = Math.min(...values)
   const hi = Math.max(...values)
   const trend = computeTrend(rows, higherIsBetter)
-  const band = unit ? unit.ref_range : null
+  // Scale the canonical reference band into ORIGINAL units so the chart marker
+  // and target zone stay aligned with the plotted original values (ratio = 1
+  // whenever no unit conversion happened).
+  const ratio =
+    latest.original_value != null && latest.value ? latest.original_value / latest.value : 1
+  const band = unit ? { low: unit.ref_range.low * ratio, high: unit.ref_range.high * ratio } : null
 
   return (
     <>
@@ -280,7 +288,10 @@ function MetricDetailBody({
             />
             {/* a11y: chart legend — 15px (was 10.5px) */}
             <span className="text-[15px] text-neu-muted">
-              Vùng mục tiêu {formatRefRange(unit, higherIsBetter)}
+              Vùng mục tiêu{' '}
+              {ratio === 1
+                ? formatRefRange(unit, higherIsBetter)
+                : `${formatLabValue(band.low, unitLabel)}–${formatLabValue(band.high, unitLabel)} ${unitLabel}`}
             </span>
           </div>
         )}
@@ -438,7 +449,7 @@ function HistoryRow({
       <div className="min-w-0 flex-1">
         {/* a11y: history row value — 18px (was 14px), unit — 15px (was 11px) */}
         <p className="text-[18px] font-bold text-neu-text">
-          {formatLabValue(metric.value, unitLabel)} <span className="text-[15px] font-medium text-neu-muted">{unitLabel}</span>
+          {displayValueOf(metric, unitLabel)} <span className="text-[15px] font-medium text-neu-muted">{displayUnitOf(metric, unitLabel)}</span>
         </p>
         {/* a11y: timestamp — 15px (was 11.5px) */}
         <p className="mt-0.5 text-[15px] text-neu-muted">{formatWhen(metric.measured_at)}</p>

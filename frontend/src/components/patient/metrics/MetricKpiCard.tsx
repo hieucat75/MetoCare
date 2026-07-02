@@ -4,7 +4,7 @@ import type { CategoryTheme, MetricSeries } from '@/lib/metrics/kpi'
 import { NeuBadge } from '@/components/patient/neu'
 import { Sparkline } from './Sparkline'
 import { metricIcon, labToneToNeu, healthMetricStatus, type NeuTone } from './metricVisuals'
-import { formatLabValue } from '@/lib/utils/formatLabValue'
+import { displayValueOf, displayUnitOf, plotValueOf } from '@/lib/utils/formatLabValue'
 
 type Props = {
   series: MetricSeries
@@ -18,7 +18,9 @@ export function MetricKpiCard({ series, theme, onOpen }: Props) {
   const { latest, unit, higherIsBetter, labelVn, metricType, history } = series
   const Icon = metricIcon(metricType)
   const label = labelVn ?? metricLabel(metricType as MetricType)
-  const unitLabel = latest.unit || metricUnit(metricType as MetricType)
+  // Classification uses canonical unit; display uses the ORIGINAL as-recorded unit.
+  const canonicalUnit = latest.unit || metricUnit(metricType as MetricType)
+  const unitLabel = displayUnitOf(latest, canonicalUnit)
 
   let status: { tone: NeuTone; label: string } | null
   if (unit) {
@@ -28,7 +30,7 @@ export function MetricKpiCard({ series, theme, onOpen }: Props) {
     status = healthMetricStatus(latest)
   }
 
-  const spark = history.slice(0, 8).map((m) => m.value)
+  const spark = history.slice(0, 8).map(plotValueOf)
 
   const content = (
     <>
@@ -52,7 +54,7 @@ export function MetricKpiCard({ series, theme, onOpen }: Props) {
       <p className="mt-0.5 flex items-baseline gap-1">
         {/* a11y: metric value — 40px bold (was 26px) */}
         <span className="font-extrabold leading-none tracking-[-0.02em] text-neu-text" style={{ fontSize: '40px' }}>
-          {formatLabValue(latest.value, unitLabel)}
+          {displayValueOf(latest, canonicalUnit)}
         </span>
         {/* a11y: unit — 18px medium (was 13px) */}
         <span className="font-medium text-neu-muted" style={{ fontSize: '18px' }}>{unitLabel}</span>

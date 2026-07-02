@@ -137,6 +137,7 @@ export default function BiomarkerDetailPage() {
           bm.units[0]
         if (!unit) return
         const higherIsBetter = bm.higher_is_better
+        // Classification / gauge use CANONICAL value+unit; display uses ORIGINAL.
         const status = classifyLabValue(latest.value, unit, higherIsBetter)
         const geo = refBarGeometry(latest.value, unit, higherIsBetter)
         const range =
@@ -147,11 +148,12 @@ export default function BiomarkerDetailPage() {
           status.key !== 'normal'
             ? computeAttentionReason(status.key, unit, higherIsBetter)
             : ''
+        const prevMetric = history.length > 1 ? history[1] : null
         setLiveData({
-          value: latest.value,
-          unitLabel: unit.label,
+          value: latest.original_value ?? latest.value,
+          unitLabel: latest.original_unit ?? unit.label,
           range,
-          prev: history.length > 1 ? history[1].value : null,
+          prev: prevMetric ? (prevMetric.original_value ?? prevMetric.value) : null,
           statusKey: status.key,
           statusLevel: STATUS_KEY_TO_LEVEL[status.key],
           riskText: status.label,
