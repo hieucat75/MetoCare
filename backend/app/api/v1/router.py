@@ -12,6 +12,7 @@ from .routes import (
     booking,
     care_plans,
     consent,
+    consultations,
     doctor,
     doctor_review,
     encounters,
@@ -21,6 +22,7 @@ from .routes import (
     lab_intelligence,
     lab_reference,
     lab_upload,
+    marketplace,
     medications,
     meto,
     narrative,
@@ -53,4 +55,6 @@ api_router.include_router(patient_insight.router)
 api_router.include_router(narrative.router)
 api_router.include_router(medications.router)
 api_router.include_router(doctor.router)
+api_router.include_router(marketplace.router)
+api_router.include_router(consultations.router)
 api_router.include_router(meto.router)

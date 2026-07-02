@@ -22,12 +22,16 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import CurrentUser, get_session, require_mfa, require_roles
 from app.models.user import UserRole
+from app.schemas.consultation import ConsultationOut
 from app.schemas.doctor import (
     DoctorDashboardOut,
+    DoctorMarketplaceUpdate,
     DoctorPatientItem,
     DoctorProfileOut,
     DoctorProfileUpdate,
 )
+from app.services import consultation as consult_svc
+from app.services import doctor_marketplace
 from app.services.doctor import (
     _require_doctor,
     get_doctor_dashboard,
@@ -131,3 +135,59 @@ def get_my_dashboard(
     doc = _require_doctor(db, user.id)
     data = get_doctor_dashboard(db, doctor_id=doc.id, doctor_user_id=user.id)
     return DoctorDashboardOut(**data)
+
+
+# ---------------------------------------------------------------------------
+# T10 — Marketplace self-service
+# ---------------------------------------------------------------------------
+
+
+@router.patch(
+    "/doctors/me/marketplace",
+    response_model=DoctorProfileOut,
+    status_code=status.HTTP_200_OK,
+    summary="Update own marketplace listing (DOCTOR + MFA)",
+)
+def patch_my_marketplace(
+    payload: DoctorMarketplaceUpdate,
+    user: CurrentUser = Depends(_doctor_mfa),
+    _mfa: CurrentUser = Depends(require_mfa),
+    db: Session = Depends(get_session),
+) -> DoctorProfileOut:
+    doc = _require_doctor(db, user.id)
+    updated = doctor_marketplace.update_my_marketplace_profile(
+        db, doc, payload.model_dump(exclude_none=True)
+    )
+    return DoctorProfileOut.model_validate(updated)
+
+
+@router.post(
+    "/doctors/me/submit-verification",
+    response_model=DoctorProfileOut,
+    status_code=status.HTTP_200_OK,
+    summary="Submit marketplace profile for verification (DOCTOR + MFA)",
+)
+def submit_my_verification(
+    user: CurrentUser = Depends(_doctor_mfa),
+    _mfa: CurrentUser = Depends(require_mfa),
+    db: Session = Depends(get_session),
+) -> DoctorProfileOut:
+    doc = _require_doctor(db, user.id)
+    updated = doctor_marketplace.submit_for_verification(db, doc)
+    return DoctorProfileOut.model_validate(updated)
+
+
+@router.get(
+    "/doctors/me/consultations",
+    response_model=list[ConsultationOut],
+    status_code=status.HTTP_200_OK,
+    summary="List own consultations (DOCTOR + MFA)",
+)
+def list_my_consultations(
+    user: CurrentUser = Depends(_doctor_mfa),
+    _mfa: CurrentUser = Depends(require_mfa),
+    db: Session = Depends(get_session),
+) -> list[ConsultationOut]:
+    doc = _require_doctor(db, user.id)
+    rows = consult_svc.list_doctor_consultations(db, doc.id)
+    return [ConsultationOut.model_validate(r) for r in rows]
