@@ -37,6 +37,10 @@ class ConsultationOut(BaseModel):
     consultation_price: float
     data_consent_accepted: bool
     data_consent_accepted_at: dt.datetime | None
+    # NOTE (product/security review): chief_complaint/patient_note are patient
+    # free-text ("reason for visit") and are currently visible to the assigned
+    # doctor before an access grant is issued. Behavior left unchanged pending
+    # product sign-off on pre-grant visibility of this reason-for-visit text.
     chief_complaint: str | None
     patient_note: str | None
     booking_appointment_id: str | None
@@ -57,11 +61,13 @@ class ConsultationCancel(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Payment (patient-safe view: no payout to patients, but fee split is fine to show)
+# Payment
 # ---------------------------------------------------------------------------
 
 
 class PaymentOut(BaseModel):
+    """Doctor/admin-facing payment view — includes payout + fee internals."""
+
     id: str
     consultation_id: str
     consultation_price: float
@@ -72,6 +78,22 @@ class PaymentOut(BaseModel):
     payment_provider: str
     paid_at: dt.datetime | None
     refunded_at: dt.datetime | None
+
+    model_config = {"from_attributes": True}
+
+
+class PatientPaymentOut(BaseModel):
+    """Patient-facing payment view — only what the patient pays.
+
+    Intentionally omits ``platform_fee`` and ``doctor_payout``: patients never
+    see payout internals beyond the price they pay.
+    """
+
+    consultation_id: str
+    consultation_price: float
+    currency: str
+    payment_status: str
+    paid_at: dt.datetime | None
 
     model_config = {"from_attributes": True}
 

@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.models.care import Doctor
 from app.models.consultation import DoctorVerificationStatus
-from app.services import audit
+from app.services import audit, consultation_access
 
 
 def list_by_status(db: Session, status_filter: str | None = None) -> list[Doctor]:
@@ -43,11 +43,16 @@ def _set_status(
     new_status: str,
     is_verified: bool,
     actor_id: str,
+    revoke_grants: bool = False,
 ) -> Doctor:
     doctor = _get_doctor_or_404(db, doctor_id)
     doctor.verification_status = new_status
     doctor.is_verified = is_verified  # keep legacy mirror in sync
     db.add(doctor)
+    # Losing verified standing must revoke any in-flight PHI access grants so a
+    # suspended/rejected doctor cannot keep reading already-paid consultations.
+    if revoke_grants:
+        consultation_access.revoke_all_for_doctor(db, doctor_id)
     audit.record(
         db,
         actor_type="admin",
@@ -79,6 +84,7 @@ def reject(db: Session, doctor_id: str, *, actor_id: str) -> Doctor:
         new_status=DoctorVerificationStatus.REJECTED,
         is_verified=False,
         actor_id=actor_id,
+        revoke_grants=True,
     )
 
 
@@ -89,4 +95,5 @@ def suspend(db: Session, doctor_id: str, *, actor_id: str) -> Doctor:
         new_status=DoctorVerificationStatus.SUSPENDED,
         is_verified=False,
         actor_id=actor_id,
+        revoke_grants=True,
     )

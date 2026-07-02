@@ -14,7 +14,11 @@ from sqlalchemy.orm import Session
 
 from app.core.clock import utcnow
 from app.models.care import Doctor
-from app.models.consultation import Consultation, ConsultationAccessGrant
+from app.models.consultation import (
+    Consultation,
+    ConsultationAccessGrant,
+    DoctorVerificationStatus,
+)
 from app.services import audit
 
 
@@ -70,6 +74,18 @@ def assert_doctor_can_view(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You do not have access to this consultation.",
         )
+    # Defense-in-depth: only a currently VERIFIED + active doctor may view PHI.
+    # A suspended/rejected/deactivated doctor is denied even if a stale grant
+    # somehow survives (grants are also revoked on suspend/reject).
+    if (
+        doctor.verification_status != DoctorVerificationStatus.VERIFIED
+        or not doctor.is_active
+    ):
+        _audit_denied(db, doctor.id, consultation_id, consultation.patient_id)
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your account is not permitted to view patient data.",
+        )
     grant = get_active_grant(
         db,
         doctor_id=doctor.id,
@@ -120,6 +136,36 @@ def revoke_on_end(db: Session, consultation: Consultation) -> None:
             severity="info",
         )
     db.flush()
+
+
+def revoke_all_for_doctor(db: Session, doctor_id: str) -> int:
+    """Revoke every active grant held by a doctor (on suspend / reject).
+
+    Returns the number of grants revoked. Callers own the transaction/commit.
+    """
+    now = utcnow()
+    grants = db.execute(
+        select(ConsultationAccessGrant).where(
+            ConsultationAccessGrant.doctor_id == doctor_id,
+            ConsultationAccessGrant.revoked_at.is_(None),
+        )
+    ).scalars()
+    revoked_count = 0
+    for grant in grants:
+        grant.revoked_at = now
+        revoked_count += 1
+    if revoked_count:
+        audit.record(
+            db,
+            actor_type="admin",
+            actor_id=None,
+            action="consultation_access_revoke",
+            resource_type="doctor",
+            resource_id=doctor_id,
+            severity="warning",
+        )
+    db.flush()
+    return revoked_count
 
 
 def _audit_denied(
