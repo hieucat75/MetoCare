@@ -16,7 +16,7 @@ Formatting rules (same as frontend):
 | BP (mmHg)           | Integer                       | 120      |
 | eGFR (mL/min)       | Integer                       | 89       |
 | µmol/L              | Integer                       | 45       |
-| g/dL                | 2 decimals                    | 14.50    |
+| g/dL                | ≤2 decimals, zeros trimmed    | 14.5     |
 | IU/L                | Integer                       | 32       |
 | mIU/L               | 1 decimal                     | 2.5      |
 | Default (unknown)   | 2 decimals, trailing-zero trim| 1.23     |
@@ -38,6 +38,10 @@ import re
 # ── Sentinel ──────────────────────────────────────────────────────────────────
 
 _MISSING = "—"
+
+# Hard cap on decimal places for any surfaced value (unit rules are the max
+# precision; this is the absolute ceiling). Keeps AI/UI numbers clean.
+_MAX_DECIMALS = 2
 
 # ── Unit rule table ───────────────────────────────────────────────────────────
 # Each entry is (compiled_regex, decimal_places).
@@ -111,8 +115,10 @@ def format_lab_value(
     Returns
     -------
     str
-        Formatted number (e.g. ``"174"``, ``"5.6"``, ``"14.50"``) or
-        ``"—"`` for missing / invalid values.
+        Formatted number (e.g. ``"174"``, ``"5.6"``, ``"14.5"``) or
+        ``"—"`` for missing / invalid values. Trailing zeros are trimmed
+        and precision is capped at 2 decimals, so no raw IEEE float
+        artifact ever reaches a user/AI surface.
 
     Examples
     --------
@@ -120,6 +126,12 @@ def format_lab_value(
     '174'
     >>> format_lab_value(5.7321, "mmol/L")
     '5.7'
+    >>> format_lab_value(14.50, "g/dL")
+    '14.5'
+    >>> format_lab_value(88.0, "µmol/L")
+    '88'
+    >>> format_lab_value(0.9916099999999999, "mg/dL")
+    '1'
     >>> format_lab_value(None, "mg/dL")
     '—'
     >>> format_lab_value("<5", "µmol/L")
@@ -146,7 +158,17 @@ def format_lab_value(
     else:
         decimals = 0 if value == int(value) else 1
 
-    return f"{value:.{decimals}f}"
+    # P0 clinical-integrity: cap precision at 2 decimals (unit rule is the *max*)
+    # and strip insignificant trailing zeros so no raw IEEE artifact
+    # (e.g. 0.9916099999999999) or noisy "14.50"/"6.0" ever reaches a user/AI.
+    decimals = min(decimals, _MAX_DECIMALS)
+    formatted = f"{value:.{decimals}f}"
+    if "." in formatted:
+        formatted = formatted.rstrip("0").rstrip(".")
+    # Guard against "-0" from tiny negative rounding.
+    if formatted in ("-0", ""):
+        formatted = "0"
+    return formatted
 
 
 def format_lab_display(
@@ -175,6 +197,8 @@ def format_lab_display(
     --------
     >>> format_lab_display(174.48289999999997, "mg/dL")
     '174 mg/dL'
+    >>> format_lab_display(88.0, "µmol/L")
+    '88 µmol/L'
     >>> format_lab_display(None, "mg/dL")
     '—'
     """

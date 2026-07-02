@@ -6,7 +6,7 @@ routes build these directly from the service dataclasses via ``model_validate``.
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
 
 class TrendOut(BaseModel):
@@ -25,7 +25,21 @@ class MetricInsightOut(BaseModel):
     label: str
     value: float
     unit: str | None = None
+    # P0 clinical-integrity: ORIGINAL value+unit as recorded (value/unit stay
+    # canonical for internal logic). `display` is the formatted original for the UI.
+    original_value: float | None = None
+    original_unit: str | None = None
+    display: str | None = None
     status: str  # normal | low | high | critical | unknown
+
+    @model_validator(mode="after")
+    def _populate_display(self) -> MetricInsightOut:
+        from app.utils.number_format import format_lab_display
+
+        disp_value = self.original_value if self.original_value is not None else self.value
+        disp_unit = self.original_unit if self.original_unit is not None else self.unit
+        self.display = format_lab_display(disp_value, disp_unit)
+        return self
     trend: TrendOut
     meaning: str
     risks: list[str]

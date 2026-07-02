@@ -66,7 +66,8 @@ def test_mmoll_one_decimal() -> None:
 
 
 def test_mmoll_trailing_zero() -> None:
-    assert format_lab_value(1.009, "mmol/L") == "1.0"
+    # P0: insignificant trailing zeros are stripped ("1.0" → "1").
+    assert format_lab_value(1.009, "mmol/L") == "1"
 
 
 def test_mmoll_case_insensitive() -> None:
@@ -128,19 +129,21 @@ def test_umol_alternate_mu() -> None:
     assert format_lab_value(44.7, "μmol/L") == "45"
 
 
-# ── g/dL → 2 decimals ────────────────────────────────────────────────────────
+# ── g/dL → ≤2 decimals, trailing zeros trimmed ───────────────────────────────
 
 
 def test_gdl_two_decimals() -> None:
-    assert format_lab_value(14.5, "g/dL") == "14.50"
+    # P0: g/dL caps at 2 decimals but trims insignificant trailing zeros.
+    assert format_lab_value(14.5, "g/dL") == "14.5"
 
 
 def test_gdl_trailing_zeros() -> None:
-    assert format_lab_value(14.00001, "g/dL") == "14.00"
+    # 14.00001 → 2-decimal round "14.00" → zeros trimmed → "14".
+    assert format_lab_value(14.00001, "g/dL") == "14"
 
 
 def test_gdl_case_insensitive() -> None:
-    assert format_lab_value(14.5, "G/DL") == "14.50"
+    assert format_lab_value(14.5, "G/DL") == "14.5"
 
 
 # ── IU/L → integer ───────────────────────────────────────────────────────────
@@ -231,4 +234,4 @@ def test_display_whitespace_unit_trimmed() -> None:
 
 
 def test_display_gdl_with_unit() -> None:
-    assert format_lab_display(14.5, "g/dL") == "14.50 g/dL"
+    assert format_lab_display(14.5, "g/dL") == "14.5 g/dL"

@@ -34,6 +34,12 @@ class HealthMetric(UUIDPrimaryKey, TimestampMixin, SoftDeleteMixin, Base):
     # Lets lab→metric promotion stay idempotent + traceable.
     source_ref: Mapped[str | None] = mapped_column(String(64), index=True)
     device_id: Mapped[str | None] = mapped_column(String(64))
+    # P0 clinical-integrity: preserve the ORIGINAL value+unit as recorded/entered
+    # (e.g. 88 µmol/L). `value`/`unit` above hold the CANONICAL/SI-converted number
+    # used only for internal classification + trends; original_* is what every
+    # user/AI-facing surface must display. NULL for legacy rows (backfilled).
+    original_value: Mapped[float | None] = mapped_column(Float)
+    original_unit: Mapped[str | None] = mapped_column(String(64))
     normal_range_min: Mapped[float | None] = mapped_column(Float)
     normal_range_max: Mapped[float | None] = mapped_column(Float)
     status: Mapped[str | None] = mapped_column(String(16))  # normal/low/high/critical

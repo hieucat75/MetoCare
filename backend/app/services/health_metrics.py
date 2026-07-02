@@ -60,6 +60,10 @@ def create_metric(
         metric_type=metric_type,
         value=value,
         unit=unit,
+        # Self-report is already the ORIGINAL — no unit conversion happens here,
+        # so original_* mirror value/unit (P0 clinical-integrity).
+        original_value=value,
+        original_unit=unit,
         measured_at=as_naive_utc(measured_at) or utcnow(),
         source=source,
         normal_range_min=normal_range_min,
