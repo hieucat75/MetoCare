@@ -2,7 +2,17 @@
 
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
-import { Activity, Bell, Bot, ChevronRight, Droplet, Heart, Pill, Scale } from 'lucide-react'
+import {
+  Activity,
+  Bell,
+  Bot,
+  ChevronRight,
+  Droplet,
+  Heart,
+  Pill,
+  Scale,
+  Stethoscope,
+} from 'lucide-react'
 import { PatientPrimaryFab } from '@/components/patient/PatientPrimaryFab'
 import Link from 'next/link'
 import { PatientErrorState, PatientSkeleton } from '@/components/patient/states'
@@ -211,6 +221,9 @@ export default function PatientDashboardPage() {
       {/* ── Meto — flagship, first viewport ── */}
       <AiCopilotCard summary={summary} healthSummary={healthSummary} liveScore={liveScore} />
 
+      {/* ── Doctor marketplace entry ── */}
+      <MarketplaceEntryCard onOpen={() => router.push('/marketplace')} />
+
       {hasAnyData ? (
         <>
           {/* ── Medication reminder — primary daily action, shown before analytics ── */}
@@ -238,6 +251,35 @@ export default function PatientDashboardPage() {
       {/* ── FAB ── */}
       <PatientPrimaryFab ariaLabel="Ghi chỉ số" onClick={() => router.push('/metrics/log')} />
     </div>
+  )
+}
+
+// ─── Doctor marketplace entry card ───────────────────────────────────────────
+
+function MarketplaceEntryCard({ onOpen }: { onOpen: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="w-full text-left transition-transform active:scale-[0.99]"
+    >
+      <NeuCard className="!p-4">
+        <div className="flex items-center gap-3.5">
+          <span
+            className="grid size-[52px] shrink-0 place-items-center rounded-[16px] text-white"
+            style={{ background: HERO_GRADIENT, boxShadow: '0 8px 16px -8px rgba(11,107,77,0.6)' }}
+            aria-hidden="true"
+          >
+            <Stethoscope className="size-6" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-[17px] font-bold text-neu-text">Tư vấn bác sĩ</p>
+            <p className="text-[14px] text-neu-muted">Đặt lịch tư vấn với bác sĩ chuyên khoa</p>
+          </div>
+          <ChevronRight className="size-5 shrink-0 text-neu-muted" aria-hidden="true" />
+        </div>
+      </NeuCard>
+    </button>
   )
 }
 
