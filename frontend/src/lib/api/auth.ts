@@ -82,14 +82,25 @@ export async function login(
   return res
 }
 
+export interface ConsentPayload {
+  accepted: boolean
+  terms_version: string
+  privacy_version: string
+  app_version?: string
+  locale?: string
+  timezone?: string
+  device_platform?: string
+}
+
 export async function register(
   identifier: AuthIdentifier,
   password: string,
   fullName?: string,
+  consent?: ConsentPayload,
 ): Promise<TokenResponse> {
   const res = await api.post<TokenResponse>(
     '/auth/register',
-    { ...identifier, password, full_name: fullName },
+    { ...identifier, password, full_name: fullName, ...(consent ? { consent } : {}) },
     { skipAuth: true },
   )
   setTokens(res.access_token, res.refresh_token)

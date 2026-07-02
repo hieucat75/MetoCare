@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import datetime as dt
 import uuid
+from dataclasses import dataclass
 
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
@@ -22,6 +23,7 @@ from app.core.security import (
     verify_password,
 )
 from app.models.auth_tokens import RefreshToken
+from app.models.consent import TermsConsent
 from app.models.patient import PatientProfile
 from app.models.user import MFA_REQUIRED_ROLES, User, UserRole
 from app.services import audit
@@ -29,6 +31,20 @@ from app.services import audit
 
 class AuthError(Exception):
     """Authentication / registration failure."""
+
+
+@dataclass(frozen=True)
+class TermsConsentData:
+    """Legal-consent metadata to persist atomically with a new account."""
+
+    accepted: bool
+    terms_version: str
+    privacy_version: str
+    app_version: str | None = None
+    locale: str | None = None
+    timezone: str | None = None
+    ip: str | None = None
+    device_platform: str | None = None
 
 
 def register(
@@ -39,10 +55,15 @@ def register(
     password: str,
     full_name: str | None = None,
     role: UserRole = UserRole.PATIENT,
+    consent: TermsConsentData | None = None,
 ) -> User:
     """Create a user identified by either email or phone (exactly one).
 
     ``phone`` is expected already-normalized (``+84…``) by the caller.
+
+    When *consent* is provided and accepted, a ``terms_consents`` row is written
+    in the SAME transaction as the account — recorded once per (user, terms
+    version), so a repeat of the same version is a no-op.
     """
     if bool(email) == bool(phone):
         raise AuthError("exactly one of email or phone is required")
@@ -70,6 +91,8 @@ def register(
     if role == UserRole.PATIENT:
         db.add(PatientProfile(user_id=user.id, full_name=full_name))
 
+    _record_terms_consent(db, user_id=user.id, consent=consent)
+
     audit.record(
         db,
         actor_type="user",
@@ -80,6 +103,39 @@ def register(
     )
     db.commit()
     return user
+
+
+def _record_terms_consent(
+    db: Session, *, user_id: str, consent: TermsConsentData | None
+) -> None:
+    """Write a terms_consents row if consent was given and not already recorded.
+
+    Idempotent per (user_id, terms_version): a repeat acceptance of the same
+    Terms version is a no-op; a new version yields a new row.
+    """
+    if consent is None or not consent.accepted:
+        return
+    existing = db.execute(
+        select(TermsConsent.id).where(
+            TermsConsent.user_id == user_id,
+            TermsConsent.terms_version == consent.terms_version,
+        )
+    ).first()
+    if existing is not None:
+        return
+    db.add(
+        TermsConsent(
+            user_id=user_id,
+            terms_version=consent.terms_version,
+            privacy_version=consent.privacy_version,
+            accepted_at=utcnow(),
+            app_version=consent.app_version,
+            locale=consent.locale,
+            timezone=consent.timezone,
+            ip=consent.ip,
+            device_platform=consent.device_platform,
+        )
+    )
 
 
 def change_password(db: Session, *, user_id: str, current_password: str, new_password: str) -> User:

@@ -9,6 +9,8 @@ import { ApiError } from '@/lib/api/client'
 import { getRoleHomePath } from '@/lib/api/auth'
 import { normalizeVnPhone, isValidVnPhone } from '@/lib/phone'
 import { NeuButton } from '@/components/patient/neu'
+import { ConsentStep } from '@/components/patient/consent/ConsentStep'
+import { buildConsentPayload } from '@/lib/legal'
 import { cn } from '@/lib/utils'
 
 function FieldLabel({ htmlFor, children }: { htmlFor: string; children: React.ReactNode }) {
@@ -98,6 +100,7 @@ export default function RegisterPage() {
     if (user) router.replace(getRoleHomePath(user.role))
   }, [user, router])
 
+  const [step, setStep] = React.useState<'form' | 'consent'>('form')
   const [fullName, setFullName] = React.useState('')
   const [phone, setPhone] = React.useState('')
   const [password, setPassword] = React.useState('')
@@ -118,7 +121,8 @@ export default function RegisterPage() {
     return errs
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  // Step 1 → validate the form, then advance to the mandatory consent screen.
+  const handleContinue = (e: React.FormEvent) => {
     e.preventDefault()
     const errs = validateForm()
     if (Object.keys(errs).length > 0) {
@@ -127,12 +131,19 @@ export default function RegisterPage() {
     }
     setFieldErrors({})
     setError(null)
+    setStep('consent')
+  }
+
+  // Step 2 → account is created only after the user accepts Terms & Privacy.
+  const handleCreateAccount = async () => {
+    setError(null)
     setIsLoading(true)
     try {
       await register(
         { phone: normalizeVnPhone(phone) ?? phone.trim() },
         password,
-        fullName.trim() || undefined
+        fullName.trim() || undefined,
+        buildConsentPayload(true)
       )
       setSuccess(true)
       // New patients go through onboarding to fill the clinical profile.
@@ -140,9 +151,12 @@ export default function RegisterPage() {
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.status === 409) {
+          // Phone problems belong to the form — send the user back to fix them.
           setFieldErrors({ phone: 'Số điện thoại này đã được đăng ký. Hãy thử đăng nhập.' })
+          setStep('form')
         } else if (err.status === 422) {
           setFieldErrors({ phone: 'Số điện thoại di động Việt Nam không hợp lệ.' })
+          setStep('form')
         } else if (err.status === 429) {
           setError('Quá nhiều yêu cầu. Vui lòng thử lại sau ít phút.')
         } else {
@@ -162,9 +176,24 @@ export default function RegisterPage() {
         <div className="w-14 h-14 rounded-2xl bg-mint-100 flex items-center justify-center mx-auto mb-4">
           <CheckCircle2 className="w-8 h-8 text-neu-green" aria-hidden="true" />
         </div>
-        <h2 className="text-[24px] font-extrabold text-neu-text mb-2">Đăng ký thành công!</h2>
-        <p className="text-[17px] text-text-muted">Đang thiết lập hồ sơ của bạn...</p>
+        <h2 className="text-[24px] font-extrabold text-neu-text mb-2 dark:text-white">
+          Đăng ký thành công!
+        </h2>
+        <p className="text-[17px] text-text-muted dark:text-white/70">
+          Đang thiết lập hồ sơ của bạn...
+        </p>
       </div>
+    )
+  }
+
+  if (step === 'consent') {
+    return (
+      <ConsentStep
+        onAccept={handleCreateAccount}
+        onBack={() => setStep('form')}
+        isLoading={isLoading}
+        error={error}
+      />
     )
   }
 
@@ -184,7 +213,7 @@ export default function RegisterPage() {
         </div>
       )}
 
-      <form onSubmit={handleSubmit} noValidate>
+      <form onSubmit={handleContinue} noValidate>
         <div className="mb-4">
           <FieldLabel htmlFor="fullName">Họ và tên</FieldLabel>
           <MintInput
@@ -258,10 +287,10 @@ export default function RegisterPage() {
 
         <NeuButton
           type="submit"
-          disabled={isLoading || !phone.trim() || !password || !fullName.trim()}
-          className="h-12 rounded-xl bg-gradient-to-b from-[#17AE7B] to-[#0B6B4D] text-white shadow-[0_12px_24px_-8px_rgba(11,107,77,0.6)] hover:opacity-95"
+          disabled={!phone.trim() || !password || !fullName.trim()}
+          className="h-12 w-full rounded-xl bg-gradient-to-b from-[#17AE7B] to-[#0B6B4D] text-[17px] font-semibold text-white shadow-[0_12px_24px_-8px_rgba(11,107,77,0.6)] hover:opacity-95 disabled:opacity-50"
         >
-          {isLoading ? 'Đang đăng ký…' : 'Đăng ký'}
+          Tiếp tục
         </NeuButton>
       </form>
 

@@ -25,6 +25,7 @@ from .clinical import (
     RiskScore,
     SymptomLog,
 )
+from .consent import TermsConsent
 from .drug_catalog import DrugEntry
 from .governance import AuditLog, Consent
 from .meto import MetoAuditLog, MetoConsent, MetoConversation, MetoMessage
@@ -51,6 +52,7 @@ __all__ = [
     "CarePlan",
     "Clinic",
     "Consent",
+    "TermsConsent",
     "Doctor",
     "DoctorAvailability",
     "DoctorClinic",

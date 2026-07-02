@@ -7,6 +7,21 @@ from pydantic import BaseModel, EmailStr, Field, model_validator
 from app.models.user import UserRole
 
 
+class ConsentInput(BaseModel):
+    """Terms of Use + Privacy Policy acceptance captured at registration.
+
+    Optional on RegisterRequest so existing callers stay valid (non-breaking).
+    """
+
+    accepted: bool = False
+    terms_version: str = Field(max_length=32)
+    privacy_version: str = Field(max_length=32)
+    app_version: str | None = Field(default=None, max_length=32)
+    locale: str | None = Field(default=None, max_length=32)
+    timezone: str | None = Field(default=None, max_length=64)
+    device_platform: str | None = Field(default=None, max_length=64)
+
+
 class RegisterRequest(BaseModel):
     # Patients self-register with `phone`; `email` path is kept for compatibility
     # (e.g. admin-provisioned / legacy). Exactly one identifier is required.
@@ -17,6 +32,9 @@ class RegisterRequest(BaseModel):
     # Self-service registration is patient-only; elevated roles are provisioned
     # by an admin (not via this public endpoint).
     role: UserRole = UserRole.PATIENT
+    # Optional legal-consent block (Terms + Privacy). When present and accepted,
+    # a terms_consents row is written atomically with the new account.
+    consent: ConsentInput | None = None
 
     @model_validator(mode="after")
     def _one_identifier(self) -> RegisterRequest:

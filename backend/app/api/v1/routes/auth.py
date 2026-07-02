@@ -46,6 +46,18 @@ def register(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="Số điện thoại di động Việt Nam không hợp lệ.",
             )
+    consent_data: auth.TermsConsentData | None = None
+    if payload.consent is not None:
+        consent_data = auth.TermsConsentData(
+            accepted=payload.consent.accepted,
+            terms_version=payload.consent.terms_version,
+            privacy_version=payload.consent.privacy_version,
+            app_version=payload.consent.app_version,
+            locale=payload.consent.locale,
+            timezone=payload.consent.timezone,
+            ip=request.client.host if request.client else None,
+            device_platform=payload.consent.device_platform,
+        )
     try:
         user = auth.register(
             db,
@@ -54,6 +66,7 @@ def register(
             password=payload.password,
             full_name=payload.full_name,
             role=role,
+            consent=consent_data,
         )
     except auth.AuthError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
