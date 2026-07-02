@@ -21,8 +21,14 @@ jest.mock('framer-motion', () => {
       {
         get: (_: unknown, tag: string) =>
           // eslint-disable-next-line react/display-name
-          mockReact.forwardRef(({ children, ...props }: React.HTMLAttributes<HTMLElement> & { children?: React.ReactNode }, ref: React.Ref<HTMLElement>) =>
-            mockReact.createElement(tag, { ...props, ref }, children)
+          mockReact.forwardRef(
+            (
+              {
+                children,
+                ...props
+              }: React.HTMLAttributes<HTMLElement> & { children?: React.ReactNode },
+              ref: React.Ref<HTMLElement>
+            ) => mockReact.createElement(tag, { ...props, ref }, children)
           ),
       }
     ),
