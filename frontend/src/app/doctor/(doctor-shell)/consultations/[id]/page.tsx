@@ -444,11 +444,11 @@ function SummaryBody({ summary }: { summary: PatientSummaryOut }) {
           <ul className="mt-1 space-y-1 text-body-sm">
             {summary.vitals.latest.map((v, i) => (
               <li key={i} className="flex items-center justify-between">
-                <span className="text-text-muted">{v.label ?? v.metric_type ?? 'Chỉ số'}</span>
+                <span className="text-text-muted">{v.metric_type ?? 'Chỉ số'}</span>
                 <span className="font-medium text-text">
                   {v.value ?? '—'}
                   {v.unit ? ` ${v.unit}` : ''}
-                  {v.recorded_at ? ` · ${formatDateTime(v.recorded_at)}` : ''}
+                  {v.measured_at ? ` · ${formatDateTime(v.measured_at)}` : ''}
                 </span>
               </li>
             ))}
@@ -469,10 +469,10 @@ function SummaryBody({ summary }: { summary: PatientSummaryOut }) {
             {summary.lab_documents.map((d, i) => (
               <li key={d.id ?? i} className="flex items-center justify-between">
                 <span className="truncate text-text">
-                  {d.title ?? d.document_type ?? 'Tài liệu'}
+                  {d.lab_name ?? 'Tài liệu'}
                 </span>
                 <span className="shrink-0 text-text-muted">
-                  {formatDateTime(d.test_date ?? d.uploaded_at) ?? d.status ?? '—'}
+                  {formatDateTime(d.created_at) ?? d.status ?? '—'}
                 </span>
               </li>
             ))}
@@ -491,7 +491,7 @@ function SummaryBody({ summary }: { summary: PatientSummaryOut }) {
               <li key={m.id ?? i} className="flex items-center justify-between">
                 <span className="text-text">{m.name ?? 'Thuốc'}</span>
                 <span className="text-text-muted">
-                  {[m.dosage, m.frequency].filter(Boolean).join(' · ') || m.status || '—'}
+                  {[m.dose, m.note].filter(Boolean).join(' · ') || '—'}
                 </span>
               </li>
             ))}
@@ -508,9 +508,9 @@ function SummaryBody({ summary }: { summary: PatientSummaryOut }) {
           <ul className="mt-1 space-y-1 text-body-sm">
             {summary.symptoms.map((s, i) => (
               <li key={s.id ?? i} className="flex items-center justify-between">
-                <span className="text-text">{s.name ?? 'Triệu chứng'}</span>
+                <span className="text-text">{s.description ?? 'Triệu chứng'}</span>
                 <span className="text-text-muted">
-                  {[s.severity, s.recorded_at ? formatDateTime(s.recorded_at) : null]
+                  {[s.severity, s.reported_at ? formatDateTime(s.reported_at) : null]
                     .filter(Boolean)
                     .join(' · ') || '—'}
                 </span>
@@ -529,9 +529,9 @@ function SummaryBody({ summary }: { summary: PatientSummaryOut }) {
           <ul className="mt-1 space-y-1 text-body-sm">
             {summary.nutrition.map((n, i) => (
               <li key={n.id ?? i} className="flex items-center justify-between">
-                <span className="text-text">{n.label ?? 'Bữa ăn'}</span>
+                <span className="text-text">{n.meal_type ?? 'Bữa ăn'}</span>
                 <span className="truncate text-text-muted">
-                  {n.summary ?? (n.recorded_at ? formatDateTime(n.recorded_at) : '—')}
+                  {n.description ?? (n.logged_at ? formatDateTime(n.logged_at) : '—')}
                 </span>
               </li>
             ))}
@@ -548,9 +548,9 @@ function SummaryBody({ summary }: { summary: PatientSummaryOut }) {
           <ul className="mt-1 space-y-1 text-body-sm">
             {summary.upcoming_appointments.map((a, i) => (
               <li key={a.id ?? i} className="flex items-center justify-between">
-                <span className="text-text">{a.title ?? 'Lịch hẹn'}</span>
+                <span className="text-text">{a.notes ?? 'Lịch hẹn'}</span>
                 <span className="text-text-muted">
-                  {formatDateTime(a.scheduled_at) ?? a.status ?? '—'}
+                  {formatDateTime(a.slot_start) ?? a.status ?? '—'}
                 </span>
               </li>
             ))}
@@ -568,7 +568,9 @@ function SummaryBody({ summary }: { summary: PatientSummaryOut }) {
             {summary.active_care_plans.map((p, i) => (
               <li key={p.id ?? i}>
                 <p className="font-medium text-text">{p.title ?? 'Kế hoạch'}</p>
-                {p.summary && <p className="text-text-muted">{p.summary}</p>}
+                {p.version != null && (
+                  <p className="text-text-muted">Phiên bản {p.version}</p>
+                )}
               </li>
             ))}
           </ul>

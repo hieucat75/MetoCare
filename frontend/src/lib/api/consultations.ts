@@ -80,11 +80,12 @@ export interface NoteCreate {
 // backend field-naming drift degrades to "not shown" rather than a crash.
 
 export interface SummaryVital {
+  id?: string
   metric_type?: string | null
-  label?: string | null
   value?: number | string | null
   unit?: string | null
-  recorded_at?: string | null
+  measured_at?: string | null
+  status?: string | null
 }
 
 export interface SummaryVitals {
@@ -100,48 +101,49 @@ export interface SummaryMetabolicScore {
 
 export interface SummaryLabDocument {
   id?: string
-  title?: string | null
-  document_type?: string | null
-  test_date?: string | null
-  uploaded_at?: string | null
+  lab_name?: string | null
+  file_type?: string | null
+  ocr_status?: string | null
   status?: string | null
+  created_at?: string | null
 }
 
 export interface SummaryMedication {
   id?: string
   name?: string | null
-  dosage?: string | null
-  frequency?: string | null
-  status?: string | null
+  dose?: string | null
+  note?: string | null
+  created_at?: string | null
 }
 
 export interface SummarySymptom {
   id?: string
-  name?: string | null
+  description?: string | null
   severity?: string | null
-  note?: string | null
-  recorded_at?: string | null
+  reported_at?: string | null
 }
 
 export interface SummaryNutrition {
   id?: string
-  label?: string | null
-  summary?: string | null
-  recorded_at?: string | null
+  description?: string | null
+  meal_type?: string | null
+  calories_kcal?: number | null
+  logged_at?: string | null
 }
 
 export interface SummaryAppointment {
   id?: string
-  title?: string | null
-  scheduled_at?: string | null
+  doctor_id?: string | null
   status?: string | null
+  notes?: string | null
+  slot_start?: string | null
+  created_at?: string | null
 }
 
 export interface SummaryCarePlan {
   id?: string
   title?: string | null
-  status?: string | null
-  summary?: string | null
+  version?: number | null
 }
 
 export interface PatientSummaryOut {
