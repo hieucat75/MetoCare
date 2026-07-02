@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { useRouter, usePathname } from 'next/navigation'
-import { Home, Bot, Heart, Pill, User } from 'lucide-react'
+import { Home, Bot, Heart, Pill, User, Stethoscope } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface BottomNavItem {
@@ -42,6 +42,13 @@ const BOTTOM_NAV_ITEMS: BottomNavItem[] = [
     label: 'Thuốc',
     icon: <Pill className="w-[22px] h-[22px]" />,
     href: '/medications',
+  },
+  {
+    id: 'marketplace',
+    label: 'Bác sĩ',
+    icon: <Stethoscope className="w-[22px] h-[22px]" />,
+    href: '/marketplace',
+    aliases: ['/marketplace/consultations'],
   },
   {
     id: 'profile',

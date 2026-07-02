@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { useRouter, usePathname } from 'next/navigation'
-import { Home, Bot, Heart, Pill, User, LogOut } from 'lucide-react'
+import { Home, Bot, Heart, Pill, User, LogOut, Stethoscope } from 'lucide-react'
 import { AppShell, Sidebar, TopNav, PageLoading } from '@/design-system'
 import type { NavItem } from '@/design-system'
 import { useAuth } from '@/lib/auth/context'
@@ -37,6 +37,12 @@ const NAV_ITEMS: NavItem[] = [
     href: '/metrics',
   },
   { id: 'medications', label: 'Thuốc', icon: <Pill className="w-5 h-5" />, href: '/medications' },
+  {
+    id: 'marketplace',
+    label: 'Bác sĩ',
+    icon: <Stethoscope className="w-5 h-5" />,
+    href: '/marketplace',
+  },
   { id: 'profile', label: 'Tôi', icon: <User className="w-5 h-5" />, href: '/profile' },
 ]
 
@@ -47,6 +53,7 @@ const ROUTE_ALIASES: Record<string, string> = {
   '/care-plan': 'health',
   '/devices': 'health',
   '/health-story': 'health',
+  '/marketplace/consultations': 'marketplace',
   '/notifications': 'profile',
   '/report': 'profile',
   '/settings': 'profile',
@@ -74,6 +81,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/accessibility': 'Trợ năng',
   '/report': 'Báo cáo sức khoẻ',
   '/marketplace': 'Tư vấn bác sĩ',
+  '/marketplace/consultations': 'Lịch tư vấn',
   '/consultations': 'Tư vấn của tôi',
 }
 
