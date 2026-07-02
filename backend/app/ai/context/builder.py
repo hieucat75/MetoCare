@@ -310,17 +310,16 @@ class ContextBuilder:
             if profile and profile.dob:
                 try:
                     dob_val = profile.dob
+                    birth_year = None
                     if isinstance(dob_val, str) and not dob_val.startswith("gAAAAAB"):
-                        dob_dt = dt.date.fromisoformat(dob_val[:10])
-                        today = dt.date.today()
-                        age = today.year - dob_dt.year - (
-                            (today.month, today.day) < (dob_dt.month, dob_dt.day)
-                        )
+                        birth_year = dt.date.fromisoformat(dob_val[:10]).year
                     elif isinstance(dob_val, dt.date):
-                        today = dt.date.today()
-                        age = today.year - dob_val.year - (
-                            (today.month, today.day) < (dob_val.month, dob_val.day)
-                        )
+                        birth_year = dob_val.year
+                    if birth_year is not None:
+                        # Vietnamese convention: tuổi = năm hiện tại − năm sinh
+                        # (year-based, NOT birthday-precise). Born 1975 → 51 in 2026,
+                        # regardless of whether the birthday has passed yet this year.
+                        age = dt.date.today().year - birth_year
                 except Exception:
                     age = None
 
