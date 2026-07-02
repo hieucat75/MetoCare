@@ -1,41 +1,61 @@
 /**
- * Tests for MetoAura component.
+ * Tests for MetoAura component (Framer Motion liquid-glass redesign).
+ * Component uses Framer Motion animations — no CSS animation classes.
  * Verifies correct rendering across states and sizes.
  */
 import * as React from 'react'
-import { render, screen } from '@testing-library/react'
+import { render } from '@testing-library/react'
 import { MetoAura, type MetoState } from '@/components/patient/meto/MetoAura'
+
+// Mock framer-motion to avoid animation issues in JSDOM
+jest.mock('framer-motion', () => {
+  const actual = jest.requireActual('framer-motion')
+  return {
+    ...actual,
+    motion: new Proxy(
+      {},
+      {
+        get: (_: unknown, tag: string) =>
+          // eslint-disable-next-line react/display-name
+          React.forwardRef(({ children, ...props }: React.HTMLAttributes<HTMLElement> & { children?: React.ReactNode }, ref: React.Ref<HTMLElement>) =>
+            React.createElement(tag, { ...props, ref }, children)
+          ),
+      }
+    ),
+    AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+    useReducedMotion: () => false,
+  }
+})
 
 describe('MetoAura', () => {
   it('renders without crashing', () => {
-    render(<MetoAura />)
-    // The component renders as aria-hidden so we verify via container
     const { container } = render(<MetoAura />)
     expect(container.firstChild).toBeTruthy()
   })
 
-  it('applies idle state animation class by default', () => {
+  it('renders idle state', () => {
     const { container } = render(<MetoAura state="idle" />)
-    const el = container.firstChild as HTMLElement
-    expect(el.className).toContain('meto-breathe')
+    expect(container.firstChild).toBeTruthy()
   })
 
-  it('applies thinking state animation class', () => {
+  it('renders thinking state', () => {
     const { container } = render(<MetoAura state="thinking" />)
-    const el = container.firstChild as HTMLElement
-    expect(el.className).toContain('meto-pulse')
+    expect(container.firstChild).toBeTruthy()
   })
 
-  it('applies answering state animation class', () => {
+  it('renders answering state', () => {
     const { container } = render(<MetoAura state="answering" />)
-    const el = container.firstChild as HTMLElement
-    expect(el.className).toContain('meto-glow')
+    expect(container.firstChild).toBeTruthy()
   })
 
-  it('applies listening state animation class', () => {
+  it('renders listening state', () => {
     const { container } = render(<MetoAura state="listening" />)
-    const el = container.firstChild as HTMLElement
-    expect(el.className).toContain('meto-pulse')
+    expect(container.firstChild).toBeTruthy()
+  })
+
+  it('renders completed state', () => {
+    const { container } = render(<MetoAura state="completed" />)
+    expect(container.firstChild).toBeTruthy()
   })
 
   it('renders with sm size (40px)', () => {
@@ -52,11 +72,25 @@ describe('MetoAura', () => {
     expect(el.style.height).toBe('56px')
   })
 
-  it('renders with lg size (80px)', () => {
+  it('renders with lg size (72px)', () => {
     const { container } = render(<MetoAura size="lg" />)
     const el = container.firstChild as HTMLElement
-    expect(el.style.width).toBe('80px')
-    expect(el.style.height).toBe('80px')
+    expect(el.style.width).toBe('72px')
+    expect(el.style.height).toBe('72px')
+  })
+
+  it('renders with xl size (96px)', () => {
+    const { container } = render(<MetoAura size="xl" />)
+    const el = container.firstChild as HTMLElement
+    expect(el.style.width).toBe('96px')
+    expect(el.style.height).toBe('96px')
+  })
+
+  it('renders with xs size (32px)', () => {
+    const { container } = render(<MetoAura size="xs" />)
+    const el = container.firstChild as HTMLElement
+    expect(el.style.width).toBe('32px')
+    expect(el.style.height).toBe('32px')
   })
 
   it('is aria-hidden (decorative element)', () => {
