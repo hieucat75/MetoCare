@@ -2,7 +2,8 @@
 
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
-import { FlaskConical, Plus } from 'lucide-react'
+import { FlaskConical } from 'lucide-react'
+import { PatientPrimaryFab } from '@/components/patient/PatientPrimaryFab'
 import { PatientErrorState } from '@/components/patient/states'
 import { MetricGroupCard } from '@/components/patient/metrics/MetricGroupCard'
 import { useAuth } from '@/lib/auth/context'
@@ -167,14 +168,10 @@ export default function MetricsPage() {
         )}
       </div>
 
-      <button
-        type="button"
-        aria-label="Ghi chỉ số mới"
+      <PatientPrimaryFab
+        ariaLabel="Ghi chỉ số mới"
         onClick={() => router.push('/metrics/log/fasting_glucose')}
-        className="fixed bottom-28 right-5 z-30 flex size-14 items-center justify-center rounded-full text-white neu-btn-primary !min-h-0 !p-0"
-      >
-        <Plus className="size-7" aria-hidden="true" />
-      </button>
+      />
     </>
   )
 }

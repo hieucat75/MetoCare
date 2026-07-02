@@ -2,7 +2,8 @@
 
 import * as React from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { ArrowLeft, Plus, TrendingDown, TrendingUp, Minus } from 'lucide-react'
+import { ArrowLeft, TrendingDown, TrendingUp, Minus } from 'lucide-react'
+import { PatientPrimaryFab } from '@/components/patient/PatientPrimaryFab'
 import { PatientErrorState, PatientSkeleton } from '@/components/patient/states'
 import { NeuCard, NeuBadge } from '@/components/patient/neu'
 import { DangerAlertBanner } from '@/components/patient/metrics/DangerAlertBanner'
@@ -189,14 +190,10 @@ export default function MetricDetailPage() {
         />
       )}
 
-      <button
-        type="button"
-        aria-label="Ghi chỉ số"
+      <PatientPrimaryFab
+        ariaLabel="Ghi chỉ số"
         onClick={() => router.push(`/metrics/log/${metricType}`)}
-        className="fixed bottom-28 right-5 z-30 flex size-14 items-center justify-center rounded-full text-white neu-btn-primary !min-h-0 !p-0"
-      >
-        <Plus className="size-7" aria-hidden="true" />
-      </button>
+      />
     </div>
   )
 }

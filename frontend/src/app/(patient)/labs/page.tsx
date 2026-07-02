@@ -15,6 +15,7 @@ import {
   Upload,
 } from 'lucide-react'
 import { PatientErrorState } from '@/components/patient/states'
+import { PatientPrimaryFab } from '@/components/patient/PatientPrimaryFab'
 import { NeuCard, NeuBadge, NeuButton } from '@/components/patient/neu'
 import { useAuth } from '@/lib/auth/context'
 import {
@@ -438,14 +439,10 @@ export default function LabsPage() {
         </Link>
 
         {/* Manual entry — FAB */}
-        <button
-          type="button"
-          aria-label="Nhập kết quả thủ công"
+        <PatientPrimaryFab
+          ariaLabel="Nhập kết quả thủ công"
           onClick={() => setModalOpen(true)}
-          className="fixed bottom-28 right-5 z-30 flex size-14 items-center justify-center rounded-full text-white neu-btn-primary !min-h-0 !p-0"
-        >
-          <Plus className="size-7" aria-hidden="true" />
-        </button>
+        />
 
         <LabEntryModal
           open={modalOpen}

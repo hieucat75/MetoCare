@@ -2,7 +2,8 @@
 
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
-import { Pill, Plus, Pencil, Trash2, X, CheckCircle2, XCircle } from 'lucide-react'
+import { Pill, Pencil, Trash2, X, CheckCircle2, XCircle } from 'lucide-react'
+import { PatientPrimaryFab } from '@/components/patient/PatientPrimaryFab'
 import { NeuCard, NeuButton } from '@/components/patient/neu'
 import { PatientEmptyState } from '@/components/patient'
 import { PatientErrorState, PatientSkeleton } from '@/components/patient/states'
@@ -581,23 +582,20 @@ export default function MedicationsPage() {
         <WeeklyAdherenceSection summary={summary} />
       )}
 
-      {/* FAB — add medication */}
-      <button
-        type="button"
-        aria-label="Thêm thuốc"
+      {/* FAB — add medication (keeps its own gradient skin via className="" + style) */}
+      <PatientPrimaryFab
+        ariaLabel="Thêm thuốc"
         onClick={() => {
           setDeleteMode(false)
           setEditing(null)
           setModalOpen(true)
         }}
-        className="fixed bottom-28 right-5 z-30 flex size-14 items-center justify-center rounded-full text-white"
+        className=""
         style={{
           background: 'linear-gradient(160deg,#0F9C6E,#0a7a57)',
           boxShadow: '0 8px 20px -6px rgba(15,156,110,0.55)',
         }}
-      >
-        <Plus className="size-7" aria-hidden="true" />
-      </button>
+      />
 
       <MedModal
         open={modalOpen}

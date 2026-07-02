@@ -2,7 +2,8 @@
 
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
-import { Activity, Bell, Bot, ChevronRight, Droplet, Heart, Pill, Plus, Scale } from 'lucide-react'
+import { Activity, Bell, Bot, ChevronRight, Droplet, Heart, Pill, Scale } from 'lucide-react'
+import { PatientPrimaryFab } from '@/components/patient/PatientPrimaryFab'
 import Link from 'next/link'
 import { PatientErrorState, PatientSkeleton } from '@/components/patient/states'
 import { NeuCard, NeuButton, NeuIconButton, NeuBadge } from '@/components/patient/neu'
@@ -235,14 +236,7 @@ export default function PatientDashboardPage() {
       )}
 
       {/* ── FAB ── */}
-      <button
-        type="button"
-        aria-label="Ghi chỉ số"
-        onClick={() => router.push('/metrics/log')}
-        className="fixed bottom-28 right-5 z-30 flex size-14 items-center justify-center rounded-full text-white neu-btn-primary !min-h-0 !p-0"
-      >
-        <Plus className="size-7" aria-hidden="true" />
-      </button>
+      <PatientPrimaryFab ariaLabel="Ghi chỉ số" onClick={() => router.push('/metrics/log')} />
     </div>
   )
 }
