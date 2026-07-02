@@ -3,7 +3,16 @@
 import * as React from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { BrandLogo, BrandMark } from '@/components/brand'
-import { LayoutDashboard, ClipboardList, Users, Calendar, FileText, LogOut } from 'lucide-react'
+import {
+  LayoutDashboard,
+  ClipboardList,
+  Users,
+  Calendar,
+  FileText,
+  Stethoscope,
+  BadgeCheck,
+  LogOut,
+} from 'lucide-react'
 import { AppShell, Sidebar, TopNav, PageLoading } from '@/design-system'
 import type { NavItem } from '@/design-system'
 import { useAuth } from '@/lib/auth/context'
@@ -41,6 +50,18 @@ const NAV_ITEMS: NavItem[] = [
     label: 'Ghi chú lâm sàng',
     icon: <FileText className="w-5 h-5" />,
     href: '/doctor/notes',
+  },
+  {
+    id: 'consultations',
+    label: 'Tư vấn',
+    icon: <Stethoscope className="w-5 h-5" />,
+    href: '/doctor/consultations',
+  },
+  {
+    id: 'marketplace-profile',
+    label: 'Hồ sơ tư vấn',
+    icon: <BadgeCheck className="w-5 h-5" />,
+    href: '/doctor/marketplace-profile',
   },
 ]
 

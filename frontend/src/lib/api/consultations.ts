@@ -68,12 +68,99 @@ export interface ReviewCreate {
   feedback?: string
 }
 
+/** Append-only clinical note body (content 1..8000, note_type defaults recommendation). */
+export interface NoteCreate {
+  content: string
+  note_type?: string
+}
+
+// ── Patient summary (DOCTOR, MFA, scoped) ─────────────────────────────────────
+// Field names below mirror the documented PatientSummaryOut contract. Sub-item
+// shapes are typed leniently (all optional) and rendered defensively, so any
+// backend field-naming drift degrades to "not shown" rather than a crash.
+
+export interface SummaryVital {
+  metric_type?: string | null
+  label?: string | null
+  value?: number | string | null
+  unit?: string | null
+  recorded_at?: string | null
+}
+
+export interface SummaryVitals {
+  latest: SummaryVital[]
+  trend?: string | null
+}
+
+export interface SummaryMetabolicScore {
+  latest_score?: number | null
+  trend?: string | null
+  recorded_at?: string | null
+}
+
+export interface SummaryLabDocument {
+  id?: string
+  title?: string | null
+  document_type?: string | null
+  test_date?: string | null
+  uploaded_at?: string | null
+  status?: string | null
+}
+
+export interface SummaryMedication {
+  id?: string
+  name?: string | null
+  dosage?: string | null
+  frequency?: string | null
+  status?: string | null
+}
+
+export interface SummarySymptom {
+  id?: string
+  name?: string | null
+  severity?: string | null
+  note?: string | null
+  recorded_at?: string | null
+}
+
+export interface SummaryNutrition {
+  id?: string
+  label?: string | null
+  summary?: string | null
+  recorded_at?: string | null
+}
+
+export interface SummaryAppointment {
+  id?: string
+  title?: string | null
+  scheduled_at?: string | null
+  status?: string | null
+}
+
+export interface SummaryCarePlan {
+  id?: string
+  title?: string | null
+  status?: string | null
+  summary?: string | null
+}
+
+export interface PatientSummaryOut {
+  patient_id: string
+  generated_at: string
+  vitals: SummaryVitals
+  lab_documents: SummaryLabDocument[]
+  metabolic_score: SummaryMetabolicScore
+  medications: SummaryMedication[]
+  symptoms: SummarySymptom[]
+  nutrition: SummaryNutrition[]
+  upcoming_appointments: SummaryAppointment[]
+  active_care_plans: SummaryCarePlan[]
+}
+
 // ── Typed functions ───────────────────────────────────────────────────────────
 
 /** PATIENT: create a consultation request (status REQUESTED). 422 if consent false. */
-export async function createConsultation(
-  payload: ConsultationCreate,
-): Promise<ConsultationOut> {
+export async function createConsultation(payload: ConsultationCreate): Promise<ConsultationOut> {
   return api.post<ConsultationOut>('/consultations', payload)
 }
 
@@ -93,10 +180,7 @@ export async function payConsultation(id: string): Promise<PatientPaymentOut> {
 }
 
 /** PATIENT or DOCTOR: cancel a consultation with an optional reason (<=255). */
-export async function cancelConsultation(
-  id: string,
-  reason?: string,
-): Promise<ConsultationOut> {
+export async function cancelConsultation(id: string, reason?: string): Promise<ConsultationOut> {
   return api.post<ConsultationOut>(`/consultations/${id}/cancel`, { reason })
 }
 
@@ -109,9 +193,42 @@ export async function listNotes(id: string): Promise<NoteOut[]> {
 }
 
 /** PATIENT: submit a review (rating 1..5 + optional feedback) after COMPLETED. */
-export async function createReview(
-  id: string,
-  payload: ReviewCreate,
-): Promise<ReviewOut> {
+export async function createReview(id: string, payload: ReviewCreate): Promise<ReviewOut> {
   return api.post<ReviewOut>(`/consultations/${id}/review`, payload)
+}
+
+// ── Doctor-side consultation functions (DOCTOR, MFA) ──────────────────────────
+
+/** DOCTOR: list the caller's own consultations. */
+export async function listMyConsultations(): Promise<ConsultationOut[]> {
+  return api.get<ConsultationOut[]>('/doctors/me/consultations')
+}
+
+/**
+ * DOCTOR: fetch the scoped + audited patient summary for a consultation.
+ * Returns 403 before payment and after complete/cancel (access window is
+ * PAID → IN_PROGRESS); callers must render a "no access" state on 403.
+ */
+export async function getPatientSummary(id: string): Promise<PatientSummaryOut> {
+  return api.get<PatientSummaryOut>(`/consultations/${id}/patient-summary`)
+}
+
+/** DOCTOR: confirm a REQUESTED consultation → CONFIRMED (409 if invalid transition). */
+export async function confirmConsultation(id: string): Promise<ConsultationOut> {
+  return api.post<ConsultationOut>(`/consultations/${id}/confirm`, {})
+}
+
+/** DOCTOR: start a PAID consultation → IN_PROGRESS (409 if not PAID). */
+export async function startConsultation(id: string): Promise<ConsultationOut> {
+  return api.post<ConsultationOut>(`/consultations/${id}/start`, {})
+}
+
+/** DOCTOR: complete an IN_PROGRESS consultation → COMPLETED (409 if invalid transition). */
+export async function completeConsultation(id: string): Promise<ConsultationOut> {
+  return api.post<ConsultationOut>(`/consultations/${id}/complete`, {})
+}
+
+/** DOCTOR: append an immutable clinical note (content 1..8000). Notes cannot be edited/deleted. */
+export async function createNote(id: string, payload: NoteCreate): Promise<NoteOut> {
+  return api.post<NoteOut>(`/consultations/${id}/notes`, payload)
 }
