@@ -273,9 +273,7 @@ describe('P0 — shared biomarker classification: dashboard and detail same sour
   })
 
   test('dashboard buildDashboardSummary(tsh=0.03) produces concern with very_low severity', () => {
-    const metrics: HealthMetric[] = [
-      makeMetric('tsh', TSH_VERY_LOW, 'mIU/L'),
-    ]
+    const metrics: HealthMetric[] = [makeMetric('tsh', TSH_VERY_LOW, 'mIU/L')]
     const summary = buildDashboardSummary(metrics, minimalCatalog)
     const tshConcern = summary.concerns.find((c) => c.metricType === 'tsh')
     expect(tshConcern).toBeDefined()

@@ -20,11 +20,11 @@ type Props = {
 // ---------------------------------------------------------------------------
 
 const SIZE_MAP = {
-  xs: 32,  // thinking indicator
-  sm: 40,  // chat header (thu nhỏ)
-  md: 56,  // floating button
-  lg: 72,  // empty state
-  xl: 96,  // splash / welcome screen
+  xs: 32, // thinking indicator
+  sm: 40, // chat header (thu nhỏ)
+  md: 56, // floating button
+  lg: 72, // empty state
+  xl: 96, // splash / welcome screen
 } as const
 
 // ---------------------------------------------------------------------------
@@ -33,18 +33,18 @@ const SIZE_MAP = {
 
 const C = {
   mintPrimary: '#5ECBC8',
-  mintLight:   '#A8EDEA',
-  mintDeep:    '#3BB8B5',
-  mintPale:    '#E8F9F9',
-  glowColor:   'rgba(94, 203, 200, 0.4)',
-  glowStrong:  'rgba(94, 203, 200, 0.7)',
-  glowSoft:    'rgba(94, 203, 200, 0.2)',
+  mintLight: '#A8EDEA',
+  mintDeep: '#3BB8B5',
+  mintPale: '#E8F9F9',
+  glowColor: 'rgba(94, 203, 200, 0.4)',
+  glowStrong: 'rgba(94, 203, 200, 0.7)',
+  glowSoft: 'rgba(94, 203, 200, 0.2)',
   // Facial features — deep teal ink for high contrast on the light mint bubble
   // AND on light app backgrounds (dashboard, floating button, sidebar).
-  ink:      '#0A4A47',
-  inkSoft:  'rgba(10, 74, 71, 0.55)',
+  ink: '#0A4A47',
+  inkSoft: 'rgba(10, 74, 71, 0.55)',
   eyeShine: 'rgba(255, 255, 255, 0.95)',
-  blush:    'rgba(255, 138, 138, 0.4)',
+  blush: 'rgba(255, 138, 138, 0.4)',
 }
 
 // ---------------------------------------------------------------------------
@@ -53,7 +53,7 @@ const C = {
 // ---------------------------------------------------------------------------
 
 function MetoFace({ state, sizePx }: { state: MetoState; sizePx: number }) {
-  const faceSize = sizePx * 0.62   // 62% of bubble — a touch larger so features read
+  const faceSize = sizePx * 0.62 // 62% of bubble — a touch larger so features read
   const faceOffset = (sizePx - faceSize) / 2
   // Small sizes (sm 40px) drop fine detail (brows, thought dots, cheeks) so the
   // core eyes+nose+mouth stay crisp and instantly readable.
@@ -84,24 +84,52 @@ function MetoFace({ state, sizePx }: { state: MetoState; sizePx: number }) {
           <>
             {/* Eyes — dark, glossy */}
             <motion.ellipse
-              cx="34" cy="44" rx="7" ry="8.5"
+              cx="34"
+              cy="44"
+              rx="7"
+              ry="8.5"
               fill={C.ink}
               animate={{ ry: [8.5, 1.2, 8.5] }}
-              transition={{ duration: 4, times: [0, 0.05, 0.1], repeat: Infinity, repeatDelay: 3.5 }}
+              transition={{
+                duration: 4,
+                times: [0, 0.05, 0.1],
+                repeat: Infinity,
+                repeatDelay: 3.5,
+              }}
             />
             <motion.ellipse
-              cx="66" cy="44" rx="7" ry="8.5"
+              cx="66"
+              cy="44"
+              rx="7"
+              ry="8.5"
               fill={C.ink}
               animate={{ ry: [8.5, 1.2, 8.5] }}
-              transition={{ duration: 4, times: [0, 0.05, 0.1], repeat: Infinity, repeatDelay: 3.5 }}
+              transition={{
+                duration: 4,
+                times: [0, 0.05, 0.1],
+                repeat: Infinity,
+                repeatDelay: 3.5,
+              }}
             />
             {/* Eye shine */}
             <circle cx="31.5" cy="41" r="2.2" fill={C.eyeShine} />
             <circle cx="63.5" cy="41" r="2.2" fill={C.eyeShine} />
             {/* Nose */}
-            <path d="M 47.5 54 Q 50 57 52.5 54" stroke={C.ink} strokeWidth="2.5" strokeLinecap="round" fill="none" />
+            <path
+              d="M 47.5 54 Q 50 57 52.5 54"
+              stroke={C.ink}
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              fill="none"
+            />
             {/* Gentle smile */}
-            <path d="M 34 65 Q 50 77 66 65" stroke={C.ink} strokeWidth="5" strokeLinecap="round" fill="none" />
+            <path
+              d="M 34 65 Q 50 77 66 65"
+              stroke={C.ink}
+              strokeWidth="5"
+              strokeLinecap="round"
+              fill="none"
+            />
             {/* Cheeks */}
             {!compact && (
               <>
@@ -117,8 +145,20 @@ function MetoFace({ state, sizePx }: { state: MetoState; sizePx: number }) {
           <>
             {!compact && (
               <>
-                <path d="M 25 30 Q 34 24 43 29" stroke={C.ink} strokeWidth="3" strokeLinecap="round" fill="none" />
-                <path d="M 57 29 Q 66 24 75 30" stroke={C.ink} strokeWidth="3" strokeLinecap="round" fill="none" />
+                <path
+                  d="M 25 30 Q 34 24 43 29"
+                  stroke={C.ink}
+                  strokeWidth="3"
+                  strokeLinecap="round"
+                  fill="none"
+                />
+                <path
+                  d="M 57 29 Q 66 24 75 30"
+                  stroke={C.ink}
+                  strokeWidth="3"
+                  strokeLinecap="round"
+                  fill="none"
+                />
               </>
             )}
             {/* Eyes wider */}
@@ -127,9 +167,21 @@ function MetoFace({ state, sizePx }: { state: MetoState; sizePx: number }) {
             <circle cx="31" cy="41" r="2.4" fill={C.eyeShine} />
             <circle cx="63" cy="41" r="2.4" fill={C.eyeShine} />
             {/* Nose */}
-            <path d="M 47.5 55 Q 50 58 52.5 55" stroke={C.ink} strokeWidth="2.5" strokeLinecap="round" fill="none" />
+            <path
+              d="M 47.5 55 Q 50 58 52.5 55"
+              stroke={C.ink}
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              fill="none"
+            />
             {/* Slight open mouth — attentive */}
-            <path d="M 38 66 Q 50 74 62 66" stroke={C.ink} strokeWidth="4.5" strokeLinecap="round" fill="none" />
+            <path
+              d="M 38 66 Q 50 74 62 66"
+              stroke={C.ink}
+              strokeWidth="4.5"
+              strokeLinecap="round"
+              fill="none"
+            />
           </>
         )}
 
@@ -138,8 +190,20 @@ function MetoFace({ state, sizePx }: { state: MetoState; sizePx: number }) {
           <>
             {!compact && (
               <>
-                <path d="M 26 32 Q 35 28 42 33" stroke={C.inkSoft} strokeWidth="3" strokeLinecap="round" fill="none" />
-                <path d="M 58 33 Q 65 28 74 32" stroke={C.inkSoft} strokeWidth="3" strokeLinecap="round" fill="none" />
+                <path
+                  d="M 26 32 Q 35 28 42 33"
+                  stroke={C.inkSoft}
+                  strokeWidth="3"
+                  strokeLinecap="round"
+                  fill="none"
+                />
+                <path
+                  d="M 58 33 Q 65 28 74 32"
+                  stroke={C.inkSoft}
+                  strokeWidth="3"
+                  strokeLinecap="round"
+                  fill="none"
+                />
               </>
             )}
             {/* Eyes */}
@@ -147,31 +211,61 @@ function MetoFace({ state, sizePx }: { state: MetoState; sizePx: number }) {
             <ellipse cx="66" cy="45" rx="7" ry="8" fill={C.ink} />
             {/* Glance shine drifting up-left — thoughtful */}
             <motion.circle
-              cx="31" cy="42" r="2.4" fill={C.eyeShine}
+              cx="31"
+              cy="42"
+              r="2.4"
+              fill={C.eyeShine}
               animate={{ cx: [31, 30, 31], cy: [42, 41, 42] }}
               transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
             />
             <motion.circle
-              cx="63" cy="42" r="2.4" fill={C.eyeShine}
+              cx="63"
+              cy="42"
+              r="2.4"
+              fill={C.eyeShine}
               animate={{ cx: [63, 62, 63], cy: [42, 41, 42] }}
               transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
             />
             {/* Nose */}
-            <path d="M 47.5 55 Q 50 57.5 52.5 55" stroke={C.ink} strokeWidth="2.3" strokeLinecap="round" fill="none" />
+            <path
+              d="M 47.5 55 Q 50 57.5 52.5 55"
+              stroke={C.ink}
+              strokeWidth="2.3"
+              strokeLinecap="round"
+              fill="none"
+            />
             {/* Thinking mouth — slight line */}
-            <path d="M 40 67 Q 50 70 60 67" stroke={C.ink} strokeWidth="4" strokeLinecap="round" fill="none" />
+            <path
+              d="M 40 67 Q 50 70 60 67"
+              stroke={C.ink}
+              strokeWidth="4"
+              strokeLinecap="round"
+              fill="none"
+            />
             {/* Thought dots top-right */}
             {!compact && (
               <>
-                <motion.circle cx="78" cy="20" r="2.2" fill={C.inkSoft}
+                <motion.circle
+                  cx="78"
+                  cy="20"
+                  r="2.2"
+                  fill={C.inkSoft}
                   animate={{ opacity: [0.3, 1, 0.3], scale: [0.8, 1.2, 0.8] }}
                   transition={{ duration: 1, repeat: Infinity, delay: 0 }}
                 />
-                <motion.circle cx="86" cy="12" r="3" fill={C.inkSoft}
+                <motion.circle
+                  cx="86"
+                  cy="12"
+                  r="3"
+                  fill={C.inkSoft}
                   animate={{ opacity: [0.2, 0.9, 0.2], scale: [0.8, 1.2, 0.8] }}
                   transition={{ duration: 1, repeat: Infinity, delay: 0.3 }}
                 />
-                <motion.circle cx="94" cy="4" r="3.6" fill={C.inkSoft}
+                <motion.circle
+                  cx="94"
+                  cy="4"
+                  r="3.6"
+                  fill={C.inkSoft}
                   animate={{ opacity: [0.1, 0.7, 0.1], scale: [0.8, 1.2, 0.8] }}
                   transition={{ duration: 1, repeat: Infinity, delay: 0.6 }}
                 />
@@ -186,21 +280,41 @@ function MetoFace({ state, sizePx }: { state: MetoState; sizePx: number }) {
             {/* Happy squint eyes */}
             <motion.path
               d="M 26 42 Q 34 35 42 42"
-              stroke={C.ink} strokeWidth="4.5" strokeLinecap="round" fill="none"
-              animate={{ d: ['M 26 42 Q 34 35 42 42', 'M 27 43 Q 34 37 41 43', 'M 26 42 Q 34 35 42 42'] }}
+              stroke={C.ink}
+              strokeWidth="4.5"
+              strokeLinecap="round"
+              fill="none"
+              animate={{
+                d: ['M 26 42 Q 34 35 42 42', 'M 27 43 Q 34 37 41 43', 'M 26 42 Q 34 35 42 42'],
+              }}
               transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut' }}
             />
             <motion.path
               d="M 58 42 Q 66 35 74 42"
-              stroke={C.ink} strokeWidth="4.5" strokeLinecap="round" fill="none"
-              animate={{ d: ['M 58 42 Q 66 35 74 42', 'M 59 43 Q 66 37 73 43', 'M 58 42 Q 66 35 74 42'] }}
+              stroke={C.ink}
+              strokeWidth="4.5"
+              strokeLinecap="round"
+              fill="none"
+              animate={{
+                d: ['M 58 42 Q 66 35 74 42', 'M 59 43 Q 66 37 73 43', 'M 58 42 Q 66 35 74 42'],
+              }}
               transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut' }}
             />
             {/* Nose */}
-            <path d="M 47.5 52 Q 50 55 52.5 52" stroke={C.ink} strokeWidth="2.3" strokeLinecap="round" fill="none" />
+            <path
+              d="M 47.5 52 Q 50 55 52.5 52"
+              stroke={C.ink}
+              strokeWidth="2.3"
+              strokeLinecap="round"
+              fill="none"
+            />
             {/* Talking mouth — open/close */}
             <motion.path
-              stroke={C.ink} strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" fill="rgba(10,74,71,0.16)"
+              stroke={C.ink}
+              strokeWidth="4"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              fill="rgba(10,74,71,0.16)"
               animate={{
                 d: [
                   'M 35 64 Q 50 72 65 64 Q 50 68 35 64',
@@ -227,26 +341,46 @@ function MetoFace({ state, sizePx }: { state: MetoState; sizePx: number }) {
           <>
             {/* Star eyes */}
             <motion.text
-              x="28" y="51" fontSize="22" fontWeight="bold" textAnchor="middle"
+              x="28"
+              y="51"
+              fontSize="22"
+              fontWeight="bold"
+              textAnchor="middle"
               fill={C.ink}
               initial={{ scale: 0, opacity: 0 }}
               animate={{ scale: [0, 1.3, 1], opacity: 1 }}
               transition={{ duration: 0.4, delay: 0.1 }}
-            >✦</motion.text>
+            >
+              ✦
+            </motion.text>
             <motion.text
-              x="72" y="51" fontSize="22" fontWeight="bold" textAnchor="middle"
+              x="72"
+              y="51"
+              fontSize="22"
+              fontWeight="bold"
+              textAnchor="middle"
               fill={C.ink}
               initial={{ scale: 0, opacity: 0 }}
               animate={{ scale: [0, 1.3, 1], opacity: 1 }}
               transition={{ duration: 0.4, delay: 0.2 }}
-            >✦</motion.text>
+            >
+              ✦
+            </motion.text>
             {/* Nose */}
-            <path d="M 47.5 54 Q 50 57 52.5 54" stroke={C.ink} strokeWidth="2.3" strokeLinecap="round" fill="none" />
+            <path
+              d="M 47.5 54 Q 50 57 52.5 54"
+              stroke={C.ink}
+              strokeWidth="2.3"
+              strokeLinecap="round"
+              fill="none"
+            />
             {/* Big happy smile */}
             <motion.path
               d="M 28 63 Q 50 84 72 63"
-              stroke={C.ink} strokeWidth="5"
-              strokeLinecap="round" fill="none"
+              stroke={C.ink}
+              strokeWidth="5"
+              strokeLinecap="round"
+              fill="none"
               initial={{ pathLength: 0 }}
               animate={{ pathLength: 1 }}
               transition={{ duration: 0.5, delay: 0.3, ease: 'easeOut' }}
@@ -254,11 +388,25 @@ function MetoFace({ state, sizePx }: { state: MetoState; sizePx: number }) {
             {/* Rosy cheeks */}
             {!compact && (
               <>
-                <motion.ellipse cx="20" cy="59" rx="8" ry="5" fill={C.blush}
-                  initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.5 }}
+                <motion.ellipse
+                  cx="20"
+                  cy="59"
+                  rx="8"
+                  ry="5"
+                  fill={C.blush}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 0.5 }}
                 />
-                <motion.ellipse cx="80" cy="59" rx="8" ry="5" fill={C.blush}
-                  initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.5 }}
+                <motion.ellipse
+                  cx="80"
+                  cy="59"
+                  rx="8"
+                  ry="5"
+                  fill={C.blush}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 0.5 }}
                 />
               </>
             )}
@@ -398,29 +546,36 @@ export function MetoAura({ state = 'idle', size = 'md', className = '' }: Props)
       `0 8px 32px ${C.glowStrong}, 0 0 42px ${C.glowStrong}`,
       `0 5px 20px ${C.glowColor}, 0 0 18px rgba(94,203,200,0.4)`,
     ],
-    completed: [
-      `0 8px 30px ${C.glowStrong}, 0 0 40px ${C.glowStrong}`,
-    ],
+    completed: [`0 8px 30px ${C.glowStrong}, 0 0 40px ${C.glowStrong}`],
   }
 
   const scaleByState: Record<MetoState, number[]> = {
-    idle:      [1, 1.04, 1],
+    idle: [1, 1.04, 1],
     listening: [1, 1.06, 1],
-    thinking:  [1, 1.02, 1],
+    thinking: [1, 1.02, 1],
     answering: [1, 1.03, 1],
     completed: [1, 1.1, 1.05],
   }
 
   const durationByState: Record<MetoState, number> = {
-    idle: 3, listening: 1.5, thinking: 2, answering: 1.5, completed: 0.4,
+    idle: 3,
+    listening: 1.5,
+    thinking: 2,
+    answering: 1.5,
+    completed: 0.4,
   }
 
-  const showFace = px >= 40  // only show face when large enough
+  const showFace = px >= 40 // only show face when large enough
 
   return (
     <div
       className={className}
-      style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+      style={{
+        position: 'relative',
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
     >
       {/* ---- Thinking ripples (behind bubble) ---- */}
       {!shouldReduceMotion && state === 'thinking' && (
