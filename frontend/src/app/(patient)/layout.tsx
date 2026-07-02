@@ -73,6 +73,8 @@ const PAGE_TITLES: Record<string, string> = {
   '/consents': 'Đồng ý chia sẻ',
   '/accessibility': 'Trợ năng',
   '/report': 'Báo cáo sức khoẻ',
+  '/marketplace': 'Tư vấn bác sĩ',
+  '/consultations': 'Tư vấn của tôi',
 }
 
 function getPageTitle(pathname: string): string {
@@ -176,12 +178,17 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
     '/report',
   ])
   const isAiCopilotPage = pathname.startsWith('/ai-copilot')
+  // Marketplace + consultations screens render their own back-button header.
+  const isMarketplacePage = pathname.startsWith('/marketplace')
+  const isConsultationsPage = pathname.startsWith('/consultations')
   const hideMobileTopBar =
     NEU_TOPBAR_HIDDEN.has(pathname) ||
     isMetricDetail ||
     isMedicationDetail ||
     isDeviceDetail ||
-    isAiCopilotPage
+    isAiCopilotPage ||
+    isMarketplacePage ||
+    isConsultationsPage
 
   const handleNavItem = (item: NavItem) => router.push(item.href)
 
