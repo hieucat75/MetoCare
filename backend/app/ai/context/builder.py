@@ -405,10 +405,17 @@ class ContextBuilder:
         Always makes BOTH queries to maintain stable DB call order.
         """
         try:
+            # care_plans.patient_id references patient_profiles.id (NOT user.id),
+            # and profile.id != user.id — resolve via subselect (same fix as P0).
+            # status is stored uppercase by CarePlanStatus (e.g. "ACTIVE"); match
+            # case-insensitively so an active plan is actually found.
             plan = db.execute(
                 text("""
                     SELECT id, title FROM care_plans
-                    WHERE patient_id = :uid AND status = 'active'
+                    WHERE patient_id = (
+                            SELECT id FROM patient_profiles WHERE user_id = :uid
+                          )
+                      AND UPPER(status) = 'ACTIVE'
                     ORDER BY created_at DESC LIMIT 1
                 """),
                 {"uid": user_id},
@@ -610,28 +617,39 @@ class ContextBuilder:
     def _build_today_context(self, db: Session, user_id: str) -> dict:
         """Build today's context. Consumes DB execute #8."""
         today = dt.date.today().isoformat()
+        # Midnight-today boundary as an ISO string — portable comparison against
+        # the DateTime column across SQLite (tests) and Postgres (prod), avoiding
+        # DB-specific date() semantics.
+        today_start = dt.datetime.combine(dt.date.today(), dt.time.min).isoformat()
         appointment_list = []
 
         try:
+            # appointments.patient_id references patient_profiles.id (NOT user.id),
+            # and profile.id != user.id — resolve via subselect (same fix as P0).
+            # Columns match the real appointments schema (scheduled_at/mode/status);
+            # the previous title/appointment_time/provider_name/location columns do
+            # not exist, so this query always failed and appointments never loaded.
             appts = db.execute(
                 text("""
-                    SELECT title, appointment_time, provider_name, location
+                    SELECT scheduled_at, mode, status, doctor_id
                     FROM appointments
-                    WHERE patient_id = :uid
-                      AND date(appointment_time) >= :today
+                    WHERE patient_id = (
+                            SELECT id FROM patient_profiles WHERE user_id = :uid
+                          )
+                      AND scheduled_at >= :today_start
                       AND status != 'cancelled'
-                    ORDER BY appointment_time ASC
+                    ORDER BY scheduled_at ASC
                     LIMIT 3
                 """),
-                {"uid": user_id, "today": today},
+                {"uid": user_id, "today_start": today_start},
             ).fetchall()
 
             appointment_list = [
                 {
-                    "title": a[0] or "Lịch hẹn",
-                    "datetime": str(a[1]) if a[1] else None,
-                    "provider": a[2] or "",
-                    "location": a[3] or "",
+                    "title": "Lịch hẹn",
+                    "datetime": str(a[0]) if a[0] else None,
+                    "mode": a[1] or "",
+                    "status": a[2] or "",
                 }
                 for a in appts
             ]
