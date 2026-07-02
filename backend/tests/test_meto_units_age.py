@@ -60,28 +60,44 @@ def test_system_prompt_hard_locks_conversion():
 
 
 def test_recent_labs_carry_verbatim_display_token():
-    """Lab rows must expose a `display` = exact value + unit, with no conversion."""
-    # Stored in mmol/L; range printed in mg/dL — the exact real-world trap.
-    row = ("Glucose (fasting)", "5.73", "mmol/L", "70 - 100", "high", dt.date(2026, 6, 30))
+    """Lab rows must expose a `display` = ORIGINAL value + unit, with no conversion.
+
+    Columns (P0): test_name, value, unit, reference_range, status, test_date,
+    original_test_name, original_value, original_unit, original_reference_range.
+    Here original_* are NULL so the builder falls back to the canonical columns and
+    formats them in the ORIGINAL unit (5.73 mmol/L → "5.7 mmol/L", never mg/dL).
+    """
+    row = (
+        "Glucose (fasting)", "5.73", "mmol/L", "70 - 100", "high",
+        dt.date(2026, 6, 30), None, None, None, None,
+    )
     labs = ContextBuilder()._build_recent_labs(_FakeDB([row]), "u1")
 
     assert labs is not None
-    assert labs[0]["value"] == "5.73"
+    # format_lab_value rounds mmol/L to 1 decimal (5.73 → 5.7) — still the ORIGINAL unit.
+    assert labs[0]["value"] == "5.7"
     assert labs[0]["unit"] == "mmol/L"
-    assert labs[0]["display"] == "5.73 mmol/L"
-    # The converted number must never be pre-computed into the context.
+    assert labs[0]["display"] == "5.7 mmol/L"
+    # The converted mg/dL number must never be pre-computed into the context.
     assert "103.24" not in labs[0]["display"]
     assert "mg/dL" not in labs[0]["display"]
 
 
 def test_recent_metrics_carry_verbatim_display_token():
-    """Metric rows must expose a `display` = exact value + unit."""
-    row = ("blood_glucose", "5.73", "mmol/L", dt.datetime(2026, 6, 30, 8, 0), "high")
+    """Metric rows must expose a `display` = ORIGINAL value + unit.
+
+    Columns (P0): metric_type, value, unit, measured_at, status,
+    original_value, original_unit (original_* NULL → fall back + format).
+    """
+    row = (
+        "blood_glucose", "5.73", "mmol/L", dt.datetime(2026, 6, 30, 8, 0), "high",
+        None, None,
+    )
     metrics = ContextBuilder()._build_recent_metrics(_FakeDB([row]), "u1")
 
     assert metrics is not None
-    assert metrics[0]["latest_value"] == "5.73"
-    assert metrics[0]["display"] == "5.73 mmol/L"
+    assert metrics[0]["latest_value"] == "5.7"
+    assert metrics[0]["display"] == "5.7 mmol/L"
 
 
 def test_assembled_labs_block_has_no_convert_reminder():

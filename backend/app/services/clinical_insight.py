@@ -89,6 +89,10 @@ class MetricInsight:
     label: str
     value: float
     unit: str | None
+    # P0 clinical-integrity: ORIGINAL value+unit as recorded (value/unit stay
+    # canonical for internal classification). Surfaced by MetricInsightOut.
+    original_value: float | None
+    original_unit: str | None
     status: str  # normal | low | high | critical | unknown
     trend: Trend
     meaning: str
@@ -340,6 +344,10 @@ def build_metric_insight(metric_type: str, rows: list[HealthMetric]) -> MetricIn
         label=_label(metric_type),
         value=cur.value,
         unit=cur.unit,
+        original_value=(
+            cur.original_value if cur.original_value is not None else cur.value
+        ),
+        original_unit=(cur.original_unit if cur.original_unit is not None else cur.unit),
         status=status,
         trend=trend,
         meaning=_safe(content["meaning"]),

@@ -147,6 +147,12 @@ export interface HealthMetric {
   metric_type: MetricType
   value: number
   unit: string
+  // P0 clinical-integrity: ORIGINAL as-recorded value+unit (e.g. 88 µmol/L).
+  // value/unit above stay CANONICAL for classification only. `display` is the
+  // backend-formatted original the UI shows. All three additive/back-compat.
+  original_value?: number | null
+  original_unit?: string | null
+  display?: string | null
   // Backend uses measured_at; recorded_at is a UI alias populated during normalization
   measured_at: string
   recorded_at: string // aliased from measured_at for backwards compat
@@ -357,6 +363,11 @@ export interface MetricInsight {
   label: string
   value: number
   unit: string | null
+  // P0 clinical-integrity: ORIGINAL as-recorded value+unit (value/unit stay
+  // canonical for internal logic). `display` is the formatted original.
+  original_value?: number | null
+  original_unit?: string | null
+  display?: string | null
   status: 'normal' | 'low' | 'high' | 'critical' | 'unknown'
   trend: InsightTrend
   meaning: string
@@ -466,6 +477,8 @@ export interface LabResultEntry {
   original_unit: string | null
   original_reference_range: string | null
   original_test_name: string | null
+  /** Backend-formatted ORIGINAL-unit display string, e.g. "88 µmol/L". */
+  display?: string | null
   normalized_value_si: number | null
   normalized_unit_si: string | null
   /** Backend quality flag: 'flag' means suspicious value/unit, needs user verification. */

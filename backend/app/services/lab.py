@@ -230,6 +230,13 @@ def _promote_row(db: Session, row: LabResult, measured_at: dt.datetime) -> bool:
             metric_type=canonical,
             value=promote_value,
             unit=promote_unit,
+            # P0 clinical-integrity: preserve the ORIGINAL value+unit as printed on
+            # the lab report (e.g. 88 µmol/L) for every user/AI-facing surface.
+            # value/unit above stay CANONICAL for internal classification + trends.
+            original_value=(
+                row.original_value if row.original_value is not None else float(row.value)
+            ),
+            original_unit=row.original_unit or row.unit,
             measured_at=measured_at,
             source="lab_result",
             source_ref=row.id,

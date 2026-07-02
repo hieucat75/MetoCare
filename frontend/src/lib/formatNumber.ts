@@ -151,3 +151,69 @@ export function formatLabDisplay(
   if (!unit || unit.trim() === '') return formatted
   return `${formatted} ${unit.trim()}`
 }
+
+// ── Original-value display helpers (P0 clinical integrity) ────────────────────
+//
+// Metric/lab/insight API rows now carry BOTH a canonical (converted) value/unit
+// — used only for internal classification — and the ORIGINAL as-recorded
+// value/unit the patient must actually see (e.g. creatinine "88 µmol/L", never
+// the converted "0.99 mg/dL"). These helpers pick the original everywhere and
+// route every raw number through formatLabValue so no IEEE float ever reaches
+// the UI. All fields are optional so pre-original rows fall back gracefully.
+
+/**
+ * Shape shared by any row that may carry an original value/unit alongside the
+ * canonical one. `display` is the backend-formatted original (e.g. "88 µmol/L").
+ */
+export interface DisplayableLabValue {
+  value?: number | string | null
+  unit?: string | null
+  original_value?: number | null
+  original_unit?: string | null
+  display?: string | null
+}
+
+/** The unit a patient should read — original as-recorded, never the canonical. */
+export function displayUnitOf(
+  m: DisplayableLabValue,
+  fallbackUnit?: string | null,
+): string {
+  const u = m.original_unit ?? m.unit ?? fallbackUnit ?? ''
+  return (u ?? '').trim()
+}
+
+/**
+ * The value TEXT a patient should read — formatted in the ORIGINAL unit.
+ * Never the canonical/converted number and never a raw float.
+ */
+export function displayValueOf(
+  m: DisplayableLabValue,
+  fallbackUnit?: string | null,
+): string {
+  const unit = m.original_unit ?? m.unit ?? fallbackUnit ?? null
+  const value = m.original_value ?? m.value
+  return formatLabValue(value, unit)
+}
+
+/**
+ * Combined "value unit" string (e.g. "88 µmol/L"). Prefers the backend
+ * `display` string; otherwise formats the original value + unit.
+ */
+export function displayInlineOf(
+  m: DisplayableLabValue,
+  fallbackUnit?: string | null,
+): string {
+  if (m.display && m.display.trim() !== '') return m.display.trim()
+  const unit = m.original_unit ?? m.unit ?? fallbackUnit ?? null
+  return formatLabDisplay(m.original_value ?? m.value, unit)
+}
+
+/**
+ * Numeric value to PLOT on a chart/sparkline — original as-recorded when
+ * present. Returns 0 for non-finite input so the chart never breaks.
+ */
+export function plotValueOf(m: DisplayableLabValue): number {
+  const v = m.original_value ?? m.value
+  const n = typeof v === 'string' ? parseFloat(v) : v
+  return typeof n === 'number' && isFinite(n) ? n : 0
+}

@@ -111,11 +111,24 @@ class LabResultOut(BaseModel):
     original_unit: str | None = None
     original_reference_range: str | None = None
     original_test_name: str | None = None
+    # P0 clinical-integrity: formatted ORIGINAL-unit display string for the UI
+    # (e.g. "88 µmol/L"). Never the canonical/SI-converted number.
+    display: str | None = None
     # SI-normalized fields
     normalized_value_si: float | None = None
     normalized_unit_si: str | None = None
     data_quality_flag: str | None = None
     created_at: dt.datetime
+
+    @model_validator(mode="after")
+    def _populate_display(self) -> LabResultOut:
+        """Compute the formatted ORIGINAL-unit display string (P0 integrity)."""
+        from app.utils.number_format import format_lab_display
+
+        disp_value = self.original_value if self.original_value is not None else self.value
+        disp_unit = self.original_unit if self.original_unit is not None else self.unit
+        self.display = format_lab_display(disp_value, disp_unit)
+        return self
 
     @model_validator(mode="after")
     def _populate_clinical_message(self) -> LabResultOut:

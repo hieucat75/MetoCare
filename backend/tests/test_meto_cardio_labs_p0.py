@@ -20,6 +20,7 @@ from app.ai.context.builder import ContextBuilder
 from app.ai.context.schemas import ScreenContext
 from app.ai.prompt.assembler import PromptAssembler
 from app.models.clinical import LabResult, LabUploadBatch
+from app.utils.number_format import format_lab_value
 
 # Cardiovascular lipid/glycemic panel — (test_name, value, unit, reference_range, status)
 _CARDIO_PANEL = [
@@ -78,9 +79,10 @@ def test_cardio_chat_context_includes_seeded_labs(db, patient):
         assert set(by_name) == {"LDL Cholesterol", "HDL Cholesterol", "HbA1c"}
 
         # Full field coverage: metric, value, unit, status, reference range, collected_at.
+        # value is the ORIGINAL formatted via format_lab_value (e.g. 180.0 → "180").
         for name, value, unit, ref, status in _CARDIO_PANEL:
             lab = by_name[name]
-            assert lab["value"] == str(value)
+            assert lab["value"] == format_lab_value(value, unit)
             assert lab["unit"] == unit
             assert lab["reference_range"] == ref
             assert lab["status"] == status
@@ -112,7 +114,9 @@ def test_cardio_chat_prompt_embeds_labs_so_ai_wont_ask_reupload(db, patient):
         # Every seeded lab must appear in the prompt the model receives.
         for name, value, _unit, _ref, _status in _CARDIO_PANEL:
             assert name in system_prompt, f"{name} missing from prompt — AI is blind to it"
-            assert str(value) in system_prompt, f"value for {name} missing from prompt"
+            assert (
+                format_lab_value(value, _unit) in system_prompt
+            ), f"value for {name} missing from prompt"
 
         # The labs section header must be present (assembler renders recent_labs).
         assert "Kết quả xét nghiệm" in system_prompt

@@ -37,6 +37,12 @@ class MetricOut(BaseModel):
     metric_type: str
     value: float
     unit: str | None
+    # P0 clinical-integrity: ORIGINAL value+unit as recorded (e.g. 88 µmol/L).
+    # value/unit above stay CANONICAL for internal classification. `display` is
+    # the formatted original the UI should show. All three are additive/back-compat.
+    original_value: float | None = None
+    original_unit: str | None = None
+    display: str | None = None
     measured_at: dt.datetime
     status: str | None
     source: str | None = None  # self_report/manual | lab_result | device …
@@ -46,6 +52,16 @@ class MetricOut(BaseModel):
     is_critical: bool = False  # True only when canonical re-classification is 'critical'
 
     model_config = {"from_attributes": True}
+
+    @model_validator(mode="after")
+    def _populate_display(self) -> MetricOut:
+        """Compute the formatted ORIGINAL-unit display string (P0 integrity)."""
+        from app.utils.number_format import format_lab_display
+
+        disp_value = self.original_value if self.original_value is not None else self.value
+        disp_unit = self.original_unit if self.original_unit is not None else self.unit
+        self.display = format_lab_display(disp_value, disp_unit)
+        return self
 
     @model_validator(mode="after")
     def _populate_clinical_message(self) -> MetricOut:

@@ -7,7 +7,7 @@ import { computeTrend, refBarGeometry } from '@/lib/metrics/kpi'
 import type { MetricSeries } from '@/lib/metrics/kpi'
 import { healthMetricStatus, metricIcon } from './metricVisuals'
 import { Sparkline } from './Sparkline'
-import { formatLabValue } from '@/lib/utils/formatLabValue'
+import { formatLabValue, displayValueOf, displayUnitOf, displayInlineOf, plotValueOf } from '@/lib/utils/formatLabValue'
 
 // ── Status colour tokens ──────────────────────────────────────────────────────
 
@@ -118,13 +118,13 @@ function fmtDelta(series: MetricSeries): { text: string; color: string } | null 
   // Find the closest previous entry whose unit matches (skip cross-unit entries)
   const prev = series.history.slice(1).find((m) => !latestUnit || !m.unit || m.unit === latestUnit)
   if (!prev) return null
-  const delta = latest.value - prev.value
+  // Delta in the ORIGINAL unit so patients never see a canonical/converted jump.
+  const delta = plotValueOf(latest) - plotValueOf(prev)
   if (Math.abs(delta) < 0.001) return null
   const direction = delta > 0 ? 'up' : 'down'
   const good = series.higherIsBetter === null ? null : series.higherIsBetter === (direction === 'up')
   const arrow = direction === 'up' ? '↑' : '↓'
-  const abs = Math.abs(delta)
-  const formatted = abs % 1 === 0 ? String(abs) : abs.toFixed(1)
+  const formatted = formatLabValue(Math.abs(delta), latest.original_unit ?? latestUnit)
   const color = good ? '#15915A' : '#C0221A'
   return { text: `${arrow} ${formatted} so với lần trước`, color }
 }
@@ -142,21 +142,20 @@ export function MetricRowItem({ series, expanded, onToggle }: Props) {
   const st = STATUS[tone]
   const Icon = metricIcon(series.metricType)
   const name = series.labelVn ?? series.metricType
-  const unitLabel = series.latest.unit ?? series.unit?.label ?? ''
-  const value = formatLabValue(series.latest.value, unitLabel)
+  // Display the ORIGINAL as-recorded unit/value; classification/ref-bar stay canonical.
+  const canonicalUnit = series.latest.unit ?? series.unit?.label ?? ''
+  const unitLabel = displayUnitOf(series.latest, canonicalUnit)
+  const value = displayValueOf(series.latest, canonicalUnit)
   const target = targetText(series)
   const delta = fmtDelta(series)
 
-  const sparkValues = series.history.slice(0, 8).map((m) => m.value)
+  const sparkValues = series.history.slice(0, 8).map(plotValueOf)
 
-  const histRows = series.history.slice(0, 4).map((m) => {
-    const rowUnit = m.unit ?? unitLabel
-    return {
-      key: `${m.measured_at}-${m.value}`,
-      date: fmtDate(m.measured_at),
-      val: `${formatLabValue(m.value, rowUnit)} ${rowUnit}`.trim(),
-    }
-  })
+  const histRows = series.history.slice(0, 4).map((m) => ({
+    key: `${m.measured_at}-${m.value}`,
+    date: fmtDate(m.measured_at),
+    val: displayInlineOf(m, m.unit ?? unitLabel),
+  }))
 
   const StatusIcon = tone === 'mint' ? CheckCircle : TriangleAlert
 

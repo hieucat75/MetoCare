@@ -74,8 +74,10 @@ class TestBuildClinicalInputDisplayValue:
             normalized_unit_si="mg/dL",
         )
         ci = _build_clinical_input(row)
-        assert ci["normalized_value"] == "6.0", (
-            f"Expected '6.0' but got {ci['normalized_value']!r}"
+        # P0: original 6.0 mmol/L formats to "6" (trailing zeros trimmed), NOT the
+        # canonical SI float 231.63... — the display must be the original value.
+        assert ci["normalized_value"] == "6", (
+            f"Expected '6' but got {ci['normalized_value']!r}"
         )
         assert ci["normalized_unit"] == "mmol/L"
 
@@ -292,7 +294,8 @@ class TestFormatLabValue:
         assert format_lab_value(174.0, "mg/dL") == "174"
 
     def test_mmol_l_one_decimal(self):
-        assert format_lab_value(6.0, "mmol/L") == "6.0"
+        # P0: insignificant trailing zeros stripped ("6.0" → "6").
+        assert format_lab_value(6.0, "mmol/L") == "6"
 
     def test_mmol_l_rounds_one_decimal(self):
         assert format_lab_value(5.7321, "mmol/L") == "5.7"
@@ -330,7 +333,7 @@ class TestMultiResultDisplayUnit:
         ci_b = _build_clinical_input(row_b)
         assert ci_a["normalized_unit"] == "mmol/L"
         assert ci_b["normalized_unit"] == "mg/dL"
-        assert ci_a["normalized_value"] == "6.0"
+        assert ci_a["normalized_value"] == "6"
         assert ci_b["normalized_value"] == "108"
 
 

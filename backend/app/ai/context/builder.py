@@ -35,6 +35,7 @@ from app.ai.context.schemas import AssembledContext, ScreenContext
 from app.models.meto import MetoConsent
 from app.models.patient import PatientProfile
 from app.models.user import User
+from app.utils.number_format import format_lab_display, format_lab_value
 
 logger = logging.getLogger(__name__)
 
@@ -515,7 +516,9 @@ class ContextBuilder:
             rows = db.execute(
                 text("""
                     SELECT lr.test_name, lr.value, lr.unit,
-                           lr.reference_range, lr.status, lub.test_date
+                           lr.reference_range, lr.status, lub.test_date,
+                           lr.original_test_name, lr.original_value,
+                           lr.original_unit, lr.original_reference_range
                     FROM lab_results lr
                     JOIN lab_upload_batches lub ON lub.id = lr.batch_id
                     WHERE lub.patient_id = (
@@ -534,15 +537,21 @@ class ContextBuilder:
                 return None
 
             def _lab_row(r: Any) -> dict:
-                value = str(r[1]) if r[1] is not None else ""
-                unit = r[2] or ""
+                # P0 clinical-integrity: surface the ORIGINAL value+unit as printed
+                # (e.g. 88 µmol/L) — NEVER the canonical/SI-converted number. Fall
+                # back to the canonical columns only when original_* is NULL.
+                orig_test_name = r[6] or r[0]
+                orig_value = r[7] if r[7] is not None else r[1]
+                orig_unit = r[8] if r[8] is not None else (r[2] or "")
+                orig_ref = r[9] if r[9] is not None else (r[3] or "")
                 return {
-                    "test_name": r[0],
-                    "value": value,
-                    "unit": unit,
+                    "test_name": orig_test_name,
+                    # Formatted original — no raw IEEE float, no unit conversion.
+                    "value": format_lab_value(orig_value, orig_unit),
+                    "unit": orig_unit,
                     # Verbatim token the LLM must quote as-is (never convert/round).
-                    "display": f"{value} {unit}".strip(),
-                    "reference_range": r[3] or "",
+                    "display": format_lab_display(orig_value, orig_unit),
+                    "reference_range": orig_ref,
                     "status": r[4] or "unknown",
                     "collected_date": str(r[5])[:10] if r[5] else None,
                 }
@@ -565,7 +574,8 @@ class ContextBuilder:
 
             rows = db.execute(
                 text("""
-                    SELECT metric_type, value, unit, measured_at, status
+                    SELECT metric_type, value, unit, measured_at, status,
+                           original_value, original_unit
                     FROM health_metrics
                     WHERE patient_id = (
                             SELECT id FROM patient_profiles WHERE user_id = :uid
@@ -589,14 +599,16 @@ class ContextBuilder:
                 if metric_type in seen:
                     continue
                 seen.add(metric_type)
-                latest_value = str(r[1]) if r[1] is not None else ""
-                unit = r[2] or ""
+                # P0 clinical-integrity: surface the ORIGINAL value+unit — never the
+                # canonical/SI-converted number. Fall back to value/unit when NULL.
+                orig_value = r[5] if r[5] is not None else r[1]
+                orig_unit = r[6] if r[6] is not None else (r[2] or "")
                 result.append({
                     "metric_type": metric_type,
-                    "latest_value": latest_value,
-                    "unit": unit,
+                    "latest_value": format_lab_value(orig_value, orig_unit),
+                    "unit": orig_unit,
                     # Verbatim token the LLM must quote as-is (never convert/round).
-                    "display": f"{latest_value} {unit}".strip(),
+                    "display": format_lab_display(orig_value, orig_unit),
                     "measured_at": str(r[3]) if r[3] else None,
                     "status": r[4] or "unknown",
                 })

@@ -39,6 +39,7 @@ from app.schemas.patient import (
     PatientSummaryOut,
     VitalsSummary,
 )
+from app.utils.number_format import format_lab_display, format_lab_value
 
 # Re-export output schemas used by the schemas layer
 __all__ = ["build_summary"]
@@ -64,18 +65,28 @@ def _fetch_vitals(db: Session, patient_id: str) -> VitalsSummary:
     )
 
     trend = _compute_vitals_trend(rows)
-    latest = [
-        {
-            "id": r.id,
-            "metric_type": r.metric_type,
-            "value": r.value,
-            "unit": r.unit,
-            "measured_at": r.measured_at.isoformat() if r.measured_at else None,
-            "status": r.status,
-        }
-        for r in rows
-    ]
+    latest = [_vital_row(r) for r in rows]
     return VitalsSummary(latest=latest, trend=trend)
+
+
+def _vital_row(r: HealthMetric) -> dict:
+    """Serialize a vital for the doctor summary showing the ORIGINAL value+unit.
+
+    P0 clinical-integrity: doctors must see the value in the unit as recorded
+    (e.g. 88 µmol/L), never the canonical/SI-converted number. Falls back to
+    value/unit when original_* is NULL (legacy rows).
+    """
+    orig_value = r.original_value if r.original_value is not None else r.value
+    orig_unit = r.original_unit if r.original_unit is not None else r.unit
+    return {
+        "id": r.id,
+        "metric_type": r.metric_type,
+        "value": format_lab_value(orig_value, orig_unit),
+        "unit": orig_unit,
+        "display": format_lab_display(orig_value, orig_unit),
+        "measured_at": r.measured_at.isoformat() if r.measured_at else None,
+        "status": r.status,
+    }
 
 
 def _compute_vitals_trend(rows: list[HealthMetric]) -> str:

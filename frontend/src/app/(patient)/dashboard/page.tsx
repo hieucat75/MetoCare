@@ -35,7 +35,7 @@ import { METRIC_TYPE_TO_SLUG } from '@/lib/ai-copilot/slugMap'
 import { groupMetricsByCategory, type MetricSeries } from '@/lib/metrics/kpi'
 import { useLabReference } from '@/lib/api/labReference'
 import { cn } from '@/lib/utils'
-import { formatLabValue } from '@/lib/utils/formatLabValue'
+import { formatLabValue, displayValueOf, displayUnitOf, plotValueOf } from '@/lib/utils/formatLabValue'
 
 // ─── Data model ───────────────────────────────────────────────────────────────
 
@@ -669,8 +669,8 @@ function MetricTileGrid({
           key: 'glucose',
           metricType: 'fasting_glucose',
           label: 'Đường huyết',
-          value: formatLabValue(glucose.latest.value, glucoseUnit),
-          unit: glucoseUnit,
+          value: displayValueOf(glucose.latest, glucoseUnit),
+          unit: displayUnitOf(glucose.latest, glucoseUnit),
           ...toneFor('fasting_glucose'),
           history: histValues(glucose),
         }
@@ -687,8 +687,8 @@ function MetricTileGrid({
           metricType: 'blood_pressure_systolic',
           label: 'Huyết áp',
           value: dia
-            ? `${formatLabValue(sys.latest.value, 'mmHg')}/${formatLabValue(dia.latest.value, 'mmHg')}`
-            : formatLabValue(sys.latest.value, 'mmHg'),
+            ? `${displayValueOf(sys.latest, 'mmHg')}/${displayValueOf(dia.latest, 'mmHg')}`
+            : displayValueOf(sys.latest, 'mmHg'),
           unit: 'mmHg',
           ...mergeTone(toneFor('blood_pressure_systolic'), toneFor('blood_pressure_diastolic')),
           history: histValues(sys),
@@ -705,8 +705,8 @@ function MetricTileGrid({
           key: 'weight',
           metricType: 'weight',
           label: 'Cân nặng',
-          value: formatLabValue(weight.latest.value, weightUnit),
-          unit: weightUnit,
+          value: displayValueOf(weight.latest, weightUnit),
+          unit: displayUnitOf(weight.latest, weightUnit),
           ...toneFor('weight'),
           history: histValues(weight),
         }
@@ -898,7 +898,7 @@ function HealthAlertsSection({
           type="button"
           onClick={() => onOpen(concern.metricType)}
           className="neu-card w-full !p-4 text-left transition-transform active:scale-[0.98] min-h-[56px]"
-          aria-label={`${concern.label} ${concern.value} ${concern.unit} ${concern.statusLabel}`}
+          aria-label={`${concern.label} ${displayValueOf(concern, concern.unit)} ${displayUnitOf(concern, concern.unit)} ${concern.statusLabel}`}
         >
           {/* Top row: severity dot | name | value unit | status badge | chevron */}
           <div className="flex items-center gap-2.5">
@@ -911,8 +911,10 @@ function HealthAlertsSection({
               {concern.label}
             </span>
             <span className="shrink-0 tabular-nums text-[20px] font-bold text-neu-text">
-              {concern.value}
-              <span className="text-[14px] font-normal text-neu-muted ml-0.5">{concern.unit}</span>
+              {displayValueOf(concern, concern.unit)}
+              <span className="text-[14px] font-normal text-neu-muted ml-0.5">
+                {displayUnitOf(concern, concern.unit)}
+              </span>
             </span>
             <NeuBadge
               tone={concern.severity === 'danger' ? 'alert' : 'watch'}
@@ -979,8 +981,8 @@ function formatVnDate(d: Date): string {
 }
 
 function histValues(s: MetricSeries): number[] {
-  // newest-first; take up to 8 points for a compact sparkline.
-  return s.history.slice(0, 8).map((m) => m.value)
+  // newest-first; take up to 8 points for a compact sparkline (ORIGINAL values).
+  return s.history.slice(0, 8).map(plotValueOf)
 }
 
 function emptyTile(key: string, metricType: string, label: string): TileModel {
