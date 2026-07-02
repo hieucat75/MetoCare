@@ -24,7 +24,8 @@ export function FloatingMetoButton({ screenId, entityId, entityType }: Props) {
             '0 8px 24px -8px rgba(15,156,110,0.55), 0 2px 8px rgba(0,0,0,0.12)',
         }}
       >
-        <MetoAura state="idle" size="sm" />
+        {/* md fills the 56px button edge-to-edge — no white gap ring / "disc" */}
+        <MetoAura state="idle" size="md" />
       </button>
 
       <ChatSheet
