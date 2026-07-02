@@ -16,6 +16,7 @@ from app.models.user import User, UserRole
 from app.schemas.auth import (
     AccountUpdateRequest,
     ChangePasswordRequest,
+    ConsentInput,
     LoginRequest,
     LogoutRequest,
     MfaEnrollResponse,
@@ -46,6 +47,20 @@ def register(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="Số điện thoại di động Việt Nam không hợp lệ.",
             )
+    consent_data: auth.TermsConsentData | None = None
+    if payload.consent is not None:
+        consent_data = auth.TermsConsentData(
+            accepted=payload.consent.accepted,
+            terms_version=payload.consent.terms_version,
+            privacy_version=payload.consent.privacy_version,
+            app_version=payload.consent.app_version,
+            locale=payload.consent.locale,
+            timezone=payload.consent.timezone,
+            ip=request.client.host if request.client else None,
+            device_platform=payload.consent.device_platform,
+            accepted_source=payload.consent.accepted_source or "registration",
+            accepted_language=payload.consent.accepted_language,
+        )
     try:
         user = auth.register(
             db,
@@ -54,6 +69,7 @@ def register(
             password=payload.password,
             full_name=payload.full_name,
             role=role,
+            consent=consent_data,
         )
     except auth.AuthError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
@@ -179,7 +195,39 @@ def _user_out(db: Session, db_user: User) -> UserOut:
             select(PatientProfile).where(PatientProfile.user_id == db_user.id)
         ).scalar_one_or_none()
         out.patient_profile_id = profile.id if profile is not None else None
+    # Latest Terms version this user has accepted — drives the login/version gate.
+    out.accepted_terms_version = auth.latest_accepted_terms_version(db, db_user.id)
     return out
+
+
+@router.post("/accept-terms", response_model=UserOut)
+def accept_terms(
+    request: Request,
+    payload: ConsentInput,
+    actor: CurrentUser = Depends(current_user),
+    db: Session = Depends(get_session),
+) -> UserOut:
+    """Record Terms/Privacy acceptance for the logged-in user (version gate)."""
+    auth.accept_terms(
+        db,
+        user_id=actor.id,
+        consent=auth.TermsConsentData(
+            accepted=payload.accepted,
+            terms_version=payload.terms_version,
+            privacy_version=payload.privacy_version,
+            app_version=payload.app_version,
+            locale=payload.locale,
+            timezone=payload.timezone,
+            ip=request.client.host if request.client else None,
+            device_platform=payload.device_platform,
+            accepted_source=payload.accepted_source or "reconsent",
+            accepted_language=payload.accepted_language,
+        ),
+    )
+    db_user = db.get(User, actor.id)
+    if db_user is None:
+        raise HTTPException(status_code=404, detail="user not found")
+    return _user_out(db, db_user)
 
 
 @router.post("/change-password", response_model=Message)

@@ -9,6 +9,7 @@ import {
   type UserResponse,
   type TokenResponse,
   type AuthIdentifier,
+  type ConsentPayload,
 } from '@/lib/api/auth'
 import { clearTokens, getAccessToken, getRefreshToken } from '@/lib/api/client'
 
@@ -21,6 +22,7 @@ interface AuthContextValue {
     identifier: AuthIdentifier,
     password: string,
     fullName?: string,
+    consent?: ConsentPayload,
   ) => Promise<TokenResponse>
   logout: () => Promise<void>
   refresh: () => Promise<void>
@@ -61,8 +63,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   )
 
   const register = React.useCallback(
-    async (identifier: AuthIdentifier, password: string, fullName?: string) => {
-      const res = await apiRegister(identifier, password, fullName)
+    async (
+      identifier: AuthIdentifier,
+      password: string,
+      fullName?: string,
+      consent?: ConsentPayload,
+    ) => {
+      const res = await apiRegister(identifier, password, fullName, consent)
       await refresh()
       return res
     },

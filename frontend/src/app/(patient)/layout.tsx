@@ -8,6 +8,7 @@ import type { NavItem } from '@/design-system'
 import { useAuth } from '@/lib/auth/context'
 import { PatientBottomNav } from '@/components/nav/PatientBottomNav'
 import { getRoleHomePath } from '@/lib/api/auth'
+import { isTermsOutdated } from '@/lib/legal'
 import { useFeatureFlags } from '@/lib/api/features'
 import { BrandLogo, BrandMark } from '@/components/brand'
 import { FloatingMetoButton } from '@/components/patient/meto'
@@ -128,7 +129,14 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
       router.replace('/login')
       return
     }
-    if (user && user.role !== 'patient') router.replace(getRoleHomePath(user.role))
+    if (user && user.role !== 'patient') {
+      router.replace(getRoleHomePath(user.role))
+      return
+    }
+    // Login/version gate: patients on an outdated Terms version must re-accept.
+    if (user && user.role === 'patient' && isTermsOutdated(user.accepted_terms_version)) {
+      router.replace('/consent')
+    }
   }, [isLoading, isAuthenticated, user, router])
 
   if (isLoading) {
