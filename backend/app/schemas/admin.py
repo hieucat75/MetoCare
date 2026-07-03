@@ -123,3 +123,30 @@ class SystemStatsOut(BaseModel):
     total_appointments: int
     total_ai_conversations: int
     total_audit_entries: int
+
+
+# ---------------------------------------------------------------------------
+# Consultation monitoring (read-only admin views)
+# ---------------------------------------------------------------------------
+
+
+class AdminConsultationOut(BaseModel):
+    id: str
+    patient_id: str
+    patient_name: str | None = None
+    doctor_id: str
+    doctor_name: str
+    status: str
+    consultation_type: str
+    consultation_price: float
+    payment_status: str | None = None
+    created_at: dt.datetime | None = None
+
+    model_config = {"from_attributes": True}
+
+
+class AdminConsultationStatsOut(BaseModel):
+    by_status: dict[str, int]
+    total: int
+    paid_count: int
+    mock_revenue: float
