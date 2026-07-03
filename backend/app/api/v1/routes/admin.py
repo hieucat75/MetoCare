@@ -8,15 +8,21 @@ per-user audit log).
 
 from __future__ import annotations
 
+import datetime as dt
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import CurrentUser, get_session, require_mfa, require_roles
 from app.core.ratelimit import get_lockout
+from app.models.ai import AIClinicalRecommendation, AISession, RecommendationStatus
+from app.models.care import Clinic
 from app.models.governance import AuditLog
-from app.models.user import UserRole
+from app.models.meto import MetoAuditLog
+from app.models.user import User, UserRole
 from app.schemas.admin import (
+    AdminStatsOut,
     DoctorAdminOut,
     DoctorCreateRequest,
     UnlockRequest,
@@ -32,6 +38,69 @@ from app.services.doctor import create_doctor_account
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 _admin_only = require_roles(UserRole.INTERNAL_ADMIN, UserRole.SUPER_ADMIN)
+
+
+@router.get("/stats", response_model=AdminStatsOut)
+def get_system_stats(
+    actor: CurrentUser = Depends(_admin_only),
+    _mfa: CurrentUser = Depends(require_mfa),  # admin actions require MFA
+    db: Session = Depends(get_session),
+) -> AdminStatsOut:
+    """Platform-wide counts for the admin dashboard.
+
+    Real data (0 means genuinely empty). Each count is isolated in its own
+    try/except so a single failing query never 500s the whole endpoint.
+    """
+    today_start = dt.datetime.now(dt.UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+
+    def _count(stmt) -> int:
+        try:
+            return int(db.execute(stmt).scalar_one() or 0)
+        except Exception:
+            db.rollback()  # clear failed-transaction state so later counts run
+            return 0
+
+    stats = AdminStatsOut(
+        total_users=_count(select(func.count()).select_from(User)),
+        active_patients=_count(
+            select(func.count())
+            .select_from(User)
+            .where(User.role == UserRole.PATIENT, User.is_active.is_(True))
+        ),
+        active_doctors=_count(
+            select(func.count())
+            .select_from(User)
+            .where(User.role == UserRole.DOCTOR, User.is_active.is_(True))
+        ),
+        total_clinics=_count(select(func.count()).select_from(Clinic)),
+        ai_sessions_today=_count(
+            select(func.count())
+            .select_from(AISession)
+            .where(AISession.created_at >= today_start)
+        ),
+        pending_reviews=_count(
+            select(func.count())
+            .select_from(AIClinicalRecommendation)
+            .where(AIClinicalRecommendation.status == RecommendationStatus.PENDING_REVIEW)
+        ),
+        flagged_ai_sessions=_count(
+            select(func.count())
+            .select_from(MetoAuditLog)
+            .where(MetoAuditLog.safety_flags_detected.is_(True))
+        ),
+        audit_events_today=_count(
+            select(func.count()).select_from(AuditLog).where(AuditLog.timestamp >= today_start)
+        ),
+    )
+    audit.record(
+        db,
+        actor_type="admin",
+        actor_id=actor.id,
+        action="admin_read",
+        resource_type="system_stats",
+    )
+    db.commit()
+    return stats
 
 
 @router.get("/audit-logs")

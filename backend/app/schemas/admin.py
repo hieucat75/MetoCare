@@ -123,3 +123,16 @@ class SystemStatsOut(BaseModel):
     total_appointments: int
     total_ai_conversations: int
     total_audit_entries: int
+
+
+class AdminStatsOut(BaseModel):
+    """Platform-wide counts for the admin dashboard (matches frontend AdminStats)."""
+
+    total_users: int
+    active_patients: int
+    active_doctors: int
+    total_clinics: int
+    ai_sessions_today: int
+    pending_reviews: int
+    flagged_ai_sessions: int
+    audit_events_today: int

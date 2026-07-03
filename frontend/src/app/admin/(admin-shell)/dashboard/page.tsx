@@ -109,7 +109,7 @@ export default function AdminDashboardPage() {
   }, [loadStats])
 
   return (
-    <div className="px-6 py-6 max-w-6xl mx-auto">
+    <div className="px-6 py-6">
       <PageHeader title="Tổng quan hệ thống" />
 
       {/* Stats grid */}
