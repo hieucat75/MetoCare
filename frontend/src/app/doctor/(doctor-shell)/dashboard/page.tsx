@@ -2,14 +2,7 @@
 
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
-import {
-  Clock,
-  AlertTriangle,
-  Users,
-  CheckCircle,
-  ArrowRight,
-  ChevronRight,
-} from 'lucide-react'
+import { Clock, AlertTriangle, Users, CheckCircle, ArrowRight, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
   PageHeader,
@@ -20,12 +13,7 @@ import {
   DoctorReviewQueueItem,
 } from '@/design-system'
 import type { ReviewQueueItem } from '@/design-system'
-import {
-  getDoctorStats,
-  getReviewQueue,
-  type DoctorStats,
-  type QueueItem,
-} from '@/lib/api/doctor'
+import { getDoctorStats, getReviewQueue, type DoctorStats, type QueueItem } from '@/lib/api/doctor'
 import { ConsultationStatusBadge, formatVnd, formatDateTime } from '@/components/marketplace'
 import type { ConsultationStatus } from '@/lib/api/marketplace'
 import { listMyConsultations, type ConsultationOut } from '@/lib/api/consultations'
@@ -98,16 +86,14 @@ function StatCard({ label, value, Icon, accentClass }: StatCardProps) {
       <span
         className={cn(
           'inline-flex items-center justify-center h-12 w-12 rounded-xl shrink-0',
-          accentClass ?? 'bg-secondary-100 text-secondary-600',
+          accentClass ?? 'bg-secondary-100 text-secondary-600'
         )}
       >
         <Icon className="h-6 w-6" aria-hidden="true" />
       </span>
       <div className="min-w-0">
         <p className="text-body-xs text-text-muted">{label}</p>
-        <p className="text-display-xs font-bold text-text leading-tight">
-          {value ?? '—'}
-        </p>
+        <p className="text-display-xs font-bold text-text leading-tight">{value ?? '—'}</p>
       </div>
     </Card>
   )
@@ -198,7 +184,7 @@ export default function DoctorDashboardPage() {
   // "Today" = created today (local date).
   const todayConsultations = React.useMemo(
     () => consultations.filter((c) => isToday(c.created_at)),
-    [consultations],
+    [consultations]
   )
 
   return (
@@ -214,11 +200,7 @@ export default function DoctorDashboardPage() {
             ))}
           </div>
         ) : statsError ? (
-          <ErrorState
-            variant="inline"
-            title={statsError}
-            onRetry={loadStats}
-          />
+          <ErrorState variant="inline" title={statsError} onRetry={loadStats} />
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <StatCard
@@ -284,11 +266,7 @@ export default function DoctorDashboardPage() {
             {/* Status KPI grid */}
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
               {CONSULTATION_STATUS_META.map((m) => (
-                <StatusStatCard
-                  key={m.key}
-                  label={m.label}
-                  value={statusCounts[m.key] ?? 0}
-                />
+                <StatusStatCard key={m.key} label={m.label} value={statusCounts[m.key] ?? 0} />
               ))}
             </div>
 
@@ -333,10 +311,7 @@ export default function DoctorDashboardPage() {
                             <span className="text-body-sm font-semibold text-text">
                               {formatVnd(c.consultation_price)}
                             </span>
-                            <ChevronRight
-                              className="h-5 w-5 text-text-subtle"
-                              aria-hidden="true"
-                            />
+                            <ChevronRight className="h-5 w-5 text-text-subtle" aria-hidden="true" />
                           </div>
                         </div>
                       </Card>
@@ -352,9 +327,7 @@ export default function DoctorDashboardPage() {
       {/* Recent queue */}
       <section aria-label="Hàng chờ duyệt gần đây" className="mt-8">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-heading-md font-semibold text-text">
-            Hàng chờ duyệt gần đây
-          </h2>
+          <h2 className="text-heading-md font-semibold text-text">Hàng chờ duyệt gần đây</h2>
           <button
             type="button"
             onClick={() => router.push('/doctor/queue')}
@@ -368,20 +341,13 @@ export default function DoctorDashboardPage() {
         {queueLoading ? (
           <div className="flex flex-col gap-3">
             {Array.from({ length: 3 }).map((_, i) => (
-              <div
-                key={i}
-                className="rounded-lg border border-border bg-surface px-4 py-3"
-              >
+              <div key={i} className="rounded-lg border border-border bg-surface px-4 py-3">
                 <SkeletonText lines={2} lineWidths={['60%', '40%']} />
               </div>
             ))}
           </div>
         ) : queueError ? (
-          <ErrorState
-            variant="inline"
-            title={queueError}
-            onRetry={loadQueue}
-          />
+          <ErrorState variant="inline" title={queueError} onRetry={loadQueue} />
         ) : queueItems.length === 0 ? (
           <Card variant="flat" padding="md">
             <p className="text-body-sm text-text-muted text-center py-4">

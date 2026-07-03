@@ -161,8 +161,7 @@ export default function DoctorConsultationDetailPage() {
 
   const c = consultation
   const status = c.status
-  const primaryAvailable =
-    status === 'REQUESTED' || status === 'PAID' || status === 'IN_PROGRESS'
+  const primaryAvailable = status === 'REQUESTED' || status === 'PAID' || status === 'IN_PROGRESS'
   const hasActions = primaryAvailable || CANCELLABLE.includes(status)
 
   const actionProps: StateActionsProps = {
@@ -215,7 +214,9 @@ export default function DoctorConsultationDetailPage() {
                 <InfoRow label="Xác nhận" value={formatDateTime(c.confirmed_at) ?? '—'} />
               )}
               {c.paid_at && <InfoRow label="Thanh toán" value={formatDateTime(c.paid_at) ?? '—'} />}
-              {c.started_at && <InfoRow label="Bắt đầu" value={formatDateTime(c.started_at) ?? '—'} />}
+              {c.started_at && (
+                <InfoRow label="Bắt đầu" value={formatDateTime(c.started_at) ?? '—'} />
+              )}
               {c.completed_at && (
                 <InfoRow label="Hoàn thành" value={formatDateTime(c.completed_at) ?? '—'} />
               )}
@@ -227,13 +228,17 @@ export default function DoctorConsultationDetailPage() {
             {c.chief_complaint && (
               <div className="mt-4 rounded-lg bg-secondary-50 px-4 py-3">
                 <p className="text-body-xs font-semibold text-text-muted">Lý do tư vấn</p>
-                <p className="mt-0.5 whitespace-pre-line text-body-sm text-text">{c.chief_complaint}</p>
+                <p className="mt-0.5 whitespace-pre-line text-body-sm text-text">
+                  {c.chief_complaint}
+                </p>
               </div>
             )}
             {c.patient_note && (
               <div className="mt-3 rounded-lg bg-secondary-50 px-4 py-3">
                 <p className="text-body-xs font-semibold text-text-muted">Ghi chú của bệnh nhân</p>
-                <p className="mt-0.5 whitespace-pre-line text-body-sm text-text">{c.patient_note}</p>
+                <p className="mt-0.5 whitespace-pre-line text-body-sm text-text">
+                  {c.patient_note}
+                </p>
               </div>
             )}
             {c.cancel_reason && (
@@ -545,9 +550,7 @@ function SummaryBody({ summary }: { summary: PatientSummaryOut }) {
           <ul className="mt-1 space-y-1 text-body-sm">
             {summary.lab_documents.map((d, i) => (
               <li key={d.id ?? i} className="flex items-center justify-between">
-                <span className="truncate text-text">
-                  {d.lab_name ?? 'Tài liệu'}
-                </span>
+                <span className="truncate text-text">{d.lab_name ?? 'Tài liệu'}</span>
                 <span className="shrink-0 text-text-muted">
                   {formatDateTime(d.created_at) ?? d.status ?? '—'}
                 </span>
@@ -645,9 +648,7 @@ function SummaryBody({ summary }: { summary: PatientSummaryOut }) {
             {summary.active_care_plans.map((p, i) => (
               <li key={p.id ?? i}>
                 <p className="font-medium text-text">{p.title ?? 'Kế hoạch'}</p>
-                {p.version != null && (
-                  <p className="text-text-muted">Phiên bản {p.version}</p>
-                )}
+                {p.version != null && <p className="text-text-muted">Phiên bản {p.version}</p>}
               </li>
             ))}
           </ul>
