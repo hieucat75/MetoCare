@@ -4,7 +4,7 @@ import * as React from 'react'
 import { cn } from '@/lib/utils'
 import {
   PageHeader,
-  Table,
+  DataTable,
   Alert,
   Button,
   Input,
@@ -13,7 +13,7 @@ import {
   ErrorState,
   CardSkeleton,
 } from '@/design-system'
-import type { Column } from '@/design-system'
+import type { DataColumn } from '@/design-system'
 import { getAuditLogs, type AuditLog } from '@/lib/api/admin'
 
 // ---------------------------------------------------------------------------
@@ -97,7 +97,7 @@ export default function AuditLogsPage() {
         setLoadingMore(false)
       }
     },
-    [appliedResourceType, appliedAction],
+    [appliedResourceType, appliedAction]
   )
 
   // Initial load and reload when applied filters change
@@ -124,66 +124,62 @@ export default function AuditLogsPage() {
   // Table columns
   // ---------------------------------------------------------------------------
 
-  const columns: Column<AuditLog>[] = React.useMemo(
+  const columns: DataColumn<AuditLog>[] = React.useMemo(
     () => [
-      {
-        key: 'occurred_at',
-        header: 'Thời gian',
-        cell: (row) => (
-          <span className="text-body-sm text-text-muted whitespace-nowrap">
-            {formatDateTime(row.occurred_at)}
-          </span>
-        ),
-        width: '170px',
-      },
-      {
-        key: 'actor_email',
-        header: 'Người thực hiện',
-        cell: (row) => (
-          <span className="text-body-sm text-text">
-            {row.actor_email ?? row.actor_id.slice(0, 8)}
-          </span>
-        ),
-        width: '200px',
-      },
       {
         key: 'action',
         header: 'Hành động',
-        cell: (row) => (
+        priority: 1,
+        render: (row) => (
           <span
             className={cn(
               'font-mono text-body-xs bg-secondary-100 px-2 py-0.5 rounded',
-              'text-text whitespace-nowrap',
+              'text-text whitespace-nowrap'
             )}
           >
             {row.action}
           </span>
         ),
-        width: '180px',
+      },
+      {
+        key: 'actor_email',
+        header: 'Người thực hiện',
+        priority: 2,
+        render: (row) => (
+          <span className="text-body-sm text-text">
+            {row.actor_email ?? row.actor_id.slice(0, 8)}
+          </span>
+        ),
+      },
+      {
+        key: 'occurred_at',
+        header: 'Thời gian',
+        priority: 3,
+        render: (row) => (
+          <span className="text-body-sm text-text-muted whitespace-nowrap">
+            {formatDateTime(row.occurred_at)}
+          </span>
+        ),
       },
       {
         key: 'resource_type',
         header: 'Tài nguyên',
-        cell: (row) => (
+        render: (row) => (
           <span className="text-body-sm text-text-muted">
             {row.resource_type}
             {row.resource_id ? `#${row.resource_id.slice(0, 8)}` : ''}
           </span>
         ),
-        width: '180px',
       },
       {
         key: 'ip_address',
         header: 'IP',
-        cell: (row) => (
-          <span className="text-body-sm text-text-muted font-mono">
-            {row.ip_address ?? '—'}
-          </span>
+        render: (row) => (
+          <span className="text-body-sm text-text-muted font-mono">{row.ip_address ?? '—'}</span>
         ),
-        width: '130px',
       },
     ],
-    [],
+    []
   )
 
   return (
@@ -239,24 +235,17 @@ export default function AuditLogsPage() {
         />
       ) : (
         <>
-          <Table<AuditLog>
+          <DataTable<AuditLog>
             columns={columns}
-            data={logs}
-            rowKey="id"
-            stickyHeader
-            striped
+            rows={logs}
+            keyField="id"
             emptyMessage="Không có nhật ký nào."
           />
 
           {/* Load more */}
           {hasMore && (
             <div className="mt-4 flex justify-center">
-              <Button
-                variant="outline"
-                size="sm"
-                loading={loadingMore}
-                onClick={handleLoadMore}
-              >
+              <Button variant="outline" size="sm" loading={loadingMore} onClick={handleLoadMore}>
                 Tải thêm ({total - logs.length} còn lại)
               </Button>
             </div>

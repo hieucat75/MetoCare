@@ -8,6 +8,7 @@ import {
   Building2,
   UserCog,
   Stethoscope,
+  MessagesSquare,
   BarChart3,
   ScrollText,
   ShieldAlert,
@@ -45,6 +46,12 @@ const NAV_ITEMS: NavItem[] = [
     label: 'Bác sĩ',
     icon: <Stethoscope className="w-5 h-5" />,
     href: '/admin/doctors',
+  },
+  {
+    id: 'consultations',
+    label: 'Buổi tư vấn',
+    icon: <MessagesSquare className="w-5 h-5" />,
+    href: '/admin/consultations',
   },
   {
     id: 'patients-admin',

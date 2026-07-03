@@ -5,7 +5,7 @@ import { CheckCircle, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
   PageHeader,
-  Table,
+  DataTable,
   Badge,
   Switch,
   Modal,
@@ -16,7 +16,7 @@ import {
   ErrorState,
   CardSkeleton,
 } from '@/design-system'
-import type { Column } from '@/design-system'
+import type { DataColumn } from '@/design-system'
 import { getUsers, toggleUserActive, type AdminUser, type AdminUserRole } from '@/lib/api/admin'
 import { useAuth } from '@/lib/auth/context'
 
@@ -34,7 +34,10 @@ const ROLE_LABEL: Record<AdminUserRole, string> = {
   ai_service: 'Dịch vụ AI',
 }
 
-const ROLE_BADGE_VARIANT: Record<AdminUserRole, 'default' | 'primary' | 'info' | 'warning' | 'danger' | 'success'> = {
+const ROLE_BADGE_VARIANT: Record<
+  AdminUserRole,
+  'default' | 'primary' | 'info' | 'warning' | 'danger' | 'success'
+> = {
   patient: 'default',
   doctor: 'info',
   medical_reviewer: 'warning',
@@ -137,81 +140,67 @@ export default function AdminUsersPage() {
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
+    []
   )
 
-  const handleConfirmToggle = React.useCallback(
-    async (user: AdminUser, isActive: boolean) => {
-      setToggling(true)
-      try {
-        const updated = await toggleUserActive(user.id, isActive)
-        setUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)))
-      } catch {
-        // silently ignore; user list state remains unchanged
-      } finally {
-        setToggling(false)
-        setPendingToggle(null)
-      }
-    },
-    [],
-  )
+  const handleConfirmToggle = React.useCallback(async (user: AdminUser, isActive: boolean) => {
+    setToggling(true)
+    try {
+      const updated = await toggleUserActive(user.id, isActive)
+      setUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)))
+    } catch {
+      // silently ignore; user list state remains unchanged
+    } finally {
+      setToggling(false)
+      setPendingToggle(null)
+    }
+  }, [])
 
   // ---------------------------------------------------------------------------
   // Table columns
   // ---------------------------------------------------------------------------
 
-  const columns: Column<AdminUser>[] = React.useMemo(
+  const columns: DataColumn<AdminUser>[] = React.useMemo(
     () => [
       {
         key: 'full_name',
         header: 'Tên',
-        cell: (row) => (
-          <span className="text-body-sm font-medium text-text">
-            {row.full_name ?? row.email}
-          </span>
+        priority: 1,
+        render: (row) => (
+          <span className="text-body-sm font-medium text-text">{row.full_name ?? row.email}</span>
         ),
-        width: '200px',
       },
       {
         key: 'email',
         header: 'Email',
-        cell: (row) => (
-          <span className="text-body-sm text-text-muted">{row.email}</span>
-        ),
-        width: '220px',
+        priority: 3,
+        render: (row) => <span className="text-body-sm text-text-muted">{row.email}</span>,
       },
       {
         key: 'role',
         header: 'Vai trò',
-        cell: (row) => (
+        priority: 2,
+        render: (row) => (
           <Badge variant={ROLE_BADGE_VARIANT[row.role]} size="sm">
             {ROLE_LABEL[row.role]}
           </Badge>
         ),
-        width: '160px',
       },
       {
         key: 'mfa_enabled',
         header: 'MFA',
         align: 'center',
-        cell: (row) =>
+        render: (row) =>
           row.mfa_enabled ? (
-            <CheckCircle
-              className="h-4 w-4 text-success mx-auto"
-              aria-label="MFA đã bật"
-            />
+            <CheckCircle className="h-4 w-4 text-success mx-auto" aria-label="MFA đã bật" />
           ) : (
-            <X
-              className="h-4 w-4 text-secondary-400 mx-auto"
-              aria-label="MFA chưa bật"
-            />
+            <X className="h-4 w-4 text-secondary-400 mx-auto" aria-label="MFA chưa bật" />
           ),
-        width: '80px',
       },
       {
         key: 'is_active',
         header: 'Trạng thái',
-        cell: (row) => (
+        render: (row) => (
           <Switch
             size="sm"
             checked={row.is_active}
@@ -219,20 +208,18 @@ export default function AdminUsersPage() {
             onCheckedChange={(checked) => handleSwitchChange(row, checked)}
           />
         ),
-        width: '100px',
       },
       {
         key: 'created_at',
         header: 'Ngày tạo',
-        cell: (row) => (
+        render: (row) => (
           <span className="text-body-sm text-text-muted whitespace-nowrap">
             {formatDate(row.created_at)}
           </span>
         ),
-        width: '120px',
       },
     ],
-    [isSuperAdmin, toggling, handleSwitchChange],
+    [isSuperAdmin, toggling, handleSwitchChange]
   )
 
   return (
@@ -283,12 +270,10 @@ export default function AdminUsersPage() {
           size="md"
         />
       ) : (
-        <Table<AdminUser>
+        <DataTable<AdminUser>
           columns={columns}
-          data={users}
-          rowKey="id"
-          stickyHeader
-          striped
+          rows={users}
+          keyField="id"
           emptyMessage="Không có người dùng nào."
         />
       )}
@@ -325,9 +310,7 @@ export default function AdminUsersPage() {
           </>
         }
       >
-        <p className="text-body-sm text-text">
-          Bạn có chắc muốn vô hiệu hóa tài khoản này?
-        </p>
+        <p className="text-body-sm text-text">Bạn có chắc muốn vô hiệu hóa tài khoản này?</p>
         {pendingToggle && (
           <p className={cn('mt-2 text-body-sm font-medium text-text-muted')}>
             {pendingToggle.full_name ?? pendingToggle.email}

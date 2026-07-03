@@ -4,7 +4,7 @@ import * as React from 'react'
 import {
   PageHeader,
   Tabs,
-  Table,
+  DataTable,
   Badge,
   Modal,
   Button,
@@ -13,7 +13,7 @@ import {
   ErrorState,
   CardSkeleton,
 } from '@/design-system'
-import type { Column, TabItem } from '@/design-system'
+import type { DataColumn, TabItem } from '@/design-system'
 import {
   listDoctorsForVerification,
   verifyDoctor,
@@ -196,96 +196,84 @@ export default function AdminDoctorsPage() {
     }
   }, [pending, loadDoctors])
 
-  const columns: Column<DoctorVerificationOut>[] = React.useMemo(
+  const columns: DataColumn<DoctorVerificationOut>[] = React.useMemo(
     () => [
       {
         key: 'full_name',
         header: 'Họ tên',
-        cell: (row) => (
+        priority: 1,
+        render: (row) => (
           <span className="text-body-sm font-medium text-text">{displayName(row)}</span>
         ),
-        width: '180px',
       },
       {
         key: 'specialty',
         header: 'Chuyên khoa',
-        cell: (row) => (
+        priority: 3,
+        render: (row) => (
           <span className="text-body-sm text-text-muted">{row.specialty || '—'}</span>
         ),
-        width: '150px',
       },
       {
         key: 'hospital_name',
         header: 'Bệnh viện',
-        cell: (row) => (
+        render: (row) => (
           <span className="text-body-sm text-text-muted">{row.hospital_name || '—'}</span>
         ),
-        width: '160px',
       },
       {
         key: 'years_experience',
         header: 'Kinh nghiệm',
         align: 'center',
-        cell: (row) => (
+        render: (row) => (
           <span className="text-body-sm text-text-muted whitespace-nowrap">
             {row.years_experience != null ? `${row.years_experience} năm` : '—'}
           </span>
         ),
-        width: '110px',
       },
       {
         key: 'license_no',
         header: 'Số CCHN',
-        cell: (row) => (
+        render: (row) => (
           <span className="text-body-sm text-text-muted">{row.license_no || '—'}</span>
         ),
-        width: '130px',
       },
       {
         key: 'verification_status',
         header: 'Trạng thái',
-        cell: (row) => (
+        priority: 2,
+        render: (row) => (
           <Badge variant={STATUS_BADGE_VARIANT[row.verification_status]} size="sm">
             {STATUS_LABEL[row.verification_status]}
           </Badge>
         ),
-        width: '120px',
-      },
-      {
-        key: 'actions',
-        header: 'Thao tác',
-        align: 'right',
-        cell: (row) => {
-          const kinds = actionsForStatus(row.verification_status)
-          if (kinds.length === 0) {
-            return <span className="text-body-sm text-text-muted">—</span>
-          }
-          return (
-            <div className="flex justify-end gap-2">
-              {kinds.map((kind) => {
-                const action = ACTIONS[kind]
-                return (
-                  <Button
-                    key={kind}
-                    size="sm"
-                    variant={action.buttonVariant}
-                    onClick={() => {
-                      setActionError(null)
-                      setPending({ doctor: row, action })
-                    }}
-                  >
-                    {action.label}
-                  </Button>
-                )
-              })}
-            </div>
-          )
-        },
-        width: '180px',
       },
     ],
-    [],
+    []
   )
+
+  const renderRowActions = React.useCallback((row: DoctorVerificationOut) => {
+    const kinds = actionsForStatus(row.verification_status)
+    if (kinds.length === 0) {
+      return <span className="text-body-sm text-text-muted">—</span>
+    }
+    return kinds.map((kind) => {
+      const action = ACTIONS[kind]
+      return (
+        <Button
+          key={kind}
+          size="sm"
+          variant={action.buttonVariant}
+          onClick={() => {
+            setActionError(null)
+            setPending({ doctor: row, action })
+          }}
+        >
+          {action.label}
+        </Button>
+      )
+    })
+  }, [])
 
   return (
     <div className="px-6 py-6 max-w-7xl mx-auto">
@@ -332,12 +320,11 @@ export default function AdminDoctorsPage() {
           size="md"
         />
       ) : (
-        <Table<DoctorVerificationOut>
+        <DataTable<DoctorVerificationOut>
           columns={columns}
-          data={doctors}
-          rowKey="id"
-          stickyHeader
-          striped
+          rows={doctors}
+          keyField="id"
+          rowActions={renderRowActions}
           emptyMessage="Không có bác sĩ nào."
         />
       )}
