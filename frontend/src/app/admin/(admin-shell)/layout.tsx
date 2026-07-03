@@ -2,7 +2,6 @@
 
 import * as React from 'react'
 import { useRouter, usePathname } from 'next/navigation'
-import { BrandLogo, BrandMark } from '@/components/brand'
 import {
   LayoutDashboard,
   Users,
@@ -13,10 +12,10 @@ import {
   ScrollText,
   ShieldAlert,
   ToggleLeft,
-  LogOut,
 } from 'lucide-react'
-import { AppShell, Sidebar, TopNav, PageLoading } from '@/design-system'
+import { PageLoading } from '@/design-system'
 import type { NavItem } from '@/design-system'
+import { PortalShell } from '@/components/portal/PortalShell'
 import { useAuth } from '@/lib/auth/context'
 import { getRoleHomePath, type UserRole } from '@/lib/api/auth'
 
@@ -91,7 +90,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const { isAuthenticated, isLoading, user, logout } = useAuth()
   const router = useRouter()
   const pathname = usePathname()
-  const [sidebarCollapsed, setSidebarCollapsed] = React.useState(false)
 
   React.useEffect(() => {
     if (isLoading) return
@@ -135,54 +133,19 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         : 'Admin nội bộ'
 
   return (
-    <AppShell
-      sidebar={
-        <Sidebar
-          items={NAV_ITEMS}
-          activeItemId={activeId}
-          onItemClick={handleNavItem}
-          collapsed={sidebarCollapsed}
-          header={
-            <div
-              className={`flex items-center gap-2.5 p-4 ${sidebarCollapsed ? 'justify-center' : ''}`}
-            >
-              {sidebarCollapsed ? (
-                <BrandMark tone="white" className="w-8 h-8 object-contain shrink-0" />
-              ) : (
-                <div className="min-w-0">
-                  <BrandLogo tone="white" className="h-7 w-auto" />
-                  <p className="text-secondary-400 text-body-xs truncate">{roleLabel}</p>
-                </div>
-              )}
-            </div>
-          }
-          userProfile={
-            user ? { name: user.full_name ?? user.email ?? '', role: roleLabel } : undefined
-          }
-          footer={
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="w-full flex items-center gap-2.5 px-3 py-2 text-secondary-400 hover:text-white hover:bg-secondary-800 rounded-md transition-colors text-body-sm"
-            >
-              <LogOut className="w-4 h-4 shrink-0" aria-hidden="true" />
-              {!sidebarCollapsed && <span>Đăng xuất</span>}
-            </button>
-          }
-        />
-      }
-      topNav={
-        <TopNav
-          title="Quản trị MetoCare"
-          onMenuToggle={() => setSidebarCollapsed((p) => !p)}
-          showMenuToggle
-        />
-      }
+    <PortalShell
+      title="Quản trị MetoCare"
+      roleLabel={roleLabel}
+      navItems={NAV_ITEMS}
+      activeItemId={activeId}
+      onNavItem={handleNavItem}
+      onLogout={handleLogout}
       sidebarWidth="lg"
-      sidebarCollapsed={sidebarCollapsed}
-      onSidebarToggle={() => setSidebarCollapsed((p) => !p)}
+      userProfile={
+        user ? { name: user.full_name ?? user.email ?? '', role: roleLabel } : undefined
+      }
     >
       {children}
-    </AppShell>
+    </PortalShell>
   )
 }

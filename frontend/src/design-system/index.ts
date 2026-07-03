@@ -22,6 +22,8 @@ export * from './components/core/Alert';
 export * from './components/core/Modal';
 export * from './components/core/Tabs';
 export * from './components/core/Table';
+export * from './components/core/DataTable';
+export { default as DataTable } from './components/core/DataTable';
 export * from './components/core/EmptyState';
 export * from './components/core/LoadingState';
 export * from './components/core/ErrorState';

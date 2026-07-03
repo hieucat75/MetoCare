@@ -552,6 +552,44 @@
   font-size: 13px !important;  /* bumped from 10px — still fits 5-tab bar */
 }
 
+/* ─────────────────────────────────────────────────────────────────────────
+ * PORTAL app (doctor + admin) — touch-target + typography floor.
+ * Scoped to `.portal-app` (applied on the doctor/admin AppShell root by
+ * PortalShell). Mirrors the intent of `.patient-app` but far lighter: it only
+ * guarantees a 16px body and 44px touch targets on small/touch screens, and
+ * never restyles surfaces. Desktop (>= lg) is left untouched so the dense
+ * always-expanded sidebar keeps its compact look. Never affects `.patient-app`.
+ * ──────────────────────────────────────────────────────────────────────── */
+.portal-app {
+  font-size: 16px; /* body >= 16px */
+}
+
+@media (max-width: 1023px) {
+  /* Interactive elements get a 44px minimum touch target below `lg`. Most
+   * design-system controls are inline-flex + items-center, so min-height
+   * simply pads the tap area without shifting the label. */
+  .portal-app a,
+  .portal-app button,
+  .portal-app [role='button'],
+  .portal-app [role='combobox'],
+  .portal-app select,
+  .portal-app input:not([type='checkbox']):not([type='radio']),
+  .portal-app textarea {
+    min-height: 44px;
+  }
+
+  /* Keep text legible on small screens. */
+  .portal-app,
+  .portal-app p,
+  .portal-app li,
+  .portal-app td,
+  .portal-app input,
+  .portal-app textarea,
+  .portal-app select {
+    font-size: 16px;
+  }
+}
+
 /* ── Meto Aura animations ──────────────────────────────────────────────────── */
 @keyframes meto-breathe {
   0%, 100% { transform: scale(1); opacity: 0.9; }
