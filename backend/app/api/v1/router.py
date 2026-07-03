@@ -6,6 +6,7 @@ from fastapi import APIRouter
 
 from .routes import (
     admin,
+    admin_patients,
     ai,
     ai_sessions,
     auth,
@@ -43,6 +44,7 @@ api_router.include_router(lab_reference.router)
 api_router.include_router(ai.router)
 api_router.include_router(consent.router)
 api_router.include_router(admin.router)
+api_router.include_router(admin_patients.router)
 api_router.include_router(encounters.router)
 api_router.include_router(care_plans.router)
 api_router.include_router(ai_sessions.router)

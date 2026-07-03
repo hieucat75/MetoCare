@@ -3,11 +3,12 @@
 Represents an in-app notification delivered to a user.
 
 Notification types:
-  appointment_reminder  — upcoming appointment reminder
-  health_alert          — health metric threshold exceeded
-  lab_ready             — lab results are available
-  care_plan_update      — care plan was updated by doctor
-  system                — generic platform/system message
+  appointment_reminder     — upcoming appointment reminder
+  health_alert             — health metric threshold exceeded
+  lab_ready                — lab results are available
+  care_plan_update         — care plan was updated by doctor
+  system                   — generic platform/system message
+  profile_update_requested — admin asked the patient to update their profile
 """
 
 from __future__ import annotations
@@ -31,6 +32,7 @@ NOTIFICATION_TYPES = frozenset(
         "lab_ready",
         "care_plan_update",
         "system",
+        "profile_update_requested",
     }
 )
 
