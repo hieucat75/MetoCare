@@ -7,7 +7,13 @@ import { computeTrend, refBarGeometry } from '@/lib/metrics/kpi'
 import type { MetricSeries } from '@/lib/metrics/kpi'
 import { healthMetricStatus, metricIcon } from './metricVisuals'
 import { Sparkline } from './Sparkline'
-import { formatLabValue, displayValueOf, displayUnitOf, displayInlineOf, plotValueOf } from '@/lib/utils/formatLabValue'
+import {
+  formatLabValue,
+  displayValueOf,
+  displayUnitOf,
+  displayInlineOf,
+  plotValueOf,
+} from '@/lib/utils/formatLabValue'
 
 // ── Status colour tokens ──────────────────────────────────────────────────────
 
@@ -58,11 +64,12 @@ function ThreeZoneBar({ series, hue }: { series: MetricSeries; hue: string }) {
   const s2w = normalEndPct - normalStartPct
   const s3w = 100 - normalEndPct
 
-  const [c1, c2, c3] = series.higherIsBetter === true
-    ? [ZONE_RED, ZONE_GREEN, ZONE_GREEN]
-    : s1w < 2
-      ? [ZONE_GREEN, ZONE_GREEN, ZONE_RED]
-      : [ZONE_AMBER, ZONE_GREEN, ZONE_RED]
+  const [c1, c2, c3] =
+    series.higherIsBetter === true
+      ? [ZONE_RED, ZONE_GREEN, ZONE_GREEN]
+      : s1w < 2
+        ? [ZONE_GREEN, ZONE_GREEN, ZONE_RED]
+        : [ZONE_AMBER, ZONE_GREEN, ZONE_RED]
 
   return (
     <div className="relative h-[14px]">
@@ -122,7 +129,8 @@ function fmtDelta(series: MetricSeries): { text: string; color: string } | null 
   const delta = plotValueOf(latest) - plotValueOf(prev)
   if (Math.abs(delta) < 0.001) return null
   const direction = delta > 0 ? 'up' : 'down'
-  const good = series.higherIsBetter === null ? null : series.higherIsBetter === (direction === 'up')
+  const good =
+    series.higherIsBetter === null ? null : series.higherIsBetter === (direction === 'up')
   const arrow = direction === 'up' ? '↑' : '↓'
   const formatted = formatLabValue(Math.abs(delta), latest.original_unit ?? latestUnit)
   const color = good ? '#15915A' : '#C0221A'

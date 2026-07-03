@@ -26,12 +26,14 @@ describe('ConsentStep', () => {
     for (const point of CONSENT_SUMMARY) {
       expect(screen.getByText(point)).toBeInTheDocument()
     }
-    expect(
-      screen.getByRole('link', { name: /Xem đầy đủ Điều khoản sử dụng/ }),
-    ).toHaveAttribute('href', '/terms')
-    expect(
-      screen.getByRole('link', { name: /Xem Chính sách quyền riêng tư/ }),
-    ).toHaveAttribute('href', '/privacy')
+    expect(screen.getByRole('link', { name: /Xem đầy đủ Điều khoản sử dụng/ })).toHaveAttribute(
+      'href',
+      '/terms'
+    )
+    expect(screen.getByRole('link', { name: /Xem Chính sách quyền riêng tư/ })).toHaveAttribute(
+      'href',
+      '/privacy'
+    )
   })
 
   it('keeps the primary CTA disabled until the checkbox is checked', async () => {

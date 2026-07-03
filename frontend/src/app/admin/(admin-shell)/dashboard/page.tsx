@@ -14,12 +14,7 @@ import {
   ArrowRight,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import {
-  PageHeader,
-  Card,
-  CardSkeleton,
-  ErrorState,
-} from '@/design-system'
+import { PageHeader, Card, CardSkeleton, ErrorState } from '@/design-system'
 import { getAdminStats, type AdminStats } from '@/lib/api/admin'
 
 // ---------------------------------------------------------------------------
@@ -39,16 +34,14 @@ function StatCard({ label, value, Icon, accentClass }: StatCardProps) {
       <span
         className={cn(
           'inline-flex items-center justify-center h-12 w-12 rounded-xl shrink-0',
-          accentClass ?? 'bg-secondary-100 text-secondary-600',
+          accentClass ?? 'bg-secondary-100 text-secondary-600'
         )}
       >
         <Icon className="h-6 w-6" aria-hidden="true" />
       </span>
       <div className="min-w-0">
         <p className="text-body-xs text-text-muted">{label}</p>
-        <p className="text-display-xs font-bold text-text leading-tight">
-          {value ?? '—'}
-        </p>
+        <p className="text-display-xs font-bold text-text leading-tight">{value ?? '—'}</p>
       </div>
     </Card>
   )
@@ -121,11 +114,7 @@ export default function AdminDashboardPage() {
             ))}
           </div>
         ) : error ? (
-          <ErrorState
-            variant="inline"
-            title={error}
-            onRetry={loadStats}
-          />
+          <ErrorState variant="inline" title={error} onRetry={loadStats} />
         ) : (
           <>
             {/* Row 1 — User stats */}

@@ -34,7 +34,9 @@ describe('PatientPrimaryFab', () => {
 
   it('uses the default neu-btn-primary skin when no className is given', () => {
     render(<PatientPrimaryFab ariaLabel="Ghi chỉ số" onClick={() => {}} />)
-    expect(screen.getByRole('button', { name: 'Ghi chỉ số' }).className).toContain('neu-btn-primary')
+    expect(screen.getByRole('button', { name: 'Ghi chỉ số' }).className).toContain(
+      'neu-btn-primary'
+    )
   })
 
   it('replaces the default skin when className is provided (e.g. medications)', () => {

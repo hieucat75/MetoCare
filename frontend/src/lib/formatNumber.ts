@@ -30,29 +30,29 @@ type Rule = [RegExp, number]
  */
 const UNIT_RULES: Rule[] = [
   // ── 0 decimals (integer display) ──────────────────────────────────────
-  [/mg\/dl/i, 0],                     // mg/dL: glucose, cholesterol, etc.
-  [/µmol\/l|umol\/l|μmol\/l/i, 0],   // µmol/L: creatinine, bilirubin, uric acid
-  [/mmhg/i, 0],                       // mmHg: blood pressure
-  [/\bbpm\b|beats?\/min/i, 0],        // bpm: heart rate
-  [/\bu\/l\b|\biu\/l\b/i, 0],         // IU/L, U/L: enzyme units (AST, ALT, GGT, ALP)
-  [/ml\/min/i, 0],                    // mL/min: eGFR (mL/min/1.73m²)
-  [/\/µl\b|\/ul\b/i, 0],             // cells/µL: differential counts
-  [/^cm$/i, 0],                       // cm: height, waist
+  [/mg\/dl/i, 0], // mg/dL: glucose, cholesterol, etc.
+  [/µmol\/l|umol\/l|μmol\/l/i, 0], // µmol/L: creatinine, bilirubin, uric acid
+  [/mmhg/i, 0], // mmHg: blood pressure
+  [/\bbpm\b|beats?\/min/i, 0], // bpm: heart rate
+  [/\bu\/l\b|\biu\/l\b/i, 0], // IU/L, U/L: enzyme units (AST, ALT, GGT, ALP)
+  [/ml\/min/i, 0], // mL/min: eGFR (mL/min/1.73m²)
+  [/\/µl\b|\/ul\b/i, 0], // cells/µL: differential counts
+  [/^cm$/i, 0], // cm: height, waist
   // ── 2 decimals ────────────────────────────────────────────────────────
-  [/g\/dl/i, 2],                      // g/dL: haemoglobin (fixed 2 decimals per spec)
+  [/g\/dl/i, 2], // g/dL: haemoglobin (fixed 2 decimals per spec)
   // ── 1 decimal ─────────────────────────────────────────────────────────
-  [/mmol\/l/i, 1],                    // mmol/L: most chemistry panels
-  [/%/, 1],                           // %: HbA1c, eGFR %
-  [/kg\/m[²2]/i, 1],                  // kg/m²: BMI
-  [/°[cf]|celsius|fahrenheit/i, 1],   // temperature
-  [/^kg$/i, 1],                       // kg: weight
-  [/g\/l/i, 1],                       // g/L: protein, WBC, PLT
-  [/t\/l/i, 1],                       // T/L: RBC
-  [/meq\/l/i, 1],                     // mEq/L: electrolytes
-  [/pmol\/l/i, 1],                    // pmol/L: thyroid (T3, T4)
-  [/nmol\/l/i, 1],                    // nmol/L: vitamin D, cortisol
-  [/miu\/l|miu\/ml/i, 2],            // mIU/L: TSH, FSH, LH, β-hCG (2 dp: 0.03 not 0.0)
-  [/iu\/ml\b/i, 1],                   // IU/mL: antibody titres
+  [/mmol\/l/i, 1], // mmol/L: most chemistry panels
+  [/%/, 1], // %: HbA1c, eGFR %
+  [/kg\/m[²2]/i, 1], // kg/m²: BMI
+  [/°[cf]|celsius|fahrenheit/i, 1], // temperature
+  [/^kg$/i, 1], // kg: weight
+  [/g\/l/i, 1], // g/L: protein, WBC, PLT
+  [/t\/l/i, 1], // T/L: RBC
+  [/meq\/l/i, 1], // mEq/L: electrolytes
+  [/pmol\/l/i, 1], // pmol/L: thyroid (T3, T4)
+  [/nmol\/l/i, 1], // nmol/L: vitamin D, cortisol
+  [/miu\/l|miu\/ml/i, 2], // mIU/L: TSH, FSH, LH, β-hCG (2 dp: 0.03 not 0.0)
+  [/iu\/ml\b/i, 1], // IU/mL: antibody titres
 ]
 
 /**
@@ -100,7 +100,7 @@ const MISSING = '—'
  */
 export function formatLabValue(
   value: number | string | null | undefined,
-  unit?: string | null,
+  unit?: string | null
 ): string {
   // Guard: missing / empty
   if (value == null) return MISSING
@@ -108,18 +108,14 @@ export function formatLabValue(
   // String input: try to parse; if non-numeric pass through as-is
   if (typeof value === 'string') {
     const parsed = parseFloat(value)
-    if (isNaN(parsed)) return value   // e.g. "<5", "negative" — return literal
+    if (isNaN(parsed)) return value // e.g. "<5", "negative" — return literal
     return formatLabValue(parsed, unit)
   }
 
   // Guard: not a finite number
   if (!isFinite(value)) return MISSING
 
-  const decimals = unit
-    ? resolveDecimals(unit, value)
-    : Number.isInteger(value)
-      ? 0
-      : 1
+  const decimals = unit ? resolveDecimals(unit, value) : Number.isInteger(value) ? 0 : 1
 
   return value.toFixed(decimals)
 }
@@ -144,7 +140,7 @@ export function formatLabValue(
  */
 export function formatLabDisplay(
   value: number | string | null | undefined,
-  unit?: string | null,
+  unit?: string | null
 ): string {
   const formatted = formatLabValue(value, unit)
   if (formatted === MISSING) return MISSING
@@ -174,10 +170,7 @@ export interface DisplayableLabValue {
 }
 
 /** The unit a patient should read — original as-recorded, never the canonical. */
-export function displayUnitOf(
-  m: DisplayableLabValue,
-  fallbackUnit?: string | null,
-): string {
+export function displayUnitOf(m: DisplayableLabValue, fallbackUnit?: string | null): string {
   const u = m.original_unit ?? m.unit ?? fallbackUnit ?? ''
   return (u ?? '').trim()
 }
@@ -186,10 +179,7 @@ export function displayUnitOf(
  * The value TEXT a patient should read — formatted in the ORIGINAL unit.
  * Never the canonical/converted number and never a raw float.
  */
-export function displayValueOf(
-  m: DisplayableLabValue,
-  fallbackUnit?: string | null,
-): string {
+export function displayValueOf(m: DisplayableLabValue, fallbackUnit?: string | null): string {
   const unit = m.original_unit ?? m.unit ?? fallbackUnit ?? null
   const value = m.original_value ?? m.value
   return formatLabValue(value, unit)
@@ -199,10 +189,7 @@ export function displayValueOf(
  * Combined "value unit" string (e.g. "88 µmol/L"). Prefers the backend
  * `display` string; otherwise formats the original value + unit.
  */
-export function displayInlineOf(
-  m: DisplayableLabValue,
-  fallbackUnit?: string | null,
-): string {
+export function displayInlineOf(m: DisplayableLabValue, fallbackUnit?: string | null): string {
   if (m.display && m.display.trim() !== '') return m.display.trim()
   const unit = m.original_unit ?? m.unit ?? fallbackUnit ?? null
   return formatLabDisplay(m.original_value ?? m.value, unit)
