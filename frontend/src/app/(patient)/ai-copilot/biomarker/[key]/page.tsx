@@ -145,9 +145,7 @@ export default function BiomarkerDetailPage() {
             ? `${unit.ref_range.low} – ${unit.ref_range.high}`
             : `≤ ${unit.ref_range.high}`
         const attentionReason =
-          status.key !== 'normal'
-            ? computeAttentionReason(status.key, unit, higherIsBetter)
-            : ''
+          status.key !== 'normal' ? computeAttentionReason(status.key, unit, higherIsBetter) : ''
         const prevMetric = history.length > 1 ? history[1] : null
         setLiveData({
           value: latest.original_value ?? latest.value,
@@ -163,7 +161,9 @@ export default function BiomarkerDetailPage() {
           higherIsBetter,
         })
       })
-      .catch(() => {/* silently fall back to mock */})
+      .catch(() => {
+        /* silently fall back to mock */
+      })
     return () => {
       alive = false
     }
@@ -178,7 +178,7 @@ export default function BiomarkerDetailPage() {
   const displayStatus = liveData !== null ? liveData.statusLevel : bio.status
   const displayRiskText = liveData !== null ? liveData.riskText : bio.riskText
   const displayGaugePosition = liveData !== null ? liveData.gaugePosition : bio.gaugePosition
-  const displayPrev = liveData !== null ? liveData.prev : (bio.prev ? parseFloat(bio.prev) : null)
+  const displayPrev = liveData !== null ? liveData.prev : bio.prev ? parseFloat(bio.prev) : null
   const displayConclusion =
     liveData !== null && bio.conclusionByStatus
       ? (bio.conclusionByStatus[liveData.statusKey] ?? bio.conclusion)
@@ -189,8 +189,7 @@ export default function BiomarkerDetailPage() {
   const gaugeColor =
     displayGaugePosition < 40 ? '#22C55E' : displayGaugePosition < 65 ? '#F59E0B' : '#EF4444'
 
-  const prevDir =
-    displayPrev !== null && displayPrev < displayValue ? 'up' : 'down'
+  const prevDir = displayPrev !== null && displayPrev < displayValue ? 'up' : 'down'
 
   return (
     <div className="pb-24 max-w-md mx-auto">

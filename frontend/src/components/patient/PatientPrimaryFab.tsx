@@ -51,7 +51,13 @@ export function PatientPrimaryFab({
   }
 
   return (
-    <button type="button" aria-label={ariaLabel} onClick={onClick} className={classes} style={style}>
+    <button
+      type="button"
+      aria-label={ariaLabel}
+      onClick={onClick}
+      className={classes}
+      style={style}
+    >
       {content}
     </button>
   )

@@ -209,9 +209,7 @@ export default function AdminDoctorsPage() {
       {
         key: 'specialty',
         header: 'Chuyên khoa',
-        cell: (row) => (
-          <span className="text-body-sm text-text-muted">{row.specialty || '—'}</span>
-        ),
+        cell: (row) => <span className="text-body-sm text-text-muted">{row.specialty || '—'}</span>,
         width: '150px',
       },
       {
@@ -284,11 +282,11 @@ export default function AdminDoctorsPage() {
         width: '180px',
       },
     ],
-    [],
+    []
   )
 
   return (
-    <div className="px-6 py-6 max-w-7xl mx-auto">
+    <div className="px-6 py-6">
       <PageHeader
         title="Hàng chờ duyệt bác sĩ"
         subtitle="Duyệt, từ chối hoặc tạm ngưng hồ sơ bác sĩ trong marketplace"

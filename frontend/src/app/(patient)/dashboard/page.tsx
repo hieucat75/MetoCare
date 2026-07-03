@@ -45,7 +45,12 @@ import { METRIC_TYPE_TO_SLUG } from '@/lib/ai-copilot/slugMap'
 import { groupMetricsByCategory, type MetricSeries } from '@/lib/metrics/kpi'
 import { useLabReference } from '@/lib/api/labReference'
 import { cn } from '@/lib/utils'
-import { formatLabValue, displayValueOf, displayUnitOf, plotValueOf } from '@/lib/utils/formatLabValue'
+import {
+  formatLabValue,
+  displayValueOf,
+  displayUnitOf,
+  plotValueOf,
+} from '@/lib/utils/formatLabValue'
 
 // ─── Data model ───────────────────────────────────────────────────────────────
 

@@ -77,6 +77,20 @@ def deactivate_user(
     return user
 
 
+def activate_user(db: Session, user_id: str) -> User:
+    """Set is_active=True for the given user (re-activation has no role guards).
+
+    Raises:
+        ValueError: if the target user does not exist.
+    """
+    user = db.get(User, user_id)
+    if user is None:
+        raise ValueError(f"User {user_id} not found")
+    user.is_active = True
+    db.flush()
+    return user
+
+
 def get_user_audit_log(
     db: Session,
     user_id: str,

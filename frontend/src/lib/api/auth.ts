@@ -41,7 +41,7 @@ export interface AccountUpdate {
 
 export async function changePassword(
   currentPassword: string,
-  newPassword: string,
+  newPassword: string
 ): Promise<{ message: string }> {
   return api.post<{ message: string }>('/auth/change-password', {
     current_password: currentPassword,
@@ -74,7 +74,7 @@ export function looksLikePhone(input: string): boolean {
 export async function login(
   identifier: AuthIdentifier,
   password: string,
-  totpCode?: string,
+  totpCode?: string
 ): Promise<TokenResponse> {
   const body: Record<string, string> = { password, ...identifier }
   if (totpCode) body.totp_code = totpCode
@@ -99,12 +99,12 @@ export async function register(
   identifier: AuthIdentifier,
   password: string,
   fullName?: string,
-  consent?: ConsentPayload,
+  consent?: ConsentPayload
 ): Promise<TokenResponse> {
   const res = await api.post<TokenResponse>(
     '/auth/register',
     { ...identifier, password, full_name: fullName, ...(consent ? { consent } : {}) },
-    { skipAuth: true },
+    { skipAuth: true }
   )
   setTokens(res.access_token, res.refresh_token)
   return res
@@ -133,6 +133,32 @@ export async function mfaEnroll(): Promise<MfaEnrollResponse> {
 
 export async function mfaVerify(totpCode: string): Promise<{ message: string }> {
   return api.post<{ message: string }>('/auth/mfa/verify', { totp_code: totpCode })
+}
+
+/** Roles for which MFA is mandatory (mirrors backend MFA_REQUIRED_ROLES). */
+export const MFA_REQUIRED_ROLES: readonly UserRole[] = [
+  'doctor',
+  'medical_reviewer',
+  'internal_admin',
+  'super_admin',
+  'clinic_admin',
+]
+
+/**
+ * True when a user must complete MFA enrollment before reaching protected
+ * resources: their role mandates MFA but they have not enabled it yet.
+ *
+ * `mfaEnabledOrVerified` accepts either the user's `mfa_enabled` flag (from
+ * /auth/me) or a login response's `mfa` claim — both are false precisely when
+ * enrollment is still due, so the same check works in either place.
+ */
+export function needsMfaEnrollment(role: UserRole, mfaEnabledOrVerified: boolean): boolean {
+  return MFA_REQUIRED_ROLES.includes(role) && !mfaEnabledOrVerified
+}
+
+/** Where to send a user right after login: enrollment gate or their role home. */
+export function getPostLoginPath(role: UserRole, mfaEnabledOrVerified: boolean): string {
+  return needsMfaEnrollment(role, mfaEnabledOrVerified) ? '/mfa-setup' : getRoleHomePath(role)
 }
 
 export function getRoleHomePath(role: UserRole): string {

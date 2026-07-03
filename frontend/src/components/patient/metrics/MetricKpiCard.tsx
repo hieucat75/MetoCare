@@ -53,11 +53,16 @@ export function MetricKpiCard({ series, theme, onOpen }: Props) {
       <p className="mt-3 text-[16px] text-neu-muted">{label}</p>
       <p className="mt-0.5 flex items-baseline gap-1">
         {/* a11y: metric value — 40px bold (was 26px) */}
-        <span className="font-extrabold leading-none tracking-[-0.02em] text-neu-text" style={{ fontSize: '40px' }}>
+        <span
+          className="font-extrabold leading-none tracking-[-0.02em] text-neu-text"
+          style={{ fontSize: '40px' }}
+        >
           {displayValueOf(latest, canonicalUnit)}
         </span>
         {/* a11y: unit — 18px medium (was 13px) */}
-        <span className="font-medium text-neu-muted" style={{ fontSize: '18px' }}>{unitLabel}</span>
+        <span className="font-medium text-neu-muted" style={{ fontSize: '18px' }}>
+          {unitLabel}
+        </span>
       </p>
 
       <div className="mt-3">

@@ -97,7 +97,7 @@ export default function AuditLogsPage() {
         setLoadingMore(false)
       }
     },
-    [appliedResourceType, appliedAction],
+    [appliedResourceType, appliedAction]
   )
 
   // Initial load and reload when applied filters change
@@ -131,17 +131,18 @@ export default function AuditLogsPage() {
         header: 'Thời gian',
         cell: (row) => (
           <span className="text-body-sm text-text-muted whitespace-nowrap">
-            {formatDateTime(row.occurred_at)}
+            {row.occurred_at ? formatDateTime(row.occurred_at) : '—'}
           </span>
         ),
         width: '170px',
       },
       {
-        key: 'actor_email',
+        key: 'actor_id',
         header: 'Người thực hiện',
         cell: (row) => (
           <span className="text-body-sm text-text">
-            {row.actor_email ?? row.actor_id.slice(0, 8)}
+            {row.actor_type}
+            {row.actor_id ? ` · ${row.actor_id.slice(0, 8)}` : ''}
           </span>
         ),
         width: '200px',
@@ -153,7 +154,7 @@ export default function AuditLogsPage() {
           <span
             className={cn(
               'font-mono text-body-xs bg-secondary-100 px-2 py-0.5 rounded',
-              'text-text whitespace-nowrap',
+              'text-text whitespace-nowrap'
             )}
           >
             {row.action}
@@ -173,21 +174,19 @@ export default function AuditLogsPage() {
         width: '180px',
       },
       {
-        key: 'ip_address',
-        header: 'IP',
+        key: 'outcome',
+        header: 'Kết quả',
         cell: (row) => (
-          <span className="text-body-sm text-text-muted font-mono">
-            {row.ip_address ?? '—'}
-          </span>
+          <span className="text-body-sm text-text-muted font-mono">{row.outcome ?? '—'}</span>
         ),
         width: '130px',
       },
     ],
-    [],
+    []
   )
 
   return (
-    <div className="px-6 py-6 max-w-7xl mx-auto">
+    <div className="px-6 py-6">
       <PageHeader title="Nhật ký kiểm tra" />
 
       {/* Info alert */}
@@ -251,12 +250,7 @@ export default function AuditLogsPage() {
           {/* Load more */}
           {hasMore && (
             <div className="mt-4 flex justify-center">
-              <Button
-                variant="outline"
-                size="sm"
-                loading={loadingMore}
-                onClick={handleLoadMore}
-              >
+              <Button variant="outline" size="sm" loading={loadingMore} onClick={handleLoadMore}>
                 Tải thêm ({total - logs.length} còn lại)
               </Button>
             </div>

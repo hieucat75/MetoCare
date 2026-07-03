@@ -16,7 +16,12 @@ import {
   type MetricType,
 } from '@/lib/api/patient'
 import { formatRefRange, useLabReference } from '@/lib/api/labReference'
-import { formatLabValue, displayValueOf, displayUnitOf, plotValueOf } from '@/lib/utils/formatLabValue'
+import {
+  formatLabValue,
+  displayValueOf,
+  displayUnitOf,
+  plotValueOf,
+} from '@/lib/utils/formatLabValue'
 import {
   groupMetricsByCategory,
   computeTrend,
@@ -24,10 +29,7 @@ import {
   type CategoryTheme,
 } from '@/lib/metrics/kpi'
 import { MetricLineChart } from '@/components/patient/metrics/MetricLineChart'
-import {
-  metricIcon,
-  type NeuTone,
-} from '@/components/patient/metrics/metricVisuals'
+import { metricIcon, type NeuTone } from '@/components/patient/metrics/metricVisuals'
 import { RecordActions } from '@/components/records/RecordActions'
 import { EditMetricModal } from '@/components/records/EditMetricModal'
 import { DeleteConfirmDialog } from '@/components/records/DeleteConfirmDialog'
@@ -165,7 +167,10 @@ export default function MetricDetailPage() {
           metric={editTarget}
           isOpen={!!editTarget}
           onClose={() => setEditTarget(null)}
-          onSuccess={() => { setEditTarget(null); load() }}
+          onSuccess={() => {
+            setEditTarget(null)
+            load()
+          }}
           patientId={patientId}
         />
       )}
@@ -229,7 +234,9 @@ function MetricDetailBody({
   // Stats + chart plot ORIGINAL values so no canonical/raw float is ever shown.
   const values = rows.map(plotValueOf)
 
-  const avg = values.length ? values.reduce((a, b) => a + b, 0) / values.length : plotValueOf(latest)
+  const avg = values.length
+    ? values.reduce((a, b) => a + b, 0) / values.length
+    : plotValueOf(latest)
   const lo = Math.min(...values)
   const hi = Math.max(...values)
   const trend = computeTrend(rows, higherIsBetter)
@@ -270,7 +277,9 @@ function MetricDetailBody({
             {/* a11y: avg label — 15px (was 11.5px), avg value — 32px (was 24px) */}
             <p className="text-[15px] text-neu-muted">Trung bình {periodLabel}</p>
             <p className="mt-0.5">
-              <span className="text-[32px] font-extrabold text-neu-text">{formatLabValue(avg, unitLabel)}</span>
+              <span className="text-[32px] font-extrabold text-neu-text">
+                {formatLabValue(avg, unitLabel)}
+              </span>
               <span className="ml-1 text-[16px] font-semibold text-neu-muted">{unitLabel}</span>
             </p>
           </div>
@@ -299,8 +308,18 @@ function MetricDetailBody({
 
       {/* Min / Max / Count chips */}
       <div className="grid grid-cols-3 gap-2.5">
-        <StatChip label="Thấp nhất" value={formatLabValue(lo, unitLabel)} tint="#E3F5EC" color="#15915A" />
-        <StatChip label="Cao nhất" value={formatLabValue(hi, unitLabel)} tint="#FCEFC9" color="#C77A06" />
+        <StatChip
+          label="Thấp nhất"
+          value={formatLabValue(lo, unitLabel)}
+          tint="#E3F5EC"
+          color="#15915A"
+        />
+        <StatChip
+          label="Cao nhất"
+          value={formatLabValue(hi, unitLabel)}
+          tint="#FCEFC9"
+          color="#C77A06"
+        />
         <StatChip label="Lần đo" value={rows.length} tint="#E8EEF7" color="#2563EB" />
       </div>
 
@@ -449,7 +468,10 @@ function HistoryRow({
       <div className="min-w-0 flex-1">
         {/* a11y: history row value — 18px (was 14px), unit — 15px (was 11px) */}
         <p className="text-[18px] font-bold text-neu-text">
-          {displayValueOf(metric, unitLabel)} <span className="text-[15px] font-medium text-neu-muted">{displayUnitOf(metric, unitLabel)}</span>
+          {displayValueOf(metric, unitLabel)}{' '}
+          <span className="text-[15px] font-medium text-neu-muted">
+            {displayUnitOf(metric, unitLabel)}
+          </span>
         </p>
         {/* a11y: timestamp — 15px (was 11.5px) */}
         <p className="mt-0.5 text-[15px] text-neu-muted">{formatWhen(metric.measured_at)}</p>
@@ -460,13 +482,16 @@ function HistoryRow({
           {status.label}
         </NeuBadge>
       )}
-      <RecordActions onEdit={onEdit} onDelete={onDelete} label={metricUnit(metric.metric_type as MetricType) ?? metric.metric_type} />
+      <RecordActions
+        onEdit={onEdit}
+        onDelete={onDelete}
+        label={metricUnit(metric.metric_type as MetricType) ?? metric.metric_type}
+      />
     </div>
   )
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
 
 function formatWhen(iso: string): string {
   const d = new Date(iso)

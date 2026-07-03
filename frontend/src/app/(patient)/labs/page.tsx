@@ -439,10 +439,7 @@ export default function LabsPage() {
         </Link>
 
         {/* Manual entry — FAB */}
-        <PatientPrimaryFab
-          ariaLabel="Nhập kết quả thủ công"
-          onClick={() => setModalOpen(true)}
-        />
+        <PatientPrimaryFab ariaLabel="Nhập kết quả thủ công" onClick={() => setModalOpen(true)} />
 
         <LabEntryModal
           open={modalOpen}
