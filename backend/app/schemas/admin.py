@@ -15,7 +15,9 @@ from app.models.user import UserRole
 
 class UserAdminOut(BaseModel):
     id: str
-    email: str
+    # Patients self-register by phone, so email can be NULL (one of email/phone set).
+    email: str | None
+    phone: str | None = None
     role: str
     full_name: str | None
     is_active: bool

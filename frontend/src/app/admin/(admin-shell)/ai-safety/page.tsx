@@ -13,7 +13,13 @@ import {
   ErrorState,
   CardSkeleton,
 } from '@/design-system'
-import { getAiSessions, reviewAiSession, type AiSession, type AiSafetyLevel, type AiSessionFlag } from '@/lib/api/admin'
+import {
+  getAiSessions,
+  reviewAiSession,
+  type AiSession,
+  type AiSafetyLevel,
+  type AiSessionFlag,
+} from '@/lib/api/admin'
 
 // ---------------------------------------------------------------------------
 // Safety level config
@@ -121,10 +127,7 @@ function AiSessionCard({ session, onReviewed }: SessionCardProps) {
     <Card
       variant="default"
       padding="md"
-      className={cn(
-        'flex flex-col gap-3',
-        session.safety_level === 'urgent' && 'border-danger/40',
-      )}
+      className={cn('flex flex-col gap-3', session.safety_level === 'urgent' && 'border-danger/40')}
     >
       {/* Header row */}
       <div className="flex items-start justify-between gap-3">
@@ -132,9 +135,7 @@ function AiSessionCard({ session, onReviewed }: SessionCardProps) {
           <p className="text-body-sm font-semibold text-text truncate">
             {session.patient_name ?? 'Bệnh nhân ẩn danh'}
           </p>
-          <p className="text-body-xs text-text-muted mt-0.5">
-            {session.explanation_type}
-          </p>
+          <p className="text-body-xs text-text-muted mt-0.5">{session.explanation_type}</p>
         </div>
         <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
           <Badge variant={SAFETY_VARIANT[session.safety_level]} size="sm">
@@ -150,9 +151,7 @@ function AiSessionCard({ session, onReviewed }: SessionCardProps) {
 
       {/* Footer row */}
       <div className="flex items-center justify-between gap-3 pt-2 border-t border-border">
-        <p className="text-body-xs text-text-muted">
-          {formatDateTime(session.created_at)}
-        </p>
+        <p className="text-body-xs text-text-muted">{formatDateTime(session.created_at)}</p>
         {isReviewed ? (
           <div className="flex items-center gap-1.5 text-success">
             <CheckCircle className="h-4 w-4 shrink-0" aria-hidden="true" />
@@ -165,12 +164,7 @@ function AiSessionCard({ session, onReviewed }: SessionCardProps) {
             )}
           </div>
         ) : (
-          <Button
-            variant="outline"
-            size="xs"
-            loading={reviewing}
-            onClick={handleReview}
-          >
+          <Button variant="outline" size="xs" loading={reviewing} onClick={handleReview}>
             Đánh dấu đã xem xét
           </Button>
         )}
@@ -215,7 +209,7 @@ export default function AiSafetyPage() {
   const filteredSessions = filterSessions(sessions, activeTab)
 
   return (
-    <div className="px-6 py-6 max-w-5xl mx-auto">
+    <div className="px-6 py-6">
       <PageHeader
         title="Giám sát an toàn AI"
         actions={
@@ -229,8 +223,8 @@ export default function AiSafetyPage() {
 
       {/* Safety alert */}
       <Alert variant="warning" className="mb-6">
-        Các phiên AI với safety_level=&apos;urgent&apos; hoặc có gắn cờ cần được xem xét. Nội
-        dung AI không thay thế chẩn đoán bác sĩ.
+        Các phiên AI với safety_level=&apos;urgent&apos; hoặc có gắn cờ cần được xem xét. Nội dung
+        AI không thay thế chẩn đoán bác sĩ.
       </Alert>
 
       {/* Filter tabs */}
@@ -245,7 +239,7 @@ export default function AiSafetyPage() {
               'border-b-2 -mb-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30',
               activeTab === tab.id
                 ? 'border-primary text-primary'
-                : 'border-transparent text-text-muted hover:text-text hover:border-border',
+                : 'border-transparent text-text-muted hover:text-text hover:border-border'
             )}
           >
             {tab.label}
@@ -277,11 +271,7 @@ export default function AiSafetyPage() {
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {filteredSessions.map((session) => (
-            <AiSessionCard
-              key={session.id}
-              session={session}
-              onReviewed={handleSessionReviewed}
-            />
+            <AiSessionCard key={session.id} session={session} onReviewed={handleSessionReviewed} />
           ))}
         </div>
       )}

@@ -23,13 +23,14 @@ export type AdminUserRole = 'patient' | 'doctor' | 'medical_reviewer' | 'interna
 
 export interface AdminUser {
   id: string
-  email: string
+  // Patients register by phone, so email can be null (one of email/phone set).
+  email: string | null
+  phone?: string | null
   full_name: string | null
   role: AdminUserRole
   is_active: boolean
   mfa_enabled: boolean
   created_at: string
-  last_login_at: string | null
 }
 
 export interface AdminUserListResponse {
@@ -37,6 +38,10 @@ export interface AdminUserListResponse {
   items: AdminUser[]
 }
 
+/**
+ * Backend GET /admin/users returns a plain array and supports skip/limit/role
+ * only — `search` is filtered client-side over the fetched page.
+ */
 export async function getUsers(params?: {
   role?: AdminUserRole
   search?: string
@@ -45,11 +50,20 @@ export async function getUsers(params?: {
 }): Promise<AdminUserListResponse> {
   const qs = new URLSearchParams()
   if (params?.role) qs.set('role', params.role)
-  if (params?.search) qs.set('search', params.search)
   if (params?.limit) qs.set('limit', String(params.limit))
-  if (params?.offset) qs.set('offset', String(params.offset))
+  if (params?.offset) qs.set('skip', String(params.offset))
   const query = qs.toString()
-  return api.get<AdminUserListResponse>(`/admin/users${query ? `?${query}` : ''}`)
+  const users = await api.get<AdminUser[]>(`/admin/users${query ? `?${query}` : ''}`)
+  const q = params?.search?.trim().toLowerCase()
+  const items = q
+    ? users.filter(
+        (u) =>
+          (u.email ?? '').toLowerCase().includes(q) ||
+          (u.phone ?? '').toLowerCase().includes(q) ||
+          (u.full_name ?? '').toLowerCase().includes(q),
+      )
+    : users
+  return { total: items.length, items }
 }
 
 export async function toggleUserActive(userId: string, isActive: boolean): Promise<AdminUser> {
@@ -60,14 +74,13 @@ export async function toggleUserActive(userId: string, isActive: boolean): Promi
 
 export interface AuditLog {
   id: string
-  actor_id: string
-  actor_email: string | null
+  actor_type: string
+  actor_id: string | null
   action: string
   resource_type: string
   resource_id: string | null
-  ip_address: string | null
-  occurred_at: string
-  metadata: Record<string, unknown> | null
+  outcome: string | null
+  occurred_at: string | null
 }
 
 export interface AuditLogListResponse {
@@ -75,21 +88,43 @@ export interface AuditLogListResponse {
   items: AuditLog[]
 }
 
+/** Raw row shape returned by backend GET /admin/audit-logs (plain array). */
+interface AuditLogRow {
+  id: string
+  actor_type: string
+  actor_id: string | null
+  action: string
+  resource_type: string
+  resource_id: string | null
+  outcome: string | null
+  timestamp: string | null
+}
+
+/**
+ * Backend supports `limit` only and returns a plain array sorted newest-first —
+ * action/resource_type are filtered client-side; `offset` is accepted for
+ * caller compatibility but ignored (no server-side pagination).
+ */
 export async function getAuditLogs(params?: {
-  actor_id?: string
-  action?: string
-  resource_type?: string
   limit?: number
   offset?: number
+  action?: string
+  resource_type?: string
 }): Promise<AuditLogListResponse> {
   const qs = new URLSearchParams()
-  if (params?.actor_id) qs.set('actor_id', params.actor_id)
-  if (params?.action) qs.set('action', params.action)
-  if (params?.resource_type) qs.set('resource_type', params.resource_type)
   if (params?.limit) qs.set('limit', String(params.limit))
-  if (params?.offset) qs.set('offset', String(params.offset))
   const query = qs.toString()
-  return api.get<AuditLogListResponse>(`/admin/audit-logs${query ? `?${query}` : ''}`)
+  const rows = await api.get<AuditLogRow[]>(`/admin/audit-logs${query ? `?${query}` : ''}`)
+  const action = params?.action?.trim().toLowerCase()
+  const resourceType = params?.resource_type?.trim().toLowerCase()
+  const items = rows
+    .filter(
+      (r) =>
+        (!action || r.action.toLowerCase().includes(action)) &&
+        (!resourceType || r.resource_type.toLowerCase().includes(resourceType)),
+    )
+    .map(({ timestamp, ...rest }) => ({ ...rest, occurred_at: timestamp }))
+  return { total: items.length, items }
 }
 
 // ── AI Safety Monitoring ───────────────────────────────────────────────────────

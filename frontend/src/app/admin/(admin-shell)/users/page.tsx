@@ -34,7 +34,10 @@ const ROLE_LABEL: Record<AdminUserRole, string> = {
   ai_service: 'Dịch vụ AI',
 }
 
-const ROLE_BADGE_VARIANT: Record<AdminUserRole, 'default' | 'primary' | 'info' | 'warning' | 'danger' | 'success'> = {
+const ROLE_BADGE_VARIANT: Record<
+  AdminUserRole,
+  'default' | 'primary' | 'info' | 'warning' | 'danger' | 'success'
+> = {
   patient: 'default',
   doctor: 'info',
   medical_reviewer: 'warning',
@@ -137,24 +140,21 @@ export default function AdminUsersPage() {
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
+    []
   )
 
-  const handleConfirmToggle = React.useCallback(
-    async (user: AdminUser, isActive: boolean) => {
-      setToggling(true)
-      try {
-        const updated = await toggleUserActive(user.id, isActive)
-        setUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)))
-      } catch {
-        // silently ignore; user list state remains unchanged
-      } finally {
-        setToggling(false)
-        setPendingToggle(null)
-      }
-    },
-    [],
-  )
+  const handleConfirmToggle = React.useCallback(async (user: AdminUser, isActive: boolean) => {
+    setToggling(true)
+    try {
+      const updated = await toggleUserActive(user.id, isActive)
+      setUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)))
+    } catch {
+      // silently ignore; user list state remains unchanged
+    } finally {
+      setToggling(false)
+      setPendingToggle(null)
+    }
+  }, [])
 
   // ---------------------------------------------------------------------------
   // Table columns
@@ -167,7 +167,7 @@ export default function AdminUsersPage() {
         header: 'Tên',
         cell: (row) => (
           <span className="text-body-sm font-medium text-text">
-            {row.full_name ?? row.email}
+            {row.full_name ?? row.email ?? row.phone ?? '—'}
           </span>
         ),
         width: '200px',
@@ -176,7 +176,7 @@ export default function AdminUsersPage() {
         key: 'email',
         header: 'Email',
         cell: (row) => (
-          <span className="text-body-sm text-text-muted">{row.email}</span>
+          <span className="text-body-sm text-text-muted">{row.email ?? row.phone ?? '—'}</span>
         ),
         width: '220px',
       },
@@ -196,15 +196,9 @@ export default function AdminUsersPage() {
         align: 'center',
         cell: (row) =>
           row.mfa_enabled ? (
-            <CheckCircle
-              className="h-4 w-4 text-success mx-auto"
-              aria-label="MFA đã bật"
-            />
+            <CheckCircle className="h-4 w-4 text-success mx-auto" aria-label="MFA đã bật" />
           ) : (
-            <X
-              className="h-4 w-4 text-secondary-400 mx-auto"
-              aria-label="MFA chưa bật"
-            />
+            <X className="h-4 w-4 text-secondary-400 mx-auto" aria-label="MFA chưa bật" />
           ),
         width: '80px',
       },
@@ -232,11 +226,11 @@ export default function AdminUsersPage() {
         width: '120px',
       },
     ],
-    [isSuperAdmin, toggling, handleSwitchChange],
+    [isSuperAdmin, toggling, handleSwitchChange]
   )
 
   return (
-    <div className="px-6 py-6 max-w-7xl mx-auto">
+    <div className="px-6 py-6">
       <PageHeader
         title="Quản lý người dùng"
         actions={
@@ -325,9 +319,7 @@ export default function AdminUsersPage() {
           </>
         }
       >
-        <p className="text-body-sm text-text">
-          Bạn có chắc muốn vô hiệu hóa tài khoản này?
-        </p>
+        <p className="text-body-sm text-text">Bạn có chắc muốn vô hiệu hóa tài khoản này?</p>
         {pendingToggle && (
           <p className={cn('mt-2 text-body-sm font-medium text-text-muted')}>
             {pendingToggle.full_name ?? pendingToggle.email}

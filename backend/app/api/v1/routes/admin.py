@@ -29,6 +29,7 @@ from app.schemas.admin import (
     UserAdminOut,
     UserAuditLogOut,
     UserRoleUpdate,
+    UserStatusUpdate,
 )
 from app.schemas.common import Message
 from app.schemas.doctor import DoctorVerificationOut
@@ -201,6 +202,39 @@ def get_user(
         actor_id=actor.id,
         action="admin_read",
         resource_type="user",
+        resource_id=user_id,
+    )
+    db.commit()
+    return user
+
+
+@router.patch("/users/{user_id}", response_model=UserAdminOut)
+def update_user_status(
+    user_id: str,
+    payload: UserStatusUpdate,
+    actor: CurrentUser = Depends(_admin_only),
+    _mfa: CurrentUser = Depends(require_mfa),
+    db: Session = Depends(get_session),
+) -> UserAdminOut:
+    """Activate or deactivate a user. Deactivation keeps the self/SUPER_ADMIN guards."""
+    try:
+        if payload.is_active:
+            user = admin_users.activate_user(db, user_id=user_id)
+        else:
+            user = admin_users.deactivate_user(db, user_id=user_id, requester_id=actor.id)
+    except PermissionError as exc:
+        msg = str(exc)
+        if "own account" in msg:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg) from exc
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=msg) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    audit.record(
+        db,
+        actor_type="admin",
+        actor_id=actor.id,
+        action="admin_action",
+        resource_type="user_status",
         resource_id=user_id,
     )
     db.commit()
