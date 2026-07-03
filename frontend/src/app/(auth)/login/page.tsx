@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import { Eye, EyeOff, Phone } from 'lucide-react'
 import { useAuth } from '@/lib/auth/context'
 import { ApiError } from '@/lib/api/client'
-import { getRoleHomePath, type AuthIdentifier } from '@/lib/api/auth'
+import { getPostLoginPath, type AuthIdentifier } from '@/lib/api/auth'
 import { normalizeVnPhone } from '@/lib/phone'
 import { NeuButton } from '@/components/patient/neu'
 import { cn } from '@/lib/utils'
@@ -104,7 +104,7 @@ export default function LoginPage() {
   const [error, setError] = React.useState<string | null>(null)
 
   React.useEffect(() => {
-    if (user) router.replace(getRoleHomePath(user.role))
+    if (user) router.replace(getPostLoginPath(user.role, user.mfa_enabled))
   }, [user, router])
 
   const handleCredentialsSubmit = async (e: React.FormEvent) => {
@@ -114,7 +114,7 @@ export default function LoginPage() {
     setIsLoading(true)
     try {
       const res = await login(toIdentifier(identifier), password)
-      router.replace(getRoleHomePath(res.role))
+      router.replace(getPostLoginPath(res.role, res.mfa))
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.status === 401) {
@@ -146,7 +146,7 @@ export default function LoginPage() {
     setIsLoading(true)
     try {
       const res = await login(toIdentifier(identifier), password, totpCode.trim())
-      router.replace(getRoleHomePath(res.role))
+      router.replace(getPostLoginPath(res.role, res.mfa))
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.status === 401)

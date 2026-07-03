@@ -13,12 +13,13 @@ import {
   ScrollText,
   ShieldAlert,
   ToggleLeft,
+  Settings,
   LogOut,
 } from 'lucide-react'
 import { AppShell, Sidebar, TopNav, PageLoading } from '@/design-system'
 import type { NavItem } from '@/design-system'
 import { useAuth } from '@/lib/auth/context'
-import { getRoleHomePath, type UserRole } from '@/lib/api/auth'
+import { getRoleHomePath, needsMfaEnrollment, type UserRole } from '@/lib/api/auth'
 
 const ADMIN_ROLES: UserRole[] = ['internal_admin', 'super_admin', 'clinic_admin']
 
@@ -77,6 +78,12 @@ const NAV_ITEMS: NavItem[] = [
     icon: <ToggleLeft className="w-5 h-5" />,
     href: '/admin/feature-flags',
   },
+  {
+    id: 'settings',
+    label: 'Cài đặt',
+    icon: <Settings className="w-5 h-5" />,
+    href: '/admin/settings',
+  },
 ]
 
 function getActiveId(pathname: string): string {
@@ -101,6 +108,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     }
     if (user && !ADMIN_ROLES.includes(user.role)) {
       router.replace(getRoleHomePath(user.role))
+      return
+    }
+    // Admins must finish MFA enrollment before any admin data endpoint (all are
+    // MFA-gated server-side) will answer — send them to the setup flow first.
+    if (user && needsMfaEnrollment(user.role, user.mfa_enabled)) {
+      router.replace('/mfa-setup')
     }
   }, [isLoading, isAuthenticated, user, router])
 
@@ -112,7 +125,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     )
   }
 
-  if (!isAuthenticated || (user && !ADMIN_ROLES.includes(user.role))) {
+  if (
+    !isAuthenticated ||
+    (user && !ADMIN_ROLES.includes(user.role)) ||
+    (user && needsMfaEnrollment(user.role, user.mfa_enabled))
+  ) {
     return null
   }
 
