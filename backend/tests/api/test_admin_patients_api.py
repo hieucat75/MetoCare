@@ -21,6 +21,7 @@ from app.models.clinical import LabResult, Medication
 from app.models.consent import TermsConsent
 from app.models.patient import PatientProfile
 from app.models.user import User, UserRole
+from app.services import admin_patients as admin_patients_service
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -377,3 +378,44 @@ def test_update_status_nonexistent_patient_returns_404(client, super_admin):
         json={"is_active": False},
     )
     assert r.status_code == 404, r.text
+
+
+# ---------------------------------------------------------------------------
+# Regression — status update must not 500 when the target patient falls
+# outside the list-search candidate window (PR #85 review finding).
+# ---------------------------------------------------------------------------
+
+
+def test_status_update_succeeds_for_patient_outside_candidate_window(
+    client, super_admin, db, monkeypatch
+):
+    """The route must not rebuild its response via list_patients()/search,
+    which is bounded by _CANDIDATE_LIMIT (ordered by created_at desc) — a
+    patient outside that window previously caused a committed write followed
+    by an unhandled IndexError -> 500.
+    """
+    monkeypatch.setattr(admin_patients_service, "_CANDIDATE_LIMIT", 1)
+
+    now = dt.datetime.now(dt.UTC)
+    older = _make_patient(db, full_name="Older Outside Window", phone="+84933333331")
+    newer = _make_patient(db, full_name="Newer Inside Window", phone="+84933333332")
+    older["profile"].created_at = now - dt.timedelta(days=1)
+    newer["profile"].created_at = now
+    db.add_all([older["profile"], newer["profile"]])
+    db.commit()
+
+    pid = older["profile"].id
+    r = client.patch(
+        f"/api/v1/admin/patients/{pid}/status",
+        headers=super_admin["headers"],
+        json={"is_active": False},
+    )
+
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["id"] == pid
+    assert body["is_active"] is False
+
+    db.expire_all()
+    db_user = db.get(User, older["user"].id)
+    assert db_user.is_active is False, "DB status must match the response, not just avoid a crash"

@@ -201,6 +201,34 @@ def _last_activity_for(db: Session, resource_ids: list[str]) -> dict[str, dt.dat
     return {rid: ts for rid, ts in rows if rid is not None}
 
 
+def _build_list_item(
+    profile: PatientProfile,
+    user: User,
+    *,
+    lab_counts: dict[str, int],
+    med_counts: dict[str, int],
+    flagged: set[str],
+    consent_status: dict[str, str],
+    last_activity: dict[str, dt.datetime],
+) -> dict:
+    return {
+        "id": profile.id,
+        "user_id": user.id,
+        "full_name": profile.full_name,
+        "phone": profile.phone or user.phone,
+        "gender": profile.gender,
+        "birth_year": _birth_year_from_dob(profile.dob),
+        "age": age_from_dob(profile.dob),
+        "is_active": user.is_active,
+        "lab_result_count": lab_counts.get(profile.id, 0),
+        "medication_count": med_counts.get(profile.id, 0),
+        "has_data_quality_flag": profile.id in flagged,
+        "consent_status": consent_status.get(user.id, "none"),
+        "created_at": profile.created_at,
+        "last_activity_at": last_activity.get(profile.id) or last_activity.get(user.id),
+    }
+
+
 def list_patients(
     db: Session,
     *,
@@ -217,7 +245,12 @@ def list_patients(
     age_group: str | None = None,
     sort: str = "created_at_desc",
 ) -> tuple[list[dict], int]:
-    """Return (page_of_enriched_patient_dicts, total_matching_count)."""
+    """Return (page_of_enriched_patient_dicts, total_matching_count).
+
+    NOTE: results are bounded by ``_CANDIDATE_LIMIT`` (see module docstring) —
+    do not use this to look up a single known patient by id after a mutation;
+    use ``get_patient_list_item`` instead, which is not subject to that cap.
+    """
     rows = list(
         db.execute(
             _candidate_query(
@@ -254,22 +287,15 @@ def list_patients(
             if q not in haystack:
                 continue
         enriched.append(
-            {
-                "id": profile.id,
-                "user_id": user.id,
-                "full_name": profile.full_name,
-                "phone": profile.phone or user.phone,
-                "gender": profile.gender,
-                "birth_year": _birth_year_from_dob(profile.dob),
-                "age": age,
-                "is_active": user.is_active,
-                "lab_result_count": lab_counts.get(profile.id, 0),
-                "medication_count": med_counts.get(profile.id, 0),
-                "has_data_quality_flag": profile.id in flagged,
-                "consent_status": consent_status.get(user.id, "none"),
-                "created_at": profile.created_at,
-                "last_activity_at": last_activity.get(profile.id) or last_activity.get(user.id),
-            }
+            _build_list_item(
+                profile,
+                user,
+                lab_counts=lab_counts,
+                med_counts=med_counts,
+                flagged=flagged,
+                consent_status=consent_status,
+                last_activity=last_activity,
+            )
         )
 
     reverse = sort.endswith("_desc")
@@ -295,6 +321,32 @@ def get_patient(db: Session, patient_id: str) -> tuple[PatientProfile, User] | N
     if user is None:
         return None
     return profile, user
+
+
+def get_patient_list_item(db: Session, patient_id: str) -> dict | None:
+    """Build a single list-item dict for one known patient by id.
+
+    Unlike ``list_patients``, this looks the patient up directly by primary
+    key and is NOT subject to ``_CANDIDATE_LIMIT`` — safe to call right after
+    a mutation (e.g. status update) where the patient must always be found
+    regardless of the candidate window's created_at ordering/size.
+    """
+    found = get_patient(db, patient_id)
+    if found is None:
+        return None
+    profile, user = found
+    lab_counts, med_counts, flagged = _counts_for(db, [profile.id])
+    consent_status = _consent_status_for(db, [user.id])
+    last_activity = _last_activity_for(db, [profile.id, user.id])
+    return _build_list_item(
+        profile,
+        user,
+        lab_counts=lab_counts,
+        med_counts=med_counts,
+        flagged=flagged,
+        consent_status=consent_status,
+        last_activity=last_activity,
+    )
 
 
 def get_patient_consultations(db: Session, patient_id: str, limit: int = 10) -> list[dict]:

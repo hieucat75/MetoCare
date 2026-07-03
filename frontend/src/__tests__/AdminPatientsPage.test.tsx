@@ -1,6 +1,6 @@
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import AdminPatientsPage from '@/app/admin/(admin-shell)/patients/page'
-import { getPatients } from '@/lib/api/admin'
+import { getPatients, updatePatientStatus } from '@/lib/api/admin'
 
 jest.mock('@/lib/api/admin', () => ({
   getPatients: jest.fn(),
@@ -9,10 +9,15 @@ jest.mock('@/lib/api/admin', () => ({
 
 const mockReplace = jest.fn()
 const mockPush = jest.fn()
+// Real Next.js returns a stable useSearchParams() reference across renders
+// (it only changes when the URL actually changes) — return the same instance
+// here too, otherwise a fresh URLSearchParams object on every render breaks
+// the page's useMemo/useCallback dependency chain and causes a refetch loop.
+const mockSearchParams = new URLSearchParams()
 
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ replace: mockReplace, push: mockPush }),
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => mockSearchParams,
 }))
 
 jest.mock('@/lib/auth/context', () => ({
@@ -20,6 +25,7 @@ jest.mock('@/lib/auth/context', () => ({
 }))
 
 const mockedGetPatients = getPatients as jest.Mock
+const mockedUpdatePatientStatus = updatePatientStatus as jest.Mock
 
 function samplePatient(overrides = {}) {
   return {
@@ -71,7 +77,7 @@ test('shows an error state with retry when the request fails', async () => {
 
   await waitFor(() => {
     expect(
-      screen.getByText('Không thể tải danh sách bệnh nhân. Vui lòng thử lại.'),
+      screen.getByText('Không thể tải danh sách bệnh nhân. Vui lòng thử lại.')
     ).toBeInTheDocument()
   })
 })
@@ -83,7 +89,7 @@ test('debounces the search box before updating the URL', async () => {
   await waitFor(() => expect(mockedGetPatients).toHaveBeenCalledTimes(1))
 
   const searchBox = screen.getByPlaceholderText(
-    'Tìm theo tên, số điện thoại, email hoặc mã bệnh nhân...',
+    'Tìm theo tên, số điện thoại, email hoặc mã bệnh nhân...'
   )
   fireEvent.change(searchBox, { target: { value: 'Alice' } })
 
@@ -94,6 +100,48 @@ test('debounces the search box before updating the URL', async () => {
     () => {
       expect(mockReplace).toHaveBeenCalledWith(expect.stringContaining('q=Alice'))
     },
-    { timeout: 1000 },
+    { timeout: 1000 }
   )
+})
+
+test('status toggle success updates the row without a stale/misleading state', async () => {
+  const blockedPatient = samplePatient({ is_active: false })
+  mockedGetPatients.mockResolvedValue({ total: 1, items: [blockedPatient] })
+  mockedUpdatePatientStatus.mockResolvedValue({ ...blockedPatient, is_active: true })
+
+  render(<AdminPatientsPage />)
+  await waitFor(() => expect(screen.getAllByText('Nguyen Van A').length).toBeGreaterThan(0))
+
+  const switchControl = screen.getAllByRole('switch')[0]
+  expect(switchControl).toHaveAttribute('aria-checked', 'false')
+  fireEvent.click(switchControl)
+
+  await waitFor(() => {
+    expect(mockedUpdatePatientStatus).toHaveBeenCalledWith('p1', true)
+  })
+  await waitFor(() => {
+    expect(screen.getAllByRole('switch')[0]).toHaveAttribute('aria-checked', 'true')
+  })
+  expect(screen.queryByText(/Không thể/)).not.toBeInTheDocument()
+})
+
+test('status toggle failure shows a visible Vietnamese error and does not fake success', async () => {
+  const blockedPatient = samplePatient({ is_active: false })
+  mockedGetPatients.mockResolvedValue({ total: 1, items: [blockedPatient] })
+  mockedUpdatePatientStatus.mockRejectedValue(new Error('network'))
+
+  render(<AdminPatientsPage />)
+  await waitFor(() => expect(screen.getAllByText('Nguyen Van A').length).toBeGreaterThan(0))
+
+  const switchControl = screen.getAllByRole('switch')[0]
+  fireEvent.click(switchControl)
+
+  await waitFor(() => {
+    expect(mockedUpdatePatientStatus).toHaveBeenCalledWith('p1', true)
+  })
+  await waitFor(() => {
+    expect(screen.getByText(/Không thể mở khóa tài khoản/)).toBeInTheDocument()
+  })
+  // Row must not silently flip to "active" when the request actually failed.
+  expect(screen.getAllByRole('switch')[0]).toHaveAttribute('aria-checked', 'false')
 })

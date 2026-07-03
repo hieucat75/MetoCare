@@ -16,6 +16,7 @@ import {
   ErrorState,
   CardSkeleton,
   Card,
+  Alert,
 } from '@/design-system'
 import type { Column } from '@/design-system'
 import { getPatients, updatePatientStatus, type AdminPatientListItem } from '@/lib/api/admin'
@@ -53,11 +54,12 @@ const AGE_GROUP_OPTIONS = [
   { value: '70_plus', label: '70+' },
 ]
 
-const CONSENT_LABEL: Record<string, { label: string; variant: 'success' | 'danger' | 'default' }> = {
-  valid: { label: 'Đã đồng ý', variant: 'success' },
-  revoked: { label: 'Đã thu hồi', variant: 'danger' },
-  none: { label: 'Chưa đồng ý', variant: 'default' },
-}
+const CONSENT_LABEL: Record<string, { label: string; variant: 'success' | 'danger' | 'default' }> =
+  {
+    valid: { label: 'Đã đồng ý', variant: 'success' },
+    revoked: { label: 'Đã thu hồi', variant: 'danger' },
+    none: { label: 'Chưa đồng ý', variant: 'default' },
+  }
 
 const PAGE_SIZE = 20
 
@@ -163,6 +165,7 @@ export default function AdminPatientsPage() {
 
   const [pendingBlock, setPendingBlock] = React.useState<AdminPatientListItem | null>(null)
   const [toggling, setToggling] = React.useState(false)
+  const [toggleError, setToggleError] = React.useState<string | null>(null)
 
   // Keep the search box in sync when navigation (back/forward) changes the URL.
   React.useEffect(() => {
@@ -179,7 +182,7 @@ export default function AdminPatientsPage() {
       const qs = paramsFromFilters(next)
       router.replace(`/admin/patients${qs ? `?${qs}` : ''}`)
     },
-    [router, urlFilters],
+    [router, urlFilters]
   )
 
   // Debounce the free-text search box into the URL (300ms).
@@ -223,18 +226,26 @@ export default function AdminPatientsPage() {
     loadPatients()
   }, [loadPatients])
 
-  const applyStatus = React.useCallback(async (patient: AdminPatientListItem, isActive: boolean) => {
-    setToggling(true)
-    try {
-      const updated = await updatePatientStatus(patient.id, isActive)
-      setItems((prev) => prev.map((p) => (p.id === updated.id ? updated : p)))
-    } catch {
-      // silently ignore; row state remains unchanged, admin can retry
-    } finally {
-      setToggling(false)
-      setPendingBlock(null)
-    }
-  }, [])
+  const applyStatus = React.useCallback(
+    async (patient: AdminPatientListItem, isActive: boolean) => {
+      setToggling(true)
+      setToggleError(null)
+      try {
+        const updated = await updatePatientStatus(patient.id, isActive)
+        setItems((prev) => prev.map((p) => (p.id === updated.id ? updated : p)))
+      } catch {
+        setToggleError(
+          `Không thể ${isActive ? 'mở khóa' : 'khóa'} tài khoản của ${
+            patient.full_name ?? patient.phone ?? 'bệnh nhân này'
+          }. Vui lòng thử lại.`,
+        )
+      } finally {
+        setToggling(false)
+        setPendingBlock(null)
+      }
+    },
+    [],
+  )
 
   const handleSwitchChange = React.useCallback(
     (patient: AdminPatientListItem, next: boolean) => {
@@ -244,7 +255,7 @@ export default function AdminPatientsPage() {
         void applyStatus(patient, true)
       }
     },
-    [applyStatus],
+    [applyStatus]
   )
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
@@ -369,7 +380,7 @@ export default function AdminPatientsPage() {
         width: '140px',
       },
     ],
-    [isSuperAdmin, toggling, handleSwitchChange, router],
+    [isSuperAdmin, toggling, handleSwitchChange, router]
   )
 
   return (
@@ -383,6 +394,16 @@ export default function AdminPatientsPage() {
           </Badge>
         }
       />
+
+      {toggleError && (
+        <Alert
+          variant="danger"
+          title={toggleError}
+          dismissible
+          onDismiss={() => setToggleError(null)}
+          className="mb-4"
+        />
+      )}
 
       {/* Filter row */}
       <div className="flex flex-col gap-3 mb-6">
@@ -507,35 +528,35 @@ export default function AdminPatientsPage() {
                   }}
                 >
                   <Card padding="sm" interactive>
-                  <div className="flex justify-between items-start gap-2 mb-2">
-                    <div>
-                      <p className="text-base font-medium text-text">{row.full_name ?? '—'}</p>
-                      <p className="text-sm text-text-muted">{row.phone ?? '—'}</p>
+                    <div className="flex justify-between items-start gap-2 mb-2">
+                      <div>
+                        <p className="text-base font-medium text-text">{row.full_name ?? '—'}</p>
+                        <p className="text-sm text-text-muted">{row.phone ?? '—'}</p>
+                      </div>
+                      <Badge variant={row.is_active ? 'success' : 'danger'} size="sm">
+                        {row.is_active ? 'Hoạt động' : 'Đã khóa'}
+                      </Badge>
                     </div>
-                    <Badge variant={row.is_active ? 'success' : 'danger'} size="sm">
-                      {row.is_active ? 'Hoạt động' : 'Đã khóa'}
+                    <div className="grid grid-cols-2 gap-2 text-sm text-text-muted mb-2">
+                      <span>
+                        {genderLabel(row.gender)}
+                        {row.age != null ? ` · ${row.age} tuổi` : ''}
+                      </span>
+                      <span>
+                        {row.lab_result_count} XN · {row.medication_count} thuốc
+                        {row.has_data_quality_flag && (
+                          <AlertTriangle
+                            className="ml-1 inline h-3.5 w-3.5 text-warning"
+                            aria-label="Có cảnh báo dữ liệu"
+                          />
+                        )}
+                      </span>
+                      <span>Tạo: {formatDate(row.created_at)}</span>
+                      <span>HĐ: {formatDateTime(row.last_activity_at)}</span>
+                    </div>
+                    <Badge variant={meta.variant} size="sm">
+                      {meta.label}
                     </Badge>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 text-sm text-text-muted mb-2">
-                    <span>
-                      {genderLabel(row.gender)}
-                      {row.age != null ? ` · ${row.age} tuổi` : ''}
-                    </span>
-                    <span>
-                      {row.lab_result_count} XN · {row.medication_count} thuốc
-                      {row.has_data_quality_flag && (
-                        <AlertTriangle
-                          className="ml-1 inline h-3.5 w-3.5 text-warning"
-                          aria-label="Có cảnh báo dữ liệu"
-                        />
-                      )}
-                    </span>
-                    <span>Tạo: {formatDate(row.created_at)}</span>
-                    <span>HĐ: {formatDateTime(row.last_activity_at)}</span>
-                  </div>
-                  <Badge variant={meta.variant} size="sm">
-                    {meta.label}
-                  </Badge>
                   </Card>
                 </div>
               )

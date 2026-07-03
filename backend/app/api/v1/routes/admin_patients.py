@@ -152,7 +152,7 @@ def update_patient_status(
 ) -> AdminPatientListItemOut:
     """Activate or deactivate the account behind a patient record."""
     try:
-        profile, user = admin_patients.update_patient_status(
+        admin_patients.update_patient_status(
             db, patient_id=patient_id, is_active=payload.is_active, requester_id=actor.id
         )
     except PermissionError as exc:
@@ -171,7 +171,12 @@ def update_patient_status(
     db.commit()
 
     # Re-fetch the enriched row (lab/medication counts, consent, last activity)
-    # rather than hand-assembling a partial one — status toggling must not
-    # regress the other columns the list view already showed for this row.
-    items, _total = admin_patients.list_patients(db, skip=0, limit=1, search=profile.id)
-    return AdminPatientListItemOut(**items[0])
+    # directly by id — NOT via list_patients/search, which is bounded by
+    # _CANDIDATE_LIMIT and could miss a patient outside that window, turning a
+    # successful write into an unhandled 500 (see PR #85 review).
+    item = admin_patients.get_patient_list_item(db, patient_id)
+    if item is None:
+        # The write above already committed; this would only happen if the
+        # patient were deleted in the instant between commit and this read.
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Patient not found")
+    return AdminPatientListItemOut(**item)

@@ -12,6 +12,7 @@ import {
   EmptyState,
   ErrorState,
   CardSkeleton,
+  Alert,
 } from '@/design-system'
 import {
   getPatientDetail,
@@ -80,9 +81,11 @@ export default function AdminPatientDetailPage() {
 
   const [showBlockConfirm, setShowBlockConfirm] = React.useState(false)
   const [toggling, setToggling] = React.useState(false)
+  const [toggleError, setToggleError] = React.useState<string | null>(null)
 
   const [requestSent, setRequestSent] = React.useState(false)
   const [requestSending, setRequestSending] = React.useState(false)
+  const [requestError, setRequestError] = React.useState<string | null>(null)
 
   const load = React.useCallback(async () => {
     setLoading(true)
@@ -105,11 +108,14 @@ export default function AdminPatientDetailPage() {
     async (isActive: boolean) => {
       if (!detail) return
       setToggling(true)
+      setToggleError(null)
       try {
         const updated = await updatePatientStatus(detail.id, isActive)
         setDetail((prev) => (prev ? { ...prev, is_active: updated.is_active } : prev))
       } catch {
-        // silently ignore; admin can retry
+        setToggleError(
+          `Không thể ${isActive ? 'mở khóa' : 'khóa'} tài khoản. Vui lòng thử lại.`,
+        )
       } finally {
         setToggling(false)
         setShowBlockConfirm(false)
@@ -121,11 +127,12 @@ export default function AdminPatientDetailPage() {
   const handleRequestUpdate = React.useCallback(async () => {
     if (!detail) return
     setRequestSending(true)
+    setRequestError(null)
     try {
       await requestPatientProfileUpdate(detail.user_id)
       setRequestSent(true)
     } catch {
-      // silently ignore; button stays enabled for retry
+      setRequestError('Không thể gửi yêu cầu cập nhật thông tin. Vui lòng thử lại.')
     } finally {
       setRequestSending(false)
     }
@@ -308,6 +315,24 @@ export default function AdminPatientDetailPage() {
       </div>
 
       <Section title="Hành động quản trị">
+        {toggleError && (
+          <Alert
+            variant="danger"
+            title={toggleError}
+            dismissible
+            onDismiss={() => setToggleError(null)}
+            className="mb-4"
+          />
+        )}
+        {requestError && (
+          <Alert
+            variant="danger"
+            title={requestError}
+            dismissible
+            onDismiss={() => setRequestError(null)}
+            className="mb-4"
+          />
+        )}
         <div className="flex flex-wrap gap-3">
           {detail.is_active ? (
             <Button
