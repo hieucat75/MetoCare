@@ -70,6 +70,148 @@ export async function toggleUserActive(userId: string, isActive: boolean): Promi
   return api.patch<AdminUser>(`/admin/users/${userId}`, { is_active: isActive })
 }
 
+// ── Patients ──────────────────────────────────────────────────────────────────
+
+export interface AdminPatientListItem {
+  id: string
+  user_id: string
+  full_name: string | null
+  phone: string | null
+  gender: string | null
+  birth_year: number | null
+  age: number | null
+  is_active: boolean
+  lab_result_count: number
+  medication_count: number
+  has_data_quality_flag: boolean
+  consent_status: 'valid' | 'revoked' | 'none'
+  created_at: string | null
+  last_activity_at: string | null
+}
+
+export interface AdminPatientListResponse {
+  total: number
+  items: AdminPatientListItem[]
+}
+
+export interface AdminPatientConsultation {
+  id: string
+  doctor_id: string
+  doctor_name: string | null
+  clinic_name: string | null
+  status: string
+  created_at: string | null
+}
+
+export interface AdminPatientConsent {
+  terms_version: string
+  privacy_version: string
+  accepted_at: string
+  revoked_at: string | null
+}
+
+export interface AdminPatientAuditEntry {
+  id: string
+  action: string
+  resource_type: string
+  outcome: string
+  timestamp: string
+}
+
+export interface AdminPatientDetail {
+  id: string
+  user_id: string
+  email: string | null
+  full_name: string | null
+  phone: string | null
+  dob: string | null
+  age: number | null
+  gender: string | null
+  address: string | null
+  height_cm: number | null
+  weight_kg: number | null
+  waist_cm: number | null
+  risk_segment: string | null
+  known_conditions: string | null
+  allergies: string | null
+  family_history: string | null
+  lifestyle_profile: string | null
+  is_active: boolean
+  created_at: string | null
+  last_activity_at: string | null
+  consent_status: 'valid' | 'revoked' | 'none'
+  consent: AdminPatientConsent | null
+  consultations: AdminPatientConsultation[]
+  audit_log: AdminPatientAuditEntry[]
+  summary: Record<string, unknown>
+}
+
+export interface AdminPatientListParams {
+  search?: string
+  status?: 'active' | 'inactive'
+  gender?: string
+  hasLabs?: boolean
+  hasMeds?: boolean
+  hasConsent?: boolean
+  createdFrom?: string
+  createdTo?: string
+  ageGroup?: string
+  sort?: string
+  limit?: number
+  offset?: number
+}
+
+/**
+ * Backend GET /admin/patients performs real server-side search/filter and
+ * pagination over the full dataset (unlike getUsers above, which is limited
+ * to client-side filtering of one fetched page).
+ */
+export async function getPatients(
+  params?: AdminPatientListParams,
+): Promise<AdminPatientListResponse> {
+  const qs = new URLSearchParams()
+  if (params?.search) qs.set('search', params.search)
+  if (params?.status) qs.set('status', params.status)
+  if (params?.gender) qs.set('gender', params.gender)
+  if (params?.hasLabs != null) qs.set('has_labs', String(params.hasLabs))
+  if (params?.hasMeds != null) qs.set('has_meds', String(params.hasMeds))
+  if (params?.hasConsent != null) qs.set('has_consent', String(params.hasConsent))
+  if (params?.createdFrom) qs.set('created_from', params.createdFrom)
+  if (params?.createdTo) qs.set('created_to', params.createdTo)
+  if (params?.ageGroup) qs.set('age_group', params.ageGroup)
+  if (params?.sort) qs.set('sort', params.sort)
+  if (params?.limit) qs.set('limit', String(params.limit))
+  if (params?.offset) qs.set('skip', String(params.offset))
+  const query = qs.toString()
+  return api.get<AdminPatientListResponse>(`/admin/patients${query ? `?${query}` : ''}`)
+}
+
+export async function getPatientDetail(patientId: string): Promise<AdminPatientDetail> {
+  return api.get<AdminPatientDetail>(`/admin/patients/${patientId}`)
+}
+
+export async function updatePatientStatus(
+  patientId: string,
+  isActive: boolean,
+): Promise<AdminPatientListItem> {
+  return api.patch<AdminPatientListItem>(`/admin/patients/${patientId}/status`, {
+    is_active: isActive,
+  })
+}
+
+/** Uses the generic admin notification endpoint (POST /notifications). */
+export async function requestPatientProfileUpdate(
+  userId: string,
+  message?: string,
+): Promise<void> {
+  await api.post('/notifications', {
+    user_id: userId,
+    type: 'profile_update_requested',
+    title: 'Yêu cầu cập nhật thông tin',
+    body: message?.trim() || 'Vui lòng cập nhật thông tin hồ sơ của bạn trong ứng dụng.',
+  })
+}
+
 // ── Audit Logs ─────────────────────────────────────────────────────────────────
 
 export interface AuditLog {
