@@ -121,9 +121,7 @@ export default function DoctorLayout({ children }: { children: React.ReactNode }
       onNavItem={handleNavItem}
       onLogout={handleLogout}
       sidebarWidth="md"
-      userProfile={
-        user ? { name: user.full_name ?? user.email ?? '', role: roleLabel } : undefined
-      }
+      userProfile={user ? { name: user.full_name ?? user.email ?? '', role: roleLabel } : undefined}
     >
       {children}
     </PortalShell>

@@ -65,7 +65,7 @@ export function useBreakpoint(): Breakpoint {
   const isDesktop = useMediaQuery(`(min-width: ${BREAKPOINT_LG}px)`, true)
   const isTablet = useMediaQuery(
     `(min-width: ${BREAKPOINT_MD}px) and (max-width: ${BREAKPOINT_LG - 0.02}px)`,
-    false,
+    false
   )
 
   return {

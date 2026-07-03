@@ -48,7 +48,7 @@ function MobileTopBar({ title, roleLabel, onMenu }: MobileTopBarProps) {
         className={cn(
           'inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md',
           'text-text-muted transition-colors hover:bg-secondary-100 hover:text-text',
-          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30',
+          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30'
         )}
       >
         <Menu className="h-6 w-6" aria-hidden="true" />
@@ -100,7 +100,7 @@ export function PortalShell({
       setDrawerOpen(false)
       onNavItem(item)
     },
-    [onNavItem],
+    [onNavItem]
   )
 
   // On mobile the drawer always shows the full (expanded) sidebar.
@@ -113,12 +113,7 @@ export function PortalShell({
       onItemClick={handleNavItem}
       collapsed={sidebarCollapsed}
       header={
-        <div
-          className={cn(
-            'flex items-center gap-2.5 p-4',
-            sidebarCollapsed && 'justify-center',
-          )}
-        >
+        <div className={cn('flex items-center gap-2.5 p-4', sidebarCollapsed && 'justify-center')}>
           {sidebarCollapsed ? (
             <BrandMark tone="white" className="h-8 w-8 shrink-0 object-contain" />
           ) : (
@@ -136,7 +131,7 @@ export function PortalShell({
           onClick={() => void onLogout()}
           className={cn(
             'flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-body-sm',
-            'text-secondary-400 transition-colors hover:bg-secondary-800 hover:text-white',
+            'text-secondary-400 transition-colors hover:bg-secondary-800 hover:text-white'
           )}
         >
           <LogOut className="h-4 w-4 shrink-0" aria-hidden="true" />
@@ -156,11 +151,7 @@ export function PortalShell({
         variant="mobile"
         sidebar={sidebar}
         topNav={
-          <MobileTopBar
-            title={title}
-            roleLabel={roleLabel}
-            onMenu={() => setDrawerOpen(true)}
-          />
+          <MobileTopBar title={title} roleLabel={roleLabel} onMenu={() => setDrawerOpen(true)} />
         }
         sidebarWidth={sidebarWidth}
         sidebarCollapsed={!drawerOpen}
@@ -179,11 +170,7 @@ export function PortalShell({
       className="portal-app"
       sidebar={sidebar}
       topNav={
-        <TopNav
-          title={title}
-          onMenuToggle={() => setCollapsed((prev) => !prev)}
-          showMenuToggle
-        />
+        <TopNav title={title} onMenuToggle={() => setCollapsed((prev) => !prev)} showMenuToggle />
       }
       sidebarWidth={sidebarWidth}
       sidebarCollapsed={collapsed}
