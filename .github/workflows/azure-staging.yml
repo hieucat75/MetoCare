@@ -162,7 +162,7 @@ jobs:
             --env-vars "MCP_DATABASE_URL=secretref:db-url" \
               "MCP_ENCRYPTION_KEYS=secretref:enc-keys" \
               "MCP_ENV=staging" \
-            --command "alembic" --args "upgrade head" \
+            --command "alembic" --args "upgrade" "head" \
             -o none
           # Retry job start up to 3 times — ACA control plane can be briefly busy.
           for attempt in 1 2 3; do
