@@ -154,11 +154,15 @@ export default function DoctorQueuePage() {
         />
       </div>
 
-      {/* Two-panel layout */}
+      {/* Responsive master-detail: list + detail side-by-side on lg; on mobile the
+          list is full-width and the detail replaces it once an item is selected. */}
       <div className="flex flex-1 overflow-hidden">
         {/* Left panel — queue list */}
         <aside
-          className="w-80 lg:w-96 shrink-0 flex flex-col border-r border-border bg-surface overflow-hidden"
+          className={cn(
+            'w-full lg:w-96 lg:shrink-0 flex-col border-r border-border bg-surface overflow-hidden',
+            selectedId ? 'hidden lg:flex' : 'flex',
+          )}
           aria-label="Danh sách hàng chờ"
         >
           {/* Filter buttons */}
@@ -229,11 +233,23 @@ export default function DoctorQueuePage() {
 
         {/* Right panel — review panel */}
         <main
-          className="flex-1 overflow-y-auto bg-background"
+          className={cn(
+            'flex-1 overflow-y-auto bg-background',
+            selectedId ? 'block' : 'hidden lg:block',
+          )}
           aria-label="Khu vực xét duyệt"
         >
           {selectedItem ? (
             <div className="px-6 py-6 flex flex-col gap-4 max-w-2xl mx-auto">
+              {/* Mobile-only back to list */}
+              <button
+                type="button"
+                onClick={() => setSelectedId(null)}
+                className="lg:hidden inline-flex w-fit items-center gap-1.5 rounded-md text-body-sm font-medium text-primary underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1"
+              >
+                ← Quay lại danh sách
+              </button>
+
               {/* Patient / item header */}
               <div className="flex flex-col gap-1">
                 <h2 className="text-heading-md font-semibold text-text">

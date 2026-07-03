@@ -113,7 +113,7 @@ export default function DoctorConsultationsPage() {
           />
         </Card>
       ) : (
-        <div className="space-y-2.5">
+        <div className="grid grid-cols-1 gap-2.5 lg:grid-cols-2">
           {filtered.map((c) => (
             <button
               key={c.id}

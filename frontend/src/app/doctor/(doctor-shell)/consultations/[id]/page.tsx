@@ -161,9 +161,24 @@ export default function DoctorConsultationDetailPage() {
 
   const c = consultation
   const status = c.status
+  const primaryAvailable =
+    status === 'REQUESTED' || status === 'PAID' || status === 'IN_PROGRESS'
+  const hasActions = primaryAvailable || CANCELLABLE.includes(status)
+
+  const actionProps: StateActionsProps = {
+    status,
+    busy,
+    showCancel,
+    cancelReason,
+    onSetShowCancel: setShowCancel,
+    onSetCancelReason: setCancelReason,
+    onRun: runAction,
+    onCancel: handleCancel,
+    actionError,
+  }
 
   return (
-    <div className="p-6 space-y-6 max-w-4xl">
+    <div className="p-4 sm:p-6 pb-28 lg:pb-6">
       <div className="flex items-center gap-3">
         <button
           type="button"
@@ -176,77 +191,178 @@ export default function DoctorConsultationDetailPage() {
         <PageHeader title="Chi tiết buổi tư vấn" />
       </div>
 
-      {/* ── Consultation info ── */}
-      <Card padding="lg">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <ConsultationStatusBadge status={status} />
-          <span className="text-body-sm text-text-muted">
-            {TYPE_LABELS[c.consultation_type] ?? c.consultation_type}
-          </span>
+      {/* Responsive split: summary (left) + actions/notes (right) on lg; stacked on mobile. */}
+      <div className="mt-6 lg:grid lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start lg:gap-6">
+        {/* Left column — consultation info + patient summary */}
+        <div className="min-w-0 space-y-6">
+          {/* ── Consultation info ── */}
+          <Card padding="lg">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <ConsultationStatusBadge status={status} />
+              <span className="text-body-sm text-text-muted">
+                {TYPE_LABELS[c.consultation_type] ?? c.consultation_type}
+              </span>
+            </div>
+
+            <p className="mt-3 text-heading-lg font-bold text-text">
+              {formatVnd(c.consultation_price)}
+            </p>
+
+            <dl className="mt-4 grid grid-cols-1 gap-x-8 gap-y-2 text-body-sm sm:grid-cols-2">
+              <InfoRow label="Mã tư vấn" value={c.id.slice(0, 8).toUpperCase()} />
+              <InfoRow label="Tạo lúc" value={formatDateTime(c.created_at) ?? '—'} />
+              {c.confirmed_at && (
+                <InfoRow label="Xác nhận" value={formatDateTime(c.confirmed_at) ?? '—'} />
+              )}
+              {c.paid_at && <InfoRow label="Thanh toán" value={formatDateTime(c.paid_at) ?? '—'} />}
+              {c.started_at && <InfoRow label="Bắt đầu" value={formatDateTime(c.started_at) ?? '—'} />}
+              {c.completed_at && (
+                <InfoRow label="Hoàn thành" value={formatDateTime(c.completed_at) ?? '—'} />
+              )}
+              {c.cancelled_at && (
+                <InfoRow label="Huỷ lúc" value={formatDateTime(c.cancelled_at) ?? '—'} />
+              )}
+            </dl>
+
+            {c.chief_complaint && (
+              <div className="mt-4 rounded-lg bg-secondary-50 px-4 py-3">
+                <p className="text-body-xs font-semibold text-text-muted">Lý do tư vấn</p>
+                <p className="mt-0.5 whitespace-pre-line text-body-sm text-text">{c.chief_complaint}</p>
+              </div>
+            )}
+            {c.patient_note && (
+              <div className="mt-3 rounded-lg bg-secondary-50 px-4 py-3">
+                <p className="text-body-xs font-semibold text-text-muted">Ghi chú của bệnh nhân</p>
+                <p className="mt-0.5 whitespace-pre-line text-body-sm text-text">{c.patient_note}</p>
+              </div>
+            )}
+            {c.cancel_reason && (
+              <div className="mt-3 rounded-lg bg-danger-light px-4 py-3">
+                <p className="text-body-xs font-semibold text-danger">Lý do huỷ</p>
+                <p className="mt-0.5 text-body-sm text-text">{c.cancel_reason}</p>
+              </div>
+            )}
+
+            {status === 'CONFIRMED' && (
+              <p className="mt-4 text-body-sm text-text-muted">
+                Đang chờ bệnh nhân thanh toán để bắt đầu buổi tư vấn.
+              </p>
+            )}
+          </Card>
+
+          {/* ── Patient summary ── */}
+          <PatientSummaryPanel consultationId={id} status={status} />
         </div>
 
-        <p className="mt-3 text-heading-lg font-bold text-text">
-          {formatVnd(c.consultation_price)}
-        </p>
-
-        <dl className="mt-4 grid grid-cols-1 gap-x-8 gap-y-2 text-body-sm sm:grid-cols-2">
-          <InfoRow label="Mã tư vấn" value={c.id.slice(0, 8).toUpperCase()} />
-          <InfoRow label="Tạo lúc" value={formatDateTime(c.created_at) ?? '—'} />
-          {c.confirmed_at && (
-            <InfoRow label="Xác nhận" value={formatDateTime(c.confirmed_at) ?? '—'} />
+        {/* Right column — actions (desktop) + clinical notes */}
+        <div className="mt-6 space-y-6 lg:mt-0 lg:sticky lg:top-6">
+          {/* Desktop actions panel — the mobile equivalent is the sticky bar below. */}
+          {hasActions && (
+            <Card padding="md" className="hidden lg:block">
+              <h2 className="mb-3 text-heading-sm font-semibold text-text">Thao tác</h2>
+              <StateActions {...actionProps} variant="panel" />
+            </Card>
           )}
-          {c.paid_at && <InfoRow label="Thanh toán" value={formatDateTime(c.paid_at) ?? '—'} />}
-          {c.started_at && <InfoRow label="Bắt đầu" value={formatDateTime(c.started_at) ?? '—'} />}
-          {c.completed_at && (
-            <InfoRow label="Hoàn thành" value={formatDateTime(c.completed_at) ?? '—'} />
-          )}
-          {c.cancelled_at && (
-            <InfoRow label="Huỷ lúc" value={formatDateTime(c.cancelled_at) ?? '—'} />
-          )}
-        </dl>
 
-        {c.chief_complaint && (
-          <div className="mt-4 rounded-lg bg-secondary-50 px-4 py-3">
-            <p className="text-body-xs font-semibold text-text-muted">Lý do tư vấn</p>
-            <p className="mt-0.5 whitespace-pre-line text-body-sm text-text">{c.chief_complaint}</p>
-          </div>
-        )}
-        {c.patient_note && (
-          <div className="mt-3 rounded-lg bg-secondary-50 px-4 py-3">
-            <p className="text-body-xs font-semibold text-text-muted">Ghi chú của bệnh nhân</p>
-            <p className="mt-0.5 whitespace-pre-line text-body-sm text-text">{c.patient_note}</p>
-          </div>
-        )}
-        {c.cancel_reason && (
-          <div className="mt-3 rounded-lg bg-danger-light px-4 py-3">
-            <p className="text-body-xs font-semibold text-danger">Lý do huỷ</p>
-            <p className="mt-0.5 text-body-sm text-text">{c.cancel_reason}</p>
-          </div>
-        )}
+          {/* ── Clinical notes (append-only) ── */}
+          <NotesPanel consultationId={id} status={status} />
+        </div>
+      </div>
 
-        {actionError && (
-          <div className="mt-4">
-            <Alert variant="danger" title="Thao tác thất bại">
-              {actionError}
-            </Alert>
+      <div className="mt-6">
+        <MarketplaceDisclaimer />
+      </div>
+
+      {/* Mobile sticky quick-action bar — state-machine actions at the bottom. */}
+      {hasActions && (
+        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-surface/95 px-4 py-3 backdrop-blur lg:hidden">
+          <StateActions {...actionProps} variant="bar" />
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── State-machine actions (shared by desktop panel + mobile sticky bar) ───────
+
+interface StateActionsProps {
+  status: ConsultationStatus
+  busy: boolean
+  showCancel: boolean
+  cancelReason: string
+  actionError: string | null
+  onSetShowCancel: (v: boolean) => void
+  onSetCancelReason: (v: string) => void
+  onRun: (fn: (id: string) => Promise<ConsultationOut>) => void
+  onCancel: () => void
+}
+
+function StateActions({
+  status,
+  busy,
+  showCancel,
+  cancelReason,
+  actionError,
+  onSetShowCancel,
+  onSetCancelReason,
+  onRun,
+  onCancel,
+  variant,
+}: StateActionsProps & { variant: 'panel' | 'bar' }) {
+  const isBar = variant === 'bar'
+  const canCancel = CANCELLABLE.includes(status)
+  const primaryClass = isBar ? 'flex-1' : undefined
+
+  return (
+    <div>
+      {actionError && (
+        <div className="mb-3">
+          <Alert variant="danger" title="Thao tác thất bại">
+            {actionError}
+          </Alert>
+        </div>
+      )}
+
+      {showCancel ? (
+        <div className={isBar ? undefined : 'rounded-lg border border-border p-4'}>
+          <p className="text-body-sm font-medium text-text">Xác nhận huỷ buổi tư vấn?</p>
+          <Textarea
+            className="mt-2"
+            placeholder="Lý do huỷ (không bắt buộc)…"
+            rows={2}
+            maxLength={255}
+            showCount
+            value={cancelReason}
+            onChange={(e) => onSetCancelReason(e.target.value)}
+            fullWidth
+          />
+          <div className="mt-3 flex gap-2">
+            <Button type="button" variant="danger" loading={busy} onClick={onCancel}>
+              Xác nhận huỷ
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={busy}
+              onClick={() => {
+                onSetShowCancel(false)
+                onSetCancelReason('')
+              }}
+            >
+              Không
+            </Button>
           </div>
-        )}
-
-        {status === 'CONFIRMED' && (
-          <p className="mt-4 text-body-sm text-text-muted">
-            Đang chờ bệnh nhân thanh toán để bắt đầu buổi tư vấn.
-          </p>
-        )}
-
-        {/* ── State-machine actions ── */}
-        <div className="mt-5 flex flex-wrap gap-2">
+        </div>
+      ) : (
+        <div className="flex flex-wrap gap-2">
           {status === 'REQUESTED' && (
             <Button
               type="button"
               variant="primary"
               loading={busy}
+              className={primaryClass}
               leftIcon={<CheckCircle2 className="h-4 w-4" />}
-              onClick={() => runAction(confirmConsultation)}
+              onClick={() => onRun(confirmConsultation)}
             >
               Xác nhận
             </Button>
@@ -256,8 +372,9 @@ export default function DoctorConsultationDetailPage() {
               type="button"
               variant="primary"
               loading={busy}
+              className={primaryClass}
               leftIcon={<PlayCircle className="h-4 w-4" />}
-              onClick={() => runAction(startConsultation)}
+              onClick={() => onRun(startConsultation)}
             >
               Bắt đầu tư vấn
             </Button>
@@ -267,66 +384,26 @@ export default function DoctorConsultationDetailPage() {
               type="button"
               variant="primary"
               loading={busy}
+              className={primaryClass}
               leftIcon={<Flag className="h-4 w-4" />}
-              onClick={() => runAction(completeConsultation)}
+              onClick={() => onRun(completeConsultation)}
             >
               Hoàn thành
             </Button>
           )}
-          {CANCELLABLE.includes(status) && !showCancel && (
+          {canCancel && (
             <Button
               type="button"
               variant="outline"
               disabled={busy}
               leftIcon={<XCircle className="h-4 w-4" />}
-              onClick={() => setShowCancel(true)}
+              onClick={() => onSetShowCancel(true)}
             >
               Huỷ buổi tư vấn
             </Button>
           )}
         </div>
-
-        {/* Cancel confirm with optional reason */}
-        {showCancel && (
-          <div className="mt-4 rounded-lg border border-border p-4">
-            <p className="text-body-sm font-medium text-text">Xác nhận huỷ buổi tư vấn?</p>
-            <Textarea
-              className="mt-2"
-              placeholder="Lý do huỷ (không bắt buộc)…"
-              rows={2}
-              maxLength={255}
-              showCount
-              value={cancelReason}
-              onChange={(e) => setCancelReason(e.target.value)}
-              fullWidth
-            />
-            <div className="mt-3 flex gap-2">
-              <Button type="button" variant="danger" loading={busy} onClick={handleCancel}>
-                Xác nhận huỷ
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                disabled={busy}
-                onClick={() => {
-                  setShowCancel(false)
-                  setCancelReason('')
-                }}
-              >
-                Không
-              </Button>
-            </div>
-          </div>
-        )}
-      </Card>
-
-      {/* ── Patient summary ── */}
-      <PatientSummaryPanel consultationId={id} status={status} />
-
-      {/* ── Clinical notes (append-only) ── */}
-      <NotesPanel consultationId={id} status={status} />
-
-      <MarketplaceDisclaimer />
+      )}
     </div>
   )
 }
