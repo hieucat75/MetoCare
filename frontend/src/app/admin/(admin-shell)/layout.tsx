@@ -19,6 +19,7 @@ import {
 import { AppShell, Sidebar, TopNav, PageLoading } from '@/design-system'
 import type { NavItem } from '@/design-system'
 import { useAuth } from '@/lib/auth/context'
+import { getUserDisplayName } from '@/lib/auth/userDisplay'
 import { getRoleHomePath, needsMfaEnrollment, type UserRole } from '@/lib/api/auth'
 
 const ADMIN_ROLES: UserRole[] = ['internal_admin', 'super_admin', 'clinic_admin']
@@ -174,7 +175,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             </div>
           }
           userProfile={
-            user ? { name: user.full_name ?? user.email ?? '', role: roleLabel } : undefined
+            user ? { name: getUserDisplayName(user), role: roleLabel } : undefined
           }
           footer={
             <button

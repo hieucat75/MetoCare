@@ -260,10 +260,10 @@ export default function AiSafetyPage() {
         <EmptyState
           title={
             activeTab === 'needs_review'
-              ? 'Không có phiên nào cần xem xét'
+              ? 'Chưa có phiên cần xem xét'
               : activeTab === 'urgent'
-                ? 'Không có phiên khẩn cấp nào'
-                : 'Không có phiên AI nào'
+                ? 'Chưa có phiên khẩn cấp'
+                : 'Chưa có phiên AI nào'
           }
           description="Tất cả các phiên đã được xem xét hoặc không có dữ liệu."
           size="md"

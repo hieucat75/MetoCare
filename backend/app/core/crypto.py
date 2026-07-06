@@ -19,6 +19,8 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import logging
+import re
 from functools import lru_cache
 
 from cryptography.fernet import Fernet, InvalidToken, MultiFernet
@@ -26,6 +28,16 @@ from sqlalchemy import Text
 from sqlalchemy.types import TypeDecorator
 
 from .config import get_settings
+
+logger = logging.getLogger(__name__)
+
+# Fernet tokens are URL-safe base64 whose first byte is the version marker 0x80,
+# which always serializes to the "gAAAA" prefix. Real names/emails never match.
+_FERNET_TOKEN_RE = re.compile(r"^gAAAA[A-Za-z0-9_-]+={0,2}$")
+
+# Safety bound when unwrapping values that were encrypted more than once
+# (e.g. a foreign-key ciphertext later re-encrypted by the PHI migration job).
+_MAX_DECRYPT_DEPTH = 3
 
 
 class EncryptionConfigError(RuntimeError):
@@ -59,6 +71,16 @@ def try_decrypt(token: str) -> str | None:
         return decrypt(token)
     except (InvalidToken, ValueError, TypeError):
         return None
+
+
+def is_fernet_token(value: str | None) -> bool:
+    """True if the value is shaped like a Fernet token (decryptable or not).
+
+    Used to tell "legacy plaintext" apart from "ciphertext we cannot decrypt"
+    (unknown key). Plaintext PHI (names, emails, notes) never matches the
+    gAAAA-prefixed base64 shape.
+    """
+    return bool(value) and len(value) >= 60 and _FERNET_TOKEN_RE.fullmatch(value) is not None
 
 
 def rotate(token: str) -> str:
@@ -95,5 +117,21 @@ class EncryptedString(TypeDecorator):
     def process_result_value(self, value, dialect):
         if value is None:
             return None
+        # Unwrap nested encryption: a row written with ciphertext already in it
+        # (e.g. re-encrypted by the PHI migration job) decrypts back to a token,
+        # so keep decrypting until we reach a non-token value.
+        current = value
+        for _ in range(_MAX_DECRYPT_DEPTH):
+            decrypted = try_decrypt(current)
+            if decrypted is None:
+                break
+            current = decrypted
+            if not is_fernet_token(current):
+                return current
+        if is_fernet_token(current):
+            # Undecryptable ciphertext (unknown key). Never surface raw tokens
+            # to callers/UI — treat the value as unavailable.
+            logger.warning("EncryptedString: undecryptable ciphertext; returning None")
+            return None
         # Tolerate legacy plaintext rows (pre-encryption) by returning as-is.
-        return try_decrypt(value) or value
+        return current

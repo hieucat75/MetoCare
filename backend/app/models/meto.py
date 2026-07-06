@@ -49,6 +49,9 @@ class MetoConversation(UUIDPrimaryKey, TimestampMixin, Base):
     )
     archived_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     deleted_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Admin AI-safety console: set when an admin marks the session reviewed.
+    reviewed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reviewed_by_user_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
 
 
 class MetoMessage(UUIDPrimaryKey, TimestampMixin, Base):
