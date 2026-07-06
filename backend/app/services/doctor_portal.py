@@ -34,6 +34,7 @@ from app.models.care import (
     CarePlan,
     CarePlanStatus,
     Doctor,
+    DoctorReviewDecision,
     Encounter,
 )
 from app.models.clinical import HealthMetric, LabResult
@@ -327,13 +328,23 @@ def list_patients(
     care_plans = _active_care_plans_count(db, ids)
     last_metric = _last_metric_at(db, ids)
     profile_consented = _profile_scope_consented_ids(db, doctor.user_id)
+    # PHI (name/email/risk) is only exposed to a doctor with a real care
+    # relationship: a profile-scope consent OR an encounter. A patient visible
+    # only via a narrow consent (e.g. ai_use) must NOT leak identity/risk.
+    phi_authorized = profile_consented | _encounter_patient_ids(db, doctor.id)
 
     q = (search or "").strip().lower()
     risk_filter = (risk or "").strip().lower() or None
 
     enriched: list[dict] = []
     for profile, user in rows:
-        seg = profile.risk_segment
+        authorized = profile.id in phi_authorized
+        # Mask sensitive fields BEFORE building the search haystack so a masked
+        # patient can NOT be discovered by name/email search.
+        full_name = (profile.full_name or user.full_name) if authorized else None
+        email = (user.email or "") if authorized else ""
+        seg = profile.risk_segment if authorized else None
+
         if risk_filter is not None:
             # 'high' includes very_high; low/medium are exact.
             if risk_filter == "high":
@@ -343,17 +354,15 @@ def list_patients(
                 continue
 
         if q:
-            haystack = " ".join(
-                filter(None, [profile.full_name, user.email])
-            ).lower()
+            haystack = " ".join(filter(None, [full_name, email])).lower()
             if q not in haystack:
                 continue
 
         enriched.append(
             {
                 "id": profile.id,
-                "full_name": profile.full_name or user.full_name,
-                "email": user.email or "",
+                "full_name": full_name,
+                "email": email,
                 "risk_segment": seg,
                 "last_metric_at": _iso(last_metric.get(profile.id)),
                 "pending_labs": pending_labs.get(profile.id, 0),
@@ -642,6 +651,56 @@ def parse_item_id(item_id: str) -> tuple[str, str]:
     return prefix, uuid
 
 
+def _item_patient_id(db: Session, item_type: str, uuid: str) -> str | None:
+    """Resolve the underlying item's patient_id, or None if missing/soft-deleted.
+
+    Used to server-side scope-gate ``review_item`` BEFORE any domain dispatch, so
+    a doctor cannot review an item for a patient outside their visible population
+    by crafting a composite id.
+    """
+    if item_type == _ITEM_TYPE_AI:
+        row = db.get(AIClinicalRecommendation, uuid)
+    elif item_type == _ITEM_TYPE_CARE:
+        row = db.get(CarePlan, uuid)
+    elif item_type == _ITEM_TYPE_LAB:
+        row = db.get(LabResult, uuid)
+    else:
+        return None
+    if row is None or getattr(row, "deleted_at", None) is not None:
+        return None
+    return row.patient_id
+
+
+def _record_decision(
+    db: Session,
+    *,
+    item_type: str,
+    item_id: str,
+    patient_id: str,
+    doctor_id: str,
+    decision: str,
+    comment: str | None,
+    internal_note: str | None,
+) -> None:
+    """Persist the reviewer's (potentially-PHI) comment + internal_note, encrypted.
+
+    Kept OUT of AuditLog (which is contractually PHI-free); the domain action's
+    PHI-free audit trail is recorded separately by each ``_review_*`` path.
+    """
+    db.add(
+        DoctorReviewDecision(
+            item_type=item_type,
+            item_id=item_id,
+            patient_id=patient_id,
+            doctor_id=doctor_id,
+            decision=decision,
+            comment=comment,
+            internal_note=internal_note,
+        )
+    )
+    db.flush()
+
+
 def review_item(
     db: Session,
     *,
@@ -657,14 +716,23 @@ def review_item(
     if doctor is None:
         raise PermissionDenied("User is not registered as a doctor.")
 
+    # Server-side scope gate: resolve the item's patient and confirm the doctor is
+    # related (consent OR encounter) BEFORE any domain action runs. A generic
+    # message is used so the error leaks NO patient name / PHI / summary.
+    patient_id = _item_patient_id(db, item_type, uuid)
+    if patient_id is None:
+        raise NotFound(f"Queue item '{item_id}' not found.")
+    if patient_id not in _visible_patient_ids(db, doctor):
+        raise PermissionDenied("Not permitted to review this item.")
+
     doctor_user = db.get(User, doctor.user_id) if doctor.user_id else None
 
     if item_type == _ITEM_TYPE_AI:
-        return _review_ai(db, uuid, doctor, doctor_user, decision, comment)
+        return _review_ai(db, uuid, doctor, doctor_user, decision, comment, internal_note)
     if item_type == _ITEM_TYPE_CARE:
-        return _review_care_plan(db, uuid, doctor, decision, comment)
+        return _review_care_plan(db, uuid, doctor, decision, comment, internal_note)
     if item_type == _ITEM_TYPE_LAB:
-        return _review_lab(db, uuid, doctor, decision, comment)
+        return _review_lab(db, uuid, doctor, decision, comment, internal_note)
     raise NotFound(f"Unknown queue item type '{item_type}'.")
 
 
@@ -682,12 +750,14 @@ def _review_ai(
     doctor_user: User | None,
     decision: str,
     comment: str,
+    internal_note: str | None = None,
 ) -> dict:
     if doctor_user is None:
         raise PermissionDenied("Doctor user account not found.")
     rec = db.get(AIClinicalRecommendation, rec_id)
     if rec is None or rec.deleted_at is not None:
         raise NotFound(f"AI recommendation {rec_id} not found.")
+    patient_id = rec.patient_id
     action = _DECISION_TO_AI_ACTION[decision]
     try:
         DoctorReviewService(db).review(
@@ -700,6 +770,16 @@ def _review_ai(
         # "not in pending_review status" -> invalid transition (409)
         raise InvalidTransition(str(exc)) from exc
     db.flush()
+    _record_decision(
+        db,
+        item_type=_ITEM_TYPE_AI,
+        item_id=rec_id,
+        patient_id=patient_id,
+        doctor_id=doctor.id,
+        decision=decision,
+        comment=comment,
+        internal_note=internal_note,
+    )
     updated = db.get(AIClinicalRecommendation, rec_id)
     return _rec_to_queue_item(db, updated)
 
@@ -710,6 +790,7 @@ def _review_care_plan(
     doctor: Doctor,
     decision: str,
     comment: str,
+    internal_note: str | None = None,
 ) -> dict:
     plan = db.get(CarePlan, plan_id)
     if plan is None or plan.deleted_at is not None:
@@ -718,6 +799,7 @@ def _review_care_plan(
         raise InvalidTransition(
             f"Care plan {plan_id} is not in PENDING_REVIEW (is {plan.status})."
         )
+    patient_id = plan.patient_id
 
     if decision == "approved":
         try:
@@ -746,6 +828,16 @@ def _review_care_plan(
             severity="info",
         )
 
+    _record_decision(
+        db,
+        item_type=_ITEM_TYPE_CARE,
+        item_id=plan_id,
+        patient_id=patient_id,
+        doctor_id=doctor.id,
+        decision=decision,
+        comment=comment,
+        internal_note=internal_note,
+    )
     updated = db.get(CarePlan, plan_id)
     return _care_plan_to_queue_item(db, updated)
 
@@ -756,12 +848,14 @@ def _review_lab(
     doctor: Doctor,
     decision: str,
     comment: str,
+    internal_note: str | None = None,
 ) -> dict:
     row = db.get(LabResult, lab_id)
     if row is None or row.deleted_at is not None:
         raise NotFound(f"Lab result {lab_id} not found.")
     if row.verified_by_doctor:
         raise InvalidTransition(f"Lab result {lab_id} has already been reviewed.")
+    patient_id = row.patient_id
 
     # Both approve/reject mark the lab as doctor-reviewed; a rejected/request_info
     # lab records the outcome in the audit trail (there is no lab reject column).
@@ -778,6 +872,16 @@ def _review_lab(
         resource_id=lab_id,
         outcome="success",
         severity="info",
+    )
+    _record_decision(
+        db,
+        item_type=_ITEM_TYPE_LAB,
+        item_id=lab_id,
+        patient_id=patient_id,
+        doctor_id=doctor.id,
+        decision=decision,
+        comment=comment,
+        internal_note=internal_note,
     )
     updated = db.get(LabResult, lab_id)
     return _lab_to_queue_item(db, updated, decision)
