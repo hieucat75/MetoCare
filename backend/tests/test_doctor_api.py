@@ -449,11 +449,29 @@ class TestAdminCreateDoctor:
         assert entry.actor_id == "sa-audit"
         assert entry.severity == "warning"
 
-    def test_internal_admin_returns_403(self, client):
+    def test_internal_admin_mfa_creates_doctor(self, client):
         r = client.post(
             "/api/v1/admin/doctors",
             json=self._payload("ia"),
             headers=_internal_admin_token("ia-id"),
+        )
+        assert r.status_code == 201, r.text
+        assert r.json()["role"] == "doctor"
+
+    def test_internal_admin_without_mfa_returns_403(self, client):
+        token = create_access_token(subject="ia-no-mfa", role="internal_admin", mfa=False)
+        r = client.post(
+            "/api/v1/admin/doctors",
+            json=self._payload("ia-nomfa"),
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert r.status_code == 403
+
+    def test_doctor_token_returns_403(self, client, doctor_user):
+        r = client.post(
+            "/api/v1/admin/doctors",
+            json=self._payload("dr"),
+            headers=_doctor_token(doctor_user["user"].id),
         )
         assert r.status_code == 403
 
