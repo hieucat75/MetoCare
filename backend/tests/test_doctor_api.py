@@ -507,6 +507,25 @@ class TestAdminCreateDoctor:
         )
         assert r.status_code == 422
 
+    def test_invalid_email_returns_422(self, client):
+        payload = {**self._payload("bad-email"), "email": "not-an-email"}
+        r = client.post(
+            "/api/v1/admin/doctors",
+            json=payload,
+            headers=_super_admin_token("sa-bad-email"),
+        )
+        assert r.status_code == 422
+
+    def test_overlong_email_returns_422(self, client):
+        # Must be rejected at the schema boundary, before the 255-char DB column.
+        payload = {**self._payload("long-email"), "email": f"{'a' * 250}@example.com"}
+        r = client.post(
+            "/api/v1/admin/doctors",
+            json=payload,
+            headers=_super_admin_token("sa-long-email"),
+        )
+        assert r.status_code == 422
+
     def test_created_user_has_doctor_role(self, client, db):
         r = client.post(
             "/api/v1/admin/doctors",

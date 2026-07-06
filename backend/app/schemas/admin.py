@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field
 
 from app.models.user import UserRole
 
@@ -92,7 +92,8 @@ class UnlockRequest(BaseModel):
 
 
 class DoctorCreateRequest(BaseModel):
-    email: str
+    # max_length guards the users.email VARCHAR(255) column before the DB does.
+    email: EmailStr = Field(max_length=255)
     password: str = Field(min_length=12)
     full_name: str = Field(min_length=1, max_length=255)
     specialty: str | None = None
