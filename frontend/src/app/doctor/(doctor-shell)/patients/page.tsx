@@ -15,14 +15,19 @@ import {
   RiskLevelBadge,
 } from '@/design-system'
 import type { RiskLevel } from '@/design-system'
-import { getDoctorPatients, type DoctorPatient } from '@/lib/api/doctor'
+import {
+  getDoctorPatients,
+  type DoctorPatient,
+  type DoctorPatientRiskFilter,
+  type DoctorPatientSort,
+} from '@/lib/api/doctor'
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
 type RiskSegment = DoctorPatient['risk_segment']
-type FilterSegment = 'all' | 'low' | 'medium' | 'high'
+type FilterSegment = 'all' | DoctorPatientRiskFilter
 
 interface SegmentFilter {
   key: FilterSegment
@@ -36,18 +41,22 @@ const SEGMENT_FILTERS: SegmentFilter[] = [
   { key: 'high', label: 'Nguy cơ cao' },
 ]
 
+interface SortOption {
+  key: DoctorPatientSort
+  label: string
+}
+
+const SORT_OPTIONS: SortOption[] = [
+  { key: 'risk', label: 'Nguy cơ' },
+  { key: 'last_activity', label: 'Hoạt động gần đây' },
+  { key: 'pending', label: 'Chờ xử lý' },
+  { key: 'name', label: 'Tên' },
+]
+
 function toRiskLevel(segment: RiskSegment): RiskLevel {
   if (!segment) return 'unknown'
   if (segment === 'very_high') return 'high'
   return segment as RiskLevel
-}
-
-function matchesSegmentFilter(patient: DoctorPatient, filter: FilterSegment): boolean {
-  if (filter === 'all') return true
-  if (filter === 'high') {
-    return patient.risk_segment === 'high' || patient.risk_segment === 'very_high'
-  }
-  return patient.risk_segment === filter
 }
 
 // ---------------------------------------------------------------------------
@@ -138,7 +147,6 @@ function PatientCard({ patient, onClick }: PatientCardProps) {
 export default function DoctorPatientsPage() {
   const router = useRouter()
 
-  const [allPatients, setAllPatients] = React.useState<DoctorPatient[]>([])
   const [patients, setPatients] = React.useState<DoctorPatient[]>([])
   const [total, setTotal] = React.useState(0)
   const [loading, setLoading] = React.useState(true)
@@ -147,34 +155,49 @@ export default function DoctorPatientsPage() {
 
   const [searchQuery, setSearchQuery] = React.useState('')
   const [segmentFilter, setSegmentFilter] = React.useState<FilterSegment>('all')
+  const [sort, setSort] = React.useState<DoctorPatientSort>('risk')
 
   const debounceRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const loadPatients = React.useCallback(async (search?: string) => {
-    if (search !== undefined) {
-      setSearchLoading(true)
-    } else {
-      setLoading(true)
-    }
-    setError(null)
-    try {
-      const data = await getDoctorPatients({ limit: 50, search: search || undefined })
-      if (!search) {
-        setAllPatients(data.items)
+  // Server-side fetch. Search, risk segment, and sort are all query params —
+  // the backend owns filtering/sorting so pagination stays correct (no
+  // client-side hiding of rows that live on other pages).
+  const loadPatients = React.useCallback(
+    async (
+      opts: { search?: string; segment?: FilterSegment; sort?: DoctorPatientSort; isSearch?: boolean } = {},
+    ) => {
+      const search = opts.search ?? searchQuery
+      const segment = opts.segment ?? segmentFilter
+      const sortKey = opts.sort ?? sort
+
+      if (opts.isSearch) setSearchLoading(true)
+      else setLoading(true)
+      setError(null)
+      try {
+        const data = await getDoctorPatients({
+          limit: 50,
+          search: search || undefined,
+          risk: segment === 'all' ? undefined : segment,
+          sort: sortKey,
+        })
+        setPatients(data.items)
+        setTotal(data.total)
+      } catch {
+        setError('Không thể tải danh sách bệnh nhân. Vui lòng thử lại.')
+      } finally {
+        setLoading(false)
+        setSearchLoading(false)
       }
-      setPatients(data.items)
-      setTotal(data.total)
-    } catch {
-      setError('Không thể tải danh sách bệnh nhân. Vui lòng thử lại.')
-    } finally {
-      setLoading(false)
-      setSearchLoading(false)
-    }
-  }, [])
+    },
+    [searchQuery, segmentFilter, sort],
+  )
 
   React.useEffect(() => {
-    loadPatients()
-  }, [loadPatients])
+    void loadPatients()
+    // Initial load only — subsequent loads are triggered explicitly by
+    // search/filter/sort handlers to control the loading indicator.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const handleSearchChange = React.useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -182,8 +205,24 @@ export default function DoctorPatientsPage() {
       setSearchQuery(value)
       if (debounceRef.current) clearTimeout(debounceRef.current)
       debounceRef.current = setTimeout(() => {
-        loadPatients(value)
+        void loadPatients({ search: value, isSearch: true })
       }, 300)
+    },
+    [loadPatients],
+  )
+
+  const handleSegmentChange = React.useCallback(
+    (segment: FilterSegment) => {
+      setSegmentFilter(segment)
+      void loadPatients({ segment })
+    },
+    [loadPatients],
+  )
+
+  const handleSortChange = React.useCallback(
+    (nextSort: DoctorPatientSort) => {
+      setSort(nextSort)
+      void loadPatients({ sort: nextSort })
     },
     [loadPatients],
   )
@@ -194,11 +233,7 @@ export default function DoctorPatientsPage() {
     }
   }, [])
 
-  // Apply segment filter on the current patient list
-  const displayedPatients = React.useMemo<DoctorPatient[]>(() => {
-    return patients.filter((p) => matchesSegmentFilter(p, segmentFilter))
-  }, [patients, segmentFilter])
-
+  const displayedPatients = patients
   const isSearching = searchQuery.length > 0
 
   return (
@@ -248,7 +283,7 @@ export default function DoctorPatientsPage() {
             <button
               key={opt.key}
               type="button"
-              onClick={() => setSegmentFilter(opt.key)}
+              onClick={() => handleSegmentChange(opt.key)}
               className={cn(
                 'rounded-full px-3 py-1 text-body-xs font-medium transition-colors whitespace-nowrap',
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1',
@@ -261,6 +296,29 @@ export default function DoctorPatientsPage() {
               {opt.label}
             </button>
           ))}
+        </div>
+
+        {/* Sort control */}
+        <div className="flex items-center gap-1.5 sm:ml-auto">
+          <label htmlFor="patient-sort" className="text-body-xs text-text-muted whitespace-nowrap">
+            Sắp xếp
+          </label>
+          <select
+            id="patient-sort"
+            value={sort}
+            onChange={(e) => handleSortChange(e.target.value as DoctorPatientSort)}
+            aria-label="Sắp xếp bệnh nhân"
+            className={cn(
+              'rounded-lg border border-border bg-surface py-1.5 pl-2.5 pr-7 text-body-xs text-text',
+              'focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-colors',
+            )}
+          >
+            {SORT_OPTIONS.map((opt) => (
+              <option key={opt.key} value={opt.key}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 
@@ -275,7 +333,7 @@ export default function DoctorPatientsPage() {
         <ErrorState
           variant="card"
           title={error}
-          onRetry={() => loadPatients()}
+          onRetry={() => void loadPatients()}
         />
       ) : displayedPatients.length === 0 ? (
         <EmptyState
@@ -292,7 +350,7 @@ export default function DoctorPatientsPage() {
                   label: 'Xóa tìm kiếm',
                   onClick: () => {
                     setSearchQuery('')
-                    loadPatients()
+                    void loadPatients({ search: '' })
                   },
                 },
               }
@@ -308,19 +366,6 @@ export default function DoctorPatientsPage() {
               onClick={() => router.push(`/doctor/patients/${patient.id}`)}
             />
           ))}
-        </div>
-      )}
-
-      {/* Show "no results for filter" when filtered list is empty but full list isn't */}
-      {!loading && !error && displayedPatients.length === 0 && allPatients.length > 0 && segmentFilter !== 'all' && (
-        <div className="mt-4 text-center">
-          <button
-            type="button"
-            onClick={() => setSegmentFilter('all')}
-            className="text-body-sm text-primary hover:underline underline-offset-2"
-          >
-            Xem tất cả bệnh nhân
-          </button>
         </div>
       )}
     </div>
