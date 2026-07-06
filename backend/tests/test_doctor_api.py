@@ -458,11 +458,22 @@ class TestAdminCreateDoctor:
         assert r.status_code == 201, r.text
         assert r.json()["role"] == "doctor"
 
-    def test_internal_admin_without_mfa_returns_403(self, client):
+    def test_internal_admin_without_mfa_is_allowed(self, client):
+        # Temporary relaxed policy: require_mfa is a no-op while
+        # MCP_MFA_ENFORCEMENT_ENABLED is false (default).
         token = create_access_token(subject="ia-no-mfa", role="internal_admin", mfa=False)
         r = client.post(
             "/api/v1/admin/doctors",
             json=self._payload("ia-nomfa"),
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert r.status_code == 201, r.text
+
+    def test_internal_admin_without_mfa_rejected_when_enforced(self, client, mfa_enforced):
+        token = create_access_token(subject="ia-no-mfa-2", role="internal_admin", mfa=False)
+        r = client.post(
+            "/api/v1/admin/doctors",
+            json=self._payload("ia-nomfa-enf"),
             headers={"Authorization": f"Bearer {token}"},
         )
         assert r.status_code == 403
@@ -475,13 +486,14 @@ class TestAdminCreateDoctor:
         )
         assert r.status_code == 403
 
-    def test_super_admin_without_mfa_returns_403(self, client):
+    def test_super_admin_without_mfa_is_allowed(self, client):
+        # Temporary relaxed policy: require_mfa is a no-op by default.
         r = client.post(
             "/api/v1/admin/doctors",
             json=self._payload("nomfa"),
             headers=_super_admin_token("sa-no-mfa", mfa=False),
         )
-        assert r.status_code == 403
+        assert r.status_code == 201, r.text
 
     def test_patient_token_returns_403(self, client, patient_user):
         r = client.post(

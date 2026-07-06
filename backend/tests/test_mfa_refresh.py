@@ -127,11 +127,24 @@ def test_invalid_totp_at_verify_rejected(client):
 # --------------------------------------------------------------------------- #
 
 
-def test_admin_endpoint_requires_mfa(client, token_for):
+def test_admin_endpoint_open_while_enforcement_disabled(client, token_for):
+    # Temporary relaxed policy: require_mfa is a no-op by default.
     no_mfa = client.get(
         "/api/v1/admin/audit-logs", headers=token_for("u-admin", "internal_admin", mfa=False)
     )
-    assert no_mfa.status_code == 403  # MFA required
+    assert no_mfa.status_code == 200
+
+    with_mfa = client.get(
+        "/api/v1/admin/audit-logs", headers=token_for("u-admin", "internal_admin", mfa=True)
+    )
+    assert with_mfa.status_code == 200
+
+
+def test_admin_endpoint_requires_mfa_when_enforcement_enabled(client, token_for, mfa_enforced):
+    no_mfa = client.get(
+        "/api/v1/admin/audit-logs", headers=token_for("u-admin", "internal_admin", mfa=False)
+    )
+    assert no_mfa.status_code == 403  # MFA required again
 
     with_mfa = client.get(
         "/api/v1/admin/audit-logs", headers=token_for("u-admin", "internal_admin", mfa=True)
