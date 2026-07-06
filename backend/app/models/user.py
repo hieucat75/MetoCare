@@ -48,11 +48,17 @@ class User(UUIDPrimaryKey, TimestampMixin, Base):
     role: Mapped[UserRole] = mapped_column(
         Enum(UserRole, native_enum=False, length=32), default=UserRole.PATIENT, nullable=False
     )
-    full_name: Mapped[str | None] = mapped_column(EncryptedString)  # PHI: identity
+    # Optional display field — a failed decrypt falls back to None (UI already
+    # falls back further to email/phone; see lib/auth/userDisplay.ts).
+    full_name: Mapped[str | None] = mapped_column(
+        EncryptedString(on_decrypt_failure="none")
+    )  # PHI: identity
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     mfa_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    # TOTP shared secret, encrypted at rest (set during MFA enrollment).
-    mfa_secret: Mapped[str | None] = mapped_column(EncryptedString)
+    # TOTP shared secret, encrypted at rest (set during MFA enrollment). A
+    # failed decrypt falling back to None fails CLOSED (verify_totp treats a
+    # missing secret as "no valid code"), so "none" is safe here too.
+    mfa_secret: Mapped[str | None] = mapped_column(EncryptedString(on_decrypt_failure="none"))
     # PR-F: notification preferences (in-app delivery toggles).
     notify_medication: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     notify_lab_results: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

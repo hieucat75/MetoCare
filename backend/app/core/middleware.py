@@ -28,6 +28,10 @@ _ENROLL_ALLOW_SUFFIXES = (
     "/auth/refresh",
 )
 _ENROLL_ALLOW_EXACT = frozenset({"/health", "/metrics", "/docs", "/openapi.json", "/redoc"})
+# AI-safety triage must stay reachable even for admins who haven't finished
+# MFA enrollment — matches both GET /admin/ai-sessions and
+# PATCH /admin/ai-sessions/{id}/review.
+_ENROLL_ALLOW_SUBSTRINGS = ("/admin/ai-sessions",)
 
 
 class MfaEnrollmentMiddleware(BaseHTTPMiddleware):
@@ -47,7 +51,11 @@ class MfaEnrollmentMiddleware(BaseHTTPMiddleware):
                 if _gs().skip_mfa_in_dev:
                     return await call_next(request)
                 path = request.url.path
-                if path not in _ENROLL_ALLOW_EXACT and not path.endswith(_ENROLL_ALLOW_SUFFIXES):
+                if (
+                    path not in _ENROLL_ALLOW_EXACT
+                    and not path.endswith(_ENROLL_ALLOW_SUFFIXES)
+                    and not any(sub in path for sub in _ENROLL_ALLOW_SUBSTRINGS)
+                ):
                     return JSONResponse(
                         status_code=403,
                         content={

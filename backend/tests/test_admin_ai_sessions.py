@@ -58,6 +58,31 @@ def patient_user(db):
     return user
 
 
+@pytest.fixture
+def doctor_user(db):
+    user = User(
+        email=f"ai-doctor-{os.urandom(4).hex()}@example.com",
+        password_hash="x",
+        role=UserRole.DOCTOR,
+        full_name="Dr. Test",
+    )
+    db.add(user)
+    db.commit()
+    return user
+
+
+def _second_admin(db) -> User:
+    user = User(
+        email=f"ai-admin2-{os.urandom(4).hex()}@metocare.internal",
+        password_hash="x",
+        role=UserRole.SUPER_ADMIN,
+        full_name="Second Admin",
+    )
+    db.add(user)
+    db.commit()
+    return user
+
+
 def _seed_conversation(
     db,
     user: User,
@@ -95,6 +120,78 @@ def test_patient_gets_403(client, patient_user):
     token = create_access_token(subject=patient_user.id, role="patient", mfa=True)
     r = client.get(BASE, headers={"Authorization": f"Bearer {token}"})
     assert r.status_code == 403
+
+
+def test_doctor_gets_403(client, doctor_user):
+    token = create_access_token(subject=doctor_user.id, role="doctor", mfa=True)
+    r = client.get(BASE, headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# MFA is NOT required for these two routes (finding 1)
+# ---------------------------------------------------------------------------
+
+
+def test_admin_without_mfa_can_list_sessions(client, db):
+    """GET must succeed for an admin whose session was never MFA-verified."""
+    user = User(
+        email=f"ai-nomfa-{os.urandom(4).hex()}@metocare.internal",
+        password_hash="x",
+        role=UserRole.SUPER_ADMIN,
+        full_name="No MFA Admin",
+    )
+    db.add(user)
+    db.commit()
+    token = create_access_token(
+        subject=user.id, role="super_admin", mfa=False, mfa_enrollment_required=False
+    )
+    r = client.get(BASE, headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 200
+
+
+def test_admin_without_mfa_can_patch_review(client, db, patient_user):
+    user = User(
+        email=f"ai-nomfa2-{os.urandom(4).hex()}@metocare.internal",
+        password_hash="x",
+        role=UserRole.INTERNAL_ADMIN,
+        full_name="No MFA Admin 2",
+    )
+    db.add(user)
+    db.commit()
+    conv = _seed_conversation(db, patient_user, flagged=True)
+    token = create_access_token(
+        subject=user.id, role="internal_admin", mfa=False, mfa_enrollment_required=False
+    )
+    r = client.patch(f"{BASE}/{conv.id}/review", headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 200
+    assert r.json()["reviewed_at"] is not None
+
+
+def test_admin_owing_mfa_enrollment_still_reaches_ai_sessions(client, db):
+    """The global MfaEnrollmentMiddleware normally 403s EVERY protected path
+    for an admin who hasn't completed MFA enrollment (mfa_enrollment_required
+    claim). /admin/ai-sessions is explicitly allowlisted so triage stays
+    reachable regardless of enrollment status."""
+    user = User(
+        email=f"ai-unenrolled-{os.urandom(4).hex()}@metocare.internal",
+        password_hash="x",
+        role=UserRole.SUPER_ADMIN,
+        full_name="Unenrolled Admin",
+    )
+    db.add(user)
+    db.commit()
+    token = create_access_token(
+        subject=user.id, role="super_admin", mfa=False, mfa_enrollment_required=True
+    )
+    r = client.get(BASE, headers={"Authorization": f"Bearer {token}"})
+    # Sanity: the SAME token IS blocked on an ordinary admin route, proving
+    # the allowlist — not a global MFA policy change — is what lets
+    # ai-sessions through.
+    blocked = client.get("/api/v1/admin/stats", headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 200
+    assert blocked.status_code == 403
+    assert blocked.json().get("code") == "mfa_enrollment_required"
 
 
 # ---------------------------------------------------------------------------
@@ -153,6 +250,80 @@ def test_pagination_limit_offset(client, db, admin_headers, patient_user):
     assert len(body["items"]) == 1
 
 
+def test_filter_and_pagination_combined(client, db, admin_headers, patient_user):
+    """safety_level filter AND limit/offset must compose: total reflects the
+    filtered count, and the page is sliced from the filtered set — not the
+    unfiltered one."""
+    _seed_conversation(db, patient_user)  # safe — excluded by the filter
+    urgents = [_seed_conversation(db, patient_user, escalated=True) for _ in range(3)]
+
+    r = client.get(f"{BASE}?safety_level=urgent&limit=2&offset=1", headers=admin_headers)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["total"] == 3  # filtered count, not 4
+    assert len(body["items"]) == 2  # items[1:3] of the 3-item filtered set
+    assert all(item["safety_level"] == "urgent" for item in body["items"])
+    urgent_ids = {c.id for c in urgents}
+    assert all(item["id"] in urgent_ids for item in body["items"])
+
+
+def test_severity_precedence_urgent_beats_caution_across_events(
+    client, db, admin_headers, patient_user
+):
+    """A single conversation can have multiple audit events. If ANY event
+    escalated, the conversation is urgent overall — even if an earlier event
+    was merely flagged (caution)."""
+    conv = MetoConversation(user_id=patient_user.id, screen_id="dashboard", title="c")
+    db.add(conv)
+    db.flush()
+    db.add(
+        MetoAuditLog(
+            user_id=patient_user.id,
+            conversation_id=conv.id,
+            action="chat_message",
+            safety_flags_detected=True,
+            escalation_triggered=False,
+        )
+    )
+    db.add(
+        MetoAuditLog(
+            user_id=patient_user.id,
+            conversation_id=conv.id,
+            action="chat_message",
+            safety_flags_detected=False,
+            escalation_triggered=True,
+        )
+    )
+    db.commit()
+
+    r = client.get(BASE, headers=admin_headers)
+    assert r.status_code == 200
+    item = next(i for i in r.json()["items"] if i["id"] == conv.id)
+    assert item["safety_level"] == "urgent"
+    assert item["flag"] == "urgent_response"
+
+
+# ---------------------------------------------------------------------------
+# PHI leakage (finding 2) — conversation title/content must never appear
+# ---------------------------------------------------------------------------
+
+
+def test_explanation_type_never_leaks_conversation_title(client, db, admin_headers, patient_user):
+    """Regression: conv.title is auto-generated from the user's first message
+    and can itself be PHI (e.g. a symptom description). It must never be
+    returned as explanation_type or anywhere else in the list response."""
+    sensitive_text = "Bệnh nhân bị đau ngực dữ dội, khó thở, tiền sử tăng huyết áp"
+    conv = _seed_conversation(db, patient_user, escalated=True, title=sensitive_text)
+
+    r = client.get(BASE, headers=admin_headers)
+    assert r.status_code == 200
+    assert sensitive_text not in r.text
+
+    item = next(i for i in r.json()["items"] if i["id"] == conv.id)
+    assert item["explanation_type"] in {"none", "safety_flag", "urgent_response"}
+    assert sensitive_text not in item["explanation_type"]
+
+
 # ---------------------------------------------------------------------------
 # Review
 # ---------------------------------------------------------------------------
@@ -182,3 +353,44 @@ def test_review_is_idempotent(client, db, admin_headers, patient_user):
 def test_review_unknown_id_404(client, admin_headers):
     r = client.patch(f"{BASE}/does-not-exist/review", headers=admin_headers)
     assert r.status_code == 404
+
+
+def test_concurrent_review_does_not_overwrite_reviewer_or_duplicate_audit(
+    client, db, admin_headers, patient_user
+):
+    """Two admins racing for the same session: only the winner's identity is
+    recorded, the loser's request is a no-op (not an overwrite), and exactly
+    one audit record is created — never two.
+
+    This exercises the same atomic-UPDATE guard that protects true
+    concurrent requests: the second call finds reviewed_at already set
+    (rowcount=0) and must not touch the row or write an audit entry.
+    """
+    from app.models.governance import AuditLog
+
+    second_admin = _second_admin(db)
+    second_token = create_access_token(subject=second_admin.id, role="super_admin", mfa=True)
+    second_headers = {"Authorization": f"Bearer {second_token}"}
+
+    conv = _seed_conversation(db, patient_user, flagged=True)
+
+    r1 = client.patch(f"{BASE}/{conv.id}/review", headers=admin_headers)
+    r2 = client.patch(f"{BASE}/{conv.id}/review", headers=second_headers)
+
+    assert r1.status_code == 200
+    assert r2.status_code == 200
+    assert r1.json()["reviewed_by"] == "Safety Admin"
+    # NOT overwritten to "Second Admin" — the first reviewer's identity wins.
+    assert r2.json()["reviewed_by"] == "Safety Admin"
+    assert r1.json()["reviewed_at"] == r2.json()["reviewed_at"]
+
+    reviews = (
+        db.query(AuditLog)
+        .filter(AuditLog.resource_id == conv.id, AuditLog.action == "ai_session.review")
+        .all()
+    )
+    assert len(reviews) == 1
+    assert reviews[0].actor_id != second_admin.id
+
+    db.refresh(conv)
+    assert conv.reviewed_by_user_id != second_admin.id

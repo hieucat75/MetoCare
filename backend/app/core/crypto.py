@@ -44,6 +44,16 @@ class EncryptionConfigError(RuntimeError):
     """Raised when no usable encryption key is configured."""
 
 
+class UndecryptablePHIError(RuntimeError):
+    """Raised when a required (non-nullable / business-critical) PHI field
+    cannot be decrypted with any configured key.
+
+    Callers must catch this at the API boundary (see the FastAPI exception
+    handler in app.main) and return a controlled domain error — never let a
+    `None` silently take the place of a required field's value.
+    """
+
+
 @lru_cache
 def _cipher() -> MultiFernet:
     settings = get_settings()
@@ -104,10 +114,34 @@ def blind_index(value: str) -> str:
 
 
 class EncryptedString(TypeDecorator):
-    """TEXT column whose Python value is plaintext but storage is ciphertext."""
+    """TEXT column whose Python value is plaintext but storage is ciphertext.
+
+    ``on_decrypt_failure`` controls what happens when ciphertext cannot be
+    decrypted with any configured key (corrupt row / wrong key / foreign
+    ciphertext written by another process):
+
+    - ``"none"``  (default) — return ``None``. Only safe for optional,
+      display-only fields (e.g. ``User.full_name``) where the caller/schema
+      already tolerates a missing value and a blank display is not dangerous.
+    - ``"raise"`` — raise ``UndecryptablePHIError``. Required for non-nullable
+      columns (a silent ``None`` would violate the NOT NULL contract and can
+      crash response serialization) and for any field where a silently
+      missing value could be clinically or securely dangerous.
+
+    Every column using this type must set this explicitly (see model files)
+    rather than relying on the default, so the choice is auditable per field.
+    """
 
     impl = Text
     cache_ok = True
+
+    def __init__(self, *args, on_decrypt_failure: str = "none", **kwargs):
+        super().__init__(*args, **kwargs)
+        if on_decrypt_failure not in ("none", "raise"):
+            raise ValueError(
+                f"on_decrypt_failure must be 'none' or 'raise', got {on_decrypt_failure!r}"
+            )
+        self.on_decrypt_failure = on_decrypt_failure
 
     def process_bind_param(self, value, dialect):
         if value is None:
@@ -130,8 +164,17 @@ class EncryptedString(TypeDecorator):
                 return current
         if is_fernet_token(current):
             # Undecryptable ciphertext (unknown key). Never surface raw tokens
-            # to callers/UI — treat the value as unavailable.
-            logger.warning("EncryptedString: undecryptable ciphertext; returning None")
+            # to callers/UI — treat the value as unavailable, or raise for
+            # fields where that would be a dangerous silent failure. Message
+            # deliberately omits the value itself (no plaintext/ciphertext in logs).
+            logger.warning(
+                "EncryptedString: undecryptable ciphertext (on_decrypt_failure=%s)",
+                self.on_decrypt_failure,
+            )
+            if self.on_decrypt_failure == "raise":
+                raise UndecryptablePHIError(
+                    "A required encrypted field could not be decrypted."
+                )
             return None
         # Tolerate legacy plaintext rows (pre-encryption) by returning as-is.
         return current

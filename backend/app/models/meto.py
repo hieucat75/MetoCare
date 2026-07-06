@@ -51,7 +51,11 @@ class MetoConversation(UUIDPrimaryKey, TimestampMixin, Base):
     deleted_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Admin AI-safety console: set when an admin marks the session reviewed.
     reviewed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    reviewed_by_user_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    # Nullable FK: reviewing admin. ON DELETE SET NULL — deleting the admin
+    # account must not cascade-delete the conversation or its review history.
+    reviewed_by_user_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="SET NULL"), index=True, nullable=True
+    )
 
 
 class MetoMessage(UUIDPrimaryKey, TimestampMixin, Base):

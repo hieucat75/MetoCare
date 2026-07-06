@@ -7,16 +7,20 @@ Backs the frontend "Giám sát an toàn AI" page. Sessions are Meto conversation
   - any ``safety_flags_detected``  → safety_level "caution", flag "review_requested"
   - otherwise                      → safety_level "safe",    flag "none"
 
-RBAC: INTERNAL_ADMIN / SUPER_ADMIN + MFA (same policy as the other /admin routes).
+RBAC: INTERNAL_ADMIN / SUPER_ADMIN. Unlike the other /admin routes, these two
+endpoints do NOT require step-up MFA verification (`require_mfa`) — safety
+triage needs to stay reachable for admins who haven't completed MFA
+enrollment/verification yet. RBAC role gating still applies.
 """
 
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
+from sqlalchemy import update as sa_update
 from sqlalchemy.orm import Session
 
-from app.api.deps import CurrentUser, get_session, require_mfa, require_roles
+from app.api.deps import CurrentUser, get_session, require_roles
 from app.core.clock import utcnow
 from app.models.meto import MetoAuditLog, MetoConversation
 from app.models.user import User, UserRole
@@ -39,6 +43,20 @@ def _classify(escalated: bool, flagged: bool) -> tuple[AiSafetyLevel, AiSessionF
     if flagged:
         return "caution", "review_requested"
     return "safe", "none"
+
+
+def _explanation_label(escalated: bool, flagged: bool) -> str:
+    """Controlled, non-PHI reason label for why this session is on the list.
+
+    MUST NOT derive from conversation content (title/messages) — conv.title is
+    auto-generated from the user's first message and can itself be PHI (e.g.
+    a symptom description). Only a small fixed vocabulary is ever returned.
+    """
+    if escalated:
+        return "urgent_response"
+    if flagged:
+        return "safety_flag"
+    return "none"
 
 
 def _safety_signals(db: Session, conversation_ids: list[str]) -> dict[str, tuple[bool, bool]]:
@@ -74,7 +92,7 @@ def _to_out(
         id=conv.id,
         patient_id=conv.user_id,
         patient_name=_display_name(owner),
-        explanation_type=conv.title or conv.screen_id or "meto_chat",
+        explanation_type=_explanation_label(*signals),
         safety_level=safety_level,
         flag=flag,
         created_at=conv.created_at,
@@ -98,7 +116,6 @@ def list_admin_ai_sessions(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     actor: CurrentUser = Depends(_admin_only),
-    _mfa: CurrentUser = Depends(require_mfa),  # admin actions require MFA
     db: Session = Depends(get_session),
 ) -> AdminAiSessionListResponse:
     """List AI sessions with derived safety metadata, newest first.
@@ -166,31 +183,51 @@ def list_admin_ai_sessions(
 def review_admin_ai_session(
     session_id: str,
     actor: CurrentUser = Depends(_admin_only),
-    _mfa: CurrentUser = Depends(require_mfa),  # admin actions require MFA
     db: Session = Depends(get_session),
 ) -> AdminAiSessionOut:
-    """Mark a session as reviewed by the current admin (idempotent)."""
+    """Mark a session as reviewed by the current admin (idempotent, race-safe).
+
+    Two admins can hit this endpoint for the same session at nearly the same
+    time. A read-then-write (check reviewed_at, then set it) is NOT safe: both
+    requests could read reviewed_at=None before either commits, and the second
+    write would silently overwrite the first reviewer's identity and create a
+    duplicate audit record.
+
+    Instead this uses a single atomic conditional UPDATE — only the request
+    whose WHERE clause actually matches a row (reviewed_at IS NULL) wins the
+    row and gets to write an audit record; every other request (concurrent or
+    a later idempotent retry) reads rowcount=0 and simply returns the
+    winner's state without writing anything.
+    """
     conv = db.get(MetoConversation, session_id)
     if conv is None or conv.deleted_at is not None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="AI session not found."
         )
 
-    if conv.reviewed_at is None:
-        conv.reviewed_at = utcnow()
-        conv.reviewed_by_user_id = actor.id
+    result = db.execute(
+        sa_update(MetoConversation)
+        .where(MetoConversation.id == session_id, MetoConversation.reviewed_at.is_(None))
+        .values(reviewed_at=utcnow(), reviewed_by_user_id=actor.id)
+    )
+    won = result.rowcount == 1
+    if won:
         audit.record(
             db,
             actor_type="admin",
             actor_id=actor.id,
             action="ai_session.review",
             resource_type="ai_session_safety",
-            resource_id=conv.id,
+            resource_id=session_id,
             outcome="success",
             severity="info",
         )
-        db.commit()
-        db.refresh(conv)
+    db.commit()
+
+    # The Core UPDATE above bypassed the ORM identity map, so `conv` may hold
+    # stale (pre-update) attribute values whether we won or lost the race —
+    # always re-read from the DB before building the response.
+    db.refresh(conv)
 
     signals = _safety_signals(db, [conv.id]).get(conv.id, (False, False))
     users = _users_by_id(

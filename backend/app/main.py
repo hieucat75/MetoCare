@@ -20,6 +20,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 
 from app.api.v1.router import api_router
 from app.core.config import get_settings
+from app.core.crypto import UndecryptablePHIError
 from app.core.logging import setup_logging
 from app.core.metrics import registry
 from app.core.middleware import MfaEnrollmentMiddleware, ObservabilityMiddleware
@@ -143,6 +144,26 @@ def create_app() -> FastAPI:
         return JSONResponse(
             status_code=403,
             content={"code": "consent_denied", "message": str(exc)},
+        )
+
+    @app.exception_handler(UndecryptablePHIError)
+    async def _undecryptable_phi_handler(
+        _: Request, exc: UndecryptablePHIError
+    ) -> JSONResponse:
+        """A required encrypted field could not be decrypted (corrupt row /
+        unknown key). Return a controlled domain error — never let this
+        surface as an unhandled 500 / response-validation crash, and never
+        include the underlying value (no plaintext/ciphertext) in the body."""
+        logger.error("Undecryptable PHI field encountered on a required column")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "code": "PHI_DECRYPTION_FAILED",
+                "message": (
+                    "This record could not be read due to a data integrity issue. "
+                    "Contact support."
+                ),
+            },
         )
 
     @app.get("/health", tags=["system"])
