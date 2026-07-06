@@ -232,8 +232,8 @@ export default function PatientDetailPage() {
   const summaryPatient: SummaryPatientProfile = {
     id: profile.id,
     fullName: profile.full_name ?? 'Không rõ tên',
-    dateOfBirth: profile.dob ?? '1990-01-01',
-    gender: profile.gender ?? 'other',
+    dateOfBirth: profile.dob,
+    gender: profile.gender,
     phone: profile.phone ?? undefined,
     address: undefined,
     avatarUrl: undefined,
