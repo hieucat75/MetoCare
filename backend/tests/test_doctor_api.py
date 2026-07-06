@@ -157,12 +157,12 @@ class TestGetMyProfile:
             == 403
         )
 
-    def test_doctor_without_mfa_returns_403(self, client, doctor_user):
+    def test_doctor_without_mfa_is_allowed(self, client, doctor_user):
+        # Doctors are not forced into MFA (sales-led onboarding).
         r = client.get(
             "/api/v1/doctors/me", headers=_doctor_token(doctor_user["user"].id, mfa=False)
         )  # noqa: E501
-        assert r.status_code == 403
-        assert "MFA" in r.json()["detail"]
+        assert r.status_code == 200
 
     def test_doctor_with_no_doctor_row_returns_404(self, client, db):
         import os
@@ -246,13 +246,13 @@ class TestPatchMyProfile:
         )
         assert r.status_code == 422
 
-    def test_no_mfa_returns_403(self, client, doctor_user):
+    def test_no_mfa_is_allowed(self, client, doctor_user):
         r = client.patch(
             "/api/v1/doctors/me",
             json={"bio": "x"},
             headers=_doctor_token(doctor_user["user"].id, mfa=False),
         )
-        assert r.status_code == 403
+        assert r.status_code == 200
 
 
 # ---------------------------------------------------------------------------
@@ -341,13 +341,13 @@ class TestListMyPatients:
             == 403
         )
 
-    def test_no_mfa_returns_403(self, client, doctor_user):
+    def test_no_mfa_is_allowed(self, client, doctor_user):
         assert (
             client.get(
                 "/api/v1/doctors/me/patients",
                 headers=_doctor_token(doctor_user["user"].id, mfa=False),
             ).status_code
-            == 403
+            == 200
         )
 
 
@@ -384,13 +384,13 @@ class TestGetMyDashboard:
         alerts = r.json()["recent_alerts"]
         assert any(a["patient_id"] == patient_user["profile"].id for a in alerts)
 
-    def test_no_mfa_returns_403(self, client, doctor_user):
+    def test_no_mfa_is_allowed(self, client, doctor_user):
         assert (
             client.get(
                 "/api/v1/doctors/me/dashboard",
                 headers=_doctor_token(doctor_user["user"].id, mfa=False),
             ).status_code
-            == 403
+            == 200
         )
 
     def test_patient_token_returns_403(self, client, patient_user):

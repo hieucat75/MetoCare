@@ -170,7 +170,7 @@ export function CreateDoctorModal({ open, onOpenChange, onCreated }: CreateDocto
           value={values.password}
           onChange={setField('password')}
           error={fieldErrors.password}
-          hint="Gửi mật khẩu này cho bác sĩ qua kênh an toàn; khuyến khích đổi mật khẩu sau lần đăng nhập đầu. Bác sĩ sẽ bị yêu cầu bật MFA khi đăng nhập."
+          hint="Gửi mật khẩu này cho bác sĩ qua kênh an toàn và khuyến khích đổi mật khẩu sau lần đăng nhập đầu."
           fullWidth
         />
         <Input

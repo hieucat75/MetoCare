@@ -24,9 +24,10 @@ class UserRole(enum.StrEnum):
 
 
 # Roles for which MFA is mandatory before accessing protected resources.
+# DOCTOR is deliberately NOT forced: mandatory enrollment blocked sales-led
+# onboarding. Doctors may still enroll MFA voluntarily via /auth/mfa/enroll.
 MFA_REQUIRED_ROLES = frozenset(
     {
-        UserRole.DOCTOR,
         UserRole.CLINIC_ADMIN,
         UserRole.INTERNAL_ADMIN,
         UserRole.MEDICAL_REVIEWER,

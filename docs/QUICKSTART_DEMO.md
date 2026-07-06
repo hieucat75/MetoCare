@@ -59,7 +59,7 @@ Mở **http://localhost:8000/docs** (Swagger UI) hoặc http://localhost:8000/re
 | Role | Email | Password | MFA |
 |------|-------|----------|-----|
 | patient | `demo.patient@example.com` | `DemoPatient123!` | không bắt buộc |
-| doctor | `demo.doctor@example.com` | `DemoDoctor123!` | **bị ép enroll** |
+| doctor | `demo.doctor@example.com` | `DemoDoctor123!` | không bắt buộc (tự nguyện) |
 | admin (internal_admin) | `demo.admin@example.com` | `DemoAdmin123!` | **bị ép enroll** |
 
 ## 5. Flow test trên Swagger UI (patient)
@@ -94,15 +94,15 @@ Mở **http://localhost:8000/docs** (Swagger UI) hoặc http://localhost:8000/re
    { "consent_type": "data_sharing", "data_scope": "lab", "granted_to": "<doctor_user_id>" }
    ```
 
-## 6. Flow demo ÉP MFA (doctor)
+## 6. Flow demo ÉP MFA (admin)
 
-1. **Login** `demo.doctor@example.com` / `DemoDoctor123!` → có `access_token` nhưng claim `mfa_enrollment_required=true`.
+> Doctor **không còn bị ép MFA** (bỏ để sales onboard bác sĩ dễ hơn) — login `demo.doctor@example.com` / `DemoDoctor123!` là dùng được ngay; MFA với doctor là tự nguyện qua `POST /api/v1/auth/mfa/enroll`.
+
+1. **Login** `demo.admin@example.com` / `DemoAdmin123!` → có `access_token` nhưng claim `mfa_enrollment_required=true`.
 2. Authorize bằng token đó, thử endpoint bất kỳ (vd `GET /api/v1/auth/me` vẫn cho) nhưng endpoint nghiệp vụ → **403 `mfa_enrollment_required`**.
 3. **Enroll** → `POST /api/v1/auth/mfa/enroll` → trả về `secret` + `provisioning_uri` + `backup_codes` (nhập secret/URI vào Google Authenticator; lưu backup codes).
 4. Lấy mã 6 số từ app authenticator → **Verify** → `POST /api/v1/auth/mfa/verify` `{"totp_code":"123456"}`.
-5. **Login lại** kèm `totp_code` → token mới `mfa=true`, hết bị chặn.
-
-> Admin (`demo.admin@example.com`) cũng bị ép MFA tương tự; sau khi enroll có thể thử `GET /api/v1/admin/audit-logs`.
+5. **Login lại** kèm `totp_code` → token mới `mfa=true`, hết bị chặn; thử `GET /api/v1/admin/audit-logs`.
 
 ## 7. curl nhanh (không cần Swagger)
 

@@ -15,7 +15,6 @@ from app.api.deps import (
     CurrentUser,
     current_user,
     get_session,
-    require_mfa,
     require_roles,
 )
 from app.core.config import MARKETPLACE_DISCLAIMER
@@ -55,19 +54,6 @@ _ADMIN_ROLES = frozenset({UserRole.INTERNAL_ADMIN.value, UserRole.SUPER_ADMIN.va
 # ---------------------------------------------------------------------------
 # Identity helpers
 # ---------------------------------------------------------------------------
-
-
-def _enforce_doctor_mfa(user: CurrentUser) -> None:
-    """On mixed patient/doctor routes, require an MFA-verified session for doctors.
-
-    DOCTOR is in ``MFA_REQUIRED_ROLES``; a doctor who has not enrolled MFA carries
-    an ``mfa=False`` token and must be rejected. Patient callers are unaffected.
-    """
-    if user.role == UserRole.DOCTOR.value and not user.mfa:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="MFA verification required for this resource.",
-        )
 
 
 def _resolve_patient_profile(db: Session, user_id: str) -> PatientProfile:
@@ -185,7 +171,6 @@ def pay_consultation(
 def confirm_consultation(
     consultation_id: str,
     user: CurrentUser = Depends(_doctor_only),
-    _mfa: CurrentUser = Depends(require_mfa),
     db: Session = Depends(get_session),
 ) -> ConsultationOut:
     consultation = consult_svc.confirm(db, consultation_id, doctor_user_id=user.id)
@@ -196,7 +181,6 @@ def confirm_consultation(
 def start_consultation(
     consultation_id: str,
     user: CurrentUser = Depends(_doctor_only),
-    _mfa: CurrentUser = Depends(require_mfa),
     db: Session = Depends(get_session),
 ) -> ConsultationOut:
     consultation = consult_svc.start(db, consultation_id, doctor_user_id=user.id)
@@ -207,7 +191,6 @@ def start_consultation(
 def complete_consultation(
     consultation_id: str,
     user: CurrentUser = Depends(_doctor_only),
-    _mfa: CurrentUser = Depends(require_mfa),
     db: Session = Depends(get_session),
 ) -> ConsultationOut:
     consultation = consult_svc.complete(db, consultation_id, doctor_user_id=user.id)
@@ -226,7 +209,6 @@ def cancel_consultation(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only patients and doctors can cancel consultations.",
         )
-    _enforce_doctor_mfa(user)
     patient_profile_id = None
     if user.role == UserRole.PATIENT.value:
         patient_profile_id = _resolve_patient_profile(db, user.id).id
@@ -250,7 +232,6 @@ def cancel_consultation(
 def get_patient_summary(
     consultation_id: str,
     user: CurrentUser = Depends(_doctor_only),
-    _mfa: CurrentUser = Depends(require_mfa),
     db: Session = Depends(get_session),
 ) -> PatientSummaryOut:
     doctor = get_doctor_by_user_id(db, user.id)
@@ -278,7 +259,6 @@ def add_note(
     consultation_id: str,
     payload: NoteCreate,
     user: CurrentUser = Depends(_doctor_only),
-    _mfa: CurrentUser = Depends(require_mfa),
     db: Session = Depends(get_session),
 ) -> NoteOut:
     note = consultation_note.add_note(
@@ -297,7 +277,6 @@ def list_notes(
     user: CurrentUser = Depends(current_user),
     db: Session = Depends(get_session),
 ) -> list[NoteOut]:
-    _enforce_doctor_mfa(user)
     patient_profile_id = None
     if user.role == UserRole.PATIENT.value:
         patient_profile_id = _resolve_patient_profile(db, user.id).id

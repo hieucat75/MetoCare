@@ -1,7 +1,8 @@
 """T10 — RBAC/access-control regression tests (PR #78 security review).
 
 Covers three findings:
-  1. Doctor consultation/PHI endpoints require an MFA-verified session.
+  1. (Revised) Doctor consultation/PHI endpoints accept doctor sessions with or
+     without MFA — mandatory doctor MFA was dropped for sales-led onboarding.
   2. Suspending/rejecting a doctor revokes in-flight PHI access grants and the
      defense-in-depth check denies non-VERIFIED doctors.
   3. The patient ``/pay`` response never leaks payout/platform-fee internals.
@@ -28,26 +29,27 @@ def _paid_consult(db):
 
 
 # ---------------------------------------------------------------------------
-# Finding 1 — MFA required on doctor consultation/PHI endpoints
+# Finding 1 (revised) — doctor consultation/PHI endpoints work with or
+# without an MFA-verified session
 # ---------------------------------------------------------------------------
 
 
-def test_patient_summary_rejects_doctor_without_mfa(db, client):
+def test_patient_summary_allows_doctor_without_mfa(db, client):
     doctor, _profile, c = _paid_consult(db)
     url = f"/api/v1/consultations/{c.id}/patient-summary"
     no_mfa = headers(doctor.user_id, "doctor", mfa=False)
-    assert client.get(url, headers=no_mfa).status_code == 403
-    # MFA-verified doctor still succeeds.
+    assert client.get(url, headers=no_mfa).status_code == 200
+    # MFA-verified doctor also succeeds.
     assert client.get(url, headers=headers(doctor.user_id, "doctor")).status_code == 200
 
 
-def test_add_note_rejects_doctor_without_mfa(db, client):
+def test_add_note_allows_doctor_without_mfa(db, client):
     doctor, _profile, c = _paid_consult(db)
     url = f"/api/v1/consultations/{c.id}/notes"
     body = {"content": "Uống thuốc đều đặn.", "note_type": "recommendation"}
     no_mfa = headers(doctor.user_id, "doctor", mfa=False)
-    assert client.post(url, json=body, headers=no_mfa).status_code == 403
-    # MFA-verified doctor still succeeds.
+    assert client.post(url, json=body, headers=no_mfa).status_code == 201
+    # MFA-verified doctor also succeeds.
     ok = client.post(url, json=body, headers=headers(doctor.user_id, "doctor"))
     assert ok.status_code == 201
 
