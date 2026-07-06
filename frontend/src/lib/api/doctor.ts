@@ -72,15 +72,29 @@ export interface DoctorPatientListResponse {
   items: DoctorPatient[]
 }
 
+/**
+ * Server-side risk filter. `high` includes `very_high` on the backend.
+ */
+export type DoctorPatientRiskFilter = 'low' | 'medium' | 'high'
+
+/**
+ * Server-side sort key. Default (when omitted) is `risk`.
+ */
+export type DoctorPatientSort = 'risk' | 'last_activity' | 'pending' | 'name'
+
 export async function getDoctorPatients(params?: {
   limit?: number
   offset?: number
   search?: string
+  risk?: DoctorPatientRiskFilter
+  sort?: DoctorPatientSort
 }): Promise<DoctorPatientListResponse> {
   const qs = new URLSearchParams()
   if (params?.limit) qs.set('limit', String(params.limit))
   if (params?.offset) qs.set('offset', String(params.offset))
   if (params?.search) qs.set('search', params.search)
+  if (params?.risk) qs.set('risk', params.risk)
+  if (params?.sort) qs.set('sort', params.sort)
   const query = qs.toString()
   return api.get<DoctorPatientListResponse>(`/doctor/patients${query ? `?${query}` : ''}`)
 }
