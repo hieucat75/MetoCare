@@ -17,11 +17,43 @@ export interface DoctorVerificationOut {
   is_active: boolean
 }
 
+/** Payload for creating a doctor account (`POST /api/v1/admin/doctors`). */
+export interface DoctorCreateIn {
+  email: string
+  /** Backend enforces a minimum length of 12 characters. */
+  password: string
+  full_name: string
+  specialty?: string | null
+  license_no?: string | null
+  bio?: string | null
+  clinic_id?: string | null
+}
+
+/** Result of creating a doctor account. */
+export interface DoctorAdminOut {
+  user_id: string
+  doctor_id: string
+  email: string | null
+  full_name: string
+  role: string
+  is_active: boolean
+  mfa_enabled: boolean
+}
+
 // ── Typed functions (ADMIN, MFA) ──────────────────────────────────────────────
+
+/**
+ * Create a doctor account (user + profile). The new doctor starts in
+ * PENDING_VERIFICATION and must be approved before appearing in the
+ * marketplace. 409 if the email is already registered.
+ */
+export async function createDoctor(payload: DoctorCreateIn): Promise<DoctorAdminOut> {
+  return api.post<DoctorAdminOut>('/admin/doctors', payload)
+}
 
 /** List doctors for the verification queue, optionally filtered by status. */
 export async function listDoctorsForVerification(
-  status?: DoctorVerificationStatus,
+  status?: DoctorVerificationStatus
 ): Promise<DoctorVerificationOut[]> {
   const qs = new URLSearchParams()
   if (status) qs.set('status', status)

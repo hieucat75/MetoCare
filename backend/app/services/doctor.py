@@ -4,7 +4,7 @@ Access rules enforced here (not duplicated in routes):
 - list_doctor_patients: returns ONLY patients with active consent granted to this
   doctor's user_id OR with an active encounter assigned to this doctor.
 - get_doctor_dashboard: counts derived only from the doctor's own patient set.
-- create_doctor_account: caller must already hold SUPER_ADMIN + MFA — this
+- create_doctor_account: caller must already hold an admin role + MFA — this
   function does not re-check RBAC; that is the route layer's responsibility.
 """
 

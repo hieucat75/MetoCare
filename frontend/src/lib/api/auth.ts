@@ -135,9 +135,11 @@ export async function mfaVerify(totpCode: string): Promise<{ message: string }> 
   return api.post<{ message: string }>('/auth/mfa/verify', { totp_code: totpCode })
 }
 
-/** Roles for which MFA is mandatory (mirrors backend MFA_REQUIRED_ROLES). */
+/**
+ * Roles for which MFA is mandatory (mirrors backend MFA_REQUIRED_ROLES).
+ * Doctors are exempt — forced enrollment blocked sales-led onboarding.
+ */
 export const MFA_REQUIRED_ROLES: readonly UserRole[] = [
-  'doctor',
   'medical_reviewer',
   'internal_admin',
   'super_admin',

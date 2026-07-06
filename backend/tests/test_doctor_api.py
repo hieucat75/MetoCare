@@ -157,12 +157,12 @@ class TestGetMyProfile:
             == 403
         )
 
-    def test_doctor_without_mfa_returns_403(self, client, doctor_user):
+    def test_doctor_without_mfa_is_allowed(self, client, doctor_user):
+        # Doctors are not forced into MFA (sales-led onboarding).
         r = client.get(
             "/api/v1/doctors/me", headers=_doctor_token(doctor_user["user"].id, mfa=False)
         )  # noqa: E501
-        assert r.status_code == 403
-        assert "MFA" in r.json()["detail"]
+        assert r.status_code == 200
 
     def test_doctor_with_no_doctor_row_returns_404(self, client, db):
         import os
@@ -246,13 +246,13 @@ class TestPatchMyProfile:
         )
         assert r.status_code == 422
 
-    def test_no_mfa_returns_403(self, client, doctor_user):
+    def test_no_mfa_is_allowed(self, client, doctor_user):
         r = client.patch(
             "/api/v1/doctors/me",
             json={"bio": "x"},
             headers=_doctor_token(doctor_user["user"].id, mfa=False),
         )
-        assert r.status_code == 403
+        assert r.status_code == 200
 
 
 # ---------------------------------------------------------------------------
@@ -341,13 +341,13 @@ class TestListMyPatients:
             == 403
         )
 
-    def test_no_mfa_returns_403(self, client, doctor_user):
+    def test_no_mfa_is_allowed(self, client, doctor_user):
         assert (
             client.get(
                 "/api/v1/doctors/me/patients",
                 headers=_doctor_token(doctor_user["user"].id, mfa=False),
             ).status_code
-            == 403
+            == 200
         )
 
 
@@ -384,13 +384,13 @@ class TestGetMyDashboard:
         alerts = r.json()["recent_alerts"]
         assert any(a["patient_id"] == patient_user["profile"].id for a in alerts)
 
-    def test_no_mfa_returns_403(self, client, doctor_user):
+    def test_no_mfa_is_allowed(self, client, doctor_user):
         assert (
             client.get(
                 "/api/v1/doctors/me/dashboard",
                 headers=_doctor_token(doctor_user["user"].id, mfa=False),
             ).status_code
-            == 403
+            == 200
         )
 
     def test_patient_token_returns_403(self, client, patient_user):
@@ -449,11 +449,29 @@ class TestAdminCreateDoctor:
         assert entry.actor_id == "sa-audit"
         assert entry.severity == "warning"
 
-    def test_internal_admin_returns_403(self, client):
+    def test_internal_admin_mfa_creates_doctor(self, client):
         r = client.post(
             "/api/v1/admin/doctors",
             json=self._payload("ia"),
             headers=_internal_admin_token("ia-id"),
+        )
+        assert r.status_code == 201, r.text
+        assert r.json()["role"] == "doctor"
+
+    def test_internal_admin_without_mfa_returns_403(self, client):
+        token = create_access_token(subject="ia-no-mfa", role="internal_admin", mfa=False)
+        r = client.post(
+            "/api/v1/admin/doctors",
+            json=self._payload("ia-nomfa"),
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert r.status_code == 403
+
+    def test_doctor_token_returns_403(self, client, doctor_user):
+        r = client.post(
+            "/api/v1/admin/doctors",
+            json=self._payload("dr"),
+            headers=_doctor_token(doctor_user["user"].id),
         )
         assert r.status_code == 403
 
@@ -486,6 +504,25 @@ class TestAdminCreateDoctor:
             "/api/v1/admin/doctors",
             json={"email": "x@x.com"},  # missing password and full_name
             headers=_super_admin_token("sa-val"),
+        )
+        assert r.status_code == 422
+
+    def test_invalid_email_returns_422(self, client):
+        payload = {**self._payload("bad-email"), "email": "not-an-email"}
+        r = client.post(
+            "/api/v1/admin/doctors",
+            json=payload,
+            headers=_super_admin_token("sa-bad-email"),
+        )
+        assert r.status_code == 422
+
+    def test_overlong_email_returns_422(self, client):
+        # Must be rejected at the schema boundary, before the 255-char DB column.
+        payload = {**self._payload("long-email"), "email": f"{'a' * 250}@example.com"}
+        r = client.post(
+            "/api/v1/admin/doctors",
+            json=payload,
+            headers=_super_admin_token("sa-long-email"),
         )
         assert r.status_code == 422
 

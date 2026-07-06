@@ -324,7 +324,7 @@ def get_user_audit_log(
 
 
 # ---------------------------------------------------------------------------
-# POST /admin/doctors — SUPER_ADMIN + MFA only (AC-12, AC-13)
+# POST /admin/doctors — INTERNAL_ADMIN / SUPER_ADMIN + MFA (sales onboarding)
 # ---------------------------------------------------------------------------
 
 
@@ -332,17 +332,18 @@ def get_user_audit_log(
     "/doctors",
     response_model=DoctorAdminOut,
     status_code=status.HTTP_201_CREATED,
-    summary="Create a doctor account (SUPER_ADMIN + MFA only)",
+    summary="Create a doctor account (admin + MFA)",
 )
 def create_doctor(
     payload: DoctorCreateRequest,
-    actor: CurrentUser = Depends(_super_admin_only),
+    actor: CurrentUser = Depends(_admin_only),
     _mfa: CurrentUser = Depends(require_mfa),
     db: Session = Depends(get_session),
 ) -> DoctorAdminOut:
     """Create a User(role=DOCTOR) + Doctor profile in one transaction.
 
-    SUPER_ADMIN + MFA-verified token required. INTERNAL_ADMIN → 403.
+    INTERNAL_ADMIN or SUPER_ADMIN with an MFA-verified token required, so the
+    sales/ops team can onboard doctors. Doctor/patient tokens → 403.
     Audited as action=create_doctor_account at severity=warn.
     """
     user, doctor = create_doctor_account(

@@ -20,9 +20,11 @@ import {
   rejectDoctor,
   suspendDoctor,
   type DoctorVerificationOut,
+  type DoctorAdminOut,
 } from '@/lib/api/adminDoctors'
 import type { DoctorVerificationStatus } from '@/lib/api/marketplace'
 import { ApiError } from '@/lib/api/client'
+import { CreateDoctorModal } from './CreateDoctorModal'
 
 // ---------------------------------------------------------------------------
 // Status labels + badge variants
@@ -155,6 +157,9 @@ export default function AdminDoctorsPage() {
   const [submitting, setSubmitting] = React.useState(false)
   const [actionError, setActionError] = React.useState<string | null>(null)
 
+  const [createOpen, setCreateOpen] = React.useState(false)
+  const [createSuccess, setCreateSuccess] = React.useState<string | null>(null)
+
   const loadDoctors = React.useCallback(async () => {
     setLoading(true)
     setError(null)
@@ -174,8 +179,26 @@ export default function AdminDoctorsPage() {
 
   const handleTabChange = React.useCallback((value: string) => {
     setActionError(null)
+    setCreateSuccess(null)
     setStatusFilter(value as DoctorVerificationStatus)
   }, [])
+
+  // New doctors start in PENDING_VERIFICATION: jump to that tab so the
+  // sales/admin user sees the account they just created.
+  const handleDoctorCreated = React.useCallback(
+    (created: DoctorAdminOut) => {
+      setCreateSuccess(
+        `Đã tạo tài khoản bác sĩ ${created.full_name} (${created.email ?? 'không có email'}). ` +
+          'Hồ sơ đang ở trạng thái "Chờ duyệt" — duyệt để hiển thị trong marketplace.'
+      )
+      if (statusFilter === 'PENDING_VERIFICATION') {
+        void loadDoctors()
+      } else {
+        setStatusFilter('PENDING_VERIFICATION')
+      }
+    },
+    [statusFilter, loadDoctors]
+  )
 
   const handleConfirm = React.useCallback(async () => {
     if (!pending) return
@@ -291,9 +314,22 @@ export default function AdminDoctorsPage() {
         title="Hàng chờ duyệt bác sĩ"
         subtitle="Duyệt, từ chối hoặc tạm ngưng hồ sơ bác sĩ trong marketplace"
         actions={
-          <Badge variant="default" size="md">
-            {doctors.length} bác sĩ
-          </Badge>
+          <div className="flex items-center gap-3">
+            <Badge variant="default" size="md">
+              {doctors.length} bác sĩ
+            </Badge>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => {
+                setActionError(null)
+                setCreateSuccess(null)
+                setCreateOpen(true)
+              }}
+            >
+              Thêm bác sĩ
+            </Button>
+          </div>
         }
       />
 
@@ -306,6 +342,13 @@ export default function AdminDoctorsPage() {
           variant="pill"
         />
       </div>
+
+      {/* Create success banner */}
+      {createSuccess && (
+        <Alert variant="success" title="Tạo bác sĩ thành công" className="mb-4">
+          {createSuccess}
+        </Alert>
+      )}
 
       {/* Action error banner */}
       {actionError && (
@@ -374,6 +417,13 @@ export default function AdminDoctorsPage() {
           </p>
         )}
       </Modal>
+
+      {/* Create doctor modal (sales onboarding) */}
+      <CreateDoctorModal
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        onCreated={handleDoctorCreated}
+      />
     </div>
   )
 }
