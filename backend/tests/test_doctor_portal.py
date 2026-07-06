@@ -104,6 +104,23 @@ def _grant_profile_consent(db: Session, patient_profile_id: str, doctor_user_id:
     return c
 
 
+def _grant_narrow_consent(db: Session, patient_profile_id: str, doctor_user_id: str):
+    """A visibility-granting consent whose data_scope is NOT profile/'*'.
+
+    Makes the patient VISIBLE (roster/queue) but NOT PHI-authorized, so name /
+    email / risk must be masked.
+    """
+    c = Consent(
+        patient_id=patient_profile_id,
+        consent_type="ai_use",
+        data_scope="ai_use",
+        granted_to=doctor_user_id,
+    )
+    db.add(c)
+    db.commit()
+    return c
+
+
 # ---------------------------------------------------------------------------
 # RBAC
 # ---------------------------------------------------------------------------
@@ -469,3 +486,192 @@ class TestReview:
             json={"decision": "approved", "comment": "x"},
         )
         assert r.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# FIX 1 — server-side scope gate on review dispatch (403 + no dispatch)
+# ---------------------------------------------------------------------------
+
+
+class TestReviewScopeGate:
+    def test_lab_review_denied_for_unrelated_patient(self, client, db, doctor):
+        # Patient with NO consent and NO encounter to this doctor.
+        user, profile = _make_patient(db, name="Secret Patient")
+        lab = LabResult(
+            patient_id=profile.id,
+            test_name="TG",
+            value=3.0,
+            status="high",
+            verified_by_doctor=False,
+        )
+        db.add(lab)
+        db.commit()
+        lab_id = lab.id
+
+        r = client.patch(
+            f"{API}/doctor/queue/lab_result:{lab_id}/review",
+            headers=_doctor_headers(doctor["user_id"]),
+            json={"decision": "approved", "comment": "x"},
+        )
+        assert r.status_code == 403
+        # No PHI (patient name) leaked in the error body.
+        assert "Secret Patient" not in r.text
+        # No dispatch happened: the lab is UNCHANGED.
+        db.expire_all()
+        assert db.get(LabResult, lab_id).verified_by_doctor is False
+
+    def test_care_plan_review_denied_for_unrelated_patient(self, client, db, doctor):
+        user, profile = _make_patient(db, name="Secret Patient")
+        plan = CarePlan(
+            patient_id=profile.id, title="Plan", status=CarePlanStatus.PENDING_REVIEW
+        )
+        db.add(plan)
+        db.commit()
+        plan_id = plan.id
+
+        r = client.patch(
+            f"{API}/doctor/queue/care_plan:{plan_id}/review",
+            headers=_doctor_headers(doctor["user_id"]),
+            json={"decision": "rejected", "comment": "x"},
+        )
+        assert r.status_code == 403
+        assert "Secret Patient" not in r.text
+        db.expire_all()
+        assert db.get(CarePlan, plan_id).status == CarePlanStatus.PENDING_REVIEW
+
+    def test_ai_review_denied_for_unrelated_patient(self, client, db, doctor):
+        user, profile = _make_patient(db, name="Secret Patient")
+        # Pending AI rec but NO consent/encounter granted to this doctor.
+        session = AISession(patient_id=profile.id, session_type="lab_explanation")
+        db.add(session)
+        db.flush()
+        rec = AIClinicalRecommendation.create_from_ai(
+            session_id=session.id,
+            patient_id=profile.id,
+            recommendation_type="lab_interpretation",
+        )
+        db.add(rec)
+        db.commit()
+        rec_id = rec.id
+
+        r = client.patch(
+            f"{API}/doctor/queue/ai_session:{rec_id}/review",
+            headers=_doctor_headers(doctor["user_id"]),
+            json={"decision": "approved", "comment": "x"},
+        )
+        assert r.status_code == 403
+        assert "Secret Patient" not in r.text
+        db.expire_all()
+        assert db.get(AIClinicalRecommendation, rec_id).status == "pending_review"
+
+
+# ---------------------------------------------------------------------------
+# FIX 2 — review comment + internal_note persisted (encrypted), round-trip
+# ---------------------------------------------------------------------------
+
+
+class TestReviewDecisionPersistence:
+    def _decisions(self, db, *, item_id: str):
+        from app.models.care import DoctorReviewDecision
+
+        return (
+            db.query(DoctorReviewDecision)
+            .filter(DoctorReviewDecision.item_id == item_id)
+            .all()
+        )
+
+    def test_lab_decision_persisted(self, client, db, doctor):
+        user, profile = _make_patient(db)
+        _grant_profile_consent(db, profile.id, doctor["user_id"])
+        lab = LabResult(
+            patient_id=profile.id, test_name="TG", value=3.0, status="high",
+            verified_by_doctor=False,
+        )
+        db.add(lab)
+        db.commit()
+        lab_id = lab.id
+        r = client.patch(
+            f"{API}/doctor/queue/lab_result:{lab_id}/review",
+            headers=_doctor_headers(doctor["user_id"]),
+            json={"decision": "approved", "comment": "Đã xem", "internal_note": "nội bộ"},
+        )
+        assert r.status_code == 200, r.text
+        db.expire_all()
+        rows = self._decisions(db, item_id=lab_id)
+        assert len(rows) == 1
+        assert rows[0].decision == "approved"
+        assert rows[0].comment == "Đã xem"
+        assert rows[0].internal_note == "nội bộ"
+
+    def test_care_plan_decision_persisted(self, client, db, doctor):
+        user, profile = _make_patient(db)
+        _grant_profile_consent(db, profile.id, doctor["user_id"])
+        plan = CarePlan(
+            patient_id=profile.id, title="Plan", status=CarePlanStatus.PENDING_REVIEW
+        )
+        db.add(plan)
+        db.commit()
+        plan_id = plan.id
+        r = client.patch(
+            f"{API}/doctor/queue/care_plan:{plan_id}/review",
+            headers=_doctor_headers(doctor["user_id"]),
+            json={"decision": "rejected", "comment": "Chưa phù hợp", "internal_note": "ghi chú"},
+        )
+        assert r.status_code == 200, r.text
+        db.expire_all()
+        rows = self._decisions(db, item_id=plan_id)
+        assert len(rows) == 1
+        assert rows[0].decision == "rejected"
+        assert rows[0].comment == "Chưa phù hợp"
+        assert rows[0].internal_note == "ghi chú"
+
+    def test_ai_decision_persisted(self, client, db, doctor):
+        user, profile = _make_patient(db)
+        _grant_profile_consent(db, profile.id, doctor["user_id"])
+        rec = _seed_ai_rec(
+            db, patient_id=profile.id, doctor_user_id=doctor["user_id"],
+            doctor_id=doctor["doctor_id"],
+        )
+        rec_id = rec.id
+        r = client.patch(
+            f"{API}/doctor/queue/ai_session:{rec_id}/review",
+            headers=_doctor_headers(doctor["user_id"]),
+            json={"decision": "approved", "comment": "OK", "internal_note": "riêng tư"},
+        )
+        assert r.status_code == 200, r.text
+        db.expire_all()
+        rows = self._decisions(db, item_id=rec_id)
+        assert len(rows) == 1
+        assert rows[0].decision == "approved"
+        assert rows[0].comment == "OK"
+        assert rows[0].internal_note == "riêng tư"
+
+
+# ---------------------------------------------------------------------------
+# FIX 3 — roster masks PHI for narrow/unrelated consent
+# ---------------------------------------------------------------------------
+
+
+class TestRosterPhiMasking:
+    def test_narrow_consent_masks_phi_and_not_searchable(self, client, db, doctor):
+        user, profile = _make_patient(
+            db, risk="high", name="Hidden Name", email="hidden@example.vn"
+        )
+        _grant_narrow_consent(db, profile.id, doctor["user_id"])
+
+        r = client.get(f"{API}/doctor/patients", headers=_doctor_headers(doctor["user_id"]))
+        assert r.status_code == 200
+        body = r.json()
+        assert body["total"] == 1
+        item = body["items"][0]
+        assert item["id"] == profile.id
+        assert item["full_name"] is None
+        assert item["email"] == ""
+        assert item["risk_segment"] is None
+        assert item["consented"] is False
+
+        # Searching by the real (masked) name must NOT surface the patient.
+        r2 = client.get(
+            f"{API}/doctor/patients?search=Hidden", headers=_doctor_headers(doctor["user_id"])
+        )
+        assert r2.json()["total"] == 0
