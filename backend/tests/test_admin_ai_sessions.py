@@ -7,6 +7,12 @@ Covers:
   - Safety classification from MetoAuditLog signals (safe/caution/urgent)
   - Filters: safety_level=urgent, reviewed, pagination limit/offset
   - PATCH review: persists reviewer + timestamp, idempotent, 404 for unknown id
+  - MFA: these routes carry the same require_mfa gate as every other /admin
+    route — no route-specific exception. That gate (and the enrollment
+    middleware) is a global no-op while Settings.mfa_enforcement_enabled is
+    False (default — temporary relaxed policy for the build/test phase);
+    the `mfa_enforced` fixture flips it on to prove the mandatory-MFA
+    behavior still exists and applies identically to ai-sessions.
 """
 
 from __future__ import annotations
@@ -168,11 +174,13 @@ def test_admin_without_mfa_can_patch_review(client, db, patient_user):
     assert r.json()["reviewed_at"] is not None
 
 
-def test_admin_owing_mfa_enrollment_still_reaches_ai_sessions(client, db):
-    """The global MfaEnrollmentMiddleware normally 403s EVERY protected path
-    for an admin who hasn't completed MFA enrollment (mfa_enrollment_required
-    claim). /admin/ai-sessions is explicitly allowlisted so triage stays
-    reachable regardless of enrollment status."""
+def test_ai_sessions_not_blocked_by_enrollment_claim_by_default(client, db):
+    """MFA enforcement is OFF by default (temporary relaxed policy for the
+    build/test phase — Settings.mfa_enforcement_enabled). While off, the
+    MfaEnrollmentMiddleware passes every path through unconditionally, even
+    a token that (incorrectly, e.g. minted before the flag was disabled)
+    still carries mfa_enrollment_required=True. ai-sessions behaves exactly
+    like every other admin route here — no route-specific exception."""
     user = User(
         email=f"ai-unenrolled-{os.urandom(4).hex()}@metocare.internal",
         password_hash="x",
@@ -185,13 +193,39 @@ def test_admin_owing_mfa_enrollment_still_reaches_ai_sessions(client, db):
         subject=user.id, role="super_admin", mfa=False, mfa_enrollment_required=True
     )
     r = client.get(BASE, headers={"Authorization": f"Bearer {token}"})
-    # Sanity: the SAME token IS blocked on an ordinary admin route, proving
-    # the allowlist — not a global MFA policy change — is what lets
-    # ai-sessions through.
-    blocked = client.get("/api/v1/admin/stats", headers={"Authorization": f"Bearer {token}"})
+    other_admin_route = client.get(
+        "/api/v1/admin/stats", headers={"Authorization": f"Bearer {token}"}
+    )
     assert r.status_code == 200
-    assert blocked.status_code == 403
-    assert blocked.json().get("code") == "mfa_enrollment_required"
+    assert other_admin_route.status_code == 200
+
+
+def test_ai_sessions_blocked_same_as_other_admin_routes_when_enforced(
+    client, db, mfa_enforced
+):
+    """With MCP_MFA_ENFORCEMENT_ENABLED=true, an admin who owes MFA
+    enrollment is blocked on /admin/ai-sessions exactly like any other admin
+    route — proving there is still no route-specific exception, just the
+    global flag."""
+    user = User(
+        email=f"ai-unenrolled2-{os.urandom(4).hex()}@metocare.internal",
+        password_hash="x",
+        role=UserRole.SUPER_ADMIN,
+        full_name="Unenrolled Admin 2",
+    )
+    db.add(user)
+    db.commit()
+    token = create_access_token(
+        subject=user.id, role="super_admin", mfa=False, mfa_enrollment_required=True
+    )
+    r = client.get(BASE, headers={"Authorization": f"Bearer {token}"})
+    other_admin_route = client.get(
+        "/api/v1/admin/stats", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert r.status_code == 403
+    assert r.json().get("code") == "mfa_enrollment_required"
+    assert other_admin_route.status_code == 403
+    assert other_admin_route.json().get("code") == "mfa_enrollment_required"
 
 
 # ---------------------------------------------------------------------------

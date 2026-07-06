@@ -262,7 +262,13 @@ def issue_tokens(
     family_id groups a rotation chain (one login session); generation increments
     on each rotation. A new login starts a fresh family.
     """
-    enrollment_required = user.role in MFA_REQUIRED_ROLES and not user.mfa_enabled
+    # Forced enrollment only applies while MFA enforcement is enabled
+    # (temporary relaxed policy for the build/test phase — see Settings).
+    enrollment_required = (
+        get_settings().mfa_enforcement_enabled
+        and user.role in MFA_REQUIRED_ROLES
+        and not user.mfa_enabled
+    )
     access = create_access_token(
         subject=user.id,
         role=user.role.value,

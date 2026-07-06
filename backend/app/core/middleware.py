@@ -28,10 +28,6 @@ _ENROLL_ALLOW_SUFFIXES = (
     "/auth/refresh",
 )
 _ENROLL_ALLOW_EXACT = frozenset({"/health", "/metrics", "/docs", "/openapi.json", "/redoc"})
-# AI-safety triage must stay reachable even for admins who haven't finished
-# MFA enrollment — matches both GET /admin/ai-sessions and
-# PATCH /admin/ai-sessions/{id}/review.
-_ENROLL_ALLOW_SUBSTRINGS = ("/admin/ai-sessions",)
 
 
 class MfaEnrollmentMiddleware(BaseHTTPMiddleware):
@@ -48,14 +44,13 @@ class MfaEnrollmentMiddleware(BaseHTTPMiddleware):
             if payload and payload.get("mfa_enrollment_required"):
                 from app.core.config import get_settings as _gs
 
-                if _gs().skip_mfa_in_dev:
+                # Pass through when MFA enforcement is disabled (temporary
+                # relaxed policy) — also covers tokens minted before the flag
+                # was turned off that still carry the enrollment claim.
+                if _gs().skip_mfa_in_dev or not _gs().mfa_enforcement_enabled:
                     return await call_next(request)
                 path = request.url.path
-                if (
-                    path not in _ENROLL_ALLOW_EXACT
-                    and not path.endswith(_ENROLL_ALLOW_SUFFIXES)
-                    and not any(sub in path for sub in _ENROLL_ALLOW_SUBSTRINGS)
-                ):
+                if path not in _ENROLL_ALLOW_EXACT and not path.endswith(_ENROLL_ALLOW_SUFFIXES):
                     return JSONResponse(
                         status_code=403,
                         content={

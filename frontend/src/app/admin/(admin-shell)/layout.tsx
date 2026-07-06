@@ -20,7 +20,7 @@ import { AppShell, Sidebar, TopNav, PageLoading } from '@/design-system'
 import type { NavItem } from '@/design-system'
 import { useAuth } from '@/lib/auth/context'
 import { getUserDisplayName } from '@/lib/auth/userDisplay'
-import { getRoleHomePath, type UserRole } from '@/lib/api/auth'
+import { getRoleHomePath, needsMfaEnrollment, type UserRole } from '@/lib/api/auth'
 
 const ADMIN_ROLES: UserRole[] = ['internal_admin', 'super_admin', 'clinic_admin']
 
@@ -109,6 +109,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     }
     if (user && !ADMIN_ROLES.includes(user.role)) {
       router.replace(getRoleHomePath(user.role))
+      return
+    }
+    // Admins must finish MFA enrollment before any admin data endpoint (all
+    // are MFA-gated server-side) will answer — send them to the setup flow
+    // first. No-op while MFA enforcement is disabled (temporary relaxed
+    // policy for the build/test phase; see lib/api/auth.ts).
+    if (user && needsMfaEnrollment(user.role, user.mfa_enabled)) {
+      router.replace('/mfa-setup')
     }
   }, [isLoading, isAuthenticated, user, router])
 
@@ -120,7 +128,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     )
   }
 
-  if (!isAuthenticated || (user && !ADMIN_ROLES.includes(user.role))) {
+  if (
+    !isAuthenticated ||
+    (user && !ADMIN_ROLES.includes(user.role)) ||
+    (user && needsMfaEnrollment(user.role, user.mfa_enabled))
+  ) {
     return null
   }
 
@@ -164,9 +176,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               )}
             </div>
           }
-          userProfile={
-            user ? { name: getUserDisplayName(user), role: roleLabel } : undefined
-          }
+          userProfile={user ? { name: getUserDisplayName(user), role: roleLabel } : undefined}
           footer={
             <button
               type="button"

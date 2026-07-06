@@ -7,10 +7,10 @@ Backs the frontend "Giám sát an toàn AI" page. Sessions are Meto conversation
   - any ``safety_flags_detected``  → safety_level "caution", flag "review_requested"
   - otherwise                      → safety_level "safe",    flag "none"
 
-RBAC: INTERNAL_ADMIN / SUPER_ADMIN. Unlike the other /admin routes, these two
-endpoints do NOT require step-up MFA verification (`require_mfa`) — safety
-triage needs to stay reachable for admins who haven't completed MFA
-enrollment/verification yet. RBAC role gating still applies.
+RBAC: INTERNAL_ADMIN / SUPER_ADMIN + MFA (same policy as the other /admin
+routes — require_mfa is itself a no-op while MFA enforcement is disabled,
+Settings.mfa_enforcement_enabled, the temporary relaxed policy for the
+build/test phase; see app/api/deps.py).
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from sqlalchemy import func, select
 from sqlalchemy import update as sa_update
 from sqlalchemy.orm import Session
 
-from app.api.deps import CurrentUser, get_session, require_roles
+from app.api.deps import CurrentUser, get_session, require_mfa, require_roles
 from app.core.clock import utcnow
 from app.models.meto import MetoAuditLog, MetoConversation
 from app.models.user import User, UserRole
@@ -116,6 +116,7 @@ def list_admin_ai_sessions(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     actor: CurrentUser = Depends(_admin_only),
+    _mfa: CurrentUser = Depends(require_mfa),
     db: Session = Depends(get_session),
 ) -> AdminAiSessionListResponse:
     """List AI sessions with derived safety metadata, newest first.
@@ -183,6 +184,7 @@ def list_admin_ai_sessions(
 def review_admin_ai_session(
     session_id: str,
     actor: CurrentUser = Depends(_admin_only),
+    _mfa: CurrentUser = Depends(require_mfa),
     db: Session = Depends(get_session),
 ) -> AdminAiSessionOut:
     """Mark a session as reviewed by the current admin (idempotent, race-safe).
