@@ -8,4 +8,15 @@ const api = {
   del: jest.fn().mockResolvedValue(undefined),
 }
 
-module.exports = { apiFetch, api }
+// Mirror the real ApiError so callers using `err instanceof ApiError` (e.g. the
+// doctor patient-detail consent handling) behave correctly under test.
+class ApiError extends Error {
+  constructor(status, detail) {
+    super(detail)
+    this.name = 'ApiError'
+    this.status = status
+    this.detail = detail
+  }
+}
+
+module.exports = { apiFetch, api, ApiError }
