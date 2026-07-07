@@ -8,7 +8,7 @@ just marks what kind of row it is, and ``finalized_at`` records when a
 finalized row was written. Existing rows default to 'finalized' since they
 predate the draft concept and were always complete notes.
 
-Revision ID: t13_p0_consultation_note_draft_status
+Revision ID: t13_p0_note_draft_status
 Revises: t12_merge_p0_m1_heads
 Create Date: 2026-07-07
 """
@@ -18,7 +18,7 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-revision = "t13_p0_consultation_note_draft_status"
+revision = "t13_p0_note_draft_status"
 down_revision = "t12_merge_p0_m1_heads"
 branch_labels = None
 depends_on = None

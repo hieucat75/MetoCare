@@ -141,6 +141,36 @@ def test_t12_reviewed_by_user_id_fk_and_index_roundtrip(tmp_path):
     )
 
 
+def test_all_revision_ids_fit_alembic_version_column():
+    """Every migration's ``revision`` must fit Alembic's default
+    ``alembic_version.version_num VARCHAR(32)`` column.
+
+    SQLite never enforces VARCHAR length limits, so an oversized revision id
+    passes every local/CI test silently and only fails on real Postgres —
+    which is exactly what happened with a too-long id in production
+    (StringDataRightTruncation on the version-stamp UPDATE, staging deploy
+    2026-07-07). This test makes that failure mode visible on SQLite too.
+    """
+    versions_dir = BACKEND_ROOT / "alembic" / "versions"
+    max_len = 32
+    offenders: list[tuple[str, str, int]] = []
+
+    for path in sorted(versions_dir.glob("*.py")):
+        content = path.read_text()
+        for line in content.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("revision") and "=" in stripped and "down_revision" not in stripped:
+                value = stripped.split("=", 1)[-1].strip().strip("'\"")
+                if len(value) > max_len:
+                    offenders.append((path.name, value, len(value)))
+                break
+
+    assert not offenders, (
+        f"Revision id(s) exceed alembic_version.version_num VARCHAR({max_len}): "
+        f"{offenders}"
+    )
+
+
 def test_migration_chain_order():
     """C5 fix: verify the migration chain has encounters BEFORE the encounter FK migration.
 
