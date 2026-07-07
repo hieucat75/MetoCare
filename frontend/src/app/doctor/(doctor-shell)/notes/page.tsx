@@ -6,11 +6,7 @@ import { FileText, Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { PageHeader, Card, Badge, EmptyState, CardSkeleton, ErrorState } from '@/design-system'
 import { toPageError, type PageError } from '@/lib/api/client'
-import {
-  getDoctorNotes,
-  type DoctorNoteListItem,
-  type DoctorNoteStatus,
-} from '@/lib/api/doctor'
+import { getDoctorNotes, type DoctorNoteListItem, type DoctorNoteStatus } from '@/lib/api/doctor'
 
 type FilterKey = 'recent' | 'draft' | 'finalized'
 
@@ -78,7 +74,7 @@ export default function ClinicalNotesPage() {
               'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1',
               filter === f.key
                 ? 'bg-primary text-white'
-                : 'bg-secondary-100 text-secondary-700 hover:bg-secondary-200',
+                : 'bg-secondary-100 text-secondary-700 hover:bg-secondary-200'
             )}
           >
             {f.label}
@@ -98,7 +94,7 @@ export default function ClinicalNotesPage() {
           placeholder="Tìm theo tên bệnh nhân..."
           className={cn(
             'w-full rounded-lg border border-border bg-surface pl-10 pr-4 py-2.5 text-body-sm',
-            'focus:outline-none focus:ring-2 focus:ring-primary/30',
+            'focus:outline-none focus:ring-2 focus:ring-primary/30'
           )}
           aria-label="Tìm theo tên bệnh nhân"
         />
@@ -150,9 +146,7 @@ export default function ClinicalNotesPage() {
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 space-y-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <p className="font-semibold text-text">
-                        {item.patient_name ?? 'Bệnh nhân'}
-                      </p>
+                      <p className="font-semibold text-text">{item.patient_name ?? 'Bệnh nhân'}</p>
                       <Badge variant={item.status === 'draft' ? 'warning' : 'success'} size="sm">
                         {item.status === 'draft' ? 'Nháp' : 'Đã hoàn tất'}
                       </Badge>

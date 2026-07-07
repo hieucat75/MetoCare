@@ -88,17 +88,12 @@ function PatientCard({ patient, onClick }: PatientCardProps) {
         {/* Name + risk */}
         <div className="flex items-start justify-between gap-2 mb-2">
           <div className="min-w-0">
-            <p className="text-body-sm font-semibold text-text truncate">
-              {displayName}
-            </p>
+            <p className="text-body-sm font-semibold text-text truncate">{displayName}</p>
             {patient.full_name && (
               <p className="text-body-xs text-text-muted truncate">{patient.email}</p>
             )}
           </div>
-          <RiskLevelBadge
-            level={toRiskLevel(patient.risk_segment)}
-            size="sm"
-          />
+          <RiskLevelBadge level={toRiskLevel(patient.risk_segment)} size="sm" />
         </div>
 
         {/* Stats row */}
@@ -106,7 +101,7 @@ function PatientCard({ patient, onClick }: PatientCardProps) {
           <span
             className={cn(
               'inline-flex items-center gap-1 text-body-xs',
-              patient.pending_labs > 0 ? 'text-amber-700' : 'text-text-muted',
+              patient.pending_labs > 0 ? 'text-amber-700' : 'text-text-muted'
             )}
           >
             <FlaskConical className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
@@ -165,7 +160,12 @@ export default function DoctorPatientsPage() {
   // client-side hiding of rows that live on other pages).
   const loadPatients = React.useCallback(
     async (
-      opts: { search?: string; segment?: FilterSegment; sort?: DoctorPatientSort; isSearch?: boolean } = {},
+      opts: {
+        search?: string
+        segment?: FilterSegment
+        sort?: DoctorPatientSort
+        isSearch?: boolean
+      } = {}
     ) => {
       const search = opts.search ?? searchQuery
       const segment = opts.segment ?? segmentFilter
@@ -190,7 +190,7 @@ export default function DoctorPatientsPage() {
         setSearchLoading(false)
       }
     },
-    [searchQuery, segmentFilter, sort],
+    [searchQuery, segmentFilter, sort]
   )
 
   React.useEffect(() => {
@@ -209,7 +209,7 @@ export default function DoctorPatientsPage() {
         void loadPatients({ search: value, isSearch: true })
       }, 300)
     },
-    [loadPatients],
+    [loadPatients]
   )
 
   const handleSegmentChange = React.useCallback(
@@ -217,7 +217,7 @@ export default function DoctorPatientsPage() {
       setSegmentFilter(segment)
       void loadPatients({ segment })
     },
-    [loadPatients],
+    [loadPatients]
   )
 
   const handleSortChange = React.useCallback(
@@ -225,7 +225,7 @@ export default function DoctorPatientsPage() {
       setSort(nextSort)
       void loadPatients({ sort: nextSort })
     },
-    [loadPatients],
+    [loadPatients]
   )
 
   React.useEffect(() => {
@@ -267,7 +267,7 @@ export default function DoctorPatientsPage() {
             className={cn(
               'w-full rounded-lg border border-border bg-surface py-2 pl-9 pr-4 text-body-sm text-text',
               'placeholder:text-text-muted',
-              'focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-colors',
+              'focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-colors'
             )}
           />
           {searchLoading && (
@@ -290,7 +290,7 @@ export default function DoctorPatientsPage() {
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1',
                 segmentFilter === opt.key
                   ? 'bg-primary text-white'
-                  : 'bg-secondary-100 text-secondary-700 hover:bg-secondary-200',
+                  : 'bg-secondary-100 text-secondary-700 hover:bg-secondary-200'
               )}
               aria-pressed={segmentFilter === opt.key}
             >
@@ -311,7 +311,7 @@ export default function DoctorPatientsPage() {
             aria-label="Sắp xếp bệnh nhân"
             className={cn(
               'rounded-lg border border-border bg-surface py-1.5 pl-2.5 pr-7 text-body-xs text-text',
-              'focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-colors',
+              'focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-colors'
             )}
           >
             {SORT_OPTIONS.map((opt) => (

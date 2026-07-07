@@ -39,23 +39,18 @@ import { ApiError } from '@/lib/api/client'
 import { formatRelativeTime } from '@/lib/utils'
 import { DoctorAssistantPanel } from './DoctorAssistantPanel'
 
-const NO_CONSENT_MESSAGE =
-  'Chưa có quyền xem hồ sơ bệnh nhân này (cần bệnh nhân cấp quyền).'
+const NO_CONSENT_MESSAGE = 'Chưa có quyền xem hồ sơ bệnh nhân này (cần bệnh nhân cấp quyền).'
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function mapRiskSegment(
-  seg: PatientProfile['risk_segment'],
-): SummaryPatientProfile['riskLevel'] {
+function mapRiskSegment(seg: PatientProfile['risk_segment']): SummaryPatientProfile['riskLevel'] {
   if (seg === 'very_high') return 'high'
   return (seg ?? 'unknown') as SummaryPatientProfile['riskLevel']
 }
 
-function mapApiEventType(
-  eventType: APITimelineEventType,
-): DSTimelineEvent['type'] {
+function mapApiEventType(eventType: APITimelineEventType): DSTimelineEvent['type'] {
   switch (eventType) {
     case 'lab_uploaded':
     case 'lab_approved':
@@ -238,10 +233,7 @@ export default function PatientDetailPage() {
     address: undefined,
     avatarUrl: undefined,
     riskLevel: mapRiskSegment(profile.risk_segment),
-    riskScore:
-      metabolicScore != null
-        ? Math.round(metabolicScore.score)
-        : undefined,
+    riskScore: metabolicScore != null ? Math.round(metabolicScore.score) : undefined,
     primaryDiagnosis: profile.known_conditions ?? undefined,
     primaryDoctor: undefined,
     lastVisit: undefined,
@@ -252,8 +244,18 @@ export default function PatientDetailPage() {
 
   const TABS = [
     { value: 'overview', label: 'Tổng quan', icon: <Activity className="h-4 w-4" /> },
-    { value: 'labs', label: 'Xét nghiệm', icon: <Microscope className="h-4 w-4" />, badge: labsResponse?.total },
-    { value: 'timeline', label: 'Dòng thời gian', icon: <FileText className="h-4 w-4" />, badge: timeline.length },
+    {
+      value: 'labs',
+      label: 'Xét nghiệm',
+      icon: <Microscope className="h-4 w-4" />,
+      badge: labsResponse?.total,
+    },
+    {
+      value: 'timeline',
+      label: 'Dòng thời gian',
+      icon: <FileText className="h-4 w-4" />,
+      badge: timeline.length,
+    },
   ]
 
   return (
@@ -308,8 +310,7 @@ export default function PatientDetailPage() {
                         </Badge>
                       </div>
                       <p className="text-body-xs text-text-muted">
-                        Tính toán lúc:{' '}
-                        {formatRelativeTime(metabolicScore.calculated_at)}
+                        Tính toán lúc: {formatRelativeTime(metabolicScore.calculated_at)}
                       </p>
                       {metabolicScore.top_risks.length > 0 && (
                         <div>
@@ -329,9 +330,7 @@ export default function PatientDetailPage() {
                       )}
                       {metabolicScore.suggested_actions.length > 0 && (
                         <div>
-                          <p className="text-body-sm font-medium text-text mb-1.5">
-                            Khuyến nghị:
-                          </p>
+                          <p className="text-body-sm font-medium text-text mb-1.5">Khuyến nghị:</p>
                           <ul className="space-y-1">
                             {metabolicScore.suggested_actions.map((action) => (
                               <li
@@ -364,9 +363,18 @@ export default function PatientDetailPage() {
                 <CardContent>
                   <dl className="space-y-3">
                     {[
-                      { label: 'Chiều cao', value: profile.height_cm != null ? `${profile.height_cm} cm` : null },
-                      { label: 'Cân nặng', value: profile.weight_kg != null ? `${profile.weight_kg} kg` : null },
-                      { label: 'Vòng eo', value: profile.waist_cm != null ? `${profile.waist_cm} cm` : null },
+                      {
+                        label: 'Chiều cao',
+                        value: profile.height_cm != null ? `${profile.height_cm} cm` : null,
+                      },
+                      {
+                        label: 'Cân nặng',
+                        value: profile.weight_kg != null ? `${profile.weight_kg} kg` : null,
+                      },
+                      {
+                        label: 'Vòng eo',
+                        value: profile.waist_cm != null ? `${profile.waist_cm} cm` : null,
+                      },
                       { label: 'Bệnh lý đã biết', value: profile.known_conditions },
                       { label: 'Dị ứng', value: profile.allergies },
                     ].map(({ label, value }) =>
@@ -375,11 +383,14 @@ export default function PatientDetailPage() {
                           <dt className="text-body-sm text-text-muted shrink-0">{label}</dt>
                           <dd className="text-body-sm font-medium text-text text-right">{value}</dd>
                         </div>
-                      ) : null,
+                      ) : null
                     )}
-                    {!profile.height_cm && !profile.weight_kg && !profile.known_conditions && !profile.allergies && (
-                      <p className="text-body-sm text-text-muted">Chưa có thông tin bổ sung.</p>
-                    )}
+                    {!profile.height_cm &&
+                      !profile.weight_kg &&
+                      !profile.known_conditions &&
+                      !profile.allergies && (
+                        <p className="text-body-sm text-text-muted">Chưa có thông tin bổ sung.</p>
+                      )}
                   </dl>
                 </CardContent>
               </Card>
@@ -407,10 +418,10 @@ export default function PatientDetailPage() {
                             lab.status === 'approved'
                               ? 'success'
                               : lab.status === 'rejected'
-                              ? 'danger'
-                              : lab.status === 'pending_review'
-                              ? 'warning'
-                              : 'default'
+                                ? 'danger'
+                                : lab.status === 'pending_review'
+                                  ? 'warning'
+                                  : 'default'
                           }
                           size="sm"
                         >
@@ -489,13 +500,7 @@ export default function PatientDetailPage() {
                 <CardContent className="pt-5">
                   {timeline.map((event, idx) => {
                     const dsEvent = mapApiEvent(event, idx === timeline.length - 1)
-                    return (
-                      <TimelineItem
-                        key={dsEvent.id}
-                        event={dsEvent}
-                        isLast={dsEvent.isLast}
-                      />
-                    )
+                    return <TimelineItem key={dsEvent.id} event={dsEvent} isLast={dsEvent.isLast} />
                   })}
                 </CardContent>
               </Card>

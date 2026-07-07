@@ -2,13 +2,7 @@
 
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
-import {
-  Clock,
-  AlertTriangle,
-  Users,
-  CheckCircle,
-  ArrowRight,
-} from 'lucide-react'
+import { Clock, AlertTriangle, Users, CheckCircle, ArrowRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
   PageHeader,
@@ -20,12 +14,7 @@ import {
 } from '@/design-system'
 import type { ReviewQueueItem } from '@/design-system'
 import { toPageError, type PageError } from '@/lib/api/client'
-import {
-  getDoctorStats,
-  getReviewQueue,
-  type DoctorStats,
-  type QueueItem,
-} from '@/lib/api/doctor'
+import { getDoctorStats, getReviewQueue, type DoctorStats, type QueueItem } from '@/lib/api/doctor'
 
 // ---------------------------------------------------------------------------
 // Mapper
@@ -64,16 +53,14 @@ function StatCard({ label, value, Icon, accentClass }: StatCardProps) {
       <span
         className={cn(
           'inline-flex items-center justify-center h-12 w-12 rounded-xl shrink-0',
-          accentClass ?? 'bg-secondary-100 text-secondary-600',
+          accentClass ?? 'bg-secondary-100 text-secondary-600'
         )}
       >
         <Icon className="h-6 w-6" aria-hidden="true" />
       </span>
       <div className="min-w-0">
         <p className="text-body-xs text-text-muted">{label}</p>
-        <p className="text-display-xs font-bold text-text leading-tight">
-          {value ?? '—'}
-        </p>
+        <p className="text-display-xs font-bold text-text leading-tight">{value ?? '—'}</p>
       </div>
     </Card>
   )
@@ -186,9 +173,7 @@ export default function DoctorDashboardPage() {
       {/* Recent queue */}
       <section aria-label="Hàng chờ duyệt gần đây" className="mt-8">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-heading-md font-semibold text-text">
-            Hàng chờ duyệt gần đây
-          </h2>
+          <h2 className="text-heading-md font-semibold text-text">Hàng chờ duyệt gần đây</h2>
           <button
             type="button"
             onClick={() => router.push('/doctor/queue')}
@@ -202,10 +187,7 @@ export default function DoctorDashboardPage() {
         {queueLoading ? (
           <div className="flex flex-col gap-3">
             {Array.from({ length: 3 }).map((_, i) => (
-              <div
-                key={i}
-                className="rounded-lg border border-border bg-surface px-4 py-3"
-              >
+              <div key={i} className="rounded-lg border border-border bg-surface px-4 py-3">
                 <SkeletonText lines={2} lineWidths={['60%', '40%']} />
               </div>
             ))}

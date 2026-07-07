@@ -1,11 +1,6 @@
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import DoctorConsultationDetailPage from '@/app/doctor/(doctor-shell)/consultations/[id]/page'
-import {
-  getConsultation,
-  getPatientSummary,
-  listNotes,
-  createNote,
-} from '@/lib/api/consultations'
+import { getConsultation, getPatientSummary, listNotes, createNote } from '@/lib/api/consultations'
 import { ApiError } from '@/lib/api/client'
 
 jest.mock('@/lib/api/consultations', () => ({
@@ -94,7 +89,7 @@ test('Lưu nháp saves with status=draft and keeps the textarea filled', async (
       content: 'bản nháp mới',
       note_type: 'recommendation',
       status: 'draft',
-    }),
+    })
   )
   // Draft save keeps content in the textarea (unlike finalize, which clears it).
   expect(textarea).toHaveValue('bản nháp mới')
@@ -124,7 +119,7 @@ test('Hoàn tất ghi chú saves with status=finalized and clears the editor', a
       content: 'ghi chú hoàn tất',
       note_type: 'recommendation',
       status: 'finalized',
-    }),
+    })
   )
   await waitFor(() => expect(textarea).toHaveValue(''))
   expect(await screen.findByText('Đã hoàn tất')).toBeInTheDocument()

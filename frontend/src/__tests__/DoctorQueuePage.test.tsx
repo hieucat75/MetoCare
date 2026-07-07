@@ -56,12 +56,8 @@ test('selecting an item swaps to the detail/decision view (master-detail)', asyn
   fireEvent.click(queueItem)
 
   // The detail view (decision panel + mobile back control) now renders.
-  await waitFor(() =>
-    expect(screen.getByText('Quyết Định Xét Duyệt')).toBeInTheDocument(),
-  )
-  expect(
-    screen.getByRole('button', { name: /Quay lại danh sách/ }),
-  ).toBeInTheDocument()
+  await waitFor(() => expect(screen.getByText('Quyết Định Xét Duyệt')).toBeInTheDocument())
+  expect(screen.getByRole('button', { name: /Quay lại danh sách/ })).toBeInTheDocument()
 })
 
 test('shows a 403-specific error (not a generic message) and retries', async () => {

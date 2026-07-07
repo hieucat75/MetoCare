@@ -3,7 +3,7 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000/api/v
 export class ApiError extends Error {
   constructor(
     public readonly status: number,
-    public readonly detail: string,
+    public readonly detail: string
   ) {
     super(detail)
     this.name = 'ApiError'
@@ -184,8 +184,7 @@ export async function apiUpload<T>(path: string, form: FormData): Promise<T> {
 }
 
 export const api = {
-  get: <T>(path: string, opts?: FetchOptions) =>
-    apiFetch<T>(path, { method: 'GET', ...opts }),
+  get: <T>(path: string, opts?: FetchOptions) => apiFetch<T>(path, { method: 'GET', ...opts }),
 
   post: <T>(path: string, body?: unknown, opts?: FetchOptions) =>
     apiFetch<T>(path, {
@@ -208,6 +207,5 @@ export const api = {
       ...opts,
     }),
 
-  del: <T>(path: string, opts?: FetchOptions) =>
-    apiFetch<T>(path, { method: 'DELETE', ...opts }),
+  del: <T>(path: string, opts?: FetchOptions) => apiFetch<T>(path, { method: 'DELETE', ...opts }),
 }

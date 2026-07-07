@@ -469,9 +469,7 @@ function SummaryBody({ summary }: { summary: PatientSummaryOut }) {
           <ul className="mt-1 space-y-1 text-body-sm">
             {summary.lab_documents.map((d, i) => (
               <li key={d.id ?? i} className="flex items-center justify-between">
-                <span className="truncate text-text">
-                  {d.lab_name ?? 'Tài liệu'}
-                </span>
+                <span className="truncate text-text">{d.lab_name ?? 'Tài liệu'}</span>
                 <span className="shrink-0 text-text-muted">
                   {formatDateTime(d.created_at) ?? d.status ?? '—'}
                 </span>
@@ -569,9 +567,7 @@ function SummaryBody({ summary }: { summary: PatientSummaryOut }) {
             {summary.active_care_plans.map((p, i) => (
               <li key={p.id ?? i}>
                 <p className="font-medium text-text">{p.title ?? 'Kế hoạch'}</p>
-                {p.version != null && (
-                  <p className="text-text-muted">Phiên bản {p.version}</p>
-                )}
+                {p.version != null && <p className="text-text-muted">Phiên bản {p.version}</p>}
               </li>
             ))}
           </ul>
@@ -686,8 +682,8 @@ function NotesPanel({
       {canWrite && (
         <Card padding="md" className="mb-3">
           <Alert variant="info" className="mb-3">
-            Ghi chú đã hoàn tất không thể chỉnh sửa hay xoá (append-only). Bạn có thể lưu nháp
-            nhiều lần trước khi hoàn tất.
+            Ghi chú đã hoàn tất không thể chỉnh sửa hay xoá (append-only). Bạn có thể lưu nháp nhiều
+            lần trước khi hoàn tất.
           </Alert>
           <div className="max-w-xs">
             <Select
@@ -754,7 +750,7 @@ function NotesPanel({
                       'rounded-full px-2 py-0.5 text-body-xs font-medium',
                       n.status === 'draft'
                         ? 'bg-warning-light text-amber-800'
-                        : 'bg-success-light text-green-800',
+                        : 'bg-success-light text-green-800'
                     )}
                   >
                     {n.status === 'draft' ? 'Nháp' : 'Đã hoàn tất'}

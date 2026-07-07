@@ -27,7 +27,7 @@ describe('PatientSummaryHeader demographics', () => {
       <PatientSummaryHeader
         patient={{ ...base, dateOfBirth: null, gender: null }}
         onBack={() => {}}
-      />,
+      />
     )
     expect(screen.getByText('Khong ro')).toBeInTheDocument()
     expect(screen.queryByText(/tuoi/)).not.toBeInTheDocument()
@@ -35,12 +35,7 @@ describe('PatientSummaryHeader demographics', () => {
   })
 
   it('shows only gender when dob is null', () => {
-    render(
-      <PatientSummaryHeader
-        patient={{ ...base, dateOfBirth: null }}
-        onBack={() => {}}
-      />,
-    )
+    render(<PatientSummaryHeader patient={{ ...base, dateOfBirth: null }} onBack={() => {}} />)
     expect(screen.getByText('Nam')).toBeInTheDocument()
     expect(screen.queryByText(/tuoi/)).not.toBeInTheDocument()
   })

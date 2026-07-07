@@ -91,7 +91,7 @@ test('confirming a pending appointment calls the status-update API and reloads',
   fireEvent.click(screen.getByRole('button', { name: 'Xác nhận' }))
 
   await waitFor(() =>
-    expect(mockedUpdateAppointmentStatus).toHaveBeenCalledWith('appt-1', 'confirmed'),
+    expect(mockedUpdateAppointmentStatus).toHaveBeenCalledWith('appt-1', 'confirmed')
   )
   expect(mockedGetDoctorAppointments).toHaveBeenCalledTimes(2)
 })

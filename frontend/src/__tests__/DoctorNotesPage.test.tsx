@@ -77,8 +77,8 @@ test('switching to the draft filter refetches with status=draft', async () => {
 
   await waitFor(() =>
     expect(mockedGetDoctorNotes).toHaveBeenLastCalledWith(
-      expect.objectContaining({ status: 'draft' }),
-    ),
+      expect.objectContaining({ status: 'draft' })
+    )
   )
 })
 

@@ -49,7 +49,7 @@ export interface ReviewDecisionPayload {
 
 export async function submitReviewDecision(
   itemId: string,
-  payload: ReviewDecisionPayload,
+  payload: ReviewDecisionPayload
 ): Promise<QueueItem> {
   return api.patch<QueueItem>(`/doctor/queue/${itemId}/review`, payload)
 }
@@ -122,7 +122,7 @@ export interface TimelineEvent {
 
 export async function getPatientTimeline(
   patientId: string,
-  params?: { limit?: number },
+  params?: { limit?: number }
 ): Promise<TimelineEvent[]> {
   const qs = params?.limit ? `?limit=${params.limit}` : ''
   return api.get<TimelineEvent[]>(`/doctor/patients/${patientId}/timeline${qs}`)
@@ -196,7 +196,7 @@ export async function getDoctorAppointments(params?: {
  */
 export async function updateAppointmentStatus(
   appointmentId: string,
-  status: AppointmentStatus,
+  status: AppointmentStatus
 ): Promise<{ id: string; status: AppointmentStatus }> {
   return api.patch<{ id: string; status: AppointmentStatus }>(`/appointments/${appointmentId}`, {
     status,

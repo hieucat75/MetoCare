@@ -56,7 +56,7 @@ function tomorrowIso(): string {
 
 function formatTime(iso: string): string {
   return new Intl.DateTimeFormat('vi-VN', { hour: '2-digit', minute: '2-digit' }).format(
-    new Date(iso),
+    new Date(iso)
   )
 }
 
@@ -132,7 +132,7 @@ export default function AppointmentsPage() {
       setActionError(
         err instanceof ApiError
           ? err.detail
-          : 'Cập nhật lịch hẹn thất bại. Vui lòng kiểm tra kết nối và thử lại.',
+          : 'Cập nhật lịch hẹn thất bại. Vui lòng kiểm tra kết nối và thử lại.'
       )
     } finally {
       setActioningId(null)
@@ -179,7 +179,7 @@ export default function AppointmentsPage() {
               'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1',
               tab === t.key
                 ? 'bg-primary text-white'
-                : 'bg-secondary-100 text-secondary-700 hover:bg-secondary-200',
+                : 'bg-secondary-100 text-secondary-700 hover:bg-secondary-200'
             )}
           >
             {t.label}
@@ -199,7 +199,7 @@ export default function AppointmentsPage() {
           placeholder="Tìm theo tên bệnh nhân..."
           className={cn(
             'w-full rounded-lg border border-border bg-surface pl-10 pr-4 py-2.5 text-body-sm',
-            'focus:outline-none focus:ring-2 focus:ring-primary/30',
+            'focus:outline-none focus:ring-2 focus:ring-primary/30'
           )}
           aria-label="Tìm theo tên bệnh nhân"
         />
@@ -246,9 +246,7 @@ export default function AppointmentsPage() {
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0 space-y-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <p className="font-semibold text-text">
-                        {appt.patient_name ?? 'Bệnh nhân'}
-                      </p>
+                      <p className="font-semibold text-text">{appt.patient_name ?? 'Bệnh nhân'}</p>
                       <Badge variant={badge.variant} size="sm">
                         {badge.label}
                       </Badge>
