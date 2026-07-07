@@ -675,3 +675,56 @@ class TestRosterPhiMasking:
             f"{API}/doctor/patients?search=Hidden", headers=_doctor_headers(doctor["user_id"])
         )
         assert r2.json()["total"] == 0
+
+
+# ---------------------------------------------------------------------------
+# P1: queue must not leak patient_name under a narrow (non-care) consent —
+# symmetric to the roster mask. A patient visible only via ai_use consent
+# still appears in the queue (the doctor may act) but their name must be None.
+# ---------------------------------------------------------------------------
+
+
+class TestQueuePhiMasking:
+    def test_queue_masks_patient_name_under_narrow_consent(self, client, db, doctor):
+        user, profile = _make_patient(db, name="Hidden Queue Name")
+        _grant_narrow_consent(db, profile.id, doctor["user_id"])  # ai_use only
+        db.add(
+            LabResult(
+                patient_id=profile.id, test_name="HbA1c", value=8.0, status="high",
+                verified_by_doctor=False,
+            )
+        )
+        db.commit()
+
+        r = client.get(f"{API}/doctor/queue", headers=_doctor_headers(doctor["user_id"]))
+        assert r.status_code == 200
+        body = r.json()
+        # Item is visible (doctor may act) ...
+        assert body["total"] == 1
+        item = body["items"][0]
+        assert item["item_type"] == "lab_result"
+        # ... but the name is masked (PHI gate), never the real name.
+        assert item["patient_name"] is None
+        assert "Hidden Queue Name" not in r.text
+
+    def test_review_response_masks_patient_name_under_narrow_consent(self, client, db, doctor):
+        user, profile = _make_patient(db, name="Hidden Review Name")
+        _grant_narrow_consent(db, profile.id, doctor["user_id"])  # ai_use only
+        lab = LabResult(
+            patient_id=profile.id, test_name="TG", value=3.0, status="high", verified_by_doctor=False
+        )
+        db.add(lab)
+        db.commit()
+
+        # Narrow consent grants visibility, so the scope gate allows the action,
+        # but the review response must still mask the name.
+        r = client.patch(
+            f"{API}/doctor/queue/lab_result:{lab.id}/review",
+            headers=_doctor_headers(doctor["user_id"]),
+            json={"decision": "approved", "comment": "Đã xem"},
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["status"] == "approved"
+        assert body["patient_name"] is None
+        assert "Hidden Review Name" not in r.text

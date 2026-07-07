@@ -155,6 +155,17 @@ def _visible_patient_ids(db: Session, doctor: Doctor) -> set[str]:
     return _consented_patient_ids(db, doctor.user_id) | _encounter_patient_ids(db, doctor.id)
 
 
+def _phi_authorized_ids(db: Session, doctor: Doctor) -> set[str]:
+    """PatientProfile ids for which this doctor may see identifying PHI (name).
+
+    Stricter than visibility: a real care relationship — profile-scope consent OR
+    an encounter — is required. A narrow, unrelated consent (e.g. ``ai_use``) makes
+    a patient *visible* but must NOT expose their name. Mirrors the roster mask so
+    the queue and its review response cannot leak names the roster hides.
+    """
+    return _profile_scope_consented_ids(db, doctor.user_id) | _encounter_patient_ids(db, doctor.id)
+
+
 # ---------------------------------------------------------------------------
 # Per-patient count helpers
 # ---------------------------------------------------------------------------
@@ -536,10 +547,15 @@ def _build_queue_items(db: Session, doctor: Doctor) -> list[dict]:
                 }
             )
 
-    # Attach decrypted patient names (single batched read).
+    # Attach decrypted patient names (single batched read) — but ONLY for
+    # patients whose identity this doctor is authorized to see (PHI gate,
+    # symmetric to the roster mask). A narrow ai_use consent makes an item
+    # visible without exposing the patient's name.
+    phi_ok = _phi_authorized_ids(db, doctor)
     name_map = _patient_name_map(db, {i["patient_id"] for i in items})
     for i in items:
-        i["patient_name"] = name_map.get(i["patient_id"])
+        pid = i["patient_id"]
+        i["patient_name"] = name_map.get(pid) if pid in phi_ok else None
         i["submitted_at"] = _iso(i["submitted_at"]) or _iso(utcnow())
 
     return items
@@ -781,7 +797,7 @@ def _review_ai(
         internal_note=internal_note,
     )
     updated = db.get(AIClinicalRecommendation, rec_id)
-    return _rec_to_queue_item(db, updated)
+    return _rec_to_queue_item(db, updated, doctor)
 
 
 def _review_care_plan(
@@ -839,7 +855,7 @@ def _review_care_plan(
         internal_note=internal_note,
     )
     updated = db.get(CarePlan, plan_id)
-    return _care_plan_to_queue_item(db, updated)
+    return _care_plan_to_queue_item(db, updated, doctor)
 
 
 def _review_lab(
@@ -884,7 +900,7 @@ def _review_lab(
         internal_note=internal_note,
     )
     updated = db.get(LabResult, lab_id)
-    return _lab_to_queue_item(db, updated, decision)
+    return _lab_to_queue_item(db, updated, decision, doctor)
 
 
 # ---------------------------------------------------------------------------
@@ -892,16 +908,23 @@ def _review_lab(
 # ---------------------------------------------------------------------------
 
 
-def _one_patient_name(db: Session, patient_id: str) -> str | None:
+def _one_patient_name(db: Session, patient_id: str, doctor: Doctor) -> str | None:
+    """Decrypted patient name, but ONLY if the doctor is PHI-authorized.
+
+    Same gate as the batched queue builder + roster mask: a narrow ai_use consent
+    must not leak the name through the review response either.
+    """
+    if patient_id not in _phi_authorized_ids(db, doctor):
+        return None
     profile = db.get(PatientProfile, patient_id)
     return profile.full_name if profile is not None else None
 
 
-def _rec_to_queue_item(db: Session, rec: AIClinicalRecommendation) -> dict:
+def _rec_to_queue_item(db: Session, rec: AIClinicalRecommendation, doctor: Doctor) -> dict:
     return {
         "id": f"{_ITEM_TYPE_AI}:{rec.id}",
         "patient_id": rec.patient_id,
-        "patient_name": _one_patient_name(db, rec.patient_id),
+        "patient_name": _one_patient_name(db, rec.patient_id, doctor),
         "item_type": _ITEM_TYPE_AI,
         "priority": _rec_priority(rec),
         "status": _map_rec_status(rec.status),
@@ -911,11 +934,11 @@ def _rec_to_queue_item(db: Session, rec: AIClinicalRecommendation) -> dict:
     }
 
 
-def _care_plan_to_queue_item(db: Session, plan: CarePlan) -> dict:
+def _care_plan_to_queue_item(db: Session, plan: CarePlan, doctor: Doctor) -> dict:
     return {
         "id": f"{_ITEM_TYPE_CARE}:{plan.id}",
         "patient_id": plan.patient_id,
-        "patient_name": _one_patient_name(db, plan.patient_id),
+        "patient_name": _one_patient_name(db, plan.patient_id, doctor),
         "item_type": _ITEM_TYPE_CARE,
         "priority": "normal",
         "status": _map_care_plan_status(plan.status),
@@ -925,14 +948,14 @@ def _care_plan_to_queue_item(db: Session, plan: CarePlan) -> dict:
     }
 
 
-def _lab_to_queue_item(db: Session, row: LabResult, decision: str) -> dict:
+def _lab_to_queue_item(db: Session, row: LabResult, decision: str, doctor: Doctor) -> dict:
     status = {"approved": "approved", "rejected": "rejected", "request_info": "request_info"}[
         decision
     ]
     return {
         "id": f"{_ITEM_TYPE_LAB}:{row.id}",
         "patient_id": row.patient_id,
-        "patient_name": _one_patient_name(db, row.patient_id),
+        "patient_name": _one_patient_name(db, row.patient_id, doctor),
         "item_type": _ITEM_TYPE_LAB,
         "priority": _lab_priority(row),
         "status": status,
