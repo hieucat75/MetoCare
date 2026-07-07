@@ -13,6 +13,7 @@ from .routes import (
     auth,
     booking,
     care_plans,
+    clinical_copilot,
     consent,
     consultations,
     doctor,
@@ -53,6 +54,7 @@ api_router.include_router(care_plans.router)
 api_router.include_router(ai_sessions.router)
 api_router.include_router(doctor_review.router, prefix="/doctor", tags=["doctor_review"])
 api_router.include_router(doctor_portal.router)
+api_router.include_router(clinical_copilot.router)
 api_router.include_router(patients.router)
 api_router.include_router(health_timeline.router, prefix="/patients")
 api_router.include_router(booking.router)

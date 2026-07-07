@@ -1,11 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import PatientDetailPage from '@/app/doctor/(doctor-shell)/patients/[id]/page'
-import {
-  getPatientProfile,
-  getLatestMetabolicScore,
-  getLabs,
-} from '@/lib/api/patient'
+import { getPatientProfile, getLatestMetabolicScore, getLabs } from '@/lib/api/patient'
 import { getPatientTimeline } from '@/lib/api/doctor'
 import { ApiError } from '@/lib/api/client'
 
@@ -19,16 +15,9 @@ jest.mock('@/lib/api/doctor', () => ({
   getPatientTimeline: jest.fn(),
 }))
 
-// The assistant panel mounts inside the page; keep it inert here.
-jest.mock('@/lib/api/doctorAssistant', () => ({
-  askDoctorAssistant: jest.fn().mockResolvedValue({
-    content: '',
-    disclaimer: 'disc',
-    disabled: true,
-  }),
-  DOCTOR_ASSISTANT_DISCLAIMER: 'disc',
-  DOCTOR_ASSISTANT_QUICK_PROMPTS: [],
-}))
+// The clinical copilot panel mounts inside the page; the feature flag is off
+// in tests by default (NEXT_PUBLIC_CLINICAL_COPILOT unset), so it renders its
+// "Sắp ra mắt" shell without any network call — no mock needed here.
 
 const mockPush = jest.fn()
 jest.mock('next/navigation', () => ({
@@ -88,9 +77,7 @@ test('renders timeline events in the timeline tab', async () => {
   await user.click(screen.getByRole('tab', { name: /Dòng thời gian/ }))
 
   // Timeline event content is mapped and rendered.
-  expect(
-    await screen.findByText('Bệnh nhân tải lên kết quả HbA1c'),
-  ).toBeInTheDocument()
+  expect(await screen.findByText('Bệnh nhân tải lên kết quả HbA1c')).toBeInTheDocument()
 })
 
 test('shows the no-consent state when the profile load 403s', async () => {
@@ -99,9 +86,7 @@ test('shows the no-consent state when the profile load 403s', async () => {
   render(<PatientDetailPage />)
 
   expect(
-    await screen.findByText(
-      'Chưa có quyền xem hồ sơ bệnh nhân này (cần bệnh nhân cấp quyền).',
-    ),
+    await screen.findByText('Chưa có quyền xem hồ sơ bệnh nhân này (cần bệnh nhân cấp quyền).')
   ).toBeInTheDocument()
 })
 
@@ -111,7 +96,5 @@ test('a non-403 profile failure shows the generic error, not the consent state',
   render(<PatientDetailPage />)
 
   expect(await screen.findByText('Lỗi tải dữ liệu')).toBeInTheDocument()
-  expect(
-    screen.queryByText(/Chưa có quyền xem hồ sơ bệnh nhân này/),
-  ).not.toBeInTheDocument()
+  expect(screen.queryByText(/Chưa có quyền xem hồ sơ bệnh nhân này/)).not.toBeInTheDocument()
 })
