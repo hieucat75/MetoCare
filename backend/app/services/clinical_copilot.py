@@ -315,9 +315,15 @@ def _value_display(insight: MetricInsight) -> str:
 
 def _compute_priority(findings: list[MetricInsight]) -> RiskFlag:
     """Deterministic RiskFlag.level — NEVER overridden by any LLM phrasing.
-    ``missing_data`` starts empty and is patched in by the caller (via
-    ``model_copy``) once the shared completeness assessment has run — computing
-    it here would duplicate that logic and risk drifting out of sync."""
+    ``missing_data`` AND ``sources`` start empty and are patched in by the
+    caller (via ``model_copy``) once the shared completeness assessment / the
+    source map have run. ``MetricInsight`` (this function's only input) carries
+    no underlying row id — only ``_build_source_map`` resolves which concrete
+    ``LabResult``/``HealthMetric`` row backs a given finding, so deriving
+    ``sources`` here would either be a category-label stand-in (the bug being
+    fixed) or a duplicate of that resolution that could drift out of sync.
+    Keeping this function to ``findings`` alone preserves its deterministic,
+    LLM-independent, side-effect-free contract."""
     if any(f.status == "critical" for f in findings):
         level: RiskLevel = "urgent"
     elif any(f.priority == "see_doctor" for f in findings):
@@ -331,10 +337,7 @@ def _compute_priority(findings: list[MetricInsight]) -> RiskFlag:
         label_vi=_LEVEL_LABEL_VI[level],
         findings=[f.label for f in findings],
         missing_data=[],
-        sources=[
-            SourceRef(id=f"metric:{f.metric_type}", type="metric", label=f.label)
-            for f in findings
-        ],
+        sources=[],
     )
 
 
@@ -500,6 +503,64 @@ def _completeness_signals(
 # --------------------------------------------------------------------------- #
 
 
+def _lab_row_index(lab_rows: list[LabResult]) -> dict[str, LabResult]:
+    """Freshest lab row per canonical/test name (``lab_rows`` is already
+    newest-first)."""
+    index: dict[str, LabResult] = {}
+    for row in lab_rows:
+        key = (row.canonical_name or row.test_name or "").strip().lower()
+        if key and key not in index:
+            index[key] = row
+    return index
+
+
+def _metric_row_index(metric_rows: list[HealthMetric]) -> dict[str, HealthMetric]:
+    """Freshest metric row per exact ``metric_type`` (``metric_rows`` is already
+    newest-first)."""
+    index: dict[str, HealthMetric] = {}
+    for row in metric_rows:
+        if row.metric_type not in index:
+            index[row.metric_type] = row
+    return index
+
+
+def _resolve_metric_source(
+    f: MetricInsight,
+    *,
+    lab_by_key: dict[str, LabResult],
+    metric_by_type: dict[str, HealthMetric],
+) -> tuple[str, SourceRef]:
+    """The single source of truth for one finding's citation: ``(sid, SourceRef)``
+    resolved from the SAME concrete row for id + date + label together. Shared by
+    ``_build_source_map`` (the doctor-facing source catalog) and by
+    ``get_analysis`` (to patch ``RiskFlag.sources``) so the two call sites can
+    never disagree about which row backs a given finding, and a later reading of
+    the same ``metric_type`` never resolves to (or overwrites) an earlier
+    reading's citation id — each row gets its own id for as long as it exists."""
+    if _is_lab_metric_type(f.metric_type):
+        lab_row = lab_by_key.get(f.metric_type.strip().lower())
+        if lab_row is not None:
+            sid = f"lab:{lab_row.id}"
+            date = lab_row.test_date.isoformat() if lab_row.test_date else None
+        else:
+            # No matching LabResult row found (e.g. metric promoted from a
+            # source we can't trace back) — degrade to a dateless, type-scoped
+            # citation rather than inventing or dropping it.
+            sid = f"lab:{f.metric_type}"
+            date = None
+        return sid, SourceRef(id=sid, type="lab", label=f.label, date=date)
+
+    metric_row = metric_by_type.get(f.metric_type)
+    if metric_row is not None:
+        sid = f"metric:{metric_row.id}"
+        date = metric_row.measured_at.isoformat() if metric_row.measured_at else None
+    else:
+        # Same degrade-gracefully rationale as the lab branch above.
+        sid = f"metric:{f.metric_type}"
+        date = None
+    return sid, SourceRef(id=sid, type="metric", label=f.label, date=date)
+
+
 def _build_source_map(
     *,
     patient_id: str,
@@ -524,6 +585,16 @@ def _build_source_map(
             id=f"profile:{patient_id}", type="profile", label="Hồ sơ bệnh nhân", date=profile_date
         )
 
+    # NOTE: condition/allergy ids are collection-item references into a single
+    # encrypted JSON column on PatientProfile (`known_conditions`/`allergies`)
+    # — NOT first-class DB rows with their own primary key. Unlike the
+    # lab/metric/medication/consultation ids below (each backed by a real,
+    # individually-addressable row), a `condition:<index>`/`allergy:<index>` id
+    # is only stable for the lifetime of the CURRENT list ordering — it is NOT
+    # guaranteed stable/immutable across a profile edit (e.g. reordering or
+    # removing an earlier entry shifts every later index). This is a genuine
+    # data-model limitation of how conditions/allergies are stored today, not a
+    # bug fixed here.
     for i, c in enumerate(conditions):
         sid = f"condition:{i}"
         source_map[sid] = SourceRef(id=sid, type="condition", label=c, date=profile_date)
@@ -541,45 +612,12 @@ def _build_source_map(
             date=created_at.isoformat() if created_at else None,
         )
 
-    # Freshest lab row per canonical/test name, for matching a lab-derived finding.
-    lab_by_key: dict[str, LabResult] = {}
-    for row in lab_rows:
-        key = (row.canonical_name or row.test_name or "").strip().lower()
-        if key and key not in lab_by_key:
-            lab_by_key[key] = row  # lab_rows is already newest-first
-
-    # Freshest metric row per exact metric_type, for matching a vital finding.
-    metric_by_type: dict[str, HealthMetric] = {}
-    for row in metric_rows:
-        if row.metric_type not in metric_by_type:
-            metric_by_type[row.metric_type] = row  # metric_rows is already newest-first
+    lab_by_key = _lab_row_index(lab_rows)
+    metric_by_type = _metric_row_index(metric_rows)
 
     for f in findings:
-        if _is_lab_metric_type(f.metric_type):
-            lab_row = lab_by_key.get(f.metric_type.strip().lower())
-            if lab_row is not None:
-                sid = f"lab:{lab_row.id}"
-                source_map[sid] = SourceRef(
-                    id=sid,
-                    type="lab",
-                    label=f.label,
-                    date=lab_row.test_date.isoformat() if lab_row.test_date else None,
-                )
-            else:
-                # No matching LabResult row found (e.g. metric promoted from a
-                # source we can't trace back) — degrade to a dateless citation
-                # rather than inventing or dropping it.
-                sid = f"lab:{f.metric_type}"
-                source_map[sid] = SourceRef(id=sid, type="lab", label=f.label, date=None)
-        else:
-            metric_row = metric_by_type.get(f.metric_type)
-            sid = f"metric:{f.metric_type}"
-            source_map[sid] = SourceRef(
-                id=sid,
-                type="metric",
-                label=f.label,
-                date=metric_row.measured_at.isoformat() if metric_row is not None else None,
-            )
+        sid, ref = _resolve_metric_source(f, lab_by_key=lab_by_key, metric_by_type=metric_by_type)
+        source_map[sid] = ref
 
     if consultation is not None:
         sid = f"consultation:{consultation.id}"
@@ -884,7 +922,7 @@ async def get_analysis(
         source-map + prompt-context assembly) — none of this may run on the
         event loop."""
         findings = list_insights(db, patient_id=patient_id, abnormal_only=True)
-        priority = _compute_priority(findings)  # level/findings/sources ALWAYS as-is.
+        priority = _compute_priority(findings)  # level/findings ALWAYS as-is.
 
         profile = _load_profile(db, patient_id)
         conditions, allergies = _conditions_and_allergies(profile)
@@ -893,6 +931,19 @@ async def get_analysis(
         lab_rows = _lab_rows(db, patient_id)
         metric_rows = _metric_rows(db, patient_id)
         consultation = db.get(Consultation, consultation_id) if consultation_id else None
+        if consultation is not None and consultation.patient_id != patient_id:
+            # Defense-in-depth only: the route's `_authorize` gate is the sole
+            # current caller and already raises 400 on a genuine mismatch
+            # before this code ever runs. This guards a hypothetical future
+            # caller that skips that check — never raise here, just drop the
+            # untrusted consultation context.
+            logger.warning(
+                "clinical_copilot: consultation %s patient_id mismatch for patient %s "
+                "— dropping consultation context",
+                consultation_id,
+                patient_id,
+            )
+            consultation = None
 
         source_map = _build_source_map(
             patient_id=patient_id,
@@ -905,6 +956,18 @@ async def get_analysis(
             metric_rows=metric_rows,
             consultation=consultation,
         )
+
+        # Patch RiskFlag.sources from the SAME source_map entries used for the
+        # doctor-facing citation catalog — guarantees id/date/label all come
+        # from the one concrete row per finding (see `_resolve_metric_source`).
+        lab_by_key = _lab_row_index(lab_rows)
+        metric_by_type = _metric_row_index(metric_rows)
+        priority_sources: list[SourceRef] = []
+        for f in findings:
+            sid, _ref = _resolve_metric_source(
+                f, lab_by_key=lab_by_key, metric_by_type=metric_by_type
+            )
+            priority_sources.append(source_map[sid])
 
         has_lab, has_metric, has_stale, has_contradiction = _completeness_signals(
             db, patient_id=patient_id, lab_rows=lab_rows, metric_rows=metric_rows
@@ -921,7 +984,9 @@ async def get_analysis(
             has_stale=has_stale,
             has_contradiction=has_contradiction,
         )
-        resolved_priority = priority.model_copy(update={"missing_data": missing_data})
+        resolved_priority = priority.model_copy(
+            update={"missing_data": missing_data, "sources": priority_sources}
+        )
 
         context_text = _findings_context_text(
             conditions=conditions,
@@ -1121,13 +1186,24 @@ async def get_questions(
         group = item.get("group")
         question_vi = item.get("question_vi")
         reason_vi = item.get("reason_vi")
-        if group not in _QUESTION_GROUPS or not question_vi or not reason_vi:
+        # `isinstance` MUST run before the `frozenset` membership test — a
+        # provider-returned list/dict for `group` is unhashable and would raise
+        # `TypeError` from `not in _QUESTION_GROUPS` (short-circuit `or` means
+        # only the type check needs to guard it here).
+        if (
+            not isinstance(group, str)
+            or group not in _QUESTION_GROUPS
+            or not isinstance(question_vi, str)
+            or not question_vi.strip()
+            or not isinstance(reason_vi, str)
+            or not reason_vi.strip()
+        ):
             continue
         questions.append(
             SuggestedQuestion(
                 group=group,
-                question_vi=_safe(str(question_vi)),
-                reason_vi=_safe(str(reason_vi)),
+                question_vi=_safe(question_vi),
+                reason_vi=_safe(reason_vi),
             )
         )
 
@@ -1251,9 +1327,17 @@ async def get_advice(
             continue
         category = item.get("category")
         text_vi = item.get("text_vi")
-        if category not in _ADVICE_CATEGORIES or not text_vi:
+        # Same isinstance-before-membership-test ordering as `get_questions` —
+        # `category not in _ADVICE_CATEGORIES` would raise `TypeError` on an
+        # unhashable provider value (list/dict) without the type check first.
+        if (
+            not isinstance(category, str)
+            or category not in _ADVICE_CATEGORIES
+            or not isinstance(text_vi, str)
+            or not text_vi.strip()
+        ):
             continue
-        items.append(AdviceItem(category=category, text_vi=_safe(str(text_vi))))
+        items.append(AdviceItem(category=category, text_vi=_safe(text_vi)))
 
     await run_in_threadpool(
         _record,

@@ -18,6 +18,7 @@ import datetime as dt
 import json
 import os
 
+import pytest
 from app.ai.providers.base import ChatResponse, ConversationProvider, ProviderHealthStatus
 from app.ai.registry import ProviderRegistry
 from app.models.clinical import HealthMetric
@@ -628,17 +629,16 @@ def test_source_map_dates_match_underlying_fixtures(db):
     db.add(medication)
 
     metric_date = dt.datetime(2026, 2, 1, 8, 0)
-    db.add(
-        HealthMetric(
-            patient_id=profile.id,
-            metric_type="weight",
-            value=70.0,
-            unit="kg",
-            measured_at=metric_date,
-            source="manual",
-            status="normal",
-        )
+    weight_metric = HealthMetric(
+        patient_id=profile.id,
+        metric_type="weight",
+        value=70.0,
+        unit="kg",
+        measured_at=metric_date,
+        source="manual",
+        status="normal",
     )
+    db.add(weight_metric)
 
     lab_date = dt.date(2026, 1, 10)
     lab_row = LabResult(
@@ -664,6 +664,7 @@ def test_source_map_dates_match_underlying_fixtures(db):
     db.commit()
     db.refresh(medication)
     db.refresh(lab_row)
+    db.refresh(weight_metric)
 
     consultation = consult_svc.create_consultation(
         db, patient_id=profile.id, doctor_id=doctor.id, data_consent_accepted=True
@@ -691,7 +692,7 @@ def test_source_map_dates_match_underlying_fixtures(db):
     )
 
     assert source_map[f"medication:{medication.id}"].date == medication.created_at.isoformat()
-    assert source_map["metric:weight"].date == metric_date.isoformat()
+    assert source_map[f"metric:{weight_metric.id}"].date == metric_date.isoformat()
     assert source_map[f"lab:{lab_row.id}"].date == lab_date.isoformat()
     assert source_map[f"consultation:{consultation.id}"].date == consultation.created_at.isoformat()
     assert source_map[f"profile:{profile.id}"].date == profile_reloaded.updated_at.isoformat()
@@ -771,6 +772,7 @@ def test_invented_source_id_becomes_needs_confirmation(client, db, monkeypatch):
     claim = body["key_issues"][0]
     assert claim["sources"] == []
     assert claim["basis"] == "needs_confirmation"
+    assert claim["confidence"] == "low"
 
 
 # ---------------------------------------------------------------------------
@@ -904,3 +906,421 @@ def test_analysis_threads_context_fetch_and_audit_write_off_event_loop(client, d
     assert dispatched.count("_fetch_context") == 1
     # ...and so did the single "generated" audit write — never inline, never twice.
     assert dispatched.count("_record") == 1
+
+
+def _tracked_run_in_threadpool(svc, monkeypatch) -> list[str]:
+    """Shared harness for the questions/advice threadpool-dispatch regression
+    tests below — identical wiring to
+    ``test_analysis_threads_context_fetch_and_audit_write_off_event_loop``."""
+    real_run_in_threadpool = svc.run_in_threadpool
+    dispatched: list[str] = []
+
+    async def _tracking_run_in_threadpool(func, *args, **kwargs):
+        dispatched.append(getattr(func, "__name__", repr(func)))
+        return await real_run_in_threadpool(func, *args, **kwargs)
+
+    monkeypatch.setattr(svc, "run_in_threadpool", _tracking_run_in_threadpool)
+    return dispatched
+
+
+def test_questions_threads_context_fetch_and_audit_write_off_event_loop(client, db, monkeypatch):
+    """Same guard as the ai-analysis regression test above, for ai-questions."""
+    import app.services.clinical_copilot as svc
+
+    _enable_flag(monkeypatch)
+    ctx = _fully_authorized_doctor(db)
+    _patch_registry(monkeypatch, _StubProvider(content=VALID_ANALYSIS_JSON))
+    dispatched = _tracked_run_in_threadpool(svc, monkeypatch)
+
+    resp = client.post(
+        f"{API}/doctor/patients/{ctx['patient_id']}/ai-questions",
+        json={},
+        headers=_headers(ctx["user_id"]),
+    )
+
+    assert resp.status_code == 200
+    assert dispatched.count("_fetch_context") == 1
+    assert dispatched.count("_record") == 1
+
+
+def test_advice_threads_context_fetch_and_audit_write_off_event_loop(client, db, monkeypatch):
+    """Same guard as the ai-analysis regression test above, for ai-advice."""
+    import app.services.clinical_copilot as svc
+
+    _enable_flag(monkeypatch)
+    ctx = _fully_authorized_doctor(db)
+    _patch_registry(monkeypatch, _StubProvider(content=VALID_ANALYSIS_JSON))
+    dispatched = _tracked_run_in_threadpool(svc, monkeypatch)
+
+    resp = client.post(
+        f"{API}/doctor/patients/{ctx['patient_id']}/ai-advice",
+        json={},
+        headers=_headers(ctx["user_id"]),
+    )
+
+    assert resp.status_code == 200
+    assert dispatched.count("_fetch_context") == 1
+    assert dispatched.count("_record") == 1
+
+
+# ---------------------------------------------------------------------------
+# Fix 1 regression: metric SourceRef ids are row-scoped (per HealthMetric.id),
+# never a bare category label — and track whichever row is currently freshest.
+# ---------------------------------------------------------------------------
+
+
+def test_metric_source_ref_id_is_row_scoped_and_tracks_freshest_row(client, db, monkeypatch):
+    """Two `weight` HealthMetric rows (same metric_type, different ids/dates).
+    `priority.sources`' SourceRef.id for the weight finding must be
+    `metric:<HealthMetric.id>` of the SPECIFIC freshest row — never the
+    type-only `metric:weight` string — and must change to track whichever row
+    becomes freshest, proving it is never ambiguous between the two rows."""
+    _enable_flag(monkeypatch)
+    ctx = _fully_authorized_doctor(db)
+    _patch_registry(monkeypatch, _StubProvider(content=VALID_ANALYSIS_JSON))
+
+    row1 = HealthMetric(
+        patient_id=ctx["patient_id"],
+        metric_type="weight",
+        value=68.0,
+        unit="kg",
+        measured_at=dt.datetime(2026, 1, 1, 8, 0),
+        source="manual",
+        status="high",
+    )
+    db.add(row1)
+    db.commit()
+    db.refresh(row1)
+
+    resp1 = client.post(
+        f"{API}/doctor/patients/{ctx['patient_id']}/ai-analysis",
+        json={},
+        headers=_headers(ctx["user_id"]),
+    )
+    assert resp1.status_code == 200
+    metric_sources1 = [s for s in resp1.json()["priority"]["sources"] if s["type"] == "metric"]
+    assert len(metric_sources1) == 1
+    assert metric_sources1[0]["id"] == f"metric:{row1.id}"
+    assert metric_sources1[0]["id"] != "metric:weight"
+    assert metric_sources1[0]["date"] == row1.measured_at.isoformat()
+
+    row2 = HealthMetric(
+        patient_id=ctx["patient_id"],
+        metric_type="weight",
+        value=71.0,
+        unit="kg",
+        measured_at=dt.datetime(2026, 2, 1, 8, 0),
+        source="manual",
+        status="high",
+    )
+    db.add(row2)
+    db.commit()
+    db.refresh(row2)
+
+    resp2 = client.post(
+        f"{API}/doctor/patients/{ctx['patient_id']}/ai-analysis",
+        json={},
+        headers=_headers(ctx["user_id"]),
+    )
+    assert resp2.status_code == 200
+    metric_sources2 = [s for s in resp2.json()["priority"]["sources"] if s["type"] == "metric"]
+    assert len(metric_sources2) == 1
+    # Now backed by the NEW freshest row — id changes, never the older row's id.
+    assert metric_sources2[0]["id"] == f"metric:{row2.id}"
+    assert metric_sources2[0]["id"] != metric_sources1[0]["id"]
+    assert metric_sources2[0]["date"] == row2.measured_at.isoformat()
+
+
+# ---------------------------------------------------------------------------
+# Fix 2 regression: get_questions/get_advice must never crash on a
+# non-string `group`/`category` from the LLM (frozenset membership test on an
+# unhashable value raises TypeError without an isinstance guard first).
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("bad_group", [["current_symptoms"], {"a": 1}, None, 5], ids=["list", "dict", "null", "int"])
+def test_ai_questions_malformed_group_dropped_not_500(client, db, monkeypatch, bad_group):
+    _enable_flag(monkeypatch)
+    ctx = _fully_authorized_doctor(db)
+    content = json.dumps(
+        {
+            "questions": [
+                {
+                    "group": bad_group,
+                    "question_vi": "Triệu chứng bắt đầu khi nào?",
+                    "reason_vi": "Xác định mốc thời gian khởi phát.",
+                }
+            ]
+        }
+    )
+    _patch_registry(monkeypatch, _StubProvider(content=content))
+
+    resp = client.post(
+        f"{API}/doctor/patients/{ctx['patient_id']}/ai-questions",
+        json={},
+        headers=_headers(ctx["user_id"]),
+    )
+    assert resp.status_code == 200
+    assert resp.json()["questions"] == []
+
+
+def test_ai_questions_regression_list_group_does_not_500(client, db, monkeypatch):
+    """Exact case found broken during review: `group` returned as a list —
+    `frozenset({'a'}).__contains__(['x'])` raises TypeError without an
+    isinstance guard evaluated first."""
+    _enable_flag(monkeypatch)
+    ctx = _fully_authorized_doctor(db)
+    content = json.dumps(
+        {"questions": [{"group": ["current_symptoms"], "question_vi": "x", "reason_vi": "y"}]}
+    )
+    _patch_registry(monkeypatch, _StubProvider(content=content))
+
+    resp = client.post(
+        f"{API}/doctor/patients/{ctx['patient_id']}/ai-questions",
+        json={},
+        headers=_headers(ctx["user_id"]),
+    )
+    assert resp.status_code == 200
+    assert resp.json()["questions"] == []
+
+
+@pytest.mark.parametrize("bad_category", [["home_monitoring"], {"a": 1}, None, 5], ids=["list", "dict", "null", "int"])
+def test_ai_advice_malformed_category_dropped_not_500(client, db, monkeypatch, bad_category):
+    _enable_flag(monkeypatch)
+    ctx = _fully_authorized_doctor(db)
+    content = json.dumps(
+        {"items": [{"category": bad_category, "text_vi": "Theo dõi đường huyết tại nhà mỗi ngày."}]}
+    )
+    _patch_registry(monkeypatch, _StubProvider(content=content))
+
+    resp = client.post(
+        f"{API}/doctor/patients/{ctx['patient_id']}/ai-advice",
+        json={},
+        headers=_headers(ctx["user_id"]),
+    )
+    assert resp.status_code == 200
+    assert resp.json()["items"] == []
+
+
+# ---------------------------------------------------------------------------
+# Additional low-cost coverage.
+# ---------------------------------------------------------------------------
+
+
+def test_contradiction_flag_downgrades_confidence_never_high(client, db, monkeypatch):
+    """A data_quality_flag='flag' lab result, with otherwise-complete data
+    (completeness_ratio >= 0.75), must downgrade confidence to 'medium' —
+    NEVER 'high' while a data-quality flag exists."""
+    from app.models.clinical import LabResult, Medication
+
+    _enable_flag(monkeypatch)
+    ctx = _fully_authorized_doctor(db)
+    profile = db.query(PatientProfile).filter(PatientProfile.id == ctx["patient_id"]).first()
+    profile.known_conditions = json.dumps(["Đái tháo đường type 2"])
+    profile.allergies = json.dumps(["Penicillin"])
+    db.commit()
+
+    db.add(
+        Medication(
+            patient_id=ctx["patient_id"], name="Metformin", dose="500mg", frequency="2 lần/ngày"
+        )
+    )
+    db.add(
+        HealthMetric(
+            patient_id=ctx["patient_id"],
+            metric_type="weight",
+            value=70.0,
+            unit="kg",
+            measured_at=dt.datetime.now(dt.UTC),
+            source="manual",
+            status="normal",
+        )
+    )
+    db.add(
+        LabResult(
+            patient_id=ctx["patient_id"],
+            test_name="HbA1c",
+            canonical_name="hba1c",
+            value=6.0,
+            unit="%",
+            test_date=dt.date.today(),
+            data_quality_flag="flag",
+        )
+    )
+    db.commit()
+
+    content = json.dumps(
+        {"key_issues": [], "contradictions_or_gaps": [], "differentials_to_exclude": []}
+    )
+    _patch_registry(monkeypatch, _StubProvider(content=content))
+
+    resp = client.post(
+        f"{API}/doctor/patients/{ctx['patient_id']}/ai-analysis",
+        json={},
+        headers=_headers(ctx["user_id"]),
+    )
+    assert resp.status_code == 200
+    assert resp.json()["confidence"] == "medium"
+
+
+def test_low_confidence_can_coexist_with_urgent_priority(client, db, monkeypatch):
+    """A near-empty record (completeness_ratio < 0.34) with one critical
+    finding must yield BOTH confidence == 'low' AND priority.level ==
+    'urgent' in the same response — the two computations are independently
+    extreme without interfering with each other."""
+    _enable_flag(monkeypatch)
+    ctx = _fully_authorized_doctor(db)
+    _seed_critical_finding(db, patient_id=ctx["patient_id"])
+    _patch_registry(monkeypatch, _StubProvider(content=VALID_ANALYSIS_JSON))
+
+    resp = client.post(
+        f"{API}/doctor/patients/{ctx['patient_id']}/ai-analysis",
+        json={},
+        headers=_headers(ctx["user_id"]),
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["confidence"] == "low"
+    assert body["priority"]["level"] == "urgent"
+
+
+def test_key_issues_text_as_int_is_dropped(client, db, monkeypatch):
+    _enable_flag(monkeypatch)
+    ctx = _fully_authorized_doctor(db)
+    content = json.dumps(
+        {
+            "key_issues": [{"text": 123, "source_ids": []}],
+            "contradictions_or_gaps": [],
+            "differentials_to_exclude": [],
+        }
+    )
+    _patch_registry(monkeypatch, _StubProvider(content=content))
+
+    resp = client.post(
+        f"{API}/doctor/patients/{ctx['patient_id']}/ai-analysis",
+        json={},
+        headers=_headers(ctx["user_id"]),
+    )
+    assert resp.status_code == 200
+    assert resp.json()["key_issues"] == []
+
+
+def test_key_issues_text_as_none_is_dropped(client, db, monkeypatch):
+    _enable_flag(monkeypatch)
+    ctx = _fully_authorized_doctor(db)
+    content = json.dumps(
+        {
+            "key_issues": [{"text": None, "source_ids": []}],
+            "contradictions_or_gaps": [],
+            "differentials_to_exclude": [],
+        }
+    )
+    _patch_registry(monkeypatch, _StubProvider(content=content))
+
+    resp = client.post(
+        f"{API}/doctor/patients/{ctx['patient_id']}/ai-analysis",
+        json={},
+        headers=_headers(ctx["user_id"]),
+    )
+    assert resp.status_code == 200
+    assert resp.json()["key_issues"] == []
+
+
+def test_key_issues_source_ids_as_bare_string_treated_as_no_sources(client, db, monkeypatch):
+    _enable_flag(monkeypatch)
+    ctx = _fully_authorized_doctor(db)
+    content = json.dumps(
+        {
+            "key_issues": [{"text": "Có nội dung hợp lệ.", "source_ids": "not-a-list"}],
+            "contradictions_or_gaps": [],
+            "differentials_to_exclude": [],
+        }
+    )
+    _patch_registry(monkeypatch, _StubProvider(content=content))
+
+    resp = client.post(
+        f"{API}/doctor/patients/{ctx['patient_id']}/ai-analysis",
+        json={},
+        headers=_headers(ctx["user_id"]),
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body["key_issues"]) == 1
+    assert body["key_issues"][0]["basis"] == "needs_confirmation"
+    assert body["key_issues"][0]["sources"] == []
+
+
+def test_key_issues_source_ids_with_non_string_elements_treated_as_no_sources(
+    client, db, monkeypatch
+):
+    _enable_flag(monkeypatch)
+    ctx = _fully_authorized_doctor(db)
+    content = json.dumps(
+        {
+            "key_issues": [{"text": "Có nội dung hợp lệ.", "source_ids": [1, 2, 3]}],
+            "contradictions_or_gaps": [],
+            "differentials_to_exclude": [],
+        }
+    )
+    _patch_registry(monkeypatch, _StubProvider(content=content))
+
+    resp = client.post(
+        f"{API}/doctor/patients/{ctx['patient_id']}/ai-analysis",
+        json={},
+        headers=_headers(ctx["user_id"]),
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body["key_issues"]) == 1
+    assert body["key_issues"][0]["basis"] == "needs_confirmation"
+    assert body["key_issues"][0]["sources"] == []
+
+
+async def test_get_analysis_drops_consultation_on_patient_id_mismatch(db, monkeypatch):
+    """Bypasses the route entirely (calls the service function directly) to
+    prove `get_analysis` itself never trusts a consultation whose patient_id
+    doesn't match the requested patient_id — belt-and-suspenders behind the
+    route's `_authorize` gate, which already 400s a genuine mismatch before
+    this code path is ever reached in normal operation."""
+    from app.services import clinical_copilot as svc
+    from app.services import consultation as consult_svc
+    from app.services import consultation_payment
+
+    from tests.consultation_factories import create_doctor, create_patient
+
+    doctor = create_doctor(db)
+    _user_a, profile_a = create_patient(db)
+    _user_b, profile_b = create_patient(db)
+    consultation = consult_svc.create_consultation(
+        db, patient_id=profile_a.id, doctor_id=doctor.id, data_consent_accepted=True
+    )
+    consultation_payment.pay_mock(db, consultation, patient_profile_id=profile_a.id)
+
+    content = json.dumps(
+        {
+            "key_issues": [
+                {
+                    "text": "Trích dẫn bối cảnh buổi tư vấn.",
+                    "source_ids": [f"consultation:{consultation.id}"],
+                }
+            ],
+            "contradictions_or_gaps": [],
+            "differentials_to_exclude": [],
+        }
+    )
+    _patch_registry(monkeypatch, _StubProvider(content=content))
+
+    # patient_id says profile_b, but consultation_id belongs to profile_a.
+    result = await svc.get_analysis(
+        db,
+        doctor_user_id=doctor.user_id,
+        patient_id=profile_b.id,
+        consultation_id=consultation.id,
+        chief_complaint="Không thuộc về patient_b.",
+    )
+
+    # The consultation source id must NOT be resolvable — the service dropped
+    # the mismatched consultation, so the claim citing it degrades to
+    # needs_confirmation instead of being falsely treated as sourced.
+    assert result.key_issues[0].basis == "needs_confirmation"
+    assert result.key_issues[0].sources == []

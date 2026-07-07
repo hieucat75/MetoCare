@@ -47,9 +47,19 @@ class MissingDataItem(BaseModel):
 
 
 class SourceRef(BaseModel):
-    id: str  # stable citation id, e.g. "lab:<lab_result_id>", "metric:<metric_type>",
-    # "medication:<medication_id>", "condition:<index>", "allergy:<index>",
-    # "consultation:<consultation_id>", "profile:<patient_id>"
+    id: str  # stable citation id. Two distinct id families:
+    # - ROW-BACKED (stable/immutable for the life of the row — a fresh reading
+    #   never overwrites or collides with an earlier one's id): e.g.
+    #   "lab:<lab_result_id>", "metric:<health_metric_id>",
+    #   "medication:<medication_id>", "consultation:<consultation_id>",
+    #   "profile:<patient_id>". A "lab:<metric_type>"/"metric:<metric_type>"
+    #   fallback (type-scoped, dateless) is used ONLY when no concrete row
+    #   could be resolved for that finding.
+    # - COLLECTION-ITEM REFERENCE (NOT stable/immutable across an edit): e.g.
+    #   "condition:<index>", "allergy:<index>" — these index into a single
+    #   encrypted JSON column on PatientProfile, not first-class DB rows, so
+    #   the id can shift when the list is reordered/edited. Documented
+    #   limitation, not a bug.
     type: SourceRefType
     label: str
     date: str | None = None  # ISO-8601; null ONLY if the underlying record genuinely
