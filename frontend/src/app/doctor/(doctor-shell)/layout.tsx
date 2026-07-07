@@ -7,6 +7,7 @@ import {
   LayoutDashboard,
   ClipboardList,
   Users,
+  Calendar,
   Stethoscope,
   BadgeCheck,
   LogOut,
@@ -37,8 +38,14 @@ const NAV_ITEMS: NavItem[] = [
     icon: <Users className="w-5 h-5" />,
     href: '/doctor/patients',
   },
-  // `appointments` and `notes` are non-functional "coming soon" stubs — routes
-  // remain in place (guarded) but are hidden from the main nav.
+  {
+    id: 'appointments',
+    label: 'Lịch hẹn',
+    icon: <Calendar className="w-5 h-5" />,
+    href: '/doctor/appointments',
+  },
+  // `notes` is still a non-functional "coming soon" stub — route remains in
+  // place (guarded) but is hidden from the main nav until it's real.
   {
     id: 'consultations',
     label: 'Tư vấn',
