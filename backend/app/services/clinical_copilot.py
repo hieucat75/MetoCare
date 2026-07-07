@@ -81,6 +81,7 @@ from app.services import audit
 from app.services.clinical_insight import (
     MetricInsight,
     build_health_summary,
+    canonical_metric_key,
     list_insights,
 )
 
@@ -515,12 +516,26 @@ def _lab_row_index(lab_rows: list[LabResult]) -> dict[str, LabResult]:
 
 
 def _metric_row_index(metric_rows: list[HealthMetric]) -> dict[str, HealthMetric]:
-    """Freshest metric row per exact ``metric_type`` (``metric_rows`` is already
-    newest-first)."""
+    """Freshest metric row per CANONICAL metric key (``metric_rows`` is already
+    newest-first, globally sorted by ``measured_at`` desc).
+
+    Keyed by ``canonical_metric_key`` — the SAME alias-folding identity
+    ``clinical_insight`` uses to build each ``MetricInsight`` — so a row stored
+    under an alias raw type (e.g. ``metric_type="weight_kg"``) is found under
+    the same key ``MetricInsight.metric_type`` uses (``"weight"``), instead of
+    silently missing and falling back to a dateless, type-only citation.
+
+    Because ``metric_rows`` is already sorted newest-first ACROSS ALL raw
+    types, "first row seen for a canonical key" is already "freshest row
+    across every aliased raw type for that key" — the same
+    group-then-take-first-by-recency semantics ``clinical_insight._history``
+    uses to pick the "current" reading, so the two never disagree about which
+    row backs a given finding."""
     index: dict[str, HealthMetric] = {}
     for row in metric_rows:
-        if row.metric_type not in index:
-            index[row.metric_type] = row
+        key = canonical_metric_key(row.metric_type)
+        if key not in index:
+            index[key] = row
     return index
 
 

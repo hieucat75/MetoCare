@@ -1032,6 +1032,185 @@ def test_metric_source_ref_id_is_row_scoped_and_tracks_freshest_row(client, db, 
 
 
 # ---------------------------------------------------------------------------
+# Aliased-raw-type source resolution: `MetricInsight.metric_type` is the
+# CANONICAL group key (`clinical_insight.canonical_metric_key`), but a
+# `HealthMetric` row may be stored under a raw ALIAS type (e.g. "weight_kg"
+# folds to canonical "weight"). `_metric_row_index` must key by the same
+# canonical identity so the citation always resolves to the real row — never
+# degrading to the dateless, type-only `metric:<canonical>` fallback merely
+# because the row was indexed under a different alias.
+# ---------------------------------------------------------------------------
+
+
+def _metric_sources(resp) -> list[dict]:
+    return [s for s in resp.json()["priority"]["sources"] if s["type"] == "metric"]
+
+
+def test_aliased_raw_metric_type_resolves_to_real_row_not_type_only_fallback(
+    client, db, monkeypatch
+):
+    """A single HealthMetric row stored under the raw alias `metric_type="weight_kg"`
+    must still be cited by its own row id/date — never `metric:weight` (the
+    canonical, dateless, type-only fallback)."""
+    _enable_flag(monkeypatch)
+    ctx = _fully_authorized_doctor(db)
+    _patch_registry(monkeypatch, _StubProvider(content=VALID_ANALYSIS_JSON))
+
+    row = HealthMetric(
+        patient_id=ctx["patient_id"],
+        metric_type="weight_kg",
+        value=90.0,
+        unit="kg",
+        measured_at=dt.datetime(2026, 1, 5, 8, 0),
+        source="manual",
+        status="high",
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+
+    resp = client.post(
+        f"{API}/doctor/patients/{ctx['patient_id']}/ai-analysis",
+        json={},
+        headers=_headers(ctx["user_id"]),
+    )
+    assert resp.status_code == 200
+    metric_sources = _metric_sources(resp)
+    assert len(metric_sources) == 1
+    assert metric_sources[0]["id"] == f"metric:{row.id}"
+    assert metric_sources[0]["id"] != "metric:weight"
+    assert metric_sources[0]["date"] == row.measured_at.isoformat()
+
+
+def test_mixed_alias_freshest_row_cites_newer_row_across_aliases(client, db, monkeypatch):
+    """Two rows under DIFFERENT raw aliases of the SAME canonical group
+    ("weight" and "weight_kg" both fold to "weight"): the older row uses the
+    bare canonical raw type, the newer row uses the alias. The citation must
+    track the freshest row ACROSS both raw types, not the freshest within one
+    raw type (that would be the shape of the original bug)."""
+    _enable_flag(monkeypatch)
+    ctx = _fully_authorized_doctor(db)
+    _patch_registry(monkeypatch, _StubProvider(content=VALID_ANALYSIS_JSON))
+
+    older = HealthMetric(
+        patient_id=ctx["patient_id"],
+        metric_type="weight",
+        value=68.0,
+        unit="kg",
+        measured_at=dt.datetime(2026, 1, 1, 8, 0),
+        source="manual",
+        status="high",
+    )
+    newer = HealthMetric(
+        patient_id=ctx["patient_id"],
+        metric_type="weight_kg",
+        value=93.0,
+        unit="kg",
+        measured_at=dt.datetime(2026, 2, 1, 8, 0),
+        source="manual",
+        status="high",
+    )
+    db.add_all([older, newer])
+    db.commit()
+    db.refresh(older)
+    db.refresh(newer)
+
+    resp = client.post(
+        f"{API}/doctor/patients/{ctx['patient_id']}/ai-analysis",
+        json={},
+        headers=_headers(ctx["user_id"]),
+    )
+    assert resp.status_code == 200
+    metric_sources = _metric_sources(resp)
+    assert len(metric_sources) == 1
+    assert metric_sources[0]["id"] == f"metric:{newer.id}"
+    assert metric_sources[0]["id"] != f"metric:{older.id}"
+    assert metric_sources[0]["date"] == newer.measured_at.isoformat()
+
+
+def test_waist_alias_also_resolves_to_real_row(client, db, monkeypatch):
+    """Same shape of bug/fix as the weight/weight_kg case, proven for a second
+    alias pair (`waist` -> canonical `waist_cm`) to show the fix isn't
+    hardcoded to the weight case specifically."""
+    _enable_flag(monkeypatch)
+    ctx = _fully_authorized_doctor(db)
+    _patch_registry(monkeypatch, _StubProvider(content=VALID_ANALYSIS_JSON))
+
+    row = HealthMetric(
+        patient_id=ctx["patient_id"],
+        metric_type="waist",
+        value=105.0,
+        unit="cm",
+        measured_at=dt.datetime(2026, 1, 10, 8, 0),
+        source="manual",
+        status="high",
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+
+    resp = client.post(
+        f"{API}/doctor/patients/{ctx['patient_id']}/ai-analysis",
+        json={},
+        headers=_headers(ctx["user_id"]),
+    )
+    assert resp.status_code == 200
+    metric_sources = _metric_sources(resp)
+    assert len(metric_sources) == 1
+    assert metric_sources[0]["id"] == f"metric:{row.id}"
+    assert metric_sources[0]["id"] != "metric:waist_cm"
+    assert metric_sources[0]["date"] == row.measured_at.isoformat()
+
+
+def test_distinct_canonical_groups_never_collide_in_source_map(client, db, monkeypatch):
+    """Two rows belonging to DIFFERENT canonical groups (weight-family vs
+    waist-family) must produce two DISTINCT citations, each attributed to its
+    own row — proving canonicalization only merges TRUE aliases of the same
+    group and never accidentally merges unrelated groups."""
+    _enable_flag(monkeypatch)
+    ctx = _fully_authorized_doctor(db)
+    _patch_registry(monkeypatch, _StubProvider(content=VALID_ANALYSIS_JSON))
+
+    weight_row = HealthMetric(
+        patient_id=ctx["patient_id"],
+        metric_type="weight_kg",
+        value=95.0,
+        unit="kg",
+        measured_at=dt.datetime(2026, 1, 1, 8, 0),
+        source="manual",
+        status="high",
+    )
+    waist_row = HealthMetric(
+        patient_id=ctx["patient_id"],
+        metric_type="waist",
+        value=110.0,
+        unit="cm",
+        measured_at=dt.datetime(2026, 1, 2, 8, 0),
+        source="manual",
+        status="high",
+    )
+    db.add_all([weight_row, waist_row])
+    db.commit()
+    db.refresh(weight_row)
+    db.refresh(waist_row)
+
+    resp = client.post(
+        f"{API}/doctor/patients/{ctx['patient_id']}/ai-analysis",
+        json={},
+        headers=_headers(ctx["user_id"]),
+    )
+    assert resp.status_code == 200
+    metric_sources = {s["id"]: s for s in _metric_sources(resp)}
+    assert len(metric_sources) == 2
+    assert metric_sources[f"metric:{weight_row.id}"]["date"] == weight_row.measured_at.isoformat()
+    assert metric_sources[f"metric:{waist_row.id}"]["date"] == waist_row.measured_at.isoformat()
+    # Neither collided into a type-only fallback nor swapped dates.
+    assert metric_sources[f"metric:{weight_row.id}"]["id"] != metric_sources[
+        f"metric:{waist_row.id}"
+    ]["id"]
+
+
+# ---------------------------------------------------------------------------
 # Fix 2 regression: get_questions/get_advice must never crash on a
 # non-string `group`/`category` from the LLM (frozenset membership test on an
 # unhashable value raises TypeError without an isinstance guard first).
