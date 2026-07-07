@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { ClipboardList } from 'lucide-react'
+import { ClipboardList, ArrowLeft } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { formatRelativeTime } from '@/lib/utils'
 import {
@@ -154,11 +154,18 @@ export default function DoctorQueuePage() {
         />
       </div>
 
-      {/* Two-panel layout */}
+      {/* Master-detail layout.
+          Desktop (md+): list + detail side-by-side.
+          Mobile (<md): show the LIST full-width; selecting an item swaps to the
+          DETAIL full-width with a back control. */}
       <div className="flex flex-1 overflow-hidden">
         {/* Left panel — queue list */}
         <aside
-          className="w-80 lg:w-96 shrink-0 flex flex-col border-r border-border bg-surface overflow-hidden"
+          className={cn(
+            'w-full md:w-80 lg:w-96 shrink-0 flex-col border-r border-border bg-surface overflow-hidden',
+            // On mobile, hide the list once an item is selected.
+            selectedId ? 'hidden md:flex' : 'flex',
+          )}
           aria-label="Danh sách hàng chờ"
         >
           {/* Filter buttons */}
@@ -227,13 +234,27 @@ export default function DoctorQueuePage() {
           </div>
         </aside>
 
-        {/* Right panel — review panel */}
+        {/* Right panel — review panel.
+            On mobile, only rendered when an item is selected. */}
         <main
-          className="flex-1 overflow-y-auto bg-background"
+          className={cn(
+            'flex-1 overflow-y-auto bg-background',
+            selectedId ? 'flex flex-col' : 'hidden md:flex md:flex-col',
+          )}
           aria-label="Khu vực xét duyệt"
         >
           {selectedItem ? (
-            <div className="px-6 py-6 flex flex-col gap-4 max-w-2xl mx-auto">
+            <div className="px-6 py-6 flex flex-col gap-4 max-w-2xl mx-auto w-full">
+              {/* Mobile back control — return to the list */}
+              <button
+                type="button"
+                onClick={() => setSelectedId(null)}
+                className="md:hidden inline-flex items-center gap-1.5 self-start text-body-sm font-medium text-primary hover:underline"
+              >
+                <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+                Quay lại danh sách
+              </button>
+
               {/* Patient / item header */}
               <div className="flex flex-col gap-1">
                 <h2 className="text-heading-md font-semibold text-text">

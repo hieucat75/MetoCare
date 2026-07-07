@@ -35,7 +35,12 @@ import {
   type TimelineEvent,
   type TimelineEventType as APITimelineEventType,
 } from '@/lib/api/doctor'
+import { ApiError } from '@/lib/api/client'
 import { formatRelativeTime } from '@/lib/utils'
+import { DoctorAssistantPanel } from './DoctorAssistantPanel'
+
+const NO_CONSENT_MESSAGE =
+  'Chưa có quyền xem hồ sơ bệnh nhân này (cần bệnh nhân cấp quyền).'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -138,28 +143,47 @@ export default function PatientDetailPage() {
   const [metabolicScore, setMetabolicScore] = React.useState<MetabolicScore | null>(null)
   const [labsResponse, setLabsResponse] = React.useState<LabListResponse | null>(null)
   const [timeline, setTimeline] = React.useState<TimelineEvent[]>([])
+  const [timelineForbidden, setTimelineForbidden] = React.useState(false)
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
+  const [noConsent, setNoConsent] = React.useState(false)
 
   const load = React.useCallback(async () => {
     setLoading(true)
     setError(null)
+    setNoConsent(false)
+    setTimelineForbidden(false)
+
+    // The profile load gates the whole screen: a 403 here means the doctor
+    // lacks consent for this patient.
+    let prof: PatientProfile
     try {
-      const [prof, score, labs, tl] = await Promise.all([
-        getPatientProfile(patientId),
-        getLatestMetabolicScore(patientId),
-        getLabs(patientId, { limit: 5 }),
-        getPatientTimeline(patientId, { limit: 20 }),
-      ])
-      setProfile(prof)
-      setMetabolicScore(score)
-      setLabsResponse(labs)
-      setTimeline(tl)
-    } catch {
-      setError('Không thể tải thông tin bệnh nhân. Vui lòng thử lại.')
-    } finally {
+      prof = await getPatientProfile(patientId)
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 403) {
+        setNoConsent(true)
+      } else {
+        setError('Không thể tải thông tin bệnh nhân. Vui lòng thử lại.')
+      }
       setLoading(false)
+      return
     }
+    setProfile(prof)
+
+    // Secondary resources degrade gracefully — a 403 on any of them shows an
+    // empty/no-access section rather than blocking the whole page.
+    const [score, labs, tl] = await Promise.all([
+      getLatestMetabolicScore(patientId).catch(() => null),
+      getLabs(patientId, { limit: 5 }).catch(() => null),
+      getPatientTimeline(patientId, { limit: 20 }).catch((err: unknown) => {
+        if (err instanceof ApiError && err.status === 403) setTimelineForbidden(true)
+        return [] as TimelineEvent[]
+      }),
+    ])
+    setMetabolicScore(score)
+    setLabsResponse(labs)
+    setTimeline(tl)
+    setLoading(false)
   }, [patientId])
 
   React.useEffect(() => {
@@ -170,6 +194,23 @@ export default function PatientDetailPage() {
     return (
       <div className="p-6">
         <PageLoading label="Đang tải thông tin bệnh nhân..." />
+      </div>
+    )
+  }
+
+  if (noConsent) {
+    return (
+      <div className="p-6 space-y-4">
+        <ErrorState title="Chưa có quyền truy cập" message={NO_CONSENT_MESSAGE} variant="page" />
+        <div className="text-center">
+          <button
+            type="button"
+            onClick={() => router.push('/doctor/patients')}
+            className="text-body-sm text-primary hover:underline underline-offset-2"
+          >
+            Quay lại danh sách bệnh nhân
+          </button>
+        </div>
       </div>
     )
   }
@@ -191,8 +232,8 @@ export default function PatientDetailPage() {
   const summaryPatient: SummaryPatientProfile = {
     id: profile.id,
     fullName: profile.full_name ?? 'Không rõ tên',
-    dateOfBirth: profile.dob ?? '1990-01-01',
-    gender: profile.gender ?? 'other',
+    dateOfBirth: profile.dob,
+    gender: profile.gender,
     phone: profile.phone ?? undefined,
     address: undefined,
     avatarUrl: undefined,
@@ -434,7 +475,16 @@ export default function PatientDetailPage() {
 
           {/* ── Dòng thời gian ────────────────────────────────────────── */}
           <TabsContent value="timeline">
-            {timeline.length > 0 ? (
+            {timelineForbidden ? (
+              <Card>
+                <EmptyState
+                  icon={<Activity />}
+                  title="Không có quyền xem dòng thời gian"
+                  description="Cần bệnh nhân cấp quyền để xem lịch sử hoạt động."
+                  size="md"
+                />
+              </Card>
+            ) : timeline.length > 0 ? (
               <Card>
                 <CardContent className="pt-5">
                   {timeline.map((event, idx) => {
@@ -461,6 +511,11 @@ export default function PatientDetailPage() {
             )}
           </TabsContent>
         </Tabs>
+
+        {/* Patient-scoped AI assistant (collapsible; disabled shell in P0) */}
+        <div className="mt-6">
+          <DoctorAssistantPanel patientId={patientId} />
+        </div>
       </div>
     </div>
   )

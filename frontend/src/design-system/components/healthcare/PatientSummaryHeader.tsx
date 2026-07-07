@@ -20,8 +20,10 @@ import { RiskLevelBadge } from '@/design-system/components/healthcare/RiskLevelB
 export interface PatientProfile {
   id: string
   fullName: string
-  dateOfBirth: string
-  gender: 'male' | 'female' | 'other'
+  /** Null when the patient has not recorded a date of birth. */
+  dateOfBirth: string | null
+  /** Null when the patient has not recorded a gender. */
+  gender: 'male' | 'female' | 'other' | null
   phone?: string
   address?: string
   avatarUrl?: string
@@ -47,8 +49,10 @@ export interface PatientSummaryHeaderProps {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function calculateAge(dateOfBirth: string): number {
+function calculateAge(dateOfBirth: string | null): number | null {
+  if (!dateOfBirth) return null
   const dob = new Date(dateOfBirth)
+  if (Number.isNaN(dob.getTime())) return null
   const today = new Date()
   let age = today.getFullYear() - dob.getFullYear()
   const monthDiff = today.getMonth() - dob.getMonth()
@@ -58,10 +62,21 @@ function calculateAge(dateOfBirth: string): number {
   return age
 }
 
-const GENDER_LABEL: Record<PatientProfile['gender'], string> = {
+const GENDER_LABEL: Record<'male' | 'female' | 'other', string> = {
   male: 'Nam',
   female: 'Nu',
   other: 'Khac',
+}
+
+/** Build the "gender · age" meta label, degrading to "Không rõ" when absent. */
+function buildDemographics(
+  gender: PatientProfile['gender'],
+  age: number | null,
+): string {
+  const parts: string[] = []
+  if (gender) parts.push(GENDER_LABEL[gender])
+  if (age !== null) parts.push(`${age} tuoi`)
+  return parts.length > 0 ? parts.join(' · ') : 'Khong ro'
 }
 
 function formatLastVisit(dateStr: string): string {
@@ -94,7 +109,7 @@ export function PatientSummaryHeader({
   className,
 }: PatientSummaryHeaderProps) {
   const age = calculateAge(patient.dateOfBirth)
-  const genderLabel = GENDER_LABEL[patient.gender]
+  const demographics = buildDemographics(patient.gender, age)
 
   return (
     <div
@@ -156,7 +171,7 @@ export function PatientSummaryHeader({
                 {/* Gender + age badge */}
                 <Badge variant="default" size="sm">
                   <User className="h-3 w-3" aria-hidden="true" />
-                  {genderLabel} &middot; {age} tuoi
+                  {demographics}
                 </Badge>
                 {/* Risk level badge */}
                 <RiskLevelBadge
