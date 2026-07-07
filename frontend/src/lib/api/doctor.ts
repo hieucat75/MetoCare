@@ -202,3 +202,39 @@ export async function updateAppointmentStatus(
     status,
   })
 }
+
+// ── Clinical Notes (doctor-wide) ────────────────────────────────────────────
+
+export type DoctorNoteStatus = 'draft' | 'finalized'
+
+export interface DoctorNoteListItem {
+  id: string
+  consultation_id: string
+  patient_id: string
+  patient_name: string | null
+  note_type: string
+  status: DoctorNoteStatus
+  content_preview: string
+  created_at: string
+  finalized_at: string | null
+}
+
+export interface DoctorNoteListResponse {
+  total: number
+  items: DoctorNoteListItem[]
+}
+
+export async function getDoctorNotes(params?: {
+  consultationId?: string
+  status?: DoctorNoteStatus
+  limit?: number
+  offset?: number
+}): Promise<DoctorNoteListResponse> {
+  const qs = new URLSearchParams()
+  if (params?.consultationId) qs.set('consultation_id', params.consultationId)
+  if (params?.status) qs.set('status', params.status)
+  if (params?.limit) qs.set('limit', String(params.limit))
+  if (params?.offset) qs.set('offset', String(params.offset))
+  const query = qs.toString()
+  return api.get<DoctorNoteListResponse>(`/doctor/notes${query ? `?${query}` : ''}`)
+}

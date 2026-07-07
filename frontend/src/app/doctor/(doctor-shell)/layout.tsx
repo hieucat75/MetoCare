@@ -8,6 +8,7 @@ import {
   ClipboardList,
   Users,
   Calendar,
+  FileText,
   Stethoscope,
   BadgeCheck,
   LogOut,
@@ -44,8 +45,12 @@ const NAV_ITEMS: NavItem[] = [
     icon: <Calendar className="w-5 h-5" />,
     href: '/doctor/appointments',
   },
-  // `notes` is still a non-functional "coming soon" stub — route remains in
-  // place (guarded) but is hidden from the main nav until it's real.
+  {
+    id: 'notes',
+    label: 'Ghi chú lâm sàng',
+    icon: <FileText className="w-5 h-5" />,
+    href: '/doctor/notes',
+  },
   {
     id: 'consultations',
     label: 'Tư vấn',

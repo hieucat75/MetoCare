@@ -36,6 +36,7 @@ import {
   MarketplaceDisclaimer,
 } from '@/components/marketplace'
 import { ApiError } from '@/lib/api/client'
+import { cn } from '@/lib/utils'
 import type { ConsultationStatus } from '@/lib/api/marketplace'
 import {
   getConsultation,
@@ -626,7 +627,17 @@ function NotesPanel({
     setLoading(true)
     setListError(null)
     listNotes(consultationId)
-      .then((data) => setNotes([...data].sort(byNewest)))
+      .then((data) => {
+        const sorted = [...data].sort(byNewest)
+        setNotes(sorted)
+        // Resume the latest draft (if any) so the doctor can keep editing
+        // instead of starting from a blank textarea.
+        const latest = sorted[0]
+        if (latest?.status === 'draft') {
+          setContent(latest.content)
+          setNoteType(latest.note_type)
+        }
+      })
       .catch((err: unknown) => {
         // 403 (e.g. outside access window / MFA) → treat as no notes visible.
         if (err instanceof ApiError && err.status === 403) setNotes([])
@@ -639,7 +650,7 @@ function NotesPanel({
     loadNotes()
   }, [loadNotes])
 
-  const handleSubmit = async () => {
+  const handleSave = async (noteStatus: 'draft' | 'finalized') => {
     const trimmed = content.trim()
     if (trimmed.length < 1) {
       setSaveError('Vui lòng nhập nội dung ghi chú.')
@@ -648,10 +659,16 @@ function NotesPanel({
     setSaving(true)
     setSaveError(null)
     try {
-      const created = await createNote(consultationId, { content: trimmed, note_type: noteType })
+      const created = await createNote(consultationId, {
+        content: trimmed,
+        note_type: noteType,
+        status: noteStatus,
+      })
       setNotes((prev) => [created, ...prev])
-      setContent('')
-      setNoteType('recommendation')
+      if (noteStatus === 'finalized') {
+        setContent('')
+        setNoteType('recommendation')
+      }
     } catch (err) {
       setSaveError(friendlyActionError(err))
     } finally {
@@ -669,7 +686,8 @@ function NotesPanel({
       {canWrite && (
         <Card padding="md" className="mb-3">
           <Alert variant="info" className="mb-3">
-            Ghi chú không thể chỉnh sửa hay xoá sau khi lưu (append-only).
+            Ghi chú đã hoàn tất không thể chỉnh sửa hay xoá (append-only). Bạn có thể lưu nháp
+            nhiều lần trước khi hoàn tất.
           </Alert>
           <div className="max-w-xs">
             <Select
@@ -691,9 +709,22 @@ function NotesPanel({
             fullWidth
           />
           {saveError && <p className="mt-2 text-body-sm font-medium text-danger">{saveError}</p>}
-          <div className="mt-3 flex justify-end">
-            <Button type="button" variant="primary" loading={saving} onClick={handleSubmit}>
-              Lưu ghi chú
+          <div className="mt-3 flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              loading={saving}
+              onClick={() => handleSave('draft')}
+            >
+              Lưu nháp
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              loading={saving}
+              onClick={() => handleSave('finalized')}
+            >
+              Hoàn tất ghi chú
             </Button>
           </div>
         </Card>
@@ -713,10 +744,22 @@ function NotesPanel({
         <div className="space-y-2.5">
           {notes.map((n) => (
             <Card key={n.id} padding="md">
-              <div className="flex items-center justify-between">
-                <span className="rounded-full bg-secondary-100 px-2 py-0.5 text-body-xs font-medium text-secondary-700">
-                  {noteTypeLabel(n.note_type)}
-                </span>
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="rounded-full bg-secondary-100 px-2 py-0.5 text-body-xs font-medium text-secondary-700">
+                    {noteTypeLabel(n.note_type)}
+                  </span>
+                  <span
+                    className={cn(
+                      'rounded-full px-2 py-0.5 text-body-xs font-medium',
+                      n.status === 'draft'
+                        ? 'bg-warning-light text-amber-800'
+                        : 'bg-success-light text-green-800',
+                    )}
+                  >
+                    {n.status === 'draft' ? 'Nháp' : 'Đã hoàn tất'}
+                  </span>
+                </div>
                 {n.created_at && (
                   <span className="text-body-xs text-text-subtle">
                     {formatDateTime(n.created_at)}
