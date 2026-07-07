@@ -119,7 +119,7 @@ After CI deploys to staging from `f997fe9`:
 2. Item A (password policy) — backend first, then frontend.
 3. Item B (MFA enforcement) — update DO compose + frontend .env.production.example.
 4. Item C (preflight guard) — new script + workflow integration.
-5. Item D (DO cleanup) — pending PTH decision on Option 1 vs 2.
+5. Item D (DO cleanup) — ✅ DONE. Option 1 (disable) applied via PR #95 / `d7eafe2`.
 6. Codex review all changes (single PR `hardening/prod-auth-gates`).
 7. PTH approval before any production deploy.
 
