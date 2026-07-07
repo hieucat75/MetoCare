@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Calendar, Search, Clock, CalendarCheck, CalendarClock, CheckCircle2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { PageHeader, Card, Badge, EmptyState, CardSkeleton, ErrorState } from '@/design-system'
-import { ApiError } from '@/lib/api/client'
+import { ApiError, toPageError, type PageError } from '@/lib/api/client'
 import {
   getDoctorAppointments,
   updateAppointmentStatus,
@@ -83,7 +83,7 @@ export default function AppointmentsPage() {
   const [items, setItems] = React.useState<DoctorAppointment[]>([])
   const [stats, setStats] = React.useState<DoctorAppointmentStats>(KPI_DEFAULT)
   const [loading, setLoading] = React.useState(true)
-  const [error, setError] = React.useState<{ code?: number; message?: string } | null>(null)
+  const [error, setError] = React.useState<PageError | null>(null)
   const [actioningId, setActioningId] = React.useState<string | null>(null)
   const [actionError, setActionError] = React.useState<string | null>(null)
 
@@ -112,11 +112,7 @@ export default function AppointmentsPage() {
       setItems(res.items)
       setStats(res.stats)
     } catch (err: unknown) {
-      if (err instanceof ApiError) {
-        setError({ code: err.status, message: err.detail })
-      } else {
-        setError({})
-      }
+      setError(toPageError(err))
     } finally {
       setLoading(false)
     }
@@ -223,7 +219,13 @@ export default function AppointmentsPage() {
         </div>
       ) : error ? (
         <Card>
-          <ErrorState variant="card" code={error.code} message={error.message} onRetry={load} />
+          <ErrorState
+            variant="card"
+            title={error.title}
+            code={error.code}
+            message={error.message}
+            onRetry={load}
+          />
         </Card>
       ) : items.length === 0 ? (
         <Card>

@@ -19,6 +19,7 @@ import {
   DoctorReviewQueueItem,
 } from '@/design-system'
 import type { ReviewQueueItem } from '@/design-system'
+import { toPageError, type PageError } from '@/lib/api/client'
 import {
   getDoctorStats,
   getReviewQueue,
@@ -86,11 +87,11 @@ export default function DoctorDashboardPage() {
   const router = useRouter()
 
   const [stats, setStats] = React.useState<DoctorStats | null>(null)
-  const [statsError, setStatsError] = React.useState<string | null>(null)
+  const [statsError, setStatsError] = React.useState<PageError | null>(null)
   const [statsLoading, setStatsLoading] = React.useState(true)
 
   const [queueItems, setQueueItems] = React.useState<QueueItem[]>([])
-  const [queueError, setQueueError] = React.useState<string | null>(null)
+  const [queueError, setQueueError] = React.useState<PageError | null>(null)
   const [queueLoading, setQueueLoading] = React.useState(true)
 
   const loadStats = React.useCallback(async () => {
@@ -99,8 +100,8 @@ export default function DoctorDashboardPage() {
     try {
       const data = await getDoctorStats()
       setStats(data)
-    } catch {
-      setStatsError('Không thể tải thống kê. Vui lòng thử lại.')
+    } catch (err: unknown) {
+      setStatsError(toPageError(err))
     } finally {
       setStatsLoading(false)
     }
@@ -112,8 +113,8 @@ export default function DoctorDashboardPage() {
     try {
       const data = await getReviewQueue({ limit: 5, status: 'pending_review' })
       setQueueItems(data.items)
-    } catch {
-      setQueueError('Không thể tải hàng chờ. Vui lòng thử lại.')
+    } catch (err: unknown) {
+      setQueueError(toPageError(err))
     } finally {
       setQueueLoading(false)
     }
@@ -139,7 +140,9 @@ export default function DoctorDashboardPage() {
         ) : statsError ? (
           <ErrorState
             variant="inline"
-            title={statsError}
+            title={statsError.title}
+            code={statsError.code}
+            message={statsError.message}
             onRetry={loadStats}
           />
         ) : (
@@ -210,7 +213,9 @@ export default function DoctorDashboardPage() {
         ) : queueError ? (
           <ErrorState
             variant="inline"
-            title={queueError}
+            title={queueError.title}
+            code={queueError.code}
+            message={queueError.message}
             onRetry={loadQueue}
           />
         ) : queueItems.length === 0 ? (

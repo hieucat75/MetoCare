@@ -10,6 +10,28 @@ export class ApiError extends Error {
   }
 }
 
+export interface PageError {
+  code?: number
+  title?: string
+  message?: string
+}
+
+/**
+ * Maps a caught fetch error to page-level error props (ErrorState's `code` +
+ * `message`). `ApiError` carries a real HTTP status; anything else (a plain
+ * `TypeError` from a network-level `fetch()` failure) gets the standard
+ * "can't reach the server" copy rather than a generic fallback.
+ */
+export function toPageError(err: unknown): PageError {
+  if (err instanceof ApiError) {
+    return { code: err.status, message: err.detail }
+  }
+  return {
+    title: 'Không thể kết nối máy chủ',
+    message: 'Vui lòng kiểm tra mạng và thử lại.',
+  }
+}
+
 export function getAccessToken(): string | null {
   if (typeof window === 'undefined') return null
   return localStorage.getItem('meto_access')

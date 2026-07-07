@@ -99,7 +99,7 @@ test('shows an error state with retry when the request fails', async () => {
   mockedGetDoctorPatients.mockRejectedValueOnce(new Error('network'))
   render(<DoctorPatientsPage />)
 
-  expect(
-    await screen.findByText('Không thể tải danh sách bệnh nhân. Vui lòng thử lại.'),
-  ).toBeInTheDocument()
+  expect(await screen.findByText('Không thể kết nối máy chủ')).toBeInTheDocument()
+  expect(screen.getByText('Vui lòng kiểm tra mạng và thử lại.')).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Thử lại' })).toBeInTheDocument()
 })

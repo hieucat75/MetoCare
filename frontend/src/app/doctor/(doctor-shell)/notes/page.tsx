@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { FileText, Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { PageHeader, Card, Badge, EmptyState, CardSkeleton, ErrorState } from '@/design-system'
-import { ApiError } from '@/lib/api/client'
+import { toPageError, type PageError } from '@/lib/api/client'
 import {
   getDoctorNotes,
   type DoctorNoteListItem,
@@ -36,7 +36,7 @@ export default function ClinicalNotesPage() {
   const [search, setSearch] = React.useState('')
   const [items, setItems] = React.useState<DoctorNoteListItem[]>([])
   const [loading, setLoading] = React.useState(true)
-  const [error, setError] = React.useState<{ code?: number; message?: string } | null>(null)
+  const [error, setError] = React.useState<PageError | null>(null)
 
   const load = React.useCallback(async () => {
     setLoading(true)
@@ -46,11 +46,7 @@ export default function ClinicalNotesPage() {
       const res = await getDoctorNotes({ status: config?.status, limit: 100 })
       setItems(res.items)
     } catch (err: unknown) {
-      if (err instanceof ApiError) {
-        setError({ code: err.status, message: err.detail })
-      } else {
-        setError({})
-      }
+      setError(toPageError(err))
     } finally {
       setLoading(false)
     }
@@ -118,7 +114,13 @@ export default function ClinicalNotesPage() {
         </div>
       ) : error ? (
         <Card>
-          <ErrorState variant="card" code={error.code} message={error.message} onRetry={load} />
+          <ErrorState
+            variant="card"
+            title={error.title}
+            code={error.code}
+            message={error.message}
+            onRetry={load}
+          />
         </Card>
       ) : visibleItems.length === 0 ? (
         <Card>

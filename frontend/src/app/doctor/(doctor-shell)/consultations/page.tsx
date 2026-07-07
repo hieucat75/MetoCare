@@ -4,8 +4,9 @@ import * as React from 'react'
 import { useRouter } from 'next/navigation'
 import { Stethoscope, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { PageHeader, Card, Alert, EmptyState, SkeletonText } from '@/design-system'
+import { PageHeader, Card, EmptyState, ErrorState, SkeletonText } from '@/design-system'
 import { ConsultationStatusBadge, formatVnd, formatDateTime } from '@/components/marketplace'
+import { toPageError, type PageError } from '@/lib/api/client'
 import type { ConsultationStatus } from '@/lib/api/marketplace'
 import { listMyConsultations, type ConsultationOut } from '@/lib/api/consultations'
 
@@ -31,7 +32,7 @@ export default function DoctorConsultationsPage() {
   const router = useRouter()
   const [items, setItems] = React.useState<ConsultationOut[]>([])
   const [loading, setLoading] = React.useState(true)
-  const [loadError, setLoadError] = React.useState<string | null>(null)
+  const [loadError, setLoadError] = React.useState<PageError | null>(null)
   const [filter, setFilter] = React.useState<FilterKey>('ALL')
 
   const load = React.useCallback(() => {
@@ -39,7 +40,9 @@ export default function DoctorConsultationsPage() {
     setLoadError(null)
     listMyConsultations()
       .then(setItems)
-      .catch(() => setLoadError('Không thể tải danh sách tư vấn. Vui lòng thử lại.'))
+      .catch((err: unknown) => {
+        setLoadError(toPageError(err))
+      })
       .finally(() => setLoading(false))
   }, [])
 
@@ -90,14 +93,13 @@ export default function DoctorConsultationsPage() {
         </div>
       ) : loadError ? (
         <div>
-          <Alert variant="danger" title={loadError} />
-          <button
-            type="button"
-            onClick={load}
-            className="mt-2 text-body-sm text-primary hover:underline"
-          >
-            Thử lại
-          </button>
+          <ErrorState
+            variant="card"
+            title={loadError.title}
+            code={loadError.code}
+            message={loadError.message}
+            onRetry={load}
+          />
         </div>
       ) : filtered.length === 0 ? (
         <Card padding="lg">

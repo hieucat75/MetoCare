@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Search, Users, FlaskConical, ClipboardList, Clock } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { formatRelativeTime } from '@/lib/utils'
+import { toPageError, type PageError } from '@/lib/api/client'
 import {
   PageHeader,
   Card,
@@ -151,7 +152,7 @@ export default function DoctorPatientsPage() {
   const [total, setTotal] = React.useState(0)
   const [loading, setLoading] = React.useState(true)
   const [searchLoading, setSearchLoading] = React.useState(false)
-  const [error, setError] = React.useState<string | null>(null)
+  const [error, setError] = React.useState<PageError | null>(null)
 
   const [searchQuery, setSearchQuery] = React.useState('')
   const [segmentFilter, setSegmentFilter] = React.useState<FilterSegment>('all')
@@ -182,8 +183,8 @@ export default function DoctorPatientsPage() {
         })
         setPatients(data.items)
         setTotal(data.total)
-      } catch {
-        setError('Không thể tải danh sách bệnh nhân. Vui lòng thử lại.')
+      } catch (err: unknown) {
+        setError(toPageError(err))
       } finally {
         setLoading(false)
         setSearchLoading(false)
@@ -332,7 +333,9 @@ export default function DoctorPatientsPage() {
       ) : error ? (
         <ErrorState
           variant="card"
-          title={error}
+          title={error.title}
+          code={error.code}
+          message={error.message}
           onRetry={() => void loadPatients()}
         />
       ) : displayedPatients.length === 0 ? (

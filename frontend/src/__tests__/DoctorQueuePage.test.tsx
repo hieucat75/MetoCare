@@ -1,6 +1,7 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import DoctorQueuePage from '@/app/doctor/(doctor-shell)/queue/page'
 import { getReviewQueue } from '@/lib/api/doctor'
+import { ApiError } from '@/lib/api/client'
 
 jest.mock('@/lib/api/doctor', () => ({
   getReviewQueue: jest.fn(),
@@ -61,4 +62,26 @@ test('selecting an item swaps to the detail/decision view (master-detail)', asyn
   expect(
     screen.getByRole('button', { name: /Quay lại danh sách/ }),
   ).toBeInTheDocument()
+})
+
+test('shows a 403-specific error (not a generic message) and retries', async () => {
+  mockedGetReviewQueue.mockRejectedValueOnce(new ApiError(403, 'Không có quyền truy cập'))
+  mockedGetReviewQueue.mockResolvedValueOnce({ total: 0, pending_count: 0, items: [] })
+
+  render(<DoctorQueuePage />)
+
+  expect(await screen.findByText('Không có quyền')).toBeInTheDocument()
+
+  fireEvent.click(screen.getByRole('button', { name: 'Thử lại' }))
+
+  await waitFor(() => expect(mockedGetReviewQueue).toHaveBeenCalledTimes(2))
+})
+
+test('shows a distinct 500 error message (server issue, not permission/auth)', async () => {
+  mockedGetReviewQueue.mockRejectedValueOnce(new ApiError(500, 'boom'))
+
+  render(<DoctorQueuePage />)
+
+  expect(await screen.findByText('Lỗi máy chủ')).toBeInTheDocument()
+  expect(screen.queryByText('Không có quyền')).not.toBeInTheDocument()
 })

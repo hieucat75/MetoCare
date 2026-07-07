@@ -8,11 +8,13 @@ import {
   PageHeader,
   Alert,
   EmptyState,
+  ErrorState,
   SkeletonText,
   DoctorReviewQueueItem,
   ReviewDecisionPanel,
 } from '@/design-system'
 import type { ReviewQueueItem, ReviewDecision } from '@/design-system'
+import { toPageError, type PageError } from '@/lib/api/client'
 import {
   getReviewQueue,
   submitReviewDecision,
@@ -78,7 +80,7 @@ function getReviewTypeLabel(itemType: ReviewItemType): string {
 export default function DoctorQueuePage() {
   const [items, setItems] = React.useState<QueueItem[]>([])
   const [loading, setLoading] = React.useState(true)
-  const [loadError, setLoadError] = React.useState<string | null>(null)
+  const [loadError, setLoadError] = React.useState<PageError | null>(null)
 
   const [selectedId, setSelectedId] = React.useState<string | null>(null)
   const [filter, setFilter] = React.useState<FilterKey>('all')
@@ -93,8 +95,8 @@ export default function DoctorQueuePage() {
     try {
       const data = await getReviewQueue({ status: 'pending_review', limit: 20 })
       setItems(data.items)
-    } catch {
-      setLoadError('Không thể tải hàng chờ. Vui lòng thử lại.')
+    } catch (err: unknown) {
+      setLoadError(toPageError(err))
     } finally {
       setLoading(false)
     }
@@ -202,14 +204,13 @@ export default function DoctorQueuePage() {
               ))
             ) : loadError ? (
               <div className="p-3">
-                <Alert variant="danger" title={loadError} />
-                <button
-                  type="button"
-                  onClick={loadQueue}
-                  className="mt-2 text-body-xs text-primary hover:underline"
-                >
-                  Thử lại
-                </button>
+                <ErrorState
+                  variant="card"
+                  title={loadError.title}
+                  code={loadError.code}
+                  message={loadError.message}
+                  onRetry={loadQueue}
+                />
               </div>
             ) : filteredItems.length === 0 ? (
               <EmptyState
