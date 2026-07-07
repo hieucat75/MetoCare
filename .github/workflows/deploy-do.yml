@@ -1,3 +1,15 @@
+# =============================================================================
+# DEPRECATED — DigitalOcean Production Deployment
+# Status: DISABLED (2026-07-07) — PTH decision
+#
+# DigitalOcean VPS (146.190.83.230) is DEPRECATED as of 2026-06-28.
+# Azure Container Apps is the ONLY supported deployment target.
+#
+# This file is retained as historical reference until the next repository
+# cleanup cycle. DO NOT re-enable without explicit PTH approval.
+#
+# Regression guard: all jobs have `if: false` — this workflow can never run.
+# =============================================================================
 # [LEGACY — DEPRECATED 2026-06-28]
 # MetoCare — Deploy to DigitalOcean VPS
 # STATUS: DEPRECATED. Azure Container Apps is the sole active deploy target.
@@ -23,14 +35,14 @@
 name: Deploy to DigitalOcean
 
 on:
-  push:
-    branches: [main]
+  # DISABLED — workflow_dispatch removed to prevent accidental triggering.
+  # Retain file as historical reference only.
   workflow_dispatch:
     inputs:
-      image_tag:
-        description: 'Image tag to deploy (default: short SHA)'
+      _disabled:
+        description: "THIS WORKFLOW IS DISABLED. DO NOT USE. Azure ACA is the active target."
         required: false
-        default: ''
+        default: "DISABLED"
 
 env:
   REGISTRY: ghcr.io
@@ -39,10 +51,10 @@ env:
 
 jobs:
   build:
+    if: false  # DISABLED — DigitalOcean is deprecated. Azure ACA is the active target.
     # Opt-in guard: only deploy production on an explicit `[deploy-do]` push or a
     # manual dispatch. migrate + deploy `needs: build`, so skipping build cascades
     # and skips the whole pipeline for ordinary merges.
-    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[deploy-do]')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -81,6 +93,7 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
 
   migrate:
+    if: false  # DISABLED — DigitalOcean is deprecated. Azure ACA is the active target.
     runs-on: ubuntu-latest
     needs: build
 
@@ -118,6 +131,7 @@ jobs:
           alembic current
 
   deploy:
+    if: false  # DISABLED — DigitalOcean is deprecated. Azure ACA is the active target.
     runs-on: ubuntu-latest
     needs: [build, migrate]
     environment: production
@@ -169,3 +183,17 @@ jobs:
           echo ""
           echo "--- /api/v1/info ---"
           curl -sf --max-time 15 "http://$VPS_IP/api/v1/info" | python3 -m json.tool
+
+  # Regression guard — this job documents that this workflow must never deploy.
+  # The `if: false` on every other job above is the actual enforcement mechanism.
+  _do_deployment_disabled:
+    name: "DO Deployment Disabled (regression guard)"
+    if: false  # intentionally never runs — guard documents the disabled state
+    runs-on: ubuntu-latest
+    steps:
+      - name: "This workflow is disabled"
+        run: |
+          echo "ERROR: DigitalOcean deployment is deprecated."
+          echo "Active deployment target: Azure Container Apps."
+          echo "See docs/LEGACY_DIGITALOCEAN.md and docs/PROD_HARDENING_AUTH.md"
+          exit 1
