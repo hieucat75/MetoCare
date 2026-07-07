@@ -7,6 +7,8 @@ Covers:
 - GET  /doctor/queue             lab+ai+care_plan aggregation, filters, pending_count
 - PATCH /doctor/queue/{id}/review dispatch per item_type (happy + bad id 404)
 - RBAC                           DOCTOR ok, MEDICAL_REVIEWER ok, PATIENT 403
+- GET  /doctor/appointments      scoping, status/date/search filters, pagination, KPI stats
+- GET  /doctor/notes             doctor-wide list, latest-per-consultation, status filter, scoping
 """
 
 from __future__ import annotations
@@ -20,11 +22,15 @@ from app.models.ai import (
     AIClinicalRecommendation,
     AISession,
 )
+from app.models.appointment import BookingAppointment
+from app.models.availability import DoctorAvailability
 from app.models.care import CarePlan, CarePlanStatus, Doctor, Encounter
 from app.models.clinical import HealthMetric, LabResult
 from app.models.governance import Consent
 from app.models.patient import PatientProfile
 from app.models.user import User, UserRole
+from app.services import consultation as consult_svc
+from app.services import consultation_note, consultation_payment
 from sqlalchemy.orm import Session
 
 API = "/api/v1"
@@ -728,3 +734,275 @@ class TestQueuePhiMasking:
         assert body["status"] == "approved"
         assert body["patient_name"] is None
         assert "Hidden Review Name" not in r.text
+
+
+# ---------------------------------------------------------------------------
+# Appointments
+# ---------------------------------------------------------------------------
+
+
+def _make_appointment(
+    db: Session,
+    *,
+    doctor_user_id: str,
+    patient_profile_id: str,
+    slot_start: dt.datetime,
+    status: str = "confirmed",
+    notes: str | None = None,
+):
+    slot = DoctorAvailability(
+        doctor_id=doctor_user_id,
+        slot_start=slot_start,
+        slot_end=slot_start + dt.timedelta(minutes=30),
+        is_booked=True,
+    )
+    db.add(slot)
+    db.flush()
+    appt = BookingAppointment(
+        patient_id=patient_profile_id,
+        doctor_id=doctor_user_id,
+        availability_id=slot.id,
+        status=status,
+        notes=notes,
+    )
+    db.add(appt)
+    db.commit()
+    return appt
+
+
+class TestAppointments:
+    def test_patient_forbidden(self, client):
+        assert (
+            client.get(f"{API}/doctor/appointments", headers=_patient_headers("pt-x")).status_code
+            == 403
+        )
+
+    def test_empty_baseline(self, client, doctor):
+        r = client.get(f"{API}/doctor/appointments", headers=_doctor_headers(doctor["user_id"]))
+        assert r.status_code == 200
+        body = r.json()
+        assert body["total"] == 0
+        assert body["items"] == []
+        assert body["stats"] == {
+            "today": 0,
+            "upcoming": 0,
+            "pending_confirmation": 0,
+            "completed": 0,
+        }
+
+    def test_lists_own_appointment_with_patient_name(self, client, db, doctor):
+        _, profile = _make_patient(db, name="Nguyen Van A")
+        tomorrow = dt.datetime.now() + dt.timedelta(days=1)
+        _make_appointment(
+            db,
+            doctor_user_id=doctor["user_id"],
+            patient_profile_id=profile.id,
+            slot_start=tomorrow,
+            status="confirmed",
+        )
+
+        r = client.get(f"{API}/doctor/appointments", headers=_doctor_headers(doctor["user_id"]))
+        assert r.status_code == 200
+        body = r.json()
+        assert body["total"] == 1
+        item = body["items"][0]
+        assert item["patient_name"] == "Nguyen Van A"
+        assert item["patient_id"] == profile.id
+        assert item["status"] == "confirmed"
+        assert body["stats"]["upcoming"] == 1
+
+    def test_cross_doctor_isolation(self, client, db, doctor):
+        uid = os.urandom(4).hex()
+        other_user = User(
+            email=f"dr-other-{uid}@clinic.vn",
+            password_hash="x",
+            role=UserRole.DOCTOR,
+            full_name="BS Khac",
+            is_active=True,
+            mfa_enabled=True,
+        )
+        db.add(other_user)
+        db.flush()
+        other_doc = Doctor(user_id=other_user.id, full_name="BS Khac", specialty="Noi", is_active=True)
+        db.add(other_doc)
+        db.commit()
+
+        _, profile = _make_patient(db, name="Bênh nhân Bác sĩ Khác")
+        _make_appointment(
+            db,
+            doctor_user_id=other_user.id,
+            patient_profile_id=profile.id,
+            slot_start=dt.datetime.now() + dt.timedelta(days=1),
+        )
+
+        r = client.get(f"{API}/doctor/appointments", headers=_doctor_headers(doctor["user_id"]))
+        assert r.status_code == 200
+        body = r.json()
+        assert body["total"] == 0
+        assert "Bênh nhân Bác sĩ Khác" not in r.text
+
+    def test_status_filter(self, client, db, doctor):
+        _, p1 = _make_patient(db, name="P Pending")
+        _, p2 = _make_patient(db, name="P Completed")
+        now = dt.datetime.now()
+        _make_appointment(
+            db, doctor_user_id=doctor["user_id"], patient_profile_id=p1.id,
+            slot_start=now + dt.timedelta(days=1), status="pending",
+        )
+        _make_appointment(
+            db, doctor_user_id=doctor["user_id"], patient_profile_id=p2.id,
+            slot_start=now - dt.timedelta(days=1), status="completed",
+        )
+
+        r = client.get(
+            f"{API}/doctor/appointments?status=completed",
+            headers=_doctor_headers(doctor["user_id"]),
+        )
+        assert r.status_code == 200
+        body = r.json()
+        assert body["total"] == 1
+        assert body["items"][0]["patient_name"] == "P Completed"
+        # KPI stats are computed over the full unfiltered population.
+        assert body["stats"]["pending_confirmation"] == 1
+        assert body["stats"]["completed"] == 1
+
+    def test_search_filter(self, client, db, doctor):
+        _, p1 = _make_patient(db, name="Tran Thi B")
+        _, p2 = _make_patient(db, name="Le Van C")
+        now = dt.datetime.now() + dt.timedelta(days=1)
+        _make_appointment(db, doctor_user_id=doctor["user_id"], patient_profile_id=p1.id, slot_start=now)
+        _make_appointment(db, doctor_user_id=doctor["user_id"], patient_profile_id=p2.id, slot_start=now)
+
+        r = client.get(
+            f"{API}/doctor/appointments?search=tran+thi",
+            headers=_doctor_headers(doctor["user_id"]),
+        )
+        assert r.status_code == 200
+        body = r.json()
+        assert body["total"] == 1
+        assert body["items"][0]["patient_name"] == "Tran Thi B"
+
+    def test_pagination(self, client, db, doctor):
+        now = dt.datetime.now() + dt.timedelta(days=1)
+        for i in range(3):
+            _, p = _make_patient(db, name=f"Patient {i}")
+            _make_appointment(
+                db, doctor_user_id=doctor["user_id"], patient_profile_id=p.id,
+                slot_start=now + dt.timedelta(hours=i),
+            )
+
+        r = client.get(
+            f"{API}/doctor/appointments?limit=2&offset=0",
+            headers=_doctor_headers(doctor["user_id"]),
+        )
+        body = r.json()
+        assert body["total"] == 3
+        assert len(body["items"]) == 2
+
+        r2 = client.get(
+            f"{API}/doctor/appointments?limit=2&offset=2",
+            headers=_doctor_headers(doctor["user_id"]),
+        )
+        assert len(r2.json()["items"]) == 1
+
+
+# ---------------------------------------------------------------------------
+# Notes
+# ---------------------------------------------------------------------------
+
+
+def _make_consultation(db: Session, *, doctor_id: str, patient_profile_id: str):
+    from app.models.consultation import DoctorVerificationStatus
+
+    doc = db.get(Doctor, doctor_id)
+    doc.verification_status = DoctorVerificationStatus.VERIFIED
+    doc.is_verified = True
+    doc.is_active = True
+    db.commit()
+
+    c = consult_svc.create_consultation(
+        db, patient_id=patient_profile_id, doctor_id=doctor_id, data_consent_accepted=True
+    )
+    consultation_payment.pay_mock(db, c, patient_profile_id=patient_profile_id)
+    return c
+
+
+class TestNotes:
+    def test_patient_forbidden(self, client):
+        assert (
+            client.get(f"{API}/doctor/notes", headers=_patient_headers("pt-x")).status_code == 403
+        )
+
+    def test_empty_baseline(self, client, doctor):
+        r = client.get(f"{API}/doctor/notes", headers=_doctor_headers(doctor["user_id"]))
+        assert r.status_code == 200
+        body = r.json()
+        assert body == {"total": 0, "items": []}
+
+    def test_lists_latest_note_with_patient_name_and_preview(self, client, db, doctor):
+        _, profile = _make_patient(db, name="Le Thi Note")
+        c = _make_consultation(
+            db, doctor_id=doctor["doctor_id"], patient_profile_id=profile.id
+        )
+        consultation_note.add_note(
+            db,
+            consultation_id=c.id,
+            doctor_user_id=doctor["user_id"],
+            content="Bệnh nhân cần theo dõi đường huyết mỗi ngày trong hai tuần tới",
+        )
+
+        r = client.get(f"{API}/doctor/notes", headers=_doctor_headers(doctor["user_id"]))
+        assert r.status_code == 200
+        body = r.json()
+        assert body["total"] == 1
+        item = body["items"][0]
+        assert item["patient_name"] == "Le Thi Note"
+        assert item["status"] == "finalized"
+        assert len(item["content_preview"]) <= 80
+        assert item["content_preview"] in (
+            "Bệnh nhân cần theo dõi đường huyết mỗi ngày trong hai tuần tới"[:80]
+        )
+
+    def test_cross_doctor_isolation(self, client, db, doctor):
+        uid = os.urandom(4).hex()
+        other_user = User(
+            email=f"dr-other-{uid}@clinic.vn", password_hash="x", role=UserRole.DOCTOR,
+            full_name="BS Khac", is_active=True, mfa_enabled=True,
+        )
+        db.add(other_user)
+        db.flush()
+        other_doc = Doctor(
+            user_id=other_user.id, full_name="BS Khac", specialty="Noi", is_active=True
+        )
+        db.add(other_doc)
+        db.commit()
+
+        _, profile = _make_patient(db, name="Bênh nhân khác")
+        c = _make_consultation(db, doctor_id=other_doc.id, patient_profile_id=profile.id)
+        consultation_note.add_note(
+            db, consultation_id=c.id, doctor_user_id=other_user.id, content="not yours"
+        )
+
+        r = client.get(f"{API}/doctor/notes", headers=_doctor_headers(doctor["user_id"]))
+        assert r.status_code == 200
+        assert r.json()["total"] == 0
+
+    def test_status_filter_draft_vs_finalized(self, client, db, doctor):
+        _, p1 = _make_patient(db, name="Draft Patient")
+        _, p2 = _make_patient(db, name="Final Patient")
+        c1 = _make_consultation(db, doctor_id=doctor["doctor_id"], patient_profile_id=p1.id)
+        c2 = _make_consultation(db, doctor_id=doctor["doctor_id"], patient_profile_id=p2.id)
+        consultation_note.add_note(
+            db, consultation_id=c1.id, doctor_user_id=doctor["user_id"],
+            content="draft note", status_="draft",
+        )
+        consultation_note.add_note(
+            db, consultation_id=c2.id, doctor_user_id=doctor["user_id"], content="final note"
+        )
+
+        r = client.get(
+            f"{API}/doctor/notes?status=draft", headers=_doctor_headers(doctor["user_id"])
+        )
+        body = r.json()
+        assert body["total"] == 1
+        assert body["items"][0]["patient_name"] == "Draft Patient"

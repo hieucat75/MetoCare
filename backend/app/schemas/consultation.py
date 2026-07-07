@@ -106,6 +106,9 @@ class PatientPaymentOut(BaseModel):
 class NoteCreate(BaseModel):
     content: str = Field(..., min_length=1, max_length=8000)
     note_type: str = Field(default="recommendation", max_length=32)
+    # 'draft' (Lưu nháp) or 'finalized' (Hoàn tất). Always creates a new row —
+    # never edits an existing one, preserving the append-only invariant.
+    status: str = Field(default="finalized", pattern="^(draft|finalized)$")
 
 
 class NoteOut(BaseModel):
@@ -114,6 +117,8 @@ class NoteOut(BaseModel):
     doctor_id: str
     content: str
     note_type: str
+    status: str
+    finalized_at: dt.datetime | None = None
     created_at: dt.datetime | None = None
 
     model_config = {"from_attributes": True}

@@ -8,11 +8,13 @@ import {
   PageHeader,
   Alert,
   EmptyState,
+  ErrorState,
   SkeletonText,
   DoctorReviewQueueItem,
   ReviewDecisionPanel,
 } from '@/design-system'
 import type { ReviewQueueItem, ReviewDecision } from '@/design-system'
+import { toPageError, type PageError } from '@/lib/api/client'
 import {
   getReviewQueue,
   submitReviewDecision,
@@ -78,7 +80,7 @@ function getReviewTypeLabel(itemType: ReviewItemType): string {
 export default function DoctorQueuePage() {
   const [items, setItems] = React.useState<QueueItem[]>([])
   const [loading, setLoading] = React.useState(true)
-  const [loadError, setLoadError] = React.useState<string | null>(null)
+  const [loadError, setLoadError] = React.useState<PageError | null>(null)
 
   const [selectedId, setSelectedId] = React.useState<string | null>(null)
   const [filter, setFilter] = React.useState<FilterKey>('all')
@@ -93,8 +95,8 @@ export default function DoctorQueuePage() {
     try {
       const data = await getReviewQueue({ status: 'pending_review', limit: 20 })
       setItems(data.items)
-    } catch {
-      setLoadError('Không thể tải hàng chờ. Vui lòng thử lại.')
+    } catch (err: unknown) {
+      setLoadError(toPageError(err))
     } finally {
       setLoading(false)
     }
@@ -115,7 +117,7 @@ export default function DoctorQueuePage() {
 
   const selectedItem = React.useMemo<QueueItem | null>(
     () => items.find((i) => i.id === selectedId) ?? null,
-    [items, selectedId],
+    [items, selectedId]
   )
 
   const handleDecision = React.useCallback(
@@ -130,28 +132,22 @@ export default function DoctorQueuePage() {
           internal_note: decision.internalNote,
         })
         // Update the item in list
-        setItems((prev) =>
-          prev.map((item) => (item.id === updated.id ? updated : item)),
-        )
-        setSuccessAlert(
-          `Đã gửi quyết định cho bệnh nhân ${updated.patient_name ?? 'Bệnh nhân'}.`,
-        )
+        setItems((prev) => prev.map((item) => (item.id === updated.id ? updated : item)))
+        setSuccessAlert(`Đã gửi quyết định cho bệnh nhân ${updated.patient_name ?? 'Bệnh nhân'}.`)
       } catch {
         setDecisionError('Gửi quyết định thất bại. Vui lòng kiểm tra kết nối và thử lại.')
       } finally {
         setSubmitting(false)
       }
     },
-    [selectedId],
+    [selectedId]
   )
 
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)]">
       {/* PageHeader — outside the scrollable flex layout */}
       <div className="px-6 pt-6 shrink-0">
-        <PageHeader
-          title={`Hàng chờ duyệt${!loading ? ` (${items.length})` : ''}`}
-        />
+        <PageHeader title={`Hàng chờ duyệt${!loading ? ` (${items.length})` : ''}`} />
       </div>
 
       {/* Master-detail layout.
@@ -164,7 +160,7 @@ export default function DoctorQueuePage() {
           className={cn(
             'w-full md:w-80 lg:w-96 shrink-0 flex-col border-r border-border bg-surface overflow-hidden',
             // On mobile, hide the list once an item is selected.
-            selectedId ? 'hidden md:flex' : 'flex',
+            selectedId ? 'hidden md:flex' : 'flex'
           )}
           aria-label="Danh sách hàng chờ"
         >
@@ -180,7 +176,7 @@ export default function DoctorQueuePage() {
                   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1',
                   filter === opt.key
                     ? 'bg-primary text-white'
-                    : 'bg-secondary-100 text-secondary-700 hover:bg-secondary-200',
+                    : 'bg-secondary-100 text-secondary-700 hover:bg-secondary-200'
                 )}
                 aria-pressed={filter === opt.key}
               >
@@ -193,23 +189,19 @@ export default function DoctorQueuePage() {
           <div className="flex-1 overflow-y-auto px-3 py-3 flex flex-col gap-2">
             {loading ? (
               Array.from({ length: 5 }).map((_, i) => (
-                <div
-                  key={i}
-                  className="rounded-lg border border-border bg-surface px-4 py-3"
-                >
+                <div key={i} className="rounded-lg border border-border bg-surface px-4 py-3">
                   <SkeletonText lines={3} lineWidths={['70%', '50%', '40%']} />
                 </div>
               ))
             ) : loadError ? (
               <div className="p-3">
-                <Alert variant="danger" title={loadError} />
-                <button
-                  type="button"
-                  onClick={loadQueue}
-                  className="mt-2 text-body-xs text-primary hover:underline"
-                >
-                  Thử lại
-                </button>
+                <ErrorState
+                  variant="card"
+                  title={loadError.title}
+                  code={loadError.code}
+                  message={loadError.message}
+                  onRetry={loadQueue}
+                />
               </div>
             ) : filteredItems.length === 0 ? (
               <EmptyState
@@ -239,7 +231,7 @@ export default function DoctorQueuePage() {
         <main
           className={cn(
             'flex-1 overflow-y-auto bg-background',
-            selectedId ? 'flex flex-col' : 'hidden md:flex md:flex-col',
+            selectedId ? 'flex flex-col' : 'hidden md:flex md:flex-col'
           )}
           aria-label="Khu vực xét duyệt"
         >
@@ -268,9 +260,7 @@ export default function DoctorQueuePage() {
                   </time>
                 </div>
                 {selectedItem.summary && (
-                  <p className="mt-1 text-body-sm text-text-muted">
-                    {selectedItem.summary}
-                  </p>
+                  <p className="mt-1 text-body-sm text-text-muted">{selectedItem.summary}</p>
                 )}
               </div>
 

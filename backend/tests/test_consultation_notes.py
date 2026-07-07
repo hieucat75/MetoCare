@@ -102,3 +102,104 @@ def test_no_update_or_delete_on_note_model(db):
     )
     # The model itself is a plain append row; verify it exists and is retrievable.
     assert db.get(ConsultationNote, note.id) is not None
+
+
+# ---------------------------------------------------------------------------
+# Draft / finalize workflow (still append-only — see test_notes_are_append_only)
+# ---------------------------------------------------------------------------
+
+
+def test_add_note_defaults_to_finalized(db):
+    doctor, user, profile, c = _paid(db)
+    note = consultation_note.add_note(
+        db, consultation_id=c.id, doctor_user_id=doctor.user_id, content="hoàn tất"
+    )
+    assert note.status == "finalized"
+    assert note.finalized_at is not None
+
+
+def test_add_note_as_draft_has_no_finalized_at(db):
+    doctor, user, profile, c = _paid(db)
+    note = consultation_note.add_note(
+        db,
+        consultation_id=c.id,
+        doctor_user_id=doctor.user_id,
+        content="đang soạn",
+        status_="draft",
+    )
+    assert note.status == "draft"
+    assert note.finalized_at is None
+
+
+def test_resaving_a_draft_creates_a_new_row_not_an_update(db):
+    doctor, user, profile, c = _paid(db)
+    first = consultation_note.add_note(
+        db, consultation_id=c.id, doctor_user_id=doctor.user_id, content="v1", status_="draft"
+    )
+    second = consultation_note.add_note(
+        db, consultation_id=c.id, doctor_user_id=doctor.user_id, content="v2", status_="draft"
+    )
+    assert first.id != second.id
+    # Both rows persist — v1 was never mutated or deleted.
+    assert db.get(ConsultationNote, first.id).content == "v1"
+    assert db.get(ConsultationNote, second.id).content == "v2"
+
+
+def test_list_doctor_notes_returns_latest_per_consultation(db):
+    import datetime as _dt
+
+    doctor, user, profile, c = _paid(db)
+    first = consultation_note.add_note(
+        db, consultation_id=c.id, doctor_user_id=doctor.user_id, content="v1", status_="draft"
+    )
+    # SQLite's CURRENT_TIMESTAMP is second-granularity, so two notes created in
+    # the same test can tie on created_at — backdate the first to make the
+    # "latest wins" ordering unambiguous (Postgres's microsecond `now()` would
+    # not need this in production).
+    first.created_at = _dt.datetime(2020, 1, 1)
+    db.commit()
+    second = consultation_note.add_note(
+        db, consultation_id=c.id, doctor_user_id=doctor.user_id, content="v2 final"
+    )
+
+    total, items = consultation_note.list_doctor_notes(db, doctor_user_id=doctor.user_id)
+    assert total == 1
+    assert items[0]["content"] == "v2 final"
+    assert items[0]["status"] == "finalized"
+    assert items[0]["patient_id"] == profile.id
+    assert second.created_at >= first.created_at
+
+
+def test_list_doctor_notes_scoped_to_own_notes_only(db):
+    doctor, user, profile, c = _paid(db)
+    other = create_doctor(db)
+    consultation_note.add_note(
+        db, consultation_id=c.id, doctor_user_id=doctor.user_id, content="mine"
+    )
+
+    total, items = consultation_note.list_doctor_notes(db, doctor_user_id=other.user_id)
+    assert total == 0
+    assert items == []
+
+
+def test_list_doctor_notes_status_filter(db):
+    doctor, user, profile, c = _paid(db)
+    user2, profile2 = create_patient(db)
+    c2 = svc.create_consultation(
+        db, patient_id=profile2.id, doctor_id=doctor.id, data_consent_accepted=True
+    )
+    consultation_payment.pay_mock(db, c2, patient_profile_id=profile2.id)
+
+    consultation_note.add_note(
+        db, consultation_id=c.id, doctor_user_id=doctor.user_id, content="draft one",
+        status_="draft",
+    )
+    consultation_note.add_note(
+        db, consultation_id=c2.id, doctor_user_id=doctor.user_id, content="final one"
+    )
+
+    total, items = consultation_note.list_doctor_notes(
+        db, doctor_user_id=doctor.user_id, status_="draft"
+    )
+    assert total == 1
+    assert items[0]["content"] == "draft one"

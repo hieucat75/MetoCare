@@ -69,10 +69,7 @@ const GENDER_LABEL: Record<'male' | 'female' | 'other', string> = {
 }
 
 /** Build the "gender · age" meta label, degrading to "Không rõ" when absent. */
-function buildDemographics(
-  gender: PatientProfile['gender'],
-  age: number | null,
-): string {
+function buildDemographics(gender: PatientProfile['gender'], age: number | null): string {
   const parts: string[] = []
   if (gender) parts.push(GENDER_LABEL[gender])
   if (age !== null) parts.push(`${age} tuoi`)
@@ -112,12 +109,7 @@ export function PatientSummaryHeader({
   const demographics = buildDemographics(patient.gender, age)
 
   return (
-    <div
-      className={cn(
-        'bg-surface border-b border-border px-6 py-4',
-        className,
-      )}
-    >
+    <div className={cn('bg-surface border-b border-border px-6 py-4', className)}>
       {/* Row 1: back button, name, gender+age badge, risk badge, actions */}
       <div className="flex items-start justify-between gap-4">
         {/* Left side */}
@@ -133,7 +125,7 @@ export function PatientSummaryHeader({
                 'h-8 w-8 rounded-md text-text-muted',
                 'hover:bg-secondary-100 hover:text-text transition-colors',
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30',
-                'mt-0.5',
+                'mt-0.5'
               )}
             >
               <ArrowLeft className="h-4 w-4" aria-hidden="true" />
@@ -154,7 +146,7 @@ export function PatientSummaryHeader({
                 className={cn(
                   'shrink-0 inline-flex items-center justify-center',
                   'h-10 w-10 rounded-full bg-primary-light text-primary-700',
-                  'text-label-md font-semibold border border-primary-200',
+                  'text-label-md font-semibold border border-primary-200'
                 )}
                 aria-hidden="true"
               >
@@ -193,11 +185,7 @@ export function PatientSummaryHeader({
         </div>
 
         {/* Right side: actions */}
-        {actions && (
-          <div className="shrink-0 flex items-center gap-2 pt-0.5">
-            {actions}
-          </div>
-        )}
+        {actions && <div className="shrink-0 flex items-center gap-2 pt-0.5">{actions}</div>}
       </div>
 
       {/* Row 2 (not compact): meta info — phone, address, doctor, last visit */}
@@ -238,7 +226,7 @@ export function PatientSummaryHeader({
             className={cn(
               'inline-flex items-center gap-1.5 text-body-xs font-medium',
               'px-2.5 py-1 rounded-full',
-              'bg-clinical-active-light text-green-800 border border-clinical-active-border',
+              'bg-clinical-active-light text-green-800 border border-clinical-active-border'
             )}
           >
             <ClipboardList className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
@@ -251,7 +239,7 @@ export function PatientSummaryHeader({
               className={cn(
                 'inline-flex items-center gap-1.5 text-body-xs font-medium',
                 'px-2.5 py-1 rounded-full',
-                'bg-clinical-pending-review-light text-amber-800 border border-clinical-pending-review-border',
+                'bg-clinical-pending-review-light text-amber-800 border border-clinical-pending-review-border'
               )}
             >
               <AlertCircle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />

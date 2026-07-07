@@ -33,12 +33,16 @@ export interface PatientPaymentOut {
   paid_at?: string | null
 }
 
+export type NoteStatus = 'draft' | 'finalized'
+
 export interface NoteOut {
   id: string
   consultation_id: string
   doctor_id: string
   content: string
   note_type: string
+  status: NoteStatus
+  finalized_at?: string | null
   created_at?: string | null
 }
 
@@ -72,6 +76,8 @@ export interface ReviewCreate {
 export interface NoteCreate {
   content: string
   note_type?: string
+  /** 'draft' (Lưu nháp) or 'finalized' (Hoàn tất). Defaults to 'finalized'. */
+  status?: NoteStatus
 }
 
 // ── Patient summary (DOCTOR, MFA, scoped) ─────────────────────────────────────

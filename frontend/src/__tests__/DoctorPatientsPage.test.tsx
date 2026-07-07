@@ -46,7 +46,7 @@ test('initial load requests default sort=risk and no risk filter', async () => {
 
   await waitFor(() => expect(mockedGetDoctorPatients).toHaveBeenCalled())
   expect(mockedGetDoctorPatients).toHaveBeenCalledWith(
-    expect.objectContaining({ sort: 'risk', risk: undefined }),
+    expect.objectContaining({ sort: 'risk', risk: undefined })
   )
 })
 
@@ -61,9 +61,9 @@ test('typing in the search box calls the API with the search term (debounced, se
   await waitFor(
     () =>
       expect(mockedGetDoctorPatients).toHaveBeenCalledWith(
-        expect.objectContaining({ search: 'Nguyen' }),
+        expect.objectContaining({ search: 'Nguyen' })
       ),
-    { timeout: 1000 },
+    { timeout: 1000 }
   )
 })
 
@@ -75,8 +75,8 @@ test('selecting a risk segment calls the API with risk= (server-side filter)', a
 
   await waitFor(() =>
     expect(mockedGetDoctorPatients).toHaveBeenCalledWith(
-      expect.objectContaining({ risk: 'medium' }),
-    ),
+      expect.objectContaining({ risk: 'medium' })
+    )
   )
 })
 
@@ -89,9 +89,7 @@ test('changing the sort control calls the API with sort=', async () => {
   })
 
   await waitFor(() =>
-    expect(mockedGetDoctorPatients).toHaveBeenCalledWith(
-      expect.objectContaining({ sort: 'name' }),
-    ),
+    expect(mockedGetDoctorPatients).toHaveBeenCalledWith(expect.objectContaining({ sort: 'name' }))
   )
 })
 
@@ -99,7 +97,7 @@ test('shows an error state with retry when the request fails', async () => {
   mockedGetDoctorPatients.mockRejectedValueOnce(new Error('network'))
   render(<DoctorPatientsPage />)
 
-  expect(
-    await screen.findByText('Không thể tải danh sách bệnh nhân. Vui lòng thử lại.'),
-  ).toBeInTheDocument()
+  expect(await screen.findByText('Không thể kết nối máy chủ')).toBeInTheDocument()
+  expect(screen.getByText('Vui lòng kiểm tra mạng và thử lại.')).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Thử lại' })).toBeInTheDocument()
 })

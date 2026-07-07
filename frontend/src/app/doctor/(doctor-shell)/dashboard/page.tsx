@@ -2,13 +2,7 @@
 
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
-import {
-  Clock,
-  AlertTriangle,
-  Users,
-  CheckCircle,
-  ArrowRight,
-} from 'lucide-react'
+import { Clock, AlertTriangle, Users, CheckCircle, ArrowRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
   PageHeader,
@@ -19,12 +13,8 @@ import {
   DoctorReviewQueueItem,
 } from '@/design-system'
 import type { ReviewQueueItem } from '@/design-system'
-import {
-  getDoctorStats,
-  getReviewQueue,
-  type DoctorStats,
-  type QueueItem,
-} from '@/lib/api/doctor'
+import { toPageError, type PageError } from '@/lib/api/client'
+import { getDoctorStats, getReviewQueue, type DoctorStats, type QueueItem } from '@/lib/api/doctor'
 
 // ---------------------------------------------------------------------------
 // Mapper
@@ -63,16 +53,14 @@ function StatCard({ label, value, Icon, accentClass }: StatCardProps) {
       <span
         className={cn(
           'inline-flex items-center justify-center h-12 w-12 rounded-xl shrink-0',
-          accentClass ?? 'bg-secondary-100 text-secondary-600',
+          accentClass ?? 'bg-secondary-100 text-secondary-600'
         )}
       >
         <Icon className="h-6 w-6" aria-hidden="true" />
       </span>
       <div className="min-w-0">
         <p className="text-body-xs text-text-muted">{label}</p>
-        <p className="text-display-xs font-bold text-text leading-tight">
-          {value ?? '—'}
-        </p>
+        <p className="text-display-xs font-bold text-text leading-tight">{value ?? '—'}</p>
       </div>
     </Card>
   )
@@ -86,11 +74,11 @@ export default function DoctorDashboardPage() {
   const router = useRouter()
 
   const [stats, setStats] = React.useState<DoctorStats | null>(null)
-  const [statsError, setStatsError] = React.useState<string | null>(null)
+  const [statsError, setStatsError] = React.useState<PageError | null>(null)
   const [statsLoading, setStatsLoading] = React.useState(true)
 
   const [queueItems, setQueueItems] = React.useState<QueueItem[]>([])
-  const [queueError, setQueueError] = React.useState<string | null>(null)
+  const [queueError, setQueueError] = React.useState<PageError | null>(null)
   const [queueLoading, setQueueLoading] = React.useState(true)
 
   const loadStats = React.useCallback(async () => {
@@ -99,8 +87,8 @@ export default function DoctorDashboardPage() {
     try {
       const data = await getDoctorStats()
       setStats(data)
-    } catch {
-      setStatsError('Không thể tải thống kê. Vui lòng thử lại.')
+    } catch (err: unknown) {
+      setStatsError(toPageError(err))
     } finally {
       setStatsLoading(false)
     }
@@ -112,8 +100,8 @@ export default function DoctorDashboardPage() {
     try {
       const data = await getReviewQueue({ limit: 5, status: 'pending_review' })
       setQueueItems(data.items)
-    } catch {
-      setQueueError('Không thể tải hàng chờ. Vui lòng thử lại.')
+    } catch (err: unknown) {
+      setQueueError(toPageError(err))
     } finally {
       setQueueLoading(false)
     }
@@ -139,7 +127,9 @@ export default function DoctorDashboardPage() {
         ) : statsError ? (
           <ErrorState
             variant="inline"
-            title={statsError}
+            title={statsError.title}
+            code={statsError.code}
+            message={statsError.message}
             onRetry={loadStats}
           />
         ) : (
@@ -183,9 +173,7 @@ export default function DoctorDashboardPage() {
       {/* Recent queue */}
       <section aria-label="Hàng chờ duyệt gần đây" className="mt-8">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-heading-md font-semibold text-text">
-            Hàng chờ duyệt gần đây
-          </h2>
+          <h2 className="text-heading-md font-semibold text-text">Hàng chờ duyệt gần đây</h2>
           <button
             type="button"
             onClick={() => router.push('/doctor/queue')}
@@ -199,10 +187,7 @@ export default function DoctorDashboardPage() {
         {queueLoading ? (
           <div className="flex flex-col gap-3">
             {Array.from({ length: 3 }).map((_, i) => (
-              <div
-                key={i}
-                className="rounded-lg border border-border bg-surface px-4 py-3"
-              >
+              <div key={i} className="rounded-lg border border-border bg-surface px-4 py-3">
                 <SkeletonText lines={2} lineWidths={['60%', '40%']} />
               </div>
             ))}
@@ -210,7 +195,9 @@ export default function DoctorDashboardPage() {
         ) : queueError ? (
           <ErrorState
             variant="inline"
-            title={queueError}
+            title={queueError.title}
+            code={queueError.code}
+            message={queueError.message}
             onRetry={loadQueue}
           />
         ) : queueItems.length === 0 ? (

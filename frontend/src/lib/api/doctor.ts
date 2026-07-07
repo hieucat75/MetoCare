@@ -49,7 +49,7 @@ export interface ReviewDecisionPayload {
 
 export async function submitReviewDecision(
   itemId: string,
-  payload: ReviewDecisionPayload,
+  payload: ReviewDecisionPayload
 ): Promise<QueueItem> {
   return api.patch<QueueItem>(`/doctor/queue/${itemId}/review`, payload)
 }
@@ -122,7 +122,7 @@ export interface TimelineEvent {
 
 export async function getPatientTimeline(
   patientId: string,
-  params?: { limit?: number },
+  params?: { limit?: number }
 ): Promise<TimelineEvent[]> {
   const qs = params?.limit ? `?limit=${params.limit}` : ''
   return api.get<TimelineEvent[]>(`/doctor/patients/${patientId}/timeline${qs}`)
@@ -140,4 +140,101 @@ export interface DoctorStats {
 
 export async function getDoctorStats(): Promise<DoctorStats> {
   return api.get<DoctorStats>('/doctor/stats')
+}
+
+// ── Appointments ──────────────────────────────────────────────────────────────
+
+export type AppointmentStatus = 'pending' | 'confirmed' | 'cancelled' | 'completed'
+
+export interface DoctorAppointment {
+  id: string
+  patient_id: string
+  patient_name: string | null
+  slot_start: string
+  slot_end: string
+  status: AppointmentStatus
+  notes: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface DoctorAppointmentStats {
+  today: number
+  upcoming: number
+  pending_confirmation: number
+  completed: number
+}
+
+export interface DoctorAppointmentListResponse {
+  total: number
+  stats: DoctorAppointmentStats
+  items: DoctorAppointment[]
+}
+
+export async function getDoctorAppointments(params?: {
+  status?: AppointmentStatus[]
+  search?: string
+  dateFrom?: string
+  dateTo?: string
+  limit?: number
+  offset?: number
+}): Promise<DoctorAppointmentListResponse> {
+  const qs = new URLSearchParams()
+  params?.status?.forEach((s) => qs.append('status', s))
+  if (params?.search) qs.set('search', params.search)
+  if (params?.dateFrom) qs.set('date_from', params.dateFrom)
+  if (params?.dateTo) qs.set('date_to', params.dateTo)
+  if (params?.limit) qs.set('limit', String(params.limit))
+  if (params?.offset) qs.set('offset', String(params.offset))
+  const query = qs.toString()
+  return api.get<DoctorAppointmentListResponse>(`/doctor/appointments${query ? `?${query}` : ''}`)
+}
+
+/**
+ * Reuses the existing booking state-machine endpoint (PATCH /appointments/{id})
+ * rather than duplicating confirm/cancel/complete transition logic.
+ */
+export async function updateAppointmentStatus(
+  appointmentId: string,
+  status: AppointmentStatus
+): Promise<{ id: string; status: AppointmentStatus }> {
+  return api.patch<{ id: string; status: AppointmentStatus }>(`/appointments/${appointmentId}`, {
+    status,
+  })
+}
+
+// ── Clinical Notes (doctor-wide) ────────────────────────────────────────────
+
+export type DoctorNoteStatus = 'draft' | 'finalized'
+
+export interface DoctorNoteListItem {
+  id: string
+  consultation_id: string
+  patient_id: string
+  patient_name: string | null
+  note_type: string
+  status: DoctorNoteStatus
+  content_preview: string
+  created_at: string
+  finalized_at: string | null
+}
+
+export interface DoctorNoteListResponse {
+  total: number
+  items: DoctorNoteListItem[]
+}
+
+export async function getDoctorNotes(params?: {
+  consultationId?: string
+  status?: DoctorNoteStatus
+  limit?: number
+  offset?: number
+}): Promise<DoctorNoteListResponse> {
+  const qs = new URLSearchParams()
+  if (params?.consultationId) qs.set('consultation_id', params.consultationId)
+  if (params?.status) qs.set('status', params.status)
+  if (params?.limit) qs.set('limit', String(params.limit))
+  if (params?.offset) qs.set('offset', String(params.offset))
+  const query = qs.toString()
+  return api.get<DoctorNoteListResponse>(`/doctor/notes${query ? `?${query}` : ''}`)
 }

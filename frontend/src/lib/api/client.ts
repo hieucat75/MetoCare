@@ -3,10 +3,32 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000/api/v
 export class ApiError extends Error {
   constructor(
     public readonly status: number,
-    public readonly detail: string,
+    public readonly detail: string
   ) {
     super(detail)
     this.name = 'ApiError'
+  }
+}
+
+export interface PageError {
+  code?: number
+  title?: string
+  message?: string
+}
+
+/**
+ * Maps a caught fetch error to page-level error props (ErrorState's `code` +
+ * `message`). `ApiError` carries a real HTTP status; anything else (a plain
+ * `TypeError` from a network-level `fetch()` failure) gets the standard
+ * "can't reach the server" copy rather than a generic fallback.
+ */
+export function toPageError(err: unknown): PageError {
+  if (err instanceof ApiError) {
+    return { code: err.status, message: err.detail }
+  }
+  return {
+    title: 'Không thể kết nối máy chủ',
+    message: 'Vui lòng kiểm tra mạng và thử lại.',
   }
 }
 
@@ -162,8 +184,7 @@ export async function apiUpload<T>(path: string, form: FormData): Promise<T> {
 }
 
 export const api = {
-  get: <T>(path: string, opts?: FetchOptions) =>
-    apiFetch<T>(path, { method: 'GET', ...opts }),
+  get: <T>(path: string, opts?: FetchOptions) => apiFetch<T>(path, { method: 'GET', ...opts }),
 
   post: <T>(path: string, body?: unknown, opts?: FetchOptions) =>
     apiFetch<T>(path, {
@@ -186,6 +207,5 @@ export const api = {
       ...opts,
     }),
 
-  del: <T>(path: string, opts?: FetchOptions) =>
-    apiFetch<T>(path, { method: 'DELETE', ...opts }),
+  del: <T>(path: string, opts?: FetchOptions) => apiFetch<T>(path, { method: 'DELETE', ...opts }),
 }

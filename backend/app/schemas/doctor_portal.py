@@ -122,3 +122,61 @@ class ReviewDecisionPayload(BaseModel):
     decision: ReviewDecision
     comment: str = Field(min_length=1)
     internal_note: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# 6. GET /doctor/appointments
+# ---------------------------------------------------------------------------
+
+AppointmentStatus = Literal["pending", "confirmed", "cancelled", "completed"]
+
+
+class DoctorAppointment(BaseModel):
+    id: str
+    patient_id: str
+    patient_name: str | None = None
+    slot_start: str  # ISO-8601
+    slot_end: str  # ISO-8601
+    status: AppointmentStatus
+    notes: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class DoctorAppointmentStats(BaseModel):
+    today: int
+    upcoming: int
+    pending_confirmation: int
+    completed: int
+
+
+class DoctorAppointmentListResponse(BaseModel):
+    total: int
+    stats: DoctorAppointmentStats
+    items: list[DoctorAppointment]
+
+
+# ---------------------------------------------------------------------------
+# 7. GET /doctor/notes
+# ---------------------------------------------------------------------------
+
+NoteStatus = Literal["draft", "finalized"]
+
+
+class DoctorNoteListItem(BaseModel):
+    id: str
+    consultation_id: str
+    patient_id: str
+    patient_name: str | None = None
+    note_type: str
+    status: NoteStatus
+    # Preview only — full content is never exposed in the list, only via the
+    # per-consultation note editor/detail read.
+    content_preview: str
+    created_at: str
+    finalized_at: str | None = None
+
+
+class DoctorNoteListResponse(BaseModel):
+    total: int
+    items: list[DoctorNoteListItem]
