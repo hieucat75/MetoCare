@@ -122,3 +122,35 @@ class ReviewDecisionPayload(BaseModel):
     decision: ReviewDecision
     comment: str = Field(min_length=1)
     internal_note: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# 6. GET /doctor/appointments
+# ---------------------------------------------------------------------------
+
+AppointmentStatus = Literal["pending", "confirmed", "cancelled", "completed"]
+
+
+class DoctorAppointment(BaseModel):
+    id: str
+    patient_id: str
+    patient_name: str | None = None
+    slot_start: str  # ISO-8601
+    slot_end: str  # ISO-8601
+    status: AppointmentStatus
+    notes: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class DoctorAppointmentStats(BaseModel):
+    today: int
+    upcoming: int
+    pending_confirmation: int
+    completed: int
+
+
+class DoctorAppointmentListResponse(BaseModel):
+    total: int
+    stats: DoctorAppointmentStats
+    items: list[DoctorAppointment]

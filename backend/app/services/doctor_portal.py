@@ -301,6 +301,88 @@ def _as_naive(value: dt.datetime) -> dt.datetime:
 
 
 # ---------------------------------------------------------------------------
+# 6. Appointments
+# ---------------------------------------------------------------------------
+
+
+def list_appointments(
+    db: Session,
+    doctor_user_id: str,
+    *,
+    status: list[str] | None = None,
+    search: str | None = None,
+    date_from: dt.date | None = None,
+    date_to: dt.date | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[int, dict, list[dict]]:
+    """Return (total_before_pagination, kpi_stats, page_of_appointment_dicts).
+
+    Scoped directly to ``BookingAppointment.doctor_id == doctor_user_id``: being
+    the assigned doctor of a real, patient-initiated booking is itself the care
+    relationship (the patient chose this doctor), so ``patient_name`` is always
+    attached here — unlike the roster/queue, which may surface patients without
+    an explicit booking and must gate PHI behind consent/encounter.
+    """
+    from app.models.appointment import BookingAppointment
+    from app.models.availability import DoctorAvailability
+
+    rows = db.execute(
+        select(BookingAppointment, DoctorAvailability, PatientProfile)
+        .join(DoctorAvailability, BookingAppointment.availability_id == DoctorAvailability.id)
+        .join(PatientProfile, BookingAppointment.patient_id == PatientProfile.id)
+        .where(BookingAppointment.doctor_id == doctor_user_id)
+    ).all()
+
+    now = utcnow()
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    today_end = today_start + dt.timedelta(days=1)
+
+    kpi = {"today": 0, "upcoming": 0, "pending_confirmation": 0, "completed": 0}
+    search_lower = search.strip().lower() if search else None
+    filtered: list[dict] = []
+
+    for appt, slot, profile in rows:
+        active = appt.status in ("pending", "confirmed")
+        if active and today_start <= slot.slot_start < today_end:
+            kpi["today"] += 1
+        if active and slot.slot_start >= today_end:
+            kpi["upcoming"] += 1
+        if appt.status == "pending":
+            kpi["pending_confirmation"] += 1
+        if appt.status == "completed":
+            kpi["completed"] += 1
+
+        if status and appt.status not in status:
+            continue
+        if date_from and slot.slot_start.date() < date_from:
+            continue
+        if date_to and slot.slot_start.date() > date_to:
+            continue
+        if search_lower and search_lower not in (profile.full_name or "").lower():
+            continue
+
+        filtered.append(
+            {
+                "id": appt.id,
+                "patient_id": profile.id,
+                "patient_name": profile.full_name,
+                "slot_start": _iso(slot.slot_start),
+                "slot_end": _iso(slot.slot_end),
+                "status": appt.status,
+                "notes": appt.notes,
+                "created_at": _iso(appt.created_at),
+                "updated_at": _iso(appt.updated_at),
+            }
+        )
+
+    filtered.sort(key=lambda r: r["slot_start"])
+    total = len(filtered)
+    page = filtered[offset : offset + limit]
+    return total, kpi, page
+
+
+# ---------------------------------------------------------------------------
 # 2. Patient roster
 # ---------------------------------------------------------------------------
 

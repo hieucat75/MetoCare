@@ -9,6 +9,7 @@ Endpoints:
 - GET   /doctor/patients/{patient_id}/timeline
 - GET   /doctor/queue
 - PATCH /doctor/queue/{item_id}/review
+- GET   /doctor/appointments
 
 RBAC: DOCTOR and MEDICAL_REVIEWER (patients -> 403). Patient-specific reads stay
 consent-gated regardless of role.
@@ -34,6 +35,9 @@ from app.models.clinical import (
 from app.models.patient import PatientProfile
 from app.models.user import UserRole
 from app.schemas.doctor_portal import (
+    DoctorAppointment,
+    DoctorAppointmentListResponse,
+    DoctorAppointmentStats,
     DoctorPatient,
     DoctorPatientListResponse,
     DoctorStats,
@@ -257,3 +261,36 @@ def review_queue_item(
     except InvalidTransition as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     return QueueItem(**updated)
+
+
+# ---------------------------------------------------------------------------
+# 6. Appointments
+# ---------------------------------------------------------------------------
+
+
+@router.get("/appointments", response_model=DoctorAppointmentListResponse)
+def list_appointments(
+    status_filter: list[str] | None = Query(default=None, alias="status"),
+    search: str | None = Query(default=None),
+    date_from: dt.date | None = Query(default=None),
+    date_to: dt.date | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    user: CurrentUser = Depends(_portal_roles),
+    db: Session = Depends(get_session),
+) -> DoctorAppointmentListResponse:
+    total, kpi, items = doctor_portal.list_appointments(
+        db,
+        user.id,
+        status=status_filter,
+        search=search,
+        date_from=date_from,
+        date_to=date_to,
+        limit=limit,
+        offset=offset,
+    )
+    return DoctorAppointmentListResponse(
+        total=total,
+        stats=DoctorAppointmentStats(**kpi),
+        items=[DoctorAppointment(**item) for item in items],
+    )
