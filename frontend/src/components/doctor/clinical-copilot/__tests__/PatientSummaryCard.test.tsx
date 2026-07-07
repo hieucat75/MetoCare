@@ -19,8 +19,10 @@ function sampleData(overrides: Partial<ClinicalSummaryOut> = {}): ClinicalSummar
       },
     ],
     notable_changes: ['Cân nặng giảm 2kg'],
-    sources: [{ type: 'lab', label: 'Xét nghiệm HbA1c', date: '2026-07-01' }],
+    sources: [{ id: 'src-hba1c', type: 'lab', label: 'Xét nghiệm HbA1c', date: '2026-07-01' }],
+    missing_data: [],
     confidence: 'high',
+    confidence_note_vi: null,
     disclaimer: 'disc',
     ...overrides,
   }
@@ -58,4 +60,30 @@ test('does not crash and shows "Không có dữ liệu." for every empty list fi
 
   expect(screen.getAllByText('Không có dữ liệu.').length).toBeGreaterThan(0)
   expect(screen.queryByText('Nguồn')).not.toBeInTheDocument()
+})
+
+test('shows the low-confidence note prominently when confidence is "low"', () => {
+  render(
+    <PatientSummaryCard
+      data={sampleData({
+        confidence: 'low',
+        confidence_note_vi: 'Tóm tắt này dựa trên dữ liệu hạn chế.',
+      })}
+    />
+  )
+
+  expect(screen.getByTestId('low-confidence-banner')).toBeInTheDocument()
+  expect(screen.getByText('Tóm tắt này dựa trên dữ liệu hạn chế.')).toBeInTheDocument()
+})
+
+test('a SourceRef with date: null renders "không rõ thời điểm" instead of the date', () => {
+  render(
+    <PatientSummaryCard
+      data={sampleData({
+        sources: [{ id: 'src-x', type: 'lab', label: 'Xét nghiệm cũ', date: null }],
+      })}
+    />
+  )
+
+  expect(screen.getByText(/Xét nghiệm cũ · không rõ thời điểm/)).toBeInTheDocument()
 })

@@ -2,6 +2,7 @@
 
 import { Card, CardHeader, CardTitle, CardContent } from '@/design-system'
 import type { ClinicalAdviceOut, AdviceCategory } from '@/lib/api/clinicalCopilot'
+import { ConfidenceNote } from './ConfidenceNote'
 
 type Props = { data: ClinicalAdviceOut }
 
@@ -28,6 +29,7 @@ export function SuggestedAdvice({ data }: Props) {
 
   return (
     <Card padding="md">
+      <ConfidenceNote confidence={data.confidence} note={data.confidence_note_vi} />
       <CardHeader>
         <CardTitle className="text-body-md">Gợi ý tư vấn</CardTitle>
       </CardHeader>

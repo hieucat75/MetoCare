@@ -17,7 +17,9 @@ function sampleData(): ClinicalQuestionsOut {
         reason_vi: 'Đánh giá tuân thủ điều trị',
       },
     ],
+    missing_data: [],
     confidence: 'medium',
+    confidence_note_vi: null,
     disclaimer: 'disc',
   }
 }
@@ -61,6 +63,25 @@ test('marking a question "Bỏ qua" greys it out', async () => {
 })
 
 test('renders "Không có dữ liệu." when there are no questions', () => {
-  render(<SuggestedQuestions data={{ questions: [], confidence: 'low', disclaimer: 'disc' }} />)
+  render(
+    <SuggestedQuestions
+      data={{ questions: [], missing_data: [], confidence: 'low', disclaimer: 'disc' }}
+    />
+  )
   expect(screen.getByText('Không có dữ liệu.')).toBeInTheDocument()
+})
+
+test('shows the low-confidence note prominently when confidence is "low"', () => {
+  render(
+    <SuggestedQuestions
+      data={{
+        ...sampleData(),
+        confidence: 'low',
+        confidence_note_vi: 'Gợi ý này dựa trên dữ liệu hạn chế.',
+      }}
+    />
+  )
+
+  expect(screen.getByTestId('low-confidence-banner')).toBeInTheDocument()
+  expect(screen.getByText('Gợi ý này dựa trên dữ liệu hạn chế.')).toBeInTheDocument()
 })

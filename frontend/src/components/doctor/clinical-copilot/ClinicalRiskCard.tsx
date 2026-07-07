@@ -3,7 +3,14 @@
 import { AlertTriangle } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardContent, Badge } from '@/design-system'
 import { cn } from '@/lib/utils'
-import type { ClinicalAnalysisOut, RiskLevel } from '@/lib/api/clinicalCopilot'
+import type {
+  ClinicalAnalysisOut,
+  RiskLevel,
+  CitedClaim,
+  MissingDataItem,
+} from '@/lib/api/clinicalCopilot'
+import { ConfidenceNote } from './ConfidenceNote'
+import { SourceList } from './SourceList'
 
 type Props = { data: ClinicalAnalysisOut }
 
@@ -42,6 +49,11 @@ export function ClinicalRiskCard({ data }: Props) {
         </div>
       )}
 
+      {/* Low/medium confidence disclosure — a different signal than urgent
+          priority above, so it renders in its own visually distinct style
+          even when both are present at once. */}
+      <ConfidenceNote confidence={data.confidence} note={data.confidence_note_vi} />
+
       <CardHeader>
         <CardTitle className="text-body-md">Phân tích nguy cơ</CardTitle>
         <Badge variant={RISK_BADGE_VARIANT[priority.level]}>{priority.label_vi}</Badge>
@@ -49,13 +61,13 @@ export function ClinicalRiskCard({ data }: Props) {
 
       <CardContent className="space-y-3">
         <ListOrEmpty title="Dấu hiệu ghi nhận" items={priority.findings} />
-        <ListOrEmpty title="Dữ liệu còn thiếu" items={priority.missing_data} />
-        <ListOrEmpty title="Vấn đề cần lưu ý" items={data.key_issues} />
-        <ListOrEmpty
+        <MissingDataSection items={data.missing_data} />
+        <CitedClaimSection title="Vấn đề cần lưu ý" items={data.key_issues} />
+        <CitedClaimSection
           title="Mâu thuẫn / khoảng trống thông tin"
           items={data.contradictions_or_gaps}
         />
-        <ListOrEmpty
+        <CitedClaimSection
           title="Chẩn đoán phân biệt cần loại trừ"
           items={data.differentials_to_exclude}
         />
@@ -63,14 +75,7 @@ export function ClinicalRiskCard({ data }: Props) {
         {priority.sources.length > 0 && (
           <div>
             <p className="mb-1 text-body-xs font-semibold text-text-muted">Nguồn</p>
-            <ul className="space-y-0.5">
-              {priority.sources.map((s, i) => (
-                <li key={i} className="text-body-xs text-text-subtle">
-                  {s.label}
-                  {s.date ? ` · ${s.date}` : ''}
-                </li>
-              ))}
-            </ul>
+            <SourceList sources={priority.sources} />
           </div>
         )}
       </CardContent>
@@ -86,6 +91,62 @@ function ListOrEmpty({ title, items }: { title: string; items: string[] }) {
         <ul className="space-y-0.5 text-body-sm text-text">
           {items.map((item, i) => (
             <li key={i}>{item}</li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-body-sm text-text-subtle">Không có dữ liệu.</p>
+      )}
+    </div>
+  )
+}
+
+/** Real "Dữ liệu còn thiếu" list — `label_vi` is pre-translated, rendered as-is. */
+function MissingDataSection({ items }: { items: MissingDataItem[] }) {
+  return (
+    <div>
+      <p className="mb-1 text-body-sm font-medium text-text">Dữ liệu còn thiếu</p>
+      {items.length > 0 ? (
+        <ul className="space-y-0.5 text-body-sm text-text">
+          {items.map((item, i) => (
+            <li key={`${item.category}-${i}`}>{item.label_vi}</li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-body-sm text-text-subtle">Không có dữ liệu.</p>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Renders a `CitedClaim[]` section: each claim's text, plus either its
+ * sources (label + date, falling back to "không rõ thời điểm") when
+ * `basis === 'sourced'`, or a muted "Cần xác nhận thêm" badge when
+ * `basis === 'needs_confirmation'` — there are no real sources to show in
+ * that case.
+ */
+function CitedClaimSection({ title, items }: { title: string; items: CitedClaim[] }) {
+  return (
+    <div>
+      <p className="mb-1 text-body-sm font-medium text-text">{title}</p>
+      {items.length > 0 ? (
+        <ul className="space-y-2">
+          {items.map((claim, i) => (
+            <li key={i} className="text-body-sm text-text">
+              <p>{claim.text}</p>
+              {claim.basis === 'needs_confirmation' ? (
+                <span className="mt-1 inline-flex items-center rounded-full bg-secondary-100 px-2 py-0.5 text-body-xs font-medium text-text-muted">
+                  Cần xác nhận thêm
+                </span>
+              ) : (
+                claim.sources.length > 0 && (
+                  <div className="mt-1">
+                    <p className="text-body-xs font-semibold text-text-muted">Nguồn</p>
+                    <SourceList sources={claim.sources} />
+                  </div>
+                )
+              )}
+            </li>
           ))}
         </ul>
       ) : (

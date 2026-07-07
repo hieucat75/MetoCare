@@ -88,20 +88,13 @@ export function ClinicalCopilotPanel({ scope }: Props) {
       .catch(() => setAdvice({ data: null, loading: false, error: 'Không thể tải gợi ý tư vấn.' }))
   }, [scope])
 
-  // Reset cached data whenever the panel is re-scoped to a different
-  // patient/consultation — otherwise a mounted panel keeps rendering the
-  // previous patient's PHI after client-side navigation to a new one.
-  const scopeKey = `${scope.patientId}:${scope.consultationId ?? ''}`
-  const prevScopeKey = React.useRef(scopeKey)
-  React.useEffect(() => {
-    if (prevScopeKey.current === scopeKey) return
-    prevScopeKey.current = scopeKey
-    setHasLoaded(false)
-    setSummary(idleState())
-    setAnalysis(idleState())
-    setQuestions(idleState())
-    setAdvice(idleState())
-  }, [scopeKey])
+  // Re-scoping to a different patient/consultation is handled by the caller
+  // mounting this component with a React `key` derived from the scope (see
+  // the two call sites: patients/[id]/page.tsx and consultations/[id]/page.tsx)
+  // — a full remount gives fresh state with no risk of stale PHI, and avoids
+  // the delimiter-collision/edge-case risk of a hand-rolled scope-key string
+  // compared in an effect (see rules/react/hooks.md: "resetting state when a
+  // prop changes — use a key on the parent or derive from props").
 
   React.useEffect(() => {
     if (!open || hasLoaded || !CLINICAL_COPILOT_ENABLED) return

@@ -4,6 +4,7 @@ import * as React from 'react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/design-system'
 import { cn } from '@/lib/utils'
 import type { ClinicalQuestionsOut, SuggestedQuestionGroup } from '@/lib/api/clinicalCopilot'
+import { ConfidenceNote } from './ConfidenceNote'
 
 type Props = { data: ClinicalQuestionsOut }
 
@@ -57,6 +58,7 @@ export function SuggestedQuestions({ data }: Props) {
 
   return (
     <Card padding="md">
+      <ConfidenceNote confidence={data.confidence} note={data.confidence_note_vi} />
       <CardHeader>
         <CardTitle className="text-body-md">Gợi ý câu hỏi thăm khám</CardTitle>
       </CardHeader>

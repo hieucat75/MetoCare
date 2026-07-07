@@ -329,7 +329,10 @@ export default function DoctorConsultationDetailPage() {
       <NotesPanel consultationId={id} status={status} />
 
       {/* ── Meto clinical copilot (patient-scoped decision support) ── */}
-      <ClinicalCopilotPanel scope={{ patientId: c.patient_id, consultationId: id }} />
+      <ClinicalCopilotPanel
+        key={JSON.stringify([c.patient_id, id])}
+        scope={{ patientId: c.patient_id, consultationId: id }}
+      />
 
       <MarketplaceDisclaimer />
     </div>

@@ -49,6 +49,7 @@ _FEATURE_UNAVAILABLE_DETAIL = "Meto phân tích hồ sơ hiện chưa khả dụ
 _CONSENT_DENIED_DETAIL = "Bệnh nhân chưa cấp quyền sử dụng tính năng AI cho hồ sơ này."
 _NOT_A_DOCTOR_DETAIL = "Chỉ bác sĩ mới có thể sử dụng tính năng này."
 _CONSULTATION_MISMATCH_DETAIL = "consultation_id không thuộc về patient_id trong đường dẫn."
+_MALFORMED_OUTPUT_DETAIL = "Meto không thể xử lý phản hồi AI cho yêu cầu này. Vui lòng thử lại."
 
 
 def _authorize(
@@ -105,12 +106,15 @@ def post_ai_summary(
     user: CurrentUser = Depends(_portal_roles),
     db: Session = Depends(get_session),
 ) -> ClinicalSummaryOut:
-    _authorize(db, patient_id=patient_id, consultation_id=payload.consultation_id, user=user)
+    chief_complaint = _authorize(
+        db, patient_id=patient_id, consultation_id=payload.consultation_id, user=user
+    )
     return clinical_copilot_svc.get_summary(
         db,
         doctor_user_id=user.id,
         patient_id=patient_id,
         consultation_id=payload.consultation_id,
+        chief_complaint=chief_complaint,
     )
 
 
@@ -137,6 +141,11 @@ async def post_ai_analysis(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=_FEATURE_UNAVAILABLE_DETAIL,
         ) from exc
+    except clinical_copilot_svc.CopilotMalformedOutput as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=_MALFORMED_OUTPUT_DETAIL,
+        ) from exc
 
 
 @router.post("/patients/{patient_id}/ai-questions", response_model=ClinicalQuestionsOut)
@@ -162,6 +171,11 @@ async def post_ai_questions(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=_FEATURE_UNAVAILABLE_DETAIL,
         ) from exc
+    except clinical_copilot_svc.CopilotMalformedOutput as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=_MALFORMED_OUTPUT_DETAIL,
+        ) from exc
 
 
 @router.post("/patients/{patient_id}/ai-advice", response_model=ClinicalAdviceOut)
@@ -186,4 +200,9 @@ async def post_ai_advice(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=_FEATURE_UNAVAILABLE_DETAIL,
+        ) from exc
+    except clinical_copilot_svc.CopilotMalformedOutput as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=_MALFORMED_OUTPUT_DETAIL,
         ) from exc

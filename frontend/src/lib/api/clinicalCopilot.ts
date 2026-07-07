@@ -21,14 +21,52 @@ import { api } from './client'
 // Shared shapes
 // ---------------------------------------------------------------------------
 
-export type SourceRef = {
-  type: 'lab' | 'metric' | 'medication' | 'condition' | 'allergy' | 'appointment'
+export interface SourceRef {
+  id: string
+  type:
+    | 'lab'
+    | 'metric'
+    | 'medication'
+    | 'condition'
+    | 'allergy'
+    | 'appointment'
+    | 'consultation'
+    | 'profile'
   label: string
+  /** ISO-8601, or null when the underlying record genuinely has no date — NEVER treat null as "current"/"now". */
   date?: string | null
 }
 
 export type ConfidenceLevel = 'high' | 'medium' | 'low'
 export type RiskLevel = 'normal' | 'monitor' | 'see_doctor_soon' | 'urgent'
+
+export type MissingDataCategory =
+  | 'demographics'
+  | 'symptoms'
+  | 'allergies'
+  | 'medications'
+  | 'medical_history'
+  | 'vitals_metrics'
+  | 'labs'
+  | 'consultation_context'
+
+/** A doctor-facing "Dữ liệu còn thiếu" item. `label_vi` is pre-translated — never re-translate it. */
+export interface MissingDataItem {
+  category: MissingDataCategory
+  label_vi: string
+}
+
+/**
+ * A single claim/finding that is either backed by real sources (`sourced`) or
+ * flagged as needing the doctor's own confirmation because there are no
+ * sources to cite (`needs_confirmation`).
+ */
+export interface CitedClaim {
+  text: string
+  sources: SourceRef[]
+  basis: 'sourced' | 'needs_confirmation'
+  confidence: ConfidenceLevel
+}
 
 export type MedicationBrief = { name: string; dosage: string; frequency: string }
 export type AbnormalFindingBrief = {
@@ -52,7 +90,9 @@ export interface ClinicalSummaryOut {
   abnormal_findings: AbnormalFindingBrief[]
   notable_changes: string[]
   sources: SourceRef[]
+  missing_data: MissingDataItem[]
   confidence: ConfidenceLevel
+  confidence_note_vi?: string | null
   disclaimer: string
 }
 
@@ -64,16 +104,18 @@ export interface RiskFlag {
   level: RiskLevel
   label_vi: string
   findings: string[]
-  missing_data: string[]
+  missing_data: MissingDataItem[]
   sources: SourceRef[]
 }
 
 export interface ClinicalAnalysisOut {
   priority: RiskFlag
-  key_issues: string[]
-  contradictions_or_gaps: string[]
-  differentials_to_exclude: string[]
+  key_issues: CitedClaim[]
+  contradictions_or_gaps: CitedClaim[]
+  differentials_to_exclude: CitedClaim[]
+  missing_data: MissingDataItem[]
   confidence: ConfidenceLevel
+  confidence_note_vi?: string | null
   disclaimer: string
 }
 
@@ -99,7 +141,9 @@ export interface SuggestedQuestion {
 
 export interface ClinicalQuestionsOut {
   questions: SuggestedQuestion[]
+  missing_data: MissingDataItem[]
   confidence: ConfidenceLevel
+  confidence_note_vi?: string | null
   disclaimer: string
 }
 
@@ -120,7 +164,9 @@ export interface AdviceItem {
 
 export interface ClinicalAdviceOut {
   items: AdviceItem[]
+  missing_data: MissingDataItem[]
   confidence: ConfidenceLevel
+  confidence_note_vi?: string | null
   disclaimer: string
 }
 

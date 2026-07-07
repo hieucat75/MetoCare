@@ -40,7 +40,9 @@ jest.mock('@/lib/api/clinicalCopilot', () => {
       abnormal_findings: [],
       notable_changes: [],
       sources: [],
+      missing_data: [],
       confidence: 'high',
+      confidence_note_vi: null,
       disclaimer: 'disc',
     }),
     getClinicalAnalysis: jest.fn().mockResolvedValue({
@@ -54,17 +56,23 @@ jest.mock('@/lib/api/clinicalCopilot', () => {
       key_issues: [],
       contradictions_or_gaps: [],
       differentials_to_exclude: [],
+      missing_data: [],
       confidence: 'high',
+      confidence_note_vi: null,
       disclaimer: 'disc',
     }),
     getClinicalQuestions: jest.fn().mockResolvedValue({
       questions: [],
+      missing_data: [],
       confidence: 'high',
+      confidence_note_vi: null,
       disclaimer: 'disc',
     }),
     getClinicalAdvice: jest.fn().mockResolvedValue({
       items: [],
+      missing_data: [],
       confidence: 'high',
+      confidence_note_vi: null,
       disclaimer: 'disc',
     }),
   }

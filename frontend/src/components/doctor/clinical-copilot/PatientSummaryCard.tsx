@@ -2,6 +2,8 @@
 
 import { Card, CardHeader, CardTitle, CardContent } from '@/design-system'
 import type { ClinicalSummaryOut } from '@/lib/api/clinicalCopilot'
+import { ConfidenceNote } from './ConfidenceNote'
+import { SourceList } from './SourceList'
 
 type Props = { data: ClinicalSummaryOut }
 
@@ -15,6 +17,7 @@ const CONFIDENCE_LABEL: Record<ClinicalSummaryOut['confidence'], string> = {
 export function PatientSummaryCard({ data }: Props) {
   return (
     <Card padding="md">
+      <ConfidenceNote confidence={data.confidence} note={data.confidence_note_vi} />
       <CardHeader>
         <CardTitle className="text-body-md">Tóm tắt hồ sơ</CardTitle>
         <span className="text-body-xs text-text-subtle">{CONFIDENCE_LABEL[data.confidence]}</span>
@@ -67,14 +70,7 @@ export function PatientSummaryCard({ data }: Props) {
         {data.sources.length > 0 && (
           <div>
             <p className="mb-1 text-body-xs font-semibold text-text-muted">Nguồn</p>
-            <ul className="space-y-0.5">
-              {data.sources.map((s, i) => (
-                <li key={i} className="text-body-xs text-text-subtle">
-                  {s.label}
-                  {s.date ? ` · ${s.date}` : ''}
-                </li>
-              ))}
-            </ul>
+            <SourceList sources={data.sources} />
           </div>
         )}
       </CardContent>

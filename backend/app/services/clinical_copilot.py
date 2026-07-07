@@ -12,15 +12,27 @@ Design:
 - ``get_analysis`` computes ``priority`` (the RiskFlag level) DETERMINISTICALLY
   from ``clinical_insight`` findings; the LLM is used ONLY to phrase the
   narrative fields (``key_issues`` / ``contradictions_or_gaps`` /
-  ``differentials_to_exclude``) — it can never change the computed level.
+  ``differentials_to_exclude``) — it can never change the computed level. Each
+  narrative item is a ``CitedClaim``: it is either backed by ≥1 verified
+  ``SourceRef`` (``basis="sourced"``) or explicitly marked
+  ``basis="needs_confirmation"`` — the LLM can never assert an uncited claim as
+  if it were sourced.
 - ``get_questions`` / ``get_advice`` make one LLM call each, constrained to a
   strict JSON contract, with every returned string re-validated through
   ``guardrails.check_output`` before it is ever returned.
+- ALL FOUR public functions share one deterministic completeness assessor
+  (``_assess_completeness``) for ``missing_data`` / ``confidence`` /
+  ``confidence_note_vi`` — never touched by the LLM.
 - A provider outage never raises a raw exception to the route layer — it is
   translated to ``CopilotUnavailable`` after writing a `.failed` audit row.
 - A malformed/non-JSON LLM response never crashes and never leaks raw model
-  output — it degrades to a neutral, safe fallback and the request still
-  succeeds (only a genuine provider outage is a hard failure).
+  output. Two distinct outcomes:
+    1. The TOP-LEVEL structure is unusable (non-JSON, non-dict, a required key
+       missing entirely, or present with the wrong type) → ``CopilotMalformedOutput``
+       (route translates to a controlled 422) + a `.malformed` audit row.
+    2. The top-level structure parses fine but some individual nested items are
+       bad → those items are silently dropped; the request still returns 200
+       with a smaller, valid (possibly all-``needs_confirmation``) result.
 - AuditLog rows for this feature carry ONLY ids (actor_id, resource_id) —
   never any patient content, per ``app.services.audit``'s append-only,
   no-sensitive-content contract.
@@ -32,26 +44,34 @@ import datetime as dt
 import json
 import logging
 from collections.abc import Iterable
+from typing import Literal
 
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from app.ai.exceptions import ProviderUnavailableError
 from app.ai.providers.base import ChatMessage
 from app.ai.registry import get_registry
+from app.domain import insight_content as ic
 from app.domain.guardrails import check_output
+from app.domain.lab_interpreter import _ALIAS_INDEX
 from app.domain.policies import DISCLAIMER_VI
 from app.models.clinical import HealthMetric, LabResult, LabUploadBatch
+from app.models.consultation import Consultation
 from app.models.patient import PatientProfile
 from app.schemas.clinical_copilot import (
     AbnormalFindingBrief,
     AdviceItem,
+    CitedClaim,
     ClinicalAdviceOut,
     ClinicalAnalysisOut,
     ClinicalQuestionsOut,
     ClinicalSummaryOut,
     ConfidenceLevel,
     MedicationBrief,
+    MissingDataCategory,
+    MissingDataItem,
     RiskFlag,
     RiskLevel,
     SourceRef,
@@ -71,6 +91,13 @@ UNAVAILABLE_MESSAGE_VI = "Meto phân tích hồ sơ hiện chưa khả dụng."
 _MAX_MEDICATIONS = 10
 _MAX_ITEMS = 8
 _FALLBACK_LINE_VI = "Chưa thể tạo nội dung chi tiết lúc này. Vui lòng thử lại sau."
+
+# "Needs refresh" window for chronic metabolic monitoring — deliberately distinct
+# from app.ai.context.builder's `_LABS_LOOKBACK_DAYS` (90) / `_METRICS_LOOKBACK_DAYS`
+# (30): those bound what gets FETCHED into an AI context window, this constant
+# answers a different question — "is data we already found too old to trust
+# without a refresh?" — so it is not reused/aligned with those.
+_STALE_DATA_DAYS = 180
 
 _LEVEL_LABEL_VI: dict[RiskLevel, str] = {
     "normal": "Bình thường",
@@ -96,9 +123,24 @@ _ADVICE_CATEGORIES = frozenset(
     {"explain_patient", "home_monitoring", "when_to_visit", "suggested_tests"}
 )
 
+_MISSING_DATA_LABELS_VI: dict[MissingDataCategory, str] = {
+    "demographics": "Thiếu thông tin nhân khẩu học cơ bản của bệnh nhân.",
+    "symptoms": "Chưa ghi nhận triệu chứng / lý do khám của buổi tư vấn này.",
+    "allergies": "Chưa có thông tin về dị ứng (không đồng nghĩa với không dị ứng).",
+    "medications": "Chưa có thông tin thuốc đang dùng.",
+    "medical_history": "Chưa có thông tin bệnh nền / tiền sử bệnh.",
+    "vitals_metrics": "Chưa có chỉ số sinh hiệu / đo lường nào được ghi nhận.",
+    "labs": "Chưa có kết quả xét nghiệm nào được ghi nhận.",
+    "consultation_context": "Chưa có bối cảnh buổi tư vấn (lý do khám).",
+}
+
 
 class CopilotUnavailable(Exception):
     """Raised when every LLM provider is unavailable for a copilot request."""
+
+
+class CopilotMalformedOutput(Exception):
+    """Provider answered but the structure couldn't be safely used."""
 
 
 # --------------------------------------------------------------------------- #
@@ -136,21 +178,43 @@ def _parse_list(val: object) -> list[str]:
     return []
 
 
-def _conditions_and_allergies(db: Session, patient_id: str) -> tuple[list[str], list[str]]:
-    """Mirrors ``ContextBuilder._build_health_summary`` but keyed by patient_id
-    directly (no user_id subselect needed — ORM auto-decrypts EncryptedString)."""
-    profile = db.query(PatientProfile).filter(PatientProfile.id == patient_id).first()
+def _coerce_datetime(value: object) -> dt.datetime | None:
+    """SQLite's driver returns TEXT for DateTime columns read via a raw ``text()``
+    query (no ORM type deserialization) — normalize to a real ``datetime`` so
+    every downstream ``.isoformat()`` call is safe, matching what the ORM would
+    have given us."""
+    if value is None:
+        return None
+    if isinstance(value, dt.datetime):
+        return value
+    if isinstance(value, str):
+        try:
+            return dt.datetime.fromisoformat(value)
+        except ValueError:
+            return None
+    return None
+
+
+def _load_profile(db: Session, patient_id: str) -> PatientProfile | None:
+    return db.query(PatientProfile).filter(PatientProfile.id == patient_id).first()
+
+
+def _conditions_and_allergies(profile: PatientProfile | None) -> tuple[list[str], list[str]]:
+    """Mirrors ``ContextBuilder._build_health_summary`` but keyed by an
+    already-loaded profile (single query per request, shared with the
+    completeness assessor / source map instead of re-querying)."""
     if profile is None:
         return [], []
     return _parse_list(profile.known_conditions), _parse_list(profile.allergies)
 
 
-def _medications(db: Session, patient_id: str) -> list[MedicationBrief]:
-    """Mirrors ``ContextBuilder._build_medications`` — patient_id-keyed directly."""
+def _medication_records(db: Session, patient_id: str) -> list[dict]:
+    """(id, name, dose, frequency, created_at) — the single query backing both
+    the display-facing ``MedicationBrief`` list and the source-map citations."""
     rows = db.execute(
         text(
             """
-            SELECT name, dose, frequency
+            SELECT id, name, dose, frequency, created_at
             FROM medications
             WHERE patient_id = :pid AND deleted_at IS NULL
             ORDER BY created_at DESC
@@ -159,7 +223,65 @@ def _medications(db: Session, patient_id: str) -> list[MedicationBrief]:
         ),
         {"pid": patient_id, "limit": _MAX_MEDICATIONS},
     ).fetchall()
-    return [MedicationBrief(name=r[0], dosage=r[1] or "", frequency=r[2] or "") for r in rows]
+    return [
+        {
+            "id": r[0],
+            "name": r[1],
+            "dose": r[2],
+            "frequency": r[3],
+            "created_at": _coerce_datetime(r[4]),
+        }
+        for r in rows
+    ]
+
+
+def _medication_briefs(records: list[dict]) -> list[MedicationBrief]:
+    return [
+        MedicationBrief(name=r["name"], dosage=r["dose"] or "", frequency=r["frequency"] or "")
+        for r in records
+    ]
+
+
+def _lab_rows(db: Session, patient_id: str) -> list[LabResult]:
+    """All non-deleted lab results for the patient, newest first. Backs the
+    ``labs`` completeness signal, the staleness check, the (existing)
+    data_quality_flag contradiction signal, and the lab SourceRef citations."""
+    return list(
+        db.execute(
+            select(LabResult)
+            .join(LabUploadBatch, LabUploadBatch.id == LabResult.batch_id, isouter=True)
+            .where(LabResult.patient_id == patient_id, LabResult.deleted_at.is_(None))
+            .order_by(LabResult.test_date.desc().nullslast())
+        )
+        .scalars()
+        .all()
+    )
+
+
+def _metric_rows(db: Session, patient_id: str) -> list[HealthMetric]:
+    """All non-deleted health metrics for the patient, newest first. Backs the
+    ``vitals_metrics`` completeness signal, the staleness check, and the metric
+    SourceRef citations."""
+    return list(
+        db.execute(
+            select(HealthMetric)
+            .where(HealthMetric.patient_id == patient_id, HealthMetric.deleted_at.is_(None))
+            .order_by(HealthMetric.measured_at.desc())
+        )
+        .scalars()
+        .all()
+    )
+
+
+def _is_lab_metric_type(metric_type: str) -> bool:
+    """True if ``metric_type`` resolves to a lab biomarker (vs a manually-logged
+    vital like blood pressure/weight) — mirrors
+    ``clinical_insight._lab_canonical``'s exact-alias-only resolution."""
+    raw = (metric_type or "").strip().lower()
+    if raw in _ALIAS_INDEX:
+        return True
+    aliased = ic.METRIC_TYPE_ALIASES.get(raw)
+    return bool(aliased and aliased in _ALIAS_INDEX)
 
 
 def _has_lab_data(db: Session, patient_id: str) -> bool:
@@ -192,7 +314,10 @@ def _value_display(insight: MetricInsight) -> str:
 
 
 def _compute_priority(findings: list[MetricInsight]) -> RiskFlag:
-    """Deterministic RiskFlag.level — NEVER overridden by any LLM phrasing."""
+    """Deterministic RiskFlag.level — NEVER overridden by any LLM phrasing.
+    ``missing_data`` starts empty and is patched in by the caller (via
+    ``model_copy``) once the shared completeness assessment has run — computing
+    it here would duplicate that logic and risk drifting out of sync."""
     if any(f.status == "critical" for f in findings):
         level: RiskLevel = "urgent"
     elif any(f.priority == "see_doctor" for f in findings):
@@ -206,7 +331,10 @@ def _compute_priority(findings: list[MetricInsight]) -> RiskFlag:
         label_vi=_LEVEL_LABEL_VI[level],
         findings=[f.label for f in findings],
         missing_data=[],
-        sources=[SourceRef(type="metric", label=f.label) for f in findings],
+        sources=[
+            SourceRef(id=f"metric:{f.metric_type}", type="metric", label=f.label)
+            for f in findings
+        ],
     )
 
 
@@ -232,13 +360,318 @@ def _record(
     db.commit()
 
 
-def _parse_llm_json(raw: str, required_keys: Iterable[str]) -> dict | None:
+# --------------------------------------------------------------------------- #
+# Completeness / confidence — ONE shared, deterministic assessor
+# --------------------------------------------------------------------------- #
+
+
+def _is_stale_date(value: dt.date | dt.datetime | None) -> bool:
+    if value is None:
+        return False
+    as_date = value.date() if isinstance(value, dt.datetime) else value
+    cutoff = dt.datetime.now(dt.UTC).date() - dt.timedelta(days=_STALE_DATA_DAYS)
+    return as_date < cutoff
+
+
+def _assess_completeness(
+    *,
+    conditions: list[str],
+    allergies: list[str],
+    medication_records: list[dict],
+    chief_complaint: str | None,
+    consultation_id: str | None,
+    demographics_present: bool,
+    has_lab_data: bool,
+    has_metric_data: bool,
+    has_stale: bool,
+    has_contradiction: bool,
+) -> tuple[list[MissingDataItem], ConfidenceLevel, str | None]:
+    """Pure, deterministic completeness/confidence assessment. NEVER touched by
+    the LLM — every input is a plain fact already fetched/computed by the
+    caller from the database.
+
+    Applicability: ``symptoms`` and ``consultation_context`` only apply when a
+    ``consultation_id`` was supplied (they describe THIS consultation's
+    context, which doesn't exist outside one); the other six categories always
+    apply.
+
+    Presence: a category counts as present only when real, already-fetched data
+    backs it — an empty ``allergies`` list is treated as UNKNOWN (never as
+    "confirmed no allergies"), since `PatientProfile` has no such explicit flag.
+
+    Confidence tiers (exact thresholds):
+        completeness_ratio = present / applicable   (0.0 if nothing applies)
+
+        completeness_ratio == 0.0          -> "low"
+        completeness_ratio < 0.34          -> "low"
+        has_contradiction                  -> "medium"  (never "high" when a
+                                               data-quality flag exists)
+        has_stale and ratio < 0.75         -> "medium"
+        completeness_ratio >= 0.75
+            and not has_stale              -> "high"
+        otherwise                          -> "medium"
+    """
+    applicable: list[MissingDataCategory] = [
+        "demographics",
+        "allergies",
+        "medications",
+        "medical_history",
+        "vitals_metrics",
+        "labs",
+    ]
+    if consultation_id is not None:
+        applicable += ["symptoms", "consultation_context"]
+
+    has_chief_complaint = bool(chief_complaint and chief_complaint.strip())
+    presence: dict[MissingDataCategory, bool] = {
+        "demographics": demographics_present,
+        "symptoms": has_chief_complaint,
+        "allergies": bool(allergies),
+        "medications": bool(medication_records),
+        "medical_history": bool(conditions),
+        "vitals_metrics": has_metric_data,
+        "labs": has_lab_data,
+        "consultation_context": has_chief_complaint,
+    }
+
+    missing_data = [
+        MissingDataItem(category=cat, label_vi=_MISSING_DATA_LABELS_VI[cat])
+        for cat in applicable
+        if not presence[cat]
+    ]
+
+    present_count = sum(1 for cat in applicable if presence[cat])
+    completeness_ratio = present_count / len(applicable) if applicable else 0.0
+
+    confidence: ConfidenceLevel
+    if completeness_ratio == 0.0:
+        confidence = "low"
+    elif completeness_ratio < 0.34:
+        confidence = "low"
+    elif has_contradiction:
+        confidence = "medium"
+    elif has_stale and completeness_ratio < 0.75:
+        confidence = "medium"
+    elif completeness_ratio >= 0.75 and not has_stale:
+        confidence = "high"
+    else:
+        confidence = "medium"
+
+    confidence_note_vi: str | None
+    if confidence == "low":
+        confidence_note_vi = (
+            "Phân tích dựa trên dữ liệu còn hạn chế hoặc chưa đầy đủ — cần bổ sung "
+            "thêm thông tin trước khi đưa ra kết luận."
+        )
+    elif confidence == "medium":
+        confidence_note_vi = "Một số dữ liệu có thể chưa đầy đủ hoặc chưa cập nhật gần đây."
+    else:
+        confidence_note_vi = None
+
+    return missing_data, confidence, confidence_note_vi
+
+
+def _completeness_signals(
+    db: Session,
+    *,
+    patient_id: str,
+    lab_rows: list[LabResult],
+    metric_rows: list[HealthMetric],
+) -> tuple[bool, bool, bool, bool]:
+    """(has_lab_data, has_metric_data, has_stale, has_contradiction) — the four
+    boolean signals ``_assess_completeness`` needs, derived from the same rows
+    used to build the source map (no duplicate queries beyond what's already
+    fetched for citations)."""
+    has_lab = bool(lab_rows) or _has_lab_data(db, patient_id)
+    has_metric = bool(metric_rows) or _has_metric_data(db, patient_id)
+
+    has_contradiction = any((r.data_quality_flag or "").strip().lower() == "flag" for r in lab_rows)
+
+    freshest_lab = lab_rows[0].test_date if lab_rows else None
+    freshest_metric = metric_rows[0].measured_at if metric_rows else None
+    has_stale = (has_lab and _is_stale_date(freshest_lab)) or (
+        has_metric and _is_stale_date(freshest_metric)
+    )
+    return has_lab, has_metric, has_stale, has_contradiction
+
+
+# --------------------------------------------------------------------------- #
+# Source map — real ids + real dates, never invented
+# --------------------------------------------------------------------------- #
+
+
+def _build_source_map(
+    *,
+    patient_id: str,
+    profile: PatientProfile | None,
+    conditions: list[str],
+    allergies: list[str],
+    medication_records: list[dict],
+    findings: list[MetricInsight],
+    lab_rows: list[LabResult],
+    metric_rows: list[HealthMetric],
+    consultation: Consultation | None,
+) -> dict[str, SourceRef]:
+    """Build the citation catalog: id -> SourceRef, with a REAL date resolved
+    from the underlying record wherever one exists (never invented)."""
+    source_map: dict[str, SourceRef] = {}
+
+    profile_date = (
+        profile.updated_at.isoformat() if profile is not None and profile.updated_at else None
+    )
+    if profile is not None:
+        source_map[f"profile:{patient_id}"] = SourceRef(
+            id=f"profile:{patient_id}", type="profile", label="Hồ sơ bệnh nhân", date=profile_date
+        )
+
+    for i, c in enumerate(conditions):
+        sid = f"condition:{i}"
+        source_map[sid] = SourceRef(id=sid, type="condition", label=c, date=profile_date)
+    for i, a in enumerate(allergies):
+        sid = f"allergy:{i}"
+        source_map[sid] = SourceRef(id=sid, type="allergy", label=a, date=profile_date)
+
+    for rec in medication_records:
+        sid = f"medication:{rec['id']}"
+        created_at = rec.get("created_at")
+        source_map[sid] = SourceRef(
+            id=sid,
+            type="medication",
+            label=rec["name"],
+            date=created_at.isoformat() if created_at else None,
+        )
+
+    # Freshest lab row per canonical/test name, for matching a lab-derived finding.
+    lab_by_key: dict[str, LabResult] = {}
+    for row in lab_rows:
+        key = (row.canonical_name or row.test_name or "").strip().lower()
+        if key and key not in lab_by_key:
+            lab_by_key[key] = row  # lab_rows is already newest-first
+
+    # Freshest metric row per exact metric_type, for matching a vital finding.
+    metric_by_type: dict[str, HealthMetric] = {}
+    for row in metric_rows:
+        if row.metric_type not in metric_by_type:
+            metric_by_type[row.metric_type] = row  # metric_rows is already newest-first
+
+    for f in findings:
+        if _is_lab_metric_type(f.metric_type):
+            lab_row = lab_by_key.get(f.metric_type.strip().lower())
+            if lab_row is not None:
+                sid = f"lab:{lab_row.id}"
+                source_map[sid] = SourceRef(
+                    id=sid,
+                    type="lab",
+                    label=f.label,
+                    date=lab_row.test_date.isoformat() if lab_row.test_date else None,
+                )
+            else:
+                # No matching LabResult row found (e.g. metric promoted from a
+                # source we can't trace back) — degrade to a dateless citation
+                # rather than inventing or dropping it.
+                sid = f"lab:{f.metric_type}"
+                source_map[sid] = SourceRef(id=sid, type="lab", label=f.label, date=None)
+        else:
+            metric_row = metric_by_type.get(f.metric_type)
+            sid = f"metric:{f.metric_type}"
+            source_map[sid] = SourceRef(
+                id=sid,
+                type="metric",
+                label=f.label,
+                date=metric_row.measured_at.isoformat() if metric_row is not None else None,
+            )
+
+    if consultation is not None:
+        sid = f"consultation:{consultation.id}"
+        source_map[sid] = SourceRef(
+            id=sid,
+            type="consultation",
+            label="Bối cảnh buổi tư vấn",
+            date=consultation.created_at.isoformat() if consultation.created_at else None,
+        )
+
+    return source_map
+
+
+def _source_catalog_text(source_map: dict[str, SourceRef]) -> str:
+    if not source_map:
+        return ""
+    lines = [
+        "Danh mục mã nguồn được phép trích dẫn (source_ids) — CHỈ được dùng "
+        "id có trong danh sách này, KHÔNG được tự tạo id mới:"
+    ]
+    lines += [f"- {sid}: {ref.label}" for sid, ref in source_map.items()]
+    return "\n".join(lines)
+
+
+def _source_is_stale(source: SourceRef) -> bool:
+    if source.date is None:
+        return False
+    try:
+        return _is_stale_date(dt.date.fromisoformat(source.date[:10]))
+    except ValueError:
+        return False
+
+
+def _build_cited_claims(raw_items: object, source_map: dict[str, SourceRef]) -> list[CitedClaim]:
+    """Validate+resolve one LLM-returned list field into ``CitedClaim`` items.
+
+    Per item (never fails the whole response — bad items are simply dropped):
+    - must be a dict with a non-empty string ``text`` (else dropped);
+    - ``source_ids`` (if present) must be a list of strings; only ids that
+      exist in ``source_map`` are kept, unknown/invented ids are silently
+      dropped;
+    - >=1 valid source id survives -> basis="sourced", confidence="high"
+      unless any resolved source is stale, then "medium";
+    - 0 valid source ids survive -> basis="needs_confirmation", sources=[],
+      confidence="low".
+    """
+    claims: list[CitedClaim] = []
+    if not isinstance(raw_items, list):
+        return claims
+    for item in raw_items[:_MAX_ITEMS]:
+        if not isinstance(item, dict):
+            continue
+        raw_text = item.get("text")
+        if not isinstance(raw_text, str) or not raw_text.strip():
+            continue
+        raw_ids = item.get("source_ids")
+        valid_ids = (
+            [sid for sid in raw_ids if isinstance(sid, str) and sid in source_map]
+            if isinstance(raw_ids, list)
+            else []
+        )
+        basis: Literal["sourced", "needs_confirmation"]
+        confidence: ConfidenceLevel
+        if valid_ids:
+            sources = [source_map[sid] for sid in valid_ids]
+            basis = "sourced"
+            confidence = "medium" if any(_source_is_stale(s) for s in sources) else "high"
+        else:
+            sources = []
+            basis = "needs_confirmation"
+            confidence = "low"
+        claims.append(
+            CitedClaim(text=_safe(raw_text), sources=sources, basis=basis, confidence=confidence)
+        )
+    return claims
+
+
+# --------------------------------------------------------------------------- #
+# LLM parsing / structural validation
+# --------------------------------------------------------------------------- #
+
+
+def _parse_llm_json(raw: str, required_list_keys: Iterable[str]) -> dict | None:
     """Best-effort parse of the LLM's forced-JSON output.
 
     Strips common markdown code-fence wrapping, then requires every key in
-    ``required_keys`` to be present. Returns None (never raises) on any
-    malformation — the caller degrades to a safe fallback instead of crashing
-    or passing raw garbage through.
+    ``required_list_keys`` to be present AND typed as a ``list`` at the top
+    level. Returns None (never raises) on any TOP-LEVEL malformation — the
+    caller treats None as a structural failure (``CopilotMalformedOutput``),
+    distinct from individual bad items nested inside an otherwise-valid list
+    (handled by ``_build_cited_claims`` / per-item filtering, which is NOT a
+    failure).
     """
     text_ = (raw or "").strip()
     if text_.startswith("```"):
@@ -252,7 +685,7 @@ def _parse_llm_json(raw: str, required_keys: Iterable[str]) -> dict | None:
         return None
     if not isinstance(parsed, dict):
         return None
-    if not all(key in parsed for key in required_keys):
+    if not all(key in parsed and isinstance(parsed[key], list) for key in required_list_keys):
         return None
     return parsed
 
@@ -265,7 +698,9 @@ async def _call_llm(
     max_tokens: int = 800,
 ) -> str:
     """Call the provider chain with fallback; raises ProviderUnavailableError
-    if every provider in the chain fails (caller translates to CopilotUnavailable)."""
+    if every provider in the chain fails (caller translates to CopilotUnavailable).
+    Every provider in the chain shares this exact parsing/validation code path —
+    no per-provider special-casing."""
     registry = get_registry()
 
     async def call_fn(provider):
@@ -298,6 +733,7 @@ def _findings_context_text(
     medications: list[MedicationBrief],
     findings: list[MetricInsight],
     chief_complaint: str | None,
+    source_catalog: str = "",
 ) -> str:
     """Compact, factual bullet context for the LLM prompt. Contains ONLY
     already-vetted deterministic data — no free-text patient input."""
@@ -319,7 +755,10 @@ def _findings_context_text(
             lines.append(f"- {f.label}: {_value_display(f)} ({f.status}, {f.trend.label})")
     else:
         lines.append("Không có chỉ số bất thường nào được ghi nhận gần đây.")
-    return "\n".join(lines) if lines else "Không có dữ liệu lâm sàng đáng chú ý."
+    body = "\n".join(lines) if lines else "Không có dữ liệu lâm sàng đáng chú ý."
+    if source_catalog:
+        body = f"{body}\n\n{source_catalog}"
+    return body
 
 
 _JSON_ONLY_INSTRUCTION_VI = (
@@ -340,11 +779,16 @@ def get_summary(
     doctor_user_id: str,
     patient_id: str,
     consultation_id: str | None = None,
+    chief_complaint: str | None = None,
 ) -> ClinicalSummaryOut:
-    conditions, allergies = _conditions_and_allergies(db, patient_id)
-    medications = _medications(db, patient_id)
+    profile = _load_profile(db, patient_id)
+    conditions, allergies = _conditions_and_allergies(profile)
+    medication_records = _medication_records(db, patient_id)
+    medications = _medication_briefs(medication_records)
     findings = list_insights(db, patient_id=patient_id, abnormal_only=True)
     summary = build_health_summary(db, patient_id=patient_id)
+    lab_rows = _lab_rows(db, patient_id)
+    metric_rows = _metric_rows(db, patient_id)
 
     abnormal_findings = [
         AbnormalFindingBrief(
@@ -365,25 +809,34 @@ def get_summary(
             seen.add(entry)
             notable_changes.append(entry)
 
-    sources: list[SourceRef] = [SourceRef(type="metric", label=f.label) for f in findings]
-    sources += [SourceRef(type="medication", label=m.name) for m in medications]
-    sources += [SourceRef(type="condition", label=c) for c in conditions]
-    sources += [SourceRef(type="allergy", label=a) for a in allergies]
+    source_map = _build_source_map(
+        patient_id=patient_id,
+        profile=profile,
+        conditions=conditions,
+        allergies=allergies,
+        medication_records=medication_records,
+        findings=findings,
+        lab_rows=lab_rows,
+        metric_rows=metric_rows,
+        consultation=None,
+    )
+    sources = list(source_map.values())
 
-    blocks_present = [
-        bool(conditions or allergies),
-        bool(medications),
-        _has_lab_data(db, patient_id),
-        _has_metric_data(db, patient_id),
-    ]
-    present_count = sum(1 for b in blocks_present if b)
-    confidence: ConfidenceLevel
-    if present_count == len(blocks_present):
-        confidence = "high"
-    elif present_count == 0:
-        confidence = "low"
-    else:
-        confidence = "medium"
+    has_lab, has_metric, has_stale, has_contradiction = _completeness_signals(
+        db, patient_id=patient_id, lab_rows=lab_rows, metric_rows=metric_rows
+    )
+    missing_data, confidence, confidence_note_vi = _assess_completeness(
+        conditions=conditions,
+        allergies=allergies,
+        medication_records=medication_records,
+        chief_complaint=chief_complaint,
+        consultation_id=consultation_id,
+        demographics_present=profile is not None,
+        has_lab_data=has_lab,
+        has_metric_data=has_metric,
+        has_stale=has_stale,
+        has_contradiction=has_contradiction,
+    )
 
     _record(
         db,
@@ -403,12 +856,14 @@ def get_summary(
         notable_changes=notable_changes,
         sources=sources,
         confidence=confidence,
+        missing_data=missing_data,
+        confidence_note_vi=confidence_note_vi,
         disclaimer=DISCLAIMER_VI,
     )
 
 
 # --------------------------------------------------------------------------- #
-# 2. Analysis — deterministic priority + LLM-phrased reasoning
+# 2. Analysis — deterministic priority + LLM-phrased, per-item cited reasoning
 # --------------------------------------------------------------------------- #
 
 
@@ -420,23 +875,90 @@ async def get_analysis(
     consultation_id: str | None = None,
     chief_complaint: str | None = None,
 ) -> ClinicalAnalysisOut:
-    findings = list_insights(db, patient_id=patient_id, abnormal_only=True)
-    priority = _compute_priority(findings)  # ALWAYS returned as-is — never LLM-derived.
+    def _fetch_context() -> tuple[
+        RiskFlag, dict[str, SourceRef], list[MissingDataItem], ConfidenceLevel, str | None, str
+    ]:
+        """ALL blocking DB reads for this request, gathered synchronously in one
+        threadpool hop (profile/conditions/allergies, medications, insight
+        findings, consultation lookup, lab/metric rows, completeness signals,
+        source-map + prompt-context assembly) — none of this may run on the
+        event loop."""
+        findings = list_insights(db, patient_id=patient_id, abnormal_only=True)
+        priority = _compute_priority(findings)  # level/findings/sources ALWAYS as-is.
 
-    conditions, allergies = _conditions_and_allergies(db, patient_id)
-    medications = _medications(db, patient_id)
-    context_text = _findings_context_text(
-        conditions=conditions,
-        allergies=allergies,
-        medications=medications,
-        findings=findings,
-        chief_complaint=chief_complaint,
-    )
+        profile = _load_profile(db, patient_id)
+        conditions, allergies = _conditions_and_allergies(profile)
+        medication_records = _medication_records(db, patient_id)
+        medications = _medication_briefs(medication_records)
+        lab_rows = _lab_rows(db, patient_id)
+        metric_rows = _metric_rows(db, patient_id)
+        consultation = db.get(Consultation, consultation_id) if consultation_id else None
+
+        source_map = _build_source_map(
+            patient_id=patient_id,
+            profile=profile,
+            conditions=conditions,
+            allergies=allergies,
+            medication_records=medication_records,
+            findings=findings,
+            lab_rows=lab_rows,
+            metric_rows=metric_rows,
+            consultation=consultation,
+        )
+
+        has_lab, has_metric, has_stale, has_contradiction = _completeness_signals(
+            db, patient_id=patient_id, lab_rows=lab_rows, metric_rows=metric_rows
+        )
+        missing_data, confidence, confidence_note_vi = _assess_completeness(
+            conditions=conditions,
+            allergies=allergies,
+            medication_records=medication_records,
+            chief_complaint=chief_complaint,
+            consultation_id=consultation_id,
+            demographics_present=profile is not None,
+            has_lab_data=has_lab,
+            has_metric_data=has_metric,
+            has_stale=has_stale,
+            has_contradiction=has_contradiction,
+        )
+        resolved_priority = priority.model_copy(update={"missing_data": missing_data})
+
+        context_text = _findings_context_text(
+            conditions=conditions,
+            allergies=allergies,
+            medications=medications,
+            findings=findings,
+            chief_complaint=chief_complaint,
+            source_catalog=_source_catalog_text(source_map),
+        )
+        return (
+            resolved_priority,
+            source_map,
+            missing_data,
+            confidence,
+            confidence_note_vi,
+            context_text,
+        )
+
+    (
+        priority,
+        source_map,
+        missing_data,
+        confidence,
+        confidence_note_vi,
+        context_text,
+    ) = await run_in_threadpool(_fetch_context)
+
     system_prompt = (
         "Bạn là Meto Clinical Copilot, hỗ trợ BÁC SĨ đọc nhanh hồ sơ bệnh nhân — "
         "KHÔNG thay thế quyết định lâm sàng của bác sĩ. " + _JSON_ONLY_INSTRUCTION_VI + " "
-        'Schema: {"key_issues": [string], "contradictions_or_gaps": [string], '
-        '"differentials_to_exclude": [string]}.'
+        "Mỗi mục trong key_issues/contradictions_or_gaps/differentials_to_exclude "
+        'PHẢI có dạng {"text": string, "source_ids": [id từ danh mục được cung cấp]}. '
+        "Chỉ dùng source_ids có trong danh mục; nếu không có căn cứ rõ ràng, để "
+        "source_ids là mảng rỗng thay vì tự bịa id. "
+        'Schema: {"key_issues": [{"text": string, "source_ids": [string]}], '
+        '"contradictions_or_gaps": [{"text": string, "source_ids": [string]}], '
+        '"differentials_to_exclude": [{"text": string, "source_ids": [string]}]}.'
     )
 
     try:
@@ -447,7 +969,8 @@ async def get_analysis(
             patient_id,
             exc,
         )
-        _record(
+        await run_in_threadpool(
+            _record,
             db,
             doctor_user_id=doctor_user_id,
             patient_id=patient_id,
@@ -461,19 +984,23 @@ async def get_analysis(
         raw, ("key_issues", "contradictions_or_gaps", "differentials_to_exclude")
     )
     if parsed is None:
-        key_issues = [_FALLBACK_LINE_VI]
-        contradictions: list[str] = []
-        differentials: list[str] = []
-    else:
-        key_issues = [_safe(str(s)) for s in parsed.get("key_issues", [])][:_MAX_ITEMS]
-        contradictions = [
-            _safe(str(s)) for s in parsed.get("contradictions_or_gaps", [])
-        ][:_MAX_ITEMS]
-        differentials = [
-            _safe(str(s)) for s in parsed.get("differentials_to_exclude", [])
-        ][:_MAX_ITEMS]
+        await run_in_threadpool(
+            _record,
+            db,
+            doctor_user_id=doctor_user_id,
+            patient_id=patient_id,
+            action="ai_clinical_analysis.malformed",
+            outcome="failed",
+            severity="warning",
+        )
+        raise CopilotMalformedOutput(UNAVAILABLE_MESSAGE_VI)
 
-    _record(
+    key_issues = _build_cited_claims(parsed.get("key_issues"), source_map)
+    contradictions = _build_cited_claims(parsed.get("contradictions_or_gaps"), source_map)
+    differentials = _build_cited_claims(parsed.get("differentials_to_exclude"), source_map)
+
+    await run_in_threadpool(
+        _record,
         db,
         doctor_user_id=doctor_user_id,
         patient_id=patient_id,
@@ -487,7 +1014,9 @@ async def get_analysis(
         key_issues=key_issues,
         contradictions_or_gaps=contradictions,
         differentials_to_exclude=differentials,
-        confidence="high" if findings else "medium",
+        confidence=confidence,
+        missing_data=missing_data,
+        confidence_note_vi=confidence_note_vi,
         disclaimer=DISCLAIMER_VI,
     )
 
@@ -505,16 +1034,46 @@ async def get_questions(
     consultation_id: str | None = None,
     chief_complaint: str | None = None,
 ) -> ClinicalQuestionsOut:
-    findings = list_insights(db, patient_id=patient_id, abnormal_only=True)
-    conditions, allergies = _conditions_and_allergies(db, patient_id)
-    medications = _medications(db, patient_id)
-    context_text = _findings_context_text(
-        conditions=conditions,
-        allergies=allergies,
-        medications=medications,
-        findings=findings,
-        chief_complaint=chief_complaint,
+    def _fetch_context() -> tuple[list[MissingDataItem], ConfidenceLevel, str | None, str]:
+        """ALL blocking DB reads for this request, gathered synchronously in one
+        threadpool hop."""
+        findings = list_insights(db, patient_id=patient_id, abnormal_only=True)
+        profile = _load_profile(db, patient_id)
+        conditions, allergies = _conditions_and_allergies(profile)
+        medication_records = _medication_records(db, patient_id)
+        medications = _medication_briefs(medication_records)
+        lab_rows = _lab_rows(db, patient_id)
+        metric_rows = _metric_rows(db, patient_id)
+
+        has_lab, has_metric, has_stale, has_contradiction = _completeness_signals(
+            db, patient_id=patient_id, lab_rows=lab_rows, metric_rows=metric_rows
+        )
+        missing_data, confidence, confidence_note_vi = _assess_completeness(
+            conditions=conditions,
+            allergies=allergies,
+            medication_records=medication_records,
+            chief_complaint=chief_complaint,
+            consultation_id=consultation_id,
+            demographics_present=profile is not None,
+            has_lab_data=has_lab,
+            has_metric_data=has_metric,
+            has_stale=has_stale,
+            has_contradiction=has_contradiction,
+        )
+
+        context_text = _findings_context_text(
+            conditions=conditions,
+            allergies=allergies,
+            medications=medications,
+            findings=findings,
+            chief_complaint=chief_complaint,
+        )
+        return missing_data, confidence, confidence_note_vi, context_text
+
+    missing_data, confidence, confidence_note_vi, context_text = await run_in_threadpool(
+        _fetch_context
     )
+
     system_prompt = (
         "Bạn là Meto Clinical Copilot, gợi ý câu hỏi khai thác bệnh sử cho BÁC SĨ hỏi "
         "bệnh nhân — bác sĩ quyết định hỏi gì. " + _JSON_ONLY_INSTRUCTION_VI + " "
@@ -531,7 +1090,8 @@ async def get_questions(
             patient_id,
             exc,
         )
-        _record(
+        await run_in_threadpool(
+            _record,
             db,
             doctor_user_id=doctor_user_id,
             patient_id=patient_id,
@@ -542,25 +1102,37 @@ async def get_questions(
         raise CopilotUnavailable(UNAVAILABLE_MESSAGE_VI) from exc
 
     parsed = _parse_llm_json(raw, ("questions",))
-    questions: list[SuggestedQuestion] = []
-    if parsed is not None:
-        for item in parsed.get("questions", [])[:_MAX_ITEMS]:
-            if not isinstance(item, dict):
-                continue
-            group = item.get("group")
-            question_vi = item.get("question_vi")
-            reason_vi = item.get("reason_vi")
-            if group not in _QUESTION_GROUPS or not question_vi or not reason_vi:
-                continue
-            questions.append(
-                SuggestedQuestion(
-                    group=group,
-                    question_vi=_safe(str(question_vi)),
-                    reason_vi=_safe(str(reason_vi)),
-                )
-            )
+    if parsed is None:
+        await run_in_threadpool(
+            _record,
+            db,
+            doctor_user_id=doctor_user_id,
+            patient_id=patient_id,
+            action="ai_clinical_questions.malformed",
+            outcome="failed",
+            severity="warning",
+        )
+        raise CopilotMalformedOutput(UNAVAILABLE_MESSAGE_VI)
 
-    _record(
+    questions: list[SuggestedQuestion] = []
+    for item in parsed.get("questions", [])[:_MAX_ITEMS]:
+        if not isinstance(item, dict):
+            continue
+        group = item.get("group")
+        question_vi = item.get("question_vi")
+        reason_vi = item.get("reason_vi")
+        if group not in _QUESTION_GROUPS or not question_vi or not reason_vi:
+            continue
+        questions.append(
+            SuggestedQuestion(
+                group=group,
+                question_vi=_safe(str(question_vi)),
+                reason_vi=_safe(str(reason_vi)),
+            )
+        )
+
+    await run_in_threadpool(
+        _record,
         db,
         doctor_user_id=doctor_user_id,
         patient_id=patient_id,
@@ -571,7 +1143,9 @@ async def get_questions(
 
     return ClinicalQuestionsOut(
         questions=questions,
-        confidence="high" if questions else "low",
+        confidence=confidence,
+        missing_data=missing_data,
+        confidence_note_vi=confidence_note_vi,
         disclaimer=DISCLAIMER_VI,
     )
 
@@ -589,16 +1163,46 @@ async def get_advice(
     consultation_id: str | None = None,
     chief_complaint: str | None = None,
 ) -> ClinicalAdviceOut:
-    findings = list_insights(db, patient_id=patient_id, abnormal_only=True)
-    conditions, allergies = _conditions_and_allergies(db, patient_id)
-    medications = _medications(db, patient_id)
-    context_text = _findings_context_text(
-        conditions=conditions,
-        allergies=allergies,
-        medications=medications,
-        findings=findings,
-        chief_complaint=chief_complaint,
+    def _fetch_context() -> tuple[list[MissingDataItem], ConfidenceLevel, str | None, str]:
+        """ALL blocking DB reads for this request, gathered synchronously in one
+        threadpool hop."""
+        findings = list_insights(db, patient_id=patient_id, abnormal_only=True)
+        profile = _load_profile(db, patient_id)
+        conditions, allergies = _conditions_and_allergies(profile)
+        medication_records = _medication_records(db, patient_id)
+        medications = _medication_briefs(medication_records)
+        lab_rows = _lab_rows(db, patient_id)
+        metric_rows = _metric_rows(db, patient_id)
+
+        has_lab, has_metric, has_stale, has_contradiction = _completeness_signals(
+            db, patient_id=patient_id, lab_rows=lab_rows, metric_rows=metric_rows
+        )
+        missing_data, confidence, confidence_note_vi = _assess_completeness(
+            conditions=conditions,
+            allergies=allergies,
+            medication_records=medication_records,
+            chief_complaint=chief_complaint,
+            consultation_id=consultation_id,
+            demographics_present=profile is not None,
+            has_lab_data=has_lab,
+            has_metric_data=has_metric,
+            has_stale=has_stale,
+            has_contradiction=has_contradiction,
+        )
+
+        context_text = _findings_context_text(
+            conditions=conditions,
+            allergies=allergies,
+            medications=medications,
+            findings=findings,
+            chief_complaint=chief_complaint,
+        )
+        return missing_data, confidence, confidence_note_vi, context_text
+
+    missing_data, confidence, confidence_note_vi, context_text = await run_in_threadpool(
+        _fetch_context
     )
+
     system_prompt = (
         "Bạn là Meto Clinical Copilot, gợi ý hướng tư vấn cho BÁC SĨ dùng khi giải "
         "thích cho bệnh nhân — không đưa ra chẩn đoán cuối cùng, không kê đơn thuốc. "
@@ -617,7 +1221,8 @@ async def get_advice(
             patient_id,
             exc,
         )
-        _record(
+        await run_in_threadpool(
+            _record,
             db,
             doctor_user_id=doctor_user_id,
             patient_id=patient_id,
@@ -628,18 +1233,30 @@ async def get_advice(
         raise CopilotUnavailable(UNAVAILABLE_MESSAGE_VI) from exc
 
     parsed = _parse_llm_json(raw, ("items",))
-    items: list[AdviceItem] = []
-    if parsed is not None:
-        for item in parsed.get("items", [])[:_MAX_ITEMS]:
-            if not isinstance(item, dict):
-                continue
-            category = item.get("category")
-            text_vi = item.get("text_vi")
-            if category not in _ADVICE_CATEGORIES or not text_vi:
-                continue
-            items.append(AdviceItem(category=category, text_vi=_safe(str(text_vi))))
+    if parsed is None:
+        await run_in_threadpool(
+            _record,
+            db,
+            doctor_user_id=doctor_user_id,
+            patient_id=patient_id,
+            action="ai_clinical_advice.malformed",
+            outcome="failed",
+            severity="warning",
+        )
+        raise CopilotMalformedOutput(UNAVAILABLE_MESSAGE_VI)
 
-    _record(
+    items: list[AdviceItem] = []
+    for item in parsed.get("items", [])[:_MAX_ITEMS]:
+        if not isinstance(item, dict):
+            continue
+        category = item.get("category")
+        text_vi = item.get("text_vi")
+        if category not in _ADVICE_CATEGORIES or not text_vi:
+            continue
+        items.append(AdviceItem(category=category, text_vi=_safe(str(text_vi))))
+
+    await run_in_threadpool(
+        _record,
         db,
         doctor_user_id=doctor_user_id,
         patient_id=patient_id,
@@ -650,6 +1267,8 @@ async def get_advice(
 
     return ClinicalAdviceOut(
         items=items,
-        confidence="high" if items else "low",
+        confidence=confidence,
+        missing_data=missing_data,
+        confidence_note_vi=confidence_note_vi,
         disclaimer=DISCLAIMER_VI,
     )

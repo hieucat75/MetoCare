@@ -519,7 +519,7 @@ export default function PatientDetailPage() {
 
         {/* Patient-scoped clinical copilot (collapsible; disabled shell in P0) */}
         <div className="mt-6">
-          <ClinicalCopilotPanel scope={{ patientId }} />
+          <ClinicalCopilotPanel key={patientId} scope={{ patientId }} />
         </div>
       </div>
     </div>
