@@ -30,7 +30,9 @@ class RegisterRequest(BaseModel):
     # (e.g. admin-provisioned / legacy). Exactly one identifier is required.
     email: EmailStr | None = None
     phone: str | None = None
-    password: str = Field(min_length=8)
+    # Build/test phase policy: passwords are only required to be >=6 chars
+    # (no complexity rules).
+    password: str = Field(min_length=6)
     full_name: str | None = None
     # Self-service registration is patient-only; elevated roles are provisioned
     # by an admin (not via this public endpoint).
@@ -117,7 +119,7 @@ class UserOut(BaseModel):
 
 class ChangePasswordRequest(BaseModel):
     current_password: str
-    new_password: str = Field(min_length=8)
+    new_password: str = Field(min_length=6)
 
 
 class AccountUpdateRequest(BaseModel):

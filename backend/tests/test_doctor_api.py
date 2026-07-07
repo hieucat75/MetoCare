@@ -528,6 +528,25 @@ class TestAdminCreateDoctor:
         )
         assert r.status_code == 422
 
+    def test_six_char_simple_password_is_valid(self, client):
+        # Build/test phase policy: >=6 chars, no complexity requirements.
+        payload = {**self._payload("pw6"), "password": "doctor"}
+        r = client.post(
+            "/api/v1/admin/doctors",
+            json=payload,
+            headers=_super_admin_token("sa-pw6"),
+        )
+        assert r.status_code == 201, r.text
+
+    def test_five_char_password_returns_422(self, client):
+        payload = {**self._payload("pw5"), "password": "12345"}
+        r = client.post(
+            "/api/v1/admin/doctors",
+            json=payload,
+            headers=_super_admin_token("sa-pw5"),
+        )
+        assert r.status_code == 422
+
     def test_overlong_email_returns_422(self, client):
         # Must be rejected at the schema boundary, before the 255-char DB column.
         payload = {**self._payload("long-email"), "email": f"{'a' * 250}@example.com"}

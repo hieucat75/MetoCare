@@ -20,7 +20,7 @@ export interface DoctorVerificationOut {
 /** Payload for creating a doctor account (`POST /api/v1/admin/doctors`). */
 export interface DoctorCreateIn {
   email: string
-  /** Backend enforces a minimum length of 12 characters. */
+  /** Backend enforces a minimum length of 6 characters (build/test phase policy). */
   password: string
   full_name: string
   specialty?: string | null

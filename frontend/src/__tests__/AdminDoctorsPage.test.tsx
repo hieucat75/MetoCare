@@ -87,16 +87,16 @@ test('creates a doctor and shows a success banner', async () => {
   expect(screen.getByText(/BS Trần Thị Mới/)).toBeInTheDocument()
 })
 
-test('rejects a password shorter than 12 characters without calling the API', async () => {
+test('rejects a password shorter than 6 characters without calling the API', async () => {
   const user = userEvent.setup()
   render(<AdminDoctorsPage />)
   await screen.findByText('BS Lê Văn B')
 
   await openCreateModal(user)
-  await fillRequiredFields(user, 'short')
+  await fillRequiredFields(user, '12345')
   await user.click(screen.getByRole('button', { name: 'Tạo bác sĩ' }))
 
-  expect(await screen.findByText('Mật khẩu phải có ít nhất 12 ký tự.')).toBeInTheDocument()
+  expect(await screen.findByText('Mật khẩu phải có ít nhất 6 ký tự.')).toBeInTheDocument()
   expect(mockedCreate).not.toHaveBeenCalled()
 })
 
@@ -113,4 +113,27 @@ test('shows a friendly message when the email is already registered', async () =
   expect(
     await screen.findByText('Email này đã được đăng ký. Vui lòng dùng email khác.')
   ).toBeInTheDocument()
+})
+
+test('accepts a simple 6-character password (build/test phase policy)', async () => {
+  mockedCreate.mockResolvedValue({
+    user_id: 'u10',
+    doctor_id: 'd10',
+    email: 'new-dr@hospital.vn',
+    full_name: 'BS Trần Thị Mới',
+    role: 'doctor',
+    is_active: true,
+    mfa_enabled: false,
+  })
+  const user = userEvent.setup()
+  render(<AdminDoctorsPage />)
+  await screen.findByText('BS Lê Văn B')
+
+  await openCreateModal(user)
+  await fillRequiredFields(user, '123456')
+  await user.click(screen.getByRole('button', { name: 'Tạo bác sĩ' }))
+
+  await waitFor(() => {
+    expect(mockedCreate).toHaveBeenCalledWith(expect.objectContaining({ password: '123456' }))
+  })
 })

@@ -136,8 +136,8 @@ export default function SettingsPage() {
 
   async function savePassword(e: React.FormEvent) {
     e.preventDefault()
-    if (newPw.length < 8) {
-      setPwError('Mật khẩu mới tối thiểu 8 ký tự.')
+    if (newPw.length < 6) {
+      setPwError('Mật khẩu mới tối thiểu 6 ký tự.')
       return
     }
     if (newPw !== confirmPw) {
@@ -347,7 +347,7 @@ export default function SettingsPage() {
                     type="password"
                     value={newPw}
                     onChange={(e) => setNewPw(e.target.value)}
-                    placeholder="Tối thiểu 8 ký tự"
+                    placeholder="Tối thiểu 6 ký tự"
                     required
                     className={INPUT_CLASS}
                   />

@@ -117,7 +117,7 @@ export default function RegisterPage() {
     else if (!isValidVnPhone(phone))
       errs.phone = 'Số điện thoại di động không hợp lệ (VD: 0901234567)'
     if (!password) errs.password = 'Mật khẩu là bắt buộc'
-    else if (password.length < 8) errs.password = 'Mật khẩu tối thiểu 8 ký tự'
+    else if (password.length < 6) errs.password = 'Mật khẩu tối thiểu 6 ký tự.'
     return errs
   }
 
@@ -263,7 +263,7 @@ export default function RegisterPage() {
               setPassword(v)
               if (fieldErrors.password) setFieldErrors((p) => ({ ...p, password: '' }))
             }}
-            placeholder="Tối thiểu 8 ký tự"
+            placeholder="Tối thiểu 6 ký tự"
             autoComplete="new-password"
             disabled={isLoading}
             error={!!fieldErrors.password}

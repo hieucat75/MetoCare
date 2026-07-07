@@ -7,7 +7,7 @@ import { changePassword } from '@/lib/api/auth'
 import { ApiError } from '@/lib/api/client'
 import { useAuth } from '@/lib/auth/context'
 
-const MIN_PASSWORD_LENGTH = 8
+const MIN_PASSWORD_LENGTH = 6
 
 export default function AdminSettingsPage() {
   const { user } = useAuth()

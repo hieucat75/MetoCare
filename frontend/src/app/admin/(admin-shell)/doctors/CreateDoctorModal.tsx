@@ -5,7 +5,7 @@ import { Modal, Button, Alert, Input, PasswordInput, Textarea } from '@/design-s
 import { createDoctor, type DoctorAdminOut } from '@/lib/api/adminDoctors'
 import { ApiError } from '@/lib/api/client'
 
-const PASSWORD_MIN_LENGTH = 12
+const PASSWORD_MIN_LENGTH = 6
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 interface FormValues {

@@ -102,7 +102,7 @@ class UnlockRequest(BaseModel):
 class DoctorCreateRequest(BaseModel):
     # max_length guards the users.email VARCHAR(255) column before the DB does.
     email: EmailStr = Field(max_length=255)
-    password: str = Field(min_length=12)
+    password: str = Field(min_length=6)
     full_name: str = Field(min_length=1, max_length=255)
     specialty: str | None = None
     license_no: str | None = None

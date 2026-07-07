@@ -588,7 +588,7 @@ function FormsSection() {
             <PasswordInput
               label="Mật khẩu"
               placeholder="Nhập mật khẩu..."
-              hint="Tối thiểu 8 ký tự, bao gồm chữ hoa và số"
+              hint="Mật khẩu tối thiểu 6 ký tự."
               fullWidth
             />
             <PasswordInput
