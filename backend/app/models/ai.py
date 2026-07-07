@@ -38,7 +38,11 @@ class AISession(UUIDPrimaryKey, TimestampMixin, SoftDeleteMixin, Base):
     )
     # health_assistant / lifestyle_coach / lab_explanation / triage
     session_type: Mapped[str] = mapped_column(String(64), nullable=False)
-    messages: Mapped[str | None] = mapped_column(EncryptedString)  # PHI: encrypted json transcript
+    # Nullable (not every session persists a transcript) — a failed decrypt
+    # falls back to None rather than raising.
+    messages: Mapped[str | None] = mapped_column(
+        EncryptedString(on_decrypt_failure="none")
+    )  # PHI: encrypted json transcript
     key_version: Mapped[int | None] = mapped_column(Integer, default=1)
     risk_level: Mapped[str | None] = mapped_column(String(16))  # low / moderate / high / critical
     escalated_to_doctor: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -82,7 +86,10 @@ class AIClinicalRecommendation(UUIDPrimaryKey, TimestampMixin, SoftDeleteMixin, 
     )
     # lab_interpretation / care_plan_draft / lifestyle_advice / triage_assessment / metabolic_score
     recommendation_type: Mapped[str] = mapped_column(String(64), nullable=False)
-    content: Mapped[str | None] = mapped_column(EncryptedString)  # PHI: encrypted content
+    # Nullable — a failed decrypt falls back to None rather than raising.
+    content: Mapped[str | None] = mapped_column(
+        EncryptedString(on_decrypt_failure="none")
+    )  # PHI: encrypted content
     key_version: Mapped[int | None] = mapped_column(Integer, default=1)
     status: Mapped[str] = mapped_column(
         String(32), default=RecommendationStatus.PENDING_REVIEW, nullable=False

@@ -19,6 +19,8 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import logging
+import re
 from functools import lru_cache
 
 from cryptography.fernet import Fernet, InvalidToken, MultiFernet
@@ -27,9 +29,29 @@ from sqlalchemy.types import TypeDecorator
 
 from .config import get_settings
 
+logger = logging.getLogger(__name__)
+
+# Fernet tokens are URL-safe base64 whose first byte is the version marker 0x80,
+# which always serializes to the "gAAAA" prefix. Real names/emails never match.
+_FERNET_TOKEN_RE = re.compile(r"^gAAAA[A-Za-z0-9_-]+={0,2}$")
+
+# Safety bound when unwrapping values that were encrypted more than once
+# (e.g. a foreign-key ciphertext later re-encrypted by the PHI migration job).
+_MAX_DECRYPT_DEPTH = 3
+
 
 class EncryptionConfigError(RuntimeError):
     """Raised when no usable encryption key is configured."""
+
+
+class UndecryptablePHIError(RuntimeError):
+    """Raised when a required (non-nullable / business-critical) PHI field
+    cannot be decrypted with any configured key.
+
+    Callers must catch this at the API boundary (see the FastAPI exception
+    handler in app.main) and return a controlled domain error — never let a
+    `None` silently take the place of a required field's value.
+    """
 
 
 @lru_cache
@@ -61,6 +83,16 @@ def try_decrypt(token: str) -> str | None:
         return None
 
 
+def is_fernet_token(value: str | None) -> bool:
+    """True if the value is shaped like a Fernet token (decryptable or not).
+
+    Used to tell "legacy plaintext" apart from "ciphertext we cannot decrypt"
+    (unknown key). Plaintext PHI (names, emails, notes) never matches the
+    gAAAA-prefixed base64 shape.
+    """
+    return bool(value) and len(value) >= 60 and _FERNET_TOKEN_RE.fullmatch(value) is not None
+
+
 def rotate(token: str) -> str:
     """Re-encrypt a token with the primary key (for key-rotation jobs)."""
     return _cipher().rotate(token.encode()).decode()
@@ -82,10 +114,34 @@ def blind_index(value: str) -> str:
 
 
 class EncryptedString(TypeDecorator):
-    """TEXT column whose Python value is plaintext but storage is ciphertext."""
+    """TEXT column whose Python value is plaintext but storage is ciphertext.
+
+    ``on_decrypt_failure`` controls what happens when ciphertext cannot be
+    decrypted with any configured key (corrupt row / wrong key / foreign
+    ciphertext written by another process):
+
+    - ``"none"``  (default) — return ``None``. Only safe for optional,
+      display-only fields (e.g. ``User.full_name``) where the caller/schema
+      already tolerates a missing value and a blank display is not dangerous.
+    - ``"raise"`` — raise ``UndecryptablePHIError``. Required for non-nullable
+      columns (a silent ``None`` would violate the NOT NULL contract and can
+      crash response serialization) and for any field where a silently
+      missing value could be clinically or securely dangerous.
+
+    Every column using this type must set this explicitly (see model files)
+    rather than relying on the default, so the choice is auditable per field.
+    """
 
     impl = Text
     cache_ok = True
+
+    def __init__(self, *args, on_decrypt_failure: str = "none", **kwargs):
+        super().__init__(*args, **kwargs)
+        if on_decrypt_failure not in ("none", "raise"):
+            raise ValueError(
+                f"on_decrypt_failure must be 'none' or 'raise', got {on_decrypt_failure!r}"
+            )
+        self.on_decrypt_failure = on_decrypt_failure
 
     def process_bind_param(self, value, dialect):
         if value is None:
@@ -95,5 +151,30 @@ class EncryptedString(TypeDecorator):
     def process_result_value(self, value, dialect):
         if value is None:
             return None
+        # Unwrap nested encryption: a row written with ciphertext already in it
+        # (e.g. re-encrypted by the PHI migration job) decrypts back to a token,
+        # so keep decrypting until we reach a non-token value.
+        current = value
+        for _ in range(_MAX_DECRYPT_DEPTH):
+            decrypted = try_decrypt(current)
+            if decrypted is None:
+                break
+            current = decrypted
+            if not is_fernet_token(current):
+                return current
+        if is_fernet_token(current):
+            # Undecryptable ciphertext (unknown key). Never surface raw tokens
+            # to callers/UI — treat the value as unavailable, or raise for
+            # fields where that would be a dangerous silent failure. Message
+            # deliberately omits the value itself (no plaintext/ciphertext in logs).
+            logger.warning(
+                "EncryptedString: undecryptable ciphertext (on_decrypt_failure=%s)",
+                self.on_decrypt_failure,
+            )
+            if self.on_decrypt_failure == "raise":
+                raise UndecryptablePHIError(
+                    "A required encrypted field could not be decrypted."
+                )
+            return None
         # Tolerate legacy plaintext rows (pre-encryption) by returning as-is.
-        return try_decrypt(value) or value
+        return current

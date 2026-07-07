@@ -116,3 +116,20 @@ def token_for():
 @pytest.fixture
 def client():
     return TestClient(app)
+
+
+@pytest.fixture
+def mfa_enforced(monkeypatch):
+    """Turn MFA enforcement ON for one test (default is OFF — relaxed policy).
+
+    get_settings() is lru_cached, so the cache must be cleared around the env
+    override. Teardown clears it again; the next get_settings() call after
+    monkeypatch undoes the env var rebuilds the default (enforcement-off)
+    settings.
+    """
+    from app.core.config import get_settings
+
+    monkeypatch.setenv("MCP_MFA_ENFORCEMENT_ENABLED", "true")
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()

@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import datetime as dt
+from typing import Literal
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
+from app.core.crypto import is_fernet_token
 from app.models.user import UserRole
 
 # ---------------------------------------------------------------------------
@@ -25,6 +27,12 @@ class UserAdminOut(BaseModel):
     created_at: dt.datetime | None = None
 
     model_config = {"from_attributes": True}
+
+    @field_validator("full_name", mode="after")
+    @classmethod
+    def _never_expose_ciphertext(cls, v: str | None) -> str | None:
+        # Defense in depth: never leak Fernet tokens from corrupt rows.
+        return None if is_fernet_token(v) else v
 
 
 class UserStatusUpdate(BaseModel):
@@ -139,3 +147,36 @@ class AdminStatsOut(BaseModel):
     pending_reviews: int
     flagged_ai_sessions: int
     audit_events_today: int
+
+
+# ---------------------------------------------------------------------------
+# AI safety monitoring (/admin/ai-sessions — matches frontend AiSession)
+# ---------------------------------------------------------------------------
+
+AiSafetyLevel = Literal["safe", "caution", "urgent"]
+AiSessionFlag = Literal[
+    "none", "urgent_response", "off_topic", "clinical_claim", "review_requested"
+]
+
+
+class AdminAiSessionOut(BaseModel):
+    id: str
+    patient_id: str
+    patient_name: str | None
+    explanation_type: str
+    safety_level: AiSafetyLevel
+    flag: AiSessionFlag
+    created_at: dt.datetime
+    reviewed_by: str | None = None
+    reviewed_at: dt.datetime | None = None
+
+    @field_validator("patient_name", "reviewed_by", mode="after")
+    @classmethod
+    def _never_expose_ciphertext(cls, v: str | None) -> str | None:
+        return None if is_fernet_token(v) else v
+
+
+class AdminAiSessionListResponse(BaseModel):
+    total: int
+    flagged_count: int
+    items: list[AdminAiSessionOut]
