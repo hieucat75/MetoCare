@@ -78,8 +78,9 @@ class LabDocument(UUIDPrimaryKey, TimestampMixin, Base):
     storage_key: Mapped[str] = mapped_column(String(512), nullable=False)
     file_type: Mapped[str | None] = mapped_column(String(32))
     lab_name: Mapped[str | None] = mapped_column(String(255))
-    # PHI: raw OCR-extracted text encrypted at rest.
-    raw_text: Mapped[str | None] = mapped_column(EncryptedString)
+    # PHI: raw OCR-extracted text encrypted at rest. Nullable (OCR may not
+    # have run yet) — a failed decrypt falls back to None rather than raising.
+    raw_text: Mapped[str | None] = mapped_column(EncryptedString(on_decrypt_failure="none"))
     ocr_status: Mapped[str] = mapped_column(String(24), default="pending")  # pending/done/failed
     # Async pipeline state machine (P2 #3): uploaded -> ocr_pending ->
     # ocr_done|ocr_failed -> interpreted|interpretation_failed.

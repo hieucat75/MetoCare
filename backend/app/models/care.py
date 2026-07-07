@@ -149,7 +149,10 @@ class Encounter(UUIDPrimaryKey, TimestampMixin, SoftDeleteMixin, Base):
     # pending_review / in_progress / completed / cancelled
     status: Mapped[str] = mapped_column(String(32), default="pending_review", nullable=False)
     chief_complaint: Mapped[str | None] = mapped_column(Text)
-    notes: Mapped[str | None] = mapped_column(EncryptedString)  # PHI: encrypted
+    # Nullable — a failed decrypt falls back to None rather than raising.
+    notes: Mapped[str | None] = mapped_column(
+        EncryptedString(on_decrypt_failure="none")
+    )  # PHI: encrypted
     encounter_date: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=dt.datetime.utcnow
     )
@@ -174,7 +177,10 @@ class CarePlan(UUIDPrimaryKey, TimestampMixin, SoftDeleteMixin, Base):
         ForeignKey("encounters.id"), index=True, nullable=True
     )
     title: Mapped[str] = mapped_column(String(255), nullable=False)
-    content: Mapped[str | None] = mapped_column(EncryptedString)  # PHI: encrypted content
+    # Nullable — a failed decrypt falls back to None rather than raising.
+    content: Mapped[str | None] = mapped_column(
+        EncryptedString(on_decrypt_failure="none")
+    )  # PHI: encrypted content
     status: Mapped[str] = mapped_column(String(32), default=CarePlanStatus.DRAFT, nullable=False)
     approved_by_doctor_id: Mapped[str | None] = mapped_column(
         ForeignKey("doctors.id"), index=True, nullable=True
@@ -267,6 +273,27 @@ class CarePlan(UUIDPrimaryKey, TimestampMixin, SoftDeleteMixin, Base):
         )
 
 
+class DoctorReviewDecision(UUIDPrimaryKey, TimestampMixin, Base):
+    """Encrypted store for a doctor's review decision + free-text notes.
+
+    The unified doctor-portal review flow (``services.doctor_portal``) records
+    the domain action (lab verified / care plan approved / AI rec accepted) in
+    the PHI-FREE ``AuditLog``. The reviewer's ``comment`` and ``internal_note``
+    can contain PHI, so — per AuditLog's contract ("never stores sensitive
+    content") — they are persisted here instead, encrypted at rest.
+    """
+
+    __tablename__ = "doctor_review_decisions"
+
+    item_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    item_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    patient_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    doctor_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    decision: Mapped[str] = mapped_column(String(16), nullable=False)
+    comment: Mapped[str | None] = mapped_column(EncryptedString)  # PHI: encrypted
+    internal_note: Mapped[str | None] = mapped_column(EncryptedString)  # PHI: encrypted
+
+
 class BookingHealthSnapshot(UUIDPrimaryKey, Base):
     """Step 4: BookingHealthSnapshot model (append-only)."""
 
@@ -278,7 +305,12 @@ class BookingHealthSnapshot(UUIDPrimaryKey, Base):
     patient_id: Mapped[str] = mapped_column(
         ForeignKey("patient_profiles.id"), index=True, nullable=False
     )
-    payload: Mapped[str] = mapped_column(EncryptedString, nullable=False)  # PHI: encrypted snapshot
+    # Non-nullable — a failed decrypt must raise (never silently become None
+    # in a `str` field, which would violate the NOT NULL contract and crash
+    # response serialization).
+    payload: Mapped[str] = mapped_column(
+        EncryptedString(on_decrypt_failure="raise"), nullable=False
+    )  # PHI: encrypted snapshot
     created_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), default=dt.datetime.utcnow, nullable=False
     )

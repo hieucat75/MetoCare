@@ -44,7 +44,10 @@ class MfaEnrollmentMiddleware(BaseHTTPMiddleware):
             if payload and payload.get("mfa_enrollment_required"):
                 from app.core.config import get_settings as _gs
 
-                if _gs().skip_mfa_in_dev:
+                # Pass through when MFA enforcement is disabled (temporary
+                # relaxed policy) — also covers tokens minted before the flag
+                # was turned off that still carry the enrollment claim.
+                if _gs().skip_mfa_in_dev or not _gs().mfa_enforcement_enabled:
                     return await call_next(request)
                 path = request.url.path
                 if path not in _ENROLL_ALLOW_EXACT and not path.endswith(_ENROLL_ALLOW_SUFFIXES):
