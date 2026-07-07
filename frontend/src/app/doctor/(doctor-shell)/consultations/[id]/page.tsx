@@ -51,6 +51,7 @@ import {
   type NoteOut,
   type PatientSummaryOut,
 } from '@/lib/api/consultations'
+import { ClinicalCopilotPanel } from '@/components/doctor/clinical-copilot/ClinicalCopilotPanel'
 
 const TYPE_LABELS: Record<string, string> = {
   CHAT: 'Nhắn tin',
@@ -326,6 +327,12 @@ export default function DoctorConsultationDetailPage() {
 
       {/* ── Clinical notes (append-only) ── */}
       <NotesPanel consultationId={id} status={status} />
+
+      {/* ── Meto clinical copilot (patient-scoped decision support) ── */}
+      <ClinicalCopilotPanel
+        key={JSON.stringify([c.patient_id, id])}
+        scope={{ patientId: c.patient_id, consultationId: id }}
+      />
 
       <MarketplaceDisclaimer />
     </div>

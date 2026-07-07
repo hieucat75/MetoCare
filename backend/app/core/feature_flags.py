@@ -29,6 +29,9 @@ class FeatureFlag(enum.StrEnum):
     # PA-11: Clinical Insight Engine — rules-first patient guidance.
     CLINICAL_INSIGHT = "clinical_insight"  # Gates insight + health-summary endpoints
     CLINICAL_INSIGHT_AI = "clinical_insight_ai"  # Gates OPTIONAL LLM rephrasing of rules text
+    # Meto Clinical Copilot: doctor-facing AI decision-support (calls a real LLM
+    # over PHI) — default OFF (fail-closed), same precedent as AI_SESSION_ENABLED.
+    CLINICAL_COPILOT = "clinical_copilot"
 
 
 _DEFAULTS = {
@@ -50,6 +53,7 @@ _DEFAULTS = {
     # PA-11: rules-first insight is deterministic + guardrail-checked → safe ON by default.
     FeatureFlag.CLINICAL_INSIGHT: True,
     FeatureFlag.CLINICAL_INSIGHT_AI: False,  # LLM rephrasing OFF in v1 (rules-only)
+    FeatureFlag.CLINICAL_COPILOT: False,  # fail-closed — calls a real LLM over PHI
 }
 
 

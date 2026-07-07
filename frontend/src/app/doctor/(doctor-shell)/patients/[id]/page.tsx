@@ -37,7 +37,7 @@ import {
 } from '@/lib/api/doctor'
 import { ApiError } from '@/lib/api/client'
 import { formatRelativeTime } from '@/lib/utils'
-import { DoctorAssistantPanel } from './DoctorAssistantPanel'
+import { ClinicalCopilotPanel } from '@/components/doctor/clinical-copilot/ClinicalCopilotPanel'
 
 const NO_CONSENT_MESSAGE = 'Chưa có quyền xem hồ sơ bệnh nhân này (cần bệnh nhân cấp quyền).'
 
@@ -517,9 +517,9 @@ export default function PatientDetailPage() {
           </TabsContent>
         </Tabs>
 
-        {/* Patient-scoped AI assistant (collapsible; disabled shell in P0) */}
+        {/* Patient-scoped clinical copilot (collapsible; disabled shell in P0) */}
         <div className="mt-6">
-          <DoctorAssistantPanel patientId={patientId} />
+          <ClinicalCopilotPanel key={patientId} scope={{ patientId }} />
         </div>
       </div>
     </div>

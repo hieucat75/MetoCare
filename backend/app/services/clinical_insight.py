@@ -272,11 +272,15 @@ def _retest_phrase(weeks: int) -> str:
     return f"Xét nghiệm/đo lại sau khoảng {weeks} tuần."
 
 
-def _group_key(metric_type: str) -> str:
+def canonical_metric_key(metric_type: str) -> str:
     """Identity key for grouping a metric's history. Canonicalises TRUE lab
     aliases (glucose→fasting_glucose, ldl_c→ldl) so they form one trend, but
     keeps distinct measurements distinct — notably systolic vs diastolic blood
-    pressure, which share content/label but must never share a trend."""
+    pressure, which share content/label but must never share a trend.
+
+    Public (no leading underscore): shared with ``app.services.clinical_copilot``
+    so both modules use the exact same alias-folding identity for a metric_type
+    — never duplicate this table/logic in the copilot module."""
     raw = (metric_type or "").strip().lower()
     canon = _canonical(raw)
     if canon:
@@ -287,6 +291,11 @@ def _group_key(metric_type: str) -> str:
     if aliased and aliased != "blood_pressure":
         return aliased
     return raw
+
+
+# Backward-compat alias — some existing tests/call sites reference the original
+# private name directly. The implementation lives in exactly one place above.
+_group_key = canonical_metric_key
 
 
 def _label(metric_type: str) -> str:
@@ -312,7 +321,7 @@ def _history(db: Session, patient_id: str) -> dict[str, list[HealthMetric]]:
     )
     by_type: dict[str, list[HealthMetric]] = {}
     for r in rows:
-        by_type.setdefault(_group_key(r.metric_type), []).append(r)  # newest-first
+        by_type.setdefault(canonical_metric_key(r.metric_type), []).append(r)  # newest-first
     return by_type
 
 
@@ -373,7 +382,7 @@ def list_insights(
 
 def get_insight(db: Session, *, patient_id: str, metric_type: str) -> MetricInsight | None:
     """Single-metric insight for the detail card (returns even when normal)."""
-    key = _group_key(metric_type)
+    key = canonical_metric_key(metric_type)
     rows = _history(db, patient_id).get(key)
     if not rows:
         return None
