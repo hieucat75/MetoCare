@@ -13,6 +13,7 @@ import {
   ErrorState,
   CardSkeleton,
 } from '@/design-system'
+import { ApiError } from '@/lib/api/client'
 import {
   getAiSessions,
   reviewAiSession,
@@ -20,6 +21,19 @@ import {
   type AiSafetyLevel,
   type AiSessionFlag,
 } from '@/lib/api/admin'
+
+// ---------------------------------------------------------------------------
+// Review error messages
+// ---------------------------------------------------------------------------
+
+function getReviewErrorMessage(err: unknown): string {
+  if (err instanceof ApiError) {
+    if (err.status === 401) return 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.'
+    if (err.status === 403) return 'Bạn không có quyền đánh dấu phiên này đã xem xét.'
+    if (err.status === 404) return 'Phiên AI này không còn tồn tại.'
+  }
+  return 'Không thể cập nhật trạng thái xem xét. Vui lòng thử lại.'
+}
 
 // ---------------------------------------------------------------------------
 // Safety level config
@@ -106,14 +120,19 @@ interface SessionCardProps {
 
 function AiSessionCard({ session, onReviewed }: SessionCardProps) {
   const [reviewing, setReviewing] = React.useState(false)
+  const [reviewError, setReviewError] = React.useState<string | null>(null)
 
   const handleReview = async () => {
     setReviewing(true)
+    setReviewError(null)
     try {
       const updated = await reviewAiSession(session.id)
       onReviewed(updated)
-    } catch {
-      // silently ignore — badge stays unreviewed
+    } catch (err) {
+      // Surface the failure — do not silently leave the admin thinking the
+      // click did nothing. The row's own state is untouched since onReviewed
+      // is only called on success.
+      setReviewError(getReviewErrorMessage(err))
     } finally {
       setReviewing(false)
     }
@@ -169,6 +188,18 @@ function AiSessionCard({ session, onReviewed }: SessionCardProps) {
           </Button>
         )}
       </div>
+
+      {/* Review error — dismissible; row state is untouched, retry re-tries the same click */}
+      {reviewError && !isReviewed && (
+        <Alert
+          variant="danger"
+          dismissible
+          onDismiss={() => setReviewError(null)}
+          className="py-2 px-3"
+        >
+          <span className="text-body-xs">{reviewError}</span>
+        </Alert>
+      )}
     </Card>
   )
 }
@@ -260,10 +291,10 @@ export default function AiSafetyPage() {
         <EmptyState
           title={
             activeTab === 'needs_review'
-              ? 'Không có phiên nào cần xem xét'
+              ? 'Chưa có phiên cần xem xét'
               : activeTab === 'urgent'
-                ? 'Không có phiên khẩn cấp nào'
-                : 'Không có phiên AI nào'
+                ? 'Chưa có phiên khẩn cấp'
+                : 'Chưa có phiên AI nào'
           }
           description="Tất cả các phiên đã được xem xét hoặc không có dữ liệu."
           size="md"

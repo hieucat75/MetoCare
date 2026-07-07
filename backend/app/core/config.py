@@ -141,6 +141,15 @@ class Settings(BaseSettings):
     # MUST be false (default) in production.
     skip_mfa_in_dev: bool = False
 
+    # Temporary relaxed authentication policy for the build/test phase.
+    # MFA enforcement is OFF by default (development/staging): no role is
+    # forced to enroll, no mfa_enrollment_required claim/redirect, and the
+    # require_mfa endpoint gates are no-ops. Set
+    # MCP_MFA_ENFORCEMENT_ENABLED=true to restore mandatory MFA for the roles
+    # in MFA_REQUIRED_ROLES. The MFA enroll/verify/TOTP APIs and DB fields
+    # stay fully functional either way (voluntary MFA keeps working).
+    mfa_enforcement_enabled: bool = False
+
     # ---- Observability ----
     log_level: str = "INFO"
     metrics_enabled: bool = True  # exposes /metrics; disable on untrusted edges

@@ -109,7 +109,15 @@ def require_roles(*roles: UserRole) -> Callable[[CurrentUser], CurrentUser]:
 
 
 def require_mfa(user: CurrentUser = Depends(current_user)) -> CurrentUser:
-    """Require the session to have been MFA-verified (token claim mfa=true)."""
+    """Require the session to have been MFA-verified (token claim mfa=true).
+
+    No-op while MFA enforcement is disabled (Settings.mfa_enforcement_enabled,
+    default false — temporary relaxed policy for the build/test phase). The
+    gate stays wired on every sensitive endpoint so setting
+    MCP_MFA_ENFORCEMENT_ENABLED=true restores the mandatory-MFA policy.
+    """
+    if not get_settings().mfa_enforcement_enabled:
+        return user
     if not user.mfa:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

@@ -136,8 +136,19 @@ export async function mfaVerify(totpCode: string): Promise<{ message: string }> 
 }
 
 /**
- * Roles for which MFA is mandatory (mirrors backend MFA_REQUIRED_ROLES).
- * Doctors are exempt — forced enrollment blocked sales-led onboarding.
+ * Temporary relaxed authentication policy for the build/test phase:
+ * MFA enforcement is OFF unless NEXT_PUBLIC_MFA_ENFORCEMENT_ENABLED is
+ * explicitly "true" (mirrors backend MCP_MFA_ENFORCEMENT_ENABLED). While
+ * off, no role is redirected to /mfa-setup; voluntary MFA (enroll/TOTP
+ * login) keeps working.
+ */
+export const MFA_ENFORCEMENT_ENABLED =
+  process.env.NEXT_PUBLIC_MFA_ENFORCEMENT_ENABLED === 'true'
+
+/**
+ * Roles for which MFA is mandatory when enforcement is enabled (mirrors
+ * backend MFA_REQUIRED_ROLES). Doctors are exempt — forced enrollment
+ * blocked sales-led onboarding.
  */
 export const MFA_REQUIRED_ROLES: readonly UserRole[] = [
   'medical_reviewer',
@@ -149,12 +160,14 @@ export const MFA_REQUIRED_ROLES: readonly UserRole[] = [
 /**
  * True when a user must complete MFA enrollment before reaching protected
  * resources: their role mandates MFA but they have not enabled it yet.
+ * Always false while MFA enforcement is disabled.
  *
  * `mfaEnabledOrVerified` accepts either the user's `mfa_enabled` flag (from
  * /auth/me) or a login response's `mfa` claim — both are false precisely when
  * enrollment is still due, so the same check works in either place.
  */
 export function needsMfaEnrollment(role: UserRole, mfaEnabledOrVerified: boolean): boolean {
+  if (!MFA_ENFORCEMENT_ENABLED) return false
   return MFA_REQUIRED_ROLES.includes(role) && !mfaEnabledOrVerified
 }
 

@@ -166,7 +166,12 @@ class ConsultationNote(UUIDPrimaryKey, TimestampMixin, Base):
         ForeignKey("consultations.id"), index=True, nullable=False
     )
     doctor_id: Mapped[str] = mapped_column(ForeignKey("doctors.id"), index=True, nullable=False)
-    content: Mapped[str] = mapped_column(EncryptedString, nullable=False)  # PHI: encrypted
+    # Non-nullable — a failed decrypt must raise (never silently become None
+    # in a `str` field, which would violate the NOT NULL contract and crash
+    # response serialization). Explicit example from the security review.
+    content: Mapped[str] = mapped_column(
+        EncryptedString(on_decrypt_failure="raise"), nullable=False
+    )  # PHI: encrypted
     note_type: Mapped[str] = mapped_column(String(32), default="recommendation", nullable=False)
 
 

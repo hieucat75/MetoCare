@@ -81,6 +81,66 @@ def test_sqlite_upgrade_downgrade_roundtrip(tmp_path):
     assert remaining <= {"alembic_version"}, f"tables left after downgrade: {remaining}"
 
 
+def _sqlite_fk_list(path: pathlib.Path, table: str) -> list[tuple]:
+    con = sqlite3.connect(path)
+    try:
+        return list(con.execute(f"PRAGMA foreign_key_list({table})"))
+    finally:
+        con.close()
+
+
+def _sqlite_index_names(path: pathlib.Path, table: str) -> set[str]:
+    con = sqlite3.connect(path)
+    try:
+        return {r[1] for r in con.execute(f"PRAGMA index_list({table})")}
+    finally:
+        con.close()
+
+
+def _sqlite_columns(path: pathlib.Path, table: str) -> set[str]:
+    con = sqlite3.connect(path)
+    try:
+        return {r[1] for r in con.execute(f"PRAGMA table_info({table})")}
+    finally:
+        con.close()
+
+
+def test_t12_reviewed_by_user_id_fk_and_index_roundtrip(tmp_path):
+    """t12_m1: reviewed_by_user_id must be a nullable FK to users.id with
+    ON DELETE SET NULL, plus an index — and both must cleanly disappear on
+    downgrade (finding 4)."""
+    db = tmp_path / "t12_fk.sqlite3"
+    url = f"sqlite:///{db}"
+
+    up = _alembic(["upgrade", "head"], url)
+    assert up.returncode == 0, up.stderr
+
+    cols = _sqlite_columns(db, "meto_conversations")
+    assert "reviewed_at" in cols
+    assert "reviewed_by_user_id" in cols
+
+    fks = _sqlite_fk_list(db, "meto_conversations")
+    reviewer_fk = next((fk for fk in fks if fk[3] == "reviewed_by_user_id"), None)
+    assert reviewer_fk is not None, "no FK found on reviewed_by_user_id"
+    # PRAGMA foreign_key_list columns: (id, seq, table, from, to, on_update, on_delete, match)
+    assert reviewer_fk[2] == "users"
+    assert reviewer_fk[4] == "id"
+    assert reviewer_fk[6] == "SET NULL"
+
+    index_names = _sqlite_index_names(db, "meto_conversations")
+    assert "ix_meto_conversations_reviewed_by_user_id" in index_names
+
+    down = _alembic(["downgrade", "t11_m1_health_metric_original"], url)
+    assert down.returncode == 0, down.stderr
+
+    cols_after = _sqlite_columns(db, "meto_conversations")
+    assert "reviewed_at" not in cols_after
+    assert "reviewed_by_user_id" not in cols_after
+    assert "ix_meto_conversations_reviewed_by_user_id" not in _sqlite_index_names(
+        db, "meto_conversations"
+    )
+
+
 def test_migration_chain_order():
     """C5 fix: verify the migration chain has encounters BEFORE the encounter FK migration.
 
