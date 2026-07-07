@@ -267,6 +267,7 @@ def add_note(
         doctor_user_id=user.id,
         content=payload.content,
         note_type=payload.note_type,
+        status_=payload.status,
     )
     return NoteOut.model_validate(note)
 

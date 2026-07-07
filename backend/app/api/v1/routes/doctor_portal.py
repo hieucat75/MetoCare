@@ -10,6 +10,7 @@ Endpoints:
 - GET   /doctor/queue
 - PATCH /doctor/queue/{item_id}/review
 - GET   /doctor/appointments
+- GET   /doctor/notes
 
 RBAC: DOCTOR and MEDICAL_REVIEWER (patients -> 403). Patient-specific reads stay
 consent-gated regardless of role.
@@ -20,6 +21,7 @@ from __future__ import annotations
 import datetime as dt
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import CurrentUser, get_session, require_roles
@@ -38,6 +40,8 @@ from app.schemas.doctor_portal import (
     DoctorAppointment,
     DoctorAppointmentListResponse,
     DoctorAppointmentStats,
+    DoctorNoteListItem,
+    DoctorNoteListResponse,
     DoctorPatient,
     DoctorPatientListResponse,
     DoctorStats,
@@ -46,7 +50,7 @@ from app.schemas.doctor_portal import (
     ReviewDecisionPayload,
     TimelineEvent,
 )
-from app.services import doctor_portal
+from app.services import consultation_note, doctor_portal
 from app.services.doctor_portal import (
     InvalidTransition,
     NotFound,
@@ -293,4 +297,58 @@ def list_appointments(
         total=total,
         stats=DoctorAppointmentStats(**kpi),
         items=[DoctorAppointment(**item) for item in items],
+    )
+
+
+# ---------------------------------------------------------------------------
+# 7. Clinical notes
+# ---------------------------------------------------------------------------
+
+_NOTE_PREVIEW_LEN = 80
+
+
+@router.get("/notes", response_model=DoctorNoteListResponse)
+def list_doctor_notes(
+    consultation_id: str | None = Query(default=None),
+    status_filter: str | None = Query(default=None, alias="status"),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    user: CurrentUser = Depends(_portal_roles),
+    db: Session = Depends(get_session),
+) -> DoctorNoteListResponse:
+    total, items = consultation_note.list_doctor_notes(
+        db,
+        doctor_user_id=user.id,
+        consultation_id=consultation_id,
+        status_=status_filter,
+        limit=limit,
+        offset=offset,
+    )
+
+    patient_ids = {item["patient_id"] for item in items}
+    names: dict[str, str | None] = {}
+    if patient_ids:
+        rows = db.execute(
+            select(PatientProfile.id, PatientProfile.full_name).where(
+                PatientProfile.id.in_(patient_ids)
+            )
+        ).all()
+        names = dict(rows)
+
+    return DoctorNoteListResponse(
+        total=total,
+        items=[
+            DoctorNoteListItem(
+                id=item["id"],
+                consultation_id=item["consultation_id"],
+                patient_id=item["patient_id"],
+                patient_name=names.get(item["patient_id"]),
+                note_type=item["note_type"],
+                status=item["status"],
+                content_preview=item["content"][:_NOTE_PREVIEW_LEN],
+                created_at=item["created_at"].isoformat(),
+                finalized_at=item["finalized_at"].isoformat() if item["finalized_at"] else None,
+            )
+            for item in items
+        ],
     )

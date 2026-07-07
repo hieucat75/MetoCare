@@ -154,3 +154,29 @@ class DoctorAppointmentListResponse(BaseModel):
     total: int
     stats: DoctorAppointmentStats
     items: list[DoctorAppointment]
+
+
+# ---------------------------------------------------------------------------
+# 7. GET /doctor/notes
+# ---------------------------------------------------------------------------
+
+NoteStatus = Literal["draft", "finalized"]
+
+
+class DoctorNoteListItem(BaseModel):
+    id: str
+    consultation_id: str
+    patient_id: str
+    patient_name: str | None = None
+    note_type: str
+    status: NoteStatus
+    # Preview only — full content is never exposed in the list, only via the
+    # per-consultation note editor/detail read.
+    content_preview: str
+    created_at: str
+    finalized_at: str | None = None
+
+
+class DoctorNoteListResponse(BaseModel):
+    total: int
+    items: list[DoctorNoteListItem]

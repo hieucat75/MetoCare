@@ -157,7 +157,10 @@ class ConsultationNote(UUIDPrimaryKey, TimestampMixin, Base):
     """Doctor's recommendation note. PHI content is encrypted at rest.
 
     APPEND-ONLY: there is intentionally no update or delete function anywhere in
-    the codebase. A correction is a new note, never an edit.
+    the codebase. A correction is a new note, never an edit. The draft/finalize
+    workflow (``status``) follows the same rule: saving a draft again or
+    finalizing both create a brand new row — nothing about an existing row is
+    ever mutated.
     """
 
     __tablename__ = "consultation_notes"
@@ -173,6 +176,12 @@ class ConsultationNote(UUIDPrimaryKey, TimestampMixin, Base):
         EncryptedString(on_decrypt_failure="raise"), nullable=False
     )  # PHI: encrypted
     note_type: Mapped[str] = mapped_column(String(32), default="recommendation", nullable=False)
+    # 'draft' | 'finalized'. Defaults to 'finalized' — pre-draft-workflow rows
+    # and any direct "Hoàn tất" submission are complete notes, not drafts.
+    status: Mapped[str] = mapped_column(String(16), default="finalized", nullable=False)
+    finalized_at: Mapped[dt.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
 
 # ---------------------------------------------------------------------------
