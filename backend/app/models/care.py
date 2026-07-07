@@ -273,6 +273,27 @@ class CarePlan(UUIDPrimaryKey, TimestampMixin, SoftDeleteMixin, Base):
         )
 
 
+class DoctorReviewDecision(UUIDPrimaryKey, TimestampMixin, Base):
+    """Encrypted store for a doctor's review decision + free-text notes.
+
+    The unified doctor-portal review flow (``services.doctor_portal``) records
+    the domain action (lab verified / care plan approved / AI rec accepted) in
+    the PHI-FREE ``AuditLog``. The reviewer's ``comment`` and ``internal_note``
+    can contain PHI, so — per AuditLog's contract ("never stores sensitive
+    content") — they are persisted here instead, encrypted at rest.
+    """
+
+    __tablename__ = "doctor_review_decisions"
+
+    item_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    item_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    patient_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    doctor_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    decision: Mapped[str] = mapped_column(String(16), nullable=False)
+    comment: Mapped[str | None] = mapped_column(EncryptedString)  # PHI: encrypted
+    internal_note: Mapped[str | None] = mapped_column(EncryptedString)  # PHI: encrypted
+
+
 class BookingHealthSnapshot(UUIDPrimaryKey, Base):
     """Step 4: BookingHealthSnapshot model (append-only)."""
 

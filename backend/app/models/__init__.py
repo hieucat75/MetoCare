@@ -15,6 +15,7 @@ from .care import (
     Clinic,
     Doctor,
     DoctorClinic,
+    DoctorReviewDecision,
     Encounter,
 )
 from .clinical import (
@@ -78,6 +79,7 @@ __all__ = [
     "Doctor",
     "DoctorAvailability",
     "DoctorClinic",
+    "DoctorReviewDecision",
     "Encounter",
     "HealthMetric",
     "LabDocument",
