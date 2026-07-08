@@ -23,6 +23,7 @@ def record(
     severity: str = "info",
     ip_address: str | None = None,
     device: str | None = None,
+    clinic_id: str | None = None,
 ) -> AuditLog:
     entry = AuditLog(
         actor_type=actor_type,
@@ -34,6 +35,7 @@ def record(
         severity=severity,
         ip_address=ip_address,
         device=device,
+        clinic_id=clinic_id,
     )
     db.add(entry)
     db.flush()  # assign id without committing the surrounding transaction

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from sqlalchemy import DateTime, String
+from sqlalchemy import DateTime, Index, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -68,3 +68,10 @@ class AuditLog(UUIDPrimaryKey, Base):
     timestamp: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), server_default=_NOW, index=True, nullable=False
     )
+    # Clinic SaaS Phase C0 (DATA_MODEL.md §9): NULL = platform-global event.
+    # No FK constraint — mirrors `granted_to`/`resource_id`'s bare-string
+    # convention; AuditLog intentionally never references entities that might
+    # later be pruned/archived independent of the append-only log.
+    clinic_id: Mapped[str | None] = mapped_column(String(36))
+
+    __table_args__ = (Index("ix_audit_logs_clinic_timestamp", "clinic_id", "timestamp"),)

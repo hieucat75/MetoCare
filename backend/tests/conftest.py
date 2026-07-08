@@ -21,6 +21,9 @@ os.environ["MCP_OCR_MODE"] = "mock"
 os.environ["FEATURE_AI_ASSISTANT"] = "true"
 os.environ["FEATURE_OCR"] = "true"
 os.environ["FEATURE_AI_RECOMMENDATION"] = "true"
+# Clinic SaaS Phase C0: default OFF (fail-closed); tests exercising the module
+# turn it ON here, dedicated tests flip it OFF via monkeypatch for the 503 check.
+os.environ["FEATURE_CLINIC_SAAS"] = "true"
 # Drive the OCR pipeline deterministically in tests; the background worker is
 # exercised by a dedicated async test, not the shared TestClient app.
 os.environ["MCP_OCR_WORKER_ENABLED"] = "false"
@@ -37,7 +40,79 @@ from fastapi.testclient import TestClient  # noqa: E402
 @pytest.fixture(scope="session", autouse=True)
 def _setup_db():
     create_all()
+    _seed_subscription_plans()
     yield
+
+
+def _seed_subscription_plans() -> None:
+    """`create_all()` builds schema only (no data), unlike Alembic in
+    production — migration c0_m7_subscription_plan.py seeds the 4 standard
+    tiers there. Mirror that seed here so tests exercise the same "trial plan
+    always exists" invariant `create_trial_subscription()` depends on."""
+    from app.models.clinic import SubscriptionPlan
+
+    session = SessionLocal()
+    try:
+        if session.query(SubscriptionPlan).count() > 0:
+            return
+        plans = [
+            SubscriptionPlan(
+                code="trial",
+                name="Dùng thử",
+                entitlements={
+                    "max_branches": 1,
+                    "max_doctors": 2,
+                    "max_active_patients": 100,
+                    "copilot_quota_per_month": 50,
+                    "crm_automation_enabled": False,
+                    "advanced_reports_enabled": False,
+                    "api_sso_enabled": False,
+                },
+            ),
+            SubscriptionPlan(
+                code="basic",
+                name="Cơ bản",
+                entitlements={
+                    "max_branches": 1,
+                    "max_doctors": 5,
+                    "max_active_patients": 500,
+                    "copilot_quota_per_month": 200,
+                    "crm_automation_enabled": False,
+                    "advanced_reports_enabled": False,
+                    "api_sso_enabled": False,
+                },
+            ),
+            SubscriptionPlan(
+                code="professional",
+                name="Chuyên nghiệp",
+                entitlements={
+                    "max_branches": 3,
+                    "max_doctors": 20,
+                    "max_active_patients": 3000,
+                    "copilot_quota_per_month": 1000,
+                    "crm_automation_enabled": True,
+                    "advanced_reports_enabled": True,
+                    "api_sso_enabled": False,
+                },
+            ),
+            SubscriptionPlan(
+                code="enterprise",
+                name="Doanh nghiệp",
+                entitlements={
+                    "max_branches": 999,
+                    "max_doctors": 999,
+                    "max_active_patients": 999999,
+                    "copilot_quota_per_month": 999999,
+                    "crm_automation_enabled": True,
+                    "advanced_reports_enabled": True,
+                    "api_sso_enabled": True,
+                },
+            ),
+        ]
+        session.add_all(plans)
+        session.commit()
+    finally:
+        session.close()
 
 
 @pytest.fixture(autouse=True)
