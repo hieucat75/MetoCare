@@ -59,6 +59,34 @@ def create_branch(
     return branch
 
 
+def assert_branch_ids_belong_to_clinic(
+    db: Session, *, clinic_id: str, branch_ids: list[str]
+) -> None:
+    """Raise unless every id in `branch_ids` names an actual `ClinicBranch`
+    row scoped to `clinic_id`.
+
+    Closes a real gap found in Codex's PR #96 review: `create_invitation`/
+    `update_membership` (clinic_membership.py) and `create_service`/
+    `update_service` (clinic_service_catalog.py) all accepted a caller-
+    supplied `branch_ids` list and persisted it verbatim with no check that
+    those ids belong to the clinic in scope — a caller could reference
+    another clinic's branch id, silently corrupting cross-tenant references
+    that a future branch-scoped access check (C1+) would rely on.
+    """
+    if not branch_ids:
+        return
+    found = set(
+        db.execute(
+            select(ClinicBranch.id).where(
+                ClinicBranch.clinic_id == clinic_id, ClinicBranch.id.in_(branch_ids)
+            )
+        ).scalars()
+    )
+    missing = set(branch_ids) - found
+    if missing:
+        raise ClinicBranchError("Một hoặc nhiều chi nhánh không thuộc phòng khám này.")
+
+
 def get_branch(db: Session, *, clinic_id: str, branch_id: str) -> ClinicBranch | None:
     """Scoped lookup — a branch belonging to another clinic is treated as
     not-found, never returned (BOLA/IDOR guard, THREAT_MODEL.md §1/§2)."""

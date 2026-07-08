@@ -21,7 +21,7 @@ import datetime as dt
 import hashlib
 import secrets
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from app.core.clock import as_naive_utc, utcnow
@@ -33,6 +33,7 @@ from app.models.clinic import (
     ClinicRole,
 )
 from app.services import audit
+from app.services.clinic_branch import ClinicBranchError, assert_branch_ids_belong_to_clinic
 
 INVITATION_TTL_DAYS = 7
 _VALID_ROLES = frozenset(r.value for r in ClinicRole)
@@ -92,6 +93,10 @@ def create_invitation(
     if not invited_email and not invited_phone:
         raise ClinicMembershipError("Cần cung cấp email hoặc số điện thoại để mời.")
     _validate_roles(roles)
+    try:
+        assert_branch_ids_belong_to_clinic(db, clinic_id=clinic_id, branch_ids=branch_ids or [])
+    except ClinicBranchError as exc:
+        raise ClinicMembershipError(str(exc)) from exc
 
     existing = db.execute(
         select(ClinicInvitation).where(
@@ -196,8 +201,24 @@ def accept_invitation(db: Session, *, raw_token: str, accepting_user_id: str) ->
         db.commit()
         raise ClinicMembershipError("Lời mời đã hết hạn.")
 
-    invitation.status = ClinicInvitationStatus.ACCEPTED
-    invitation.accepted_by_user_id = accepting_user_id
+    # Atomic conditional accept (Codex PR #96 review, P1 finding #1): the
+    # PENDING check above is a plain SELECT and is not by itself safe under
+    # concurrency — two simultaneous callers could both read PENDING before
+    # either commits, and both create a membership from what is supposed to
+    # be a single-use token. This UPDATE only succeeds for whichever caller
+    # wins the race (rowcount == 1); the loser gets the same
+    # invalid-or-already-used error a genuinely stale token would produce.
+    result = db.execute(
+        update(ClinicInvitation)
+        .where(
+            ClinicInvitation.id == invitation.id,
+            ClinicInvitation.status == ClinicInvitationStatus.PENDING,
+        )
+        .values(status=ClinicInvitationStatus.ACCEPTED, accepted_by_user_id=accepting_user_id)
+    )
+    if result.rowcount != 1:
+        raise ClinicMembershipError("Lời mời không hợp lệ hoặc đã được sử dụng.")
+    db.refresh(invitation)
 
     membership = db.execute(
         select(ClinicMembership).where(
@@ -328,6 +349,12 @@ def update_membership(
         _validate_roles(roles)
         membership.roles = roles
     if branch_ids is not None:
+        try:
+            assert_branch_ids_belong_to_clinic(
+                db, clinic_id=membership.clinic_id, branch_ids=branch_ids
+            )
+        except ClinicBranchError as exc:
+            raise ClinicMembershipError(str(exc)) from exc
         membership.branch_ids = branch_ids
     if status_value is not None:
         membership.status = status_value
