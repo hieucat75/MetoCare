@@ -142,7 +142,7 @@ def assert_clinic_membership(
     Returns the membership row (None only for a bypassing platform admin) so
     callers can read `branch_ids`/`roles` without a second query.
     """
-    if _is_admin(role):
+    if _is_write_admin(role):
         return None
     membership = db.execute(
         select(ClinicMembership).where(
