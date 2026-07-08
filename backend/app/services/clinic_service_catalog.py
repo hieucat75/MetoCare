@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.models.clinic import ClinicService, ClinicServiceStatus
 from app.services import audit
+from app.services.clinic_branch import assert_branch_ids_belong_to_clinic
 
 
 def create_service(
@@ -26,6 +27,7 @@ def create_service(
     branch_ids: list[str] | None = None,
     package_visit_count: int | None = None,
 ) -> ClinicService:
+    assert_branch_ids_belong_to_clinic(db, clinic_id=clinic_id, branch_ids=branch_ids or [])
     service = ClinicService(
         clinic_id=clinic_id,
         name=name,
@@ -80,6 +82,10 @@ def update_service(
     db: Session, *, service: ClinicService, actor_id: str, **fields
 ) -> ClinicService:
     allowed = ("name", "price", "branch_ids", "package_visit_count", "status")
+    if fields.get("branch_ids") is not None:
+        assert_branch_ids_belong_to_clinic(
+            db, clinic_id=service.clinic_id, branch_ids=fields["branch_ids"]
+        )
     changed_price = False
     for key, value in fields.items():
         if key in allowed and value is not None:

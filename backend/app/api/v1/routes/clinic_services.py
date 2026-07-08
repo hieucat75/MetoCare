@@ -22,6 +22,7 @@ from app.schemas.clinic_service import (
 )
 from app.services import clinic as clinic_service_lookup
 from app.services import clinic_service_catalog as catalog_service
+from app.services.clinic_branch import ClinicBranchError
 
 router = APIRouter(
     prefix="/clinics/{clinic_id}/services",
@@ -49,15 +50,18 @@ def create_service(
             status_code=status.HTTP_404_NOT_FOUND, detail=_CLINIC_NOT_FOUND_DETAIL
         )
     assert_clinic_writable(clinic)
-    service = catalog_service.create_service(
-        db,
-        clinic_id=clinic_id,
-        actor_id=tenant.user_id,
-        name=payload.name,
-        price=payload.price,
-        branch_ids=payload.branch_ids,
-        package_visit_count=payload.package_visit_count,
-    )
+    try:
+        service = catalog_service.create_service(
+            db,
+            clinic_id=clinic_id,
+            actor_id=tenant.user_id,
+            name=payload.name,
+            price=payload.price,
+            branch_ids=payload.branch_ids,
+            package_visit_count=payload.package_visit_count,
+        )
+    except ClinicBranchError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     db.commit()
     return ClinicServiceOut.model_validate(service)
 
@@ -100,8 +104,11 @@ def update_service(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=_SERVICE_NOT_FOUND_DETAIL
         )
-    service = catalog_service.update_service(
-        db, service=service, actor_id=tenant.user_id, **payload.model_dump(exclude_unset=True)
-    )
+    try:
+        service = catalog_service.update_service(
+            db, service=service, actor_id=tenant.user_id, **payload.model_dump(exclude_unset=True)
+        )
+    except ClinicBranchError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     db.commit()
     return ClinicServiceOut.model_validate(service)
