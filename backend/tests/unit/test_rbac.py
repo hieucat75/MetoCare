@@ -248,6 +248,22 @@ def test_assert_clinic_membership_admin_platform_role_bypasses(db, clinic_with_m
     assert result is None
 
 
+def test_assert_clinic_membership_medical_reviewer_does_not_bypass(db, clinic_with_member):
+    """Codex PR #96 review (P2): the docstring says only INTERNAL_ADMIN/
+    SUPER_ADMIN bypass, but the code used to call the broader `_is_admin`
+    (which also covers MEDICAL_REVIEWER, a read-only reviewer role with no
+    business bypassing clinic-tenant membership). A MEDICAL_REVIEWER with no
+    membership row at this clinic must be rejected like any other caller."""
+    with pytest.raises(HTTPException) as exc_info:
+        assert_clinic_membership(
+            db,
+            "some-reviewer-user-id",
+            clinic_with_member["clinic_id"],
+            role=UserRole.MEDICAL_REVIEWER,
+        )
+    assert exc_info.value.status_code == 403
+
+
 def test_require_clinic_roles_rejects_insufficient_role():
     with pytest.raises(HTTPException) as exc_info:
         require_clinic_roles([ClinicRole.NURSE], ClinicRole.OWNER, ClinicRole.ADMIN)

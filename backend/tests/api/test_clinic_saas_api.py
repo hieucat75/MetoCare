@@ -157,6 +157,47 @@ def test_branch_crud(client, owner):
     assert dup.status_code >= 400
 
 
+def test_invitation_rejects_branch_id_from_another_clinic(client, owner, other_user):
+    """Codex PR #96 review, P1 finding #2: branch_ids must be tenant-scoped.
+    A foreign clinic's branch id must never be persisted onto this clinic's
+    invitation."""
+    clinic_a = _create_clinic(client, owner, name="Clinic A - branch scoping")
+    clinic_b = _create_clinic(client, other_user, name="Clinic B - branch scoping")
+    foreign_branch = client.post(
+        f"/api/v1/clinics/{clinic_b['id']}/branches",
+        json={"name": "Foreign Branch", "working_hours": {}},
+        headers=other_user["headers"],
+    ).json()
+
+    resp = client.post(
+        f"/api/v1/clinics/{clinic_a['id']}/invitations",
+        json={
+            "roles": ["nurse"],
+            "invited_email": "scoped@example.com",
+            "branch_ids": [foreign_branch["id"]],
+        },
+        headers=owner["headers"],
+    )
+    assert resp.status_code >= 400, resp.text
+
+
+def test_service_rejects_branch_id_from_another_clinic(client, owner, other_user):
+    clinic_a = _create_clinic(client, owner, name="Clinic A - service branch scoping")
+    clinic_b = _create_clinic(client, other_user, name="Clinic B - service branch scoping")
+    foreign_branch = client.post(
+        f"/api/v1/clinics/{clinic_b['id']}/branches",
+        json={"name": "Foreign Branch 2", "working_hours": {}},
+        headers=other_user["headers"],
+    ).json()
+
+    resp = client.post(
+        f"/api/v1/clinics/{clinic_a['id']}/services",
+        json={"name": "Khám tổng quát", "price": 100, "branch_ids": [foreign_branch["id"]]},
+        headers=owner["headers"],
+    )
+    assert resp.status_code == 400, resp.text
+
+
 # ---------------------------------------------------------------------------
 # Services
 # ---------------------------------------------------------------------------
