@@ -7,6 +7,7 @@ from enum import StrEnum
 
 from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, validates
+from sqlalchemy.types import JSON
 
 from app.core.crypto import EncryptedString
 from app.core.database import Base
@@ -69,6 +70,22 @@ class Clinic(UUIDPrimaryKey, TimestampMixin, Base):
     operating_hours: Mapped[str | None] = mapped_column(String(255))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # ------------------------------------------------------------------ #
+    # Clinic SaaS Phase C0 (DATA_MODEL.md §1) — additive tenant columns. #
+    # ------------------------------------------------------------------ #
+    legal_name: Mapped[str | None] = mapped_column(String(255))
+    tax_code: Mapped[str | None] = mapped_column(String(20))
+    license_no: Mapped[str | None] = mapped_column(String(64))
+    clinic_type: Mapped[str | None] = mapped_column(String(32))
+    # trial|active|suspended|expired|deactivated — authoritative lifecycle state.
+    # Distinct from `is_active` above, kept unchanged for backward compat.
+    status: Mapped[str] = mapped_column(String(16), default="trial", nullable=False)
+    branding: Mapped[dict | None] = mapped_column(JSON)
+    cancellation_policy: Mapped[dict | None] = mapped_column(JSON)
+    queue_config: Mapped[dict | None] = mapped_column(JSON)
+    overbooking_policy: Mapped[dict | None] = mapped_column(JSON)
+    deactivated_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    restored_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class Doctor(UUIDPrimaryKey, TimestampMixin, Base):

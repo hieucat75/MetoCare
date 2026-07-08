@@ -12,7 +12,11 @@ Per-request gate order (cheapest / safest checks first):
 1. Feature flag (``CLINICAL_COPILOT``) — 503 before any DB/provider work.
 2. Scope: consultation-scoped (``assert_doctor_can_view``) when a
    ``consultation_id`` is supplied, else the same patient-page gate the
-   clinical timeline uses (``doctor_portal._require_timeline_access``).
+   clinical timeline uses (``doctor_portal._require_timeline_access``),
+   followed by ``assert_doctor_clinic_scope_for_patient`` — additive
+   clinic-membership check that closes the cross-clinic gap in
+   ``docs/clinic-saas/THREAT_MODEL.md`` §10 (a no-op until a patient is
+   actually linked to a clinic via ``ClinicPatientRelationship``).
 3. Consent: ``ConsentGuard`` for ``ai_use`` / ``clinical_copilot`` — 403 on
    ``ConsentDenied``.
 4. Service call — ``CopilotUnavailable`` (every provider down) → 503 friendly
@@ -28,6 +32,7 @@ from starlette.concurrency import run_in_threadpool
 from app.api.deps import CurrentUser, get_session, require_roles
 from app.api.v1.routes.doctor_portal import _require_timeline_access
 from app.core.feature_flags import FeatureFlag, is_enabled
+from app.core.rbac import assert_doctor_clinic_scope_for_patient
 from app.models.user import UserRole
 from app.schemas.clinical_copilot import (
     ClinicalAdviceOut,
@@ -81,6 +86,9 @@ def _authorize(
         chief_complaint = consultation.chief_complaint
     else:
         _require_timeline_access(db, patient_id=patient_id, user=user)
+        assert_doctor_clinic_scope_for_patient(
+            db, doctor_user_id=user.id, patient_id=patient_id
+        )
 
     try:
         ConsentGuard(db).require(

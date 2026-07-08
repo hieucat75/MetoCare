@@ -32,6 +32,10 @@ class FeatureFlag(enum.StrEnum):
     # Meto Clinical Copilot: doctor-facing AI decision-support (calls a real LLM
     # over PHI) — default OFF (fail-closed), same precedent as AI_SESSION_ENABLED.
     CLINICAL_COPILOT = "clinical_copilot"
+    # Clinic SaaS Phase C0: multi-tenant clinic/branch/membership/subscription
+    # module — default OFF (fail-closed) until the tenant-isolation surface is
+    # verified end-to-end, same precedent as CLINICAL_COPILOT/AI_SESSION_ENABLED.
+    CLINIC_SAAS = "clinic_saas"
 
 
 _DEFAULTS = {
@@ -54,6 +58,7 @@ _DEFAULTS = {
     FeatureFlag.CLINICAL_INSIGHT: True,
     FeatureFlag.CLINICAL_INSIGHT_AI: False,  # LLM rephrasing OFF in v1 (rules-only)
     FeatureFlag.CLINICAL_COPILOT: False,  # fail-closed — calls a real LLM over PHI
+    FeatureFlag.CLINIC_SAAS: False,  # fail-closed — new multi-tenant module
 }
 
 

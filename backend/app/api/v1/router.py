@@ -13,7 +13,12 @@ from .routes import (
     auth,
     booking,
     care_plans,
+    clinic_branches,
+    clinic_members,
+    clinic_services,
+    clinic_subscriptions,
     clinical_copilot,
+    clinics,
     consent,
     consultations,
     doctor,
@@ -66,3 +71,11 @@ api_router.include_router(doctor.router)
 api_router.include_router(marketplace.router)
 api_router.include_router(consultations.router)
 api_router.include_router(meto.router)
+# Clinic SaaS Phase C0 — multi-tenant foundation (gated by FeatureFlag.CLINIC_SAAS,
+# fail-closed default; see app/api/deps_clinic_saas.py).
+api_router.include_router(clinics.router)
+api_router.include_router(clinic_branches.router)
+api_router.include_router(clinic_members.router)
+api_router.include_router(clinic_members.accept_router)
+api_router.include_router(clinic_services.router)
+api_router.include_router(clinic_subscriptions.router)
