@@ -164,8 +164,24 @@ test('surfaces "no_membership" (not stale/partial data) when the backend returns
 test('surfaces "must_select_clinic" with the real myMemberships list when the backend can\'t resolve a single active clinic (400)', async () => {
   mockedListMyMemberships.mockResolvedValue({
     items: [
-      { id: 'm1', clinic_id: 'c1', clinic_name: 'Phòng khám A', clinic_status: 'active', roles: ['owner'], branch_ids: [], is_primary: true },
-      { id: 'm2', clinic_id: 'c2', clinic_name: 'Phòng khám B', clinic_status: 'active', roles: ['doctor'], branch_ids: [], is_primary: false },
+      {
+        id: 'm1',
+        clinic_id: 'c1',
+        clinic_name: 'Phòng khám A',
+        clinic_status: 'active',
+        roles: ['owner'],
+        branch_ids: [],
+        is_primary: true,
+      },
+      {
+        id: 'm2',
+        clinic_id: 'c2',
+        clinic_name: 'Phòng khám B',
+        clinic_status: 'active',
+        roles: ['doctor'],
+        branch_ids: [],
+        is_primary: false,
+      },
     ],
   })
   mockedGetMyClinic.mockRejectedValue(new ApiError(400, 'Multiple active clinics — select one'))
@@ -201,7 +217,9 @@ test('a generic network failure (non-ApiError) also lands in "error", never an u
   renderProbe()
 
   await waitFor(() => expect(screen.getByTestId('status')).toHaveTextContent('error'))
-  expect(screen.getByTestId('error-message')).toHaveTextContent('Vui lòng kiểm tra mạng và thử lại.')
+  expect(screen.getByTestId('error-message')).toHaveTextContent(
+    'Vui lòng kiểm tra mạng và thử lại.'
+  )
 })
 
 describe('capabilitiesForRoles — derived directly from the real membership.roles the backend returns', () => {
