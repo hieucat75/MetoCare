@@ -57,6 +57,18 @@ P0: 1 · P1: 1 · P2: 2
 | P2 (self-bypass) | **Accepted risk, not code-changed.** UUID4 collision probability (~1/2^122 per comparison) is the same negligible collision space every other FK/PK relationship in this schema already relies on being safe; modifying the shared, safety-critical `ConsentGuard` (used by `ai_sessions`/`clinical_copilot`) for M06 alone is out of proportion to the threat. Documented inline at the call site. |
 | P2 (test gap) | Added `test_create_patient_concurrent_phone_race_safety_net` (monkeypatches `find_by_phone` to simulate the TOCTOU loser, asserts the DB unique-constraint IntegrityError is mapped to a controlled 400) and `test_link_wrong_phone_rejected` (P0 regression). The relationship-level unique-constraint race (`_insert_relationship`'s `uq_clinic_patient_rel_clinic_patient`) was already exercised by the existing `test_link_same_patient_twice_rejected` (same code path — no separate pre-check exists that would behave differently under a true concurrent race vs. two sequential calls). |
 
+**Self-identified during fix-up** (not a Codex finding, caught while
+reasoning through the P1 Receptionist-PATCH expansion): the PATCH `status`
+field allowed setting `status=merged`, but BRD §6.5's merge workflow ("chỉ
+Clinic Admin... toàn bộ encounter/lịch/hóa đơn trỏ sang hồ sơ chính... un-merge
+trong 30 ngày") is explicitly out of M06's scope — re-pointing every other
+record's FKs and a 30-day un-merge window are not implemented. Allowing any
+role to flip the status flag to `merged` via this simple PATCH would be a
+half-built, misleading operation. Fixed: `merged` removed from both the
+Pydantic pattern and the service-layer valid-status set (all roles,
+including Owner/Admin) — only `active`/`inactive` are settable until the
+real merge feature lands.
+
 Verification after fixes: 29 targeted tests green (26 original + 3 new),
 full backend suite green, frontend 507/507 tests green, clean build,
 zero new typecheck errors.

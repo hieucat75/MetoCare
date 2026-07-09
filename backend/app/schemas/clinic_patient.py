@@ -23,7 +23,10 @@ import datetime as dt
 
 from pydantic import BaseModel, Field
 
-_STATUS_PATTERN = r"^(active|inactive|merged)$"
+# `merged` is deliberately excluded — see the matching comment on
+# `_VALID_STATUSES` in app/services/clinic_patients.py (BRD §6.5's merge
+# workflow is out of M06's scope; this PATCH never half-implements it).
+_STATUS_PATTERN = r"^(active|inactive)$"
 
 
 class ClinicPatientAdminOut(BaseModel):

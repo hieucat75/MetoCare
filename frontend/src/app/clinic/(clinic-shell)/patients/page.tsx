@@ -367,13 +367,15 @@ function PatientDetailModal({
         ) : canEdit ? (
           <div className="mt-2 flex flex-col gap-3 border-t border-border pt-3">
             <FormField label="Trạng thái">
+              {/* `merged` is view-only here — BRD §6.5's merge workflow
+                  (re-point history, 30-day un-merge) is out of M06's scope;
+                  this PATCH never sets that status. */}
               <Select
                 value={status}
                 onValueChange={(v) => setStatus(v as ClinicPatientRelationshipStatus)}
                 options={[
                   { value: 'active', label: STATUS_LABEL.active },
                   { value: 'inactive', label: STATUS_LABEL.inactive },
-                  { value: 'merged', label: STATUS_LABEL.merged },
                 ]}
               />
             </FormField>

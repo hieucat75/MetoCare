@@ -32,11 +32,18 @@ from app.services import audit
 # admin_patients.py's _CANDIDATE_LIMIT (BR-M06-06: roster must always
 # paginate, never return the full dataset).
 _ROSTER_CANDIDATE_LIMIT = 5000
+# `merged` is deliberately NOT settable via this PATCH: BRD §6.5's merge
+# workflow ("chỉ Clinic Admin... toàn bộ encounter/lịch/hóa đơn của hồ sơ phụ
+# trỏ sang hồ sơ chính... có thể un-merge trong 30 ngày") is explicitly
+# deferred by M06_IMPLEMENTATION_PLAN.md §3 (US-M06-03) — it re-points every
+# other record's foreign keys and supports a 30-day un-merge, neither of
+# which this simple status-flip implements. Allowing `merged` here would be
+# a half-built, misleading operation; the real merge feature sets this value
+# through its own dedicated flow when built.
 _VALID_STATUSES = frozenset(
     {
         ClinicPatientRelationshipStatus.ACTIVE,
         ClinicPatientRelationshipStatus.INACTIVE,
-        ClinicPatientRelationshipStatus.MERGED,
     }
 )
 
