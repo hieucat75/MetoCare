@@ -190,13 +190,26 @@ export interface ClinicInvitationCreatePayload {
 
 // ── Service catalog DTOs (app/schemas/clinic_service.py) ──────────────────────
 
+export type ClinicServiceType = 'single' | 'package'
+
 export interface ClinicServiceOut {
   id: string
   clinic_id: string
   name: string
-  price: number
+  code: string | null
+  specialty: string | null
+  duration_minutes: number | null
+  // Backend serializes Decimal as a JSON string (precision-safe) — Codex
+  // second-pass review P1, backend/app/schemas/clinic_service.py.
+  price: string
+  type: ClinicServiceType
   branch_ids: string[] | null
+  doctor_ids: string[] | null
   package_visit_count: number | null
+  duration_months: number | null
+  included_items: Record<string, unknown> | null
+  benefits: Record<string, unknown> | null
+  cancellation_refund_policy: Record<string, unknown> | null
   status: ClinicServiceStatus
   created_at: string
   updated_at: string
@@ -209,16 +222,34 @@ export interface ClinicServiceListOut {
 
 export interface ClinicServiceCreatePayload {
   name: string
+  code: string
+  specialty: string
+  duration_minutes: number
   price: number
+  type?: ClinicServiceType
   branch_ids?: string[] | null
+  doctor_ids?: string[] | null
   package_visit_count?: number | null
+  duration_months?: number | null
+  included_items?: Record<string, unknown> | null
+  benefits?: Record<string, unknown> | null
+  cancellation_refund_policy?: Record<string, unknown> | null
 }
 
 export interface ClinicServiceUpdatePayload {
   name?: string
+  code?: string
+  specialty?: string
+  duration_minutes?: number
   price?: number
+  type?: ClinicServiceType
   branch_ids?: string[] | null
+  doctor_ids?: string[] | null
   package_visit_count?: number | null
+  duration_months?: number | null
+  included_items?: Record<string, unknown> | null
+  benefits?: Record<string, unknown> | null
+  cancellation_refund_policy?: Record<string, unknown> | null
   status?: ClinicServiceStatus
 }
 
