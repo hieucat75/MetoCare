@@ -11,6 +11,7 @@ import datetime as dt
 
 from sqlalchemy import DateTime, Index, String
 from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.types import JSON
 
 from app.core.database import Base
 
@@ -73,5 +74,11 @@ class AuditLog(UUIDPrimaryKey, Base):
     # convention; AuditLog intentionally never references entities that might
     # later be pruned/archived independent of the append-only log.
     clinic_id: Mapped[str | None] = mapped_column(String(36))
+    # Clinic SaaS C1 (BR-M05-02 and later BRs needing before/after capture,
+    # e.g. appointment reschedule, invoice discount): structured, PHI-free
+    # metadata only — reference IDs and business-rule values (old/new price,
+    # old/new status), never note/lab/diagnosis content. Same discipline as
+    # `resource_id` (audit.py docstring).
+    details: Mapped[dict | None] = mapped_column(JSON)
 
     __table_args__ = (Index("ix_audit_logs_clinic_timestamp", "clinic_id", "timestamp"),)

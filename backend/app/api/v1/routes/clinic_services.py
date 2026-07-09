@@ -21,8 +21,10 @@ from app.schemas.clinic_service import (
     ClinicServiceUpdate,
 )
 from app.services import clinic as clinic_service_lookup
+from app.services import clinic_branch as branch_lookup
 from app.services import clinic_service_catalog as catalog_service
 from app.services.clinic_branch import ClinicBranchError
+from app.services.clinic_service_catalog import ClinicServiceError
 
 router = APIRouter(
     prefix="/clinics/{clinic_id}/services",
@@ -32,6 +34,7 @@ router = APIRouter(
 
 _SERVICE_NOT_FOUND_DETAIL = "Không tìm thấy dịch vụ."
 _CLINIC_NOT_FOUND_DETAIL = "Không tìm thấy phòng khám."
+_BRANCH_NOT_FOUND_DETAIL = "Không tìm thấy chi nhánh."
 _MANAGE_ROLES = (ClinicRole.OWNER, ClinicRole.ADMIN)
 
 
@@ -56,11 +59,20 @@ def create_service(
             clinic_id=clinic_id,
             actor_id=tenant.user_id,
             name=payload.name,
+            code=payload.code,
+            specialty=payload.specialty,
+            duration_minutes=payload.duration_minutes,
             price=payload.price,
+            type=payload.type,
             branch_ids=payload.branch_ids,
+            doctor_ids=payload.doctor_ids,
             package_visit_count=payload.package_visit_count,
+            duration_months=payload.duration_months,
+            included_items=payload.included_items,
+            benefits=payload.benefits,
+            cancellation_refund_policy=payload.cancellation_refund_policy,
         )
-    except ClinicBranchError as exc:
+    except (ClinicBranchError, ClinicServiceError) as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     db.commit()
     return ClinicServiceOut.model_validate(service)
@@ -69,15 +81,50 @@ def create_service(
 @router.get("", response_model=ClinicServiceListOut)
 def list_services(
     clinic_id: str,
+    branch_id: str | None = Query(default=None),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=200),
     tenant: TenantContext = Depends(get_tenant_context),
     db: Session = Depends(get_session),
 ) -> ClinicServiceListOut:
     """Read access: every clinic role per RBAC_MATRIX.md M05 row (Owner/Admin
-    full, everyone else R)."""
+    full, everyone else R). `branch_id` (AC-M05-03) narrows to one branch for
+    a branch-switcher UX.
+
+    Codex PR review fix (P1): visibility is now ALWAYS derived from
+    `TenantContext.branch_ids`, never trusted purely from the client — an
+    explicit `branch_id` must be one of the caller's own membership branches
+    (else 403); when omitted, a branch-scoped membership (non-empty
+    `tenant.branch_ids`) defaults to exactly that scope rather than falling
+    through to "every branch." A membership with no branch restriction
+    (`tenant.branch_ids` empty, e.g. Owner/Admin) still sees everything,
+    same as before.
+
+    Codex second-pass review P2: an unrestricted (Owner/Admin) caller's
+    explicit `branch_id` was never checked against `clinic_id` at all — a
+    garbage/foreign id silently filtered to a misleading empty result
+    instead of 404. Now validated via `get_branch` regardless of whether the
+    caller's own membership is branch-scoped."""
     assert_path_clinic_matches_tenant(tenant.clinic_id, clinic_id)
-    items, total = catalog_service.list_services(db, clinic_id=clinic_id, skip=skip, limit=limit)
+    if branch_id is not None and tenant.branch_ids and branch_id not in tenant.branch_ids:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Bạn không có quyền xem chi nhánh này."
+        )
+    if branch_id is not None and not tenant.branch_ids:
+        if branch_lookup.get_branch(db, clinic_id=clinic_id, branch_id=branch_id) is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail=_BRANCH_NOT_FOUND_DETAIL
+            )
+    effective_branch_ids: list[str] | None
+    if branch_id is not None:
+        effective_branch_ids = [branch_id]
+    elif tenant.branch_ids:
+        effective_branch_ids = list(tenant.branch_ids)
+    else:
+        effective_branch_ids = None
+    items, total = catalog_service.list_services(
+        db, clinic_id=clinic_id, branch_ids=effective_branch_ids, skip=skip, limit=limit
+    )
     return ClinicServiceListOut(
         total=total, items=[ClinicServiceOut.model_validate(s) for s in items]
     )
@@ -108,7 +155,7 @@ def update_service(
         service = catalog_service.update_service(
             db, service=service, actor_id=tenant.user_id, **payload.model_dump(exclude_unset=True)
         )
-    except ClinicBranchError as exc:
+    except (ClinicBranchError, ClinicServiceError) as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     db.commit()
     return ClinicServiceOut.model_validate(service)

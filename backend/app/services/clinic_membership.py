@@ -62,6 +62,44 @@ def _generate_token() -> str:
     return secrets.token_urlsafe(32)
 
 
+def assert_doctor_ids_belong_to_clinic(
+    db: Session, *, clinic_id: str, doctor_ids: list[str]
+) -> None:
+    """Raise unless every id in `doctor_ids` (`Doctor.id` values) has an
+    ACTIVE `ClinicMembership` at `clinic_id` with `doctor` in `roles`.
+
+    Mirrors `assert_branch_ids_belong_to_clinic` (clinic_branch.py) — the
+    same class of "caller-supplied id list must be validated against this
+    tenant's own members, never persisted verbatim" guard, applied to M05's
+    `ClinicService.doctor_ids` (m05-services-pricing.md §5.3: "doctors ⊆ bác
+    sĩ tenant")."""
+    if not doctor_ids:
+        return
+    # `roles` is a JSON array — not portably filterable in a SQL WHERE clause
+    # across SQLite/Postgres, so the "doctor in roles" check runs in Python
+    # (Codex PR review fix: the original query only checked
+    # `doctor_profile_id.in_(...)` + active status, so an active
+    # admin/nurse/receptionist row that happened to carry a
+    # `doctor_profile_id` would incorrectly pass).
+    candidates = db.execute(
+        select(ClinicMembership.doctor_profile_id, ClinicMembership.roles).where(
+            ClinicMembership.clinic_id == clinic_id,
+            ClinicMembership.status == ClinicMembershipStatus.ACTIVE,
+            ClinicMembership.doctor_profile_id.in_(doctor_ids),
+        )
+    ).all()
+    found = {
+        doctor_profile_id
+        for doctor_profile_id, roles in candidates
+        if ClinicRole.DOCTOR in (roles or [])
+    }
+    missing = set(doctor_ids) - found
+    if missing:
+        raise ClinicMembershipError(
+            "Một hoặc nhiều bác sĩ không thuộc phòng khám này hoặc chưa có vai trò Doctor."
+        )
+
+
 def _has_other_active_owner(
     db: Session, *, clinic_id: str, exclude_membership_id: str | None = None
 ) -> bool:

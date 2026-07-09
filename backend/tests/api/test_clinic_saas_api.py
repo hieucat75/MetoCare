@@ -192,7 +192,14 @@ def test_service_rejects_branch_id_from_another_clinic(client, owner, other_user
 
     resp = client.post(
         f"/api/v1/clinics/{clinic_a['id']}/services",
-        json={"name": "Khám tổng quát", "price": 100, "branch_ids": [foreign_branch["id"]]},
+        json={
+            "name": "Khám tổng quát",
+            "code": "SVC-001",
+            "specialty": "Nội tiết",
+            "duration_minutes": 30,
+            "price": 100,
+            "branch_ids": [foreign_branch["id"]],
+        },
         headers=owner["headers"],
     )
     assert resp.status_code == 400, resp.text
@@ -207,11 +214,19 @@ def test_service_catalog_crud(client, owner):
     clinic = _create_clinic(client, owner)
     create = client.post(
         f"/api/v1/clinics/{clinic['id']}/services",
-        json={"name": "Khám tổng quát", "price": 300000},
+        json={
+            "name": "Khám tổng quát",
+            "code": "SVC-100",
+            "specialty": "Nội tiết",
+            "duration_minutes": 30,
+            "price": 300000,
+        },
         headers=owner["headers"],
     )
     assert create.status_code == 201, create.text
     service = create.json()
+    assert service["code"] == "SVC-100"
+    assert service["type"] == "single"
 
     updated = client.patch(
         f"/api/v1/clinics/{clinic['id']}/services/{service['id']}",
@@ -219,7 +234,9 @@ def test_service_catalog_crud(client, owner):
         headers=owner["headers"],
     )
     assert updated.status_code == 200
-    assert updated.json()["price"] == 350000.0
+    # price serializes as a Decimal string (Codex second-pass review P1,
+    # money precision), not a JSON float.
+    assert updated.json()["price"] == "350000.00"
 
     listed = client.get(
         f"/api/v1/clinics/{clinic['id']}/services", headers=owner["headers"]
@@ -655,7 +672,13 @@ def test_suspended_clinic_allows_reads_blocks_writes(client, owner, super_admin)
     ).status_code == 403
     assert client.post(
         f"/api/v1/clinics/{clinic['id']}/services",
-        json={"name": "Blocked Service", "price": 1000},
+        json={
+            "name": "Blocked Service",
+            "code": "SVC-BLOCKED",
+            "specialty": "Nội tiết",
+            "duration_minutes": 30,
+            "price": 1000,
+        },
         headers=owner["headers"],
     ).status_code == 403
 
@@ -953,7 +976,13 @@ def test_service_list_pagination_honors_limit(client, owner):
     for i in range(3):
         resp = client.post(
             f"/api/v1/clinics/{clinic['id']}/services",
-            json={"name": f"Service {i}", "price": 1000 + i},
+            json={
+                "name": f"Service {i}",
+                "code": f"SVC-PAG-{i}",
+                "specialty": "Nội tiết",
+                "duration_minutes": 30,
+                "price": 1000 + i,
+            },
             headers=owner["headers"],
         )
         assert resp.status_code == 201

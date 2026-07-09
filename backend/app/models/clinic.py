@@ -12,6 +12,7 @@ tenant/membership/catalog/subscription metadata.
 from __future__ import annotations
 
 import datetime as dt
+from decimal import Decimal
 from enum import StrEnum
 
 from sqlalchemy import (
@@ -72,6 +73,11 @@ class ClinicInvitationStatus(StrEnum):
 class ClinicServiceStatus(StrEnum):
     ACTIVE = "active"
     INACTIVE = "inactive"
+
+
+class ClinicServiceType(StrEnum):
+    SINGLE = "single"
+    PACKAGE = "package"
 
 
 class ClinicPatientRelationshipStatus(StrEnum):
@@ -198,13 +204,55 @@ class ClinicService(UUIDPrimaryKey, TimestampMixin, Base):
     # null = all branches; non-null = restricted to these ClinicBranch.id values.
     branch_ids: Mapped[list | None] = mapped_column(JSON)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    price: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)
+    # BRD m05-services-pricing.md §5.3: unique in tenant, [A-Z0-9-]. Nullable at
+    # DB layer (partial unique index below); required at Create-schema layer,
+    # matching the project's "validate at service/schema layer" convention.
+    code: Mapped[str | None] = mapped_column(String(32))
+    specialty: Mapped[str | None] = mapped_column(String(64))
+    duration_minutes: Mapped[int | None] = mapped_column(Integer)
+    # Array of Doctor.id (not ClinicMembership.id) scoped to this clinic's
+    # active doctor memberships — validated in the service layer, mirrors
+    # assert_branch_ids_belong_to_clinic's pattern for branch_ids.
+    doctor_ids: Mapped[list | None] = mapped_column(JSON)
+    type: Mapped[str] = mapped_column(
+        String(16), default=ClinicServiceType.SINGLE, nullable=False
+    )
+    # Codex second-pass review P1: money must not round-trip through float —
+    # `Decimal` end-to-end (Python + Numeric(12,2) DB type) avoids binary
+    # floating-point precision loss on currency values.
+    price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     package_visit_count: Mapped[int | None] = mapped_column(Integer)
+    # type=package only (§5.3 "Gói chăm sóc bổ sung"). 3/6/12-month chronic-care
+    # packages: included_items = {visit_count, lab_read_count, teleconsult_count};
+    # benefits = {med_reminder, followup_reminder, metric_tracking} (booleans).
+    duration_months: Mapped[int | None] = mapped_column(Integer)
+    included_items: Mapped[dict | None] = mapped_column(JSON)
+    benefits: Mapped[dict | None] = mapped_column(JSON)
+    cancellation_refund_policy: Mapped[dict | None] = mapped_column(JSON)
     status: Mapped[str] = mapped_column(
         String(16), default=ClinicServiceStatus.ACTIVE, nullable=False
     )
 
-    __table_args__ = (Index("ix_clinic_services_clinic_status", "clinic_id", "status"),)
+    __table_args__ = (
+        Index("ix_clinic_services_clinic_status", "clinic_id", "status"),
+        Index(
+            "uq_clinic_services_clinic_code",
+            "clinic_id",
+            "code",
+            unique=True,
+            postgresql_where=text("code IS NOT NULL"),
+            sqlite_where=text("code IS NOT NULL"),
+        ),
+        # Codex second-pass review P1: name uniqueness (BR-M05 §5.3 "Unique
+        # trong tenant") was only a service-layer check-then-insert, racy
+        # under concurrency. A real DB constraint makes the race safe; the
+        # service layer's pre-check stays as a friendly-error fast path.
+        # Index, not UniqueConstraint: SQLite can't ALTER/DROP a named
+        # constraint without batch mode, but a plain unique index drops
+        # cleanly on both SQLite and Postgres (same pattern as the `code`
+        # index above).
+        Index("uq_clinic_services_clinic_name", "clinic_id", "name", unique=True),
+    )
 
 
 class ClinicPatientRelationship(UUIDPrimaryKey, TimestampMixin, Base):

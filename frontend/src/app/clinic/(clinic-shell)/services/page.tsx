@@ -24,8 +24,12 @@ import {
 } from '@/lib/api/clinics'
 import { useClinic } from '@/lib/clinic/ClinicContext'
 
-function formatPrice(price: number): string {
-  return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(price)
+function formatPrice(price: string): string {
+  // price is now a Decimal-as-string from the backend (precision-safe) —
+  // Codex second-pass review P1.
+  return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(
+    Number(price)
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -87,6 +91,9 @@ interface CreateServiceModalProps {
 
 function CreateServiceModal({ open, onOpenChange, onCreated, clinicId }: CreateServiceModalProps) {
   const [name, setName] = React.useState('')
+  const [code, setCode] = React.useState('')
+  const [specialty, setSpecialty] = React.useState('')
+  const [durationMinutes, setDurationMinutes] = React.useState('')
   const [price, setPrice] = React.useState('')
   const [saving, setSaving] = React.useState(false)
   const [error, setError] = React.useState<PageError | null>(null)
@@ -100,8 +107,21 @@ function CreateServiceModal({ open, onOpenChange, onCreated, clinicId }: CreateS
       if (!Number.isFinite(priceValue) || priceValue < 0) {
         throw new Error('Giá dịch vụ không hợp lệ.')
       }
-      await createService(clinicId, { name, price: priceValue })
+      const durationValue = Number(durationMinutes)
+      if (!Number.isInteger(durationValue) || durationValue < 5 || durationValue > 240) {
+        throw new Error('Thời lượng phải từ 5 đến 240 phút.')
+      }
+      await createService(clinicId, {
+        name,
+        code: code.toUpperCase(),
+        specialty,
+        duration_minutes: durationValue,
+        price: priceValue,
+      })
       setName('')
+      setCode('')
+      setSpecialty('')
+      setDurationMinutes('')
       setPrice('')
       onOpenChange(false)
       onCreated()
@@ -127,6 +147,27 @@ function CreateServiceModal({ open, onOpenChange, onCreated, clinicId }: CreateS
         {error && <p className="text-body-xs text-danger">{error.message}</p>}
         <FormField label="Tên dịch vụ" required>
           <Input value={name} onChange={(e) => setName(e.target.value)} required autoFocus />
+        </FormField>
+        <FormField label="Mã dịch vụ (VD: SVC-001)" required>
+          <Input
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            pattern="[A-Za-z0-9-]+"
+            required
+          />
+        </FormField>
+        <FormField label="Chuyên khoa" required>
+          <Input value={specialty} onChange={(e) => setSpecialty(e.target.value)} required />
+        </FormField>
+        <FormField label="Thời lượng (phút)" required>
+          <Input
+            type="number"
+            min={5}
+            max={240}
+            value={durationMinutes}
+            onChange={(e) => setDurationMinutes(e.target.value)}
+            required
+          />
         </FormField>
         <FormField label="Giá (VNĐ)" required>
           <Input
