@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { useRouter, usePathname } from 'next/navigation'
-import { LayoutDashboard, Settings, Users, Building2, Stethoscope } from 'lucide-react'
+import { LayoutDashboard, Settings, Users, Building2, Stethoscope, UserRound } from 'lucide-react'
 import { PortalShell } from '@/components/portal/PortalShell'
 import type { NavItem } from '@/design-system'
 import { useAuth } from '@/lib/auth/context'
@@ -63,6 +63,15 @@ function buildNavItems(capabilities: ClinicCapabilities): NavItem[] {
     icon: <Stethoscope className="w-5 h-5" />,
     href: '/clinic/services',
   })
+
+  if (capabilities.canViewPatients) {
+    items.push({
+      id: 'clinic-patients',
+      label: 'Bệnh nhân',
+      icon: <UserRound className="w-5 h-5" />,
+      href: '/clinic/patients',
+    })
+  }
 
   if (capabilities.canViewStaff) {
     items.push({
