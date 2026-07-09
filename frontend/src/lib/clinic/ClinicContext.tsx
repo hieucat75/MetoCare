@@ -36,6 +36,9 @@ export interface ClinicCapabilities {
   canManageServices: boolean // M05 write — Owner/Admin (read is universal, all 7 roles)
   canManageSubscription: boolean // M04 write — Owner only
   canViewSubscription: boolean // M04 read — Owner/Admin/Accountant
+  canViewPatients: boolean // M06 read — Owner/Admin/Doctor/Nurse/Reception full, Care Coordinator narrow, Accountant excluded
+  canManagePatients: boolean // M06 link/create — Owner/Admin/Reception
+  canUpdatePatientRecord: boolean // M06 PATCH status/internal_notes — Owner/Admin only
 }
 
 function capabilitiesForRoles(roles: ClinicRole[]): ClinicCapabilities {
@@ -51,6 +54,14 @@ function capabilitiesForRoles(roles: ClinicRole[]): ClinicCapabilities {
     canManageServices: ownerOrAdmin,
     canManageSubscription: has('owner'),
     canViewSubscription: ownerOrAdmin || has('accountant'),
+    canViewPatients:
+      ownerOrAdmin ||
+      has('doctor') ||
+      has('nurse') ||
+      has('receptionist') ||
+      has('care_coordinator'),
+    canManagePatients: ownerOrAdmin || has('receptionist'),
+    canUpdatePatientRecord: ownerOrAdmin,
   }
 }
 

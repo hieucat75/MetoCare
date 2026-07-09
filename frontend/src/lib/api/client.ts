@@ -127,8 +127,10 @@ export async function apiFetch<T>(path: string, options: FetchOptions = {}): Pro
     let detail = `Lỗi ${res.status}`
     try {
       const body = await res.json()
-      if (body?.code === 'VALIDATION_ERROR') {
-        // Structured validation error: serialize full body so callers can render field-level detail
+      if (body?.code === 'VALIDATION_ERROR' || body?.code === 'DUPLICATE_CANDIDATE') {
+        // Structured error: serialize full body so callers can render field-level
+        // detail (VALIDATION_ERROR) or the dedup candidate (DUPLICATE_CANDIDATE,
+        // M06 create-patient 409 — app/api/v1/routes/clinic_patients.py).
         detail = JSON.stringify(body)
       } else if (typeof body.detail === 'string') {
         detail = body.detail

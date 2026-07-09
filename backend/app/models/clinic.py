@@ -25,6 +25,7 @@ from sqlalchemy import (
     Integer,
     Numeric,
     String,
+    Text,
     UniqueConstraint,
     text,
 )
@@ -271,6 +272,10 @@ class ClinicPatientRelationship(UUIDPrimaryKey, TimestampMixin, Base):
     first_seen_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), server_default=_NOW, nullable=False
     )
+    # Clinic SaaS C1 M06: clinic-only operational note, no PHI (same
+    # discipline as AuditLog.details — reference/business text, never
+    # clinical content; clinical notes live on M09's Encounter/Notes model).
+    internal_notes: Mapped[str | None] = mapped_column(Text)
 
     __table_args__ = (
         UniqueConstraint(

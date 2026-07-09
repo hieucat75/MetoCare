@@ -16,6 +16,7 @@ export type ClinicBranchStatus = 'active' | 'paused' | 'archived'
 export type ClinicMembershipStatus = 'invited' | 'active' | 'suspended' | 'removed'
 export type ClinicInvitationStatus = 'pending' | 'accepted' | 'revoked' | 'expired'
 export type ClinicServiceStatus = 'active' | 'inactive'
+export type ClinicPatientRelationshipStatus = 'active' | 'inactive' | 'merged'
 
 /** Request header used to select among the caller's own active clinic
  * memberships (app/api/deps_tenant.py get_tenant_context). Never a source of
@@ -253,6 +254,82 @@ export interface ClinicServiceUpdatePayload {
   status?: ClinicServiceStatus
 }
 
+// ── Patient management DTOs (app/schemas/clinic_patient.py, M06) ─────────────
+
+/** Full administrative record — Owner/Admin/Doctor/Nurse/Reception. Fields
+ * tied to the clinic relationship (id/patient_code/status/internal_notes/
+ * first_seen_at/created_at/updated_at) are `null` when the caller sees this
+ * patient only via a cross-clinic Consent grant, with no own-clinic
+ * relationship row (M06 plan §1's consent-shared read path). */
+export interface ClinicPatientAdminOut {
+  id: string | null
+  patient_id: string
+  clinic_id: string
+  patient_code: string | null
+  status: ClinicPatientRelationshipStatus | null
+  internal_notes: string | null
+  first_seen_at: string | null
+  full_name: string | null
+  dob: string | null
+  gender: string | null
+  address: string | null
+  phone: string | null
+  created_at: string | null
+  updated_at: string | null
+}
+
+/** Care Coordinator's narrow "care context" shape — no dob/address/
+ * internal_notes (RBAC_MATRIX.md M06 row: field-level filtering, not just
+ * route-level gating). */
+export interface ClinicPatientCareContextOut {
+  id: string
+  patient_id: string
+  patient_code: string
+  status: ClinicPatientRelationshipStatus
+  full_name: string | null
+  phone: string | null
+  first_seen_at: string
+}
+
+export type ClinicPatientListItem = ClinicPatientAdminOut | ClinicPatientCareContextOut
+
+export interface ClinicPatientListOut {
+  total: number
+  items: ClinicPatientListItem[]
+}
+
+export interface PatientCandidateOut {
+  patient_id: string
+  full_name: string | null
+  dob: string | null
+  phone: string | null
+  already_linked: boolean
+}
+
+export interface ClinicPatientLinkPayload {
+  patient_id: string
+  patient_code?: string | null
+}
+
+export interface ClinicPatientCreatePayload {
+  full_name: string
+  phone: string
+  dob: string
+  gender: string
+  address?: string | null
+  patient_code?: string | null
+  override_dedup_reason?: string | null
+}
+
+export interface ClinicPatientUpdatePayload {
+  status?: ClinicPatientRelationshipStatus
+  internal_notes?: string
+}
+
+export interface ClinicPatientListParams extends PageParams {
+  search?: string
+}
+
 // ── Subscription DTOs (app/schemas/clinic_subscription.py) ───────────────────
 
 export interface SubscriptionPlanOut {
@@ -472,6 +549,82 @@ export async function updateService(
   payload: ClinicServiceUpdatePayload
 ): Promise<ClinicServiceOut> {
   return api.patch<ClinicServiceOut>(`/clinics/${clinicId}/services/${serviceId}`, payload, {
+    headers: clinicHeaders(clinicId),
+  })
+}
+
+// ── Patient management (M06) ──────────────────────────────────────────────────
+
+function patientListQuery(params: ClinicPatientListParams = {}): string {
+  const qs = new URLSearchParams()
+  if (params.skip != null) qs.set('skip', String(params.skip))
+  if (params.limit != null) qs.set('limit', String(params.limit))
+  if (params.search) qs.set('search', params.search)
+  const query = qs.toString()
+  return query ? `?${query}` : ''
+}
+
+export async function listClinicPatients(
+  clinicId: string,
+  params: ClinicPatientListParams = {}
+): Promise<ClinicPatientListOut> {
+  return api.get<ClinicPatientListOut>(
+    `/clinics/${clinicId}/patients${patientListQuery(params)}`,
+    { headers: clinicHeaders(clinicId) }
+  )
+}
+
+/** Exact-phone-match dedup helper (BR-M06-02) — `null` when no candidate
+ * matches. No partial/fuzzy search: never a patient-enumeration oracle. */
+export async function searchPatientCandidate(
+  clinicId: string,
+  phone: string
+): Promise<PatientCandidateOut | null> {
+  return api.get<PatientCandidateOut | null>(
+    `/clinics/${clinicId}/patients/search-candidates?phone=${encodeURIComponent(phone)}`,
+    { headers: clinicHeaders(clinicId) }
+  )
+}
+
+export async function linkClinicPatient(
+  clinicId: string,
+  payload: ClinicPatientLinkPayload
+): Promise<ClinicPatientAdminOut> {
+  return api.post<ClinicPatientAdminOut>(`/clinics/${clinicId}/patients/link`, payload, {
+    headers: clinicHeaders(clinicId),
+  })
+}
+
+/** Throws `ApiError(409, ...)` with a JSON-stringified
+ * `{code: 'DUPLICATE_CANDIDATE', candidate: PatientCandidateOut}` body when a
+ * phone-exact-match candidate exists and `override_dedup_reason` was not
+ * supplied — callers should `JSON.parse(err.detail)` on a 409 to surface the
+ * AC-M06-02 duplicate-warning UI. */
+export async function createClinicPatient(
+  clinicId: string,
+  payload: ClinicPatientCreatePayload
+): Promise<ClinicPatientAdminOut> {
+  return api.post<ClinicPatientAdminOut>(`/clinics/${clinicId}/patients`, payload, {
+    headers: clinicHeaders(clinicId),
+  })
+}
+
+export async function getClinicPatient(
+  clinicId: string,
+  patientId: string
+): Promise<ClinicPatientAdminOut | ClinicPatientCareContextOut> {
+  return api.get<ClinicPatientAdminOut | ClinicPatientCareContextOut>(
+    `/clinics/${clinicId}/patients/${patientId}`,
+    { headers: clinicHeaders(clinicId) }
+  )
+}
+
+export async function updateClinicPatient(
+  clinicId: string,
+  patientId: string,
+  payload: ClinicPatientUpdatePayload
+): Promise<ClinicPatientAdminOut> {
+  return api.patch<ClinicPatientAdminOut>(`/clinics/${clinicId}/patients/${patientId}`, payload, {
     headers: clinicHeaders(clinicId),
   })
 }
