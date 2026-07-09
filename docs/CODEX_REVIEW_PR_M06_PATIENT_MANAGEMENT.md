@@ -77,4 +77,40 @@ zero new typecheck errors.
 
 ## Round 2 — Follow-up verification review
 
-(recorded below once complete)
+**Scope:** independently re-verify each of the 4 round-1 findings against
+the current code (not just trust the fixes-applied description), plus check
+for any new issues introduced by the fixes themselves.
+
+**VERDICT: PASS**
+
+P0: 0 · P1: 0 · P2: 0
+
+1. **P0 link-by-UUID: RESOLVED** — `ClinicPatientLinkRequest.phone` is
+   required; the route passes `payload.phone` through; `link_patient`
+   normalizes and compares it against `User.phone` or `PatientProfile.phone`
+   before insert. Empty/invalid phones fail normalization.
+2. **P1 Receptionist PATCH: RESOLVED** — `_UPDATE_ROLES` includes
+   `RECEPTIONIST`. Confirmed `merged` is not reachable through PATCH for any
+   role: schema pattern only permits `active|inactive`, service
+   `_VALID_STATUSES` also excludes `merged`.
+3. **P2 race test: meaningful** — the monkeypatch targets the exact service
+   symbol the route calls; if not hit, the pre-check would return 409 (not
+   the asserted 400) — the 400 the test actually observes is the real
+   `User.phone` unique-constraint `IntegrityError` mapping.
+4. **P2 self-bypass: accepted-risk documented, not code-changed** — matches
+   the round-1 doc's description; no new regression introduced by that
+   decision.
+
+**New findings: none.**
+
+---
+
+## Overall disposition
+
+**PASS.** All P0/P1 findings from the initial review are resolved and
+independently re-confirmed by Codex against the fixed code, plus one
+additional scope-correctness issue (`merged` status reachability) was
+self-identified and fixed during the same pass. No new issues introduced by
+the fixes. Full verification pipeline green (29 targeted backend tests,
+full backend suite, 507/507 frontend tests, clean build, migration
+upgrade/downgrade/upgrade, single Alembic head).
