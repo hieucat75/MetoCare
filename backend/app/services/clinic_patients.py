@@ -171,11 +171,32 @@ def link_patient(
     clinic_id: str,
     actor_id: str,
     patient_id: str,
+    phone: str,
     patient_code: str | None = None,
 ) -> ClinicPatientRelationship:
+    """Link requires the caller to also supply the patient's phone (the same
+    exact-match value `search_candidate` returned) — a bare `patient_id`
+    alone is never sufficient proof of legitimate contact. Codex review
+    finding (P0): without this, any clinic with write access to `/link`
+    could link — and thereby gain full administrative PHI visibility
+    (name/dob/address/phone) on — any patient whose UUID they learned from
+    anywhere (a leaked id, another system's URL, cross-clinic staff access),
+    entirely bypassing the phone-based dedup/consent design this milestone
+    is built around."""
     profile = db.get(PatientProfile, patient_id)
     if profile is None:
         raise ClinicPatientError("Không tìm thấy bệnh nhân.")
+    normalized_phone = normalize_vn_phone(phone)
+    if normalized_phone is None:
+        raise ClinicPatientError("Số điện thoại không hợp lệ.")
+    user = db.get(User, profile.user_id)
+    if user is None:
+        raise ClinicPatientError("Không tìm thấy bệnh nhân.")
+    # Match either User.phone (the common case — login identity) or
+    # PatientProfile.phone (the shared-number override-create path, where
+    # User.phone is deliberately left unset — see create_patient).
+    if normalized_phone not in (user.phone, profile.phone):
+        raise ClinicPatientError("Số điện thoại không khớp với hồ sơ bệnh nhân này.")
     return _insert_relationship(
         db,
         clinic_id=clinic_id,

@@ -75,6 +75,11 @@ class PatientCandidateOut(BaseModel):
 
 class ClinicPatientLinkRequest(BaseModel):
     patient_id: str = Field(min_length=1)
+    # Required proof-of-contact (Codex review P0): a bare patient_id is never
+    # sufficient to link — the caller must also supply the exact phone
+    # number the patient was found by (search-candidates), re-verified
+    # server-side against that patient's real phone before linking.
+    phone: str = Field(min_length=1, max_length=20)
     patient_code: str | None = Field(default=None, min_length=1, max_length=32)
 
 

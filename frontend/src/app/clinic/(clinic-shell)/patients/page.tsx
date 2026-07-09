@@ -131,7 +131,7 @@ function AddPatientModal({ open, onOpenChange, onDone, clinicId }: AddPatientMod
     setSaving(true)
     setError(null)
     try {
-      await linkClinicPatient(clinicId, { patient_id: candidate.patient_id })
+      await linkClinicPatient(clinicId, { patient_id: candidate.patient_id, phone })
       handleClose(false)
       onDone()
     } catch (err: unknown) {
@@ -226,7 +226,12 @@ function AddPatientModal({ open, onOpenChange, onDone, clinicId }: AddPatientMod
               Không tìm thấy hồ sơ trùng — tạo bệnh nhân mới.
             </p>
             <FormField label="Họ và tên" required>
-              <Input value={fullName} onChange={(e) => setFullName(e.target.value)} required autoFocus />
+              <Input
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                required
+                autoFocus
+              />
             </FormField>
             <FormField label="Ngày sinh" required>
               <Input type="date" value={dob} onChange={(e) => setDob(e.target.value)} required />
@@ -525,12 +530,7 @@ export default function ClinicPatientsPage() {
         />
       ) : (
         <>
-          <Table
-            columns={columns}
-            data={items}
-            rowKey="patient_id"
-            onRowClick={handleRowClick}
-          />
+          <Table columns={columns} data={items} rowKey="patient_id" onRowClick={handleRowClick} />
           <p className="mt-2 text-body-xs text-text-muted">
             Hiển thị {items.length} / {total} bệnh nhân
           </p>
@@ -538,11 +538,7 @@ export default function ClinicPatientsPage() {
       )}
 
       {capabilities.canManagePatients && (
-        <AddPatientModal
-          {...addModal.modalProps}
-          clinicId={clinic.id}
-          onDone={() => void load()}
-        />
+        <AddPatientModal {...addModal.modalProps} clinicId={clinic.id} onDone={() => void load()} />
       )}
 
       <PatientDetailModal

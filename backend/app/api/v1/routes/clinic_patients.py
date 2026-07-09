@@ -55,7 +55,11 @@ _FULL_ACCESS_ROLES = (
 )
 _READ_ROLES = (*_FULL_ACCESS_ROLES, ClinicRole.CARE_COORDINATOR)
 _WRITE_ROLES = (ClinicRole.OWNER, ClinicRole.ADMIN, ClinicRole.RECEPTIONIST)
-_UPDATE_ROLES = (ClinicRole.OWNER, ClinicRole.ADMIN)
+# Codex review (P1): RBAC_MATRIX.md's "Patient admin record (M06)" row and
+# BRD §6.2 ("Receptionist: Tạo/sửa hồ sơ hành chính" — create/EDIT
+# administrative records) both grant Receptionist full read+write here;
+# excluding it from the status/internal_notes PATCH was a scoping mismatch.
+_UPDATE_ROLES = (ClinicRole.OWNER, ClinicRole.ADMIN, ClinicRole.RECEPTIONIST)
 
 
 def _has_full_access(roles: frozenset[str]) -> bool:
@@ -164,6 +168,7 @@ def link_patient(
             clinic_id=clinic_id,
             actor_id=tenant.user_id,
             patient_id=payload.patient_id,
+            phone=payload.phone,
             patient_code=payload.patient_code,
         )
     except ClinicPatientError as exc:
@@ -247,6 +252,15 @@ def get_patient_detail(
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail=_PATIENT_NOT_FOUND_DETAIL
             )
+        # Codex review (P2): ConsentGuard.require's "is_self" bypass compares
+        # `actor_id` (here, `clinic_id`) against `patient_id`/`PatientProfile.
+        # user_id` — for a genuine `clinic_id` this can only coincide via a
+        # UUID4 collision (~1/2^122 per comparison), the same negligible
+        # collision space every other FK/PK relationship in this schema
+        # already relies on being safe. Accepted risk, not code-changed:
+        # modifying the shared, safety-critical `ConsentGuard` (used by
+        # ai_sessions/clinical_copilot) for this is out of proportion to the
+        # threat.
         ConsentGuard(db).require(
             patient_id,
             consent_type="clinic_admin_record",

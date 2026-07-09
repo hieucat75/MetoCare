@@ -67,9 +67,13 @@ def _member(db, clinic_id: str, roles: list[str], *, status: str = "active") -> 
     return user
 
 
-def _patient_headers(db, full_name: str = "Nguyễn Văn A") -> dict:
+def _patient_headers(db, full_name: str = "Nguyễn Văn A", phone: str | None = None) -> dict:
+    from app.core.phone import normalize_vn_phone
+
+    raw_phone = phone or _random_phone()
+    normalized_phone = normalize_vn_phone(raw_phone)
     user = User(
-        phone=None, email=f"pt-{os.urandom(4).hex()}@metocare.internal",
+        phone=normalized_phone, email=None,
         password_hash="x", role=UserRole.PATIENT, full_name=full_name, is_active=True,
     )
     db.add(user)
@@ -77,7 +81,7 @@ def _patient_headers(db, full_name: str = "Nguyễn Văn A") -> dict:
     profile = PatientProfile(user_id=user.id, full_name=full_name, dob="1990-01-01", gender="male")
     db.add(profile)
     db.commit()
-    return {"user_id": user.id, "profile_id": profile.id}
+    return {"user_id": user.id, "profile_id": profile.id, "phone": raw_phone}
 
 
 def _random_phone() -> str:
@@ -208,7 +212,7 @@ def test_link_existing_patient(client, owner, db):
     patient = _patient_headers(db)
     resp = client.post(
         f"{API}/clinics/{clinic['id']}/patients/link",
-        json={"patient_id": patient["profile_id"]},
+        json={"patient_id": patient["profile_id"], "phone": patient["phone"]},
         headers=owner["headers"],
     )
     assert resp.status_code == 201, resp.text
@@ -220,16 +224,58 @@ def test_link_same_patient_twice_rejected(client, owner, db):
     patient = _patient_headers(db)
     first = client.post(
         f"{API}/clinics/{clinic['id']}/patients/link",
-        json={"patient_id": patient["profile_id"]},
+        json={"patient_id": patient["profile_id"], "phone": patient["phone"]},
         headers=owner["headers"],
     )
     assert first.status_code == 201
     second = client.post(
         f"{API}/clinics/{clinic['id']}/patients/link",
-        json={"patient_id": patient["profile_id"]},
+        json={"patient_id": patient["profile_id"], "phone": patient["phone"]},
         headers=owner["headers"],
     )
     assert second.status_code == 400
+
+
+def test_create_patient_concurrent_phone_race_safety_net(client, owner, db, monkeypatch):
+    """Codex review P2: forces the check-then-insert TOCTOU race on
+    `User.phone` (app/services/clinic_patients.py create_patient) — two
+    concurrent creates with the same new phone both pass the pre-check
+    before either commits. Simulated by monkeypatching `find_by_phone` to
+    return None (as the loser's pre-check race would see) while a colliding
+    User already exists; the DB unique constraint must still turn this into
+    a controlled ClinicPatientError (400), never an unhandled 500."""
+    from app.services import clinic_patients as patients_service
+
+    clinic = _create_clinic(client, owner)
+    phone = _random_phone()
+    winner = client.post(
+        f"{API}/clinics/{clinic['id']}/patients",
+        json=_create_payload(phone=phone),
+        headers=owner["headers"],
+    )
+    assert winner.status_code == 201, winner.text
+
+    monkeypatch.setattr(patients_service, "find_by_phone", lambda db, phone_normalized: None)
+    loser = client.post(
+        f"{API}/clinics/{clinic['id']}/patients",
+        json=_create_payload(full_name="Người thua cuộc đua", phone=phone),
+        headers=owner["headers"],
+    )
+    assert loser.status_code == 400, loser.text
+
+
+def test_link_wrong_phone_rejected(client, owner, db):
+    """Codex review P0 regression: a bare patient_id must never be
+    sufficient to link — the caller must prove real-world contact via a
+    matching phone, re-verified server-side."""
+    clinic = _create_clinic(client, owner)
+    patient = _patient_headers(db)
+    resp = client.post(
+        f"{API}/clinics/{clinic['id']}/patients/link",
+        json={"patient_id": patient["profile_id"], "phone": _random_phone()},
+        headers=owner["headers"],
+    )
+    assert resp.status_code == 400, resp.text
 
 
 # ---------------------------------------------------------------------------
@@ -411,7 +457,11 @@ def test_accountant_denied_roster_access(client, owner, db):
     assert resp.status_code == 403
 
 
-def test_receptionist_can_create_but_not_patch(client, owner, db):
+def test_receptionist_can_create_and_patch(client, owner, db):
+    """RBAC_MATRIX.md's Patient admin record row + BRD §6.2 ("Receptionist:
+    Tạo/sửa hồ sơ hành chính") both grant Receptionist full read+write here
+    (Codex review P1 fix — status/internal_notes PATCH was incorrectly
+    Owner/Admin-only)."""
     clinic = _create_clinic(client, owner)
     reception = _member(db, clinic["id"], ["receptionist"])
     created = client.post(
@@ -425,6 +475,21 @@ def test_receptionist_can_create_but_not_patch(client, owner, db):
         f"{API}/clinics/{clinic['id']}/patients/{created.json()['patient_id']}",
         json={"internal_notes": "note"},
         headers={**reception["headers"], "X-Clinic-Id": clinic["id"]},
+    )
+    assert patch.status_code == 200, patch.text
+    assert patch.json()["internal_notes"] == "note"
+
+
+def test_accountant_denied_patch(client, owner, db):
+    clinic = _create_clinic(client, owner)
+    created = client.post(
+        f"{API}/clinics/{clinic['id']}/patients", json=_create_payload(), headers=owner["headers"]
+    )
+    accountant = _member(db, clinic["id"], ["accountant"])
+    patch = client.patch(
+        f"{API}/clinics/{clinic['id']}/patients/{created.json()['patient_id']}",
+        json={"internal_notes": "note"},
+        headers={**accountant["headers"], "X-Clinic-Id": clinic["id"]},
     )
     assert patch.status_code == 403
 

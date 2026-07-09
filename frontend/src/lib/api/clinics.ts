@@ -308,6 +308,10 @@ export interface PatientCandidateOut {
 
 export interface ClinicPatientLinkPayload {
   patient_id: string
+  /** Required proof-of-contact — must match the patient's real phone
+   * (the value `searchPatientCandidate` matched on); the backend
+   * re-verifies this server-side before linking (Codex review P0). */
+  phone: string
   patient_code?: string | null
 }
 
@@ -568,10 +572,9 @@ export async function listClinicPatients(
   clinicId: string,
   params: ClinicPatientListParams = {}
 ): Promise<ClinicPatientListOut> {
-  return api.get<ClinicPatientListOut>(
-    `/clinics/${clinicId}/patients${patientListQuery(params)}`,
-    { headers: clinicHeaders(clinicId) }
-  )
+  return api.get<ClinicPatientListOut>(`/clinics/${clinicId}/patients${patientListQuery(params)}`, {
+    headers: clinicHeaders(clinicId),
+  })
 }
 
 /** Exact-phone-match dedup helper (BR-M06-02) — `null` when no candidate
