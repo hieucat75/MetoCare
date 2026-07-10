@@ -2,7 +2,15 @@
 
 import * as React from 'react'
 import { useRouter, usePathname } from 'next/navigation'
-import { LayoutDashboard, Settings, Users, Building2, Stethoscope, UserRound } from 'lucide-react'
+import {
+  LayoutDashboard,
+  Settings,
+  Users,
+  Building2,
+  Stethoscope,
+  UserRound,
+  CalendarDays,
+} from 'lucide-react'
 import { PortalShell } from '@/components/portal/PortalShell'
 import type { NavItem } from '@/design-system'
 import { useAuth } from '@/lib/auth/context'
@@ -70,6 +78,15 @@ function buildNavItems(capabilities: ClinicCapabilities): NavItem[] {
       label: 'Bệnh nhân',
       icon: <UserRound className="w-5 h-5" />,
       href: '/clinic/patients',
+    })
+  }
+
+  if (capabilities.canViewAppointments) {
+    items.push({
+      id: 'clinic-appointments',
+      label: 'Lịch hẹn',
+      icon: <CalendarDays className="w-5 h-5" />,
+      href: '/clinic/appointments',
     })
   }
 

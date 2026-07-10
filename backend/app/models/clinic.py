@@ -94,6 +94,34 @@ class ClinicSubscriptionStatus(StrEnum):
     CANCELLED = "cancelled"
 
 
+class ClinicAppointmentStatus(StrEnum):
+    """Full BRD lifecycle (m07-appointment.md §7.5). M07 only routes a
+    subset of transitions (confirm/cancel/reschedule/no_show,
+    no_show->arrived); arrived->in_queue->in_consultation->completed are
+    M08/M09's own action endpoints — the shared validator already knows
+    these are valid so M08/M09 can reuse it (M07_IMPLEMENTATION_PLAN.md §4)."""
+
+    PENDING = "pending"
+    CONFIRMED = "confirmed"
+    ARRIVED = "arrived"
+    IN_QUEUE = "in_queue"
+    IN_CONSULTATION = "in_consultation"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
+    NO_SHOW = "no_show"
+
+
+class ClinicAppointmentSource(StrEnum):
+    """APPT-01 — every appointment records which channel created it."""
+
+    RECEPTION = "reception"
+    DOCTOR = "doctor"
+    PATIENT = "patient"
+    CARE_COORDINATOR = "care_coordinator"
+    MARKETPLACE = "marketplace"
+    API_PARTNER = "api_partner"
+
+
 class ClinicBranch(UUIDPrimaryKey, TimestampMixin, Base):
     __tablename__ = "clinic_branches"
 
@@ -324,5 +352,100 @@ class ClinicSubscription(UUIDPrimaryKey, TimestampMixin, Base):
             unique=True,
             postgresql_where=text("status IN ('trial', 'active')"),
             sqlite_where=text("status IN ('trial', 'active')"),
+        ),
+    )
+
+
+class ClinicAppointment(UUIDPrimaryKey, TimestampMixin, Base):
+    """Clinic-scoped appointment (Clinic SaaS C1 M07). A third, deliberately
+    separate table from the legacy `Appointment` (`care.py`, doctor-handoff/
+    encounter-flow entity) and the marketplace `BookingAppointment` (T21,
+    clinic-agnostic, keyed to `users.id`) — see
+    `docs/clinic-saas/M07_IMPLEMENTATION_PLAN.md` §1. No consultation/
+    marketplace code path is modified by this model.
+    """
+
+    __tablename__ = "clinic_appointments"
+
+    clinic_id: Mapped[str] = mapped_column(
+        ForeignKey("clinics.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    branch_id: Mapped[str] = mapped_column(
+        ForeignKey("clinic_branches.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    patient_id: Mapped[str] = mapped_column(
+        ForeignKey("patient_profiles.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    # Nullable — BRD: "required trừ dịch vụ không cần bác sĩ".
+    doctor_id: Mapped[str | None] = mapped_column(
+        ForeignKey("doctors.id", ondelete="RESTRICT"), nullable=True
+    )
+    service_id: Mapped[str] = mapped_column(
+        ForeignKey("clinic_services.id", ondelete="RESTRICT"), nullable=False
+    )
+    # Snapshotted at create — same Decimal-end-to-end precision discipline as
+    # ClinicService.price (Codex second-pass review P1 precedent).
+    price_snapshot: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    start_time: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    end_time: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(16), default=ClinicAppointmentStatus.PENDING, nullable=False
+    )
+    created_by_user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    created_by_source: Mapped[str] = mapped_column(String(20), nullable=False)
+    # Bare reference, no FK — M11 Care Plan doesn't exist yet (same bare-
+    # reference convention as AuditLog.resource_id).
+    linked_care_plan_item_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    cancellation_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    cancelled_by_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    cancelled_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Self-FK: "đổi lịch = Cancelled(cũ) + lịch mới liên kết" (BRD §7.5) — the
+    # chain of appointments IS the reschedule history, no separate history
+    # table (same "no redundant history table" discipline as M05's
+    # price-audit-via-AuditLog decision).
+    reschedule_of_id: Mapped[str | None] = mapped_column(
+        ForeignKey("clinic_appointments.id", ondelete="RESTRICT"), nullable=True
+    )
+    # Plain scheduling note, non-PHI — clinical content stays out of scope,
+    # belongs to M09 Encounter.notes (same precedent as legacy
+    # BookingAppointment.notes).
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        Index(
+            "ix_clinic_appointments_clinic_branch_start",
+            "clinic_id",
+            "branch_id",
+            "start_time",
+        ),
+        Index(
+            "ix_clinic_appointments_clinic_doctor_start",
+            "clinic_id",
+            "doctor_id",
+            "start_time",
+        ),
+        Index("ix_clinic_appointments_clinic_status", "clinic_id", "status"),
+        # AC-M07-02's DB-level double-booking guarantee: catches exact-
+        # start-time collisions for a doctor across all non-terminal
+        # statuses. Scope-bounded (documented in M07_IMPLEMENTATION_PLAN.md
+        # §2) — free-form overlapping-but-different-start-time bookings are
+        # only caught by the service layer's best-effort pre-check, since a
+        # true range-overlap EXCLUDE constraint is Postgres-only and would
+        # break the SQLite upgrade/downgrade/upgrade verification.
+        Index(
+            "uq_clinic_appointments_doctor_start",
+            "doctor_id",
+            "start_time",
+            unique=True,
+            postgresql_where=text(
+                "status NOT IN ('cancelled', 'no_show') AND doctor_id IS NOT NULL"
+            ),
+            sqlite_where=text(
+                "status NOT IN ('cancelled', 'no_show') AND doctor_id IS NOT NULL"
+            ),
         ),
     )
