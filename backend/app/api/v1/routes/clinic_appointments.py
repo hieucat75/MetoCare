@@ -57,6 +57,7 @@ _FORBIDDEN_OWN_APPOINTMENT_DETAIL = (
     "Bạn chỉ có thể thao tác trên lịch hẹn được phân công cho mình."
 )
 _DOCTOR_SELF_BOOKING_ONLY_DETAIL = "Bác sĩ chỉ có thể tự đặt lịch cho chính mình."
+_FORBIDDEN_BRANCH_DETAIL = "Bạn không có quyền truy cập chi nhánh này."
 
 _READ_ROLES = (
     ClinicRole.OWNER,
@@ -77,6 +78,18 @@ def _is_doctor_only(roles: frozenset[str]) -> bool:
 
 def _has_owner_admin_access(roles: frozenset[str]) -> bool:
     return bool(set(roles) & set(_OWNER_ADMIN_ROLES))
+
+
+def _assert_actor_branch_scope(tenant: TenantContext, branch_id: str) -> None:
+    """Raise 403 unless `branch_id` is within the caller's own membership
+    scope. `tenant.branch_ids` empty means unrestricted (matches
+    `clinic_services.list_services`'s established convention — Owner/Admin
+    typically hold no branch restriction; Reception/Nurse/Care Coordinator/
+    Doctor memberships may be scoped to specific branches, and per this
+    milestone's explicit instruction a branch-scoped role must never act
+    outside its own branch)."""
+    if tenant.branch_ids and branch_id not in tenant.branch_ids:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=_FORBIDDEN_BRANCH_DETAIL)
 
 
 def _own_doctor_profile_id(db: Session, tenant: TenantContext) -> str | None:
@@ -129,6 +142,7 @@ def _load_appointment_for_mutation(
             status_code=status.HTTP_404_NOT_FOUND, detail=_APPOINTMENT_NOT_FOUND_DETAIL
         )
     _assert_doctor_owns_appointment(db, tenant, appointment)
+    _assert_actor_branch_scope(tenant, appointment.branch_id)
     return appointment
 
 
@@ -157,11 +171,24 @@ def list_appointments(
         # regardless of what the client requested via `doctor_id`.
         effective_doctor_id = own_doctor_id
 
-    branch_ids = [branch_id] if branch_id is not None else None
+    # Branch scoping ALWAYS derives from TenantContext.branch_ids, never
+    # trusted purely from the client (same fix M05's list_services applied
+    # after its own Codex review — clinic_services.py's docstring). An
+    # explicit `branch_id` must be one of the caller's own membership
+    # branches; when omitted, a branch-scoped membership defaults to exactly
+    # that scope rather than silently falling through to "every branch."
+    if branch_id is not None:
+        _assert_actor_branch_scope(tenant, branch_id)
+        effective_branch_ids = [branch_id]
+    elif tenant.branch_ids:
+        effective_branch_ids = list(tenant.branch_ids)
+    else:
+        effective_branch_ids = None
+
     items, total = appointments_service.list_appointments(
         db,
         clinic_id=clinic_id,
-        branch_ids=branch_ids,
+        branch_ids=effective_branch_ids,
         doctor_id=effective_doctor_id,
         status=status_filter,
         date_from=date_from,
@@ -185,6 +212,7 @@ def create_appointment(
     require_clinic_roles(tenant.roles, *_CREATE_ROLES)
     clinic = _load_clinic_or_404(db, clinic_id)
     assert_clinic_writable(clinic)
+    _assert_actor_branch_scope(tenant, payload.branch_id)
 
     if _is_doctor_only(tenant.roles):
         own_doctor_id = _own_doctor_profile_id(db, tenant)
@@ -238,6 +266,7 @@ def get_appointment(
             status_code=status.HTTP_404_NOT_FOUND, detail=_APPOINTMENT_NOT_FOUND_DETAIL
         )
     _assert_doctor_owns_appointment(db, tenant, appointment)
+    _assert_actor_branch_scope(tenant, appointment.branch_id)
     return ClinicAppointmentOut.model_validate(appointment)
 
 
@@ -303,6 +332,8 @@ def reschedule_appointment(
     clinic = _load_clinic_or_404(db, clinic_id)
     assert_clinic_writable(clinic)
     original = _load_appointment_for_mutation(db, tenant, clinic_id, appointment_id)
+    if payload.branch_id is not None:
+        _assert_actor_branch_scope(tenant, payload.branch_id)
 
     is_override_allowed = _has_owner_admin_access(tenant.roles)
     try:

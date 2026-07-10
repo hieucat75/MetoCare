@@ -576,6 +576,40 @@ def test_invalid_transition_cancelled_to_confirmed_rejected(client, owner):
     assert confirm.status_code == 400, confirm.text
 
 
+def test_denied_transition_audit_row_persists(client, owner, db):
+    """A denied transition must leave a durable audit trail (BR-M07-01:
+    "mọi transition ghi audit"). The route never calls db.commit() on the
+    error path (it raises HTTPException from ClinicAppointmentError), so
+    transition_status must commit the denial record itself before raising —
+    otherwise get_session()'s implicit rollback-on-exception would silently
+    discard it every time."""
+    from app.models.governance import AuditLog
+
+    scaffold = _appointment_scaffold(client, owner)
+    appt = _create_and_get(client, scaffold, start_time=_next_weekday_at(5, 9, 0))
+    cancel = client.post(
+        f"{API}/clinics/{scaffold['clinic']['id']}/appointments/{appt['id']}/cancel",
+        json={"reason": "x"},
+        headers=scaffold["headers"],
+    )
+    assert cancel.status_code == 200
+
+    denied = client.post(
+        f"{API}/clinics/{scaffold['clinic']['id']}/appointments/{appt['id']}/confirm",
+        headers=scaffold["headers"],
+    )
+    assert denied.status_code == 400
+
+    rows = (
+        db.query(AuditLog)
+        .filter_by(action="clinic_appointment_transition_denied", resource_id=appt["id"])
+        .all()
+    )
+    assert len(rows) == 1
+    assert rows[0].outcome == "denied"
+    assert rows[0].details == {"from": "cancelled", "to": "confirmed"}
+
+
 # ---------------------------------------------------------------------------
 # Cancel
 # ---------------------------------------------------------------------------
@@ -778,14 +812,59 @@ def test_branch_scoped_membership_cannot_create_at_other_branch(client, owner, d
         json=_create_payload(scaffold, branch_id=other_branch["id"]),
         headers=headers,
     )
-    # Reception isn't itself branch-restricted at the RBAC-role layer in
-    # M07 (create is validated against clinic membership, not the caller's
-    # own branch_ids) — the appointment still succeeds in the clinic. This
-    # test documents that branch-scoping for M07 create currently applies
-    # only via the doctor's own membership branch_ids (asserted above in
-    # test_create_appointment_doctor_outside_branch_scope_rejected), not
-    # via the general staff caller's branch_ids. See final report.
-    assert resp.status_code in (201, 400)
+    # A branch-scoped receptionist must never be able to create at a
+    # different branch of the same clinic ("branch-scoped role không vượt
+    # branch" — this session's explicit instruction). Enforced via
+    # `_assert_actor_branch_scope` against `TenantContext.branch_ids`, the
+    # same pattern M05's `list_services` already established.
+    assert resp.status_code == 403, resp.text
+
+
+def test_branch_scoped_membership_can_create_at_own_branch(client, owner, db):
+    scaffold = _appointment_scaffold(client, owner)
+    user = _make_user(db, role=UserRole.CLINIC_ADMIN)
+    _add_membership(
+        db,
+        user_id=user["user_id"],
+        clinic_id=scaffold["clinic"]["id"],
+        roles=["receptionist"],
+        branch_ids=[scaffold["branch"]["id"]],
+    )
+    headers = {**user["headers"], "X-Clinic-Id": scaffold["clinic"]["id"]}
+    resp = client.post(
+        f"{API}/clinics/{scaffold['clinic']['id']}/appointments",
+        json=_create_payload(scaffold),
+        headers=headers,
+    )
+    assert resp.status_code == 201, resp.text
+
+
+def test_branch_scoped_membership_cannot_list_other_branch(client, owner, db):
+    scaffold = _appointment_scaffold(client, owner)
+    other_branch = _create_branch(client, scaffold["headers"], scaffold["clinic"]["id"])
+    user = _make_user(db, role=UserRole.CLINIC_ADMIN)
+    _add_membership(
+        db,
+        user_id=user["user_id"],
+        clinic_id=scaffold["clinic"]["id"],
+        roles=["receptionist"],
+        branch_ids=[scaffold["branch"]["id"]],
+    )
+    headers = {**user["headers"], "X-Clinic-Id": scaffold["clinic"]["id"]}
+    denied = client.get(
+        f"{API}/clinics/{scaffold['clinic']['id']}/appointments",
+        params={"branch_id": other_branch["id"]},
+        headers=headers,
+    )
+    assert denied.status_code == 403, denied.text
+
+    # Omitting branch_id must default to the caller's OWN branch scope, not
+    # every branch of the clinic.
+    unfiltered = client.get(
+        f"{API}/clinics/{scaffold['clinic']['id']}/appointments", headers=headers
+    )
+    assert unfiltered.status_code == 200
+    assert unfiltered.json()["total"] == 0
 
 
 # ---------------------------------------------------------------------------

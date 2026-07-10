@@ -326,6 +326,23 @@ def transition_status(
             severity="warning",
             details={"from": appointment.status, "to": new_status},
         )
+        # Commit here, not just flush: every calling route only calls
+        # db.commit() on the success path (it raises HTTPException from the
+        # ClinicAppointmentError below without committing), and
+        # get_session()'s `finally: db.close()` implicitly rolls back an
+        # uncommitted flush when this exception propagates — without this
+        # commit, the denial audit row would be silently discarded every
+        # time, undermining BR-M07-01's "mọi transition ghi audit" for
+        # exactly the case (a rejected attempt) that most needs a durable
+        # trail. Same precedent as clinic_membership.accept_invitation's
+        # expired-token path. Safe here: the only call site that chains a
+        # second transition_status in the same transaction
+        # (reschedule_appointment, cancelling the original after creating
+        # the new appointment) pre-validates the original's status is
+        # PENDING or CONFIRMED, and both transition to CANCELLED validly, so
+        # this denial branch — and therefore this commit — can never fire
+        # mid-reschedule.
+        db.commit()
         raise ClinicAppointmentError(
             f"Không thể chuyển trạng thái từ '{appointment.status}' sang '{new_status}'."
         )
