@@ -22,10 +22,16 @@ const CHECKINABLE_STATUS_LABEL: Record<string, string> = {
   arrived: 'Đã đến',
 }
 
-function todayRange(): { date_from: string; date_to: string } {
+function checkinWindowRange(): { date_from: string; date_to: string } {
+  // Codex M08 R8 P2: the backend allows check-in within its configured
+  // window around start_time (default ±12h), which crosses local midnight —
+  // a browser-local "today" filter hid a valid late-night prior-day
+  // appointment. Fetch ±1 day and let the backend enforce the real window.
   const start = new Date()
+  start.setDate(start.getDate() - 1)
   start.setHours(0, 0, 0, 0)
   const end = new Date()
+  end.setDate(end.getDate() + 1)
   end.setHours(23, 59, 59, 999)
   return { date_from: start.toISOString(), date_to: end.toISOString() }
 }
@@ -40,8 +46,9 @@ interface CheckInPanelProps {
   onChanged: () => void
 }
 
-/** AC-M08-01 (≤3 thao tác): today's checkin-able appointments, one-click
- * "Check-in" each — reuses the M07 list API with today's date window. */
+/** AC-M08-01 (≤3 thao tác): checkin-able appointments, one-click
+ * "Check-in" each — reuses the M07 list API with a ±1-day window (the
+ * backend enforces the actual check-in window). */
 export function CheckInPanel({ clinicId, branchId, reloadToken, onChanged }: CheckInPanelProps) {
   const [items, setItems] = React.useState<ClinicAppointmentOut[]>([])
   const [loading, setLoading] = React.useState(true)
@@ -55,7 +62,7 @@ export function CheckInPanel({ clinicId, branchId, reloadToken, onChanged }: Che
       const data = await listClinicAppointments(clinicId, {
         limit: 100,
         branch_id: branchId || undefined,
-        ...todayRange(),
+        ...checkinWindowRange(),
       })
       setItems(data.items.filter((a) => CHECKINABLE_STATUSES.includes(a.status)))
     } catch (err: unknown) {

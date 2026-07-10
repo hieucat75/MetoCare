@@ -367,6 +367,18 @@ def reschedule_appointment(
     if payload.branch_id is not None:
         _assert_actor_branch_scope(tenant, payload.branch_id)
 
+    # Codex M08 R8 P1: a doctor-scoped caller could reschedule their own
+    # appointment onto ANOTHER doctor via payload.doctor_id, bypassing the
+    # self-booking boundary (create enforces it; reschedule creates a new
+    # appointment too). Target doctor must be omitted (keeps the original's)
+    # or the caller's own profile.
+    if _is_doctor_only(tenant.roles) and payload.doctor_id is not None:
+        own_doctor_id = _own_doctor_profile_id(db, tenant)
+        if own_doctor_id is None or payload.doctor_id != own_doctor_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail=_DOCTOR_SELF_BOOKING_ONLY_DETAIL
+            )
+
     is_override_allowed = _has_owner_admin_access(tenant.roles)
     try:
         new_appointment = appointments_service.reschedule_appointment(

@@ -10,12 +10,12 @@ Appointment-status sync ALWAYS goes through
 validator) — no parallel appointment machine exists here; this module owns
 only the queue-ENTRY state machine (`_VALID_QUEUE_TRANSITIONS`).
 
-Concurrency (plan §2/§3):
-- Queue-number allocation: `UPDATE ... SET last_number = last_number + 1
-  ... RETURNING` (Postgres row lock serializes concurrent check-ins;
-  rollback rolls the increment back with the tx) + SAVEPOINT-wrapped INSERT
-  and one retry for the first-insert-of-the-day race. Verified working on
-  the test SQLite (3.53 >= 3.35, RETURNING supported) — no fallback needed.
+Concurrency (plan §2/§3, revised through Codex R6/R8):
+- Queue-number allocation runs under a clinic-row FOR UPDATE lock (one
+  allocation per clinic in flight; config changes serialize against it) and
+  reconciles every number against the scope's actually-issued max, so scope
+  flips can never re-issue a number. SAVEPOINT-wrapped INSERT + one retry
+  guards the first-insert-of-the-day.
 - Every entry status transition is an atomic conditional
   `UPDATE ... WHERE id = ? AND status = <expected>` checked via `rowcount`;
   the concurrent loser gets `ClinicQueueConflictError` -> 409.
@@ -187,7 +187,7 @@ def _counter_scope(
     return branch_id, ""
 
 
-def _seed_counter_start(
+def _max_issued_in_scope(
     db: Session,
     *,
     clinic_id: str,
@@ -196,16 +196,15 @@ def _seed_counter_start(
     doctor_id: str | None,
     is_doctor_scoped: bool,
 ) -> int:
-    """Codex M08 R5 P1: an admin flipping `number_reset_scope` mid-day used
-    to make a brand-new counter identity start at 1 while numbers up to N
-    were already issued to the SAME uniqueness scope — e.g. doctor A held
-    branch-day number 1, the scope flipped to branch_doctor_day, and doctor
-    A's next patient got number 1 again. A NEW counter therefore seeds from
-    the max queue_number already issued today within exactly its own
-    uniqueness scope (clinic-wide / per-branch / per-branch-per-doctor), so
-    numbering continues where that scope left off. This deliberately does
-    NOT widen the scope: under steady branch_doctor_day, doctor B's first
-    patient still gets 1 (BR-M08-03 "reset theo bác sĩ") — per-doctor
+    """Max queue_number already issued today within exactly one uniqueness
+    scope (clinic-wide / per-branch / per-branch-per-doctor). Used to
+    reconcile EVERY allocation (Codex M08 R5+R8 P1): scope flips must never
+    re-issue a number the same scope already handed out — neither a
+    brand-new counter starting at 1 (R5: branch_day → branch_doctor_day)
+    nor a STALE old counter resuming below numbers an interim scope issued
+    (R8: branch_day → clinic_day → back to branch_day). This deliberately
+    does NOT widen the scope: under steady branch_doctor_day, doctor B's
+    first patient still gets 1 (BR-M08-03 "reset theo bác sĩ") — per-doctor
     duplicates across DIFFERENT doctors are that scope's by-design behavior,
     always displayed alongside the doctor name. Numbers issued under a
     PREVIOUS scope may still repeat against the new scope's history
@@ -229,7 +228,7 @@ def _seed_counter_start(
     max_issued = db.execute(
         select(func.max(ClinicQueueEntry.queue_number)).where(*conditions)
     ).scalar_one_or_none()
-    return (max_issued or 0) + 1
+    return max_issued or 0
 
 
 def _insert_counter_row(
@@ -274,44 +273,57 @@ def _allocate_queue_number(
     counter_date: dt.date,
     doctor_id: str | None = None,
 ) -> int:
+    """Runs entirely under the caller's clinic-row FOR UPDATE lock (Codex
+    M08 R6 P1), so at most one allocation per clinic is in flight and the
+    counter row needs no atomic increment of its own. Every allocation
+    reconciles the counter against the scope's actually-issued max (Codex
+    M08 R8 P1: a scope flipped away and back would otherwise resume from a
+    stale last_number and re-issue numbers the interim scope already handed
+    out). The savepoint-wrapped INSERT + one retry stays as a belt-and-
+    braces guard for the first-insert-of-the-day (e.g. a non-check-in writer
+    ever touching counters)."""
     branch_condition = (
         ClinicQueueCounter.branch_id.is_(None)
         if branch_id is None
         else ClinicQueueCounter.branch_id == branch_id
     )
+    is_doctor_scoped = scope_key.startswith("doctor:")
     for _attempt in range(2):
-        allocated = db.execute(
-            update(ClinicQueueCounter)
-            .where(
+        counter = db.execute(
+            select(ClinicQueueCounter).where(
                 ClinicQueueCounter.clinic_id == clinic_id,
                 branch_condition,
                 ClinicQueueCounter.scope_key == scope_key,
                 ClinicQueueCounter.counter_date == counter_date,
             )
-            .values(last_number=ClinicQueueCounter.last_number + 1)
-            .returning(ClinicQueueCounter.last_number),
-            execution_options={"synchronize_session": False},
         ).scalar_one_or_none()
-        if allocated is not None:
-            return allocated
-        start_number = _seed_counter_start(
+        max_issued = _max_issued_in_scope(
             db,
             clinic_id=clinic_id,
             branch_id=branch_id,
             counter_date=counter_date,
             doctor_id=doctor_id,
-            is_doctor_scoped=scope_key.startswith("doctor:"),
+            is_doctor_scoped=is_doctor_scoped,
         )
+        new_number = max(counter.last_number if counter is not None else 0, max_issued) + 1
+        if counter is not None:
+            db.execute(
+                update(ClinicQueueCounter)
+                .where(ClinicQueueCounter.id == counter.id)
+                .values(last_number=new_number),
+                execution_options={"synchronize_session": False},
+            )
+            return new_number
         if _insert_counter_row(
             db,
             clinic_id=clinic_id,
             branch_id=branch_id,
             scope_key=scope_key,
             counter_date=counter_date,
-            start_number=start_number,
+            start_number=new_number,
         ):
-            return start_number
-        # Lost the first-insert race — the row now exists; retry the UPDATE.
+            return new_number
+        # Lost the first-insert race — the row now exists; retry.
     raise ClinicQueueConflictError("Không thể cấp số thứ tự — xung đột đồng thời.")
 
 

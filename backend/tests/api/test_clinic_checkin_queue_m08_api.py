@@ -529,6 +529,35 @@ def test_branch_doctor_day_scope_resets_per_doctor(client, owner, db):
     assert entry3["queue_number"] == 2  # doctor A continues
 
 
+def test_scope_revert_does_not_reuse_stale_counter(client, owner, db):
+    """Codex M08 R8 P1: flip branch_day -> clinic_day -> back to branch_day.
+    The original branch-day counter still exists with a stale last_number;
+    per-allocation reconciliation against the scope's issued max must keep
+    numbering monotonic instead of re-issuing the interim scope's number."""
+    scaffold = _scaffold(client, owner)
+    e1 = _checked_in_entry(client, scaffold)  # branch_day -> 1
+    assert e1["queue_number"] == 1
+
+    clinic_row = db.get(Clinic, scaffold["clinic"]["id"])
+    clinic_row.queue_config = {"number_reset_scope": "clinic_day"}
+    db.commit()
+    patient2 = _create_patient(client, scaffold["headers"], scaffold["clinic"]["id"])
+    e2 = _checked_in_entry(
+        client, scaffold, patient_id=patient2["patient_id"], start_time=_soon(hours=3)
+    )
+    assert e2["queue_number"] == 2  # clinic_day seeds past 1
+
+    clinic_row = db.get(Clinic, scaffold["clinic"]["id"])
+    clinic_row.queue_config = {"number_reset_scope": "branch_day"}
+    db.commit()
+    patient3 = _create_patient(client, scaffold["headers"], scaffold["clinic"]["id"])
+    e3 = _checked_in_entry(
+        client, scaffold, patient_id=patient3["patient_id"], start_time=_soon(hours=4)
+    )
+    # Stale branch-day counter said last_number=1; reconciliation must win.
+    assert e3["queue_number"] == 3
+
+
 def test_counter_first_insert_race_savepoint_retry(client, owner, db, monkeypatch):
     """Simulates losing the first-insert-of-the-day race: the fake insert
     plants the counter row (the concurrent winner's) and reports failure —

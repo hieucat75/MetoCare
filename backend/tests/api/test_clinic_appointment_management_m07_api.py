@@ -804,6 +804,44 @@ def test_doctor_with_extra_nonmanage_role_still_row_scoped(client, owner, db):
     assert confirm.status_code == 403, confirm.text
 
 
+def test_doctor_reschedule_cannot_retarget_other_doctor(client, owner, db):
+    """Codex M08 R8 P1: reschedule creates a NEW appointment, so the
+    self-booking boundary applies to its target doctor too — a doctor-scoped
+    caller may keep the original doctor (omit) or name themselves, never
+    another doctor."""
+    scaffold = _appointment_scaffold(client, owner)
+    doctor = _doctor_with_membership(db, scaffold["clinic"]["id"])
+    other = _doctor_with_membership(db, scaffold["clinic"]["id"])
+    appt = _create_and_get(
+        client, scaffold, doctor_id=doctor["doctor_id"], start_time=_next_weekday_at(0, 9, 0)
+    )
+    doctor_headers = {**doctor["headers"], "X-Clinic-Id": scaffold["clinic"]["id"]}
+    base = f"{API}/clinics/{scaffold['clinic']['id']}/appointments/{appt['id']}/reschedule"
+
+    retarget = client.post(
+        base,
+        json={
+            "start_time": _next_weekday_at(0, 10, 0).isoformat(),
+            "reason": "Đổi lịch",
+            "doctor_id": other["doctor_id"],
+        },
+        headers=doctor_headers,
+    )
+    assert retarget.status_code == 403, retarget.text
+
+    own = client.post(
+        base,
+        json={
+            "start_time": _next_weekday_at(0, 11, 0).isoformat(),
+            "reason": "Đổi lịch",
+            "doctor_id": doctor["doctor_id"],
+        },
+        headers=doctor_headers,
+    )
+    assert own.status_code == 201, own.text
+    assert own.json()["doctor_id"] == doctor["doctor_id"]
+
+
 def test_doctor_self_booking_only(client, owner, db):
     scaffold = _appointment_scaffold(client, owner)
     doctor_a = _doctor_with_membership(db, scaffold["clinic"]["id"])
