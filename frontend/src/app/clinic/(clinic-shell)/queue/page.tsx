@@ -177,7 +177,8 @@ export default function ClinicQueuePage() {
         </Button>
       )
     }
-    if (canManage && (row.status === 'waiting' || row.status === 'called')) {
+    // Doctor may remove/flag THEIR OWN entry (backend enforces own-ness).
+    if (canAct && (row.status === 'waiting' || row.status === 'called')) {
       actions.push(
         <Button
           key="leave"
@@ -189,7 +190,7 @@ export default function ClinicQueuePage() {
         </Button>
       )
     }
-    if (canManage && isActive) {
+    if (canAct && isActive) {
       actions.push(
         <Button key="priority" size="sm" variant="ghost" onClick={() => openPriority(row)}>
           {row.is_priority ? 'Bỏ ưu tiên' : 'Ưu tiên'}
@@ -291,7 +292,7 @@ export default function ClinicQueuePage() {
         <QueueDisplayBoard clinicId={clinic.id} branchId={branchFilter || undefined} />
       ) : (
         <>
-          {canManage && (
+          {canAct && (
             <CheckInPanel
               clinicId={clinic.id}
               branchId={branchFilter || undefined}

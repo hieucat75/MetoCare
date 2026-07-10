@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -187,8 +187,59 @@ def _counter_scope(
     return branch_id, ""
 
 
+def _seed_counter_start(
+    db: Session,
+    *,
+    clinic_id: str,
+    branch_id: str | None,
+    counter_date: dt.date,
+    doctor_id: str | None,
+    is_doctor_scoped: bool,
+) -> int:
+    """Codex M08 R5 P1: an admin flipping `number_reset_scope` mid-day used
+    to make a brand-new counter identity start at 1 while numbers up to N
+    were already issued to the SAME uniqueness scope — e.g. doctor A held
+    branch-day number 1, the scope flipped to branch_doctor_day, and doctor
+    A's next patient got number 1 again. A NEW counter therefore seeds from
+    the max queue_number already issued today within exactly its own
+    uniqueness scope (clinic-wide / per-branch / per-branch-per-doctor), so
+    numbering continues where that scope left off. This deliberately does
+    NOT widen the scope: under steady branch_doctor_day, doctor B's first
+    patient still gets 1 (BR-M08-03 "reset theo bác sĩ") — per-doctor
+    duplicates across DIFFERENT doctors are that scope's by-design behavior,
+    always displayed alongside the doctor name. Numbers issued under a
+    PREVIOUS scope may still repeat against the new scope's history
+    (unavoidable without renumbering issued tickets); only forward
+    uniqueness within each scope is guaranteed. Residual micro-race (an
+    uncommitted concurrent allocation invisible to this MAX at the exact
+    flip moment) is accepted: the flip is a rare admin action; steady-state
+    allocation is fully serialized by the counter row lock."""
+    conditions = [
+        ClinicQueueEntry.clinic_id == clinic_id,
+        ClinicQueueEntry.service_date == counter_date,
+    ]
+    if branch_id is not None:
+        conditions.append(ClinicQueueEntry.branch_id == branch_id)
+    if is_doctor_scoped:
+        conditions.append(
+            ClinicQueueEntry.doctor_id.is_(None)
+            if doctor_id is None
+            else ClinicQueueEntry.doctor_id == doctor_id
+        )
+    max_issued = db.execute(
+        select(func.max(ClinicQueueEntry.queue_number)).where(*conditions)
+    ).scalar_one_or_none()
+    return (max_issued or 0) + 1
+
+
 def _insert_counter_row(
-    db: Session, *, clinic_id: str, branch_id: str | None, scope_key: str, counter_date: dt.date
+    db: Session,
+    *,
+    clinic_id: str,
+    branch_id: str | None,
+    scope_key: str,
+    counter_date: dt.date,
+    start_number: int,
 ) -> bool:
     """First-insert-of-the-day, inside a SAVEPOINT: on the concurrent
     first-insert race the IntegrityError rolls back the savepoint ONLY (M06
@@ -205,7 +256,7 @@ def _insert_counter_row(
                     branch_id=branch_id,
                     scope_key=scope_key,
                     counter_date=counter_date,
-                    last_number=1,
+                    last_number=start_number,
                 )
             )
             db.flush()
@@ -215,7 +266,13 @@ def _insert_counter_row(
 
 
 def _allocate_queue_number(
-    db: Session, *, clinic_id: str, branch_id: str | None, scope_key: str, counter_date: dt.date
+    db: Session,
+    *,
+    clinic_id: str,
+    branch_id: str | None,
+    scope_key: str,
+    counter_date: dt.date,
+    doctor_id: str | None = None,
 ) -> int:
     branch_condition = (
         ClinicQueueCounter.branch_id.is_(None)
@@ -237,14 +294,23 @@ def _allocate_queue_number(
         ).scalar_one_or_none()
         if allocated is not None:
             return allocated
+        start_number = _seed_counter_start(
+            db,
+            clinic_id=clinic_id,
+            branch_id=branch_id,
+            counter_date=counter_date,
+            doctor_id=doctor_id,
+            is_doctor_scoped=scope_key.startswith("doctor:"),
+        )
         if _insert_counter_row(
             db,
             clinic_id=clinic_id,
             branch_id=branch_id,
             scope_key=scope_key,
             counter_date=counter_date,
+            start_number=start_number,
         ):
-            return 1
+            return start_number
         # Lost the first-insert race — the row now exists; retry the UPDATE.
     raise ClinicQueueConflictError("Không thể cấp số thứ tự — xung đột đồng thời.")
 
@@ -360,6 +426,7 @@ def check_in_appointment(
         branch_id=counter_branch_id,
         scope_key=scope_key,
         counter_date=service_date,
+        doctor_id=appointment.doctor_id,
     )
 
     entry = ClinicQueueEntry(

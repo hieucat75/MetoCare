@@ -5,11 +5,14 @@ Doctor own-scoped, CC read-only, Accountant none):
 - `_READ_ROLES` may list/display; a doctor-only caller is row-scoped to
   entries with their own `doctor_profile_id` (hardened from M07's `_is_doctor_only`
   pattern).
-- `_MANAGE_ROLES` (Owner/Admin/Reception/Nurse) may check-in/walk-in/leave/
-  priority.
-- `_ACT_ROLES` (= manage + doctor) may call/missed-call/start/complete —
-  doctor-only callers on their OWN entries only, and blocked from calling
-  an over-missed-call-cap entry (BR-M08-04: reception handles those).
+- `_MANAGE_ROLES` (Owner/Admin/Reception/Nurse) are unrestricted; walk-in
+  intake is manage-only (US-M08-02 is a reception workflow — no "own"
+  reading applies before an entry exists).
+- `_ACT_ROLES` (= manage + doctor) may check-in/call/missed-call/start/
+  complete/leave/priority — doctor-only callers on their OWN appointment/
+  entries only (Codex M08 R5 P1: the matrix's Doctor cell is "own", not
+  "none"), and blocked from calling an over-missed-call-cap entry
+  (BR-M08-04: reception handles those).
 
 Two routers because the check-in action lives on the appointment resource
 (`POST /clinics/{cid}/appointments/{aid}/check-in`, plan §4) while
@@ -69,6 +72,9 @@ _CLINIC_NOT_FOUND_DETAIL = "Không tìm thấy phòng khám."
 _APPOINTMENT_NOT_FOUND_DETAIL = "Không tìm thấy lịch hẹn."
 _ENTRY_NOT_FOUND_DETAIL = "Không tìm thấy lượt chờ."
 _FORBIDDEN_OWN_ENTRY_DETAIL = "Bạn chỉ có thể thao tác trên lượt chờ được phân công cho mình."
+_FORBIDDEN_OWN_APPOINTMENT_DETAIL = (
+    "Bạn chỉ có thể thao tác trên lịch hẹn được phân công cho mình."
+)
 _FORBIDDEN_BRANCH_DETAIL = "Bạn không có quyền truy cập chi nhánh này."
 _FORBIDDEN_OVER_CAP_DETAIL = (
     "Lượt chờ đã vượt số lần gọi nhỡ tối đa — cần lễ tân xử lý (gọi lại hoặc hủy lượt)."
@@ -184,7 +190,10 @@ def check_in_appointment(
     db: Session = Depends(get_session),
 ) -> ClinicQueueEntryOut:
     assert_path_clinic_matches_tenant(tenant.clinic_id, clinic_id)
-    require_clinic_roles(tenant.roles, *_MANAGE_ROLES)
+    # Codex M08 R5 P1: RBAC matrix grants Doctor "own" rights on the whole
+    # M08 row — a doctor may check in THEIR OWN appointment (patient walked
+    # straight to the consult room); manage roles stay unrestricted.
+    require_clinic_roles(tenant.roles, *_ACT_ROLES)
     clinic = _load_clinic_or_404(db, clinic_id)
     assert_clinic_writable(clinic)
     appointment = appointments_service.get_own_clinic_appointment(
@@ -194,6 +203,13 @@ def check_in_appointment(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=_APPOINTMENT_NOT_FOUND_DETAIL
         )
+    if _is_doctor_scoped(tenant.roles):
+        own_doctor_id = _own_doctor_profile_id(db, tenant)
+        if own_doctor_id is None or appointment.doctor_id != own_doctor_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=_FORBIDDEN_OWN_APPOINTMENT_DETAIL,
+            )
     _assert_actor_branch_scope(tenant, appointment.branch_id)
     try:
         entry = queue_service.check_in_appointment(
@@ -450,7 +466,9 @@ def leave_entry(
     db: Session = Depends(get_session),
 ) -> ClinicQueueEntryOut:
     assert_path_clinic_matches_tenant(tenant.clinic_id, clinic_id)
-    require_clinic_roles(tenant.roles, *_MANAGE_ROLES)
+    # Codex M08 R5 P1: Doctor may remove THEIR OWN entry (own-entry check in
+    # _load_entry_for_action); manage roles unrestricted.
+    require_clinic_roles(tenant.roles, *_ACT_ROLES)
     clinic = _load_clinic_or_404(db, clinic_id)
     assert_clinic_writable(clinic)
     entry = _load_entry_for_action(db, tenant, clinic_id, entry_id)
@@ -473,7 +491,9 @@ def set_priority(
     db: Session = Depends(get_session),
 ) -> ClinicQueueEntryOut:
     assert_path_clinic_matches_tenant(tenant.clinic_id, clinic_id)
-    require_clinic_roles(tenant.roles, *_MANAGE_ROLES)
+    # Codex M08 R5 P1: Doctor may flag THEIR OWN entry (reason still
+    # mandatory + audited per BR-M08-02); manage roles unrestricted.
+    require_clinic_roles(tenant.roles, *_ACT_ROLES)
     clinic = _load_clinic_or_404(db, clinic_id)
     assert_clinic_writable(clinic)
     entry = _load_entry_for_action(db, tenant, clinic_id, entry_id)

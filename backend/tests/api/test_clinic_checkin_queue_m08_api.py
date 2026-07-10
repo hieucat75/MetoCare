@@ -536,7 +536,7 @@ def test_counter_first_insert_race_savepoint_retry(client, owner, db, monkeypatc
     and never a 500."""
     scaffold = _scaffold(client, owner)
 
-    def losing_insert(db_, *, clinic_id, branch_id, scope_key, counter_date):
+    def losing_insert(db_, *, clinic_id, branch_id, scope_key, counter_date, **kwargs):
         db_.add(
             ClinicQueueCounter(
                 clinic_id=clinic_id,
@@ -1319,17 +1319,42 @@ def test_queue_config_garbage_values_fail_safe(client, owner, db):
     assert resp.json()["queue_number"] == 1
 
 
-def test_priority_forbidden_for_doctor(client, owner, db):
+def test_priority_doctor_own_yes_others_no(client, owner, db):
+    """Codex M08 R5 P1: the matrix's Doctor cell is "own", not "none" — a
+    doctor may flag THEIR OWN entry (reason mandatory), never another
+    doctor's."""
     scaffold = _scaffold(client, owner)
     doctor = _doctor_with_membership(db, scaffold["clinic"]["id"])
+    other = _doctor_with_membership(db, scaffold["clinic"]["id"])
     entry = _checked_in_entry(client, scaffold, doctor_id=doctor["doctor_id"])
-    resp = _entry_action(
+    doctor_headers = {**doctor["headers"], "X-Clinic-Id": scaffold["clinic"]["id"]}
+
+    own = _entry_action(
         client,
         scaffold,
         entry["id"],
         "priority",
+        json_body={"is_priority": True, "reason": "Cao tuổi"},
+        headers=doctor_headers,
+    )
+    assert own.status_code == 200, own.text
+    assert own.json()["is_priority"] is True
+
+    patient2 = _create_patient(client, scaffold["headers"], scaffold["clinic"]["id"])
+    other_entry = _checked_in_entry(
+        client,
+        scaffold,
+        doctor_id=other["doctor_id"],
+        patient_id=patient2["patient_id"],
+        start_time=_soon(hours=3),
+    )
+    resp = _entry_action(
+        client,
+        scaffold,
+        other_entry["id"],
+        "priority",
         json_body={"is_priority": True, "reason": "x"},
-        headers={**doctor["headers"], "X-Clinic-Id": scaffold["clinic"]["id"]},
+        headers=doctor_headers,
     )
     assert resp.status_code == 403, resp.text
 
@@ -1461,18 +1486,116 @@ def test_doctor_sees_and_acts_only_on_own_entries(client, owner, db):
     )
 
 
-def test_doctor_cannot_leave_entries(client, owner, db):
+def test_doctor_leave_own_yes_others_no(client, owner, db):
+    """Codex M08 R5 P1: a doctor may remove THEIR OWN entry from the queue,
+    never another doctor's."""
     scaffold = _scaffold(client, owner)
     doctor = _doctor_with_membership(db, scaffold["clinic"]["id"])
+    other = _doctor_with_membership(db, scaffold["clinic"]["id"])
     entry = _checked_in_entry(client, scaffold, doctor_id=doctor["doctor_id"])
-    resp = _entry_action(
+    doctor_headers = {**doctor["headers"], "X-Clinic-Id": scaffold["clinic"]["id"]}
+
+    own = _entry_action(client, scaffold, entry["id"], "leave", headers=doctor_headers)
+    assert own.status_code == 200, own.text
+    assert own.json()["status"] == "left"
+
+    patient2 = _create_patient(client, scaffold["headers"], scaffold["clinic"]["id"])
+    other_entry = _checked_in_entry(
         client,
         scaffold,
-        entry["id"],
-        "leave",
-        headers={**doctor["headers"], "X-Clinic-Id": scaffold["clinic"]["id"]},
+        doctor_id=other["doctor_id"],
+        patient_id=patient2["patient_id"],
+        start_time=_soon(hours=3),
+    )
+    resp = _entry_action(
+        client, scaffold, other_entry["id"], "leave", headers=doctor_headers
     )
     assert resp.status_code == 403, resp.text
+
+
+def test_doctor_checkin_own_appointment_yes_others_no(client, owner, db):
+    """Codex M08 R5 P1: a doctor may check in THEIR OWN appointment (patient
+    walked straight to the consult room), never another doctor's."""
+    scaffold = _scaffold(client, owner)
+    doctor = _doctor_with_membership(db, scaffold["clinic"]["id"])
+    other = _doctor_with_membership(db, scaffold["clinic"]["id"])
+    doctor_headers = {**doctor["headers"], "X-Clinic-Id": scaffold["clinic"]["id"]}
+
+    own_appt = _create_appointment(client, scaffold, doctor_id=doctor["doctor_id"])
+    resp = _check_in(client, scaffold, own_appt["id"], headers=doctor_headers)
+    assert resp.status_code == 201, resp.text
+
+    patient2 = _create_patient(client, scaffold["headers"], scaffold["clinic"]["id"])
+    other_appt = _create_appointment(
+        client,
+        scaffold,
+        doctor_id=other["doctor_id"],
+        patient_id=patient2["patient_id"],
+        start_time=_soon(hours=3),
+    )
+    denied = _check_in(client, scaffold, other_appt["id"], headers=doctor_headers)
+    assert denied.status_code == 403, denied.text
+    # No-doctor appointment: also outside a doctor-scoped caller's "own" set.
+    patient3 = _create_patient(client, scaffold["headers"], scaffold["clinic"]["id"])
+    no_doc_appt = _create_appointment(
+        client, scaffold, patient_id=patient3["patient_id"], start_time=_soon(hours=4)
+    )
+    denied2 = _check_in(client, scaffold, no_doc_appt["id"], headers=doctor_headers)
+    assert denied2.status_code == 403, denied2.text
+
+
+def test_scope_flip_mid_day_numbers_continue(client, owner, db):
+    """Codex M08 R5 P1 (exact reported scenario): doctor A holds branch-day
+    numbers, an admin flips to branch_doctor_day mid-day — doctor A's next
+    entry must CONTINUE (seed = max issued within the new counter's own
+    uniqueness scope), never hand the same doctor a duplicate 1. Steady-state
+    per-doctor reset (BR-M08-03 "reset theo bác sĩ") is preserved: a doctor
+    with no numbers today still starts at 1."""
+    scaffold = _scaffold(client, owner)
+    doctor_a = _doctor_with_membership(db, scaffold["clinic"]["id"])
+    doctor_b = _doctor_with_membership(db, scaffold["clinic"]["id"])
+    e1 = _checked_in_entry(client, scaffold, doctor_id=doctor_a["doctor_id"])
+    patient2 = _create_patient(client, scaffold["headers"], scaffold["clinic"]["id"])
+    e2 = _checked_in_entry(
+        client,
+        scaffold,
+        patient_id=patient2["patient_id"],
+        doctor_id=doctor_a["doctor_id"],
+        start_time=_soon(hours=3),
+    )
+    assert (e1["queue_number"], e2["queue_number"]) == (1, 2)  # branch_day
+
+    clinic_row = db.get(Clinic, scaffold["clinic"]["id"])
+    clinic_row.queue_config = {"number_reset_scope": "branch_doctor_day"}
+    db.commit()
+    patient3 = _create_patient(client, scaffold["headers"], scaffold["clinic"]["id"])
+    e3 = _checked_in_entry(
+        client,
+        scaffold,
+        patient_id=patient3["patient_id"],
+        doctor_id=doctor_a["doctor_id"],
+        start_time=_soon(hours=4),
+    )
+    assert e3["queue_number"] == 3  # doctor A continues, never a duplicate
+
+    patient4 = _create_patient(client, scaffold["headers"], scaffold["clinic"]["id"])
+    e4 = _checked_in_entry(
+        client,
+        scaffold,
+        patient_id=patient4["patient_id"],
+        doctor_id=doctor_b["doctor_id"],
+        start_time=_soon(hours=5),
+    )
+    assert e4["queue_number"] == 1  # fresh doctor: per-doctor reset intact
+
+    clinic_row = db.get(Clinic, scaffold["clinic"]["id"])
+    clinic_row.queue_config = {"number_reset_scope": "clinic_day"}
+    db.commit()
+    patient5 = _create_patient(client, scaffold["headers"], scaffold["clinic"]["id"])
+    e5 = _checked_in_entry(
+        client, scaffold, patient_id=patient5["patient_id"], start_time=_soon(hours=6)
+    )
+    assert e5["queue_number"] == 4  # clinic-wide counter seeds past day max 3
 
 
 # ---------------------------------------------------------------------------
