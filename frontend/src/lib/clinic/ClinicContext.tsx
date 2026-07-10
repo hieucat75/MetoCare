@@ -41,6 +41,9 @@ export interface ClinicCapabilities {
   canUpdatePatientRecord: boolean // M06 PATCH status/internal_notes — Owner/Admin/Reception
   canViewAppointments: boolean // M07 read — everyone except Accountant (RBAC_MATRIX.md Appointments row)
   canManageAppointments: boolean // M07 create/confirm/cancel/reschedule — Owner/Admin/Reception/Doctor (Doctor's own-only scoping is server-enforced, this is UX-only)
+  canViewQueue: boolean // M08 read — Owner/Admin/Doctor/Nurse/Reception/Care Coordinator (backend _READ_ROLES)
+  canManageQueue: boolean // M08 check-in/walk-in/leave/priority — Owner/Admin/Reception/Nurse (backend _MANAGE_ROLES)
+  canActOnOwnQueue: boolean // M08 Doctor call/start/complete on OWN entries only (server-enforced row scoping, this is UX-only)
 }
 
 function capabilitiesForRoles(roles: ClinicRole[]): ClinicCapabilities {
@@ -66,6 +69,14 @@ function capabilitiesForRoles(roles: ClinicRole[]): ClinicCapabilities {
     canUpdatePatientRecord: ownerOrAdmin || has('receptionist'),
     canViewAppointments: !isAccountantOnly,
     canManageAppointments: ownerOrAdmin || has('receptionist') || has('doctor'),
+    canViewQueue:
+      ownerOrAdmin ||
+      has('doctor') ||
+      has('nurse') ||
+      has('receptionist') ||
+      has('care_coordinator'),
+    canManageQueue: ownerOrAdmin || has('receptionist') || has('nurse'),
+    canActOnOwnQueue: has('doctor'),
   }
 }
 

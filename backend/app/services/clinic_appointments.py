@@ -129,6 +129,7 @@ def create_appointment(
     notes: str | None = None,
     override_working_hours_reason: str | None = None,
     is_override_allowed: bool = False,
+    skip_overlap_precheck: bool = False,
 ) -> ClinicAppointment:
     start_time = as_naive_utc(start_time)
 
@@ -188,8 +189,16 @@ def create_appointment(
                 "Thời gian đặt lịch nằm ngoài giờ làm việc của chi nhánh."
             )
 
-    if doctor_id is not None and _has_overlapping_appointment(
-        db, doctor_id=doctor_id, start_time=start_time, end_time=end_time
+    # `skip_overlap_precheck` — M08 walk-in only (plan §5 ADR-4): a walk-in
+    # is an immediate arrival, not a future slot reservation; blocking it
+    # because the doctor has a booked slot "now" would break US-M08-02. The
+    # DB exact-start unique index below still applies unconditionally.
+    if (
+        doctor_id is not None
+        and not skip_overlap_precheck
+        and _has_overlapping_appointment(
+            db, doctor_id=doctor_id, start_time=start_time, end_time=end_time
+        )
     ):
         raise ClinicAppointmentError("Bác sĩ đã có lịch hẹn trùng khung giờ này.")
 

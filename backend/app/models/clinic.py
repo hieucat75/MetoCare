@@ -120,6 +120,30 @@ class ClinicAppointmentSource(StrEnum):
     CARE_COORDINATOR = "care_coordinator"
     MARKETPLACE = "marketplace"
     API_PARTNER = "api_partner"
+    # M08 (BR-M08-01): a walk-in check-in creates its own ClinicAppointment.
+    # Additive Python-only change — the column is String(20), no migration
+    # (M08_IMPLEMENTATION_PLAN.md §5 ADR-7).
+    WALK_IN = "walk_in"
+
+
+class ClinicQueueEntryStatus(StrEnum):
+    """Queue-entry lifecycle (M08_IMPLEMENTATION_PLAN.md §3) — fail-closed,
+    validated by `services/clinic_queue.py`'s `_VALID_QUEUE_TRANSITIONS`.
+    Terminal at the entry level only: `left` never transitions the
+    appointment backward (BRD §7.5 has no backward edges — plan §5 ADR-6)."""
+
+    WAITING = "waiting"
+    CALLED = "called"
+    IN_CONSULTATION = "in_consultation"
+    COMPLETED = "completed"
+    LEFT = "left"
+
+
+class ClinicQueueEntrySource(StrEnum):
+    """QUEUE entry origin — scheduled check-in vs walk-in (US-M08-01/02)."""
+
+    SCHEDULED = "scheduled"
+    WALK_IN = "walk_in"
 
 
 class ClinicBranch(UUIDPrimaryKey, TimestampMixin, Base):
@@ -447,5 +471,133 @@ class ClinicAppointment(UUIDPrimaryKey, TimestampMixin, Base):
             sqlite_where=text(
                 "status NOT IN ('cancelled', 'no_show') AND doctor_id IS NOT NULL"
             ),
+        ),
+    )
+
+
+class ClinicQueueEntry(UUIDPrimaryKey, TimestampMixin, Base):
+    """Clinic check-in / queue entry (Clinic SaaS C1 M08). Exactly one entry
+    per appointment, ever (walk-ins create an appointment too — BR-M08-01),
+    so `appointment_id` is a hard UNIQUE: the INSERT is the serialization
+    point for concurrent double check-ins (M08_IMPLEMENTATION_PLAN.md §2).
+    No PHI: patient identity stays on `PatientProfile`; `priority_reason` is
+    operational text stored on the row (never in audit details — M07 R1 P1
+    discipline)."""
+
+    __tablename__ = "clinic_queue_entries"
+
+    clinic_id: Mapped[str] = mapped_column(
+        ForeignKey("clinics.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    branch_id: Mapped[str] = mapped_column(
+        ForeignKey("clinic_branches.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    patient_id: Mapped[str] = mapped_column(
+        ForeignKey("patient_profiles.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    appointment_id: Mapped[str] = mapped_column(
+        ForeignKey("clinic_appointments.id", ondelete="RESTRICT"), unique=True, nullable=False
+    )
+    # Mirrors the appointment's nullable doctor (services without a doctor).
+    doctor_id: Mapped[str | None] = mapped_column(
+        ForeignKey("doctors.id", ondelete="RESTRICT"), nullable=True
+    )
+    # Clinic-local operational day — computed with queue_config.day_offset_minutes
+    # (default 420 = UTC+7), NOT utcnow().date(): a VN clinic's "day" boundary
+    # is midnight ICT, and the codebase stores naive UTC (plan §5 ADR-2).
+    service_date: Mapped[dt.date] = mapped_column(Date, nullable=False)
+    queue_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(16), default=ClinicQueueEntryStatus.WAITING, nullable=False
+    )
+    is_priority: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Verbatim priority reason lives HERE, not in audit details (AC-M08-04 +
+    # M07's PHI-free-audit discipline: audit gets `reason_provided` only).
+    priority_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    priority_set_by_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    missed_call_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    source: Mapped[str] = mapped_column(String(16), nullable=False)
+    checked_in_by_user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    # BR-M08-05: wait time = consultation_started_at - checked_in_at, stored
+    # data for M16 reporting. `called_at` records the LAST call.
+    checked_in_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    called_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    consultation_started_at: Mapped[dt.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    completed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    left_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        Index(
+            "ix_clinic_queue_entries_clinic_branch_date",
+            "clinic_id",
+            "branch_id",
+            "service_date",
+        ),
+        Index("ix_clinic_queue_entries_clinic_status", "clinic_id", "status"),
+        # DB-enforced "one active queue entry per patient per clinic" —
+        # historical completed/left rows unconstrained (ClinicInvitation
+        # partial-index pattern; concurrent loser gets IntegrityError -> 409).
+        Index(
+            "uq_clinic_queue_entries_active_patient",
+            "clinic_id",
+            "patient_id",
+            unique=True,
+            postgresql_where=text("status IN ('waiting', 'called', 'in_consultation')"),
+            sqlite_where=text("status IN ('waiting', 'called', 'in_consultation')"),
+        ),
+    )
+
+
+class ClinicQueueCounter(UUIDPrimaryKey, TimestampMixin, Base):
+    """Per-scope daily queue-number counter (BR-M08-03). Allocation is
+    `UPDATE ... SET last_number = last_number + 1 ... RETURNING` — the
+    Postgres row lock serializes concurrent check-ins until commit, and a
+    rollback rolls the increment back with the transaction; first-insert
+    races are resolved by a SAVEPOINT-wrapped INSERT + one retry
+    (M08_IMPLEMENTATION_PLAN.md §2).
+
+    `branch_id` is nullable — a documented deviation from plan §2's NOT NULL:
+    the `clinic_day` reset scope (plan §5 ADR-1) needs ONE clinic-wide
+    counter row shared by every branch, which cannot carry a real branch FK.
+    NULL = clinic-wide row; the plain UNIQUE constraint cannot police NULL
+    rows (SQL NULLs are pairwise distinct), so a partial unique index covers
+    the `branch_id IS NULL` case with the same ClinicInvitation dual-syntax
+    pattern."""
+
+    __tablename__ = "clinic_queue_counters"
+
+    clinic_id: Mapped[str] = mapped_column(
+        ForeignKey("clinics.id", ondelete="RESTRICT"), nullable=False
+    )
+    branch_id: Mapped[str | None] = mapped_column(
+        ForeignKey("clinic_branches.id", ondelete="RESTRICT"), nullable=True
+    )
+    # "" for branch_day/clinic_day; "doctor:<id>" for branch_doctor_day.
+    scope_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    counter_date: Mapped[dt.date] = mapped_column(Date, nullable=False)
+    last_number: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "clinic_id",
+            "branch_id",
+            "scope_key",
+            "counter_date",
+            name="uq_clinic_queue_counters_scope",
+        ),
+        Index(
+            "uq_clinic_queue_counters_clinic_scope",
+            "clinic_id",
+            "scope_key",
+            "counter_date",
+            unique=True,
+            postgresql_where=text("branch_id IS NULL"),
+            sqlite_where=text("branch_id IS NULL"),
         ),
     )

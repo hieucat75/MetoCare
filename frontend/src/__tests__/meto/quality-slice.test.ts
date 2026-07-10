@@ -17,7 +17,7 @@ import {
   hasMarkdownLeakage,
   processInline,
 } from '@/lib/utils/markdownSanitize'
-import type { MetaChatResponse } from '@/lib/api/meto'
+import type { MetoChatResponse } from '@/lib/api/meto'
 
 // ── A. Markdown Leakage Tests ────────────────────────────────────────────────
 
@@ -161,8 +161,8 @@ describe('Provider identity leakage prevention', () => {
     'claude',
   ]
 
-  it('MetaChatResponse provider_used is always "meto"', () => {
-    const mockResponse: MetaChatResponse = {
+  it('MetoChatResponse provider_used is always "meto"', () => {
+    const mockResponse: MetoChatResponse = {
       conversation_id: 'conv-1',
       message_id: 'msg-1',
       content: 'Test response',
@@ -194,7 +194,7 @@ describe('Provider identity leakage prevention', () => {
 
 describe('Consent gate removed', () => {
   it('consent_required is always false/falsy in chat flow', () => {
-    const mockResponse: MetaChatResponse = {
+    const mockResponse: MetoChatResponse = {
       conversation_id: 'conv-1',
       message_id: 'msg-1',
       content: 'Meto reads your health profile and answers immediately.',
@@ -211,7 +211,7 @@ describe('Consent gate removed', () => {
   })
 
   it('consent_required defaults to undefined/false when not set', () => {
-    const mockResponse: MetaChatResponse = {
+    const mockResponse: MetoChatResponse = {
       conversation_id: 'conv-1',
       message_id: 'msg-1',
       content: 'Normal response',

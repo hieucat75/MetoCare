@@ -814,6 +814,198 @@ export async function markArrivedOverride(
   )
 }
 
+// ── Check-in & queue (M08 — app/schemas/clinic_queue.py) ─────────────────────
+
+export type ClinicQueueEntryStatus =
+  | 'waiting'
+  | 'called'
+  | 'in_consultation'
+  | 'completed'
+  | 'left'
+
+export type ClinicQueueEntrySource = 'scheduled' | 'walk_in'
+
+/** Staff view — full operational fields (QUEUE-02) incl. the server-side-
+ * decrypted patient display name. Mirrors `ClinicQueueEntryOut` exactly. */
+export interface ClinicQueueEntryOut {
+  id: string
+  clinic_id: string
+  branch_id: string
+  patient_id: string
+  appointment_id: string
+  doctor_id: string | null
+  service_date: string
+  queue_number: number
+  status: ClinicQueueEntryStatus
+  is_priority: boolean
+  priority_reason: string | null
+  missed_call_count: number
+  source: ClinicQueueEntrySource
+  checked_in_at: string
+  called_at: string | null
+  consultation_started_at: string | null
+  completed_at: string | null
+  left_at: string | null
+  // Enrichment (QUEUE-02 staff fields), computed server-side.
+  patient_display_name: string | null
+  doctor_name: string | null
+  service_name: string | null
+  appointment_start_time: string
+  waiting_minutes: number
+  /** BR-M08-04: over the missed-call cap — reception must resolve. */
+  requires_reception_action: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface ClinicQueueListOut {
+  total: number
+  items: ClinicQueueEntryOut[]
+}
+
+/** Public-screen payload (AC-M08-03): number + masked initials + status +
+ * doctor name ONLY — the backend schema shape itself excludes PHI. */
+export interface ClinicQueueDisplayEntryOut {
+  queue_number: number
+  patient_initials: string
+  status: string
+  doctor_name: string | null
+}
+
+export interface ClinicQueueDisplayOut {
+  items: ClinicQueueDisplayEntryOut[]
+}
+
+export interface ClinicQueueWalkInPayload {
+  branch_id: string
+  patient_id: string
+  service_id: string
+  doctor_id?: string | null
+  notes?: string | null
+}
+
+export interface ClinicQueuePriorityPayload {
+  is_priority: boolean
+  /** Required (min 1 char) for BOTH set and unset — BR-M08-02/AC-M08-04. */
+  reason: string
+}
+
+export interface ClinicQueueListParams {
+  branch_id?: string
+  doctor_id?: string
+  /** ISO date (YYYY-MM-DD); backend defaults to the clinic's operational today. */
+  service_date?: string
+  status?: ClinicQueueEntryStatus
+}
+
+function queueListQuery(params: ClinicQueueListParams = {}): string {
+  const qs = new URLSearchParams()
+  if (params.branch_id) qs.set('branch_id', params.branch_id)
+  if (params.doctor_id) qs.set('doctor_id', params.doctor_id)
+  if (params.service_date) qs.set('service_date', params.service_date)
+  if (params.status) qs.set('status', params.status)
+  const query = qs.toString()
+  return query ? `?${query}` : ''
+}
+
+/** Check-in a scheduled appointment (manage roles) — creates the queue entry. */
+export async function checkInAppointment(
+  clinicId: string,
+  appointmentId: string
+): Promise<ClinicQueueEntryOut> {
+  return api.post<ClinicQueueEntryOut>(
+    `/clinics/${clinicId}/appointments/${appointmentId}/check-in`,
+    undefined,
+    { headers: clinicHeaders(clinicId) }
+  )
+}
+
+/** Walk-in (US-M08-02) — creates a `walk_in` appointment + queue entry in one call. */
+export async function walkInCheckIn(
+  clinicId: string,
+  payload: ClinicQueueWalkInPayload
+): Promise<ClinicQueueEntryOut> {
+  return api.post<ClinicQueueEntryOut>(`/clinics/${clinicId}/queue/walk-in`, payload, {
+    headers: clinicHeaders(clinicId),
+  })
+}
+
+export async function listQueue(
+  clinicId: string,
+  params: ClinicQueueListParams = {}
+): Promise<ClinicQueueListOut> {
+  return api.get<ClinicQueueListOut>(`/clinics/${clinicId}/queue${queueListQuery(params)}`, {
+    headers: clinicHeaders(clinicId),
+  })
+}
+
+export async function getQueueDisplay(
+  clinicId: string,
+  branchId?: string
+): Promise<ClinicQueueDisplayOut> {
+  const query = branchId ? `?branch_id=${encodeURIComponent(branchId)}` : ''
+  return api.get<ClinicQueueDisplayOut>(`/clinics/${clinicId}/queue/display${query}`, {
+    headers: clinicHeaders(clinicId),
+  })
+}
+
+function queueEntryAction(
+  clinicId: string,
+  entryId: string,
+  action: 'call' | 'missed-call' | 'start-consultation' | 'complete' | 'leave'
+): Promise<ClinicQueueEntryOut> {
+  return api.post<ClinicQueueEntryOut>(
+    `/clinics/${clinicId}/queue/${entryId}/${action}`,
+    undefined,
+    { headers: clinicHeaders(clinicId) }
+  )
+}
+
+export async function callQueueEntry(
+  clinicId: string,
+  entryId: string
+): Promise<ClinicQueueEntryOut> {
+  return queueEntryAction(clinicId, entryId, 'call')
+}
+
+export async function markMissedCall(
+  clinicId: string,
+  entryId: string
+): Promise<ClinicQueueEntryOut> {
+  return queueEntryAction(clinicId, entryId, 'missed-call')
+}
+
+export async function startConsultation(
+  clinicId: string,
+  entryId: string
+): Promise<ClinicQueueEntryOut> {
+  return queueEntryAction(clinicId, entryId, 'start-consultation')
+}
+
+export async function completeQueueEntry(
+  clinicId: string,
+  entryId: string
+): Promise<ClinicQueueEntryOut> {
+  return queueEntryAction(clinicId, entryId, 'complete')
+}
+
+export async function leaveQueue(
+  clinicId: string,
+  entryId: string
+): Promise<ClinicQueueEntryOut> {
+  return queueEntryAction(clinicId, entryId, 'leave')
+}
+
+export async function setQueuePriority(
+  clinicId: string,
+  entryId: string,
+  payload: ClinicQueuePriorityPayload
+): Promise<ClinicQueueEntryOut> {
+  return api.post<ClinicQueueEntryOut>(`/clinics/${clinicId}/queue/${entryId}/priority`, payload, {
+    headers: clinicHeaders(clinicId),
+  })
+}
+
 // ── Subscription (M04) ────────────────────────────────────────────────────────
 
 /** Platform-wide plan catalog — no clinic scope needed. */

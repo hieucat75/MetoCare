@@ -17,6 +17,7 @@ from .routes import (
     clinic_branches,
     clinic_members,
     clinic_patients,
+    clinic_queue,
     clinic_services,
     clinic_subscriptions,
     clinical_copilot,
@@ -82,4 +83,6 @@ api_router.include_router(clinic_members.accept_router)
 api_router.include_router(clinic_services.router)
 api_router.include_router(clinic_patients.router)
 api_router.include_router(clinic_appointments.router)
+api_router.include_router(clinic_queue.router)
+api_router.include_router(clinic_queue.checkin_router)
 api_router.include_router(clinic_subscriptions.router)
