@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class ClinicQueueEntryOut(BaseModel):
@@ -79,5 +79,13 @@ class ClinicQueuePriorityRequest(BaseModel):
     is_priority: bool
     # Required — BR-M08-02/AC-M08-04: priority is exclusively a human action
     # WITH a reason. The verbatim reason is stored on the row; audit records
-    # only `reason_provided` (M07 PHI-audit discipline).
+    # only `reason_provided` (M07 PHI-audit discipline). Codex M08 R1 P1:
+    # min_length alone accepts a whitespace-only string — strip first, so
+    # "   " fails validation instead of satisfying the mandatory-reason rule
+    # (the service re-checks defensively as well).
     reason: str = Field(min_length=1, max_length=500)
+
+    @field_validator("reason", mode="before")
+    @classmethod
+    def _strip_reason(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value

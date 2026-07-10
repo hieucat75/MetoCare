@@ -115,11 +115,36 @@ _CHECKIN_CHAIN: dict[str, tuple[str, ...]] = {
 }
 
 
+# Codex M08 R1 P1: `Clinic.queue_config` is an untyped tenant-editable JSON
+# blob — a string/list/negative value for a numeric key must degrade to the
+# fail-safe default (never a 500 TypeError mid-check-in). Bounds keep even
+# valid ints operationally sane.
+_INT_CONFIG_BOUNDS: dict[str, tuple[int, int]] = {
+    "max_missed_calls": (1, 20),
+    "checkin_window_hours": (1, 48),
+    "day_offset_minutes": (-720, 840),
+}
+_VALID_RESET_SCOPES = ("branch_day", "branch_doctor_day", "clinic_day")
+
+
+def _coerce_int(value: object, *, default: int, low: int, high: int) -> int:
+    # bool is an int subclass — treat it as invalid, not as 0/1.
+    if isinstance(value, bool) or not isinstance(value, int):
+        return default
+    return min(high, max(low, value))
+
+
 def get_queue_config(clinic: Clinic) -> dict:
-    """Merged copy — never mutates the Clinic row's JSON (immutability)."""
+    """Merged, TYPE-SANITIZED copy — never mutates the Clinic row's JSON
+    (immutability), never trusts its value types (Codex M08 R1 P1)."""
     merged = dict(_DEFAULT_QUEUE_CONFIG)
-    if clinic.queue_config:
-        merged.update({k: v for k, v in clinic.queue_config.items() if v is not None})
+    raw = clinic.queue_config or {}
+    for key, (low, high) in _INT_CONFIG_BOUNDS.items():
+        if key in raw:
+            merged[key] = _coerce_int(raw[key], default=merged[key], low=low, high=high)
+    scope = raw.get("number_reset_scope")
+    if scope in _VALID_RESET_SCOPES:
+        merged["number_reset_scope"] = scope
     return merged
 
 
@@ -408,15 +433,26 @@ def _assert_transition_allowed(
 
 
 def _apply_transition(
-    db: Session, *, entry_id: str, expected_status: str, values: dict
+    db: Session,
+    *,
+    entry_id: str,
+    expected_status: str,
+    values: dict,
+    extra_where: list | None = None,
 ) -> bool:
     """The serialization point for two staff acting on the same entry:
     exactly one conditional UPDATE wins; the loser sees rowcount == 0.
-    Module-level so tests can monkeypatch it to inject a concurrent winner
-    between the route's read and this UPDATE."""
+    `extra_where` lets a caller make additional invariants atomic (e.g. the
+    missed-call cap — Codex M08 R1 P1). Module-level so tests can monkeypatch
+    it to inject a concurrent winner between the route's read and this
+    UPDATE."""
     result = db.execute(
         update(ClinicQueueEntry)
-        .where(ClinicQueueEntry.id == entry_id, ClinicQueueEntry.status == expected_status)
+        .where(
+            ClinicQueueEntry.id == entry_id,
+            ClinicQueueEntry.status == expected_status,
+            *(extra_where or []),
+        )
         .values(**values),
         execution_options={"synchronize_session": False},
     )
@@ -431,12 +467,17 @@ def _transition_entry(
     actor_id: str,
     extra_values: dict | None = None,
     details_extra: dict | None = None,
+    extra_where: list | None = None,
 ) -> ClinicQueueEntry:
     expected_status = entry.status
     _assert_transition_allowed(db, entry=entry, new_status=new_status, actor_id=actor_id)
     values = {"status": new_status, **(extra_values or {})}
     if not _apply_transition(
-        db, entry_id=entry.id, expected_status=expected_status, values=values
+        db,
+        entry_id=entry.id,
+        expected_status=expected_status,
+        values=values,
+        extra_where=extra_where,
     ):
         raise ClinicQueueConflictError(
             "Lượt chờ vừa được cập nhật bởi người khác — vui lòng tải lại hàng chờ."
@@ -467,7 +508,21 @@ def call_entry(db: Session, *, entry: ClinicQueueEntry, actor_id: str) -> Clinic
     )
 
 
-def mark_missed_call(db: Session, *, entry: ClinicQueueEntry, actor_id: str) -> ClinicQueueEntry:
+def mark_missed_call(
+    db: Session, *, entry: ClinicQueueEntry, actor_id: str, max_missed_calls: int
+) -> ClinicQueueEntry:
+    """BR-M08-04's cap is a hard bound (Codex M08 R1 P1: previously only the
+    doctor's `call` was gated, so call→missed cycles could push the count
+    past the configured max indefinitely). At the cap, reception's resolution
+    paths are `call` again or `leave` — never another missed-call increment.
+    Enforced twice: a friendly fail-fast here, and atomically inside the
+    conditional UPDATE (`missed_call_count < max`) so a concurrent racer
+    can't overshoot between this read and the write."""
+    if entry.missed_call_count >= max_missed_calls:
+        raise ClinicQueueError(
+            "Lượt chờ đã đạt số lần gọi nhỡ tối đa — lễ tân xử lý bằng cách"
+            " gọi lại hoặc hủy lượt chờ."
+        )
     # SQL-side increment; the conditional WHERE status='called' guarantees at
     # most one missed-call per call cycle wins, so the loaded count + 1 in
     # the audit details cannot double-count under concurrency (BR-M08-04).
@@ -479,6 +534,7 @@ def mark_missed_call(db: Session, *, entry: ClinicQueueEntry, actor_id: str) -> 
         actor_id=actor_id,
         extra_values={"missed_call_count": ClinicQueueEntry.missed_call_count + 1},
         details_extra={"missed_call_count": new_count},
+        extra_where=[ClinicQueueEntry.missed_call_count < max_missed_calls],
     )
 
 
@@ -551,13 +607,34 @@ def set_priority(
     db: Session, *, entry: ClinicQueueEntry, actor_id: str, is_priority: bool, reason: str
 ) -> ClinicQueueEntry:
     """BR-M08-02: the system never auto-prioritizes — this human-only action
-    requires a reason (schema-enforced). Verbatim reason lives on the row;
-    audit records only `reason_provided` (M07 PHI-audit discipline)."""
+    requires a reason (schema-enforced + defensively re-checked here, Codex
+    M08 R1 P1: a whitespace-only string must not satisfy the mandatory-reason
+    rule). Verbatim reason lives on the row; audit records only
+    `reason_provided` (M07 PHI-audit discipline).
+
+    Concurrency (Codex M08 R1 P1): a conditional UPDATE predicated on the
+    loaded `is_priority` — not ORM read-modify-write — so two staff racing
+    the same toggle get exactly one winner (the loser 409s and reloads) and
+    the audit's from/to can never record a stale pair."""
+    reason = reason.strip()
+    if not reason:
+        raise ClinicQueueError("Lý do ưu tiên là bắt buộc.")
     old_priority = entry.is_priority
-    entry.is_priority = is_priority
-    entry.priority_reason = reason
-    entry.priority_set_by_user_id = actor_id
-    db.flush()
+    result = db.execute(
+        update(ClinicQueueEntry)
+        .where(ClinicQueueEntry.id == entry.id, ClinicQueueEntry.is_priority == old_priority)
+        .values(
+            is_priority=is_priority,
+            priority_reason=reason,
+            priority_set_by_user_id=actor_id,
+        ),
+        execution_options={"synchronize_session": False},
+    )
+    if result.rowcount != 1:
+        raise ClinicQueueConflictError(
+            "Cờ ưu tiên vừa được cập nhật bởi người khác — vui lòng tải lại hàng chờ."
+        )
+    db.expire(entry)
     audit.record(
         db,
         actor_type="user",
@@ -566,7 +643,7 @@ def set_priority(
         resource_type="clinic_queue_entry",
         resource_id=entry.id,
         clinic_id=entry.clinic_id,
-        details={"from": old_priority, "to": is_priority, "reason_provided": bool(reason.strip())},
+        details={"from": old_priority, "to": is_priority, "reason_provided": True},
     )
     return entry
 

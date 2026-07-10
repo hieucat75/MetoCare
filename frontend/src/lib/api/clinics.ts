@@ -816,12 +816,7 @@ export async function markArrivedOverride(
 
 // ── Check-in & queue (M08 — app/schemas/clinic_queue.py) ─────────────────────
 
-export type ClinicQueueEntryStatus =
-  | 'waiting'
-  | 'called'
-  | 'in_consultation'
-  | 'completed'
-  | 'left'
+export type ClinicQueueEntryStatus = 'waiting' | 'called' | 'in_consultation' | 'completed' | 'left'
 
 export type ClinicQueueEntrySource = 'scheduled' | 'walk_in'
 
@@ -989,10 +984,7 @@ export async function completeQueueEntry(
   return queueEntryAction(clinicId, entryId, 'complete')
 }
 
-export async function leaveQueue(
-  clinicId: string,
-  entryId: string
-): Promise<ClinicQueueEntryOut> {
+export async function leaveQueue(clinicId: string, entryId: string): Promise<ClinicQueueEntryOut> {
   return queueEntryAction(clinicId, entryId, 'leave')
 }
 

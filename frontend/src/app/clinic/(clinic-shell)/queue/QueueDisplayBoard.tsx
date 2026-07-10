@@ -80,9 +80,7 @@ export function QueueDisplayBoard({ clinicId, branchId }: QueueDisplayBoardProps
               isCalled ? 'border-primary bg-primary/5' : 'border-border bg-surface'
             }`}
           >
-            <p className="text-[56px] font-bold leading-none tabular-nums">
-              {item.queue_number}
-            </p>
+            <p className="text-[56px] font-bold leading-none tabular-nums">{item.queue_number}</p>
             <p className="mt-3 text-body-lg font-semibold">{item.patient_initials}</p>
             <p className="mt-1 text-body-sm text-text-muted">
               {item.doctor_name ? `BS. ${item.doctor_name}` : 'Chưa phân công bác sĩ'}

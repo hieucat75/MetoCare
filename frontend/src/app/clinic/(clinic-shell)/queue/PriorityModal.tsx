@@ -62,12 +62,7 @@ export function PriorityModal({ open, onOpenChange, onDone, clinicId, entry }: P
         </p>
 
         <FormField label="Lý do" required>
-          <Textarea
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            rows={3}
-            required
-          />
+          <Textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3} required />
         </FormField>
 
         <Button type="submit" loading={saving} disabled={!reason.trim()} fullWidth>

@@ -93,7 +93,13 @@ def _member(db, clinic_id: str, roles: list[str], *, branch_ids: list[str] | Non
     return user
 
 
-def _doctor_with_membership(db, clinic_id: str, *, branch_ids: list[str] | None = None) -> dict:
+def _doctor_with_membership(
+    db,
+    clinic_id: str,
+    *,
+    branch_ids: list[str] | None = None,
+    roles: list[str] | None = None,
+) -> dict:
     doctor_profile = Doctor(full_name=f"BS {os.urandom(3).hex()}")
     db.add(doctor_profile)
     db.commit()
@@ -109,7 +115,7 @@ def _doctor_with_membership(db, clinic_id: str, *, branch_ids: list[str] | None 
         db,
         user_id=doctor_user.id,
         clinic_id=clinic_id,
-        roles=["doctor"],
+        roles=roles or ["doctor"],
         branch_ids=branch_ids,
         doctor_profile_id=doctor_profile.id,
     )
@@ -726,11 +732,20 @@ def test_missed_call_cap_blocks_doctor_but_not_reception(client, owner, db):
     # BR-M08-04: over the cap, the doctor can no longer call...
     over_cap = _entry_action(client, scaffold, entry["id"], "call", headers=doctor_headers)
     assert over_cap.status_code == 403, over_cap.text
-    # ...but reception-side roles still can (or can remove the entry).
+    # ...but reception-side roles still can — their resolution paths are
+    # "call again" or "leave". A further missed-call increment past the cap
+    # is a hard 400 for EVERYONE (Codex M08 R1 P1: the cap was previously
+    # only a doctor-call gate, so call->missed cycles could grow the count
+    # unboundedly past the configured max).
     reception_call = _entry_action(client, scaffold, entry["id"], "call")
     assert reception_call.status_code == 200, reception_call.text
-    assert _entry_action(client, scaffold, entry["id"], "missed-call").status_code == 200
+    capped = _entry_action(client, scaffold, entry["id"], "missed-call")
+    assert capped.status_code == 400, capped.text
     assert _entry_action(client, scaffold, entry["id"], "leave").status_code == 200
+    # Count never exceeded the cap.
+    row = db.get(ClinicQueueEntry, entry["id"])
+    db.refresh(row)
+    assert row.missed_call_count == 3
 
 
 def test_leave_terminal_and_appointment_untouched(client, owner, db):
@@ -804,7 +819,7 @@ def _install_racing_winner(monkeypatch, db, winner_status: str):
 
     real_apply = queue_service._apply_transition
 
-    def racing_apply(db_, *, entry_id, expected_status, values):
+    def racing_apply(db_, *, entry_id, expected_status, values, **kwargs):
         db_.execute(
             sa_update(ClinicQueueEntry)
             .where(ClinicQueueEntry.id == entry_id)
@@ -905,6 +920,93 @@ def test_priority_sets_row_fields_audits_without_verbatim_reason_and_reorders(
     assert listing.status_code == 200
     ids = [item["id"] for item in listing.json()["items"]]
     assert ids.index(entry2["id"]) < ids.index(entry1["id"])
+
+
+def test_priority_whitespace_reason_422(client, owner):
+    """Codex M08 R1 P1 regression: min_length alone accepted '   ' as a
+    mandatory reason — the schema now strips before validating."""
+    scaffold = _scaffold(client, owner)
+    entry = _checked_in_entry(client, scaffold)
+    resp = _entry_action(
+        client,
+        scaffold,
+        entry["id"],
+        "priority",
+        json_body={"is_priority": True, "reason": "   "},
+    )
+    assert resp.status_code == 422, resp.text
+
+
+def test_priority_race_loser_409(client, owner, db):
+    """Codex M08 R1 P1 regression: priority was ORM read-modify-write — two
+    racing staff silently last-write-won with stale audit from/to. Now a
+    conditional UPDATE predicated on the loaded is_priority: the loser 409s."""
+    from app.services.clinic_queue import ClinicQueueConflictError
+    from sqlalchemy import update as sa_update
+
+    scaffold = _scaffold(client, owner)
+    entry_out = _checked_in_entry(client, scaffold)
+    entry = db.get(ClinicQueueEntry, entry_out["id"])
+    assert entry.is_priority is False  # loaded (stale-to-be) state
+
+    # Concurrent "winner" flips the flag between our read and our write.
+    db.execute(
+        sa_update(ClinicQueueEntry)
+        .where(ClinicQueueEntry.id == entry.id)
+        .values(is_priority=True),
+        execution_options={"synchronize_session": False},
+    )
+    with pytest.raises(ClinicQueueConflictError):
+        queue_service.set_priority(
+            db, entry=entry, actor_id=owner["user_id"], is_priority=True, reason="Cao tuổi"
+        )
+
+
+def test_doctor_with_extra_nonmanage_role_still_own_scoped(client, owner, db):
+    """Codex M08 R1 P1 regression: a ['doctor', 'care_coordinator'] membership
+    used to dodge own-entry scoping (the old exact-set `== {doctor}` test),
+    letting it call/start any doctor's entry. Scoping now applies to every
+    caller holding `doctor` without a manage role."""
+    scaffold = _scaffold(client, owner)
+    other_doctor = _doctor_with_membership(db, scaffold["clinic"]["id"])
+    entry = _checked_in_entry(client, scaffold, doctor_id=other_doctor["doctor_id"])
+
+    dcc = _doctor_with_membership(
+        db, scaffold["clinic"]["id"], roles=["doctor", "care_coordinator"]
+    )
+    dcc_headers = {**dcc["headers"], "X-Clinic-Id": scaffold["clinic"]["id"]}
+
+    for action in ("call", "start-consultation", "complete"):
+        resp = _entry_action(client, scaffold, entry["id"], action, headers=dcc_headers)
+        assert resp.status_code == 403, f"{action}: {resp.text}"
+
+    # List is row-scoped to their own (empty) assignment set too.
+    listing = client.get(
+        f"{API}/clinics/{scaffold['clinic']['id']}/queue", headers=dcc_headers
+    )
+    assert listing.status_code == 200
+    assert all(
+        item["doctor_id"] == dcc["doctor_id"] for item in listing.json()["items"]
+    )
+
+
+def test_queue_config_garbage_values_fail_safe(client, owner, db):
+    """Codex M08 R1 P1 regression: tenant-editable queue_config JSON with
+    wrong types must degrade to defaults (fail-safe), never 500 a check-in."""
+    scaffold = _scaffold(client, owner)
+    clinic_row = db.get(Clinic, scaffold["clinic"]["id"])
+    clinic_row.queue_config = {
+        "max_missed_calls": "ba",
+        "checkin_window_hours": None,
+        "day_offset_minutes": [420],
+        "number_reset_scope": "bogus_scope",
+    }
+    db.commit()
+
+    appt = _create_appointment(client, scaffold)
+    resp = _check_in(client, scaffold, appt["id"])
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["queue_number"] == 1
 
 
 def test_priority_forbidden_for_doctor(client, owner, db):

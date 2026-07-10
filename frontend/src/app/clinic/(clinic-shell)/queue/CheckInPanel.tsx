@@ -100,9 +100,7 @@ export function CheckInPanel({ clinicId, branchId, reloadToken, onChanged }: Che
       {loading ? (
         <p className="text-body-xs text-text-muted">Đang tải…</p>
       ) : items.length === 0 ? (
-        <p className="text-body-xs text-text-muted">
-          Không còn lịch hẹn nào hôm nay cần check-in.
-        </p>
+        <p className="text-body-xs text-text-muted">Không còn lịch hẹn nào hôm nay cần check-in.</p>
       ) : (
         <ul className="flex flex-col divide-y divide-border">
           {items.map((row) => (
@@ -112,7 +110,8 @@ export function CheckInPanel({ clinicId, branchId, reloadToken, onChanged }: Che
                 {CHECKINABLE_STATUS_LABEL[row.status] ?? row.status}
               </Badge>
               <span className="text-body-xs text-text-muted">
-                BN {row.patient_id.slice(0, 8)} · BS {row.doctor_id ? row.doctor_id.slice(0, 8) : '—'}
+                BN {row.patient_id.slice(0, 8)} · BS{' '}
+                {row.doctor_id ? row.doctor_id.slice(0, 8) : '—'}
               </span>
               <div className="ml-auto">
                 <Button

@@ -3,7 +3,7 @@
 RBAC per RBAC_MATRIX.md's M08 row (Owner/Admin/Nurse/Reception manage,
 Doctor own-scoped, CC read-only, Accountant none):
 - `_READ_ROLES` may list/display; a doctor-only caller is row-scoped to
-  entries with their own `doctor_profile_id` (M07 `_is_doctor_only`
+  entries with their own `doctor_profile_id` (hardened from M07's `_is_doctor_only`
   pattern).
 - `_MANAGE_ROLES` (Owner/Admin/Reception/Nurse) may check-in/walk-in/leave/
   priority.
@@ -88,8 +88,14 @@ _MANAGE_ROLES = (
 _ACT_ROLES = (*_MANAGE_ROLES, ClinicRole.DOCTOR)
 
 
-def _is_doctor_only(roles: frozenset[str]) -> bool:
-    return set(roles) == {ClinicRole.DOCTOR}
+def _is_doctor_scoped(roles: frozenset[str]) -> bool:
+    """Own-entry scoping applies to any caller who can act ONLY by virtue of
+    their doctor role — i.e. holds `doctor` and no manage role. Codex M08 R1
+    P1: the previous exact-set test (`roles == {doctor}`) let a
+    doctor+care_coordinator membership skip own-entry enforcement entirely,
+    since CC isn't a manage role but the set-equality check no longer
+    matched."""
+    return ClinicRole.DOCTOR in roles and not (set(roles) & set(_MANAGE_ROLES))
 
 
 def _assert_actor_branch_scope(tenant: TenantContext, branch_id: str) -> None:
@@ -120,7 +126,7 @@ def _assert_doctor_owns_entry(
 ) -> None:
     """403 (not 404) — an authorization boundary within the same clinic, not
     existence-obscurity across clinics (M07 precedent)."""
-    if not _is_doctor_only(tenant.roles):
+    if not _is_doctor_scoped(tenant.roles):
         return
     own_doctor_id = _own_doctor_profile_id(db, tenant)
     if own_doctor_id is None or entry.doctor_id != own_doctor_id:
@@ -249,7 +255,7 @@ def list_queue(
     clinic = _load_clinic_or_404(db, clinic_id)
 
     effective_doctor_id = doctor_id
-    if _is_doctor_only(tenant.roles):
+    if _is_doctor_scoped(tenant.roles):
         own_doctor_id = _own_doctor_profile_id(db, tenant)
         if own_doctor_id is None:
             return ClinicQueueListOut(total=0, items=[])
@@ -310,7 +316,7 @@ def call_entry(
     entry = _load_entry_for_action(db, tenant, clinic_id, entry_id)
     # BR-M08-04: past the missed-call cap, only reception-side roles may
     # keep calling (or remove) — the doctor is blocked until resolved.
-    if _is_doctor_only(tenant.roles):
+    if _is_doctor_scoped(tenant.roles):
         config = queue_service.get_queue_config(clinic)
         if entry.missed_call_count >= config["max_missed_calls"]:
             raise HTTPException(
@@ -339,7 +345,13 @@ def mark_missed_call(
     assert_clinic_writable(clinic)
     entry = _load_entry_for_action(db, tenant, clinic_id, entry_id)
     try:
-        entry = queue_service.mark_missed_call(db, entry=entry, actor_id=tenant.user_id)
+        config = queue_service.get_queue_config(clinic)
+        entry = queue_service.mark_missed_call(
+            db,
+            entry=entry,
+            actor_id=tenant.user_id,
+            max_missed_calls=config["max_missed_calls"],
+        )
     except ClinicQueueConflictError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except ClinicQueueError as exc:
@@ -441,6 +453,8 @@ def set_priority(
             is_priority=payload.is_priority,
             reason=payload.reason,
         )
+    except ClinicQueueConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except ClinicQueueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     db.commit()

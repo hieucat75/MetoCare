@@ -36,8 +36,18 @@ export function WalkInModal({ open, onOpenChange, onDone, clinicId }: WalkInModa
 
   React.useEffect(() => {
     if (!open) return
-    void listServices(clinicId, { limit: 200 }).then((res) => setServices(res.items))
-    void listClinicPatients(clinicId, { limit: 200 }).then((res) => setPatients(res.items))
+    // Codex M08 R1 P2: without catches these become unhandled rejections and
+    // the selectors stay silently empty — surface a retryable error instead.
+    listServices(clinicId, { limit: 200 })
+      .then((res) => setServices(res.items))
+      .catch((err: unknown) =>
+        setError(toPageError(err)),
+      )
+    listClinicPatients(clinicId, { limit: 200 })
+      .then((res) => setPatients(res.items))
+      .catch((err: unknown) =>
+        setError(toPageError(err)),
+      )
   }, [open, clinicId])
 
   const reset = () => {
