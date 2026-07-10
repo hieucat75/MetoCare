@@ -128,17 +128,24 @@ _VALID_RESET_SCOPES = ("branch_day", "branch_doctor_day", "clinic_day")
 
 
 def _coerce_int(value: object, *, default: int, low: int, high: int) -> int:
-    # bool is an int subclass — treat it as invalid, not as 0/1.
+    # bool is an int subclass — treat it as invalid, not as 0/1. Out-of-range
+    # ints revert to the default (Codex M08 R2 P1: clamping a nonsense value
+    # like max_missed_calls=0 or day_offset_minutes=99999 silently invents a
+    # config the tenant never chose — the stated fail-safe is the default).
     if isinstance(value, bool) or not isinstance(value, int):
         return default
-    return min(high, max(low, value))
+    if not (low <= value <= high):
+        return default
+    return value
 
 
 def get_queue_config(clinic: Clinic) -> dict:
     """Merged, TYPE-SANITIZED copy — never mutates the Clinic row's JSON
-    (immutability), never trusts its value types (Codex M08 R1 P1)."""
+    (immutability), never trusts its value types (Codex M08 R1 P1). The JSON
+    column itself can hold a non-object (string/list/bool — Codex M08 R2 P1),
+    so even `raw` is validated before any attribute access."""
     merged = dict(_DEFAULT_QUEUE_CONFIG)
-    raw = clinic.queue_config or {}
+    raw = clinic.queue_config if isinstance(clinic.queue_config, dict) else {}
     for key, (low, high) in _INT_CONFIG_BOUNDS.items():
         if key in raw:
             merged[key] = _coerce_int(raw[key], default=merged[key], low=low, high=high)
@@ -773,11 +780,17 @@ def display_queue(
     clinic: Clinic,
     branch_ids: list[str] | None = None,
     service_date: dt.date | None = None,
+    doctor_id: str | None = None,
 ) -> list[dict]:
     """Public-screen payload (AC-M08-03): queue number + masked initials +
-    status + doctor name ONLY — no service, no full name, no patient_id."""
+    status + doctor name ONLY — no service, no full name, no patient_id.
+    `doctor_id` carries the route's doctor own-scoping (Codex M08 R2 P1)."""
     items, _total = list_queue(
-        db, clinic=clinic, branch_ids=branch_ids, service_date=service_date
+        db,
+        clinic=clinic,
+        branch_ids=branch_ids,
+        service_date=service_date,
+        doctor_id=doctor_id,
     )
     return [
         {

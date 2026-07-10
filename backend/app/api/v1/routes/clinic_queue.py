@@ -285,12 +285,28 @@ def display_queue(
 ) -> ClinicQueueDisplayOut:
     """Public-screen payload — deliberately still an AUTHENTICATED endpoint
     (the physical screen runs an authenticated session, plan §4): masked
-    initials + number + status + doctor only, no PHI (AC-M08-03)."""
+    initials + number + status + doctor only, no PHI (AC-M08-03).
+
+    Codex M08 R2 P1: a doctor-scoped caller gets the same own-entry filter
+    as the staff list — without it this route was the one read that ignored
+    the RBAC matrix's "Doctor ✓ (own)" row. The physical screen runs under a
+    reception/admin session, which is unrestricted here."""
     assert_path_clinic_matches_tenant(tenant.clinic_id, clinic_id)
     require_clinic_roles(tenant.roles, *_READ_ROLES)
     clinic = _load_clinic_or_404(db, clinic_id)
+
+    effective_doctor_id = None
+    if _is_doctor_scoped(tenant.roles):
+        own_doctor_id = _own_doctor_profile_id(db, tenant)
+        if own_doctor_id is None:
+            return ClinicQueueDisplayOut(items=[])
+        effective_doctor_id = own_doctor_id
+
     items = queue_service.display_queue(
-        db, clinic=clinic, branch_ids=_effective_branch_ids(tenant, branch_id)
+        db,
+        clinic=clinic,
+        branch_ids=_effective_branch_ids(tenant, branch_id),
+        doctor_id=effective_doctor_id,
     )
     return ClinicQueueDisplayOut(
         items=[ClinicQueueDisplayEntryOut.model_validate(item) for item in items]

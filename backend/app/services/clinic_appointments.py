@@ -357,8 +357,28 @@ def transition_status(
         )
 
     old_status = appointment.status
-    appointment.status = new_status
-    db.flush()
+    # Codex M08 R2 P1: an ORM read-then-set here let two concurrent
+    # transitions (e.g. M08 check-in racing an M07 cancel, both loading
+    # `confirmed`) last-write-win — a cancelled appointment could end up
+    # in_queue with an active queue entry, or vice versa. The conditional
+    # UPDATE makes the expected prior status part of the write itself: the
+    # stale loser sees rowcount == 0 and gets a controlled error, never a
+    # lost update. (Postgres row-lock also serializes the two until commit.)
+    result = db.execute(
+        update(ClinicAppointment)
+        .where(
+            ClinicAppointment.id == appointment.id,
+            ClinicAppointment.status == old_status,
+        )
+        .values(status=new_status),
+        execution_options={"synchronize_session": False},
+    )
+    if result.rowcount != 1:
+        raise ClinicAppointmentError(
+            "Trạng thái lịch hẹn vừa được thay đổi bởi một thao tác khác —"
+            " vui lòng tải lại và thử lại."
+        )
+    db.expire(appointment)
     audit.record(
         db,
         actor_type="user",

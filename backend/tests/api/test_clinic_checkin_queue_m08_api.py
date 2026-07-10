@@ -990,6 +990,104 @@ def test_doctor_with_extra_nonmanage_role_still_own_scoped(client, owner, db):
     )
 
 
+def test_checkin_racing_cancel_stale_loser_controlled(client, owner, db):
+    """Codex M08 R2 P1 regression: transition_status was ORM read-then-set —
+    a check-in that loaded `confirmed` could overwrite a concurrently
+    committed `cancelled` and attach an active queue entry to a cancelled
+    appointment. The conditional UPDATE makes the stale loser fail
+    controlled, with no entry created."""
+    from app.services.clinic_appointments import ClinicAppointmentError
+    from app.services.clinic_queue import ClinicQueueError
+    from sqlalchemy import update as sa_update
+
+    scaffold = _scaffold(client, owner)
+    appt = _create_appointment(client, scaffold)
+    base = f"{API}/clinics/{scaffold['clinic']['id']}/appointments/{appt['id']}"
+    assert client.post(f"{base}/confirm", headers=scaffold["headers"]).status_code == 200
+
+    stale = db.get(ClinicAppointment, appt["id"])
+    assert stale.status == "confirmed"  # loaded, about-to-be-stale state
+
+    # Concurrent cancel commits between our read and our write.
+    db.execute(
+        sa_update(ClinicAppointment)
+        .where(ClinicAppointment.id == appt["id"])
+        .values(status="cancelled"),
+        execution_options={"synchronize_session": False},
+    )
+
+    clinic_row = db.get(Clinic, scaffold["clinic"]["id"])
+    # Old behavior: the stale chain blindly ORM-overwrote cancelled ->
+    # in_queue and created an entry. New behavior: the first conditional hop
+    # (WHERE status='confirmed') sees rowcount 0 and raises, creating nothing.
+    with pytest.raises((ClinicAppointmentError, ClinicQueueError)):
+        queue_service.check_in_appointment(
+            db, clinic=clinic_row, appointment=stale, actor_id=owner["user_id"]
+        )
+    db.rollback()  # discards the simulated concurrent write too (same session)
+    assert db.query(ClinicQueueEntry).filter_by(appointment_id=appt["id"]).count() == 0
+    db.expire_all()
+    # The loser never wrote in_queue — pre-race state survives the rollback.
+    assert _appointment_status(db, appt["id"]) == "confirmed"
+
+
+def test_display_doctor_scoped_to_own_entries(client, owner, db):
+    """Codex M08 R2 P1 regression: /display ignored the RBAC matrix's
+    "Doctor (own)" row — a doctor-scoped caller now sees only their own
+    entries there, same as the staff list."""
+    scaffold = _scaffold(client, owner)
+    doctor_a = _doctor_with_membership(db, scaffold["clinic"]["id"])
+    doctor_b = _doctor_with_membership(db, scaffold["clinic"]["id"])
+    entry_a = _checked_in_entry(client, scaffold, doctor_id=doctor_a["doctor_id"])
+    patient2 = _create_patient(client, scaffold["headers"], scaffold["clinic"]["id"])
+    _checked_in_entry(
+        client,
+        scaffold,
+        doctor_id=doctor_b["doctor_id"],
+        patient_id=patient2["patient_id"],
+        start_time=_soon(hours=3),
+    )
+
+    resp = client.get(
+        f"{API}/clinics/{scaffold['clinic']['id']}/queue/display",
+        headers={**doctor_a["headers"], "X-Clinic-Id": scaffold["clinic"]["id"]},
+    )
+    assert resp.status_code == 200, resp.text
+    items = resp.json()["items"]
+    assert len(items) == 1
+    assert items[0]["queue_number"] == entry_a["queue_number"]
+    # Owner (unrestricted) still sees both — the physical screen's session.
+    full = client.get(
+        f"{API}/clinics/{scaffold['clinic']['id']}/queue/display",
+        headers=scaffold["headers"],
+    )
+    assert len(full.json()["items"]) == 2
+
+
+def test_queue_config_non_dict_and_out_of_range_fail_safe(client, owner, db):
+    """Codex M08 R2 P1 regression: a non-object queue_config (JSON string)
+    must not 500, and out-of-range ints revert to the DEFAULT rather than
+    clamping to an invented nearby value."""
+    scaffold = _scaffold(client, owner)
+    clinic_row = db.get(Clinic, scaffold["clinic"]["id"])
+    clinic_row.queue_config = "not-a-dict"
+    db.commit()
+    appt = _create_appointment(client, scaffold)
+    resp = _check_in(client, scaffold, appt["id"])
+    assert resp.status_code == 201, resp.text
+
+    # max_missed_calls=0 is out of range (min 1) -> default 3 applies, so a
+    # first missed-call must still succeed instead of 400ing at "cap 0".
+    clinic_row = db.get(Clinic, scaffold["clinic"]["id"])
+    clinic_row.queue_config = {"max_missed_calls": 0}
+    db.commit()
+    entry_id = resp.json()["id"]
+    assert _entry_action(client, scaffold, entry_id, "call").status_code == 200
+    missed = _entry_action(client, scaffold, entry_id, "missed-call")
+    assert missed.status_code == 200, missed.text
+    assert missed.json()["missed_call_count"] == 1
+
+
 def test_queue_config_garbage_values_fail_safe(client, owner, db):
     """Codex M08 R1 P1 regression: tenant-editable queue_config JSON with
     wrong types must degrade to defaults (fail-safe), never 500 a check-in."""
