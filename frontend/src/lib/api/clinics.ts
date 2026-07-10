@@ -17,6 +17,15 @@ export type ClinicMembershipStatus = 'invited' | 'active' | 'suspended' | 'remov
 export type ClinicInvitationStatus = 'pending' | 'accepted' | 'revoked' | 'expired'
 export type ClinicServiceStatus = 'active' | 'inactive'
 export type ClinicPatientRelationshipStatus = 'active' | 'inactive' | 'merged'
+export type ClinicAppointmentStatus =
+  | 'pending'
+  | 'confirmed'
+  | 'arrived'
+  | 'in_queue'
+  | 'in_consultation'
+  | 'completed'
+  | 'cancelled'
+  | 'no_show'
 
 /** Request header used to select among the caller's own active clinic
  * memberships (app/api/deps_tenant.py get_tenant_context). Never a source of
@@ -334,6 +343,77 @@ export interface ClinicPatientListParams extends PageParams {
   search?: string
 }
 
+// ── Appointment management DTOs (app/schemas/clinic_appointment.py, M07) ─────
+
+export interface ClinicAppointmentOut {
+  id: string
+  clinic_id: string
+  branch_id: string
+  patient_id: string
+  doctor_id: string | null
+  service_id: string
+  // Backend serializes Decimal as a JSON string (precision-safe), same
+  // convention as ClinicServiceOut.price.
+  price_snapshot: string
+  start_time: string
+  end_time: string
+  status: ClinicAppointmentStatus
+  created_by_user_id: string
+  created_by_source: string
+  linked_care_plan_item_id: string | null
+  cancellation_reason: string | null
+  cancelled_by_user_id: string | null
+  cancelled_at: string | null
+  reschedule_of_id: string | null
+  notes: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface ClinicAppointmentListOut {
+  total: number
+  items: ClinicAppointmentOut[]
+}
+
+export interface ClinicAppointmentCreatePayload {
+  branch_id: string
+  patient_id: string
+  doctor_id?: string | null
+  service_id: string
+  start_time: string
+  notes?: string | null
+  /** Owner/Admin-only — ignored server-side for any other caller (the
+   * backend still enforces the real working-hours check either way). */
+  override_working_hours_reason?: string | null
+}
+
+export interface ClinicAppointmentCancelPayload {
+  reason: string
+}
+
+export interface ClinicAppointmentReschedulePayload {
+  start_time: string
+  reason: string
+  branch_id?: string | null
+  doctor_id?: string | null
+}
+
+export interface ClinicAppointmentNoShowPayload {
+  reason?: string | null
+}
+
+export interface ClinicAppointmentArrivedOverridePayload {
+  reason: string
+}
+
+export interface ClinicAppointmentListParams extends PageParams {
+  branch_id?: string
+  doctor_id?: string
+  status?: ClinicAppointmentStatus
+  date_from?: string
+  date_to?: string
+}
+
 // ── Subscription DTOs (app/schemas/clinic_subscription.py) ───────────────────
 
 export interface SubscriptionPlanOut {
@@ -630,6 +710,108 @@ export async function updateClinicPatient(
   return api.patch<ClinicPatientAdminOut>(`/clinics/${clinicId}/patients/${patientId}`, payload, {
     headers: clinicHeaders(clinicId),
   })
+}
+
+// ── Appointment management (M07) ──────────────────────────────────────────────
+
+function appointmentListQuery(params: ClinicAppointmentListParams = {}): string {
+  const qs = new URLSearchParams()
+  if (params.skip != null) qs.set('skip', String(params.skip))
+  if (params.limit != null) qs.set('limit', String(params.limit))
+  if (params.branch_id) qs.set('branch_id', params.branch_id)
+  if (params.doctor_id) qs.set('doctor_id', params.doctor_id)
+  if (params.status) qs.set('status', params.status)
+  if (params.date_from) qs.set('date_from', params.date_from)
+  if (params.date_to) qs.set('date_to', params.date_to)
+  const query = qs.toString()
+  return query ? `?${query}` : ''
+}
+
+export async function listClinicAppointments(
+  clinicId: string,
+  params: ClinicAppointmentListParams = {}
+): Promise<ClinicAppointmentListOut> {
+  return api.get<ClinicAppointmentListOut>(
+    `/clinics/${clinicId}/appointments${appointmentListQuery(params)}`,
+    { headers: clinicHeaders(clinicId) }
+  )
+}
+
+export async function createClinicAppointment(
+  clinicId: string,
+  payload: ClinicAppointmentCreatePayload
+): Promise<ClinicAppointmentOut> {
+  return api.post<ClinicAppointmentOut>(`/clinics/${clinicId}/appointments`, payload, {
+    headers: clinicHeaders(clinicId),
+  })
+}
+
+export async function getClinicAppointment(
+  clinicId: string,
+  appointmentId: string
+): Promise<ClinicAppointmentOut> {
+  return api.get<ClinicAppointmentOut>(`/clinics/${clinicId}/appointments/${appointmentId}`, {
+    headers: clinicHeaders(clinicId),
+  })
+}
+
+export async function confirmClinicAppointment(
+  clinicId: string,
+  appointmentId: string
+): Promise<ClinicAppointmentOut> {
+  return api.post<ClinicAppointmentOut>(
+    `/clinics/${clinicId}/appointments/${appointmentId}/confirm`,
+    undefined,
+    { headers: clinicHeaders(clinicId) }
+  )
+}
+
+export async function cancelClinicAppointment(
+  clinicId: string,
+  appointmentId: string,
+  payload: ClinicAppointmentCancelPayload
+): Promise<ClinicAppointmentOut> {
+  return api.post<ClinicAppointmentOut>(
+    `/clinics/${clinicId}/appointments/${appointmentId}/cancel`,
+    payload,
+    { headers: clinicHeaders(clinicId) }
+  )
+}
+
+export async function rescheduleClinicAppointment(
+  clinicId: string,
+  appointmentId: string,
+  payload: ClinicAppointmentReschedulePayload
+): Promise<ClinicAppointmentOut> {
+  return api.post<ClinicAppointmentOut>(
+    `/clinics/${clinicId}/appointments/${appointmentId}/reschedule`,
+    payload,
+    { headers: clinicHeaders(clinicId) }
+  )
+}
+
+export async function markNoShow(
+  clinicId: string,
+  appointmentId: string,
+  payload: ClinicAppointmentNoShowPayload = {}
+): Promise<ClinicAppointmentOut> {
+  return api.post<ClinicAppointmentOut>(
+    `/clinics/${clinicId}/appointments/${appointmentId}/no-show`,
+    payload,
+    { headers: clinicHeaders(clinicId) }
+  )
+}
+
+export async function markArrivedOverride(
+  clinicId: string,
+  appointmentId: string,
+  payload: ClinicAppointmentArrivedOverridePayload
+): Promise<ClinicAppointmentOut> {
+  return api.post<ClinicAppointmentOut>(
+    `/clinics/${clinicId}/appointments/${appointmentId}/arrived-override`,
+    payload,
+    { headers: clinicHeaders(clinicId) }
+  )
 }
 
 // ── Subscription (M04) ────────────────────────────────────────────────────────

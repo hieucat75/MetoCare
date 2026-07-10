@@ -39,6 +39,8 @@ export interface ClinicCapabilities {
   canViewPatients: boolean // M06 read — Owner/Admin/Doctor/Nurse/Reception full, Care Coordinator narrow, Accountant excluded
   canManagePatients: boolean // M06 link/create — Owner/Admin/Reception
   canUpdatePatientRecord: boolean // M06 PATCH status/internal_notes — Owner/Admin/Reception
+  canViewAppointments: boolean // M07 read — everyone except Accountant (RBAC_MATRIX.md Appointments row)
+  canManageAppointments: boolean // M07 create/confirm/cancel/reschedule — Owner/Admin/Reception/Doctor (Doctor's own-only scoping is server-enforced, this is UX-only)
 }
 
 function capabilitiesForRoles(roles: ClinicRole[]): ClinicCapabilities {
@@ -62,6 +64,8 @@ function capabilitiesForRoles(roles: ClinicRole[]): ClinicCapabilities {
       has('care_coordinator'),
     canManagePatients: ownerOrAdmin || has('receptionist'),
     canUpdatePatientRecord: ownerOrAdmin || has('receptionist'),
+    canViewAppointments: !isAccountantOnly,
+    canManageAppointments: ownerOrAdmin || has('receptionist') || has('doctor'),
   }
 }
 

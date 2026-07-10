@@ -13,6 +13,7 @@ from .routes import (
     auth,
     booking,
     care_plans,
+    clinic_appointments,
     clinic_branches,
     clinic_members,
     clinic_patients,
@@ -80,4 +81,5 @@ api_router.include_router(clinic_members.router)
 api_router.include_router(clinic_members.accept_router)
 api_router.include_router(clinic_services.router)
 api_router.include_router(clinic_patients.router)
+api_router.include_router(clinic_appointments.router)
 api_router.include_router(clinic_subscriptions.router)
