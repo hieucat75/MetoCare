@@ -210,10 +210,10 @@ def _seed_counter_start(
     always displayed alongside the doctor name. Numbers issued under a
     PREVIOUS scope may still repeat against the new scope's history
     (unavoidable without renumbering issued tickets); only forward
-    uniqueness within each scope is guaranteed. Residual micro-race (an
-    uncommitted concurrent allocation invisible to this MAX at the exact
-    flip moment) is accepted: the flip is a rare admin action; steady-state
-    allocation is fully serialized by the counter row lock."""
+    uniqueness within each scope is guaranteed. This MAX only sees committed
+    entries, which is safe because `check_in_appointment` holds the clinic
+    row FOR UPDATE for the whole allocation (Codex M08 R6 P1) — no other
+    check-in for this clinic can be in flight while it runs."""
     conditions = [
         ClinicQueueEntry.clinic_id == clinic_id,
         ClinicQueueEntry.service_date == counter_date,
@@ -380,6 +380,18 @@ def check_in_appointment(
     actor_id: str,
     source: str = ClinicQueueEntrySource.SCHEDULED,
 ) -> ClinicQueueEntry:
+    # Codex M08 R6 P1: allocation and queue_config changes must serialize.
+    # Without this, a check-in that allocated N+1 under the OLD scope but
+    # hadn't committed was invisible to a post-flip allocation's seed MAX —
+    # two N+1 tickets in the same (new) uniqueness scope. FOR UPDATE on the
+    # clinic row makes every check-in and every clinic-row config UPDATE
+    # mutually exclusive until commit on Postgres (the admin's flip waits
+    # for the in-flight allocation, and vice versa); SQLite ignores the
+    # clause but is single-writer anyway. Config is (re-)read only under
+    # the lock.
+    clinic = db.execute(
+        select(Clinic).where(Clinic.id == clinic.id).with_for_update()
+    ).scalar_one()
     config = get_queue_config(clinic)
     now = utcnow()
 

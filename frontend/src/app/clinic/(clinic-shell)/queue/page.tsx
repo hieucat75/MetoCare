@@ -361,7 +361,10 @@ export default function ClinicQueuePage() {
         <WalkInModal {...walkInModal.modalProps} clinicId={clinic.id} onDone={refetchAll} />
       )}
 
-      {canManage && (
+      {/* canAct, not canManage: a doctor can flag THEIR OWN entry (Codex
+          M08 R6 P1 — the button was visible via canAct but the modal never
+          mounted, making doctor own-priority unusable). */}
+      {canAct && (
         <PriorityModal
           {...priorityModal.modalProps}
           clinicId={clinic.id}
