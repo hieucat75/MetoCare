@@ -105,7 +105,17 @@ feature gating and 4-field display payload intact).
 | 2 | P2 | CheckInPanel's ±1-day fetch still hid valid appointments when `checkin_window_hours` > 24 (max 48) | Window widened to ±2 days (backend enforces the real window) |
 | 3 | P2 | `tsconfig.tsbuildinfo` re-entered the diff a second time | Restored via `git show` + `git update-index --skip-worktree` locally so FE build/test runs can never re-commit it |
 
-## Round 10 — (recorded when complete)
+## Round 10 — **PASS** (0 P0, 0 P1, 1 P2) → P2 fixed in the final commit
+
+Verdict quote: "No [P0] findings. No [P1] findings. The M07 read/write doctor
+scoping split is applied correctly: nurse unscopes reads but not mutations; care
+coordinator unscopes neither. Queue RBAC, tenant/branch scoping, feature gating,
+public payload shape, and transactional conditional updates hold under review.
+… VERDICT: PASS"
+
+| # | Sev | Finding | Fix |
+|---|---|---|---|
+| 1 | P2 | `tsconfig.tsbuildinfo` still differed vs merge-base at HEAD — skip-worktree hid the local restore from staging, so the earlier committed change survived | skip-worktree lifted, merge-base version staged and committed; file identical to `a10e675` in the final diff |
 
 Operational notes: round 6's first attempt aborted on a Codex usage-limit window and
 was re-run after reset. The round-1 first attempt required upgrading the Codex CLI
