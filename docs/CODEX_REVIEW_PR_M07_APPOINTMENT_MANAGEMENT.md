@@ -88,4 +88,40 @@ fix regressions + 1 new), full backend suite green.
 
 ## Round 2 — Follow-up verification review
 
-(recorded below once complete)
+**Scope:** independently re-verify each of the 3 round-1 findings against
+the current code, plus check for any new issues introduced by the fixes.
+
+**VERDICT: PASS**
+
+P0: 0 · P1: 0 · P2: 0
+
+1. **P1 (audit PHI): RESOLVED** — `transition_status`'s success-path audit
+   details contain only `from`/`to`/`reason_provided`; the cancellation
+   policy-violation audit only `{"policy_violation": True}`;
+   `run_no_show_job`'s audit only `reason_provided`. Verbatim cancellation
+   text remains correctly retained on `ClinicAppointment.cancellation_reason`.
+2. **P1 (no-show race): RESOLVED** — the job now performs a conditional
+   `UPDATE ... WHERE id=... AND status='confirmed'` per candidate; the audit
+   record and `transitioned_count` increment only happen after
+   `rowcount == 1`; a losing concurrent call skips both. No over/under-count
+   introduced.
+3. **P2 (test gap): RESOLVED** — the new regression test exercises both the
+   detail GET route and the confirm mutation route against an appointment at
+   a different branch, asserting 403 on both.
+
+No consumers of the removed `details.reason` field exist anywhere in the
+codebase (new milestone, nothing to break).
+
+**New findings: none.**
+
+---
+
+## Overall disposition
+
+**PASS.** All P0/P1/P2 findings from the initial review — plus two
+additional gaps (cross-branch scoping, denied-transition audit durability)
+self-identified during the pre-review pass — are resolved and independently
+re-confirmed against the fixed code. No new issues introduced by any of the
+fixes. Full verification pipeline green: 51 targeted backend tests, full
+backend suite, single Alembic head, migration upgrade/downgrade/upgrade
+verified.
