@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -358,7 +358,21 @@ def transition_status(
         resource_type="clinic_appointment",
         resource_id=appointment.id,
         clinic_id=appointment.clinic_id,
-        details={"from": old_status, "to": new_status, "reason": reason},
+        # Codex review (P1): AuditLog's contract is "never stores sensitive
+        # content" (governance.py) — a free-text reason can carry PHI (e.g.
+        # "patient hospitalized for hypoglycemia"). Record only that a
+        # reason was supplied, not its content; the verbatim cancellation
+        # reason is already durably stored on the appointment row itself
+        # (`cancellation_reason`), which callers with access to the
+        # appointment can already read — no separate PHI-safe store needed
+        # for it. No-show/arrived-override reasons have no dedicated column
+        # and are, by this same discipline, not durably retained anywhere as
+        # free text.
+        details={
+            "from": old_status,
+            "to": new_status,
+            "reason_provided": bool((reason or "").strip()),
+        },
     )
     return appointment
 
@@ -407,7 +421,7 @@ def cancel_appointment(
             resource_id=appointment.id,
             clinic_id=appointment.clinic_id,
             severity="warning",
-            details={"policy_violation": True, "reason": reason},
+            details={"policy_violation": True},
         )
     return appointment
 
@@ -504,13 +518,24 @@ def reschedule_appointment(
 def run_no_show_job(
     db: Session, *, clinic_id: str, actor_id: str, grace_period_minutes: int = 60
 ) -> int:
-    """Idempotent by construction: only CONFIRMED appointments past the
-    grace period match; a second call the same day finds zero (already
-    transitioned) rows — no separate idempotency-key bookkeeping needed."""
+    """Race-safe idempotency (Codex review P1): the original SELECT-then-
+    loop-mutate-each-ORM-row pattern only guaranteed idempotency for
+    SEQUENTIAL calls — two genuinely concurrent `/run-no-show-job` calls
+    (e.g. a double-click, or an overlapping ops retry) could both read the
+    same CONFIRMED row before either committed its ORM UPDATE, both flip it,
+    and both record a transition audit — duplicated side effects even though
+    the final `status` value happened to end up correct. Each transition is
+    now a single conditional `UPDATE ... WHERE status = 'confirmed'`
+    (checked via `rowcount`), the same atomic-conditional-update pattern
+    `clinic_membership.accept_invitation` uses for its single-use-token
+    race: only the call that actually flips the row records an audit entry
+    and counts toward the return value; a call that loses the race to a
+    concurrent run sees `rowcount == 0` and silently skips that row, exactly
+    as if it had already run and found nothing to do."""
     cutoff = utcnow() - dt.timedelta(minutes=grace_period_minutes)
-    candidates = list(
+    candidate_ids = list(
         db.execute(
-            select(ClinicAppointment).where(
+            select(ClinicAppointment.id).where(
                 ClinicAppointment.clinic_id == clinic_id,
                 ClinicAppointment.status == ClinicAppointmentStatus.CONFIRMED,
                 ClinicAppointment.start_time < cutoff,
@@ -518,13 +543,30 @@ def run_no_show_job(
         ).scalars()
     )
     count = 0
-    for appointment in candidates:
-        transition_status(
+    for appointment_id in candidate_ids:
+        result = db.execute(
+            update(ClinicAppointment)
+            .where(
+                ClinicAppointment.id == appointment_id,
+                ClinicAppointment.status == ClinicAppointmentStatus.CONFIRMED,
+            )
+            .values(status=ClinicAppointmentStatus.NO_SHOW)
+        )
+        if result.rowcount != 1:
+            continue
+        audit.record(
             db,
-            appointment=appointment,
-            new_status=ClinicAppointmentStatus.NO_SHOW,
+            actor_type="user",
             actor_id=actor_id,
-            reason="auto: end-of-day grace period expired",
+            action="clinic_appointment_transition",
+            resource_type="clinic_appointment",
+            resource_id=appointment_id,
+            clinic_id=clinic_id,
+            details={
+                "from": ClinicAppointmentStatus.CONFIRMED,
+                "to": ClinicAppointmentStatus.NO_SHOW,
+                "reason_provided": True,
+            },
         )
         count += 1
     return count

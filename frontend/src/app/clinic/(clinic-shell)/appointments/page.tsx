@@ -47,7 +47,10 @@ const STATUS_LABEL: Record<ClinicAppointmentStatus, string> = {
   no_show: 'Không đến',
 }
 
-const STATUS_VARIANT: Record<ClinicAppointmentStatus, 'success' | 'warning' | 'danger' | 'default'> = {
+const STATUS_VARIANT: Record<
+  ClinicAppointmentStatus,
+  'success' | 'warning' | 'danger' | 'default'
+> = {
   pending: 'warning',
   confirmed: 'success',
   arrived: 'success',
@@ -254,7 +257,14 @@ interface ActionModalProps {
   action: ActionKind | null
 }
 
-function ActionModal({ open, onOpenChange, onDone, clinicId, appointment, action }: ActionModalProps) {
+function ActionModal({
+  open,
+  onOpenChange,
+  onDone,
+  clinicId,
+  appointment,
+  action,
+}: ActionModalProps) {
   const [reason, setReason] = React.useState('')
   const [newStartTime, setNewStartTime] = React.useState('')
   const [saving, setSaving] = React.useState(false)
@@ -437,7 +447,12 @@ export default function ClinicAppointmentsPage() {
         }
         if (row.status === 'pending' || row.status === 'confirmed') {
           actions.push(
-            <Button key="cancel" size="sm" variant="ghost" onClick={() => openAction(row, 'cancel')}>
+            <Button
+              key="cancel"
+              size="sm"
+              variant="ghost"
+              onClick={() => openAction(row, 'cancel')}
+            >
               Hủy
             </Button>,
             <Button
@@ -452,7 +467,12 @@ export default function ClinicAppointmentsPage() {
         }
         if (row.status === 'confirmed') {
           actions.push(
-            <Button key="no_show" size="sm" variant="ghost" onClick={() => openAction(row, 'no_show')}>
+            <Button
+              key="no_show"
+              size="sm"
+              variant="ghost"
+              onClick={() => openAction(row, 'no_show')}
+            >
               Không đến
             </Button>
           )

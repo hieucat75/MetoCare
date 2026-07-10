@@ -867,6 +867,39 @@ def test_branch_scoped_membership_cannot_list_other_branch(client, owner, db):
     assert unfiltered.json()["total"] == 0
 
 
+def test_branch_scoped_membership_cannot_view_or_mutate_other_branch(client, owner, db):
+    """Codex review P2: create/list-only branch-scope coverage would not
+    catch a regression removing `_assert_actor_branch_scope` from the
+    detail/mutation routes specifically (they share `_load_appointment_for_
+    mutation`/an inline check, but that's implementation detail the tests
+    should not assume — assert the observable behavior directly)."""
+    scaffold = _appointment_scaffold(client, owner)
+    other_branch = _create_branch(client, scaffold["headers"], scaffold["clinic"]["id"])
+    appt = _create_and_get(
+        client, scaffold, branch_id=other_branch["id"], start_time=_next_weekday_at(6, 11, 0)
+    )
+    user = _make_user(db, role=UserRole.CLINIC_ADMIN)
+    _add_membership(
+        db,
+        user_id=user["user_id"],
+        clinic_id=scaffold["clinic"]["id"],
+        roles=["receptionist"],
+        branch_ids=[scaffold["branch"]["id"]],
+    )
+    headers = {**user["headers"], "X-Clinic-Id": scaffold["clinic"]["id"]}
+
+    detail = client.get(
+        f"{API}/clinics/{scaffold['clinic']['id']}/appointments/{appt['id']}", headers=headers
+    )
+    assert detail.status_code == 403, detail.text
+
+    confirm = client.post(
+        f"{API}/clinics/{scaffold['clinic']['id']}/appointments/{appt['id']}/confirm",
+        headers=headers,
+    )
+    assert confirm.status_code == 403, confirm.text
+
+
 # ---------------------------------------------------------------------------
 # Multi-clinic / revoked membership
 # ---------------------------------------------------------------------------
