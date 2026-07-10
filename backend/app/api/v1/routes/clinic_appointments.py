@@ -43,7 +43,10 @@ from app.schemas.clinic_appointment import (
 )
 from app.services import clinic as clinic_service_lookup
 from app.services import clinic_appointments as appointments_service
-from app.services.clinic_appointments import ClinicAppointmentError
+from app.services.clinic_appointments import (
+    ClinicAppointmentConflictError,
+    ClinicAppointmentError,
+)
 
 router = APIRouter(
     prefix="/clinics/{clinic_id}/appointments",
@@ -243,6 +246,10 @@ def create_appointment(
             override_working_hours_reason=payload.override_working_hours_reason,
             is_override_allowed=is_override_allowed,
         )
+    except ClinicAppointmentConflictError as exc:
+        # Codex M08 R3 P1: a concurrent-transition stale loser is a conflict
+        # (client should reload), not a validation failure.
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except ClinicAppointmentError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     db.commit()
@@ -286,6 +293,10 @@ def confirm_appointment(
         appointment = appointments_service.confirm_appointment(
             db, appointment=appointment, actor_id=tenant.user_id
         )
+    except ClinicAppointmentConflictError as exc:
+        # Codex M08 R3 P1: a concurrent-transition stale loser is a conflict
+        # (client should reload), not a validation failure.
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except ClinicAppointmentError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     db.commit()
@@ -309,6 +320,10 @@ def cancel_appointment(
         appointment = appointments_service.cancel_appointment(
             db, appointment=appointment, actor_id=tenant.user_id, reason=payload.reason
         )
+    except ClinicAppointmentConflictError as exc:
+        # Codex M08 R3 P1: a concurrent-transition stale loser is a conflict
+        # (client should reload), not a validation failure.
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except ClinicAppointmentError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     db.commit()
@@ -349,6 +364,10 @@ def reschedule_appointment(
             new_doctor_id=payload.doctor_id,
             is_override_allowed=is_override_allowed,
         )
+    except ClinicAppointmentConflictError as exc:
+        # Codex M08 R3 P1: a concurrent-transition stale loser is a conflict
+        # (client should reload), not a validation failure.
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except ClinicAppointmentError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     db.commit()
@@ -372,6 +391,10 @@ def mark_no_show(
         appointment = appointments_service.mark_no_show(
             db, appointment=appointment, actor_id=tenant.user_id, reason=payload.reason
         )
+    except ClinicAppointmentConflictError as exc:
+        # Codex M08 R3 P1: a concurrent-transition stale loser is a conflict
+        # (client should reload), not a validation failure.
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except ClinicAppointmentError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     db.commit()
@@ -395,6 +418,10 @@ def mark_arrived_override(
         appointment = appointments_service.mark_arrived_override(
             db, appointment=appointment, actor_id=tenant.user_id, reason=payload.reason
         )
+    except ClinicAppointmentConflictError as exc:
+        # Codex M08 R3 P1: a concurrent-transition stale loser is a conflict
+        # (client should reload), not a validation failure.
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except ClinicAppointmentError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     db.commit()

@@ -47,7 +47,10 @@ from app.schemas.clinic_queue import (
 from app.services import clinic as clinic_service_lookup
 from app.services import clinic_appointments as appointments_service
 from app.services import clinic_queue as queue_service
-from app.services.clinic_appointments import ClinicAppointmentError
+from app.services.clinic_appointments import (
+    ClinicAppointmentConflictError,
+    ClinicAppointmentError,
+)
 from app.services.clinic_queue import ClinicQueueConflictError, ClinicQueueError
 
 router = APIRouter(
@@ -196,7 +199,7 @@ def check_in_appointment(
         entry = queue_service.check_in_appointment(
             db, clinic=clinic, appointment=appointment, actor_id=tenant.user_id
         )
-    except ClinicQueueConflictError as exc:
+    except (ClinicQueueConflictError, ClinicAppointmentConflictError) as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except (ClinicQueueError, ClinicAppointmentError) as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
@@ -227,7 +230,7 @@ def walk_in_check_in(
             doctor_id=payload.doctor_id,
             notes=payload.notes,
         )
-    except ClinicQueueConflictError as exc:
+    except (ClinicQueueConflictError, ClinicAppointmentConflictError) as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except (ClinicQueueError, ClinicAppointmentError) as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
@@ -393,7 +396,7 @@ def start_consultation(
         entry = queue_service.start_consultation(
             db, entry=entry, appointment=appointment, actor_id=tenant.user_id
         )
-    except ClinicQueueConflictError as exc:
+    except (ClinicQueueConflictError, ClinicAppointmentConflictError) as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except (ClinicQueueError, ClinicAppointmentError) as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
@@ -418,7 +421,7 @@ def complete_entry(
         entry = queue_service.complete_entry(
             db, entry=entry, appointment=appointment, actor_id=tenant.user_id
         )
-    except ClinicQueueConflictError as exc:
+    except (ClinicQueueConflictError, ClinicAppointmentConflictError) as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except (ClinicQueueError, ClinicAppointmentError) as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc

@@ -272,6 +272,32 @@ def _advance_appointment_to_in_queue(
         )
 
 
+def _deny_checkin(
+    db: Session, *, appointment: ClinicAppointment, actor_id: str, reason_code: str, message: str
+) -> None:
+    """Codex M08 R3 P1: a REJECTED check-in attempt must leave a durable,
+    PHI-free audit trail (reason code only, never free text), same denial-
+    durability discipline as the transition validators. The commit is safe
+    for the same reason as M07's precedent: the scheduled check-in route
+    flushes nothing before these checks run, and the walk-in path cannot
+    reach either denial (its appointment is freshly `pending` — always in
+    the chain — with start_time=now — always inside the window)."""
+    audit.record(
+        db,
+        actor_type="user",
+        actor_id=actor_id,
+        action="clinic_queue_checkin_denied",
+        resource_type="clinic_appointment",
+        resource_id=appointment.id,
+        clinic_id=appointment.clinic_id,
+        outcome="denied",
+        severity="warning",
+        details={"reason": reason_code, "appointment_status": appointment.status},
+    )
+    db.commit()
+    raise ClinicQueueError(message)
+
+
 def check_in_appointment(
     db: Session,
     *,
@@ -282,6 +308,15 @@ def check_in_appointment(
 ) -> ClinicQueueEntry:
     config = get_queue_config(clinic)
     now = utcnow()
+
+    if appointment.status not in _CHECKIN_CHAIN:
+        _deny_checkin(
+            db,
+            appointment=appointment,
+            actor_id=actor_id,
+            reason_code="invalid_status",
+            message=f"Không thể check-in lịch hẹn ở trạng thái '{appointment.status}'.",
+        )
 
     # Plan §5 ADR-3: |now - start_time| <= checkin_window_hours. Late
     # arrivals past the window use M07's no-show -> arrived-override
@@ -294,9 +329,15 @@ def check_in_appointment(
     window = dt.timedelta(hours=config["checkin_window_hours"])
     is_human_overridden_arrival = appointment.status == ClinicAppointmentStatus.ARRIVED
     if not is_human_overridden_arrival and abs(now - start_time) > window:
-        raise ClinicQueueError(
-            "Ngoài khung giờ check-in cho lịch hẹn này — dùng quy trình xử lý"
-            " đến muộn (no-show -> arrived) nếu bệnh nhân đến trễ."
+        _deny_checkin(
+            db,
+            appointment=appointment,
+            actor_id=actor_id,
+            reason_code="outside_window",
+            message=(
+                "Ngoài khung giờ check-in cho lịch hẹn này — dùng quy trình xử lý"
+                " đến muộn (no-show -> arrived) nếu bệnh nhân đến trễ."
+            ),
         )
 
     _advance_appointment_to_in_queue(db, appointment=appointment, actor_id=actor_id)

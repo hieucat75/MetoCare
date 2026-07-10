@@ -359,9 +359,11 @@ def test_concurrent_double_check_in_unique_appointment_409(client, owner, db, mo
     appt = _create_appointment(client, scaffold)
     assert _check_in(client, scaffold, appt["id"]).status_code == 201
 
-    monkeypatch.setattr(
-        queue_service, "_advance_appointment_to_in_queue", lambda db, **kwargs: None
-    )
+    # Simulate the loser having passed every status validation on its stale
+    # pre-commit read: the winner's `in_queue` becomes a valid no-op chain
+    # entry, so this request reaches the entry INSERT — where the DB unique
+    # index must be the real safety net.
+    monkeypatch.setitem(queue_service._CHECKIN_CHAIN, "in_queue", ())
     loser = _check_in(client, scaffold, appt["id"])
     assert loser.status_code == 409, loser.text
     assert _appointment_status(db, appt["id"]) == "in_queue"
@@ -784,6 +786,96 @@ def test_invalid_queue_transitions_fail_closed(client, owner, setup_actions, inv
         assert _entry_action(client, scaffold, entry["id"], action).status_code == 200
     denied = _entry_action(client, scaffold, entry["id"], invalid_action)
     assert denied.status_code == 400, denied.text
+
+
+def test_denied_checkin_audit_persists(client, owner, db):
+    """Codex M08 R3 P1 regression: a rejected check-in (invalid appointment
+    status / outside window) must leave a durable PHI-free audit row even
+    though the route never commits on the error path."""
+    from app.models.governance import AuditLog
+
+    scaffold = _scaffold(client, owner)
+    # Invalid status: cancel first, then attempt check-in.
+    appt = _create_appointment(client, scaffold)
+    base = f"{API}/clinics/{scaffold['clinic']['id']}/appointments/{appt['id']}"
+    assert (
+        client.post(
+            f"{base}/cancel", json={"reason": "Đổi kế hoạch"}, headers=scaffold["headers"]
+        ).status_code
+        == 200
+    )
+    assert _check_in(client, scaffold, appt["id"]).status_code == 400
+
+    # Outside window: fresh patient (active-entry index is untouched anyway).
+    appt2 = _create_appointment(client, scaffold, start_time=_soon(hours=72))
+    assert _check_in(client, scaffold, appt2["id"]).status_code == 400
+
+    rows = (
+        db.query(AuditLog)
+        .filter_by(action="clinic_queue_checkin_denied", clinic_id=scaffold["clinic"]["id"])
+        .all()
+    )
+    by_resource = {row.resource_id: row.details for row in rows}
+    assert by_resource[appt["id"]]["reason"] == "invalid_status"
+    assert by_resource[appt2["id"]]["reason"] == "outside_window"
+    for details in by_resource.values():
+        assert set(details) == {"reason", "appointment_status"}  # PHI-free codes only
+
+
+def test_stale_appointment_transition_maps_409(client, owner, monkeypatch):
+    """Codex M08 R3 P1 regression: the conditional-update stale loser is a
+    conflict (409, client reloads), not a validation 400 — verified through
+    both route modules' mapping."""
+    from app.services.clinic_appointments import ClinicAppointmentConflictError
+
+    scaffold = _scaffold(client, owner)
+    appt = _create_appointment(client, scaffold)
+
+    def stale_loser(*args, **kwargs):
+        raise ClinicAppointmentConflictError("stale")
+
+    import app.services.clinic_appointments as appointments_service
+
+    monkeypatch.setattr(appointments_service, "transition_status", stale_loser)
+    # M08 check-in route (chains through transition_status).
+    resp = _check_in(client, scaffold, appt["id"])
+    assert resp.status_code == 409, resp.text
+    # M07 confirm route (confirm_appointment wraps transition_status).
+    resp2 = client.post(
+        f"{API}/clinics/{scaffold['clinic']['id']}/appointments/{appt['id']}/confirm",
+        headers=scaffold["headers"],
+    )
+    assert resp2.status_code == 409, resp2.text
+
+
+def test_skip_overlap_precheck_bound_to_walk_in_source(client, owner, db):
+    """Codex M08 R3 P2 regression: skip_overlap_precheck must be inert for
+    any non-walk_in source — a scheduled booking cannot bypass the guard."""
+    from app.services import clinic_appointments as appointments_service
+    from app.services.clinic_appointments import ClinicAppointmentError
+
+    scaffold = _scaffold(client, owner)
+    doctor = _doctor_with_membership(db, scaffold["clinic"]["id"])
+    start = _soon(hours=2)
+    _create_appointment(
+        client, scaffold, doctor_id=doctor["doctor_id"], start_time=start
+    )
+
+    patient2 = _create_patient(client, scaffold["headers"], scaffold["clinic"]["id"])
+    with pytest.raises(ClinicAppointmentError, match="trùng khung giờ"):
+        appointments_service.create_appointment(
+            db,
+            clinic_id=scaffold["clinic"]["id"],
+            actor_id=owner["user_id"],
+            branch_id=scaffold["branch"]["id"],
+            patient_id=patient2["patient_id"],
+            doctor_id=doctor["doctor_id"],
+            service_id=scaffold["service"]["id"],
+            start_time=start + dt.timedelta(minutes=10),  # overlapping, different start
+            created_by_source="reception",
+            skip_overlap_precheck=True,  # must be ignored for non-walk_in
+        )
+    db.rollback()
 
 
 def test_denied_transition_audit_row_persists(client, owner, db):
