@@ -84,7 +84,11 @@ def _member(db, clinic_id: str, roles: list[str], *, status: str = "active") -> 
 
 
 def _doctor_with_membership(
-    db, clinic_id: str, *, branch_ids: list[str] | None = None
+    db,
+    clinic_id: str,
+    *,
+    branch_ids: list[str] | None = None,
+    roles: list[str] | None = None,
 ) -> dict:
     """Wires up a real `Doctor` row + `doctor_profile_id`-linked active
     `doctor` `ClinicMembership`, mirroring
@@ -106,7 +110,7 @@ def _doctor_with_membership(
         db,
         user_id=doctor_user.id,
         clinic_id=clinic_id,
-        roles=["doctor"],
+        roles=roles or ["doctor"],
         branch_ids=branch_ids,
         doctor_profile_id=doctor_profile.id,
     )
@@ -765,6 +769,39 @@ def test_doctor_sees_only_own_assigned_appointments(client, owner, db):
         headers={**doctor_a["headers"], "X-Clinic-Id": scaffold["clinic"]["id"]},
     )
     assert other_read.status_code == 403
+
+
+def test_doctor_with_extra_nonmanage_role_still_row_scoped(client, owner, db):
+    """Codex M08 R7 P1 (same class as M08 R1): a ["doctor",
+    "care_coordinator"] membership used to dodge doctor row-scoping via the
+    exact-set `== {doctor}` test — reading AND mutating any doctor's
+    appointments even though care_coordinator grants no mutation right
+    (absent from _MUTATE_ROLES). Scoping now applies to every caller whose
+    access derives only from the doctor role."""
+    scaffold = _appointment_scaffold(client, owner)
+    other_doctor = _doctor_with_membership(db, scaffold["clinic"]["id"])
+    appt = _create_and_get(
+        client,
+        scaffold,
+        doctor_id=other_doctor["doctor_id"],
+        start_time=_next_weekday_at(0, 9, 0),
+    )
+
+    dcc = _doctor_with_membership(
+        db, scaffold["clinic"]["id"], roles=["doctor", "care_coordinator"]
+    )
+    dcc_headers = {**dcc["headers"], "X-Clinic-Id": scaffold["clinic"]["id"]}
+    base = f"{API}/clinics/{scaffold['clinic']['id']}/appointments"
+
+    listing = client.get(base, headers=dcc_headers)
+    assert listing.status_code == 200
+    assert all(
+        item["doctor_id"] == dcc["doctor_id"] for item in listing.json()["items"]
+    )
+    detail = client.get(f"{base}/{appt['id']}", headers=dcc_headers)
+    assert detail.status_code == 403, detail.text
+    confirm = client.post(f"{base}/{appt['id']}/confirm", headers=dcc_headers)
+    assert confirm.status_code == 403, confirm.text
 
 
 def test_doctor_self_booking_only(client, owner, db):

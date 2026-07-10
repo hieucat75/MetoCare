@@ -75,8 +75,25 @@ _MUTATE_ROLES = (ClinicRole.OWNER, ClinicRole.ADMIN, ClinicRole.RECEPTIONIST, Cl
 _OWNER_ADMIN_ROLES = (ClinicRole.OWNER, ClinicRole.ADMIN)
 
 
+# Roles that grant appointment access independently of the doctor role —
+# a caller holding any of these is never doctor-row-scoped.
+_UNSCOPED_ROLES = (
+    ClinicRole.OWNER,
+    ClinicRole.ADMIN,
+    ClinicRole.RECEPTIONIST,
+    ClinicRole.NURSE,
+)
+
+
 def _is_doctor_only(roles: frozenset[str]) -> bool:
-    return set(roles) == {ClinicRole.DOCTOR}
+    """Doctor row-scoping applies to any caller whose appointment access
+    derives ONLY from their doctor role. Codex M08 R7 P1 (same class as M08
+    R1): the previous exact-set test (`roles == {doctor}`) let a
+    doctor+care_coordinator membership dodge scoping entirely — reading and
+    MUTATING any doctor's appointments even though care_coordinator grants
+    no mutation right at all (it is absent from _MUTATE_ROLES). Matches
+    M08's `_is_doctor_scoped` rule exactly (clinic_queue.py)."""
+    return ClinicRole.DOCTOR in roles and not (set(roles) & set(_UNSCOPED_ROLES))
 
 
 def _has_owner_admin_access(roles: frozenset[str]) -> bool:
