@@ -277,22 +277,30 @@ def _deny_checkin(
 ) -> None:
     """Codex M08 R3 P1: a REJECTED check-in attempt must leave a durable,
     PHI-free audit trail (reason code only, never free text), same denial-
-    durability discipline as the transition validators. The commit is safe
-    for the same reason as M07's precedent: the scheduled check-in route
-    flushes nothing before these checks run, and the walk-in path cannot
-    reach either denial (its appointment is freshly `pending` — always in
-    the chain — with start_time=now — always inside the window)."""
+    durability discipline as the transition validators.
+
+    Codex M08 R4 P1: the audit's durability commit must not drag pending
+    work with it — the walk-in path flushes a freshly created appointment
+    before reaching these checks, and a clock jump between its two utcnow()
+    reads could land here, silently persisting a half-done walk-in alongside
+    a 400. Rolling back FIRST discards any such pending state (values needed
+    for the audit are captured beforehand), so the commit persists exactly
+    one row: the denial audit."""
+    resource_id = appointment.id
+    clinic_id = appointment.clinic_id
+    appointment_status = appointment.status
+    db.rollback()
     audit.record(
         db,
         actor_type="user",
         actor_id=actor_id,
         action="clinic_queue_checkin_denied",
         resource_type="clinic_appointment",
-        resource_id=appointment.id,
-        clinic_id=appointment.clinic_id,
+        resource_id=resource_id,
+        clinic_id=clinic_id,
         outcome="denied",
         severity="warning",
-        details={"reason": reason_code, "appointment_status": appointment.status},
+        details={"reason": reason_code, "appointment_status": appointment_status},
     )
     db.commit()
     raise ClinicQueueError(message)
@@ -449,34 +457,48 @@ def walk_in_check_in(
 # ---------------------------------------------------------------------------
 
 
+def record_entry_denial(
+    db: Session, *, entry: ClinicQueueEntry, actor_id: str, action: str, details: dict
+) -> None:
+    """Durable, PHI-free denial audit for a rejected queue action (Codex M08
+    R3/R4 P1: every prohibited attempt needs a trail; routes never commit on
+    error paths). Rollback-FIRST so the commit persists exactly one row —
+    the denial audit — never any pending work a caller may have flushed
+    (same single-row-commit guarantee as `_deny_checkin`)."""
+    resource_id = entry.id
+    clinic_id = entry.clinic_id
+    db.rollback()
+    audit.record(
+        db,
+        actor_type="user",
+        actor_id=actor_id,
+        action=action,
+        resource_type="clinic_queue_entry",
+        resource_id=resource_id,
+        clinic_id=clinic_id,
+        outcome="denied",
+        severity="warning",
+        details=details,
+    )
+    db.commit()
+
+
 def _assert_transition_allowed(
     db: Session, *, entry: ClinicQueueEntry, new_status: str, actor_id: str
 ) -> None:
     allowed = _VALID_QUEUE_TRANSITIONS.get(entry.status, set())
     if new_status in allowed:
         return
-    audit.record(
+    from_status = entry.status
+    record_entry_denial(
         db,
-        actor_type="user",
+        entry=entry,
         actor_id=actor_id,
         action="clinic_queue_transition_denied",
-        resource_type="clinic_queue_entry",
-        resource_id=entry.id,
-        clinic_id=entry.clinic_id,
-        outcome="denied",
-        severity="warning",
-        details={"from": entry.status, "to": new_status},
+        details={"from": from_status, "to": new_status},
     )
-    # M07 transition_status denial-durability precedent: routes only commit
-    # on the success path, and get_session()'s implicit rollback would
-    # silently discard the denial audit row otherwise. Safe here for the
-    # same reason as M07: every caller runs this check BEFORE flushing any
-    # other change in the request (appointment sync and the conditional
-    # entry UPDATE both happen after), so this commit persists the denial
-    # audit and nothing else.
-    db.commit()
     raise ClinicQueueError(
-        f"Không thể chuyển trạng thái hàng chờ từ '{entry.status}' sang '{new_status}'."
+        f"Không thể chuyển trạng thái hàng chờ từ '{from_status}' sang '{new_status}'."
     )
 
 
@@ -567,6 +589,19 @@ def mark_missed_call(
     conditional UPDATE (`missed_call_count < max`) so a concurrent racer
     can't overshoot between this read and the write."""
     if entry.missed_call_count >= max_missed_calls:
+        # Codex M08 R4 P1: the cap rejection is a denied state-changing
+        # attempt — it needs a durable trail like every other denial.
+        record_entry_denial(
+            db,
+            entry=entry,
+            actor_id=actor_id,
+            action="clinic_queue_transition_denied",
+            details={
+                "from": entry.status,
+                "to": ClinicQueueEntryStatus.WAITING,
+                "reason": "missed_call_cap",
+            },
+        )
         raise ClinicQueueError(
             "Lượt chờ đã đạt số lần gọi nhỡ tối đa — lễ tân xử lý bằng cách"
             " gọi lại hoặc hủy lượt chờ."
@@ -667,10 +702,27 @@ def set_priority(
     reason = reason.strip()
     if not reason:
         raise ClinicQueueError("Lý do ưu tiên là bắt buộc.")
+    # Codex M08 R4 P2: priority is meaningless on a terminal record — reject
+    # up front (with a durable denial trail), and repeat the invariant inside
+    # the conditional UPDATE so a complete/leave racing this call can't
+    # stamp a reason onto a just-terminalized entry.
+    if entry.status not in _ACTIVE_ENTRY_STATUSES:
+        record_entry_denial(
+            db,
+            entry=entry,
+            actor_id=actor_id,
+            action="clinic_queue_priority_denied",
+            details={"reason": "terminal_entry", "status": entry.status},
+        )
+        raise ClinicQueueError("Chỉ có thể đặt ưu tiên cho lượt chờ đang hoạt động.")
     old_priority = entry.is_priority
     result = db.execute(
         update(ClinicQueueEntry)
-        .where(ClinicQueueEntry.id == entry.id, ClinicQueueEntry.is_priority == old_priority)
+        .where(
+            ClinicQueueEntry.id == entry.id,
+            ClinicQueueEntry.is_priority == old_priority,
+            ClinicQueueEntry.status.in_(_ACTIVE_ENTRY_STATUSES),
+        )
         .values(
             is_priority=is_priority,
             priority_reason=reason,

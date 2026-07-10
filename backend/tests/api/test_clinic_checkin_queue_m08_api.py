@@ -878,6 +878,126 @@ def test_skip_overlap_precheck_bound_to_walk_in_source(client, owner, db):
     db.rollback()
 
 
+def test_walkin_denial_never_persists_half_created_appointment(
+    client, owner, db, monkeypatch
+):
+    """Codex M08 R4 P1 regression: _deny_checkin used to commit the whole
+    session — a clock jump between walk-in's two utcnow() reads could land
+    in the outside-window denial and persist the half-created walk-in
+    appointment alongside the 400. Rollback-first now guarantees the denial
+    audit is the ONLY row committed."""
+    scaffold = _scaffold(client, owner)
+    from app.models.governance import AuditLog
+
+    base_now = dt.datetime.utcnow()
+    calls = {"n": 0}
+
+    def jumping_clock():
+        calls["n"] += 1
+        # 1st call = walk-in start_time; later calls = check-in's `now`,
+        # jumped past the 12h window.
+        return base_now if calls["n"] == 1 else base_now + dt.timedelta(hours=20)
+
+    monkeypatch.setattr(queue_service, "utcnow", jumping_clock)
+    resp = client.post(
+        f"{API}/clinics/{scaffold['clinic']['id']}/queue/walk-in",
+        json={
+            "branch_id": scaffold["branch"]["id"],
+            "patient_id": scaffold["patient"]["patient_id"],
+            "service_id": scaffold["service"]["id"],
+        },
+        headers=scaffold["headers"],
+    )
+    assert resp.status_code == 400, resp.text
+
+    # The half-created walk-in appointment was rolled back, not committed.
+    walkins = (
+        db.query(ClinicAppointment)
+        .filter_by(
+            clinic_id=scaffold["clinic"]["id"],
+            patient_id=scaffold["patient"]["patient_id"],
+            created_by_source="walk_in",
+        )
+        .count()
+    )
+    assert walkins == 0
+    # ...but the denial audit row IS durable.
+    denial = (
+        db.query(AuditLog)
+        .filter_by(
+            action="clinic_queue_checkin_denied", clinic_id=scaffold["clinic"]["id"]
+        )
+        .all()
+    )
+    assert len(denial) == 1
+    assert denial[0].details["reason"] == "outside_window"
+
+
+def test_cap_denials_are_audited(client, owner, db):
+    """Codex M08 R4 P1 regression: the missed-call-cap 400 and the doctor
+    over-cap-call 403 each leave a durable PHI-free denial audit row."""
+    from app.models.governance import AuditLog
+
+    scaffold = _scaffold(client, owner)
+    doctor = _doctor_with_membership(db, scaffold["clinic"]["id"])
+    entry = _checked_in_entry(client, scaffold, doctor_id=doctor["doctor_id"])
+    for _ in range(3):
+        assert _entry_action(client, scaffold, entry["id"], "call").status_code == 200
+        assert _entry_action(client, scaffold, entry["id"], "missed-call").status_code == 200
+
+    doctor_headers = {**doctor["headers"], "X-Clinic-Id": scaffold["clinic"]["id"]}
+    assert (
+        _entry_action(client, scaffold, entry["id"], "call", headers=doctor_headers).status_code
+        == 403
+    )
+    assert _entry_action(client, scaffold, entry["id"], "call").status_code == 200
+    assert _entry_action(client, scaffold, entry["id"], "missed-call").status_code == 400
+
+    reasons = [
+        row.details.get("reason")
+        for row in db.query(AuditLog)
+        .filter_by(
+            action="clinic_queue_transition_denied",
+            resource_id=entry["id"],
+            outcome="denied",
+        )
+        .all()
+    ]
+    assert "over_missed_call_cap_doctor" in reasons
+    assert "missed_call_cap" in reasons
+
+
+def test_priority_rejected_on_terminal_entry_with_audit(client, owner, db):
+    """Codex M08 R4 P2 regression: priority (and its free-text reason) can
+    no longer be stamped onto a completed/left record; the rejection is
+    audited and the conditional UPDATE repeats the active-status invariant."""
+    from app.models.governance import AuditLog
+
+    scaffold = _scaffold(client, owner)
+    entry = _checked_in_entry(client, scaffold)
+    assert _entry_action(client, scaffold, entry["id"], "leave").status_code == 200
+
+    resp = _entry_action(
+        client,
+        scaffold,
+        entry["id"],
+        "priority",
+        json_body={"is_priority": True, "reason": "Cao tuổi"},
+    )
+    assert resp.status_code == 400, resp.text
+    row = db.get(ClinicQueueEntry, entry["id"])
+    db.refresh(row)
+    assert row.is_priority is False
+    assert row.priority_reason is None
+    denials = (
+        db.query(AuditLog)
+        .filter_by(action="clinic_queue_priority_denied", resource_id=entry["id"])
+        .all()
+    )
+    assert len(denials) == 1
+    assert denials[0].details == {"reason": "terminal_entry", "status": "left"}
+
+
 def test_denied_transition_audit_row_persists(client, owner, db):
     """M07 denial-durability precedent applied to the queue machine: the
     route never commits on the error path, so the service must commit the

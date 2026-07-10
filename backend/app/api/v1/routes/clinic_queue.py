@@ -335,9 +335,22 @@ def call_entry(
     entry = _load_entry_for_action(db, tenant, clinic_id, entry_id)
     # BR-M08-04: past the missed-call cap, only reception-side roles may
     # keep calling (or remove) — the doctor is blocked until resolved.
+    # Codex M08 R4 P1: the block itself is audited (durable PHI-free trail
+    # for a prohibited attempt), same denial discipline as the service layer.
     if _is_doctor_scoped(tenant.roles):
         config = queue_service.get_queue_config(clinic)
         if entry.missed_call_count >= config["max_missed_calls"]:
+            queue_service.record_entry_denial(
+                db,
+                entry=entry,
+                actor_id=tenant.user_id,
+                action="clinic_queue_transition_denied",
+                details={
+                    "from": entry.status,
+                    "to": "called",
+                    "reason": "over_missed_call_cap_doctor",
+                },
+            )
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN, detail=_FORBIDDEN_OVER_CAP_DETAIL
             )
