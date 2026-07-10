@@ -84,7 +84,11 @@ def _member(db, clinic_id: str, roles: list[str], *, status: str = "active") -> 
 
 
 def _doctor_with_membership(
-    db, clinic_id: str, *, branch_ids: list[str] | None = None
+    db,
+    clinic_id: str,
+    *,
+    branch_ids: list[str] | None = None,
+    roles: list[str] | None = None,
 ) -> dict:
     """Wires up a real `Doctor` row + `doctor_profile_id`-linked active
     `doctor` `ClinicMembership`, mirroring
@@ -106,7 +110,7 @@ def _doctor_with_membership(
         db,
         user_id=doctor_user.id,
         clinic_id=clinic_id,
-        roles=["doctor"],
+        roles=roles or ["doctor"],
         branch_ids=branch_ids,
         doctor_profile_id=doctor_profile.id,
     )
@@ -765,6 +769,106 @@ def test_doctor_sees_only_own_assigned_appointments(client, owner, db):
         headers={**doctor_a["headers"], "X-Clinic-Id": scaffold["clinic"]["id"]},
     )
     assert other_read.status_code == 403
+
+
+def test_doctor_with_extra_nonmanage_role_still_row_scoped(client, owner, db):
+    """Codex M08 R7 P1 (same class as M08 R1): a ["doctor",
+    "care_coordinator"] membership used to dodge doctor row-scoping via the
+    exact-set `== {doctor}` test — reading AND mutating any doctor's
+    appointments even though care_coordinator grants no mutation right
+    (absent from _MUTATE_ROLES). Scoping now applies to every caller whose
+    access derives only from the doctor role."""
+    scaffold = _appointment_scaffold(client, owner)
+    other_doctor = _doctor_with_membership(db, scaffold["clinic"]["id"])
+    appt = _create_and_get(
+        client,
+        scaffold,
+        doctor_id=other_doctor["doctor_id"],
+        start_time=_next_weekday_at(0, 9, 0),
+    )
+
+    dcc = _doctor_with_membership(
+        db, scaffold["clinic"]["id"], roles=["doctor", "care_coordinator"]
+    )
+    dcc_headers = {**dcc["headers"], "X-Clinic-Id": scaffold["clinic"]["id"]}
+    base = f"{API}/clinics/{scaffold['clinic']['id']}/appointments"
+
+    listing = client.get(base, headers=dcc_headers)
+    assert listing.status_code == 200
+    assert all(
+        item["doctor_id"] == dcc["doctor_id"] for item in listing.json()["items"]
+    )
+    detail = client.get(f"{base}/{appt['id']}", headers=dcc_headers)
+    assert detail.status_code == 403, detail.text
+    confirm = client.post(f"{base}/{appt['id']}/confirm", headers=dcc_headers)
+    assert confirm.status_code == 403, confirm.text
+
+
+def test_doctor_nurse_reads_all_but_mutates_own_only(client, owner, db):
+    """Codex M08 R9 P1: nurse un-scopes READS (full appointment view per the
+    matrix) but grants no mutation right — a ["doctor", "nurse"] membership
+    must still be write-scoped to its own appointments."""
+    scaffold = _appointment_scaffold(client, owner)
+    other = _doctor_with_membership(db, scaffold["clinic"]["id"])
+    appt = _create_and_get(
+        client, scaffold, doctor_id=other["doctor_id"], start_time=_next_weekday_at(0, 9, 0)
+    )
+    dn = _doctor_with_membership(db, scaffold["clinic"]["id"], roles=["doctor", "nurse"])
+    dn_headers = {**dn["headers"], "X-Clinic-Id": scaffold["clinic"]["id"]}
+    base = f"{API}/clinics/{scaffold['clinic']['id']}/appointments"
+
+    # Read: unscoped via nurse (list shows the other doctor's appointment).
+    listing = client.get(base, headers=dn_headers)
+    assert listing.status_code == 200
+    assert any(item["id"] == appt["id"] for item in listing.json()["items"])
+    detail = client.get(f"{base}/{appt['id']}", headers=dn_headers)
+    assert detail.status_code == 200, detail.text
+
+    # Write: scoped — only the doctor role grants mutation, so own-only.
+    confirm = client.post(f"{base}/{appt['id']}/confirm", headers=dn_headers)
+    assert confirm.status_code == 403, confirm.text
+    cancel = client.post(
+        f"{base}/{appt['id']}/cancel", json={"reason": "x"}, headers=dn_headers
+    )
+    assert cancel.status_code == 403, cancel.text
+
+
+def test_doctor_reschedule_cannot_retarget_other_doctor(client, owner, db):
+    """Codex M08 R8 P1: reschedule creates a NEW appointment, so the
+    self-booking boundary applies to its target doctor too — a doctor-scoped
+    caller may keep the original doctor (omit) or name themselves, never
+    another doctor."""
+    scaffold = _appointment_scaffold(client, owner)
+    doctor = _doctor_with_membership(db, scaffold["clinic"]["id"])
+    other = _doctor_with_membership(db, scaffold["clinic"]["id"])
+    appt = _create_and_get(
+        client, scaffold, doctor_id=doctor["doctor_id"], start_time=_next_weekday_at(0, 9, 0)
+    )
+    doctor_headers = {**doctor["headers"], "X-Clinic-Id": scaffold["clinic"]["id"]}
+    base = f"{API}/clinics/{scaffold['clinic']['id']}/appointments/{appt['id']}/reschedule"
+
+    retarget = client.post(
+        base,
+        json={
+            "start_time": _next_weekday_at(0, 10, 0).isoformat(),
+            "reason": "Đổi lịch",
+            "doctor_id": other["doctor_id"],
+        },
+        headers=doctor_headers,
+    )
+    assert retarget.status_code == 403, retarget.text
+
+    own = client.post(
+        base,
+        json={
+            "start_time": _next_weekday_at(0, 11, 0).isoformat(),
+            "reason": "Đổi lịch",
+            "doctor_id": doctor["doctor_id"],
+        },
+        headers=doctor_headers,
+    )
+    assert own.status_code == 201, own.text
+    assert own.json()["doctor_id"] == doctor["doctor_id"]
 
 
 def test_doctor_self_booking_only(client, owner, db):

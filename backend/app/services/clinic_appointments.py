@@ -31,6 +31,7 @@ from app.core.clock import as_naive_utc, utcnow
 from app.models.care import Clinic
 from app.models.clinic import (
     ClinicAppointment,
+    ClinicAppointmentSource,
     ClinicAppointmentStatus,
     ClinicBranchStatus,
     ClinicMembership,
@@ -52,6 +53,13 @@ class ClinicAppointmentError(ValueError):
     doctor not a clinic member, working-hours violation, invalid state
     transition). Routes translate this to a controlled 400 — never a raw
     500, same pattern as `ClinicPatientError`/`ClinicServiceError`."""
+
+
+class ClinicAppointmentConflictError(ClinicAppointmentError):
+    """Concurrency loser: the conditional status UPDATE saw a stale prior
+    status (someone else transitioned the row first). Routes map this to 409
+    BEFORE the parent's 400 (Codex M08 R3 P1: a 400 reads as a validation
+    error and the frontend never triggers its conflict-reload path)."""
 
 
 def _parse_range(range_str: str) -> tuple[dt.time, dt.time] | None:
@@ -129,6 +137,7 @@ def create_appointment(
     notes: str | None = None,
     override_working_hours_reason: str | None = None,
     is_override_allowed: bool = False,
+    skip_overlap_precheck: bool = False,
 ) -> ClinicAppointment:
     start_time = as_naive_utc(start_time)
 
@@ -188,8 +197,21 @@ def create_appointment(
                 "Thời gian đặt lịch nằm ngoài giờ làm việc của chi nhánh."
             )
 
-    if doctor_id is not None and _has_overlapping_appointment(
-        db, doctor_id=doctor_id, start_time=start_time, end_time=end_time
+    # `skip_overlap_precheck` — M08 walk-in only (plan §5 ADR-4): a walk-in
+    # is an immediate arrival, not a future slot reservation; blocking it
+    # because the doctor has a booked slot "now" would break US-M08-02. The
+    # DB exact-start unique index below still applies unconditionally.
+    # Codex M08 R3 P2: the flag is hard-bound to the walk_in source here so
+    # no future scheduled-booking caller can accidentally bypass the guard.
+    overlap_precheck_skipped = (
+        skip_overlap_precheck and created_by_source == ClinicAppointmentSource.WALK_IN
+    )
+    if (
+        doctor_id is not None
+        and not overlap_precheck_skipped
+        and _has_overlapping_appointment(
+            db, doctor_id=doctor_id, start_time=start_time, end_time=end_time
+        )
     ):
         raise ClinicAppointmentError("Bác sĩ đã có lịch hẹn trùng khung giờ này.")
 
@@ -348,8 +370,28 @@ def transition_status(
         )
 
     old_status = appointment.status
-    appointment.status = new_status
-    db.flush()
+    # Codex M08 R2 P1: an ORM read-then-set here let two concurrent
+    # transitions (e.g. M08 check-in racing an M07 cancel, both loading
+    # `confirmed`) last-write-win — a cancelled appointment could end up
+    # in_queue with an active queue entry, or vice versa. The conditional
+    # UPDATE makes the expected prior status part of the write itself: the
+    # stale loser sees rowcount == 0 and gets a controlled error, never a
+    # lost update. (Postgres row-lock also serializes the two until commit.)
+    result = db.execute(
+        update(ClinicAppointment)
+        .where(
+            ClinicAppointment.id == appointment.id,
+            ClinicAppointment.status == old_status,
+        )
+        .values(status=new_status),
+        execution_options={"synchronize_session": False},
+    )
+    if result.rowcount != 1:
+        raise ClinicAppointmentConflictError(
+            "Trạng thái lịch hẹn vừa được thay đổi bởi một thao tác khác —"
+            " vui lòng tải lại và thử lại."
+        )
+    db.expire(appointment)
     audit.record(
         db,
         actor_type="user",

@@ -127,26 +127,35 @@ test('an accountant-only membership sees only Tổng quan + Dịch vụ — no S
   expect(screen.getByText('Tổng quan')).toBeInTheDocument()
   expect(screen.getByText('Dịch vụ')).toBeInTheDocument()
   expect(screen.queryByText('Chi nhánh')).not.toBeInTheDocument()
+  expect(screen.queryByText('Hàng chờ')).not.toBeInTheDocument()
   expect(screen.queryByText('Nhân sự')).not.toBeInTheDocument()
   expect(screen.queryByText('Cài đặt phòng khám')).not.toBeInTheDocument()
 })
 
-test('an owner membership sees the full nav: Tổng quan, Chi nhánh, Dịch vụ, Nhân sự, Cài đặt phòng khám', async () => {
+test('an owner membership sees the full nav: Tổng quan, Chi nhánh, Dịch vụ, Hàng chờ, Nhân sự, Cài đặt phòng khám', async () => {
   await renderShellForRoles(['owner'])
 
   expect(screen.getByText('Tổng quan')).toBeInTheDocument()
   expect(screen.getByText('Chi nhánh')).toBeInTheDocument()
   expect(screen.getByText('Dịch vụ')).toBeInTheDocument()
+  expect(screen.getByText('Hàng chờ')).toBeInTheDocument()
   expect(screen.getByText('Nhân sự')).toBeInTheDocument()
   expect(screen.getByText('Cài đặt phòng khám')).toBeInTheDocument()
 })
 
-test('a doctor membership can view branches/services but has no Staff or Settings entries (view-only capabilities)', async () => {
+test('a doctor membership can view branches/services/queue but has no Staff or Settings entries (view-only capabilities)', async () => {
   await renderShellForRoles(['doctor'])
 
   expect(screen.getByText('Tổng quan')).toBeInTheDocument()
   expect(screen.getByText('Chi nhánh')).toBeInTheDocument()
   expect(screen.getByText('Dịch vụ')).toBeInTheDocument()
+  expect(screen.getByText('Hàng chờ')).toBeInTheDocument()
   expect(screen.queryByText('Nhân sự')).not.toBeInTheDocument()
   expect(screen.queryByText('Cài đặt phòng khám')).not.toBeInTheDocument()
+})
+
+test('a receptionist membership sees the Hàng chờ entry (M08 queue read roles)', async () => {
+  await renderShellForRoles(['receptionist'])
+
+  expect(screen.getByText('Hàng chờ')).toBeInTheDocument()
 })

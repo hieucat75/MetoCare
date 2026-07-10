@@ -10,6 +10,7 @@ import {
   Stethoscope,
   UserRound,
   CalendarDays,
+  ListOrdered,
 } from 'lucide-react'
 import { PortalShell } from '@/components/portal/PortalShell'
 import type { NavItem } from '@/design-system'
@@ -87,6 +88,15 @@ function buildNavItems(capabilities: ClinicCapabilities): NavItem[] {
       label: 'Lịch hẹn',
       icon: <CalendarDays className="w-5 h-5" />,
       href: '/clinic/appointments',
+    })
+  }
+
+  if (capabilities.canViewQueue) {
+    items.push({
+      id: 'clinic-queue',
+      label: 'Hàng chờ',
+      icon: <ListOrdered className="w-5 h-5" />,
+      href: '/clinic/queue',
     })
   }
 

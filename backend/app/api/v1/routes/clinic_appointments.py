@@ -43,7 +43,10 @@ from app.schemas.clinic_appointment import (
 )
 from app.services import clinic as clinic_service_lookup
 from app.services import clinic_appointments as appointments_service
-from app.services.clinic_appointments import ClinicAppointmentError
+from app.services.clinic_appointments import (
+    ClinicAppointmentConflictError,
+    ClinicAppointmentError,
+)
 
 router = APIRouter(
     prefix="/clinics/{clinic_id}/appointments",
@@ -72,8 +75,33 @@ _MUTATE_ROLES = (ClinicRole.OWNER, ClinicRole.ADMIN, ClinicRole.RECEPTIONIST, Cl
 _OWNER_ADMIN_ROLES = (ClinicRole.OWNER, ClinicRole.ADMIN)
 
 
-def _is_doctor_only(roles: frozenset[str]) -> bool:
-    return set(roles) == {ClinicRole.DOCTOR}
+# Codex M08 R7+R9 P1 (same class as M08 R1): doctor row-scoping applies to
+# any caller whose relevant ACCESS derives only from their doctor role — and
+# read vs write must be split, because the un-scoping role sets differ:
+# nurse holds full appointment READ (matrix row) but is absent from
+# _MUTATE_ROLES, so a doctor+nurse membership must stay write-scoped (R9:
+# it could otherwise cancel/reschedule/confirm another doctor's appointment)
+# while reading unscoped. Care Coordinator un-scopes neither (R7's verified
+# fix).
+_READ_UNSCOPING_ROLES = (
+    ClinicRole.OWNER,
+    ClinicRole.ADMIN,
+    ClinicRole.RECEPTIONIST,
+    ClinicRole.NURSE,
+)
+_MUTATION_UNSCOPING_ROLES = (
+    ClinicRole.OWNER,
+    ClinicRole.ADMIN,
+    ClinicRole.RECEPTIONIST,
+)
+
+
+def _is_doctor_read_scoped(roles: frozenset[str]) -> bool:
+    return ClinicRole.DOCTOR in roles and not (set(roles) & set(_READ_UNSCOPING_ROLES))
+
+
+def _is_doctor_mutation_scoped(roles: frozenset[str]) -> bool:
+    return ClinicRole.DOCTOR in roles and not (set(roles) & set(_MUTATION_UNSCOPING_ROLES))
 
 
 def _has_owner_admin_access(roles: frozenset[str]) -> bool:
@@ -102,7 +130,7 @@ def _own_doctor_profile_id(db: Session, tenant: TenantContext) -> str | None:
 def _created_by_source(tenant: TenantContext) -> str:
     return (
         ClinicAppointmentSource.DOCTOR
-        if _is_doctor_only(tenant.roles)
+        if _is_doctor_mutation_scoped(tenant.roles)
         else ClinicAppointmentSource.RECEPTION
     )
 
@@ -117,12 +145,23 @@ def _load_clinic_or_404(db: Session, clinic_id: str):
 
 
 def _assert_doctor_owns_appointment(
-    db: Session, tenant: TenantContext, appointment: ClinicAppointment
+    db: Session,
+    tenant: TenantContext,
+    appointment: ClinicAppointment,
+    *,
+    for_mutation: bool = False,
 ) -> None:
-    """A doctor-only caller may only read/write appointments assigned to
+    """A doctor-scoped caller may only read/write appointments assigned to
     them. 403 (not 404) — this is an authorization boundary within the same
-    clinic, not existence-obscurity across clinics."""
-    if not _is_doctor_only(tenant.roles):
+    clinic, not existence-obscurity across clinics. `for_mutation` selects
+    the write predicate (Codex M08 R9 P1: read and write un-scoping role
+    sets differ)."""
+    scoped = (
+        _is_doctor_mutation_scoped(tenant.roles)
+        if for_mutation
+        else _is_doctor_read_scoped(tenant.roles)
+    )
+    if not scoped:
         return
     own_doctor_id = _own_doctor_profile_id(db, tenant)
     if own_doctor_id is None or appointment.doctor_id != own_doctor_id:
@@ -141,7 +180,7 @@ def _load_appointment_for_mutation(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=_APPOINTMENT_NOT_FOUND_DETAIL
         )
-    _assert_doctor_owns_appointment(db, tenant, appointment)
+    _assert_doctor_owns_appointment(db, tenant, appointment, for_mutation=True)
     _assert_actor_branch_scope(tenant, appointment.branch_id)
     return appointment
 
@@ -163,7 +202,7 @@ def list_appointments(
     require_clinic_roles(tenant.roles, *_READ_ROLES)
 
     effective_doctor_id = doctor_id
-    if _is_doctor_only(tenant.roles):
+    if _is_doctor_read_scoped(tenant.roles):
         own_doctor_id = _own_doctor_profile_id(db, tenant)
         if own_doctor_id is None:
             return ClinicAppointmentListOut(total=0, items=[])
@@ -214,7 +253,7 @@ def create_appointment(
     assert_clinic_writable(clinic)
     _assert_actor_branch_scope(tenant, payload.branch_id)
 
-    if _is_doctor_only(tenant.roles):
+    if _is_doctor_mutation_scoped(tenant.roles):
         own_doctor_id = _own_doctor_profile_id(db, tenant)
         if own_doctor_id is None or payload.doctor_id != own_doctor_id:
             raise HTTPException(
@@ -243,6 +282,10 @@ def create_appointment(
             override_working_hours_reason=payload.override_working_hours_reason,
             is_override_allowed=is_override_allowed,
         )
+    except ClinicAppointmentConflictError as exc:
+        # Codex M08 R3 P1: a concurrent-transition stale loser is a conflict
+        # (client should reload), not a validation failure.
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except ClinicAppointmentError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     db.commit()
@@ -286,6 +329,10 @@ def confirm_appointment(
         appointment = appointments_service.confirm_appointment(
             db, appointment=appointment, actor_id=tenant.user_id
         )
+    except ClinicAppointmentConflictError as exc:
+        # Codex M08 R3 P1: a concurrent-transition stale loser is a conflict
+        # (client should reload), not a validation failure.
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except ClinicAppointmentError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     db.commit()
@@ -309,6 +356,10 @@ def cancel_appointment(
         appointment = appointments_service.cancel_appointment(
             db, appointment=appointment, actor_id=tenant.user_id, reason=payload.reason
         )
+    except ClinicAppointmentConflictError as exc:
+        # Codex M08 R3 P1: a concurrent-transition stale loser is a conflict
+        # (client should reload), not a validation failure.
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except ClinicAppointmentError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     db.commit()
@@ -335,6 +386,18 @@ def reschedule_appointment(
     if payload.branch_id is not None:
         _assert_actor_branch_scope(tenant, payload.branch_id)
 
+    # Codex M08 R8 P1: a doctor-scoped caller could reschedule their own
+    # appointment onto ANOTHER doctor via payload.doctor_id, bypassing the
+    # self-booking boundary (create enforces it; reschedule creates a new
+    # appointment too). Target doctor must be omitted (keeps the original's)
+    # or the caller's own profile.
+    if _is_doctor_mutation_scoped(tenant.roles) and payload.doctor_id is not None:
+        own_doctor_id = _own_doctor_profile_id(db, tenant)
+        if own_doctor_id is None or payload.doctor_id != own_doctor_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail=_DOCTOR_SELF_BOOKING_ONLY_DETAIL
+            )
+
     is_override_allowed = _has_owner_admin_access(tenant.roles)
     try:
         new_appointment = appointments_service.reschedule_appointment(
@@ -349,6 +412,10 @@ def reschedule_appointment(
             new_doctor_id=payload.doctor_id,
             is_override_allowed=is_override_allowed,
         )
+    except ClinicAppointmentConflictError as exc:
+        # Codex M08 R3 P1: a concurrent-transition stale loser is a conflict
+        # (client should reload), not a validation failure.
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except ClinicAppointmentError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     db.commit()
@@ -372,6 +439,10 @@ def mark_no_show(
         appointment = appointments_service.mark_no_show(
             db, appointment=appointment, actor_id=tenant.user_id, reason=payload.reason
         )
+    except ClinicAppointmentConflictError as exc:
+        # Codex M08 R3 P1: a concurrent-transition stale loser is a conflict
+        # (client should reload), not a validation failure.
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except ClinicAppointmentError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     db.commit()
@@ -395,6 +466,10 @@ def mark_arrived_override(
         appointment = appointments_service.mark_arrived_override(
             db, appointment=appointment, actor_id=tenant.user_id, reason=payload.reason
         )
+    except ClinicAppointmentConflictError as exc:
+        # Codex M08 R3 P1: a concurrent-transition stale loser is a conflict
+        # (client should reload), not a validation failure.
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except ClinicAppointmentError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     db.commit()
