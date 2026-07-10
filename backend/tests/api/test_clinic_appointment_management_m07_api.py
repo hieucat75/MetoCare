@@ -804,6 +804,35 @@ def test_doctor_with_extra_nonmanage_role_still_row_scoped(client, owner, db):
     assert confirm.status_code == 403, confirm.text
 
 
+def test_doctor_nurse_reads_all_but_mutates_own_only(client, owner, db):
+    """Codex M08 R9 P1: nurse un-scopes READS (full appointment view per the
+    matrix) but grants no mutation right — a ["doctor", "nurse"] membership
+    must still be write-scoped to its own appointments."""
+    scaffold = _appointment_scaffold(client, owner)
+    other = _doctor_with_membership(db, scaffold["clinic"]["id"])
+    appt = _create_and_get(
+        client, scaffold, doctor_id=other["doctor_id"], start_time=_next_weekday_at(0, 9, 0)
+    )
+    dn = _doctor_with_membership(db, scaffold["clinic"]["id"], roles=["doctor", "nurse"])
+    dn_headers = {**dn["headers"], "X-Clinic-Id": scaffold["clinic"]["id"]}
+    base = f"{API}/clinics/{scaffold['clinic']['id']}/appointments"
+
+    # Read: unscoped via nurse (list shows the other doctor's appointment).
+    listing = client.get(base, headers=dn_headers)
+    assert listing.status_code == 200
+    assert any(item["id"] == appt["id"] for item in listing.json()["items"])
+    detail = client.get(f"{base}/{appt['id']}", headers=dn_headers)
+    assert detail.status_code == 200, detail.text
+
+    # Write: scoped — only the doctor role grants mutation, so own-only.
+    confirm = client.post(f"{base}/{appt['id']}/confirm", headers=dn_headers)
+    assert confirm.status_code == 403, confirm.text
+    cancel = client.post(
+        f"{base}/{appt['id']}/cancel", json={"reason": "x"}, headers=dn_headers
+    )
+    assert cancel.status_code == 403, cancel.text
+
+
 def test_doctor_reschedule_cannot_retarget_other_doctor(client, owner, db):
     """Codex M08 R8 P1: reschedule creates a NEW appointment, so the
     self-booking boundary applies to its target doctor too — a doctor-scoped

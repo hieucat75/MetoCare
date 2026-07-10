@@ -93,7 +93,19 @@ Round-7's doctor+care_coordinator predicate fix verified on M07 list/detail/muta
 | 2 | P1 | Reverting `number_reset_scope` (A→B→A) resumed the OLD scope's stale counter below numbers the interim scope issued — duplicate tickets | Allocation (already fully serialized by the R6 clinic-row lock) now reconciles EVERY number: `max(counter.last_number, scope's issued max) + 1`; regression test for the exact A→B→A scenario |
 | 3 | P2 | CheckInPanel fetched browser-local "today" only — a valid late-night prior-day appointment disappeared after midnight despite the backend's ±12h window | Fetch window widened to ±1 day; backend enforces the real window |
 
-## Round 9 — (recorded when complete)
+## Round 9 — FAIL (0 P0, 1 P1, 2 P2) → fixed in the following commit
+
+All round-8 fixes verified (reschedule target guard works for doctor+CC; allocation
+reconciliation serialized under the clinic lock avoids stale-counter reuse on A→B→A;
+feature gating and 4-field display payload intact).
+
+| # | Sev | Finding | Fix |
+|---|---|---|---|
+| 1 | P1 | **M07** doctor+nurse escalation: nurse un-scoped the single predicate but grants no mutation right (absent from `_MUTATE_ROLES`) — the combo could cancel/reschedule/confirm any doctor's appointment | Read/write scoping SPLIT: `_is_doctor_read_scoped` (nurse un-scopes reads per the matrix) vs `_is_doctor_mutation_scoped` (only owner/admin/receptionist un-scope writes); applied to list/detail/create/mutations/reschedule-retarget/`_created_by_source`; doctor+nurse regression test (reads all, mutates own-only) |
+| 2 | P2 | CheckInPanel's ±1-day fetch still hid valid appointments when `checkin_window_hours` > 24 (max 48) | Window widened to ±2 days (backend enforces the real window) |
+| 3 | P2 | `tsconfig.tsbuildinfo` re-entered the diff a second time | Restored via `git show` + `git update-index --skip-worktree` locally so FE build/test runs can never re-commit it |
+
+## Round 10 — (recorded when complete)
 
 Operational notes: round 6's first attempt aborted on a Codex usage-limit window and
 was re-run after reset. The round-1 first attempt required upgrading the Codex CLI

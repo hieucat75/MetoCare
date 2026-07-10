@@ -23,15 +23,15 @@ const CHECKINABLE_STATUS_LABEL: Record<string, string> = {
 }
 
 function checkinWindowRange(): { date_from: string; date_to: string } {
-  // Codex M08 R8 P2: the backend allows check-in within its configured
-  // window around start_time (default ±12h), which crosses local midnight —
-  // a browser-local "today" filter hid a valid late-night prior-day
-  // appointment. Fetch ±1 day and let the backend enforce the real window.
+  // Codex M08 R8+R9 P2: the backend allows check-in within the tenant's
+  // configured window around start_time (up to 48h server-side), which
+  // crosses local midnight — a narrow browser-local filter hid valid
+  // appointments. Fetch ±2 days and let the backend enforce the real window.
   const start = new Date()
-  start.setDate(start.getDate() - 1)
+  start.setDate(start.getDate() - 2)
   start.setHours(0, 0, 0, 0)
   const end = new Date()
-  end.setDate(end.getDate() + 1)
+  end.setDate(end.getDate() + 2)
   end.setHours(23, 59, 59, 999)
   return { date_from: start.toISOString(), date_to: end.toISOString() }
 }

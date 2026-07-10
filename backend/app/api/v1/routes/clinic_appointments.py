@@ -75,25 +75,33 @@ _MUTATE_ROLES = (ClinicRole.OWNER, ClinicRole.ADMIN, ClinicRole.RECEPTIONIST, Cl
 _OWNER_ADMIN_ROLES = (ClinicRole.OWNER, ClinicRole.ADMIN)
 
 
-# Roles that grant appointment access independently of the doctor role —
-# a caller holding any of these is never doctor-row-scoped.
-_UNSCOPED_ROLES = (
+# Codex M08 R7+R9 P1 (same class as M08 R1): doctor row-scoping applies to
+# any caller whose relevant ACCESS derives only from their doctor role — and
+# read vs write must be split, because the un-scoping role sets differ:
+# nurse holds full appointment READ (matrix row) but is absent from
+# _MUTATE_ROLES, so a doctor+nurse membership must stay write-scoped (R9:
+# it could otherwise cancel/reschedule/confirm another doctor's appointment)
+# while reading unscoped. Care Coordinator un-scopes neither (R7's verified
+# fix).
+_READ_UNSCOPING_ROLES = (
     ClinicRole.OWNER,
     ClinicRole.ADMIN,
     ClinicRole.RECEPTIONIST,
     ClinicRole.NURSE,
 )
+_MUTATION_UNSCOPING_ROLES = (
+    ClinicRole.OWNER,
+    ClinicRole.ADMIN,
+    ClinicRole.RECEPTIONIST,
+)
 
 
-def _is_doctor_only(roles: frozenset[str]) -> bool:
-    """Doctor row-scoping applies to any caller whose appointment access
-    derives ONLY from their doctor role. Codex M08 R7 P1 (same class as M08
-    R1): the previous exact-set test (`roles == {doctor}`) let a
-    doctor+care_coordinator membership dodge scoping entirely — reading and
-    MUTATING any doctor's appointments even though care_coordinator grants
-    no mutation right at all (it is absent from _MUTATE_ROLES). Matches
-    M08's `_is_doctor_scoped` rule exactly (clinic_queue.py)."""
-    return ClinicRole.DOCTOR in roles and not (set(roles) & set(_UNSCOPED_ROLES))
+def _is_doctor_read_scoped(roles: frozenset[str]) -> bool:
+    return ClinicRole.DOCTOR in roles and not (set(roles) & set(_READ_UNSCOPING_ROLES))
+
+
+def _is_doctor_mutation_scoped(roles: frozenset[str]) -> bool:
+    return ClinicRole.DOCTOR in roles and not (set(roles) & set(_MUTATION_UNSCOPING_ROLES))
 
 
 def _has_owner_admin_access(roles: frozenset[str]) -> bool:
@@ -122,7 +130,7 @@ def _own_doctor_profile_id(db: Session, tenant: TenantContext) -> str | None:
 def _created_by_source(tenant: TenantContext) -> str:
     return (
         ClinicAppointmentSource.DOCTOR
-        if _is_doctor_only(tenant.roles)
+        if _is_doctor_mutation_scoped(tenant.roles)
         else ClinicAppointmentSource.RECEPTION
     )
 
@@ -137,12 +145,23 @@ def _load_clinic_or_404(db: Session, clinic_id: str):
 
 
 def _assert_doctor_owns_appointment(
-    db: Session, tenant: TenantContext, appointment: ClinicAppointment
+    db: Session,
+    tenant: TenantContext,
+    appointment: ClinicAppointment,
+    *,
+    for_mutation: bool = False,
 ) -> None:
-    """A doctor-only caller may only read/write appointments assigned to
+    """A doctor-scoped caller may only read/write appointments assigned to
     them. 403 (not 404) — this is an authorization boundary within the same
-    clinic, not existence-obscurity across clinics."""
-    if not _is_doctor_only(tenant.roles):
+    clinic, not existence-obscurity across clinics. `for_mutation` selects
+    the write predicate (Codex M08 R9 P1: read and write un-scoping role
+    sets differ)."""
+    scoped = (
+        _is_doctor_mutation_scoped(tenant.roles)
+        if for_mutation
+        else _is_doctor_read_scoped(tenant.roles)
+    )
+    if not scoped:
         return
     own_doctor_id = _own_doctor_profile_id(db, tenant)
     if own_doctor_id is None or appointment.doctor_id != own_doctor_id:
@@ -161,7 +180,7 @@ def _load_appointment_for_mutation(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=_APPOINTMENT_NOT_FOUND_DETAIL
         )
-    _assert_doctor_owns_appointment(db, tenant, appointment)
+    _assert_doctor_owns_appointment(db, tenant, appointment, for_mutation=True)
     _assert_actor_branch_scope(tenant, appointment.branch_id)
     return appointment
 
@@ -183,7 +202,7 @@ def list_appointments(
     require_clinic_roles(tenant.roles, *_READ_ROLES)
 
     effective_doctor_id = doctor_id
-    if _is_doctor_only(tenant.roles):
+    if _is_doctor_read_scoped(tenant.roles):
         own_doctor_id = _own_doctor_profile_id(db, tenant)
         if own_doctor_id is None:
             return ClinicAppointmentListOut(total=0, items=[])
@@ -234,7 +253,7 @@ def create_appointment(
     assert_clinic_writable(clinic)
     _assert_actor_branch_scope(tenant, payload.branch_id)
 
-    if _is_doctor_only(tenant.roles):
+    if _is_doctor_mutation_scoped(tenant.roles):
         own_doctor_id = _own_doctor_profile_id(db, tenant)
         if own_doctor_id is None or payload.doctor_id != own_doctor_id:
             raise HTTPException(
@@ -372,7 +391,7 @@ def reschedule_appointment(
     # self-booking boundary (create enforces it; reschedule creates a new
     # appointment too). Target doctor must be omitted (keeps the original's)
     # or the caller's own profile.
-    if _is_doctor_only(tenant.roles) and payload.doctor_id is not None:
+    if _is_doctor_mutation_scoped(tenant.roles) and payload.doctor_id is not None:
         own_doctor_id = _own_doctor_profile_id(db, tenant)
         if own_doctor_id is None or payload.doctor_id != own_doctor_id:
             raise HTTPException(
