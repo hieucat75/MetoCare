@@ -9,6 +9,9 @@ testpaths = ["tests"]
 pythonpath = ["."]
 addopts = "-q"
 asyncio_mode = "auto"
+markers = [
+    "integration: marks tests as PostgreSQL integration tests (deselect with '-m not integration')",
+]
 
 [tool.ruff]
 line-length = 100
