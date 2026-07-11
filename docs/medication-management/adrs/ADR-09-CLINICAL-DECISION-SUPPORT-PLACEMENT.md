@@ -6,6 +6,21 @@
 
 ---
 
+## ADR Metadata
+
+| Field | Value |
+|-------|-------|
+| ADR | ADR-09 |
+| Status | Accepted |
+| Architecture Version | medication-architecture-v1.0 |
+| Implementation Gate | Gate 1 |
+| Domain | CDS Placement |
+| Supersedes | None |
+| Superseded By | None |
+
+---
+
+
 ## Context
 
 Clinical Decision Support (CDS) là engine thực thi safety checks và advisory rules. Câu hỏi: code này nên chạy ở đâu trong tech stack?

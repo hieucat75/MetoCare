@@ -7,6 +7,21 @@
 
 ---
 
+## ADR Metadata
+
+| Field | Value |
+|-------|-------|
+| ADR | ADR-04 |
+| Status | Accepted |
+| Architecture Version | medication-architecture-v1.0 |
+| Implementation Gate | Gate 1 |
+| Domain | Reconciliation |
+| Supersedes | None |
+| Superseded By | None |
+
+---
+
+
 ## Context
 
 Medication Reconciliation là quá trình hợp nhất danh sách thuốc từ nhiều nguồn thành một "Current Medication List" (CML) chính xác và được xác nhận. 

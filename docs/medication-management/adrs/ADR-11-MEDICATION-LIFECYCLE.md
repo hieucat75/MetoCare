@@ -7,6 +7,21 @@
 
 ---
 
+## ADR Metadata
+
+| Field | Value |
+|-------|-------|
+| ADR | ADR-11 |
+| Status | Accepted |
+| Architecture Version | medication-architecture-v1.0 |
+| Implementation Gate | Gate 1 |
+| Domain | Medication Lifecycle |
+| Supersedes | None |
+| Superseded By | None |
+
+---
+
+
 ## Context
 
 `medications.status` hiện tại không tồn tại — chỉ có soft delete (`deleted_at`). Tài liệu P0 đề xuất 4 states: `active | paused | completed | discontinued`.

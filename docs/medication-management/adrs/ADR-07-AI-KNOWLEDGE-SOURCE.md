@@ -6,6 +6,21 @@
 
 ---
 
+## ADR Metadata
+
+| Field | Value |
+|-------|-------|
+| ADR | ADR-07 |
+| Status | Proposed |
+| Architecture Version | medication-architecture-v1.0 |
+| Implementation Gate | Gate 3 |
+| Domain | AI Knowledge Source |
+| Supersedes | None |
+| Superseded By | None |
+
+---
+
+
 ## Context
 
 Meto AI hiện nhận medication list dưới dạng text (name, dose, frequency) và generates responses based on LLM training data. Không có knowledge grounding mechanism.

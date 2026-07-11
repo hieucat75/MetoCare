@@ -6,6 +6,21 @@
 
 ---
 
+## ADR Metadata
+
+| Field | Value |
+|-------|-------|
+| ADR | ADR-10 |
+| Status | Proposed |
+| Architecture Version | medication-architecture-v1.0 |
+| Implementation Gate | Gate 2 |
+| Domain | Drug Data Sources |
+| Supersedes | None |
+| Superseded By | None |
+
+---
+
+
 ## Context
 
 MetoCare cần drug knowledge data cho: drug catalog, interaction rules, allergy cross-reactivity, drug class hierarchy, monitoring parameters, dose adjustment rules. Nguồn dữ liệu nào là authoritative, có thể dùng hợp pháp, đủ cho VN market?

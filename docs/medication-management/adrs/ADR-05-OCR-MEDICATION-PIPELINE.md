@@ -7,6 +7,21 @@
 
 ---
 
+## ADR Metadata
+
+| Field | Value |
+|-------|-------|
+| ADR | ADR-05 |
+| Status | Proposed |
+| Architecture Version | medication-architecture-v1.0 |
+| Implementation Gate | Gate 3 |
+| Domain | OCR Pipeline |
+| Supersedes | None |
+| Superseded By | None |
+
+---
+
+
 ## Context
 
 MetoCare có OCR pipeline trưởng thành cho lab results (Google Cloud Vision, structured table extraction, confidence scoring). Prescription OCR là nhu cầu khác: đọc freeform prescription text, extract drug names, doses, frequencies, doctor names từ printed/handwritten Vietnamese prescriptions.

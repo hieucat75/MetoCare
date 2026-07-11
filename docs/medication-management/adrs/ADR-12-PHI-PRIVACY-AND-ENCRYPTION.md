@@ -6,6 +6,21 @@
 
 ---
 
+## ADR Metadata
+
+| Field | Value |
+|-------|-------|
+| ADR | ADR-12 |
+| Status | Proposed |
+| Architecture Version | medication-architecture-v1.0 |
+| Implementation Gate | Gate 2 |
+| Domain | PHI & Privacy |
+| Supersedes | None |
+| Superseded By | None |
+
+---
+
+
 ## Context
 
 Medication data trong MetoCare là Protected Health Information (PHI) theo bất kỳ định nghĩa nào của healthcare privacy law. Danh sách thuốc của một bệnh nhân tiết lộ: bệnh lý, tình trạng sức khỏe, hành vi, lịch sử lâm sàng.

@@ -6,6 +6,21 @@
 
 ---
 
+## ADR Metadata
+
+| Field | Value |
+|-------|-------|
+| ADR | ADR-03 |
+| Status | Accepted |
+| Architecture Version | medication-architecture-v1.0 |
+| Implementation Gate | Gate 1 |
+| Domain | History & Audit |
+| Supersedes | None |
+| Superseded By | None |
+
+---
+
+
 ## Context
 
 `medications` table hiện có `updated_at` timestamp. Khi patient hoặc doctor edit một medication (dose, frequency, status), previous value bị ghi đè. Không có lịch sử.

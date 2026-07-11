@@ -6,6 +6,21 @@
 
 ---
 
+## ADR Metadata
+
+| Field | Value |
+|-------|-------|
+| ADR | ADR-06 |
+| Status | Proposed |
+| Architecture Version | medication-architecture-v1.0 |
+| Implementation Gate | Gate 3 |
+| Domain | Traditional Medicine |
+| Supersedes | None |
+| Superseded By | None |
+
+---
+
+
 ## Context
 
 MetoCare hiện có `is_supplement` Boolean và `supplement_category` String trên `medications` table. Tài liệu P0 đề xuất dùng cách này.

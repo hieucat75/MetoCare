@@ -7,6 +7,21 @@
 
 ---
 
+## ADR Metadata
+
+| Field | Value |
+|-------|-------|
+| ADR | ADR-08 |
+| Status | Proposed |
+| Architecture Version | medication-architecture-v1.0 |
+| Implementation Gate | Gate 2 |
+| Domain | Allergy & Cross-Reactivity |
+| Supersedes | None |
+| Superseded By | None |
+
+---
+
+
 ## Context
 
 Allergy data hiện tại trong MetoCare: `allergies` field trên `patient_profiles` — free text String. "Penicillin, dust mites, shellfish" lưu như một chuỗi văn bản.

@@ -8,6 +8,21 @@
 
 ---
 
+## ADR Metadata
+
+| Field | Value |
+|-------|-------|
+| ADR | ADR-02 |
+| Status | Accepted |
+| Architecture Version | medication-architecture-v1.0 |
+| Implementation Gate | Gate 2 |
+| Domain | Interaction Engine |
+| Supersedes | None |
+| Superseded By | None |
+
+---
+
+
 ## Context
 
 MetoCare cần detect drug-drug interactions khi patient thêm thuốc. Hiện tại: zero implementation. Tài liệu P0-P4 đề xuất "50 hardcoded interaction pairs" dưới dạng `drug_interaction_rules` table với `ingredient_a`, `ingredient_b` string fields.

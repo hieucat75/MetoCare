@@ -6,6 +6,21 @@
 
 ---
 
+## ADR Metadata
+
+| Field | Value |
+|-------|-------|
+| ADR | ADR-01 |
+| Status | Accepted |
+| Architecture Version | medication-architecture-v1.0 |
+| Implementation Gate | Gate 1 |
+| Domain | Knowledge Structure |
+| Supersedes | None |
+| Superseded By | None |
+
+---
+
+
 ## Context
 
 MetoCare hiện có `drug_catalog` table với 41 entries. Mỗi entry lưu `generic_name`, `active_ingredients` (JSON array), `drug_class` (String), `brand_names` (JSON array). Đây là flat table, không có relational hierarchy.
