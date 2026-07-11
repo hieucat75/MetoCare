@@ -292,12 +292,14 @@ None. No schema conflicts, no name collisions, no FK cycles.
 **Decision:** Must fix `_build_medications()` in P0 scope alongside migrations.
 
 Allowlist for AI current-medication context:
-- `active` — include (currently taking)
-- `on_hold` — include (clearly flagged as clinician-suspended)
-- `paused` — include only when query requires history or adherence context
-- `completed`, `discontinued`, `expired`, `entered_in_error` — exclude from current context
+- `active` — always include (currently taking)
+- `on_hold` — include; output MUST label clearly as clinician-suspended (model must not interpret as currently active)
+- `paused` — include for P0 allowlist; output MUST carry `lifecycle_status` field so model does not interpret as currently taking; default to include for history/adherence/reconciliation queries only if context-aware routing is added at P1
+- `completed`, `discontinued`, `expired`, `entered_in_error` — always exclude from current context
 
-Implementation: filter by `WHERE lifecycle_status IN ('active', 'on_hold', 'paused')`, not just exclude `expired`. Use allowlist, not blocklist.
+Implementation: `WHERE lifecycle_status IN ('active', 'on_hold', 'paused')`. Use allowlist, not blocklist.
+
+**Output rule:** `_build_medications()` MUST include `lifecycle_status` in the returned payload (not just `name, dose, frequency`). The consuming model must receive the status to correctly interpret `on_hold` and `paused` records — never silently present them as active medications.
 
 ### RISK-3 — Soft-deleted rows → **Fix mapping before migration**
 
@@ -331,6 +333,15 @@ UPDATE medications SET lifecycle_status = 'entered_in_error' WHERE deleted_at IS
 - If backup command fails, migration does not run
 - Log/artifact reference saved
 - Restore rehearsal on staging or temporary DB
+
+**Azure PostgreSQL Flexible Server — async backup (PTH, 2026-07-11):**
+`az postgres flexible-server backup create` is asynchronous. Exit code 0 = request accepted, NOT backup completed. Pipeline must:
+1. Trigger backup
+2. Poll operation status until state = `Succeeded` (timeout → fail closed)
+3. Only then run `alembic upgrade head`
+4. Save backup name/restore-point as CI artifact
+
+Do NOT treat exit code 0 as evidence of a valid restore point.
 
 Rollback migration ≠ backup. Both are required independently.
 
