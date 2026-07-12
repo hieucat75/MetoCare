@@ -127,7 +127,12 @@ def pg_engine() -> Generator[sa.Engine, None, None]:
 @pytest.fixture(scope="module")
 def migrated_schema(pg_engine: sa.Engine) -> Generator[sa.Engine, None, None]:
     """Apply P0 migration and yield the engine; tear down after module."""
-    cfg = _make_alembic_config(str(pg_engine.url))
+    # IMPORTANT: use render_as_string(hide_password=False) to preserve the
+    # real password in the URL string. SQLAlchemy 2.x str(engine.url) masks
+    # the password as literal '***', which causes psycopg authentication
+    # failures when Alembic uses that string to build its own engine.
+    db_url = pg_engine.url.render_as_string(hide_password=False)
+    cfg = _make_alembic_config(db_url)
 
     # Upgrade to the P0 revision head
     command.upgrade(cfg, "p0_m01_med_lifecycle")
@@ -908,7 +913,7 @@ class TestRollback:
 
     def test_downgrade_removes_new_tables(self, pg_engine: sa.Engine) -> None:
         """After downgrade, medication_audit_log, medication_statements, medication_category_codes must not exist."""
-        cfg = _make_alembic_config(str(pg_engine.url))
+        cfg = _make_alembic_config(pg_engine.url.render_as_string(hide_password=False))
 
         # Ensure we're at the P0 revision first
         command.upgrade(cfg, "p0_m01_med_lifecycle")
@@ -940,7 +945,7 @@ class TestRollback:
         self, pg_engine: sa.Engine
     ) -> None:
         """After downgrade, P0 columns must not exist on medications."""
-        cfg = _make_alembic_config(str(pg_engine.url))
+        cfg = _make_alembic_config(pg_engine.url.render_as_string(hide_password=False))
         command.upgrade(cfg, "p0_m01_med_lifecycle")
         command.downgrade(cfg, "c0_m9_audit_log_clinic_id")
 
@@ -1056,7 +1061,7 @@ class TestMigrationIdempotency:
         Explicitly verifies that all P0 tables and columns are present after
         a clean upgrade from the pre-P0 baseline revision.
         """
-        cfg = _make_alembic_config(str(pg_engine.url))
+        cfg = _make_alembic_config(pg_engine.url.render_as_string(hide_password=False))
 
         # Ensure we start from the pre-P0 baseline
         command.downgrade(cfg, "c0_m9_audit_log_clinic_id")
@@ -1119,7 +1124,7 @@ class TestMigrationIdempotency:
         is already migrated. Alembic must detect it is already at head and do
         nothing. Seed rows must not be duplicated.
         """
-        cfg = _make_alembic_config(str(pg_engine.url))
+        cfg = _make_alembic_config(pg_engine.url.render_as_string(hide_password=False))
 
         # Ensure the DB is at P0 head (may already be there from previous test)
         command.upgrade(cfg, "p0_m01_med_lifecycle")
@@ -1173,7 +1178,7 @@ class TestMigrationIdempotency:
         schema in a consistent state: all P0 tables and columns present, seed data
         correctly re-inserted with exactly 2 rows.
         """
-        cfg = _make_alembic_config(str(pg_engine.url))
+        cfg = _make_alembic_config(pg_engine.url.render_as_string(hide_password=False))
 
         # Ensure we start from head
         command.upgrade(cfg, "p0_m01_med_lifecycle")
