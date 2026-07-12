@@ -506,7 +506,7 @@ class TestM02AuditLogTable:
                 """
                 INSERT INTO medication_audit_log
                     (id, medication_id, patient_id, event_type, event_data, created_at)
-                VALUES (:id, :mid, :pid, 'create', :payload::jsonb, now());
+                VALUES (:id, :mid, :pid, 'create', cast(:payload as jsonb), now());
                 """
             ),
             {"id": log_id, "mid": mid, "pid": pid, "payload": json.dumps(payload)},
@@ -541,7 +541,7 @@ class TestM02AuditLogTable:
                      before_snapshot, after_snapshot, created_at)
                 VALUES (:id, :mid, :pid, 'lifecycle_change',
                         'lifecycle_status', 'active', 'paused',
-                        :before::jsonb, :after::jsonb, now());
+                        cast(:before as jsonb), cast(:after as jsonb), now());
                 """
             ),
             {
@@ -578,7 +578,7 @@ class TestM02AuditLogTable:
                     (id, medication_id, patient_id, event_type,
                      event_data, before_snapshot, after_snapshot, created_at)
                 VALUES (:id, :mid, :pid, 'patient_reported_non_adherence',
-                        '{"note": "forgot"}'::jsonb, NULL, NULL, now());
+                        CAST('{"note": "forgot"}' AS jsonb), NULL, NULL, now());
                 """
             ),
             {"id": log_id, "mid": mid, "pid": pid},
@@ -704,7 +704,7 @@ class TestM03MedicationStatements:
                      payload_snapshot, statement_status, created_at)
                 VALUES (:id, :pid, 'patient_manual', 'continued_use',
                         :rel_mid, 'Lisinopril', :eff_from,
-                        :snapshot::jsonb, 'pending', now());
+                        cast(:snapshot as jsonb), 'pending', now());
                 """
             ),
             {
@@ -994,7 +994,7 @@ class TestJsonbTypeEnforcement:
                     (id, medication_id, patient_id, event_type,
                      before_snapshot, created_at)
                 VALUES (:id, :mid, :pid, 'lifecycle_change',
-                        :snap::jsonb, now());
+                        cast(:snap as jsonb), now());
                 """
             ),
             {"id": log_id, "mid": mid, "pid": pid, "snap": json.dumps(snapshot)},
@@ -1005,7 +1005,7 @@ class TestJsonbTypeEnforcement:
             sa.text(
                 """
                 SELECT COUNT(*) FROM medication_audit_log
-                WHERE before_snapshot @> '{"drug": "aspirin"}'::jsonb
+                WHERE before_snapshot @> CAST('{"drug": "aspirin"}' AS jsonb)
                   AND id = :id;
                 """
             ),
@@ -1028,7 +1028,7 @@ class TestJsonbTypeEnforcement:
                     (id, patient_id, source_type, raw_drug_name,
                      payload_snapshot, created_at)
                 VALUES (:id, :pid, 'patient_manual', 'Lisinopril',
-                        :snap::jsonb, now());
+                        cast(:snap as jsonb), now());
                 """
             ),
             {"id": stmt_id, "pid": pid, "snap": json.dumps(snap)},
