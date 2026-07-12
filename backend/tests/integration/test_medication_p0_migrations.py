@@ -68,10 +68,21 @@ def _make_alembic_config(db_url: str) -> Config:
     Also patches MCP_DATABASE_URL in os.environ so that alembic/env.py
     (which calls get_settings().database_url) sees the correct Postgres URL
     rather than the SQLite override set by tests/conftest.py.
+
+    CRITICAL: get_settings() is decorated with @lru_cache, so changing
+    os.environ alone is insufficient — the stale SQLite URL stays cached.
+    We must call get_settings.cache_clear() AFTER setting the env var so
+    the next call to get_settings() inside alembic/env.py returns the
+    correct PostgreSQL URL.
     """
     # Ensure env.py reads the correct URL — conftest.py may have set
     # MCP_DATABASE_URL=sqlite:///... which would silently override this config.
     os.environ["MCP_DATABASE_URL"] = db_url
+    # Clear the lru_cache so get_settings() re-reads from os.environ.
+    # Without this, alembic/env.py would still get the cached SQLite URL
+    # and run migrations against SQLite instead of PostgreSQL.
+    from app.core.config import get_settings
+    get_settings.cache_clear()
 
     # Resolve the alembic.ini from the backend directory (two levels up from this file)
     backend_dir = os.path.abspath(
@@ -93,9 +104,22 @@ def pg_engine() -> Generator[sa.Engine, None, None]:
 
     The database named in POSTGRES_TEST_URL must already exist (GitHub Actions
     postgres service creates it automatically).
+
+    Fail-closed guard: asserts the engine dialect is postgresql before yielding.
+    If the URL somehow resolved to SQLite (e.g. cache/env bug), the test module
+    aborts immediately with a clear error instead of silently running against
+    the wrong database.
     """
     _require_postgres()
     engine = sa.create_engine(POSTGRES_TEST_URL, echo=False, future=True)
+    # Fail-closed: abort the entire module if we are not on PostgreSQL.
+    # This catches any future regression where the URL falls back to SQLite.
+    with engine.connect() as _conn:
+        dialect_name = _conn.dialect.name
+        assert dialect_name == "postgresql", (
+            f"Integration tests MUST run against PostgreSQL, got dialect={dialect_name!r}. "
+            f"Check POSTGRES_TEST_URL: {POSTGRES_TEST_URL!r}"
+        )
     yield engine
     engine.dispose()
 
