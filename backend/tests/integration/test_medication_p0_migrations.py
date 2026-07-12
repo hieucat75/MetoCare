@@ -166,8 +166,10 @@ def _insert_patient(conn: sa.Connection, user_id: str | None = None) -> str:
     conn.execute(
         sa.text(
             """
-            INSERT INTO users (id, email, password_hash, role, full_name, created_at, updated_at)
-            VALUES (:id, :email, 'hash', 'patient', 'Test Patient', now(), now())
+            INSERT INTO users (id, email, password_hash, role, full_name,
+                               is_active, mfa_enabled, created_at, updated_at)
+            VALUES (:id, :email, 'hash', 'patient', 'Test Patient',
+                   true, false, now(), now())
             ON CONFLICT (id) DO NOTHING;
             """
         ),
