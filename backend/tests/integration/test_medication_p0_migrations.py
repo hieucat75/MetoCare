@@ -63,7 +63,16 @@ def _require_postgres() -> None:
 
 
 def _make_alembic_config(db_url: str) -> Config:
-    """Return an Alembic Config object wired to the given database URL."""
+    """Return an Alembic Config object wired to the given database URL.
+
+    Also patches MCP_DATABASE_URL in os.environ so that alembic/env.py
+    (which calls get_settings().database_url) sees the correct Postgres URL
+    rather than the SQLite override set by tests/conftest.py.
+    """
+    # Ensure env.py reads the correct URL — conftest.py may have set
+    # MCP_DATABASE_URL=sqlite:///... which would silently override this config.
+    os.environ["MCP_DATABASE_URL"] = db_url
+
     # Resolve the alembic.ini from the backend directory (two levels up from this file)
     backend_dir = os.path.abspath(
         os.path.join(os.path.dirname(__file__), "..", "..")
