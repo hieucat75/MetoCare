@@ -117,7 +117,8 @@ def _candidate_query(
     if has_meds is not None:
         meds_exists = exists(
             select(Medication.id).where(
-                Medication.patient_id == PatientProfile.id, Medication.deleted_at.is_(None)
+                Medication.patient_id == PatientProfile.id, Medication.deleted_at.is_(None),
+                Medication.lifecycle_status != "entered_in_error"
             )
         )
         stmt = stmt.where(meds_exists if has_meds else ~meds_exists)
@@ -148,7 +149,8 @@ def _counts_for(
 
     med_rows = db.execute(
         select(Medication.patient_id, func.count())
-        .where(Medication.patient_id.in_(patient_ids), Medication.deleted_at.is_(None))
+        .where(Medication.patient_id.in_(patient_ids), Medication.deleted_at.is_(None),
+                Medication.lifecycle_status != "entered_in_error")
         .group_by(Medication.patient_id)
     ).all()
     med_counts = dict(med_rows)

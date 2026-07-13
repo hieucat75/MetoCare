@@ -215,9 +215,10 @@ def _medication_records(db: Session, patient_id: str) -> list[dict]:
     rows = db.execute(
         text(
             """
-            SELECT id, name, dose, frequency, created_at
+            SELECT id, name, dose, frequency, created_at, lifecycle_status
             FROM medications
             WHERE patient_id = :pid AND deleted_at IS NULL
+              AND lifecycle_status IN ('active', 'paused')
             ORDER BY created_at DESC
             LIMIT :limit
             """
@@ -231,14 +232,21 @@ def _medication_records(db: Session, patient_id: str) -> list[dict]:
             "dose": r[2],
             "frequency": r[3],
             "created_at": _coerce_datetime(r[4]),
+            "lifecycle_status": r[5],
         }
         for r in rows
     ]
 
 
 def _medication_briefs(records: list[dict]) -> list[MedicationBrief]:
+    # ADR-11: paused medications stay visible but must be distinguishable
+    # from actively-taken ones in the clinician-facing brief.
     return [
-        MedicationBrief(name=r["name"], dosage=r["dose"] or "", frequency=r["frequency"] or "")
+        MedicationBrief(
+            name=r["name"] + (" (tạm ngưng)" if r.get("lifecycle_status") == "paused" else ""),
+            dosage=r["dose"] or "",
+            frequency=r["frequency"] or "",
+        )
         for r in records
     ]
 

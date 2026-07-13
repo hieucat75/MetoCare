@@ -141,6 +141,7 @@ def get_health_timeline(
     medication_q = db.query(Medication).filter(
         Medication.patient_id == patient_id,
         Medication.deleted_at.is_(None),
+        Medication.lifecycle_status != "entered_in_error",
     )
     medications = medication_q.all()
 
