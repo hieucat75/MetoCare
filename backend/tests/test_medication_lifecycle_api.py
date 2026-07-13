@@ -249,3 +249,65 @@ def test_list_specific_state_filter(client, patient, db):
 def test_list_invalid_state_filter_rejected(client, patient):
     r = _list(client, patient, lifecycle_status="bogus")
     assert r.status_code == 422
+
+
+# --------------------------------------------------------------------------- #
+# Codex R1 hardening — on_hold protection + delete statement + status_reason
+# --------------------------------------------------------------------------- #
+
+
+def test_patient_cannot_edit_on_hold_record_at_all(client, patient, db):
+    med = _create_med(client, patient)
+    _force_lifecycle(db, med["id"], "on_hold")
+    r = _patch(client, patient, med["id"], {"note": "thử sửa"})
+    assert r.status_code == 403
+
+
+def test_patient_cannot_delete_on_hold_record(client, patient, db):
+    med = _create_med(client, patient)
+    _force_lifecycle(db, med["id"], "on_hold")
+    r = client.delete(
+        f"/api/v1/patients/{patient['patient_id']}/medications/{med['id']}",
+        headers=patient["headers"],
+    )
+    assert r.status_code == 403
+
+
+def test_delete_records_a_statement(client, patient, db):
+    med = _create_med(client, patient)
+    r = client.delete(
+        f"/api/v1/patients/{patient['patient_id']}/medications/{med['id']}",
+        headers=patient["headers"],
+    )
+    assert r.status_code == 204
+    stmts = list(
+        db.execute(
+            select(MedicationStatement).where(
+                MedicationStatement.merged_into_medication_id == med["id"]
+            )
+        ).scalars()
+    )
+    assert len(stmts) == 2  # create + deletion assertion
+    deletion = [s for s in stmts if s.related_medication_id == med["id"]]
+    assert len(deletion) == 1
+    assert deletion[0].payload_snapshot["lifecycle_status"] == "active"
+
+
+def test_status_reason_requires_transition(client, patient):
+    med = _create_med(client, patient)
+    r = _patch(client, patient, med["id"], {"status_reason": "lý do mồ côi"})
+    assert r.status_code == 422
+
+
+def test_transition_without_reason_clears_stale_reason(client, patient):
+    med = _create_med(client, patient)
+    assert (
+        _patch(
+            client, patient, med["id"],
+            {"lifecycle_status": "paused", "status_reason": "Dừng tạm"},
+        ).status_code
+        == 200
+    )
+    r = _patch(client, patient, med["id"], {"lifecycle_status": "active"})
+    assert r.status_code == 200
+    assert r.json()["status_reason"] is None

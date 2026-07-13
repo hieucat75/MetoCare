@@ -240,8 +240,24 @@ def update_medication(
     if not data:
         return record
 
+    # on_hold is a doctor-controlled state: NO edit of any kind by others
+    # while it holds (Codex R1 P1 — non-lifecycle PATCH must not bypass it).
+    if record.lifecycle_status == "on_hold" and (actor_role or "").lower() != "doctor":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Chỉ bác sĩ có thể thay đổi hồ sơ thuốc đang on_hold.",
+        )
+
     lifecycle_target = data.get("lifecycle_status")
+    if lifecycle_target is None and "status_reason" in data:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="status_reason chỉ được gửi kèm một lifecycle transition.",
+        )
     if lifecycle_target is not None:
+        # Set-or-clear on every transition so a stale reason never survives
+        # a later transition that omits it.
+        data = {**data, "status_reason": data.get("status_reason")}
         _validate_lifecycle_transition(record, lifecycle_target, actor_role)
 
         # Q-OQ-1 (Plan §6.3): a patient re-asserting an expired medication
@@ -418,8 +434,36 @@ def delete_medication(
         )
 
     if record.deleted_at is None:
+        # Deletion IS a lifecycle exit — on_hold stays doctor-controlled here
+        # too (Codex R1 P1: DELETE must not bypass the on_hold restriction).
+        if record.lifecycle_status == "on_hold" and (actor_role or "").lower() != "doctor":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Chỉ bác sĩ có thể thay đổi hồ sơ thuốc đang on_hold.",
+            )
+
         before = _snapshot(record)
         previous_status = record.lifecycle_status
+
+        # Statement-first (ADR-04): the deletion assertion is recorded before
+        # the canonical row changes, inside the same transaction — a lost
+        # race below rolls it back together with everything else.
+        db.add(
+            MedicationStatement(
+                patient_id=patient_id,
+                source_type="patient_manual",
+                assertion_type="new_entry",
+                related_medication_id=record.id,
+                payload_snapshot=before,
+                raw_drug_name=record.name,
+                raw_dose=record.dose,
+                raw_frequency=record.frequency,
+                statement_status="accepted",
+                merged_into_medication_id=record.id,
+            )
+        )
+        db.flush()
+
         # Conditional UPDATE guards against concurrent deletes: only the
         # request that wins the WHERE deleted_at IS NULL race performs the
         # transition and writes the audit row.
