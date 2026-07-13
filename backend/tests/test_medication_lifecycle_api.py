@@ -454,3 +454,69 @@ def test_re_review_statement_has_effective_from(client, patient, db):
         )
     ).scalar_one()
     assert stmt.effective_from is not None
+
+
+# --------------------------------------------------------------------------- #
+# Codex R5 hardening — verify endpoint + entered_in_error roles + report RBAC
+# --------------------------------------------------------------------------- #
+
+
+def test_doctor_cannot_set_entered_in_error(client, patient, db):
+    med = _create_med(client, patient)
+    import pytest
+    from fastapi import HTTPException
+
+    with pytest.raises(HTTPException) as exc:
+        medication_svc.update_medication(
+            db,
+            patient_id=patient["patient_id"],
+            med_id=med["id"],
+            data={"lifecycle_status": "entered_in_error", "status_reason": "x"},
+            actor_role="doctor",
+        )
+    assert exc.value.status_code == 403
+
+
+def test_admin_can_set_entered_in_error(client, patient, db):
+    med = _create_med(client, patient)
+    record = medication_svc.update_medication(
+        db,
+        patient_id=patient["patient_id"],
+        med_id=med["id"],
+        data={"lifecycle_status": "entered_in_error", "status_reason": "data fix"},
+        actor_role="internal_admin",
+    )
+    assert record.lifecycle_status == "entered_in_error"
+
+
+def test_verify_medication_doctor_only(client, patient, db):
+    med = _create_med(client, patient)
+    # Patient via route → 403
+    r = client.post(
+        f"/api/v1/patients/{patient['patient_id']}/medications/{med['id']}/verify",
+        headers=patient["headers"],
+    )
+    assert r.status_code == 403
+
+    # Doctor via service → confirmed + verification_change audit; idempotent.
+    record = medication_svc.verify_medication(
+        db,
+        medication_id=med["id"],
+        patient_id=patient["patient_id"],
+        actor_role="doctor",
+    )
+    assert record.verification_status == "clinician_confirmed"
+    record = medication_svc.verify_medication(
+        db,
+        medication_id=med["id"],
+        patient_id=patient["patient_id"],
+        actor_role="doctor",
+    )
+    assert record.verification_status == "clinician_confirmed"
+
+    rows = [x for x in _audit_rows(db, med["id"]) if x.event_type == "verification_change"]
+    assert len(rows) == 1
+    assert rows[0].old_value == "patient_reported"
+    assert rows[0].new_value == "clinician_confirmed"
+    assert rows[0].before_snapshot["verification_status"] == "patient_reported"
+    assert rows[0].after_snapshot["verification_status"] == "clinician_confirmed"

@@ -60,11 +60,11 @@ COMPLETED_VISIBLE_STATUSES = ["completed", "discontinued"]
 NON_DOCTOR_TRANSITIONS = {
     ("paused", "active"),
     ("active", "paused"),
-    ("active", "completed"),
-    ("paused", "completed"),
+    ("active", "completed"),  # ADR-11: completed only from active
     ("active", "discontinued"),
     ("paused", "discontinued"),
 }
+ADMIN_ROLES = {"internal_admin", "super_admin"}
 # ADR-11 §Transition reasons — these transitions REQUIRE a status_reason;
 # any → entered_in_error also requires one (handled separately).
 REASON_REQUIRED_TRANSITIONS = {
@@ -97,6 +97,14 @@ def _validate_lifecycle_transition(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="on_hold chỉ được set bởi bác sĩ.",
+        )
+    # ADR-11 role matrix: entered_in_error is reserved to PATIENT (own
+    # record) and ADMIN — a doctor cannot remove a record from clinical
+    # processing this way.
+    if target == "entered_in_error" and role not in ({"patient"} | ADMIN_ROLES):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="entered_in_error chỉ dành cho bệnh nhân (hồ sơ của mình) hoặc admin.",
         )
     # ADR-11: any → entered_in_error is permitted from every source state
     # (including on_hold) — it flags a mistaken record, not a clinical change.
@@ -624,6 +632,61 @@ def log_adherence(
             actor_role=actor_role,
         )
 
+    db.commit()
+    db.refresh(record)
+    return record
+
+
+def verify_medication(
+    db: Session,
+    *,
+    medication_id: str,
+    patient_id: str,
+    actor_user_id: str | None = None,
+    actor_role: str | None = None,
+) -> Medication:
+    """Clinician verification (ADR-11 §API): set verification_status to
+    'clinician_confirmed' with a verification_change audit event.
+
+    Doctor-only. Idempotent: verifying an already-confirmed record is a
+    no-op (no duplicate audit row). No MedicationStatement is created —
+    verification is a clinician attestation ABOUT the record, not a new
+    assertion of medication use (ADR-04 statements model usage assertions).
+
+    Raises 403 for non-doctors, 404 if not found/deleted/not owned.
+    """
+    if (actor_role or "").lower() != "doctor":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Chỉ bác sĩ có thể xác nhận thuốc.",
+        )
+    record = db.execute(
+        select(Medication).where(Medication.id == medication_id).with_for_update()
+    ).scalar_one_or_none()
+    if record is None or record.patient_id != patient_id or record.deleted_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Medication not found.",
+        )
+    if record.verification_status == "clinician_confirmed":
+        return record
+
+    before = _snapshot(record)
+    previous = record.verification_status
+    record.verification_status = "clinician_confirmed"
+    db.flush()
+    _write_audit(
+        db,
+        record=record,
+        event_type="verification_change",
+        field_changed="verification_status",
+        old_value=previous,
+        new_value="clinician_confirmed",
+        before=before,
+        after=_snapshot(record),
+        actor_user_id=actor_user_id,
+        actor_role=actor_role,
+    )
     db.commit()
     db.refresh(record)
     return record

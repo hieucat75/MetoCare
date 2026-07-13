@@ -740,8 +740,14 @@ def report_non_adherence(
 
     Writes one observational ``medication_audit_log`` event with NULL
     snapshots. Does NOT change ``lifecycle_status``.
-    Access rules: same as other medication writes (AI_SERVICE always 403).
+    Access rules: PATIENT only — the event type asserts a first-person
+    patient report; clinician-entered reports need a distinct model.
     """
+    if user.role != UserRole.PATIENT:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Chỉ bệnh nhân có thể tự báo cáo non-adherence.",
+        )
     _check_write_access(db, patient_id=patient_id, requester=user)
 
     medication_svc.report_non_adherence(
@@ -753,6 +759,35 @@ def report_non_adherence(
         actor_role=user.role,
     )
     return {"recorded": True}
+
+
+@router.post(
+    "/{patient_id}/medications/{med_id}/verify",
+    response_model=MedicationOut,
+    status_code=status.HTTP_200_OK,
+    summary="Clinician verification of a medication record (doctor only)",
+)
+def verify_medication(
+    patient_id: str,
+    med_id: str,
+    user: CurrentUser = Depends(current_user),
+    db: Session = Depends(get_session),
+) -> MedicationOut:
+    """Set ``verification_status='clinician_confirmed'`` (ADR-11 §API).
+
+    Doctor-only (consent-gated like other doctor writes); idempotent.
+    Produces a ``verification_change`` audit event.
+    """
+    _check_write_access(db, patient_id=patient_id, requester=user)
+
+    record = medication_svc.verify_medication(
+        db,
+        medication_id=med_id,
+        patient_id=patient_id,
+        actor_user_id=user.id,
+        actor_role=user.role,
+    )
+    return MedicationOut.model_validate(record)
 
 
 @router.post(
