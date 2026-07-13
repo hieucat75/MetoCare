@@ -35,6 +35,7 @@ from app.schemas.medication import (
     MedicationCreate,
     MedicationOut,
     MedicationUpdate,
+    NonAdherenceReportIn,
 )
 from app.schemas.nutrition import NutritionLogCreate, NutritionLogOut
 from app.schemas.patient import PatientProfileOut, PatientProfileUpdate, PatientSummaryOut
@@ -540,18 +541,41 @@ def list_medications(
     patient_id: str,
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
+    include_completed: bool = Query(default=False),
+    lifecycle_status: str | None = Query(default=None),
     user: CurrentUser = Depends(current_user),
     db: Session = Depends(get_session),
 ) -> dict:
-    """Return paginated active medication records for *patient_id*.
+    """Return paginated medication records for *patient_id*.
 
-    Only non-deleted (``deleted_at IS NULL``) records are returned.
+    Default visibility (Plan §5.5): active/paused/on_hold, non-deleted.
+    ``include_completed=true`` adds completed+discontinued.
+    ``lifecycle_status=<state>`` filters one state; ``lifecycle_status=all``
+    is admin-only.
     Access rules: same as POST /medications.
     """
     _check_read_access(db, patient_id=patient_id, requester=user)
 
+    if lifecycle_status is not None:
+        if lifecycle_status == "all":
+            if user.role not in ("internal_admin", "super_admin"):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="lifecycle_status=all chỉ dành cho admin.",
+                )
+        elif lifecycle_status not in medication_svc.LIFECYCLE_STATUSES:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Invalid lifecycle_status '{lifecycle_status}'.",
+            )
+
     total, items = medication_svc.list_medications(
-        db, patient_id=patient_id, limit=limit, offset=offset
+        db,
+        patient_id=patient_id,
+        limit=limit,
+        offset=offset,
+        lifecycle_filter=lifecycle_status,
+        include_completed=include_completed,
     )
 
     return {
@@ -690,6 +714,37 @@ def get_adherence_summary(
     _check_read_access(db, patient_id=patient_id, requester=user)
     summary = medication_svc.adherence_summary(db, patient_id=patient_id)
     return AdherenceSummaryOut.model_validate(summary)
+
+
+@router.post(
+    "/{patient_id}/medications/{med_id}/report-non-adherence",
+    status_code=status.HTTP_200_OK,
+    summary="Report non-adherence for a medication (observational, no state change)",
+)
+def report_non_adherence(
+    patient_id: str,
+    med_id: str,
+    payload: NonAdherenceReportIn,
+    user: CurrentUser = Depends(current_user),
+    db: Session = Depends(get_session),
+) -> dict:
+    """Record a patient non-adherence report (Plan §5.4, gate T-05).
+
+    Writes one observational ``medication_audit_log`` event with NULL
+    snapshots. Does NOT change ``lifecycle_status``.
+    Access rules: same as other medication writes (AI_SERVICE always 403).
+    """
+    _check_write_access(db, patient_id=patient_id, requester=user)
+
+    medication_svc.report_non_adherence(
+        db,
+        medication_id=med_id,
+        patient_id=patient_id,
+        note=payload.note,
+        actor_user_id=user.id,
+        actor_role=user.role,
+    )
+    return {"recorded": True}
 
 
 @router.post(

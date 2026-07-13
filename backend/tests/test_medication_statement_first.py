@@ -226,9 +226,10 @@ def test_every_medication_has_a_statement(client, patient, db):
     assert med_ids <= covered, f"medications without statements: {med_ids - covered}"
 
 
-def test_api_response_shape_unchanged(client, patient):
+def test_api_response_shape_frozen(client, patient):
     med = _create_med(client, patient)
-    # PR-S1 must NOT expose new fields — API contract is frozen until PR-S2.
+    # PR-S2 deliberately exposes the 5 Plan §5.1 fields — this is the new
+    # frozen contract. Any further change must be a conscious decision.
     assert set(med.keys()) == {
         "id",
         "patient_id",
@@ -237,6 +238,11 @@ def test_api_response_shape_unchanged(client, patient):
         "frequency",
         "note",
         "created_at",
+        "lifecycle_status",
+        "verification_status",
+        "source_type",
+        "medication_category",
+        "status_reason",
     }
 
 

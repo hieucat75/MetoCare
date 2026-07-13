@@ -32,6 +32,61 @@ from app.models.clinical import (
 
 DELETED_LIFECYCLE_STATUS = "entered_in_error"
 
+# Plan §6.1 — closed value set (mirrors the DB CHECK constraint) and the
+# subset a PATIENT may set via the API. on_hold is doctor-only in BOTH
+# directions; expired is reserved for the (future) system job.
+LIFECYCLE_STATUSES = {
+    "active",
+    "paused",
+    "on_hold",
+    "completed",
+    "discontinued",
+    "expired",
+    "entered_in_error",
+}
+PATIENT_SETTABLE_STATUSES = {
+    "active",
+    "paused",
+    "completed",
+    "discontinued",
+    "entered_in_error",
+}
+# Default list visibility (Plan §5.5).
+DEFAULT_VISIBLE_STATUSES = ["active", "paused", "on_hold"]
+COMPLETED_VISIBLE_STATUSES = ["completed", "discontinued"]
+
+
+def _validate_lifecycle_transition(
+    record: Medication, target: str, actor_role: str | None
+) -> None:
+    """Enforce Plan §6.1 RBAC for a lifecycle transition (raises 4xx)."""
+    if target not in LIFECYCLE_STATUSES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid lifecycle_status '{target}'.",
+        )
+    role = (actor_role or "").lower()
+    if target == "expired":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="expired chỉ được set bởi hệ thống.",
+        )
+    if target == "on_hold" and role != "doctor":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="on_hold chỉ được set bởi bác sĩ.",
+        )
+    if record.lifecycle_status == "on_hold" and role != "doctor":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Chỉ bác sĩ có thể thay đổi trạng thái on_hold.",
+        )
+    if role == "patient" and target not in PATIENT_SETTABLE_STATUSES:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Bệnh nhân không thể set lifecycle_status '{target}'.",
+        )
+
 
 def _snapshot(record: Medication) -> dict:
     """JSON-safe snapshot of the full canonical medication state."""
@@ -185,6 +240,35 @@ def update_medication(
     if not data:
         return record
 
+    lifecycle_target = data.get("lifecycle_status")
+    if lifecycle_target is not None:
+        _validate_lifecycle_transition(record, lifecycle_target, actor_role)
+
+        # Q-OQ-1 (Plan §6.3): a patient re-asserting an expired medication
+        # does NOT directly reactivate it — a pending continued_use statement
+        # is created for review instead, and the canonical row is untouched.
+        if (
+            record.lifecycle_status == "expired"
+            and lifecycle_target == "active"
+            and (actor_role or "").lower() == "patient"
+        ):
+            db.add(
+                MedicationStatement(
+                    patient_id=patient_id,
+                    source_type="patient_manual",
+                    assertion_type="continued_use",
+                    related_medication_id=record.id,
+                    payload_snapshot=_snapshot(record),
+                    raw_drug_name=record.name,
+                    raw_dose=record.dose,
+                    raw_frequency=record.frequency,
+                    statement_status="pending",
+                )
+            )
+            db.commit()
+            db.refresh(record)
+            return record
+
     before = _snapshot(record)
 
     # Statement-first (ADR-04): an edit is a corrected assertion about the
@@ -211,20 +295,38 @@ def update_medication(
 
     after = _snapshot(record)
     changed = sorted(f for f in data if before.get(f) != after.get(f))
-    single = changed[0] if len(changed) == 1 else None
-    _write_audit(
-        db,
-        record=record,
-        event_type="update",
-        field_changed=single,
-        old_value=str(before[single]) if single else None,
-        new_value=str(after[single]) if single else None,
-        event_data={"fields": changed},
-        before=before,
-        after=after,
-        actor_user_id=actor_user_id,
-        actor_role=actor_role,
-    )
+    if lifecycle_target is not None and "lifecycle_status" in changed:
+        # T-04: lifecycle transitions are first-class audit events, with
+        # status_reason preserved as transition_reason.
+        _write_audit(
+            db,
+            record=record,
+            event_type="lifecycle_change",
+            field_changed="lifecycle_status",
+            old_value=before["lifecycle_status"],
+            new_value=after["lifecycle_status"],
+            transition_reason=data.get("status_reason"),
+            event_data={"fields": changed},
+            before=before,
+            after=after,
+            actor_user_id=actor_user_id,
+            actor_role=actor_role,
+        )
+    else:
+        single = changed[0] if len(changed) == 1 else None
+        _write_audit(
+            db,
+            record=record,
+            event_type="update",
+            field_changed=single,
+            old_value=str(before[single]) if single else None,
+            new_value=str(after[single]) if single else None,
+            event_data={"fields": changed},
+            before=before,
+            after=after,
+            actor_user_id=actor_user_id,
+            actor_role=actor_role,
+        )
 
     db.commit()
     db.refresh(record)
@@ -237,19 +339,34 @@ def list_medications(
     patient_id: str,
     limit: int = 20,
     offset: int = 0,
+    lifecycle_filter: str | None = None,
+    include_completed: bool = False,
 ) -> tuple[int, list[Medication]]:
     """Return *(total, items)* for the patient's active medication records.
 
     Only non-deleted records (``deleted_at IS NULL``) are included.
+    Default visibility (Plan §5.5): active/paused/on_hold. ``include_completed``
+    adds completed+discontinued. ``lifecycle_filter`` overrides: a specific
+    state, or ``"all"`` (caller must have enforced admin RBAC).
     Items are ordered oldest-first (``created_at ASC``).
     *limit* is clamped to 100.
     """
     limit = min(limit, 100)
 
-    base_filter = (
+    filters = [
         Medication.patient_id == patient_id,
         Medication.deleted_at.is_(None),
-    )
+    ]
+    if lifecycle_filter == "all":
+        pass  # no lifecycle restriction (admin-only, enforced by the route)
+    elif lifecycle_filter is not None:
+        filters.append(Medication.lifecycle_status == lifecycle_filter)
+    else:
+        visible = list(DEFAULT_VISIBLE_STATUSES)
+        if include_completed:
+            visible += COMPLETED_VISIBLE_STATUSES
+        filters.append(Medication.lifecycle_status.in_(visible))
+    base_filter = tuple(filters)
 
     total: int = db.execute(
         select(func.count()).select_from(Medication).where(*base_filter)
@@ -391,6 +508,39 @@ def log_adherence(
     db.commit()
     db.refresh(record)
     return record
+
+
+def report_non_adherence(
+    db: Session,
+    *,
+    medication_id: str,
+    patient_id: str,
+    note: str | None = None,
+    actor_user_id: str | None = None,
+    actor_role: str | None = None,
+) -> None:
+    """Record a patient non-adherence report (Plan §5.4, gate T-05).
+
+    Pure observational event: one medication_audit_log row with NULL
+    before/after snapshots. Does NOT change lifecycle_status.
+
+    Raises 404 if the medication does not belong to the patient or is deleted.
+    """
+    med = db.get(Medication, medication_id)
+    if med is None or med.patient_id != patient_id or med.deleted_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Medication not found.",
+        )
+    _write_audit(
+        db,
+        record=med,
+        event_type="patient_reported_non_adherence",
+        event_data={"note": note},
+        actor_user_id=actor_user_id,
+        actor_role=actor_role,
+    )
+    db.commit()
 
 
 def get_adherence(
