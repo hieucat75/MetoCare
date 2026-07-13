@@ -125,7 +125,7 @@ def test_doctor_can_set_and_clear_on_hold(client, patient, db):
         db,
         patient_id=patient["patient_id"],
         med_id=med["id"],
-        data={"lifecycle_status": "active"},
+        data={"lifecycle_status": "active", "status_reason": "Đã có kết quả — tiếp tục dùng"},
         actor_role="doctor",
     )
     assert record.lifecycle_status == "active"
@@ -220,7 +220,10 @@ def test_list_default_hides_discontinued(client, patient):
     _create_med(client, patient, name="Metformin")
     stopped = _create_med(client, patient, name="Crestor")
     assert (
-        _patch(client, patient, stopped["id"], {"lifecycle_status": "discontinued"}).status_code
+        _patch(
+            client, patient, stopped["id"],
+            {"lifecycle_status": "discontinued", "status_reason": "patient_preference"},
+        ).status_code
         == 200
     )
 
@@ -311,3 +314,70 @@ def test_transition_without_reason_clears_stale_reason(client, patient):
     r = _patch(client, patient, med["id"], {"lifecycle_status": "active"})
     assert r.status_code == 200
     assert r.json()["status_reason"] is None
+
+
+# --------------------------------------------------------------------------- #
+# Codex R2 hardening — transition table + mandatory reasons + null guard
+# --------------------------------------------------------------------------- #
+
+
+def test_same_state_transition_rejected(client, patient):
+    med = _create_med(client, patient)
+    r = _patch(client, patient, med["id"], {"lifecycle_status": "active"})
+    assert r.status_code == 422
+
+
+def test_orphan_reason_via_same_state_transition_rejected(client, patient):
+    med = _create_med(client, patient)
+    r = _patch(
+        client, patient, med["id"],
+        {"lifecycle_status": "active", "status_reason": "lý do lậu"},
+    )
+    assert r.status_code == 422
+
+
+def test_patient_cannot_reactivate_completed(client, patient):
+    med = _create_med(client, patient)
+    assert (
+        _patch(client, patient, med["id"], {"lifecycle_status": "completed"}).status_code == 200
+    )
+    r = _patch(client, patient, med["id"], {"lifecycle_status": "active"})
+    assert r.status_code == 403
+
+
+def test_discontinue_requires_reason(client, patient):
+    med = _create_med(client, patient)
+    r = _patch(client, patient, med["id"], {"lifecycle_status": "discontinued"})
+    assert r.status_code == 422
+    r = _patch(
+        client, patient, med["id"],
+        {"lifecycle_status": "discontinued", "status_reason": "adverse_effect"},
+    )
+    assert r.status_code == 200
+
+
+def test_entered_in_error_requires_reason(client, patient):
+    med = _create_med(client, patient)
+    r = _patch(client, patient, med["id"], {"lifecycle_status": "entered_in_error"})
+    assert r.status_code == 422
+
+
+def test_null_lifecycle_status_rejected(client, patient):
+    med = _create_med(client, patient)
+    r = _patch(client, patient, med["id"], {"lifecycle_status": None})
+    assert r.status_code == 422
+
+
+def test_delete_of_on_hold_blocked_for_everyone(client, patient, db):
+    med = _create_med(client, patient)
+    _force_lifecycle(db, med["id"], "on_hold")
+    # Service-level doctor call is also refused — doctors cannot delete at
+    # the route layer either (clinical safety), so the state is consistent.
+    import pytest
+    from fastapi import HTTPException
+
+    with pytest.raises(HTTPException) as exc:
+        medication_svc.delete_medication(
+            db, patient_id=patient["patient_id"], med_id=med["id"], actor_role="doctor"
+        )
+    assert exc.value.status_code == 403

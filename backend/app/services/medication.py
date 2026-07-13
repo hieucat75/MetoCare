@@ -55,15 +55,37 @@ PATIENT_SETTABLE_STATUSES = {
 DEFAULT_VISIBLE_STATUSES = ["active", "paused", "on_hold"]
 COMPLETED_VISIBLE_STATUSES = ["completed", "discontinued"]
 
+# Plan §6.1 transition table for non-doctor callers (doctor may set all
+# states). target entered_in_error is additionally allowed from any source.
+NON_DOCTOR_TRANSITIONS = {
+    ("paused", "active"),
+    ("active", "paused"),
+    ("active", "completed"),
+    ("paused", "completed"),
+    ("active", "discontinued"),
+    ("paused", "discontinued"),
+}
+# ADR-11 §Transition reasons — these transitions REQUIRE a status_reason;
+# any → entered_in_error also requires one (handled separately).
+REASON_REQUIRED_TRANSITIONS = {
+    ("active", "discontinued"),
+    ("active", "on_hold"),
+    ("on_hold", "active"),
+}
+
 
 def _validate_lifecycle_transition(
-    record: Medication, target: str, actor_role: str | None
+    record: Medication,
+    target: str,
+    actor_role: str | None,
+    reason: str | None,
 ) -> None:
-    """Enforce Plan §6.1 RBAC for a lifecycle transition (raises 4xx)."""
-    if target not in LIFECYCLE_STATUSES:
+    """Enforce Plan §6.1 RBAC + ADR-11 reason rules for a transition (4xx)."""
+    current = record.lifecycle_status
+    if target == current:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Invalid lifecycle_status '{target}'.",
+            detail=f"lifecycle_status đã là '{target}' — không có transition.",
         )
     role = (actor_role or "").lower()
     if target == "expired":
@@ -76,15 +98,26 @@ def _validate_lifecycle_transition(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="on_hold chỉ được set bởi bác sĩ.",
         )
-    if record.lifecycle_status == "on_hold" and role != "doctor":
+    if current == "on_hold" and role != "doctor":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Chỉ bác sĩ có thể thay đổi trạng thái on_hold.",
         )
-    if role == "patient" and target not in PATIENT_SETTABLE_STATUSES:
+    if (
+        role != "doctor"
+        and target != "entered_in_error"
+        and (current, target) not in NON_DOCTOR_TRANSITIONS
+    ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Bệnh nhân không thể set lifecycle_status '{target}'.",
+            detail=f"Transition '{current}' → '{target}' không được phép cho vai trò này.",
+        )
+    if (
+        (current, target) in REASON_REQUIRED_TRANSITIONS or target == "entered_in_error"
+    ) and not reason:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Transition '{current}' → '{target}' bắt buộc phải có status_reason (ADR-11).",
         )
 
 
@@ -254,15 +287,26 @@ def update_medication(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="status_reason chỉ được gửi kèm một lifecycle transition.",
         )
+    if "lifecycle_status" in data and lifecycle_target is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="lifecycle_status không được là null.",
+        )
     if lifecycle_target is not None:
+        if lifecycle_target not in LIFECYCLE_STATUSES:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Invalid lifecycle_status '{lifecycle_target}'.",
+            )
         # Set-or-clear on every transition so a stale reason never survives
         # a later transition that omits it.
         data = {**data, "status_reason": data.get("status_reason")}
-        _validate_lifecycle_transition(record, lifecycle_target, actor_role)
 
         # Q-OQ-1 (Plan §6.3): a patient re-asserting an expired medication
         # does NOT directly reactivate it — a pending continued_use statement
         # is created for review instead, and the canonical row is untouched.
+        # Checked BEFORE the transition table (this path is deliberately not
+        # a transition).
         if (
             record.lifecycle_status == "expired"
             and lifecycle_target == "active"
@@ -284,6 +328,10 @@ def update_medication(
             db.commit()
             db.refresh(record)
             return record
+
+        _validate_lifecycle_transition(
+            record, lifecycle_target, actor_role, data.get("status_reason")
+        )
 
     before = _snapshot(record)
 
@@ -434,12 +482,14 @@ def delete_medication(
         )
 
     if record.deleted_at is None:
-        # Deletion IS a lifecycle exit — on_hold stays doctor-controlled here
-        # too (Codex R1 P1: DELETE must not bypass the on_hold restriction).
-        if record.lifecycle_status == "on_hold" and (actor_role or "").lower() != "doctor":
+        # Deletion IS a lifecycle exit. on_hold records cannot be deleted via
+        # this API by ANYONE: patients/admins lack on_hold authority, and the
+        # route blocks doctors from deleting medications entirely (clinical
+        # safety). The doctor must clear on_hold first.
+        if record.lifecycle_status == "on_hold":
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Chỉ bác sĩ có thể thay đổi hồ sơ thuốc đang on_hold.",
+                detail="Hồ sơ thuốc đang on_hold — bác sĩ phải gỡ on_hold trước khi xoá.",
             )
 
         before = _snapshot(record)
