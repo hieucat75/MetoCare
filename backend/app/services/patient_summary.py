@@ -171,14 +171,19 @@ def _fetch_metabolic_score(db: Session, patient_id: str) -> MetabolicScoreSummar
 
 
 def _fetch_medications(db: Session, patient_id: str) -> list[dict]:
-    """Return all active (not soft-deleted) medication records."""
+    """Return medications for the "Medications (Active)" summary section.
+
+    Strictly ``lifecycle_status='active'`` — the section title promises
+    currently-taken drugs, so paused/on_hold/completed/discontinued records
+    must not appear here (ADR-11 display rules).
+    """
     rows = list(
         db.execute(
             select(Medication)
             .where(
                 Medication.patient_id == patient_id,
                 Medication.deleted_at.is_(None),
-                Medication.lifecycle_status != "entered_in_error",
+                Medication.lifecycle_status == "active",
             )
             .order_by(Medication.created_at.asc())
         ).scalars()
