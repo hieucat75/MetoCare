@@ -563,3 +563,27 @@ def test_adherence_summary_excludes_paused_from_today(client, patient):
     assert "Metformin" in names
     assert "Crestor" not in names
     assert active["id"]
+
+
+def test_entered_in_error_is_terminal_for_every_role(client, patient, db):
+    med = _create_med(client, patient)
+    assert (
+        _patch(
+            client, patient, med["id"],
+            {"lifecycle_status": "entered_in_error", "status_reason": "nhập nhầm"},
+        ).status_code
+        == 200
+    )
+    import pytest
+    from fastapi import HTTPException
+
+    for role in ("doctor", "internal_admin", "patient"):
+        with pytest.raises(HTTPException) as exc:
+            medication_svc.update_medication(
+                db,
+                patient_id=patient["patient_id"],
+                med_id=med["id"],
+                data={"lifecycle_status": "active", "status_reason": "khôi phục"},
+                actor_role=role,
+            )
+        assert exc.value.status_code == 422, role

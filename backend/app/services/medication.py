@@ -88,6 +88,13 @@ def _validate_lifecycle_transition(
             detail=f"lifecycle_status đã là '{target}' — không có transition.",
         )
     role = (actor_role or "").lower()
+    # ADR-11: entered_in_error is TERMINAL ("record should not exist") —
+    # no outgoing transition for any role. Re-create the medication instead.
+    if current == "entered_in_error":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="entered_in_error là trạng thái cuối — tạo hồ sơ thuốc mới thay vì khôi phục.",
+        )
     if target == "expired":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
