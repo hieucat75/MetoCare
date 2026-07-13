@@ -47,6 +47,7 @@ from app.models.clinical import (  # noqa: E402
 from app.models.patient import PatientProfile  # noqa: E402
 from app.models.user import User, UserRole  # noqa: E402
 from app.services import auth  # noqa: E402
+from app.services import medication as medication_svc  # noqa: E402
 from sqlalchemy import select  # noqa: E402
 
 # ---------------------------------------------------------------------------
@@ -785,14 +786,15 @@ def _seed_medications(db, patient_id: str, phone: str) -> list[Medication]:
         return []
     meds = []
     for name, dose, frequency, note in specs:
-        med = Medication(
+        # Statement-first (ADR-04): the service is the only sanctioned write
+        # path — seeding must not bypass medication_statements/audit either.
+        med = medication_svc.add_medication(
+            db,
             patient_id=patient_id,
-            name=name,
-            dose=dose,
-            frequency=frequency,
-            note=note,
+            data={"name": name, "dose": dose, "frequency": frequency, "note": note},
+            actor_role="seed_script",
+            commit=False,  # the seed owns its per-patient savepoint
         )
-        db.add(med)
         meds.append(med)
     return meds
 

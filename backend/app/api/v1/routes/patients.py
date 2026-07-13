@@ -512,7 +512,9 @@ def add_medication(
     _check_write_access(db, patient_id=patient_id, requester=user)
 
     data = payload.model_dump(exclude_unset=False)
-    record = medication_svc.add_medication(db, patient_id=patient_id, data=data)
+    record = medication_svc.add_medication(
+        db, patient_id=patient_id, data=data, actor_user_id=user.id, actor_role=user.role
+    )
 
     audit.record(
         db,
@@ -594,19 +596,24 @@ def delete_medication(
     # General write-access check (blocks AI_SERVICE, CLINIC_ADMIN; enforces ownership)
     _check_write_access(db, patient_id=patient_id, requester=user)
 
-    medication_svc.delete_medication(db, patient_id=patient_id, med_id=med_id)
-
-    audit.record(
-        db,
-        actor_type=user.role,
-        actor_id=user.id,
-        action="delete_medication",
-        resource_type="medication",
-        resource_id=med_id,
-        outcome="success",
-        severity="info",
+    transitioned = medication_svc.delete_medication(
+        db, patient_id=patient_id, med_id=med_id, actor_user_id=user.id, actor_role=user.role
     )
-    db.commit()
+
+    # No-op calls (already deleted / lost a concurrent race) must not audit
+    # a successful deletion — the winning request owns that audit trail.
+    if transitioned:
+        audit.record(
+            db,
+            actor_type=user.role,
+            actor_id=user.id,
+            action="delete_medication",
+            resource_type="medication",
+            resource_id=med_id,
+            outcome="success",
+            severity="info",
+        )
+        db.commit()
 
 
 @router.patch(
@@ -635,19 +642,28 @@ def update_medication(
     _check_write_access(db, patient_id=patient_id, requester=user)
 
     data = payload.model_dump(exclude_unset=True)
-    record = medication_svc.update_medication(db, patient_id=patient_id, med_id=med_id, data=data)
-
-    audit.record(
+    record = medication_svc.update_medication(
         db,
-        actor_type=user.role,
-        actor_id=user.id,
-        action="update_medication",
-        resource_type="medication",
-        resource_id=record.id,
-        outcome="success",
-        severity="info",
+        patient_id=patient_id,
+        med_id=med_id,
+        data=data,
+        actor_user_id=user.id,
+        actor_role=user.role,
     )
-    db.commit()
+
+    # Empty PATCH is a true no-op end to end — no platform audit either.
+    if data:
+        audit.record(
+            db,
+            actor_type=user.role,
+            actor_id=user.id,
+            action="update_medication",
+            resource_type="medication",
+            resource_id=record.id,
+            outcome="success",
+            severity="info",
+        )
+        db.commit()
 
     return MedicationOut.model_validate(record)
 
@@ -703,6 +719,8 @@ def log_adherence(
         medication_id=med_id,
         patient_id=patient_id,
         data=payload.model_dump(),
+        actor_user_id=user.id,
+        actor_role=user.role,
     )
     return MedicationAdherenceOut.model_validate(record)
 

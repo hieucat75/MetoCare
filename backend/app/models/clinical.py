@@ -10,13 +10,28 @@ from __future__ import annotations
 
 import datetime as dt
 
-from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Date,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    text,
+)
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.crypto import EncryptedString
 from app.core.database import Base
 
 from ._mixins import SoftDeleteMixin, TimestampMixin, UUIDPrimaryKey
+
+# JSONB on Postgres (matches migration p0_m01), plain JSON on SQLite tests.
+_JSON_VARIANT = JSON().with_variant(JSONB(astext_type=Text()), "postgresql")
 
 
 class HealthMetric(UUIDPrimaryKey, TimestampMixin, SoftDeleteMixin, Base):
@@ -152,6 +167,106 @@ class Medication(UUIDPrimaryKey, TimestampMixin, SoftDeleteMixin, Base):
     # PR-D: human-readable schedule, e.g. "2 lần/ngày", "sáng & tối".
     frequency: Mapped[str | None] = mapped_column(String(128))
     note: Mapped[str | None] = mapped_column(Text)
+
+    # P0 lifecycle fields (migration p0_m01). Value sets are enforced by DB
+    # CHECK constraints on Postgres; ORM mirrors the server defaults so
+    # SQLite test databases behave identically.
+    lifecycle_status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="active", server_default=text("'active'")
+    )
+    verification_status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="patient_reported",
+        server_default=text("'patient_reported'"),
+    )
+    source_type: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="patient_manual",
+        server_default=text("'patient_manual'"),
+    )
+    # FK to medication_category_codes(code) exists at DB level (Postgres).
+    medication_category: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+        default="conventional_drug",
+        server_default=text("'conventional_drug'"),
+    )
+    status_reason: Mapped[str | None] = mapped_column(Text)
+    # FK to drug_products deferred until the P1 catalog table exists.
+    drug_product_id: Mapped[str | None] = mapped_column(String(36))
+    generic_name: Mapped[str | None] = mapped_column(String(255))
+
+
+class MedicationStatement(UUIDPrimaryKey, Base):
+    """Raw source assertion about a medication (ADR-04, migration M-03).
+
+    Every create/edit of a canonical ``medications`` row MUST originate from a
+    statement — no write path may bypass this table (P0 invariant).
+    ``created_at`` only: the table is append-mostly and has no updated_at.
+    """
+
+    __tablename__ = "medication_statements"
+
+    patient_id: Mapped[str] = mapped_column(
+        ForeignKey("patient_profiles.id"), index=True, nullable=False
+    )
+    source_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    source_ref: Mapped[str | None] = mapped_column(String(255))
+    assertion_type: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="new_entry", server_default=text("'new_entry'")
+    )
+    related_medication_id: Mapped[str | None] = mapped_column(ForeignKey("medications.id"))
+    raw_drug_name: Mapped[str] = mapped_column(Text, nullable=False)
+    normalized_name: Mapped[str | None] = mapped_column(Text)
+    drug_product_id: Mapped[str | None] = mapped_column(String(36))
+    match_confidence: Mapped[float | None] = mapped_column(Float)
+    raw_dose: Mapped[str | None] = mapped_column(Text)
+    raw_frequency: Mapped[str | None] = mapped_column(Text)
+    raw_prescriber: Mapped[str | None] = mapped_column(Text)
+    raw_date: Mapped[dt.date | None] = mapped_column(Date)
+    effective_from: Mapped[dt.date | None] = mapped_column(Date)
+    payload_snapshot: Mapped[dict | None] = mapped_column(_JSON_VARIANT)
+    statement_status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="pending", server_default=text("'pending'")
+    )
+    merged_into_medication_id: Mapped[str | None] = mapped_column(ForeignKey("medications.id"))
+    reviewed_by_user_id: Mapped[str | None] = mapped_column(String(36))
+    reviewed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    review_note: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP"), nullable=False
+    )
+
+
+class MedicationAuditLog(UUIDPrimaryKey, Base):
+    """Unified medication audit trail (migration M-02, gate T-04).
+
+    State changes carry ``before_snapshot``/``after_snapshot``; pure
+    observational events (e.g. patient_reported_non_adherence) keep both NULL.
+    Append-only — rows are never updated.
+    """
+
+    __tablename__ = "medication_audit_log"
+
+    medication_id: Mapped[str] = mapped_column(
+        ForeignKey("medications.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    patient_id: Mapped[str] = mapped_column(String(36), index=True, nullable=False)
+    event_type: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    field_changed: Mapped[str | None] = mapped_column(String(64))
+    old_value: Mapped[str | None] = mapped_column(String(255))
+    new_value: Mapped[str | None] = mapped_column(String(255))
+    transition_reason: Mapped[str | None] = mapped_column(Text)
+    event_data: Mapped[dict | None] = mapped_column(_JSON_VARIANT)
+    before_snapshot: Mapped[dict | None] = mapped_column(_JSON_VARIANT)
+    after_snapshot: Mapped[dict | None] = mapped_column(_JSON_VARIANT)
+    created_by_user_id: Mapped[str | None] = mapped_column(String(36))
+    created_by_role: Mapped[str | None] = mapped_column(String(32))
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("CURRENT_TIMESTAMP"), nullable=False
+    )
 
 
 class MedicationAdherence(UUIDPrimaryKey, TimestampMixin, Base):

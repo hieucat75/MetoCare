@@ -7,6 +7,11 @@ invoking these functions.
 SAFETY NOTE: AI must NEVER add or modify medication records.  This constraint
 is enforced at the API/RBAC layer; this service layer trusts the caller has
 already validated access.
+
+ADR-04 invariant (P0 service phase): every create/edit of a canonical
+``medications`` row goes through ``medication_statements`` first, and every
+state change writes a ``medication_audit_log`` row in the SAME transaction.
+No write path may bypass the statement table.
 """
 
 from __future__ import annotations
@@ -14,11 +19,73 @@ from __future__ import annotations
 import datetime as dt
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from app.core.clock import as_naive_utc, utcnow
-from app.models.clinical import Medication, MedicationAdherence
+from app.models.clinical import (
+    Medication,
+    MedicationAdherence,
+    MedicationAuditLog,
+    MedicationStatement,
+)
+
+DELETED_LIFECYCLE_STATUS = "entered_in_error"
+
+
+def _snapshot(record: Medication) -> dict:
+    """JSON-safe snapshot of the full canonical medication state."""
+    return {
+        "id": record.id,
+        "patient_id": record.patient_id,
+        "name": record.name,
+        "dose": record.dose,
+        "frequency": record.frequency,
+        "note": record.note,
+        "lifecycle_status": record.lifecycle_status,
+        "verification_status": record.verification_status,
+        "source_type": record.source_type,
+        "medication_category": record.medication_category,
+        "status_reason": record.status_reason,
+        "drug_product_id": record.drug_product_id,
+        "generic_name": record.generic_name,
+        "deleted_at": record.deleted_at.isoformat() if record.deleted_at else None,
+        "deleted_by": record.deleted_by,
+    }
+
+
+def _write_audit(
+    db: Session,
+    *,
+    record: Medication,
+    event_type: str,
+    field_changed: str | None = None,
+    old_value: str | None = None,
+    new_value: str | None = None,
+    transition_reason: str | None = None,
+    event_data: dict | None = None,
+    before: dict | None = None,
+    after: dict | None = None,
+    actor_user_id: str | None = None,
+    actor_role: str | None = None,
+) -> None:
+    """Append one medication_audit_log row (no commit — caller owns the txn)."""
+    db.add(
+        MedicationAuditLog(
+            medication_id=record.id,
+            patient_id=record.patient_id,
+            event_type=event_type,
+            field_changed=field_changed,
+            old_value=old_value,
+            new_value=new_value,
+            transition_reason=transition_reason,
+            event_data=event_data,
+            before_snapshot=before,
+            after_snapshot=after,
+            created_by_user_id=actor_user_id,
+            created_by_role=actor_role,
+        )
+    )
 
 
 def add_medication(
@@ -26,14 +93,35 @@ def add_medication(
     *,
     patient_id: str,
     data: dict,
+    actor_user_id: str | None = None,
+    actor_role: str | None = None,
+    commit: bool = True,
 ) -> Medication:
-    """Persist a new Medication record for *patient_id*.
+    """Persist a new Medication record for *patient_id* (statement-first).
 
     ``data`` must contain at least ``name``.  Optional keys:
-    ``dose`` and ``note``.
+    ``dose``, ``frequency`` and ``note``.
+
+    Flow (Implementation Plan §5.2, single transaction):
+      statement(pending) → canonical row → statement accepted+merged → audit.
 
     Returns the committed Medication instance.
     """
+    statement = MedicationStatement(
+        patient_id=patient_id,
+        source_type="patient_manual",
+        assertion_type="new_entry",
+        raw_drug_name=data["name"],
+        raw_dose=data.get("dose"),
+        raw_frequency=data.get("frequency"),
+        statement_status="pending",
+    )
+    db.add(statement)
+    # Flush the statement BEFORE the canonical write — SQLAlchemy otherwise
+    # orders INSERTs by FK dependency (medications first), which would invert
+    # the ADR-04 statement-first sequence inside the transaction.
+    db.flush()
+
     record = Medication(
         patient_id=patient_id,
         name=data["name"],
@@ -42,8 +130,27 @@ def add_medication(
         note=data.get("note"),
     )
     db.add(record)
-    db.commit()
-    db.refresh(record)
+    db.flush()
+
+    statement.statement_status = "accepted"
+    statement.merged_into_medication_id = record.id
+
+    _write_audit(
+        db,
+        record=record,
+        event_type="create",
+        after=_snapshot(record),
+        actor_user_id=actor_user_id,
+        actor_role=actor_role,
+    )
+
+    # commit=False lets transaction-owning callers (seed script savepoints)
+    # keep the statement+row+audit trio inside their own atomic scope.
+    if commit:
+        db.commit()
+        db.refresh(record)
+    else:
+        db.flush()
     return record
 
 
@@ -53,14 +160,21 @@ def update_medication(
     patient_id: str,
     med_id: str,
     data: dict,
+    actor_user_id: str | None = None,
+    actor_role: str | None = None,
 ) -> Medication:
     """Apply a partial update to a Medication record (PR-D).
 
     Only keys present in *data* are written (caller passes ``exclude_unset``).
+    An empty *data* is a true no-op: no statement, no audit row.
     Raises 404 if the record does not exist, is soft-deleted, or belongs to a
     different patient.
     """
-    record = db.get(Medication, med_id)
+    # Row lock (no-op on SQLite) serializes against concurrent delete/update,
+    # so the deleted_at check and the before-snapshot reflect committed state.
+    record = db.execute(
+        select(Medication).where(Medication.id == med_id).with_for_update()
+    ).scalar_one_or_none()
 
     if record is None or record.patient_id != patient_id or record.deleted_at is not None:
         raise HTTPException(
@@ -68,8 +182,49 @@ def update_medication(
             detail="Medication not found.",
         )
 
+    if not data:
+        return record
+
+    before = _snapshot(record)
+
+    # Statement-first (ADR-04): an edit is a corrected assertion about the
+    # same medication — recorded before the canonical row changes.
+    statement = MedicationStatement(
+        patient_id=patient_id,
+        source_type="patient_manual",
+        assertion_type="new_entry",
+        related_medication_id=record.id,
+        payload_snapshot=before,
+        raw_drug_name=data.get("name", record.name),
+        raw_dose=data.get("dose", record.dose),
+        raw_frequency=data.get("frequency", record.frequency),
+        statement_status="accepted",
+        merged_into_medication_id=record.id,
+    )
+    db.add(statement)
+    # Statement INSERT precedes the canonical UPDATE (ADR-04 ordering).
+    db.flush()
+
     for field, value in data.items():
         setattr(record, field, value)
+    db.flush()
+
+    after = _snapshot(record)
+    changed = sorted(f for f in data if before.get(f) != after.get(f))
+    single = changed[0] if len(changed) == 1 else None
+    _write_audit(
+        db,
+        record=record,
+        event_type="update",
+        field_changed=single,
+        old_value=str(before[single]) if single else None,
+        new_value=str(after[single]) if single else None,
+        event_data={"fields": changed},
+        before=before,
+        after=after,
+        actor_user_id=actor_user_id,
+        actor_role=actor_role,
+    )
 
     db.commit()
     db.refresh(record)
@@ -118,17 +273,26 @@ def delete_medication(
     *,
     patient_id: str,
     med_id: str,
-) -> None:
-    """Soft-delete a Medication record.
+    actor_user_id: str | None = None,
+    actor_role: str | None = None,
+) -> bool:
+    """Soft-delete a Medication record as a lifecycle transition.
 
-    Sets ``deleted_at`` to now.  Raises 404 if the record does not exist or
-    already belongs to a different patient.  Does NOT raise on an already-deleted
-    record — it is idempotent on repeated calls.
+    Sets ``deleted_at`` AND ``lifecycle_status='entered_in_error'`` (the
+    invariant migration p0_m01 established: soft-deleted ⇒ entered_in_error),
+    and writes the audit row in the same transaction.  Raises 404 if the
+    record does not exist or belongs to a different patient.  Does NOT raise
+    on an already-deleted record — it is idempotent on repeated calls.
+
+    Returns True when THIS call performed the transition (callers gate their
+    own success auditing on it); False for already-deleted/no-op calls.
 
     Raises:
         404 — record not found or not owned by *patient_id*.
     """
-    record = db.get(Medication, med_id)
+    record = db.execute(
+        select(Medication).where(Medication.id == med_id).with_for_update()
+    ).scalar_one_or_none()
 
     if record is None or record.patient_id != patient_id:
         raise HTTPException(
@@ -137,8 +301,42 @@ def delete_medication(
         )
 
     if record.deleted_at is None:
-        record.deleted_at = utcnow()
+        before = _snapshot(record)
+        previous_status = record.lifecycle_status
+        # Conditional UPDATE guards against concurrent deletes: only the
+        # request that wins the WHERE deleted_at IS NULL race performs the
+        # transition and writes the audit row.
+        result = db.execute(
+            update(Medication)
+            .where(Medication.id == med_id, Medication.deleted_at.is_(None))
+            .values(
+                deleted_at=utcnow(),
+                deleted_by=actor_user_id,
+                lifecycle_status=DELETED_LIFECYCLE_STATUS,
+            )
+        )
+        if result.rowcount != 1:
+            db.rollback()  # lost the race — the other request owns the audit
+            return False
+        db.refresh(record)
+
+        _write_audit(
+            db,
+            record=record,
+            event_type="lifecycle_change",
+            field_changed="lifecycle_status",
+            old_value=previous_status,
+            new_value=DELETED_LIFECYCLE_STATUS,
+            transition_reason="patient_deleted_record",
+            before=before,
+            after=_snapshot(record),
+            actor_user_id=actor_user_id,
+            actor_role=actor_role,
+        )
         db.commit()
+        return True
+
+    return False
 
 
 # --------------------------------------------------------------------------- #
@@ -152,8 +350,14 @@ def log_adherence(
     medication_id: str,
     patient_id: str,
     data: dict,
+    actor_user_id: str | None = None,
+    actor_role: str | None = None,
 ) -> MedicationAdherence:
     """Record a dose event (taken or skipped) for a medication.
+
+    A skipped dose additionally writes an observational
+    ``patient_reported_non_adherence`` audit event (T-04: NULL snapshots —
+    observational events never carry state).  No lifecycle change.
 
     Raises 404 if the medication does not belong to the patient or is deleted.
     """
@@ -172,6 +376,18 @@ def log_adherence(
         note=data.get("note"),
     )
     db.add(record)
+    db.flush()
+
+    if record.skipped:
+        _write_audit(
+            db,
+            record=med,
+            event_type="patient_reported_non_adherence",
+            event_data={"adherence_id": record.id, "note": data.get("note")},
+            actor_user_id=actor_user_id,
+            actor_role=actor_role,
+        )
+
     db.commit()
     db.refresh(record)
     return record
