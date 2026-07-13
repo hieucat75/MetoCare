@@ -378,12 +378,16 @@ jobs:
       # ── Pre-migration soft-delete audit (automated gate, replaces manual step) ─
       # DATABASE_URL must be the Key Vault mcp-database-url (same source as the
       # migration job) — the GitHub DATABASE_URL secret is not a full psql URL.
+      # MEDICATION_SOFT_DELETE_MAPPINGS: per-record review approvals
+      # ("<id>:<status>,..."), a SECRET so ids never reach the public log.
+      # Remove the secret once the P0 migration has run.
       - name: Pre-migration soft-delete audit
         run: bash scripts/pre_migration_audit.sh
         env:
           DATABASE_URL: ${{ env.DB_URL }}
           POSTGRES_SERVER_NAME: ${{ secrets.POSTGRES_SERVER_NAME }}
           RESOURCE_GROUP: ${{ secrets.RESOURCE_GROUP }}
+          MEDICATION_SOFT_DELETE_MAPPINGS: ${{ secrets.MEDICATION_SOFT_DELETE_MAPPINGS }}
 
       # ── Pre-migration DB backup (RISK-4 fix) ─────────────────────────────
       - name: Pre-migration DB backup
