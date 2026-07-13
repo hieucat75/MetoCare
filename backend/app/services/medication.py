@@ -689,6 +689,11 @@ def verify_medication(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Medication not found.",
         )
+    if record.lifecycle_status == "entered_in_error":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Không thể xác nhận hồ sơ entered_in_error (trạng thái cuối).",
+        )
     if record.verification_status == "clinician_confirmed":
         return record
 

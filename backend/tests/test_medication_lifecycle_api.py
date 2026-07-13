@@ -587,3 +587,25 @@ def test_entered_in_error_is_terminal_for_every_role(client, patient, db):
                 actor_role=role,
             )
         assert exc.value.status_code == 422, role
+
+
+def test_verify_rejected_for_entered_in_error(client, patient, db):
+    med = _create_med(client, patient)
+    assert (
+        _patch(
+            client, patient, med["id"],
+            {"lifecycle_status": "entered_in_error", "status_reason": "nhập nhầm"},
+        ).status_code
+        == 200
+    )
+    import pytest
+    from fastapi import HTTPException
+
+    with pytest.raises(HTTPException) as exc:
+        medication_svc.verify_medication(
+            db,
+            medication_id=med["id"],
+            patient_id=patient["patient_id"],
+            actor_role="doctor",
+        )
+    assert exc.value.status_code == 422
