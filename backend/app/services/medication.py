@@ -166,16 +166,24 @@ def update_medication(
     """Apply a partial update to a Medication record (PR-D).
 
     Only keys present in *data* are written (caller passes ``exclude_unset``).
+    An empty *data* is a true no-op: no statement, no audit row.
     Raises 404 if the record does not exist, is soft-deleted, or belongs to a
     different patient.
     """
-    record = db.get(Medication, med_id)
+    # Row lock (no-op on SQLite) serializes against concurrent delete/update,
+    # so the deleted_at check and the before-snapshot reflect committed state.
+    record = db.execute(
+        select(Medication).where(Medication.id == med_id).with_for_update()
+    ).scalar_one_or_none()
 
     if record is None or record.patient_id != patient_id or record.deleted_at is not None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Medication not found.",
         )
+
+    if not data:
+        return record
 
     before = _snapshot(record)
 
@@ -267,7 +275,7 @@ def delete_medication(
     med_id: str,
     actor_user_id: str | None = None,
     actor_role: str | None = None,
-) -> None:
+) -> bool:
     """Soft-delete a Medication record as a lifecycle transition.
 
     Sets ``deleted_at`` AND ``lifecycle_status='entered_in_error'`` (the
@@ -276,10 +284,15 @@ def delete_medication(
     record does not exist or belongs to a different patient.  Does NOT raise
     on an already-deleted record — it is idempotent on repeated calls.
 
+    Returns True when THIS call performed the transition (callers gate their
+    own success auditing on it); False for already-deleted/no-op calls.
+
     Raises:
         404 — record not found or not owned by *patient_id*.
     """
-    record = db.get(Medication, med_id)
+    record = db.execute(
+        select(Medication).where(Medication.id == med_id).with_for_update()
+    ).scalar_one_or_none()
 
     if record is None or record.patient_id != patient_id:
         raise HTTPException(
@@ -304,7 +317,7 @@ def delete_medication(
         )
         if result.rowcount != 1:
             db.rollback()  # lost the race — the other request owns the audit
-            return
+            return False
         db.refresh(record)
 
         _write_audit(
@@ -321,6 +334,9 @@ def delete_medication(
             actor_role=actor_role,
         )
         db.commit()
+        return True
+
+    return False
 
 
 # --------------------------------------------------------------------------- #

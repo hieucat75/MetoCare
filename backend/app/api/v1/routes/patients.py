@@ -596,21 +596,24 @@ def delete_medication(
     # General write-access check (blocks AI_SERVICE, CLINIC_ADMIN; enforces ownership)
     _check_write_access(db, patient_id=patient_id, requester=user)
 
-    medication_svc.delete_medication(
+    transitioned = medication_svc.delete_medication(
         db, patient_id=patient_id, med_id=med_id, actor_user_id=user.id, actor_role=user.role
     )
 
-    audit.record(
-        db,
-        actor_type=user.role,
-        actor_id=user.id,
-        action="delete_medication",
-        resource_type="medication",
-        resource_id=med_id,
-        outcome="success",
-        severity="info",
-    )
-    db.commit()
+    # No-op calls (already deleted / lost a concurrent race) must not audit
+    # a successful deletion — the winning request owns that audit trail.
+    if transitioned:
+        audit.record(
+            db,
+            actor_type=user.role,
+            actor_id=user.id,
+            action="delete_medication",
+            resource_type="medication",
+            resource_id=med_id,
+            outcome="success",
+            severity="info",
+        )
+        db.commit()
 
 
 @router.patch(

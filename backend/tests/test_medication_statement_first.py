@@ -238,3 +238,16 @@ def test_api_response_shape_unchanged(client, patient):
         "note",
         "created_at",
     }
+
+
+def test_empty_patch_is_true_noop(client, patient, db):
+    med = _create_med(client, patient)
+    r = client.patch(
+        f"/api/v1/patients/{patient['patient_id']}/medications/{med['id']}",
+        json={},
+        headers=patient["headers"],
+    )
+    assert r.status_code == 200, r.text
+    # No provenance/audit records for a change that changed nothing.
+    assert len(_statements(db, med["id"])) == 1  # the create statement only
+    assert [row.event_type for row in _audit_rows(db, med["id"])] == ["create"]
