@@ -542,6 +542,11 @@ def delete_medication(
             detail="Medication not found.",
         )
 
+    if record.deleted_at is None and record.lifecycle_status == "entered_in_error":
+        # Already terminal and excluded from processing — deleting again would
+        # write a bogus same-state transition. No-op.
+        return False
+
     if record.deleted_at is None:
         # Deletion IS a lifecycle exit. on_hold records cannot be deleted via
         # this API by ANYONE: patients/admins lack on_hold authority, and the
@@ -779,7 +784,13 @@ def get_adherence(
 ) -> list[MedicationAdherence]:
     """Return the most recent adherence records for one medication, newest first."""
     med = db.get(Medication, medication_id)
-    if med is None or med.patient_id != patient_id or med.deleted_at is not None:
+    if (
+        med is None
+        or med.patient_id != patient_id
+        or med.deleted_at is not None
+        or med.lifecycle_status == "entered_in_error"
+    ):
+        # entered_in_error is excluded from all display incl. dose history.
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Medication not found.",
@@ -867,10 +878,18 @@ def adherence_summary(
     week_start = today_start - dt.timedelta(days=7)
     year_start = today_start - dt.timedelta(days=365)
 
+    # Rows belonging to erroneous/deleted records must not contaminate
+    # adherence metrics (ADR-11: excluded from all clinical processing).
+    countable_meds = select(Medication.id).where(
+        Medication.patient_id == patient_id,
+        Medication.deleted_at.is_(None),
+        Medication.lifecycle_status != "entered_in_error",
+    )
     all_records = list(
         db.execute(
             select(MedicationAdherence)
             .where(MedicationAdherence.patient_id == patient_id)
+            .where(MedicationAdherence.medication_id.in_(countable_meds))
             .where(MedicationAdherence.created_at >= year_start)
             .order_by(MedicationAdherence.created_at)
         ).scalars()

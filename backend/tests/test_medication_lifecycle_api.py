@@ -646,3 +646,45 @@ def test_entered_in_error_rejects_ordinary_edit_and_reports(client, patient, db)
         headers=patient["headers"],
     )
     assert r.status_code == 422
+
+
+def test_entered_in_error_excluded_from_adherence_reads(client, patient, db):
+    med = _create_med(client, patient)
+    r = client.post(
+        f"/api/v1/patients/{patient['patient_id']}/medications/{med['id']}/adherence",
+        json={"taken_at": "2026-07-13T08:00:00Z"},
+        headers=patient["headers"],
+    )
+    assert r.status_code == 201
+    assert (
+        _patch(
+            client, patient, med["id"],
+            {"lifecycle_status": "entered_in_error", "status_reason": "nhập nhầm"},
+        ).status_code
+        == 200
+    )
+    # Dose history hidden
+    r = client.get(
+        f"/api/v1/patients/{patient['patient_id']}/medications/{med['id']}/adherence",
+        headers=patient["headers"],
+    )
+    assert r.status_code == 404
+    # Summary no longer counts the flagged record's rows
+    r = client.get(
+        f"/api/v1/patients/{patient['patient_id']}/medications/adherence-summary",
+        headers=patient["headers"],
+    )
+    assert r.status_code == 200
+    assert r.json()["total_doses_logged"] == 0
+    # Deleting the flagged record is a no-op (no bogus audit)
+    r = client.delete(
+        f"/api/v1/patients/{patient['patient_id']}/medications/{med['id']}",
+        headers=patient["headers"],
+    )
+    assert r.status_code == 204
+    events = [
+        x.event_type
+        for x in _audit_rows(db, med["id"])
+        if x.event_type == "lifecycle_change"
+    ]
+    assert len(events) == 1  # only the original entered_in_error transition
