@@ -390,8 +390,11 @@ jobs:
           MEDICATION_SOFT_DELETE_MAPPINGS: ${{ secrets.MEDICATION_SOFT_DELETE_MAPPINGS }}
 
       # ── Pre-migration DB backup (RISK-4 fix) ─────────────────────────────
+      # ENV arg is literal "staging" — env.ENVIRONMENT is only defined in the
+      # test jobs, so referencing it here expands to empty and the script's
+      # usage check fails.
       - name: Pre-migration DB backup
-        run: bash scripts/pre_migration_backup.sh ${{ env.ENVIRONMENT }} $(date +%Y%m%dT%H%M%S) ${{ github.sha }}
+        run: bash scripts/pre_migration_backup.sh staging $(date +%Y%m%dT%H%M%S) ${{ github.sha }}
         env:
           AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
           POSTGRES_SERVER_NAME: ${{ secrets.POSTGRES_SERVER_NAME }}
