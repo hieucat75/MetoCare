@@ -11,10 +11,18 @@ import {
   Activity,
   CheckCircle2,
   XCircle,
+  Lock,
+  PauseCircle,
+  PlayCircle,
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth/context'
 import {
+  LifecycleBadges,
+  DiscontinueModal,
+} from '@/components/patient/medications/lifecycle'
+import {
   getMedications,
+  updateMedicationLifecycle,
   getAdherenceHistory,
   getAdherenceSummary,
   logAdherence,
@@ -199,6 +207,8 @@ export default function MedicationDetailPage() {
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
   const [logging, setLogging] = React.useState(false)
+  const [actionError, setActionError] = React.useState<string | null>(null)
+  const [discontinueOpen, setDiscontinueOpen] = React.useState(false)
 
   const load = React.useCallback(async () => {
     if (!patientId) return
@@ -206,12 +216,21 @@ export default function MedicationDetailPage() {
     setError(null)
     try {
       const [medsRes, historyRes, summaryRes] = await Promise.all([
-        getMedications(patientId, { limit: 100 }),
+        // include_completed: detail must resolve history records too
+        getMedications(patientId, { limit: 100, include_completed: true }),
         getAdherenceHistory(patientId, id, 30),
         getAdherenceSummary(patientId),
       ])
 
-      const found = medsRes.items.find((m) => m.id === id)
+      let found = medsRes.items.find((m) => m.id === id)
+      if (!found) {
+        // Expired records live outside include_completed — dedicated lookup
+        const expiredRes = await getMedications(patientId, {
+          limit: 100,
+          lifecycle_status: 'expired',
+        }).catch(() => null)
+        found = expiredRes?.items.find((m) => m.id === id)
+      }
       if (!found) {
         setError('Không tìm thấy thông tin thuốc.')
         return
@@ -241,11 +260,12 @@ export default function MedicationDetailPage() {
   const handleTaken = React.useCallback(async () => {
     if (!patientId || logging) return
     setLogging(true)
+    setActionError(null)
     try {
       await logAdherence(patientId, id, { taken_at: new Date().toISOString() })
       await load()
-    } catch {
-      // fail silently — user can retry
+    } catch (err: unknown) {
+      setActionError(err instanceof Error ? err.message : 'Không ghi được liều. Vui lòng thử lại.')
     } finally {
       setLogging(false)
     }
@@ -254,11 +274,12 @@ export default function MedicationDetailPage() {
   const handleSkipped = React.useCallback(async () => {
     if (!patientId || logging) return
     setLogging(true)
+    setActionError(null)
     try {
       await logAdherence(patientId, id, { skipped: true })
       await load()
-    } catch {
-      // fail silently — user can retry
+    } catch (err: unknown) {
+      setActionError(err instanceof Error ? err.message : 'Không ghi được liều. Vui lòng thử lại.')
     } finally {
       setLogging(false)
     }
@@ -302,6 +323,9 @@ export default function MedicationDetailPage() {
   const todayChipValue = takenToday ? 'Đã uống' : skippedToday ? 'Đã bỏ qua' : 'Chưa uống'
   const todayChipColor = takenToday ? '#0F9C6E' : skippedToday ? '#6B7280' : '#C77A06'
 
+  const isActiveMed = medication.lifecycle_status === 'active'
+  const isPausedMed = medication.lifecycle_status === 'paused'
+
   return (
     <div className="p-4 max-w-md mx-auto pb-28 space-y-4">
       {/* Header: back + title */}
@@ -334,9 +358,103 @@ export default function MedicationDetailPage() {
               {medication.name}
             </p>
             {subtitle && <p className="mt-1 text-[13.5px] text-neu-secondary">{subtitle}</p>}
+            <LifecycleBadges med={medication} />
           </div>
         </div>
+        {medication.status_reason && !isActiveMed && (
+          <p className="mt-3 rounded-[12px] bg-[#F4F7F5] px-3 py-2 text-[13px] text-neu-secondary">
+            Lý do: {medication.status_reason}
+          </p>
+        )}
       </NeuCard>
+
+      {actionError && (
+        <p role="alert" className="px-1 text-[13px] font-semibold text-[#D92D20]">
+          {actionError}
+        </p>
+      )}
+
+      {/* Lifecycle controls */}
+      {isActiveMed && (
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={async () => {
+              if (logging) return
+              setLogging(true)
+              setActionError(null)
+              try {
+                await updateMedicationLifecycle(patientId, id, 'paused')
+                await load()
+              } catch (err: unknown) {
+                setActionError(
+                  err instanceof Error ? err.message : 'Không cập nhật được trạng thái.'
+                )
+              } finally {
+                setLogging(false)
+              }
+            }}
+            disabled={logging}
+            className="flex flex-1 items-center justify-center gap-1.5 rounded-[12px] bg-[#FEF6E7] py-2.5 text-[13px] font-semibold text-[#8B6400] transition-transform active:scale-95 disabled:opacity-50"
+          >
+            <PauseCircle className="size-4" aria-hidden="true" />
+            Tạm ngưng
+          </button>
+          <button
+            type="button"
+            onClick={() => setDiscontinueOpen(true)}
+            disabled={logging}
+            className="flex flex-1 items-center justify-center gap-1.5 rounded-[12px] bg-[#F4F4F4] py-2.5 text-[13px] font-semibold text-neu-muted transition-transform active:scale-95 disabled:opacity-50"
+          >
+            <XCircle className="size-4" aria-hidden="true" />
+            Ngừng thuốc
+          </button>
+        </div>
+      )}
+      {isPausedMed && (
+        <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={async () => {
+            if (logging) return
+            setLogging(true)
+            setActionError(null)
+            try {
+              await updateMedicationLifecycle(patientId, id, 'active')
+              await load()
+            } catch (err: unknown) {
+              setActionError(
+                err instanceof Error ? err.message : 'Không cập nhật được trạng thái.'
+              )
+            } finally {
+              setLogging(false)
+            }
+          }}
+          disabled={logging}
+          className="flex w-full items-center justify-center gap-1.5 rounded-[12px] bg-[#E8F7F2] py-2.5 text-[13px] font-semibold text-[#0F9C6E] transition-transform active:scale-95 disabled:opacity-50"
+        >
+          <PlayCircle className="size-4" aria-hidden="true" />
+          {logging ? 'Đang lưu…' : 'Tiếp tục uống'}
+        </button>
+        <button
+          type="button"
+          onClick={() => setDiscontinueOpen(true)}
+          disabled={logging}
+          className="flex flex-1 items-center justify-center gap-1.5 rounded-[12px] bg-[#F4F4F4] py-2.5 text-[13px] font-semibold text-neu-muted transition-transform active:scale-95 disabled:opacity-50"
+        >
+          <XCircle className="size-4" aria-hidden="true" />
+          Ngừng thuốc
+        </button>
+        </div>
+      )}
+
+      {/* on_hold clinical lock notice */}
+      {medication.lifecycle_status === 'on_hold' && (
+        <p className="flex items-start gap-2 rounded-[14px] bg-[#EFF4FF] px-4 py-3 text-[13.5px] font-medium text-[#2563EB]">
+          <Lock className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+          Bác sĩ yêu cầu tạm ngừng thuốc này. Không tự ý dùng lại — liên hệ bác sĩ nếu có thắc mắc.
+        </p>
+      )}
 
       {/* Dose / timing chips */}
       {(medication.dose || medication.frequency) && (
@@ -382,8 +500,9 @@ export default function MedicationDetailPage() {
         </div>
       </div>
 
-      {/* Quick-log section */}
-      {takenToday ? (
+      {/* Quick-log section — active medications only (backend enforces too) */}
+      {isActiveMed &&
+        (takenToday ? (
         <NeuCard className="!p-4">
           <div className="flex items-center gap-2">
             <CheckCircle2 className="size-5 text-[#0F9C6E]" aria-hidden="true" />
@@ -412,7 +531,7 @@ export default function MedicationDetailPage() {
             </NeuButton>
           </div>
         </NeuCard>
-      )}
+        ))}
 
       {/* Notes */}
       {medication.note && (
@@ -435,6 +554,14 @@ export default function MedicationDetailPage() {
       <NeuButton variant="secondary" onClick={() => router.push('/medications')}>
         Xem tất cả thuốc
       </NeuButton>
+
+      <DiscontinueModal
+        open={discontinueOpen}
+        onClose={() => setDiscontinueOpen(false)}
+        onSaved={load}
+        patientId={patientId}
+        med={medication}
+      />
     </div>
   )
 }
