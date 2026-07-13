@@ -137,15 +137,19 @@ fi
 # automated-backup PITR window and record the pre-migration restore point
 # instead (PTH decision 2026-07-13). Higher tiers keep the on-demand path.
 # ---------------------------------------------------------------------------
-SERVER_META=$(az postgres flexible-server show \
-    --name "$POSTGRES_SERVER_NAME" \
-    --resource-group "$RESOURCE_GROUP" \
-    --query "[sku.tier, backup.earliestRestoreDate, backup.backupRetentionDays]" \
-    --output tsv 2>/dev/null || echo "Unknown")
-SKU_TIER=$(echo "$SERVER_META" | awk 'NR==1{print $1}')
-EARLIEST_RESTORE=$(echo "$SERVER_META" | awk 'NR==1{print $2}')
-RETENTION_DAYS=$(echo "$SERVER_META" | awk 'NR==1{print $3}')
-log "Server tier: ${SKU_TIER}"
+# Three scalar queries on purpose — array-query tsv output is one line on
+# some az versions and one line per element on others.
+server_meta() {
+    az postgres flexible-server show \
+        --name "$POSTGRES_SERVER_NAME" \
+        --resource-group "$RESOURCE_GROUP" \
+        --query "$1" \
+        --output tsv 2>/dev/null || echo ""
+}
+SKU_TIER=$(server_meta "sku.tier")
+EARLIEST_RESTORE=$(server_meta "backup.earliestRestoreDate")
+RETENTION_DAYS=$(server_meta "backup.backupRetentionDays")
+log "Server tier: ${SKU_TIER:-Unknown}"
 
 if [[ "$SKU_TIER" == "Burstable" ]]; then
     log "On-demand backups are not supported on Burstable — verifying PITR instead."
