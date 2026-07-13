@@ -537,3 +537,29 @@ def test_doctor_cannot_complete_from_paused(client, patient, db):
             actor_role="doctor",
         )
     assert exc.value.status_code == 422
+
+
+def test_adherence_log_rejected_for_paused(client, patient):
+    med = _create_med(client, patient)
+    assert _patch(client, patient, med["id"], {"lifecycle_status": "paused"}).status_code == 200
+    r = client.post(
+        f"/api/v1/patients/{patient['patient_id']}/medications/{med['id']}/adherence",
+        json={"skipped": True},
+        headers=patient["headers"],
+    )
+    assert r.status_code == 422
+
+
+def test_adherence_summary_excludes_paused_from_today(client, patient):
+    active = _create_med(client, patient, name="Metformin")
+    paused = _create_med(client, patient, name="Crestor")
+    assert _patch(client, patient, paused["id"], {"lifecycle_status": "paused"}).status_code == 200
+    r = client.get(
+        f"/api/v1/patients/{patient['patient_id']}/medications/adherence-summary",
+        headers=patient["headers"],
+    )
+    assert r.status_code == 200, r.text
+    names = [m["name"] for m in r.json()["today_medications"]]
+    assert "Metformin" in names
+    assert "Crestor" not in names
+    assert active["id"]

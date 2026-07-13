@@ -618,6 +618,13 @@ def log_adherence(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Medication not found.",
         )
+    if med.lifecycle_status != "active":
+        # Dose events belong to actively-taken regimens; paused/on_hold
+        # concerns go through report-non-adherence (observational channel).
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Chỉ ghi nhận liều cho thuốc đang active.",
+        )
     record = MedicationAdherence(
         medication_id=medication_id,
         patient_id=patient_id,
@@ -859,7 +866,11 @@ def adherence_summary(
     taken_dates = [as_naive_utc(r.taken_at).date() for r in all_records if r.taken_at is not None]
     current_streak, longest_streak = _compute_streaks(taken_dates)
 
-    _, active_meds = list_medications(db, patient_id=patient_id, limit=100)
+    # Today-tracking targets ONLY actively-taken medications — paused/on_hold
+    # must not be presented as actionable doses (Codex R8).
+    _, active_meds = list_medications(
+        db, patient_id=patient_id, limit=100, lifecycle_filter="active"
+    )
 
     today_medications: list[TodayMedicationOut] = []
     for med in active_meds:
