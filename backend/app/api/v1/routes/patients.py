@@ -651,17 +651,19 @@ def update_medication(
         actor_role=user.role,
     )
 
-    audit.record(
-        db,
-        actor_type=user.role,
-        actor_id=user.id,
-        action="update_medication",
-        resource_type="medication",
-        resource_id=record.id,
-        outcome="success",
-        severity="info",
-    )
-    db.commit()
+    # Empty PATCH is a true no-op end to end — no platform audit either.
+    if data:
+        audit.record(
+            db,
+            actor_type=user.role,
+            actor_id=user.id,
+            action="update_medication",
+            resource_type="medication",
+            resource_id=record.id,
+            outcome="success",
+            severity="info",
+        )
+        db.commit()
 
     return MedicationOut.model_validate(record)
 
