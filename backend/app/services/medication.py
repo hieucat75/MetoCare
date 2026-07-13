@@ -19,7 +19,7 @@ from __future__ import annotations
 import datetime as dt
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from app.core.clock import as_naive_utc, utcnow
@@ -34,7 +34,7 @@ DELETED_LIFECYCLE_STATUS = "entered_in_error"
 
 
 def _snapshot(record: Medication) -> dict:
-    """JSON-safe snapshot of the clinically relevant medication fields."""
+    """JSON-safe snapshot of the full canonical medication state."""
     return {
         "id": record.id,
         "patient_id": record.patient_id,
@@ -45,7 +45,12 @@ def _snapshot(record: Medication) -> dict:
         "lifecycle_status": record.lifecycle_status,
         "verification_status": record.verification_status,
         "source_type": record.source_type,
+        "medication_category": record.medication_category,
+        "status_reason": record.status_reason,
+        "drug_product_id": record.drug_product_id,
+        "generic_name": record.generic_name,
         "deleted_at": record.deleted_at.isoformat() if record.deleted_at else None,
+        "deleted_by": record.deleted_by,
     }
 
 
@@ -90,6 +95,7 @@ def add_medication(
     data: dict,
     actor_user_id: str | None = None,
     actor_role: str | None = None,
+    commit: bool = True,
 ) -> Medication:
     """Persist a new Medication record for *patient_id* (statement-first).
 
@@ -111,6 +117,10 @@ def add_medication(
         statement_status="pending",
     )
     db.add(statement)
+    # Flush the statement BEFORE the canonical write — SQLAlchemy otherwise
+    # orders INSERTs by FK dependency (medications first), which would invert
+    # the ADR-04 statement-first sequence inside the transaction.
+    db.flush()
 
     record = Medication(
         patient_id=patient_id,
@@ -134,8 +144,13 @@ def add_medication(
         actor_role=actor_role,
     )
 
-    db.commit()
-    db.refresh(record)
+    # commit=False lets transaction-owning callers (seed script savepoints)
+    # keep the statement+row+audit trio inside their own atomic scope.
+    if commit:
+        db.commit()
+        db.refresh(record)
+    else:
+        db.flush()
     return record
 
 
@@ -179,6 +194,8 @@ def update_medication(
         merged_into_medication_id=record.id,
     )
     db.add(statement)
+    # Statement INSERT precedes the canonical UPDATE (ADR-04 ordering).
+    db.flush()
 
     for field, value in data.items():
         setattr(record, field, value)
@@ -273,10 +290,22 @@ def delete_medication(
     if record.deleted_at is None:
         before = _snapshot(record)
         previous_status = record.lifecycle_status
-        record.deleted_at = utcnow()
-        record.deleted_by = actor_user_id
-        record.lifecycle_status = DELETED_LIFECYCLE_STATUS
-        db.flush()
+        # Conditional UPDATE guards against concurrent deletes: only the
+        # request that wins the WHERE deleted_at IS NULL race performs the
+        # transition and writes the audit row.
+        result = db.execute(
+            update(Medication)
+            .where(Medication.id == med_id, Medication.deleted_at.is_(None))
+            .values(
+                deleted_at=utcnow(),
+                deleted_by=actor_user_id,
+                lifecycle_status=DELETED_LIFECYCLE_STATUS,
+            )
+        )
+        if result.rowcount != 1:
+            db.rollback()  # lost the race — the other request owns the audit
+            return
+        db.refresh(record)
 
         _write_audit(
             db,
