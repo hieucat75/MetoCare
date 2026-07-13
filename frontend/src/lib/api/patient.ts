@@ -813,12 +813,18 @@ export interface MedicationInput {
 
 export async function getMedications(
   patientId: string,
-  params?: { limit?: number; offset?: number; include_completed?: boolean }
+  params?: {
+    limit?: number
+    offset?: number
+    include_completed?: boolean
+    lifecycle_status?: MedicationLifecycleStatus
+  }
 ): Promise<MedicationListResponse> {
   const qs = new URLSearchParams()
   if (params?.limit) qs.set('limit', String(params.limit))
   if (params?.offset) qs.set('offset', String(params.offset))
   if (params?.include_completed) qs.set('include_completed', 'true')
+  if (params?.lifecycle_status) qs.set('lifecycle_status', params.lifecycle_status)
   const query = qs.toString()
   return api.get<MedicationListResponse>(
     `/patients/${patientId}/medications${query ? `?${query}` : ''}`

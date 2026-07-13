@@ -81,6 +81,7 @@ function MedRow({
 }: MedRowProps) {
   const [logging, setLogging] = React.useState(false)
   const [rowError, setRowError] = React.useState<string | null>(null)
+  const [reasserted, setReasserted] = React.useState(false)
   const meta = [med.dose, med.frequency].filter(Boolean).join(' · ')
 
   const isActive = med.lifecycle_status === 'active'
@@ -129,6 +130,22 @@ function MedRow({
     }
   }
 
+  async function handleReassert() {
+    if (logging) return
+    setLogging(true)
+    setRowError(null)
+    try {
+      // Backend records a pending continued_use statement; the record stays
+      // expired until reviewed (Q-OQ-1) — no direct reactivation.
+      await updateMedicationLifecycle(patientId, med.id, 'active')
+      setReasserted(true)
+    } catch (err: unknown) {
+      setRowError(err instanceof Error ? err.message : 'Không gửi được yêu cầu.')
+    } finally {
+      setLogging(false)
+    }
+  }
+
   const isTaken = todayStatus?.taken_today === true
   const isSkipped = todayStatus?.skipped_today === true
 
@@ -162,8 +179,9 @@ function MedRow({
             <LifecycleBadges med={med} />
           </span>
         </button>
-        {/* on_hold is doctor-controlled: no self-service edit/delete */}
-        {!isOnHold && (
+        {/* edit/delete only while the record is live (active/paused) —
+            on_hold is doctor-controlled; terminal records are history */}
+        {(isActive || isPaused) && (
           <div className="flex shrink-0 items-center gap-1">
             <button
               type="button"
@@ -202,18 +220,48 @@ function MedRow({
         </div>
       )}
 
-      {/* paused: resume control */}
+      {/* paused: resume OR permanently discontinue */}
       {isPaused && (
-        <div className="mt-3 border-t border-[#E8F0ED] pt-3">
+        <div className="mt-3 flex gap-2 border-t border-[#E8F0ED] pt-3">
           <button
             type="button"
             onClick={() => handleLifecycle('active')}
             disabled={logging}
-            className="flex w-full items-center justify-center gap-1.5 rounded-[12px] bg-[#E8F7F2] py-2 text-[13px] font-semibold text-[#0F9C6E] transition-transform active:scale-95 disabled:opacity-50"
+            className="flex flex-1 items-center justify-center gap-1.5 rounded-[12px] bg-[#E8F7F2] py-2 text-[13px] font-semibold text-[#0F9C6E] transition-transform active:scale-95 disabled:opacity-50"
           >
             <PlayCircle className="size-4" aria-hidden="true" />
-            {logging ? 'Đang lưu…' : 'Tiếp tục uống thuốc này'}
+            {logging ? 'Đang lưu…' : 'Tiếp tục uống'}
           </button>
+          <button
+            type="button"
+            onClick={onDiscontinue}
+            disabled={logging}
+            className="flex flex-1 items-center justify-center gap-1.5 rounded-[12px] bg-[#F4F4F4] py-2 text-[13px] font-semibold text-neu-muted transition-transform active:scale-95 disabled:opacity-50"
+          >
+            <XCircle className="size-4" aria-hidden="true" />
+            Ngừng thuốc
+          </button>
+        </div>
+      )}
+
+      {/* expired: Q-OQ-1 re-review — re-assert goes to review, no direct reactivation */}
+      {med.lifecycle_status === 'expired' && (
+        <div className="mt-3 border-t border-[#E8F0ED] pt-3">
+          {reasserted ? (
+            <p className="rounded-[12px] bg-[#E8F7F2] px-3 py-2 text-[13px] font-semibold text-[#0F9C6E]">
+              Đã ghi nhận — thuốc sẽ được xem xét trước khi kích hoạt lại.
+            </p>
+          ) : (
+            <button
+              type="button"
+              onClick={handleReassert}
+              disabled={logging}
+              className="flex w-full items-center justify-center gap-1.5 rounded-[12px] bg-[#FEF2F2] py-2 text-[13px] font-semibold text-[#D92D20] transition-transform active:scale-95 disabled:opacity-50"
+            >
+              <PlayCircle className="size-4" aria-hidden="true" />
+              {logging ? 'Đang lưu…' : 'Tôi vẫn đang dùng thuốc này'}
+            </button>
+          )}
         </div>
       )}
 
@@ -589,10 +637,12 @@ export default function MedicationsPage() {
     setError(null)
     return Promise.all([
       getMedications(patientId, { limit: 50, include_completed: showHistory }),
+      // Q-OQ-1: expired records need review — always surfaced, own fetch
+      getMedications(patientId, { limit: 50, lifecycle_status: 'expired' }).catch(() => null),
       getAdherenceSummary(patientId).catch(() => null),
     ])
-      .then(([medsRes, summaryRes]) => {
-        setMeds(medsRes.items)
+      .then(([medsRes, expiredRes, summaryRes]) => {
+        setMeds([...(expiredRes?.items ?? []), ...medsRes.items])
         if (summaryRes) {
           setSummary(summaryRes)
           const map: Record<string, TodayMedication> = {}

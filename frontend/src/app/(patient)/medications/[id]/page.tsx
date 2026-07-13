@@ -222,7 +222,15 @@ export default function MedicationDetailPage() {
         getAdherenceSummary(patientId),
       ])
 
-      const found = medsRes.items.find((m) => m.id === id)
+      let found = medsRes.items.find((m) => m.id === id)
+      if (!found) {
+        // Expired records live outside include_completed — dedicated lookup
+        const expiredRes = await getMedications(patientId, {
+          limit: 100,
+          lifecycle_status: 'expired',
+        }).catch(() => null)
+        found = expiredRes?.items.find((m) => m.id === id)
+      }
       if (!found) {
         setError('Không tìm thấy thông tin thuốc.')
         return
@@ -404,6 +412,7 @@ export default function MedicationDetailPage() {
         </div>
       )}
       {isPausedMed && (
+        <div className="flex gap-2">
         <button
           type="button"
           onClick={async () => {
@@ -425,8 +434,18 @@ export default function MedicationDetailPage() {
           className="flex w-full items-center justify-center gap-1.5 rounded-[12px] bg-[#E8F7F2] py-2.5 text-[13px] font-semibold text-[#0F9C6E] transition-transform active:scale-95 disabled:opacity-50"
         >
           <PlayCircle className="size-4" aria-hidden="true" />
-          {logging ? 'Đang lưu…' : 'Tiếp tục uống thuốc này'}
+          {logging ? 'Đang lưu…' : 'Tiếp tục uống'}
         </button>
+        <button
+          type="button"
+          onClick={() => setDiscontinueOpen(true)}
+          disabled={logging}
+          className="flex flex-1 items-center justify-center gap-1.5 rounded-[12px] bg-[#F4F4F4] py-2.5 text-[13px] font-semibold text-neu-muted transition-transform active:scale-95 disabled:opacity-50"
+        >
+          <XCircle className="size-4" aria-hidden="true" />
+          Ngừng thuốc
+        </button>
+        </div>
       )}
 
       {/* on_hold clinical lock notice */}
