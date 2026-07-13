@@ -132,6 +132,64 @@ if [[ "$SERVER_STATE" != "Ready" ]]; then
 fi
 
 # ---------------------------------------------------------------------------
+# Burstable tier: Azure rejects customer on-demand backups
+# (CustomerOnDemandBackupCannotBePerformedOnBurstableServer). Verify the
+# automated-backup PITR window and record the pre-migration restore point
+# instead (PTH decision 2026-07-13). Higher tiers keep the on-demand path.
+# ---------------------------------------------------------------------------
+SERVER_META=$(az postgres flexible-server show \
+    --name "$POSTGRES_SERVER_NAME" \
+    --resource-group "$RESOURCE_GROUP" \
+    --query "[sku.tier, backup.earliestRestoreDate, backup.backupRetentionDays]" \
+    --output tsv 2>/dev/null || echo "Unknown")
+SKU_TIER=$(echo "$SERVER_META" | awk 'NR==1{print $1}')
+EARLIEST_RESTORE=$(echo "$SERVER_META" | awk 'NR==1{print $2}')
+RETENTION_DAYS=$(echo "$SERVER_META" | awk 'NR==1{print $3}')
+log "Server tier: ${SKU_TIER}"
+
+if [[ "$SKU_TIER" == "Burstable" ]]; then
+    log "On-demand backups are not supported on Burstable — verifying PITR instead."
+
+    if [[ -z "${EARLIEST_RESTORE:-}" ]] || [[ "${RETENTION_DAYS:-0}" -lt 1 ]]; then
+        die "PITR is not available (earliestRestoreDate='${EARLIEST_RESTORE:-}', retention=${RETENTION_DAYS:-0}d). No restore point exists — aborting migration (fail closed)."
+    fi
+
+    RESTORE_POINT=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+    log "✅ PITR verified — pre-migration restore point recorded."
+    log "   Restore point (UTC):   ${RESTORE_POINT}"
+    log "   Earliest restorable:   ${EARLIEST_RESTORE}"
+    log "   Retention:             ${RETENTION_DAYS} days"
+    log "   Environment:           ${ENV}"
+    log "   Git SHA:               ${GIT_SHA}"
+    log ""
+    log "To roll back to the pre-migration state:"
+    log "  az postgres flexible-server restore \\"
+    log "     --resource-group <rg> \\"
+    log "     --name <new-server-name> \\"
+    log "     --source-server ${POSTGRES_SERVER_NAME} \\"
+    log "     --restore-time ${RESTORE_POINT}"
+
+    if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+        cat >> "$GITHUB_STEP_SUMMARY" << SUMMARY
+## ✅ Pre-migration Restore Point — PITR (Burstable tier)
+
+On-demand backups are not supported on Burstable servers; the automated-backup
+PITR window was verified instead.
+
+| Item | Value |
+|------|-------|
+| Restore point (UTC) | \`${RESTORE_POINT}\` |
+| Retention | \`${RETENTION_DAYS} days\` |
+| Git SHA | \`${SHORT_SHA}\` |
+
+Roll back with \`az postgres flexible-server restore --restore-time ${RESTORE_POINT} ...\`.
+SUMMARY
+    fi
+
+    exit 0
+fi
+
+# ---------------------------------------------------------------------------
 # Trigger the backup
 # ---------------------------------------------------------------------------
 log "Triggering pre-migration backup..."
