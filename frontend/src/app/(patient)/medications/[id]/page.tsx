@@ -11,12 +11,18 @@ import {
   Activity,
   CheckCircle2,
   XCircle,
-  ShieldCheck,
   Lock,
+  PauseCircle,
+  PlayCircle,
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth/context'
 import {
+  LifecycleBadges,
+  DiscontinueModal,
+} from '@/components/patient/medications/lifecycle'
+import {
   getMedications,
+  updateMedicationLifecycle,
   getAdherenceHistory,
   getAdherenceSummary,
   logAdherence,
@@ -201,6 +207,8 @@ export default function MedicationDetailPage() {
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
   const [logging, setLogging] = React.useState(false)
+  const [actionError, setActionError] = React.useState<string | null>(null)
+  const [discontinueOpen, setDiscontinueOpen] = React.useState(false)
 
   const load = React.useCallback(async () => {
     if (!patientId) return
@@ -244,11 +252,12 @@ export default function MedicationDetailPage() {
   const handleTaken = React.useCallback(async () => {
     if (!patientId || logging) return
     setLogging(true)
+    setActionError(null)
     try {
       await logAdherence(patientId, id, { taken_at: new Date().toISOString() })
       await load()
-    } catch {
-      // fail silently — user can retry
+    } catch (err: unknown) {
+      setActionError(err instanceof Error ? err.message : 'Không ghi được liều. Vui lòng thử lại.')
     } finally {
       setLogging(false)
     }
@@ -257,11 +266,12 @@ export default function MedicationDetailPage() {
   const handleSkipped = React.useCallback(async () => {
     if (!patientId || logging) return
     setLogging(true)
+    setActionError(null)
     try {
       await logAdherence(patientId, id, { skipped: true })
       await load()
-    } catch {
-      // fail silently — user can retry
+    } catch (err: unknown) {
+      setActionError(err instanceof Error ? err.message : 'Không ghi được liều. Vui lòng thử lại.')
     } finally {
       setLogging(false)
     }
@@ -306,17 +316,7 @@ export default function MedicationDetailPage() {
   const todayChipColor = takenToday ? '#0F9C6E' : skippedToday ? '#6B7280' : '#C77A06'
 
   const isActiveMed = medication.lifecycle_status === 'active'
-  const isVerified = medication.verification_status === 'clinician_confirmed'
-  const STATUS_BADGES: Partial<
-    Record<typeof medication.lifecycle_status, { label: string; bg: string; fg: string }>
-  > = {
-    paused: { label: 'Tạm ngưng', bg: '#FEF6E7', fg: '#8B6400' },
-    on_hold: { label: 'Bác sĩ tạm giữ', bg: '#EFF4FF', fg: '#2563EB' },
-    completed: { label: 'Hoàn tất liệu trình', bg: '#F0F4F2', fg: '#4B635A' },
-    discontinued: { label: 'Đã ngừng', bg: '#F4F4F4', fg: '#667085' },
-    expired: { label: 'Hết hạn — cần xem lại', bg: '#FEF2F2', fg: '#D92D20' },
-  }
-  const statusBadge = STATUS_BADGES[medication.lifecycle_status]
+  const isPausedMed = medication.lifecycle_status === 'paused'
 
   return (
     <div className="p-4 max-w-md mx-auto pb-28 space-y-4">
@@ -350,30 +350,7 @@ export default function MedicationDetailPage() {
               {medication.name}
             </p>
             {subtitle && <p className="mt-1 text-[13.5px] text-neu-secondary">{subtitle}</p>}
-            {(statusBadge || isVerified) && (
-              <span className="mt-2 flex flex-wrap items-center gap-1.5">
-                {statusBadge && (
-                  <span
-                    className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[12px] font-semibold"
-                    style={{ background: statusBadge.bg, color: statusBadge.fg }}
-                  >
-                    {medication.lifecycle_status === 'on_hold' && (
-                      <Lock className="size-3" aria-hidden="true" />
-                    )}
-                    {statusBadge.label}
-                  </span>
-                )}
-                {isVerified && (
-                  <span
-                    className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[12px] font-semibold"
-                    style={{ background: '#E8F7F2', color: '#0F9C6E' }}
-                  >
-                    <ShieldCheck className="size-3" aria-hidden="true" />
-                    Bác sĩ xác nhận
-                  </span>
-                )}
-              </span>
-            )}
+            <LifecycleBadges med={medication} />
           </div>
         </div>
         {medication.status_reason && !isActiveMed && (
@@ -382,6 +359,75 @@ export default function MedicationDetailPage() {
           </p>
         )}
       </NeuCard>
+
+      {actionError && (
+        <p role="alert" className="px-1 text-[13px] font-semibold text-[#D92D20]">
+          {actionError}
+        </p>
+      )}
+
+      {/* Lifecycle controls */}
+      {isActiveMed && (
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={async () => {
+              if (logging) return
+              setLogging(true)
+              setActionError(null)
+              try {
+                await updateMedicationLifecycle(patientId, id, 'paused')
+                await load()
+              } catch (err: unknown) {
+                setActionError(
+                  err instanceof Error ? err.message : 'Không cập nhật được trạng thái.'
+                )
+              } finally {
+                setLogging(false)
+              }
+            }}
+            disabled={logging}
+            className="flex flex-1 items-center justify-center gap-1.5 rounded-[12px] bg-[#FEF6E7] py-2.5 text-[13px] font-semibold text-[#8B6400] transition-transform active:scale-95 disabled:opacity-50"
+          >
+            <PauseCircle className="size-4" aria-hidden="true" />
+            Tạm ngưng
+          </button>
+          <button
+            type="button"
+            onClick={() => setDiscontinueOpen(true)}
+            disabled={logging}
+            className="flex flex-1 items-center justify-center gap-1.5 rounded-[12px] bg-[#F4F4F4] py-2.5 text-[13px] font-semibold text-neu-muted transition-transform active:scale-95 disabled:opacity-50"
+          >
+            <XCircle className="size-4" aria-hidden="true" />
+            Ngừng thuốc
+          </button>
+        </div>
+      )}
+      {isPausedMed && (
+        <button
+          type="button"
+          onClick={async () => {
+            if (logging) return
+            setLogging(true)
+            setActionError(null)
+            try {
+              await updateMedicationLifecycle(patientId, id, 'active')
+              await load()
+            } catch (err: unknown) {
+              setActionError(
+                err instanceof Error ? err.message : 'Không cập nhật được trạng thái.'
+              )
+            } finally {
+              setLogging(false)
+            }
+          }}
+          disabled={logging}
+          className="flex w-full items-center justify-center gap-1.5 rounded-[12px] bg-[#E8F7F2] py-2.5 text-[13px] font-semibold text-[#0F9C6E] transition-transform active:scale-95 disabled:opacity-50"
+        >
+          <PlayCircle className="size-4" aria-hidden="true" />
+          {logging ? 'Đang lưu…' : 'Tiếp tục uống thuốc này'}
+        </button>
+      )}
 
       {/* on_hold clinical lock notice */}
       {medication.lifecycle_status === 'on_hold' && (
@@ -489,6 +535,14 @@ export default function MedicationDetailPage() {
       <NeuButton variant="secondary" onClick={() => router.push('/medications')}>
         Xem tất cả thuốc
       </NeuButton>
+
+      <DiscontinueModal
+        open={discontinueOpen}
+        onClose={() => setDiscontinueOpen(false)}
+        onSaved={load}
+        patientId={patientId}
+        med={medication}
+      />
     </div>
   )
 }

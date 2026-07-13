@@ -11,7 +11,6 @@ import {
   XCircle,
   PauseCircle,
   PlayCircle,
-  ShieldCheck,
   Lock,
 } from 'lucide-react'
 import { PatientPrimaryFab } from '@/components/patient/PatientPrimaryFab'
@@ -27,13 +26,16 @@ import {
   updateMedicationLifecycle,
   logAdherence,
   getAdherenceSummary,
-  DISCONTINUE_REASONS,
   type Medication,
   type MedicationInput,
   type AdherenceSummary,
   type TodayMedication,
   type DrugSuggestItem,
 } from '@/lib/api/patient'
+import {
+  LifecycleBadges,
+  DiscontinueModal,
+} from '@/components/patient/medications/lifecycle'
 import {
   MedicationNameAutocomplete,
   MEDICATION_SAFETY_NOTICE,
@@ -54,46 +56,6 @@ const inputClass =
 const textareaClass =
   'w-full rounded-[14px] border-2 border-[#C8D8D4] bg-white/60 backdrop-blur px-4 py-3 text-[16px] text-neu-text focus:border-[#0F9C6E] focus:outline-none min-h-[96px] resize-none'
 
-// ── Lifecycle badge ────────────────────────────────────────────────────────────
-
-const LIFECYCLE_BADGES: Partial<
-  Record<Medication['lifecycle_status'], { label: string; bg: string; fg: string }>
-> = {
-  paused: { label: 'Tạm ngưng', bg: '#FEF6E7', fg: '#8B6400' },
-  on_hold: { label: 'Bác sĩ tạm giữ', bg: '#EFF4FF', fg: '#2563EB' },
-  completed: { label: 'Hoàn tất liệu trình', bg: '#F0F4F2', fg: '#4B635A' },
-  discontinued: { label: 'Đã ngừng', bg: '#F4F4F4', fg: '#667085' },
-  expired: { label: 'Hết hạn — cần xem lại', bg: '#FEF2F2', fg: '#D92D20' },
-}
-
-function LifecycleBadges({ med }: { med: Medication }) {
-  const badge = LIFECYCLE_BADGES[med.lifecycle_status]
-  const verified = med.verification_status === 'clinician_confirmed'
-  if (!badge && !verified) return null
-  return (
-    <span className="mt-1 flex flex-wrap items-center gap-1.5">
-      {badge && (
-        <span
-          className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[12px] font-semibold"
-          style={{ background: badge.bg, color: badge.fg }}
-        >
-          {med.lifecycle_status === 'on_hold' && <Lock className="size-3" aria-hidden="true" />}
-          {badge.label}
-        </span>
-      )}
-      {verified && (
-        <span
-          className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[12px] font-semibold"
-          style={{ background: '#E8F7F2', color: '#0F9C6E' }}
-        >
-          <ShieldCheck className="size-3" aria-hidden="true" />
-          Bác sĩ xác nhận
-        </span>
-      )}
-    </span>
-  )
-}
-
 // ── Medication card row ────────────────────────────────────────────────────────
 
 type MedRowProps = {
@@ -102,7 +64,7 @@ type MedRowProps = {
   onEdit: () => void
   onDelete: () => void
   onView: () => void
-  onLogged: () => void
+  onLogged: () => Promise<void> | void
   onDiscontinue: () => void
   patientId: string
 }
@@ -128,11 +90,12 @@ function MedRow({
   async function handleTaken() {
     if (logging) return
     setLogging(true)
+    setRowError(null)
     try {
       await logAdherence(patientId, med.id, { taken_at: new Date().toISOString() })
-      onLogged()
-    } catch {
-      // silent — best-effort adherence log
+      await onLogged()
+    } catch (err: unknown) {
+      setRowError(err instanceof Error ? err.message : 'Không ghi được liều. Vui lòng thử lại.')
     } finally {
       setLogging(false)
     }
@@ -141,11 +104,12 @@ function MedRow({
   async function handleSkipped() {
     if (logging) return
     setLogging(true)
+    setRowError(null)
     try {
       await logAdherence(patientId, med.id, { skipped: true })
-      onLogged()
-    } catch {
-      // silent — best-effort adherence log
+      await onLogged()
+    } catch (err: unknown) {
+      setRowError(err instanceof Error ? err.message : 'Không ghi được liều. Vui lòng thử lại.')
     } finally {
       setLogging(false)
     }
@@ -157,7 +121,7 @@ function MedRow({
     setRowError(null)
     try {
       await updateMedicationLifecycle(patientId, med.id, target)
-      onLogged()
+      await onLogged()
     } catch (err: unknown) {
       setRowError(err instanceof Error ? err.message : 'Không cập nhật được trạng thái.')
     } finally {
@@ -347,141 +311,6 @@ function MedRow({
         </div>
       )}
     </NeuCard>
-  )
-}
-
-// ── Discontinue modal (ADR-11: mandatory reason) ───────────────────────────────
-
-type DiscontinueModalProps = {
-  open: boolean
-  onClose: () => void
-  onSaved: () => void
-  patientId: string
-  med: Medication | null
-}
-
-function DiscontinueModal({ open, onClose, onSaved, patientId, med }: DiscontinueModalProps) {
-  const [reason, setReason] = React.useState('')
-  const [detail, setDetail] = React.useState('')
-  const [submitting, setSubmitting] = React.useState(false)
-  const [formError, setFormError] = React.useState<string | null>(null)
-
-  React.useEffect(() => {
-    if (open) {
-      setReason('')
-      setDetail('')
-      setFormError(null)
-    }
-  }, [open])
-
-  async function handleConfirm() {
-    if (!med) return
-    if (!reason) {
-      setFormError('Vui lòng chọn lý do ngừng thuốc.')
-      return
-    }
-    setSubmitting(true)
-    setFormError(null)
-    const label = DISCONTINUE_REASONS.find((r) => r.value === reason)?.label ?? reason
-    const statusReason = detail.trim() ? `${label} — ${detail.trim()}` : label
-    try {
-      await updateMedicationLifecycle(patientId, med.id, 'discontinued', statusReason)
-      onSaved()
-      onClose()
-    } catch (err: unknown) {
-      setFormError(err instanceof Error ? err.message : 'Không thể ngừng thuốc. Vui lòng thử lại.')
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  if (!open || !med) return null
-
-  return (
-    <div className="fixed inset-0 z-40 flex items-end bg-black/30" onClick={onClose}>
-      <div className="w-full max-w-md mx-auto" onClick={(e) => e.stopPropagation()}>
-        <NeuCard className="!rounded-b-none">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-[18px] font-extrabold text-neu-text">Ngừng thuốc</h2>
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Đóng"
-              className="rounded-[10px] p-1.5 text-neu-muted transition-transform active:scale-90"
-            >
-              <X className="size-5" />
-            </button>
-          </div>
-
-          <p className="mb-4 text-[15px] text-neu-muted">
-            Ngừng <span className="font-bold text-neu-text">{med.name}</span>? Thuốc sẽ được lưu
-            vào lịch sử (không bị xoá) và ngừng nhắc uống.
-          </p>
-
-          {formError && (
-            <div
-              role="alert"
-              className="mb-4 rounded-[14px] bg-[#FEF2F2] border border-[#D92D20]/30 p-4 text-[13px] text-[#D92D20]"
-            >
-              {formError}
-            </div>
-          )}
-
-          <div className="space-y-1.5">
-            <label className="block text-[13px] font-semibold text-neu-muted uppercase tracking-wide">
-              Lý do <span className="text-[#D92D20]">*</span>
-            </label>
-            <div className="space-y-2">
-              {DISCONTINUE_REASONS.map((r) => (
-                <label
-                  key={r.value}
-                  className={`flex cursor-pointer items-center gap-3 rounded-[14px] border-2 px-4 py-3 text-[15px] font-medium ${
-                    reason === r.value
-                      ? 'border-[#0F9C6E] bg-[#E8F7F2] text-[#0F9C6E]'
-                      : 'border-[#C8D8D4] bg-white/60 text-neu-text'
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="discontinue-reason"
-                    value={r.value}
-                    checked={reason === r.value}
-                    onChange={() => setReason(r.value)}
-                    className="sr-only"
-                  />
-                  {r.label}
-                </label>
-              ))}
-            </div>
-          </div>
-
-          <div className="mt-4 space-y-1.5">
-            <label className="block text-[13px] font-semibold text-neu-muted uppercase tracking-wide">
-              Chi tiết (không bắt buộc)
-            </label>
-            <textarea
-              value={detail}
-              onChange={(e) => setDetail(e.target.value)}
-              placeholder="VD: Bị đau dạ dày sau khi uống"
-              className={textareaClass}
-            />
-          </div>
-
-          <div className="mt-5 flex flex-col gap-2">
-            <NeuButton
-              onClick={handleConfirm}
-              disabled={submitting}
-              className="w-full !bg-[#D92D20] !text-white"
-            >
-              {submitting ? 'Đang lưu…' : 'Xác nhận ngừng thuốc'}
-            </NeuButton>
-            <NeuButton variant="secondary" onClick={onClose} disabled={submitting} className="w-full">
-              Huỷ
-            </NeuButton>
-          </div>
-        </NeuCard>
-      </div>
-    </div>
   )
 }
 
@@ -754,11 +583,11 @@ export default function MedicationsPage() {
   const load = React.useCallback(() => {
     if (!patientId) {
       setLoading(false)
-      return
+      return Promise.resolve()
     }
     setLoading(true)
     setError(null)
-    Promise.all([
+    return Promise.all([
       getMedications(patientId, { limit: 50, include_completed: showHistory }),
       getAdherenceSummary(patientId).catch(() => null),
     ])
