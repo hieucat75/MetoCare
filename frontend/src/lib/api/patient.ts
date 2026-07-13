@@ -763,7 +763,26 @@ export async function logSymptom(
 
 // ── Medications ───────────────────────────────────────────────────────────────
 
-/** Backend Medication (PR-D adds `frequency`). All real columns; no placeholders. */
+/** Medication lifecycle states (P0, ADR-11). */
+export type MedicationLifecycleStatus =
+  | 'active'
+  | 'paused'
+  | 'on_hold'
+  | 'completed'
+  | 'discontinued'
+  | 'expired'
+  | 'entered_in_error'
+
+/** ADR-11 dropdown values for the mandatory discontinue reason. */
+export const DISCONTINUE_REASONS = [
+  { value: 'adverse_effect', label: 'Tác dụng phụ' },
+  { value: 'ineffective', label: 'Không hiệu quả' },
+  { value: 'patient_preference', label: 'Tôi muốn ngừng' },
+  { value: 'doctor_decision', label: 'Bác sĩ chỉ định ngừng' },
+  { value: 'cost', label: 'Chi phí' },
+] as const
+
+/** Backend Medication (PR-D adds `frequency`; P0 adds lifecycle fields). */
 export interface Medication {
   id: string
   patient_id: string
@@ -772,6 +791,11 @@ export interface Medication {
   frequency: string | null
   note: string | null
   created_at: string
+  lifecycle_status: MedicationLifecycleStatus
+  verification_status: string
+  source_type: string
+  medication_category: string
+  status_reason: string | null
 }
 
 export interface MedicationListResponse {
@@ -789,15 +813,32 @@ export interface MedicationInput {
 
 export async function getMedications(
   patientId: string,
-  params?: { limit?: number; offset?: number }
+  params?: { limit?: number; offset?: number; include_completed?: boolean }
 ): Promise<MedicationListResponse> {
   const qs = new URLSearchParams()
   if (params?.limit) qs.set('limit', String(params.limit))
   if (params?.offset) qs.set('offset', String(params.offset))
+  if (params?.include_completed) qs.set('include_completed', 'true')
   const query = qs.toString()
   return api.get<MedicationListResponse>(
     `/patients/${patientId}/medications${query ? `?${query}` : ''}`
   )
+}
+
+/**
+ * Lifecycle transition (P0). RBAC + the ADR-11 state machine are enforced
+ * server-side; mandatory-reason transitions reject without `status_reason`.
+ */
+export async function updateMedicationLifecycle(
+  patientId: string,
+  medId: string,
+  lifecycleStatus: MedicationLifecycleStatus,
+  statusReason?: string
+): Promise<Medication> {
+  return api.patch<Medication>(`/patients/${patientId}/medications/${medId}`, {
+    lifecycle_status: lifecycleStatus,
+    ...(statusReason ? { status_reason: statusReason } : {}),
+  })
 }
 
 export async function addMedication(patientId: string, data: MedicationInput): Promise<Medication> {

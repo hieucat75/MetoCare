@@ -2,7 +2,18 @@
 
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
-import { Pill, Pencil, Trash2, X, CheckCircle2, XCircle } from 'lucide-react'
+import {
+  Pill,
+  Pencil,
+  Trash2,
+  X,
+  CheckCircle2,
+  XCircle,
+  PauseCircle,
+  PlayCircle,
+  ShieldCheck,
+  Lock,
+} from 'lucide-react'
 import { PatientPrimaryFab } from '@/components/patient/PatientPrimaryFab'
 import { NeuCard, NeuButton } from '@/components/patient/neu'
 import { PatientEmptyState } from '@/components/patient'
@@ -13,8 +24,10 @@ import {
   addMedication,
   updateMedication,
   deleteMedication,
+  updateMedicationLifecycle,
   logAdherence,
   getAdherenceSummary,
+  DISCONTINUE_REASONS,
   type Medication,
   type MedicationInput,
   type AdherenceSummary,
@@ -41,6 +54,46 @@ const inputClass =
 const textareaClass =
   'w-full rounded-[14px] border-2 border-[#C8D8D4] bg-white/60 backdrop-blur px-4 py-3 text-[16px] text-neu-text focus:border-[#0F9C6E] focus:outline-none min-h-[96px] resize-none'
 
+// ── Lifecycle badge ────────────────────────────────────────────────────────────
+
+const LIFECYCLE_BADGES: Partial<
+  Record<Medication['lifecycle_status'], { label: string; bg: string; fg: string }>
+> = {
+  paused: { label: 'Tạm ngưng', bg: '#FEF6E7', fg: '#8B6400' },
+  on_hold: { label: 'Bác sĩ tạm giữ', bg: '#EFF4FF', fg: '#2563EB' },
+  completed: { label: 'Hoàn tất liệu trình', bg: '#F0F4F2', fg: '#4B635A' },
+  discontinued: { label: 'Đã ngừng', bg: '#F4F4F4', fg: '#667085' },
+  expired: { label: 'Hết hạn — cần xem lại', bg: '#FEF2F2', fg: '#D92D20' },
+}
+
+function LifecycleBadges({ med }: { med: Medication }) {
+  const badge = LIFECYCLE_BADGES[med.lifecycle_status]
+  const verified = med.verification_status === 'clinician_confirmed'
+  if (!badge && !verified) return null
+  return (
+    <span className="mt-1 flex flex-wrap items-center gap-1.5">
+      {badge && (
+        <span
+          className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[12px] font-semibold"
+          style={{ background: badge.bg, color: badge.fg }}
+        >
+          {med.lifecycle_status === 'on_hold' && <Lock className="size-3" aria-hidden="true" />}
+          {badge.label}
+        </span>
+      )}
+      {verified && (
+        <span
+          className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[12px] font-semibold"
+          style={{ background: '#E8F7F2', color: '#0F9C6E' }}
+        >
+          <ShieldCheck className="size-3" aria-hidden="true" />
+          Bác sĩ xác nhận
+        </span>
+      )}
+    </span>
+  )
+}
+
 // ── Medication card row ────────────────────────────────────────────────────────
 
 type MedRowProps = {
@@ -50,12 +103,27 @@ type MedRowProps = {
   onDelete: () => void
   onView: () => void
   onLogged: () => void
+  onDiscontinue: () => void
   patientId: string
 }
 
-function MedRow({ med, todayStatus, onEdit, onDelete, onView, onLogged, patientId }: MedRowProps) {
+function MedRow({
+  med,
+  todayStatus,
+  onEdit,
+  onDelete,
+  onView,
+  onLogged,
+  onDiscontinue,
+  patientId,
+}: MedRowProps) {
   const [logging, setLogging] = React.useState(false)
+  const [rowError, setRowError] = React.useState<string | null>(null)
   const meta = [med.dose, med.frequency].filter(Boolean).join(' · ')
+
+  const isActive = med.lifecycle_status === 'active'
+  const isPaused = med.lifecycle_status === 'paused'
+  const isOnHold = med.lifecycle_status === 'on_hold'
 
   async function handleTaken() {
     if (logging) return
@@ -83,6 +151,20 @@ function MedRow({ med, todayStatus, onEdit, onDelete, onView, onLogged, patientI
     }
   }
 
+  async function handleLifecycle(target: 'active' | 'paused') {
+    if (logging) return
+    setLogging(true)
+    setRowError(null)
+    try {
+      await updateMedicationLifecycle(patientId, med.id, target)
+      onLogged()
+    } catch (err: unknown) {
+      setRowError(err instanceof Error ? err.message : 'Không cập nhật được trạng thái.')
+    } finally {
+      setLogging(false)
+    }
+  }
+
   const isTaken = todayStatus?.taken_today === true
   const isSkipped = todayStatus?.skipped_today === true
 
@@ -99,6 +181,7 @@ function MedRow({ med, todayStatus, onEdit, onDelete, onView, onLogged, patientI
             style={{
               background: PILL_GRADIENT,
               boxShadow: '0 8px 16px -8px rgba(37,99,235,0.5)',
+              opacity: isActive || isPaused || isOnHold ? 1 : 0.45,
             }}
             aria-hidden="true"
           >
@@ -112,29 +195,66 @@ function MedRow({ med, todayStatus, onEdit, onDelete, onView, onLogged, patientI
             {med.note && (
               <span className="mt-0.5 block truncate text-[15px] text-neu-subtle">{med.note}</span>
             )}
+            <LifecycleBadges med={med} />
           </span>
         </button>
-        <div className="flex shrink-0 items-center gap-1">
-          <button
-            type="button"
-            onClick={onEdit}
-            aria-label="Sửa thuốc"
-            className="rounded-[10px] p-2 text-neu-muted transition-transform active:scale-90"
-          >
-            <Pencil className="size-4" />
-          </button>
-          <button
-            type="button"
-            onClick={onDelete}
-            aria-label="Xoá thuốc"
-            className="rounded-[10px] p-2 text-[#D92D20] transition-transform active:scale-90"
-          >
-            <Trash2 className="size-4" />
-          </button>
-        </div>
+        {/* on_hold is doctor-controlled: no self-service edit/delete */}
+        {!isOnHold && (
+          <div className="flex shrink-0 items-center gap-1">
+            <button
+              type="button"
+              onClick={onEdit}
+              aria-label="Sửa thuốc"
+              className="rounded-[10px] p-2 text-neu-muted transition-transform active:scale-90"
+            >
+              <Pencil className="size-4" />
+            </button>
+            <button
+              type="button"
+              onClick={onDelete}
+              aria-label="Xoá thuốc"
+              className="rounded-[10px] p-2 text-[#D92D20] transition-transform active:scale-90"
+            >
+              <Trash2 className="size-4" />
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* Adherence quick-log */}
+      {rowError && (
+        <p role="alert" className="mt-2 text-[13px] font-semibold text-[#D92D20]">
+          {rowError}
+        </p>
+      )}
+
+      {/* on_hold: clinical lock notice — patient must not resume by themselves */}
+      {isOnHold && (
+        <div className="mt-3 border-t border-[#E8F0ED] pt-3">
+          <p className="flex items-start gap-2 rounded-[12px] bg-[#EFF4FF] px-3 py-2 text-[13px] font-medium text-[#2563EB]">
+            <Lock className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+            Bác sĩ yêu cầu tạm ngừng thuốc này. Không tự ý dùng lại — liên hệ bác sĩ nếu có thắc
+            mắc.
+          </p>
+        </div>
+      )}
+
+      {/* paused: resume control */}
+      {isPaused && (
+        <div className="mt-3 border-t border-[#E8F0ED] pt-3">
+          <button
+            type="button"
+            onClick={() => handleLifecycle('active')}
+            disabled={logging}
+            className="flex w-full items-center justify-center gap-1.5 rounded-[12px] bg-[#E8F7F2] py-2 text-[13px] font-semibold text-[#0F9C6E] transition-transform active:scale-95 disabled:opacity-50"
+          >
+            <PlayCircle className="size-4" aria-hidden="true" />
+            {logging ? 'Đang lưu…' : 'Tiếp tục uống thuốc này'}
+          </button>
+        </div>
+      )}
+
+      {/* Adherence quick-log — active medications only (backend enforces too) */}
+      {isActive && (
       <div className="mt-3 border-t border-[#E8F0ED] pt-3">
         {isTaken ? (
           // Taken state: green badge + allow correcting to skipped
@@ -201,7 +321,167 @@ function MedRow({ med, todayStatus, onEdit, onDelete, onView, onLogged, patientI
           </div>
         )}
       </div>
+      )}
+
+      {/* Lifecycle actions — active medications only */}
+      {isActive && (
+        <div className="mt-2 flex gap-2">
+          <button
+            type="button"
+            onClick={() => handleLifecycle('paused')}
+            disabled={logging}
+            className="flex flex-1 items-center justify-center gap-1.5 rounded-[12px] bg-[#FEF6E7] py-2 text-[13px] font-semibold text-[#8B6400] transition-transform active:scale-95 disabled:opacity-50"
+          >
+            <PauseCircle className="size-4" aria-hidden="true" />
+            Tạm ngưng
+          </button>
+          <button
+            type="button"
+            onClick={onDiscontinue}
+            disabled={logging}
+            className="flex flex-1 items-center justify-center gap-1.5 rounded-[12px] bg-[#F4F4F4] py-2 text-[13px] font-semibold text-neu-muted transition-transform active:scale-95 disabled:opacity-50"
+          >
+            <XCircle className="size-4" aria-hidden="true" />
+            Ngừng thuốc
+          </button>
+        </div>
+      )}
     </NeuCard>
+  )
+}
+
+// ── Discontinue modal (ADR-11: mandatory reason) ───────────────────────────────
+
+type DiscontinueModalProps = {
+  open: boolean
+  onClose: () => void
+  onSaved: () => void
+  patientId: string
+  med: Medication | null
+}
+
+function DiscontinueModal({ open, onClose, onSaved, patientId, med }: DiscontinueModalProps) {
+  const [reason, setReason] = React.useState('')
+  const [detail, setDetail] = React.useState('')
+  const [submitting, setSubmitting] = React.useState(false)
+  const [formError, setFormError] = React.useState<string | null>(null)
+
+  React.useEffect(() => {
+    if (open) {
+      setReason('')
+      setDetail('')
+      setFormError(null)
+    }
+  }, [open])
+
+  async function handleConfirm() {
+    if (!med) return
+    if (!reason) {
+      setFormError('Vui lòng chọn lý do ngừng thuốc.')
+      return
+    }
+    setSubmitting(true)
+    setFormError(null)
+    const label = DISCONTINUE_REASONS.find((r) => r.value === reason)?.label ?? reason
+    const statusReason = detail.trim() ? `${label} — ${detail.trim()}` : label
+    try {
+      await updateMedicationLifecycle(patientId, med.id, 'discontinued', statusReason)
+      onSaved()
+      onClose()
+    } catch (err: unknown) {
+      setFormError(err instanceof Error ? err.message : 'Không thể ngừng thuốc. Vui lòng thử lại.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  if (!open || !med) return null
+
+  return (
+    <div className="fixed inset-0 z-40 flex items-end bg-black/30" onClick={onClose}>
+      <div className="w-full max-w-md mx-auto" onClick={(e) => e.stopPropagation()}>
+        <NeuCard className="!rounded-b-none">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-[18px] font-extrabold text-neu-text">Ngừng thuốc</h2>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Đóng"
+              className="rounded-[10px] p-1.5 text-neu-muted transition-transform active:scale-90"
+            >
+              <X className="size-5" />
+            </button>
+          </div>
+
+          <p className="mb-4 text-[15px] text-neu-muted">
+            Ngừng <span className="font-bold text-neu-text">{med.name}</span>? Thuốc sẽ được lưu
+            vào lịch sử (không bị xoá) và ngừng nhắc uống.
+          </p>
+
+          {formError && (
+            <div
+              role="alert"
+              className="mb-4 rounded-[14px] bg-[#FEF2F2] border border-[#D92D20]/30 p-4 text-[13px] text-[#D92D20]"
+            >
+              {formError}
+            </div>
+          )}
+
+          <div className="space-y-1.5">
+            <label className="block text-[13px] font-semibold text-neu-muted uppercase tracking-wide">
+              Lý do <span className="text-[#D92D20]">*</span>
+            </label>
+            <div className="space-y-2">
+              {DISCONTINUE_REASONS.map((r) => (
+                <label
+                  key={r.value}
+                  className={`flex cursor-pointer items-center gap-3 rounded-[14px] border-2 px-4 py-3 text-[15px] font-medium ${
+                    reason === r.value
+                      ? 'border-[#0F9C6E] bg-[#E8F7F2] text-[#0F9C6E]'
+                      : 'border-[#C8D8D4] bg-white/60 text-neu-text'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="discontinue-reason"
+                    value={r.value}
+                    checked={reason === r.value}
+                    onChange={() => setReason(r.value)}
+                    className="sr-only"
+                  />
+                  {r.label}
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-4 space-y-1.5">
+            <label className="block text-[13px] font-semibold text-neu-muted uppercase tracking-wide">
+              Chi tiết (không bắt buộc)
+            </label>
+            <textarea
+              value={detail}
+              onChange={(e) => setDetail(e.target.value)}
+              placeholder="VD: Bị đau dạ dày sau khi uống"
+              className={textareaClass}
+            />
+          </div>
+
+          <div className="mt-5 flex flex-col gap-2">
+            <NeuButton
+              onClick={handleConfirm}
+              disabled={submitting}
+              className="w-full !bg-[#D92D20] !text-white"
+            >
+              {submitting ? 'Đang lưu…' : 'Xác nhận ngừng thuốc'}
+            </NeuButton>
+            <NeuButton variant="secondary" onClick={onClose} disabled={submitting} className="w-full">
+              Huỷ
+            </NeuButton>
+          </div>
+        </NeuCard>
+      </div>
+    </div>
   )
 }
 
@@ -468,6 +748,8 @@ export default function MedicationsPage() {
   const [modalOpen, setModalOpen] = React.useState(false)
   const [editing, setEditing] = React.useState<Medication | null>(null)
   const [deleteMode, setDeleteMode] = React.useState(false)
+  const [discontinuing, setDiscontinuing] = React.useState<Medication | null>(null)
+  const [showHistory, setShowHistory] = React.useState(false)
 
   const load = React.useCallback(() => {
     if (!patientId) {
@@ -477,7 +759,7 @@ export default function MedicationsPage() {
     setLoading(true)
     setError(null)
     Promise.all([
-      getMedications(patientId, { limit: 50 }),
+      getMedications(patientId, { limit: 50, include_completed: showHistory }),
       getAdherenceSummary(patientId).catch(() => null),
     ])
       .then(([medsRes, summaryRes]) => {
@@ -493,7 +775,7 @@ export default function MedicationsPage() {
       })
       .catch((err: Error) => setError(err.message))
       .finally(() => setLoading(false))
-  }, [patientId])
+  }, [patientId, showHistory])
 
   React.useEffect(() => {
     load()
@@ -571,10 +853,22 @@ export default function MedicationsPage() {
                 setEditing(med)
                 setModalOpen(true)
               }}
+              onDiscontinue={() => setDiscontinuing(med)}
               onLogged={load}
             />
           ))}
         </div>
+      )}
+
+      {/* History toggle — completed + discontinued records (Plan §5.5) */}
+      {!loading && !error && (
+        <button
+          type="button"
+          onClick={() => setShowHistory((v) => !v)}
+          className="w-full rounded-[12px] py-2 text-center text-[14px] font-semibold text-neu-muted transition-opacity active:opacity-70"
+        >
+          {showHistory ? 'Ẩn thuốc đã ngừng / hoàn tất' : 'Hiện thuốc đã ngừng / hoàn tất'}
+        </button>
       )}
 
       {/* Adherence History Section */}
@@ -608,6 +902,14 @@ export default function MedicationsPage() {
         patientId={patientId}
         editing={editing}
         deleteMode={deleteMode}
+      />
+
+      <DiscontinueModal
+        open={discontinuing !== null}
+        onClose={() => setDiscontinuing(null)}
+        onSaved={load}
+        patientId={patientId}
+        med={discontinuing}
       />
     </div>
   )

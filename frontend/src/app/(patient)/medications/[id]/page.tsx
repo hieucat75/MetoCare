@@ -11,6 +11,8 @@ import {
   Activity,
   CheckCircle2,
   XCircle,
+  ShieldCheck,
+  Lock,
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth/context'
 import {
@@ -206,7 +208,8 @@ export default function MedicationDetailPage() {
     setError(null)
     try {
       const [medsRes, historyRes, summaryRes] = await Promise.all([
-        getMedications(patientId, { limit: 100 }),
+        // include_completed: detail must resolve history records too
+        getMedications(patientId, { limit: 100, include_completed: true }),
         getAdherenceHistory(patientId, id, 30),
         getAdherenceSummary(patientId),
       ])
@@ -302,6 +305,19 @@ export default function MedicationDetailPage() {
   const todayChipValue = takenToday ? 'Đã uống' : skippedToday ? 'Đã bỏ qua' : 'Chưa uống'
   const todayChipColor = takenToday ? '#0F9C6E' : skippedToday ? '#6B7280' : '#C77A06'
 
+  const isActiveMed = medication.lifecycle_status === 'active'
+  const isVerified = medication.verification_status === 'clinician_confirmed'
+  const STATUS_BADGES: Partial<
+    Record<typeof medication.lifecycle_status, { label: string; bg: string; fg: string }>
+  > = {
+    paused: { label: 'Tạm ngưng', bg: '#FEF6E7', fg: '#8B6400' },
+    on_hold: { label: 'Bác sĩ tạm giữ', bg: '#EFF4FF', fg: '#2563EB' },
+    completed: { label: 'Hoàn tất liệu trình', bg: '#F0F4F2', fg: '#4B635A' },
+    discontinued: { label: 'Đã ngừng', bg: '#F4F4F4', fg: '#667085' },
+    expired: { label: 'Hết hạn — cần xem lại', bg: '#FEF2F2', fg: '#D92D20' },
+  }
+  const statusBadge = STATUS_BADGES[medication.lifecycle_status]
+
   return (
     <div className="p-4 max-w-md mx-auto pb-28 space-y-4">
       {/* Header: back + title */}
@@ -334,9 +350,46 @@ export default function MedicationDetailPage() {
               {medication.name}
             </p>
             {subtitle && <p className="mt-1 text-[13.5px] text-neu-secondary">{subtitle}</p>}
+            {(statusBadge || isVerified) && (
+              <span className="mt-2 flex flex-wrap items-center gap-1.5">
+                {statusBadge && (
+                  <span
+                    className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[12px] font-semibold"
+                    style={{ background: statusBadge.bg, color: statusBadge.fg }}
+                  >
+                    {medication.lifecycle_status === 'on_hold' && (
+                      <Lock className="size-3" aria-hidden="true" />
+                    )}
+                    {statusBadge.label}
+                  </span>
+                )}
+                {isVerified && (
+                  <span
+                    className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[12px] font-semibold"
+                    style={{ background: '#E8F7F2', color: '#0F9C6E' }}
+                  >
+                    <ShieldCheck className="size-3" aria-hidden="true" />
+                    Bác sĩ xác nhận
+                  </span>
+                )}
+              </span>
+            )}
           </div>
         </div>
+        {medication.status_reason && !isActiveMed && (
+          <p className="mt-3 rounded-[12px] bg-[#F4F7F5] px-3 py-2 text-[13px] text-neu-secondary">
+            Lý do: {medication.status_reason}
+          </p>
+        )}
       </NeuCard>
+
+      {/* on_hold clinical lock notice */}
+      {medication.lifecycle_status === 'on_hold' && (
+        <p className="flex items-start gap-2 rounded-[14px] bg-[#EFF4FF] px-4 py-3 text-[13.5px] font-medium text-[#2563EB]">
+          <Lock className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+          Bác sĩ yêu cầu tạm ngừng thuốc này. Không tự ý dùng lại — liên hệ bác sĩ nếu có thắc mắc.
+        </p>
+      )}
 
       {/* Dose / timing chips */}
       {(medication.dose || medication.frequency) && (
@@ -382,8 +435,9 @@ export default function MedicationDetailPage() {
         </div>
       </div>
 
-      {/* Quick-log section */}
-      {takenToday ? (
+      {/* Quick-log section — active medications only (backend enforces too) */}
+      {isActiveMed &&
+        (takenToday ? (
         <NeuCard className="!p-4">
           <div className="flex items-center gap-2">
             <CheckCircle2 className="size-5 text-[#0F9C6E]" aria-hidden="true" />
@@ -412,7 +466,7 @@ export default function MedicationDetailPage() {
             </NeuButton>
           </div>
         </NeuCard>
-      )}
+        ))}
 
       {/* Notes */}
       {medication.note && (
