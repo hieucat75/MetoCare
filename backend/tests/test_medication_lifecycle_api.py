@@ -381,3 +381,58 @@ def test_delete_of_on_hold_blocked_for_everyone(client, patient, db):
             db, patient_id=patient["patient_id"], med_id=med["id"], actor_role="doctor"
         )
     assert exc.value.status_code == 403
+
+
+# --------------------------------------------------------------------------- #
+# Codex R3 hardening
+# --------------------------------------------------------------------------- #
+
+
+def test_patient_can_flag_on_hold_record_entered_in_error(client, patient, db):
+    med = _create_med(client, patient)
+    _force_lifecycle(db, med["id"], "on_hold")
+    r = _patch(
+        client, patient, med["id"],
+        {"lifecycle_status": "entered_in_error", "status_reason": "Nhập nhầm thuốc"},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["lifecycle_status"] == "entered_in_error"
+
+
+def test_on_hold_error_flag_with_extra_fields_still_blocked(client, patient, db):
+    med = _create_med(client, patient)
+    _force_lifecycle(db, med["id"], "on_hold")
+    r = _patch(
+        client, patient, med["id"],
+        {"lifecycle_status": "entered_in_error", "status_reason": "x", "note": "sửa lén"},
+    )
+    assert r.status_code == 403
+
+
+def test_expired_re_review_doctor_prescribed_goes_to_clinician(client, patient, db):
+    med = _create_med(client, patient)
+    db.execute(
+        update(Medication)
+        .where(Medication.id == med["id"])
+        .values(lifecycle_status="expired", source_type="doctor_prescribed")
+    )
+    db.commit()
+    r = _patch(client, patient, med["id"], {"lifecycle_status": "active"})
+    assert r.status_code == 200
+    stmt = db.execute(
+        select(MedicationStatement).where(
+            MedicationStatement.related_medication_id == med["id"],
+            MedicationStatement.assertion_type == "continued_use",
+        )
+    ).scalar_one()
+    assert stmt.statement_status == "awaiting_clinician"
+
+
+def test_expired_re_review_rejects_mixed_payload(client, patient, db):
+    med = _create_med(client, patient)
+    _force_lifecycle(db, med["id"], "expired")
+    r = _patch(
+        client, patient, med["id"],
+        {"lifecycle_status": "active", "dose": "1000mg"},
+    )
+    assert r.status_code == 422

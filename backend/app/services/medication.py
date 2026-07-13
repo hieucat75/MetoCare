@@ -98,20 +98,19 @@ def _validate_lifecycle_transition(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="on_hold chỉ được set bởi bác sĩ.",
         )
-    if current == "on_hold" and role != "doctor":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Chỉ bác sĩ có thể thay đổi trạng thái on_hold.",
-        )
-    if (
-        role != "doctor"
-        and target != "entered_in_error"
-        and (current, target) not in NON_DOCTOR_TRANSITIONS
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Transition '{current}' → '{target}' không được phép cho vai trò này.",
-        )
+    # ADR-11: any → entered_in_error is permitted from every source state
+    # (including on_hold) — it flags a mistaken record, not a clinical change.
+    if target != "entered_in_error":
+        if current == "on_hold" and role != "doctor":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Chỉ bác sĩ có thể thay đổi trạng thái on_hold.",
+            )
+        if role != "doctor" and (current, target) not in NON_DOCTOR_TRANSITIONS:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Transition '{current}' → '{target}' không được phép cho vai trò này.",
+            )
     if (
         (current, target) in REASON_REQUIRED_TRANSITIONS or target == "entered_in_error"
     ) and not reason:
@@ -275,7 +274,16 @@ def update_medication(
 
     # on_hold is a doctor-controlled state: NO edit of any kind by others
     # while it holds (Codex R1 P1 — non-lifecycle PATCH must not bypass it).
-    if record.lifecycle_status == "on_hold" and (actor_role or "").lower() != "doctor":
+    # Sole exception (ADR-11: any → entered_in_error): a PURE
+    # entered-in-error transition may still flag a mistaken record.
+    _is_pure_error_flag = data.get("lifecycle_status") == "entered_in_error" and set(
+        data
+    ) <= {"lifecycle_status", "status_reason"}
+    if (
+        record.lifecycle_status == "on_hold"
+        and (actor_role or "").lower() != "doctor"
+        and not _is_pure_error_flag
+    ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Chỉ bác sĩ có thể thay đổi hồ sơ thuốc đang on_hold.",
@@ -312,6 +320,15 @@ def update_medication(
             and lifecycle_target == "active"
             and (actor_role or "").lower() == "patient"
         ):
+            extra_fields = set(data) - {"lifecycle_status", "status_reason"}
+            if extra_fields:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=(
+                        "Re-assert thuốc expired phải gửi riêng — không kèm "
+                        f"chỉnh sửa khác ({', '.join(sorted(extra_fields))})."
+                    ),
+                )
             db.add(
                 MedicationStatement(
                     patient_id=patient_id,
@@ -322,7 +339,13 @@ def update_medication(
                     raw_drug_name=record.name,
                     raw_dose=record.dose,
                     raw_frequency=record.frequency,
-                    statement_status="pending",
+                    # Plan §6.3 Case D: doctor-prescribed expired records go
+                    # to the clinician queue; patient-resolvable otherwise.
+                    statement_status=(
+                        "awaiting_clinician"
+                        if record.source_type == "doctor_prescribed"
+                        else "pending"
+                    ),
                 )
             )
             db.commit()
