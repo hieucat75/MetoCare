@@ -1,29 +1,50 @@
 #!/usr/bin/env bash
 # =============================================================================
-# pre_migration_audit.sh — Pre-migration soft-delete audit gate
+# pre_migration_audit.sh — Pre-migration soft-delete audit gate (PHI-safe)
 #
 # Usage:
 #   bash scripts/pre_migration_audit.sh
 #
 # Required environment variables:
-#   DATABASE_URL          — PostgreSQL connection URL (same pattern as migration job)
+#   DATABASE_URL          — PostgreSQL connection URL (Key Vault mcp-database-url)
 #   POSTGRES_SERVER_NAME  — Azure PostgreSQL Flexible Server name (validated early)
 #   RESOURCE_GROUP        — Azure resource group name (validated early)
 #
+# Optional:
+#   MEDICATION_SOFT_DELETE_MAPPINGS — per-record review approvals, format:
+#       <medication_id>:<lifecycle_status>,<medication_id>:<lifecycle_status>
+#     Statuses limited to: discontinued | completed | entered_in_error.
+#     Set as a GitHub Actions SECRET (never a plain env var) and REMOVE it
+#     after the P0 migration has run — the gate warns when it goes stale.
+#
 # Behaviour:
 #   1. Validates required env vars (fail fast, fail clearly — before any DB call)
-#   2. Runs soft-delete audit query against medications table
-#   3. If soft_deleted_count = 0 → prints summary, writes to $GITHUB_STEP_SUMMARY
-#      if in CI, exits 0 (auto-pass — migration may proceed)
-#   4. If soft_deleted_count > 0 → prints each soft-deleted row in detail,
-#      writes WARNING to $GITHUB_STEP_SUMMARY, exits 1 (fail closed —
-#      requires manual review before migration runs)
+#   2. If medications.lifecycle_status already exists (P0 migration applied),
+#      the gate is obsolete → PASS with a notice (and a warning if the
+#      mappings secret is still set).
+#   3. Counts soft-deleted medications rows. count=0 → PASS.
+#   4. count>0 without mappings → FAIL CLOSED. Logs count + non-reversible
+#      record fingerprints ONLY.
+#   5. count>0 with mappings → PASS only when the mapping set matches the DB
+#      set exactly (no unreviewed record, no stale approval) AND every approved
+#      status equals 'entered_in_error' (migration p0_m01 applies a blanket
+#      entered_in_error UPDATE; approving any other status requires changing
+#      that migration first, so the gate refuses to let a mismatch through).
+#
+# PHI policy (PTH 2026-07-13, public repo — Actions logs are world-readable):
+#   This script NEVER prints medication names, full medication ids, patient
+#   ids, notes, or row timestamps. Records are referenced only as
+#   record_ref = sha256(<medication_id> + <salt>)[0:12], salt derived from
+#   DATABASE_URL (secret). Detailed review data must be pulled through a
+#   private Azure channel (one-shot ACA job / Cloud Shell), never through CI.
 #
 # Design reference: MEDICATION_P0_BLOCKER_REPORT.md §Additions (PTH 2026-07-11)
-# Replaces the manual "run query, check result" step from MEDICATION_SOFT_DELETE_AUDIT.md
 # =============================================================================
 
 set -euo pipefail
+
+VALID_STATUSES="discontinued completed entered_in_error"
+ROW_SCAN_LIMIT=500
 
 # ---------------------------------------------------------------------------
 # Logging helpers
@@ -63,174 +84,231 @@ if [[ ${#MISSING_VARS[@]} -gt 0 ]]; then
 fi
 
 log "All required environment variables present."
-log "  POSTGRES_SERVER_NAME: ${POSTGRES_SERVER_NAME}"
-log "  RESOURCE_GROUP:       ${RESOURCE_GROUP}"
-log "  DATABASE_URL:         [set — masked]"
+log "  DATABASE_URL:                    [set — masked]"
+log "  MEDICATION_SOFT_DELETE_MAPPINGS: $([[ -n "${MEDICATION_SOFT_DELETE_MAPPINGS:-}" ]] && echo "[set — masked]" || echo "[not set]")"
 
 # psql only understands postgresql:// URIs — strip any SQLAlchemy driver
 # suffix (e.g. postgresql+psycopg://) before connecting.
 PSQL_URL="$(printf '%s' "$DATABASE_URL" | sed -E 's|^postgres(ql)?\+[A-Za-z0-9_]+://|postgresql://|')"
 
+# Read-only + bounded session for every query this script runs.
+export PGOPTIONS="-c default_transaction_read_only=on -c statement_timeout=10000"
+
+run_psql() {
+    psql "$PSQL_URL" --no-psqlrc --tuples-only --no-align -c "$1" 2>&1
+}
+
+# Non-reversible record reference for logs: sha256(id + salt)[0:12].
+# Salt derives from DATABASE_URL (a secret), so refs cannot be recomputed
+# from public logs.
+if command -v sha256sum >/dev/null 2>&1; then
+    _sha256() { sha256sum | cut -d' ' -f1; }
+else
+    _sha256() { shasum -a 256 | cut -d' ' -f1; }
+fi
+FP_SALT="$(printf '%s' "$DATABASE_URL" | _sha256 | cut -c1-16)"
+fp() { printf '%s%s' "$1" "$FP_SALT" | _sha256 | cut -c1-12; }
+
+append_summary() {
+    if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+        echo "$1" >> "$GITHUB_STEP_SUMMARY"
+    fi
+}
+
 # ---------------------------------------------------------------------------
-# Step 2: Run summary audit query
+# Step 2: Skip when the P0 migration has already been applied
+# ---------------------------------------------------------------------------
+HAS_LIFECYCLE=$(run_psql \
+    "SELECT 1 FROM information_schema.columns
+     WHERE table_name = 'medications' AND column_name = 'lifecycle_status';") || {
+    die "psql schema probe failed. Connection error. Raw error: ${HAS_LIFECYCLE}"
+}
+
+if [[ "$HAS_LIFECYCLE" == "1" ]]; then
+    log "✅ AUDIT SKIPPED — medications.lifecycle_status already exists (P0 migration applied)."
+    if [[ -n "${MEDICATION_SOFT_DELETE_MAPPINGS:-}" ]]; then
+        warn "MEDICATION_SOFT_DELETE_MAPPINGS is still set but the migration has run."
+        warn "Remove the secret — the override must not outlive the migration it approved."
+    fi
+    append_summary "## ✅ Pre-migration Soft-Delete Audit — SKIPPED (migration already applied)"
+    exit 0
+fi
+
+# ---------------------------------------------------------------------------
+# Step 3: Collect soft-deleted medication ids (ids only — never row content)
 # ---------------------------------------------------------------------------
 log ""
 log "--- Running soft-delete audit query on medications table ---"
 
-SUMMARY_RESULT=$(psql "$PSQL_URL" --no-psqlrc --tuples-only --csv -c \
-    "SELECT COUNT(*) FILTER (WHERE deleted_at IS NULL)     AS live_count,
-            COUNT(*) FILTER (WHERE deleted_at IS NOT NULL) AS soft_deleted_count,
-            COUNT(*)                                        AS total
-     FROM medications;" 2>&1) || {
-    die "psql audit query failed. Connection error or table does not exist yet (expected if pre-P0 baseline). Raw error: ${SUMMARY_RESULT}"
+DB_IDS_RAW=$(run_psql \
+    "SELECT id FROM medications
+     WHERE deleted_at IS NOT NULL
+     ORDER BY id
+     LIMIT ${ROW_SCAN_LIMIT};") || {
+    die "psql audit query failed. Connection error or table does not exist yet (expected if pre-P0 baseline). Raw error: ${DB_IDS_RAW}"
 }
 
-# Parse CSV output (header row + data row)
-# CSV format: live_count,soft_deleted_count,total (row 1 is header, row 2 is data)
-DATA_ROW=$(echo "$SUMMARY_RESULT" | tail -n 1)
-LIVE_COUNT=$(echo "$DATA_ROW" | cut -d',' -f1)
-SOFT_DELETED_COUNT=$(echo "$DATA_ROW" | cut -d',' -f2)
-TOTAL=$(echo "$DATA_ROW" | cut -d',' -f3)
+DB_IDS=()
+while IFS= read -r line; do
+    [[ -n "$line" ]] && DB_IDS+=("$line")
+done <<< "$DB_IDS_RAW"
 
-log "Audit result:"
-log "  live_count:          ${LIVE_COUNT}"
-log "  soft_deleted_count:  ${SOFT_DELETED_COUNT}"
-log "  total:               ${TOTAL}"
+COUNT=${#DB_IDS[@]}
+log "soft_deleted_count=${COUNT}"
+
+if [[ "$COUNT" -ge "$ROW_SCAN_LIMIT" ]]; then
+    die "soft_deleted_count hit the scan limit (${ROW_SCAN_LIMIT}) — refusing to audit a truncated set."
+fi
 
 # ---------------------------------------------------------------------------
-# Step 3: Branch on soft_deleted_count
+# Step 4: count == 0 → PASS
 # ---------------------------------------------------------------------------
-if [[ "$SOFT_DELETED_COUNT" -eq 0 ]]; then
-
-    # ── PASS: No soft-deleted rows — migration may proceed ──────────────────
-    log ""
-    log "✅ AUDIT PASSED — soft_deleted_count = 0"
-    log "   No soft-deleted rows found in medications table."
-    log "   Migration may proceed. The lifecycle_status mapping will correctly"
-    log "   default all rows to 'active' (no entered_in_error updates needed)."
-    log ""
-    log "Summary:"
-    log "  Live rows (deleted_at IS NULL):         ${LIVE_COUNT}"
-    log "  Soft-deleted (deleted_at IS NOT NULL):  ${SOFT_DELETED_COUNT}"
-    log "  Total:                                  ${TOTAL}"
-
-    if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
-        cat >> "$GITHUB_STEP_SUMMARY" << SUMMARY
-## ✅ Pre-migration Soft-Delete Audit — PASSED
-
-The \`medications\` table has **no soft-deleted rows** (soft_deleted_count = 0).  
-The P0 migration lifecycle_status mapping is safe to run.
-
-| Metric | Value |
-|--------|-------|
-| Live rows (\`deleted_at IS NULL\`) | \`${LIVE_COUNT}\` |
-| Soft-deleted (\`deleted_at IS NOT NULL\`) | \`${SOFT_DELETED_COUNT}\` |
-| Total | \`${TOTAL}\` |
-| POSTGRES_SERVER_NAME | \`${POSTGRES_SERVER_NAME}\` |
-| RESOURCE_GROUP | \`${RESOURCE_GROUP}\` |
-
-**Migration may proceed.**
-SUMMARY
-        log "GitHub Step Summary updated."
+if [[ "$COUNT" -eq 0 ]]; then
+    log "review_required=false"
+    log "✅ AUDIT PASSED — no soft-deleted rows; migration may proceed."
+    if [[ -n "${MEDICATION_SOFT_DELETE_MAPPINGS:-}" ]]; then
+        warn "MEDICATION_SOFT_DELETE_MAPPINGS is set but no soft-deleted rows exist."
+        warn "Remove the stale secret."
     fi
+    append_summary "## ✅ Pre-migration Soft-Delete Audit — PASSED
 
+\`soft_deleted_count=0\` — migration may proceed."
     exit 0
+fi
 
-else
-
-    # ── FAIL: Soft-deleted rows found — manual review required ──────────────
-    warn ""
-    warn "⚠️  AUDIT FAILED — soft_deleted_count = ${SOFT_DELETED_COUNT}"
-    warn "   ${SOFT_DELETED_COUNT} soft-deleted row(s) found in medications table."
-    warn "   These rows WILL be mapped to lifecycle_status='entered_in_error' by the migration."
-    warn "   Manual review required before migration runs."
-    warn ""
-    warn "Soft-deleted rows:"
-    warn "---"
-
-    # Retrieve each soft-deleted row with full detail
-    DETAIL_RESULT=$(psql "$PSQL_URL" --no-psqlrc --tuples-only --csv -c \
-        "SELECT id, name, deleted_at, deleted_by, note
-         FROM medications
-         WHERE deleted_at IS NOT NULL
-         ORDER BY deleted_at DESC;" 2>&1) || {
-        err "Failed to retrieve soft-deleted row details: ${DETAIL_RESULT}"
-        err "Summary still shows soft_deleted_count = ${SOFT_DELETED_COUNT}."
-        err "Fail closed — exiting 1."
-        exit 1
-    }
-
-    # Print each detail row
-    ROW_NUM=0
-    while IFS=',' read -r row_id row_name row_deleted_at row_deleted_by row_note; do
-        # Skip CSV header row
-        if [[ "$row_id" == "id" ]]; then continue; fi
-        ROW_NUM=$(( ROW_NUM + 1 ))
-        warn "  Row ${ROW_NUM}:"
-        warn "    id:         ${row_id}"
-        warn "    name:       ${row_name}"
-        warn "    deleted_at: ${row_deleted_at}"
-        warn "    deleted_by: ${row_deleted_by}"
-        warn "    note:       ${row_note}"
-    done <<< "$DETAIL_RESULT"
-
-    warn "---"
-    warn ""
-    warn "WHAT THIS MEANS:"
-    warn "  The P0 migration will UPDATE these ${SOFT_DELETED_COUNT} row(s):"
-    warn "    UPDATE medications"
-    warn "    SET lifecycle_status = 'entered_in_error'"
-    warn "    WHERE deleted_at IS NOT NULL;"
+# ---------------------------------------------------------------------------
+# Step 5: count > 0 — allowlist evaluation (fail closed by default)
+# ---------------------------------------------------------------------------
+if [[ -z "${MEDICATION_SOFT_DELETE_MAPPINGS:-}" ]]; then
+    warn "review_required=true"
+    warn "⚠️  AUDIT FAILED — ${COUNT} soft-deleted record(s) require manual review."
+    warn "Record fingerprints (non-reversible; match via private Azure query, not this log):"
+    for id in "${DB_IDS[@]}"; do
+        warn "  record_ref=$(fp "$id")"
+    done
     warn ""
     warn "WHAT TO DO:"
-    warn "  1. Review the rows above with PTH."
-    warn "  2. Confirm the data belongs to patients and is correctly soft-deleted."
-    warn "  3. If the mapping is correct (soft-deleted → entered_in_error), re-run"
-    warn "     the pipeline with explicit approval (set AUDIT_OVERRIDE_SOFT_DELETE=1)."
-    warn "  4. If any row is incorrect, fix the data before running migration."
+    warn "  1. Pull record details through a PRIVATE channel (one-shot ACA job or"
+    warn "     Azure Cloud Shell) — never print row content in CI logs."
+    warn "  2. Review each record with PTH and pick a lifecycle status per record."
+    warn "  3. Set the MEDICATION_SOFT_DELETE_MAPPINGS secret:"
+    warn "       <medication_id>:<status>,<medication_id>:<status>"
+    warn "     (statuses: ${VALID_STATUSES// /|})"
+    warn "  4. Re-run the pipeline. Remove the secret after the migration lands."
     warn ""
     warn "Fail closed — migration will NOT run until this is resolved."
+    append_summary "## ⚠️ Pre-migration Soft-Delete Audit — MANUAL REVIEW REQUIRED
 
-    if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
-        # Build detail rows for summary
-        DETAIL_TABLE=""
-        while IFS=',' read -r row_id row_name row_deleted_at row_deleted_by row_note; do
-            if [[ "$row_id" == "id" ]]; then continue; fi
-            DETAIL_TABLE="${DETAIL_TABLE}| \`${row_id}\` | ${row_name} | ${row_deleted_at} | ${row_deleted_by} | ${row_note} |\n"
-        done <<< "$DETAIL_RESULT"
+\`soft_deleted_count=${COUNT}\`, \`review_required=true\`
 
-        cat >> "$GITHUB_STEP_SUMMARY" << SUMMARY
-## ⚠️ Pre-migration Soft-Delete Audit — WARNING: MANUAL REVIEW REQUIRED
+Record details are intentionally NOT shown here (public log). Pull them via a
+private Azure channel, then set the \`MEDICATION_SOFT_DELETE_MAPPINGS\` secret.
 
-**${SOFT_DELETED_COUNT} soft-deleted row(s) found.** Migration will map these to \`lifecycle_status='entered_in_error'\`.
-
-**PTH must review before migration proceeds.**
-
-### Summary
-
-| Metric | Value |
-|--------|-------|
-| Live rows (\`deleted_at IS NULL\`) | \`${LIVE_COUNT}\` |
-| Soft-deleted (\`deleted_at IS NOT NULL\`) | \`${SOFT_DELETED_COUNT}\` |
-| Total | \`${TOTAL}\` |
-
-### Soft-deleted rows requiring review
-
-| id | name | deleted_at | deleted_by | note |
-|----|------|------------|------------|------|
-$(echo -e "$DETAIL_TABLE")
-
-### Action Required
-
-1. Review the rows above.
-2. Confirm mapping \`soft-deleted → entered_in_error\` is correct for each row.
-3. Fix data or re-trigger with explicit approval if safe.
-
-**Migration blocked (fail closed).**
-SUMMARY
-        log "GitHub Step Summary updated with WARNING."
-    fi
-
+**Migration blocked (fail closed).**"
     exit 1
-
 fi
+
+log "MEDICATION_SOFT_DELETE_MAPPINGS is set — validating allowlist..."
+
+# Parallel arrays (portable to bash 3.2 — no associative arrays).
+MAP_IDS=()
+MAP_STATUSES=()
+approved_status_for() {
+    local i
+    for i in "${!MAP_IDS[@]}"; do
+        if [[ "${MAP_IDS[$i]}" == "$1" ]]; then
+            echo "${MAP_STATUSES[$i]}"
+            return 0
+        fi
+    done
+    return 1
+}
+
+IFS=',' read -ra PAIRS <<< "$MEDICATION_SOFT_DELETE_MAPPINGS"
+for pair in "${PAIRS[@]}"; do
+    pair="$(echo "$pair" | tr -d '[:space:]')"
+    [[ -z "$pair" ]] && continue
+    if [[ ! "$pair" =~ ^([0-9a-fA-F-]{36}):([a-z_]+)$ ]]; then
+        die "Malformed mapping entry (expected <uuid>:<status>). Entry ref=$(fp "$pair")"
+    fi
+    map_id="${BASH_REMATCH[1]}"
+    map_status="${BASH_REMATCH[2]}"
+    if [[ " ${VALID_STATUSES} " != *" ${map_status} "* ]]; then
+        die "Invalid lifecycle status '${map_status}' for record_ref=$(fp "$map_id"). Allowed: ${VALID_STATUSES// /|}"
+    fi
+    MAP_IDS+=("$map_id")
+    MAP_STATUSES+=("$map_status")
+done
+
+if [[ ${#MAP_IDS[@]} -eq 0 ]]; then
+    die "MEDICATION_SOFT_DELETE_MAPPINGS is set but contains no valid entries."
+fi
+
+GATE_OK=true
+
+# Every soft-deleted DB record must be explicitly approved.
+for id in "${DB_IDS[@]}"; do
+    if ! approved_status_for "$id" > /dev/null; then
+        err "Unreviewed soft-deleted record found: record_ref=$(fp "$id") is not in the allowlist."
+        GATE_OK=false
+    fi
+done
+
+# Every approval must still correspond to an existing soft-deleted record.
+for map_id in "${MAP_IDS[@]}"; do
+    found=false
+    for id in "${DB_IDS[@]}"; do
+        [[ "$id" == "$map_id" ]] && { found=true; break; }
+    done
+    if [[ "$found" == false ]]; then
+        err "Stale allowlist entry: record_ref=$(fp "$map_id") no longer matches a soft-deleted row."
+        GATE_OK=false
+    fi
+done
+
+# Migration p0_m01 applies a blanket entered_in_error UPDATE. Any other
+# approved status would be silently mis-mapped, so refuse it here.
+for i in "${!MAP_IDS[@]}"; do
+    map_id="${MAP_IDS[$i]}"
+    status="${MAP_STATUSES[$i]}"
+    if [[ "$status" != "entered_in_error" ]]; then
+        err "record_ref=$(fp "$map_id") approved as '${status}', but migration p0_m01 maps all"
+        err "soft-deleted rows to 'entered_in_error'. Change the migration (or fix the data)"
+        err "before approving a non-default status — the gate will not let the mismatch through."
+        GATE_OK=false
+    fi
+done
+
+if [[ "$GATE_OK" != true ]]; then
+    err "review_required=true"
+    err "Fail closed — allowlist validation failed."
+    append_summary "## ⚠️ Pre-migration Soft-Delete Audit — ALLOWLIST VALIDATION FAILED
+
+\`soft_deleted_count=${COUNT}\` — see job log for record fingerprints.
+
+**Migration blocked (fail closed).**"
+    exit 1
+fi
+
+log "review_required=false"
+log "✅ AUDIT PASSED — all ${COUNT} soft-deleted record(s) explicitly approved:"
+SUMMARY_ROWS=""
+for id in "${DB_IDS[@]}"; do
+    ref=$(fp "$id")
+    status=$(approved_status_for "$id")
+    log "  record_ref=${ref} approved_status=${status}"
+    SUMMARY_ROWS="${SUMMARY_ROWS}| \`${ref}\` | \`${status}\` |
+"
+done
+log "Reminder: remove the MEDICATION_SOFT_DELETE_MAPPINGS secret once the migration has run."
+
+append_summary "## ✅ Pre-migration Soft-Delete Audit — PASSED (per-record allowlist)
+
+\`soft_deleted_count=${COUNT}\`, all records explicitly approved:
+
+| record_ref | approved status |
+|------------|-----------------|
+${SUMMARY_ROWS}
+Remove the \`MEDICATION_SOFT_DELETE_MAPPINGS\` secret after the migration lands."
+
+exit 0
