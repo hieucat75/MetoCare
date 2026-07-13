@@ -98,6 +98,13 @@ def _validate_lifecycle_transition(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="on_hold chỉ được set bởi bác sĩ.",
         )
+    # ADR-11 'From states': completed is a planned course end — only an
+    # ACTIVE medication can complete, for every role.
+    if target == "completed" and current != "active":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"completed chỉ hợp lệ từ 'active' (hiện tại: '{current}').",
+        )
     # ADR-11 role matrix: entered_in_error is reserved to PATIENT (own
     # record) and ADMIN — a doctor cannot remove a record from clinical
     # processing this way.

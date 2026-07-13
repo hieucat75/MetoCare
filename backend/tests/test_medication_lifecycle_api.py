@@ -520,3 +520,20 @@ def test_verify_medication_doctor_only(client, patient, db):
     assert rows[0].new_value == "clinician_confirmed"
     assert rows[0].before_snapshot["verification_status"] == "patient_reported"
     assert rows[0].after_snapshot["verification_status"] == "clinician_confirmed"
+
+
+def test_doctor_cannot_complete_from_paused(client, patient, db):
+    med = _create_med(client, patient)
+    assert _patch(client, patient, med["id"], {"lifecycle_status": "paused"}).status_code == 200
+    import pytest
+    from fastapi import HTTPException
+
+    with pytest.raises(HTTPException) as exc:
+        medication_svc.update_medication(
+            db,
+            patient_id=patient["patient_id"],
+            med_id=med["id"],
+            data={"lifecycle_status": "completed"},
+            actor_role="doctor",
+        )
+    assert exc.value.status_code == 422
