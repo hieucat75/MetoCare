@@ -69,6 +69,9 @@ ALLOWED_TRANSITIONS = {
     ("on_hold", "discontinued"),
 }
 ADMIN_ROLES = {"internal_admin", "super_admin"}
+# Roles that may perform ANY lifecycle transition at all (Plan §6.1 names
+# only these; everything else — e.g. medical_reviewer — is read-only).
+LIFECYCLE_ROLES = {"patient", "doctor"} | ADMIN_ROLES
 # ADR-11 §Transition reasons — these transitions REQUIRE a status_reason;
 # any → entered_in_error also requires one (handled separately).
 REASON_REQUIRED_TRANSITIONS = {
@@ -92,6 +95,13 @@ def _validate_lifecycle_transition(
             detail=f"lifecycle_status đã là '{target}' — không có transition.",
         )
     role = (actor_role or "").lower()
+    # Explicit lifecycle-role allowlist: unlisted roles (e.g.
+    # medical_reviewer) must never change clinical state (Codex R14).
+    if role not in LIFECYCLE_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Vai trò này không được phép thay đổi lifecycle_status.",
+        )
     # ADR-11: entered_in_error is TERMINAL ("record should not exist") —
     # no outgoing transition for any role. Re-create the medication instead.
     if current == "entered_in_error":

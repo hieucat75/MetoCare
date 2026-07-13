@@ -688,3 +688,19 @@ def test_entered_in_error_excluded_from_adherence_reads(client, patient, db):
         if x.event_type == "lifecycle_change"
     ]
     assert len(events) == 1  # only the original entered_in_error transition
+
+
+def test_unlisted_role_cannot_transition_lifecycle(client, patient, db):
+    med = _create_med(client, patient)
+    import pytest
+    from fastapi import HTTPException
+
+    with pytest.raises(HTTPException) as exc:
+        medication_svc.update_medication(
+            db,
+            patient_id=patient["patient_id"],
+            med_id=med["id"],
+            data={"lifecycle_status": "discontinued", "status_reason": "x"},
+            actor_role="medical_reviewer",
+        )
+    assert exc.value.status_code == 403
