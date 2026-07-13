@@ -142,9 +142,9 @@ log "  Environment: ${ENV}"
 log "  Git SHA:     ${GIT_SHA}"
 
 az postgres flexible-server backup create \
-    --name "$POSTGRES_SERVER_NAME" \
+    --server-name "$POSTGRES_SERVER_NAME" \
     --resource-group "$RESOURCE_GROUP" \
-    --backup-name "$BACKUP_NAME" \
+    --name "$BACKUP_NAME" \
     --output none \
     || die "az postgres flexible-server backup create failed (request rejected). Aborting migration."
 
@@ -161,9 +161,9 @@ while [[ $POLL_COUNT -lt $MAX_POLLS ]]; do
 
     # Query the backup status
     PROVISIONING_STATE=$(az postgres flexible-server backup show \
-        --name "$POSTGRES_SERVER_NAME" \
+        --server-name "$POSTGRES_SERVER_NAME" \
         --resource-group "$RESOURCE_GROUP" \
-        --backup-name "$BACKUP_NAME" \
+        --name "$BACKUP_NAME" \
         --query "backupType" \
         --output tsv 2>/dev/null || echo "Querying")
 
@@ -171,18 +171,18 @@ while [[ $POLL_COUNT -lt $MAX_POLLS ]]; do
     # depending on the az CLI version. Try both paths.
     if [[ "$PROVISIONING_STATE" == "Querying" ]] || [[ -z "$PROVISIONING_STATE" ]]; then
         PROVISIONING_STATE=$(az postgres flexible-server backup show \
-            --name "$POSTGRES_SERVER_NAME" \
+            --server-name "$POSTGRES_SERVER_NAME" \
             --resource-group "$RESOURCE_GROUP" \
-            --backup-name "$BACKUP_NAME" \
+            --name "$BACKUP_NAME" \
             --query "properties.backupType" \
             --output tsv 2>/dev/null || echo "Unknown")
     fi
 
     # Also check provisioningState directly
     PROV_STATE=$(az postgres flexible-server backup show \
-        --name "$POSTGRES_SERVER_NAME" \
+        --server-name "$POSTGRES_SERVER_NAME" \
         --resource-group "$RESOURCE_GROUP" \
-        --backup-name "$BACKUP_NAME" \
+        --name "$BACKUP_NAME" \
         --query "provisioningState || properties.provisioningState" \
         --output tsv 2>/dev/null || echo "Unknown")
 
@@ -229,9 +229,9 @@ SUMMARY
     if [[ "$PROV_STATE" == "Failed" ]] || [[ "$PROV_STATE" == "Canceled" ]]; then
         # Retrieve full backup details for error context
         DETAILS=$(az postgres flexible-server backup show \
-            --name "$POSTGRES_SERVER_NAME" \
+            --server-name "$POSTGRES_SERVER_NAME" \
             --resource-group "$RESOURCE_GROUP" \
-            --backup-name "$BACKUP_NAME" \
+            --name "$BACKUP_NAME" \
             --output json 2>/dev/null || echo "{}")
         err "Backup failed with provisioningState='${PROV_STATE}'"
         err "Backup details: ${DETAILS}"
@@ -255,9 +255,9 @@ err "FAIL CLOSED: Migration will NOT run."
 err "Options:"
 err "  1. Check backup status manually:"
 err "     az postgres flexible-server backup show \\"
-err "        --name ${POSTGRES_SERVER_NAME} \\"
+err "        --server-name ${POSTGRES_SERVER_NAME} \\"
 err "        --resource-group ${RESOURCE_GROUP} \\"
-err "        --backup-name ${BACKUP_NAME}"
+err "        --name ${BACKUP_NAME}"
 err "  2. If backup eventually succeeded, re-trigger the pipeline."
 err "  3. If Azure backup service is degraded, escalate to PTH before proceeding."
 exit 1
