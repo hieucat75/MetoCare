@@ -67,13 +67,17 @@ log "  POSTGRES_SERVER_NAME: ${POSTGRES_SERVER_NAME}"
 log "  RESOURCE_GROUP:       ${RESOURCE_GROUP}"
 log "  DATABASE_URL:         [set — masked]"
 
+# psql only understands postgresql:// URIs — strip any SQLAlchemy driver
+# suffix (e.g. postgresql+psycopg://) before connecting.
+PSQL_URL="$(printf '%s' "$DATABASE_URL" | sed -E 's|^postgres(ql)?\+[A-Za-z0-9_]+://|postgresql://|')"
+
 # ---------------------------------------------------------------------------
 # Step 2: Run summary audit query
 # ---------------------------------------------------------------------------
 log ""
 log "--- Running soft-delete audit query on medications table ---"
 
-SUMMARY_RESULT=$(psql "$DATABASE_URL" --no-psqlrc --tuples-only --csv -c \
+SUMMARY_RESULT=$(psql "$PSQL_URL" --no-psqlrc --tuples-only --csv -c \
     "SELECT COUNT(*) FILTER (WHERE deleted_at IS NULL)     AS live_count,
             COUNT(*) FILTER (WHERE deleted_at IS NOT NULL) AS soft_deleted_count,
             COUNT(*)                                        AS total
@@ -145,7 +149,7 @@ else
     warn "---"
 
     # Retrieve each soft-deleted row with full detail
-    DETAIL_RESULT=$(psql "$DATABASE_URL" --no-psqlrc --tuples-only --csv -c \
+    DETAIL_RESULT=$(psql "$PSQL_URL" --no-psqlrc --tuples-only --csv -c \
         "SELECT id, name, deleted_at, deleted_by, note
          FROM medications
          WHERE deleted_at IS NOT NULL

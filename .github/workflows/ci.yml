@@ -376,10 +376,12 @@ jobs:
           } >> "$GITHUB_ENV"
 
       # ── Pre-migration soft-delete audit (automated gate, replaces manual step) ─
+      # DATABASE_URL must be the Key Vault mcp-database-url (same source as the
+      # migration job) — the GitHub DATABASE_URL secret is not a full psql URL.
       - name: Pre-migration soft-delete audit
         run: bash scripts/pre_migration_audit.sh
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_URL: ${{ env.DB_URL }}
           POSTGRES_SERVER_NAME: ${{ secrets.POSTGRES_SERVER_NAME }}
           RESOURCE_GROUP: ${{ secrets.RESOURCE_GROUP }}
 
