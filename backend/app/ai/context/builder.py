@@ -473,13 +473,13 @@ class ContextBuilder:
         try:
             rows = db.execute(
                 text("""
-                    SELECT name, dose, frequency, note, created_at
+                    SELECT name, dose, frequency, note, created_at, lifecycle_status
                     FROM medications
                     WHERE patient_id = (
                             SELECT id FROM patient_profiles WHERE user_id = :uid
                           )
                       AND deleted_at IS NULL
-                      AND lifecycle_status = 'active'
+                      AND lifecycle_status IN ('active', 'paused')
                     ORDER BY created_at DESC
                     LIMIT :limit
                 """),
@@ -496,6 +496,9 @@ class ContextBuilder:
                     "frequency": r[2] or "",
                     "note": r[3] or "",
                     "start_date": str(r[4])[:10] if r[4] else None,
+                    # ADR-11: paused stays clinically relevant but must never
+                    # read as "currently taking".
+                    "status": "đang tạm ngưng" if r[5] == "paused" else "đang dùng",
                 }
                 for r in rows
             ]

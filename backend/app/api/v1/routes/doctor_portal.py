@@ -175,7 +175,11 @@ def _build_timeline(db: Session, *, patient_id: str, limit: int) -> list[Timelin
     )
     medications = (
         db.query(Medication)
-        .filter(Medication.patient_id == patient_id, Medication.deleted_at.is_(None))
+        .filter(
+            Medication.patient_id == patient_id,
+            Medication.deleted_at.is_(None),
+            Medication.lifecycle_status != "entered_in_error",
+        )
         .all()
     )
     symptom_logs = (

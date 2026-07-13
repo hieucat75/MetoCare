@@ -178,6 +178,7 @@ def _fetch_medications(db: Session, patient_id: str) -> list[dict]:
             .where(
                 Medication.patient_id == patient_id,
                 Medication.deleted_at.is_(None),
+                Medication.lifecycle_status != "entered_in_error",
             )
             .order_by(Medication.created_at.asc())
         ).scalars()
