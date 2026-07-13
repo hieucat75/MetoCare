@@ -55,14 +55,18 @@ PATIENT_SETTABLE_STATUSES = {
 DEFAULT_VISIBLE_STATUSES = ["active", "paused", "on_hold"]
 COMPLETED_VISIBLE_STATUSES = ["completed", "discontinued"]
 
-# Plan §6.1 transition table for non-doctor callers (doctor may set all
-# states). target entered_in_error is additionally allowed from any source.
-NON_DOCTOR_TRANSITIONS = {
+# ADR-11 'From states' — the ONLY legal source→target pairs, for every
+# role (role overlays like on_hold-doctor-only apply on top). target
+# entered_in_error is additionally allowed from any non-terminal source.
+ALLOWED_TRANSITIONS = {
     ("paused", "active"),
+    ("on_hold", "active"),
     ("active", "paused"),
-    ("active", "completed"),  # ADR-11: completed only from active
+    ("active", "on_hold"),
+    ("active", "completed"),
     ("active", "discontinued"),
     ("paused", "discontinued"),
+    ("on_hold", "discontinued"),
 }
 ADMIN_ROLES = {"internal_admin", "super_admin"}
 # ADR-11 §Transition reasons — these transitions REQUIRE a status_reason;
@@ -128,10 +132,12 @@ def _validate_lifecycle_transition(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Chỉ bác sĩ có thể thay đổi trạng thái on_hold.",
             )
-        if role != "doctor" and (current, target) not in NON_DOCTOR_TRANSITIONS:
+        # Universal state machine — doctors are NOT exempt (Codex R12: a
+        # completed/discontinued drug must never be reactivated in place).
+        if (current, target) not in ALLOWED_TRANSITIONS:
             raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Transition '{current}' → '{target}' không được phép cho vai trò này.",
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Transition '{current}' → '{target}' không hợp lệ (ADR-11).",
             )
     if (
         (current, target) in REASON_REQUIRED_TRANSITIONS or target == "entered_in_error"
@@ -293,6 +299,14 @@ def update_medication(
 
     if not data:
         return record
+
+    # entered_in_error is terminal AND excluded from all clinical
+    # processing — no edit of any kind (Codex R12 P2).
+    if record.lifecycle_status == "entered_in_error":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Hồ sơ entered_in_error là trạng thái cuối — không thể chỉnh sửa.",
+        )
 
     # on_hold is a doctor-controlled state: NO edit of any kind by others
     # while it holds (Codex R1 P1 — non-lifecycle PATCH must not bypass it).
@@ -739,6 +753,11 @@ def report_non_adherence(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Medication not found.",
+        )
+    if med.lifecycle_status == "entered_in_error":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Hồ sơ entered_in_error không nhận báo cáo non-adherence.",
         )
     _write_audit(
         db,

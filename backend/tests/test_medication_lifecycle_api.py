@@ -342,7 +342,7 @@ def test_patient_cannot_reactivate_completed(client, patient):
         _patch(client, patient, med["id"], {"lifecycle_status": "completed"}).status_code == 200
     )
     r = _patch(client, patient, med["id"], {"lifecycle_status": "active"})
-    assert r.status_code == 403
+    assert r.status_code == 422  # invalid pair for every role (ADR-11)
 
 
 def test_discontinue_requires_reason(client, patient):
@@ -609,3 +609,40 @@ def test_verify_rejected_for_entered_in_error(client, patient, db):
             actor_role="doctor",
         )
     assert exc.value.status_code == 422
+
+
+
+def test_doctor_cannot_reactivate_completed_or_discontinued(client, patient, db):
+    import pytest
+    from fastapi import HTTPException
+
+    for end_state in ("completed", "discontinued"):
+        med = _create_med(client, patient, name=f"Med-{end_state}")
+        _force_lifecycle(db, med["id"], end_state)
+        with pytest.raises(HTTPException) as exc:
+            medication_svc.update_medication(
+                db,
+                patient_id=patient["patient_id"],
+                med_id=med["id"],
+                data={"lifecycle_status": "active", "status_reason": "x"},
+                actor_role="doctor",
+            )
+        assert exc.value.status_code == 422, end_state
+
+
+def test_entered_in_error_rejects_ordinary_edit_and_reports(client, patient, db):
+    med = _create_med(client, patient)
+    assert (
+        _patch(
+            client, patient, med["id"],
+            {"lifecycle_status": "entered_in_error", "status_reason": "nhập nhầm"},
+        ).status_code
+        == 200
+    )
+    assert _patch(client, patient, med["id"], {"dose": "999mg"}).status_code == 422
+    r = client.post(
+        f"/api/v1/patients/{patient['patient_id']}/medications/{med['id']}/report-non-adherence",
+        json={"note": "x"},
+        headers=patient["headers"],
+    )
+    assert r.status_code == 422
