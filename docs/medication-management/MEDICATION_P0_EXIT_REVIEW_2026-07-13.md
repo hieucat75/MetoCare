@@ -79,3 +79,39 @@ Sequence: (1) freeze merges; (2) tag release; (3) run deploy workflow against pr
 
 ---
 *Prepared by Agent 1 (Claude Code). Inputs: 30-check compliance review, mobile/API compat analysis, T-04 gate check (35/35 schema tests green), live staging schema+data verification (read-only ACA job, deleted after use), rollback rehearsal with roundtrip.*
+
+---
+
+# ADDENDUM — Re-run after service phase (S1→S3), same day
+
+**Reviewed state:** `main` @ `9975775` (PR-S1 #112, PR-S2 #113, PR-S3 #114 merged; staging deploy green, `migration_version: merge_c1m08_p0med`)
+**Verdict: READY FOR PRODUCTION** — pending PTH business acceptance (UAT) and the production-infra prerequisites in §4 of this document.
+
+## Updated scorecard
+
+| EC | Before | Now | Evidence |
+|----|--------|-----|----------|
+| EC-01 Schema | ⚠️ | ✅ PASS | Statement-first is the ONLY write path: service creates `medication_statements` in-transaction for create/edit/delete; repo-wide static guard test (`test_medication_write_path_guard.py`) fails CI on any bypass; seed script routed through the service. |
+| EC-02 API rollout | ⚠️ | ✅ PASS | 5 fields exposed additively (frozen-shape test updated deliberately); old payloads still validate; no contract broken across S1–S3. |
+| EC-03 Data migration | ✅ | ✅ PASS | Unchanged (verified live: 37 active w/ defaults, 2 PTH-approved exceptions). New soft-deletes now map consistently via the service. |
+| EC-04 Mobile stability | ✅ | ✅ PASS (code-level) | Additive-only responses; web client updated; physical device QA remains PTH's UAT item. |
+| EC-05 ADR compliance | ⚠️ | ✅ PASS | ADR-04 enforced (statement-first live); ADR-11 state machine universal (18 adversarial Codex rounds across S1–S3: 27 P1 + 9 P2 found & fixed in-PR); ADR-03 audit writer live. 3 PTH policy items open (below) — none violate a baseline ADR. |
+| EC-06 Rollback | ✅ | ✅ PASS | No new migrations since the rehearsal; roundtrip verified. |
+| EC-07 Audit trail | ❌ | ✅ PASS | Audit writer live: create/update/lifecycle_change/verification_change with before/after snapshots; observational events NULL-snapshot; T-04 items incl. `status_reason → transition_reason` covered by behavioral tests (48 new tests across S1–S3). |
+| EC-08 Documentation | 🔶 | 🔶 PTH signs | No ADR edited during P0. Known plan deviations documented: §6.2 expired job NOT built (needs `end_date`); `correction` assertion_type pending taxonomy decision. |
+
+## Open items (tracked, non-blocking for staging UAT)
+
+1. **PTH policy (from S1):** statement backfill for 37 pre-P0 rows; flush-only service refactor; `correction` assertion_type (ADR vocabulary).
+2. **Backend follow-up (from S3):** idempotency for expired re-assert statements (duplicate pending `continued_use` possible; zero risk today — nothing produces `expired` yet).
+3. **Future phase:** §6.2 expired-detection job (requires `end_date` column).
+
+## Production gate (unchanged from §4)
+
+Provision production ACA env + Key Vault; **prefer non-Burstable Postgres tier** (real on-demand backups; Burstable auto-falls back to PITR-verify); fresh audit-gate pass on production data; smoke per §6; 48h observation; sau go-live: **freeze module Medication 1–2 tuần** thu bug/feedback/UX/performance trước khi mở Gate 2 (per PTH direction).
+
+## Declaration readiness
+
+All technical gates green. Per PTH's terminology ruling: "Medication **Foundation** v1.0" was implementable at schema-completion; with the application layer now shipped and verified, the original **"Medication Architecture v1.0 — Successfully Implemented"** declaration (EXIT_CRITERIA §Declaration) is signable at PTH's discretion after UAT.
+
+*Re-run by Agent 1. Inputs: 18 Codex review rounds (S1: R4 PASS, S2: R15 PASS, S3: R3 PASS), full unit+integration suites green on every merge, staging deploys green (runs 29225358174 / 29233539626 / 29244726460).*
