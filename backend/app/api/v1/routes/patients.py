@@ -557,8 +557,9 @@ def list_medications(
     _check_read_access(db, patient_id=patient_id, requester=user)
 
     if lifecycle_status is not None:
+        _is_admin = user.role in ("internal_admin", "super_admin")
         if lifecycle_status == "all":
-            if user.role not in ("internal_admin", "super_admin"):
+            if not _is_admin:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="lifecycle_status=all chỉ dành cho admin.",
@@ -567,6 +568,13 @@ def list_medications(
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=f"Invalid lifecycle_status '{lifecycle_status}'.",
+            )
+        elif lifecycle_status == "entered_in_error" and not _is_admin:
+            # Mistaken records are excluded from patient/doctor display —
+            # audit/admin view only.
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="lifecycle_status=entered_in_error chỉ dành cho admin.",
             )
 
     total, items = medication_svc.list_medications(

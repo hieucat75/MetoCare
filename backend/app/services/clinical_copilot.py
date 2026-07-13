@@ -218,7 +218,7 @@ def _medication_records(db: Session, patient_id: str) -> list[dict]:
             SELECT id, name, dose, frequency, created_at
             FROM medications
             WHERE patient_id = :pid AND deleted_at IS NULL
-              AND lifecycle_status IN ('active', 'paused', 'on_hold')
+              AND lifecycle_status = 'active'
             ORDER BY created_at DESC
             LIMIT :limit
             """

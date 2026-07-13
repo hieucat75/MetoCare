@@ -436,3 +436,21 @@ def test_expired_re_review_rejects_mixed_payload(client, patient, db):
         {"lifecycle_status": "active", "dose": "1000mg"},
     )
     assert r.status_code == 422
+
+
+def test_entered_in_error_filter_admin_only(client, patient):
+    r = _list(client, patient, lifecycle_status="entered_in_error")
+    assert r.status_code == 403
+
+
+def test_re_review_statement_has_effective_from(client, patient, db):
+    med = _create_med(client, patient)
+    _force_lifecycle(db, med["id"], "expired")
+    assert _patch(client, patient, med["id"], {"lifecycle_status": "active"}).status_code == 200
+    stmt = db.execute(
+        select(MedicationStatement).where(
+            MedicationStatement.related_medication_id == med["id"],
+            MedicationStatement.assertion_type == "continued_use",
+        )
+    ).scalar_one()
+    assert stmt.effective_from is not None

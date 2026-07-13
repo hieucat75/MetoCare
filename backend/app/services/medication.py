@@ -339,6 +339,8 @@ def update_medication(
                     raw_drug_name=record.name,
                     raw_dose=record.dose,
                     raw_frequency=record.frequency,
+                    # Case A/B/C gap reconciliation needs the re-assert date.
+                    effective_from=utcnow().date(),
                     # Plan §6.3 Case D: doctor-prescribed expired records go
                     # to the clinician queue; patient-resolvable otherwise.
                     statement_status=(

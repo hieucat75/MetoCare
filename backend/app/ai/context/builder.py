@@ -479,7 +479,7 @@ class ContextBuilder:
                             SELECT id FROM patient_profiles WHERE user_id = :uid
                           )
                       AND deleted_at IS NULL
-                      AND lifecycle_status IN ('active', 'paused', 'on_hold')
+                      AND lifecycle_status = 'active'
                     ORDER BY created_at DESC
                     LIMIT :limit
                 """),
