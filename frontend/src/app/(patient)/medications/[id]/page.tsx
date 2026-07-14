@@ -19,6 +19,8 @@ import { AdherenceStatusBadge } from '@/components/patient/medications/today-sta
 import { MedModal } from '@/components/patient/medications/med-modal'
 import { MedicationOverflowMenu } from '@/components/patient/medications/overflow-menu'
 import { UsageInstructionsCard } from '@/components/patient/medications/usage-instructions'
+import { InteractionsCard } from '@/components/patient/medications/interactions-card'
+import { SideEffectsCard } from '@/components/patient/medications/side-effects-card'
 import {
   getMedications,
   updateMedicationLifecycle,
@@ -464,6 +466,13 @@ export default function MedicationDetailPage() {
 
       {/* Cách sử dụng — M3: user note vs professional guidance, kept apart */}
       <UsageInstructionsCard note={medication.note} />
+
+      {/* Tương tác thuốc + Tác dụng phụ — M4: structure/empty-state only, no
+          interaction/side-effect engine exists yet. Always called with empty
+          arrays today — the data contract exists so Gate 2 can wire a real
+          source without touching these components. */}
+      <InteractionsCard medicationName={medication.name} interactions={[]} />
+      <SideEffectsCard groups={[]} />
 
       {/* Dose / timing chips */}
       {(medication.dose || medication.frequency) && (
