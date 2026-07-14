@@ -214,41 +214,34 @@ log "Backup create request accepted. Polling for completion..."
 log "  Timeout: ${MAX_WAIT_SECONDS}s (max ${MAX_POLLS} polls every ${POLL_INTERVAL_SECONDS}s)"
 
 # ---------------------------------------------------------------------------
-# Poll until Succeeded or timeout
+# Poll until completed or timeout.
+#
+# This az CLI version's `backup show` response has NO provisioningState
+# field at all (verified against a live GeneralPurpose server 2026-07-14 —
+# the object is only {backupType, completedTime, id, name, resourceGroup,
+# source, systemData, type}). Success is `completedTime` being non-empty.
+# While the backup is still running, `backup show` 404s (object doesn't
+# exist yet) — that is treated as "still in progress", not failure.
 # ---------------------------------------------------------------------------
 POLL_COUNT=0
 while [[ $POLL_COUNT -lt $MAX_POLLS ]]; do
     POLL_COUNT=$(( POLL_COUNT + 1 ))
     ELAPSED=$(( POLL_COUNT * POLL_INTERVAL_SECONDS ))
 
-    # Query the backup status
-    PROVISIONING_STATE=$(az postgres flexible-server backup show \
+    COMPLETED_TIME=$(az postgres flexible-server backup show \
         --server-name "$POSTGRES_SERVER_NAME" \
         --resource-group "$RESOURCE_GROUP" \
         --name "$BACKUP_NAME" \
-        --query "backupType" \
-        --output tsv 2>/dev/null || echo "Querying")
+        --query "completedTime" \
+        --output tsv 2>/dev/null || echo "")
 
-    # The backup show command returns provisioningState via a different path
-    # depending on the az CLI version. Try both paths.
-    if [[ "$PROVISIONING_STATE" == "Querying" ]] || [[ -z "$PROVISIONING_STATE" ]]; then
-        PROVISIONING_STATE=$(az postgres flexible-server backup show \
-            --server-name "$POSTGRES_SERVER_NAME" \
-            --resource-group "$RESOURCE_GROUP" \
-            --name "$BACKUP_NAME" \
-            --query "properties.backupType" \
-            --output tsv 2>/dev/null || echo "Unknown")
+    if [[ -n "$COMPLETED_TIME" ]] && [[ "$COMPLETED_TIME" != "None" ]]; then
+        PROV_STATE="Succeeded"
+    else
+        PROV_STATE="InProgress"
     fi
 
-    # Also check provisioningState directly
-    PROV_STATE=$(az postgres flexible-server backup show \
-        --server-name "$POSTGRES_SERVER_NAME" \
-        --resource-group "$RESOURCE_GROUP" \
-        --name "$BACKUP_NAME" \
-        --query "provisioningState || properties.provisioningState" \
-        --output tsv 2>/dev/null || echo "Unknown")
-
-    log "  Poll ${POLL_COUNT}/${MAX_POLLS} (${ELAPSED}s elapsed): provisioningState='${PROV_STATE}'"
+    log "  Poll ${POLL_COUNT}/${MAX_POLLS} (${ELAPSED}s elapsed): completedTime='${COMPLETED_TIME}'"
 
     if [[ "$PROV_STATE" == "Succeeded" ]]; then
         log "✅ Backup completed successfully!"
@@ -288,19 +281,7 @@ SUMMARY
         exit 0
     fi
 
-    if [[ "$PROV_STATE" == "Failed" ]] || [[ "$PROV_STATE" == "Canceled" ]]; then
-        # Retrieve full backup details for error context
-        DETAILS=$(az postgres flexible-server backup show \
-            --server-name "$POSTGRES_SERVER_NAME" \
-            --resource-group "$RESOURCE_GROUP" \
-            --name "$BACKUP_NAME" \
-            --output json 2>/dev/null || echo "{}")
-        err "Backup failed with provisioningState='${PROV_STATE}'"
-        err "Backup details: ${DETAILS}"
-        die "Pre-migration backup failed. Aborting migration (fail closed)."
-    fi
-
-    # Still running / unknown — wait and retry
+    # Still running — wait and retry
     if [[ $POLL_COUNT -lt $MAX_POLLS ]]; then
         sleep "$POLL_INTERVAL_SECONDS"
     fi
@@ -309,8 +290,8 @@ done
 # ---------------------------------------------------------------------------
 # Timeout — fail closed
 # ---------------------------------------------------------------------------
-err "Pre-migration backup did not reach 'Succeeded' state within ${MAX_WAIT_SECONDS}s."
-err "Last known provisioningState: '${PROV_STATE}'"
+err "Pre-migration backup did not report a completedTime within ${MAX_WAIT_SECONDS}s."
+err "Last known completedTime: '${COMPLETED_TIME}'"
 err "Backup name: ${BACKUP_NAME}"
 err ""
 err "FAIL CLOSED: Migration will NOT run."
