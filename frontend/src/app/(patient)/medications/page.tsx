@@ -36,6 +36,7 @@ import {
   LifecycleBadges,
   DiscontinueModal,
 } from '@/components/patient/medications/lifecycle'
+import { TodayStatusCard, AdherenceStatusBadge } from '@/components/patient/medications/today-status'
 import {
   MedicationNameAutocomplete,
   MEDICATION_SAFETY_NOTICE,
@@ -61,6 +62,10 @@ const textareaClass =
 type MedRowProps = {
   med: Medication
   todayStatus: TodayMedication | undefined
+  /** False when the adherence-summary fetch hasn't succeeded — suppresses the
+   *  adherence badge so it never fabricates "cần chú ý"/"đã bỏ lỡ" from a
+   *  fetch failure rather than real absence of data. */
+  adherenceLoaded: boolean
   onEdit: () => void
   onDelete: () => void
   onView: () => void
@@ -72,6 +77,7 @@ type MedRowProps = {
 function MedRow({
   med,
   todayStatus,
+  adherenceLoaded,
   onEdit,
   onDelete,
   onView,
@@ -177,6 +183,11 @@ function MedRow({
               <span className="mt-0.5 block truncate text-[15px] text-neu-subtle">{med.note}</span>
             )}
             <LifecycleBadges med={med} />
+            {isActive && adherenceLoaded && (
+              <span className="mt-1 flex flex-wrap items-center gap-1.5">
+                <AdherenceStatusBadge med={med} today={todayStatus} />
+              </span>
+            )}
           </span>
         </button>
         {/* edit/delete only while the record is live (active/paused) —
@@ -628,11 +639,50 @@ export default function MedicationsPage() {
   const [discontinuing, setDiscontinuing] = React.useState<Medication | null>(null)
   const [showHistory, setShowHistory] = React.useState(false)
 
+  // Reset state synchronously, during render, the moment `patientId` changes
+  // — this is React's documented pattern for "resetting state when a prop
+  // changes" (as opposed to resetting in an effect, which would commit one
+  // paint of the OLD patient's meds/adherence under the NEW patientId before
+  // `load()` gets a chance to run).
+  const [loadedForPatientId, setLoadedForPatientId] = React.useState(patientId)
+  if (patientId !== loadedForPatientId) {
+    setLoadedForPatientId(patientId)
+    setMeds([])
+    setSummary(null)
+    setAdherence({})
+    setLoading(true)
+    setError(null)
+  }
+
+  // Two separate epoch counters, not one shared counter: `loadEpochRef` gates
+  // only `load()`'s own completion/loading-state, so a background adherence
+  // refresh can never strand the page in its loading skeleton by invalidating
+  // an in-flight `load()`. `adherenceEpochRef` gates the adherence snapshot
+  // specifically (bumped by both the interval AND `load()`, since a full load
+  // also produces a fresher snapshot that should supersede any in-flight
+  // background refresh) — this still prevents an out-of-order interval
+  // response from overwriting newer data.
+  const loadEpochRef = React.useRef(0)
+  const adherenceEpochRef = React.useRef(0)
+  // Kept in sync every render (not in an effect, so it's current before any
+  // effect or async callback can run) — an epoch match alone doesn't encode
+  // *which patient* a response belongs to, so a stale response for a patient
+  // this page no longer shows must still be rejected even if its epoch
+  // happens to still be current.
+  const patientIdRef = React.useRef(patientId)
+  patientIdRef.current = patientId
+
   const load = React.useCallback(() => {
     if (!patientId) {
       setLoading(false)
       return Promise.resolve()
     }
+    const loadEpoch = ++loadEpochRef.current
+    // Independently bumped (not copied from loadEpoch) — it's the same
+    // monotonic sequence the interval increments, so a full load correctly
+    // supersedes an in-flight interval fetch, and `load()`'s own adherence
+    // write is gated by this sequence rather than the unrelated load sequence.
+    const adherenceEpoch = ++adherenceEpochRef.current
     setLoading(true)
     setError(null)
     return Promise.all([
@@ -642,23 +692,68 @@ export default function MedicationsPage() {
       getAdherenceSummary(patientId).catch(() => null),
     ])
       .then(([medsRes, expiredRes, summaryRes]) => {
-        setMeds([...(expiredRes?.items ?? []), ...medsRes.items])
-        if (summaryRes) {
+        const stillCurrentPatient = patientId === patientIdRef.current
+        if (loadEpoch === loadEpochRef.current && stillCurrentPatient) {
+          setMeds([...(expiredRes?.items ?? []), ...medsRes.items])
+        }
+        // Always set (never leave a stale summary/adherence from a prior
+        // successful load in place) — a failed refresh must show "no data"
+        // rather than yesterday's now-inaccurate "hôm nay" snapshot.
+        if (adherenceEpoch === adherenceEpochRef.current && stillCurrentPatient) {
+          setSummary(summaryRes)
+          const map: Record<string, TodayMedication> = {}
+          if (summaryRes) {
+            for (const m of summaryRes.today_medications) {
+              map[m.medication_id] = m
+            }
+          }
+          setAdherence(map)
+        }
+      })
+      .catch((err: Error) => {
+        if (loadEpoch !== loadEpochRef.current || patientId !== patientIdRef.current) return
+        setError(err.message)
+      })
+      .finally(() => {
+        if (loadEpoch === loadEpochRef.current && patientId === patientIdRef.current) {
+          setLoading(false)
+        }
+      })
+  }, [patientId, showHistory])
+
+  React.useEffect(() => {
+    load()
+  }, [load])
+
+  // Silently re-fetch just the time-sensitive adherence snapshot on an
+  // interval — the "hôm nay" rollup and per-med badges are only accurate
+  // as of the last fetch; without this a tab left open across the day
+  // boundary keeps showing yesterday's "taken today" as current. Uses its
+  // own request (not `load()`) so it never flips the page into the loading
+  // skeleton for a background refresh.
+  React.useEffect(() => {
+    if (!patientId) return
+    const ADHERENCE_REFRESH_INTERVAL_MS = 5 * 60 * 1000
+    const id = setInterval(() => {
+      const epoch = ++adherenceEpochRef.current
+      getAdherenceSummary(patientId)
+        .then((summaryRes) => {
+          if (epoch !== adherenceEpochRef.current || patientId !== patientIdRef.current) return
           setSummary(summaryRes)
           const map: Record<string, TodayMedication> = {}
           for (const m of summaryRes.today_medications) {
             map[m.medication_id] = m
           }
           setAdherence(map)
-        }
-      })
-      .catch((err: Error) => setError(err.message))
-      .finally(() => setLoading(false))
-  }, [patientId, showHistory])
-
-  React.useEffect(() => {
-    load()
-  }, [load])
+        })
+        .catch(() => {
+          if (epoch !== adherenceEpochRef.current || patientId !== patientIdRef.current) return
+          setSummary(null)
+          setAdherence({})
+        })
+    }, ADHERENCE_REFRESH_INTERVAL_MS)
+    return () => clearInterval(id)
+  }, [patientId])
 
   if (!patientId) {
     return (
@@ -679,6 +774,15 @@ export default function MedicationsPage() {
   return (
     <div className="p-4 space-y-4 max-w-md mx-auto pb-28">
       <h1 className="px-1 text-[21px] font-extrabold tracking-[-0.02em] text-neu-text">Thuốc</h1>
+
+      {/* "Tình trạng hôm nay" — real-data-only today rollup, first thing patients see.
+          Gated on `summary` (not just !error): getAdherenceSummary() swallows its own
+          fetch failure via .catch(() => null), so a transient error must not render
+          the card with an empty/stale adherence map — that would fabricate "chưa ghi
+          nhận"/"bỏ lỡ" for medications we simply failed to check. */}
+      {!loading && !error && summary && (
+        <TodayStatusCard meds={meds} adherence={adherence} currentStreak={summary.current_streak} />
+      )}
 
       {/* Adherence Summary Card */}
       {loading && <AdherenceSummarySkeleton />}
@@ -720,6 +824,7 @@ export default function MedicationsPage() {
               key={med.id}
               med={med}
               todayStatus={adherence[med.id]}
+              adherenceLoaded={summary !== null}
               patientId={patientId}
               onView={() => router.push(`/medications/${med.id}`)}
               onEdit={() => {
