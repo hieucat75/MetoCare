@@ -1,0 +1,337 @@
+# =============================================================================
+# Azure Production Deploy — MANUAL ONLY (workflow_dispatch, confirm=PRODUCTION)
+#
+# Mirrors the ci.yml deploy-staging job with production values:
+#   RG rg-metocare-prod / ENV cae-metocare-prod / KV discovered at runtime.
+# Env-scoped secrets (GitHub environment azure-production):
+#   RESOURCE_GROUP, POSTGRES_SERVER_NAME (+ repo-level AZURE_* OIDC ids).
+# Provisioning prerequisite: scripts in the P0 exit review §4.
+# =============================================================================
+name: Azure Production Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type PRODUCTION to confirm"
+        required: true
+
+permissions:
+  id-token: write
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  RG: rg-metocare-prod
+  ENV_NAME: cae-metocare-prod
+  BACKEND_APP: ca-metocare-backend
+  FRONTEND_APP: ca-metocare-frontend
+
+jobs:
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    environment: azure-production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Require explicit confirmation
+        run: |
+          if [ "${{ inputs.confirm }}" != "PRODUCTION" ]; then
+            echo "::error::Type PRODUCTION in the confirm input to deploy."
+            exit 1
+          fi
+
+
+      # ── Resolve image tag (SHA8 + epoch for uniqueness) ──────────────────
+      - name: Resolve image tag
+        id: tag
+        run: |
+          SHA8=$(git rev-parse --short=8 HEAD)
+          EPOCH=$(date +%s)
+          echo "tag=${SHA8}-${EPOCH}" >> "$GITHUB_OUTPUT"
+          echo "sha8=${SHA8}" >> "$GITHUB_OUTPUT"
+
+      # ── Azure OIDC login ──────────────────────────────────────────────────
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Resolve production Key Vault
+        run: |
+          KV=$(az keyvault list -g "$RG" --query "[0].name" -o tsv)
+          if [ -z "$KV" ]; then
+            echo "::error::No Key Vault found in $RG — run provisioning first."
+            exit 1
+          fi
+          echo "KV_NAME=$KV" >> "$GITHUB_ENV"
+          echo "Key Vault: $KV"
+
+      - name: Ensure containerapp CLI extension
+        run: az extension add --name containerapp --upgrade --only-show-errors
+
+      # ── Resolve ACA environment domain (needed to bake backend FQDN into frontend) ──
+      - name: Compute Container Apps FQDNs
+        run: |
+          DOMAIN=$(az containerapp env show -g "$RG" -n "$ENV_NAME" \
+            --query 'properties.defaultDomain' -o tsv)
+          if [ -z "$DOMAIN" ]; then
+            echo "::error::Could not resolve ACA env defaultDomain for $ENV_NAME — aborting"
+            exit 1
+          fi
+          echo "BACKEND_FQDN=${BACKEND_APP}.${DOMAIN}" >> "$GITHUB_ENV"
+          echo "FRONTEND_FQDN=${FRONTEND_APP}.${DOMAIN}" >> "$GITHUB_ENV"
+          echo "Backend:  https://${BACKEND_APP}.${DOMAIN}"
+          echo "Frontend: https://${FRONTEND_APP}.${DOMAIN}"
+
+      # ── GHCR login ────────────────────────────────────────────────────────
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── Build & push backend image ────────────────────────────────────────
+      - name: Build & push backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ github.repository_owner }}/metocare-backend:${{ steps.tag.outputs.tag }}
+
+      # ── Build & push frontend image (NEXT_PUBLIC_API_URL baked at build) ──
+      - name: Build & push frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: true
+          build-args: |
+            NEXT_PUBLIC_API_URL=https://${{ env.BACKEND_FQDN }}/api/v1
+          tags: ${{ env.REGISTRY }}/${{ github.repository_owner }}/metocare-frontend:${{ steps.tag.outputs.tag }}
+
+      # ── Resume Postgres if stopped ────────────────────────────────────────
+      - name: Resume Postgres if stopped
+        run: |
+          PG_NAME="${{ secrets.POSTGRES_SERVER_NAME }}"
+          STATE=$(az postgres flexible-server show -g "$RG" -n "$PG_NAME" --query state -o tsv 2>/dev/null || echo "Unknown")
+          echo "Postgres state: $STATE"
+          if [ "$STATE" = "Stopped" ]; then
+            az postgres flexible-server start -g "$RG" -n "$PG_NAME"
+            until [ "$(az postgres flexible-server show -g "$RG" -n "$PG_NAME" --query state -o tsv)" = "Ready" ]; do
+              echo "  waiting for Postgres..."; sleep 10
+            done
+          fi
+
+      # ── Read secrets from Key Vault ───────────────────────────────────────
+      - name: Read secrets from Key Vault
+        run: |
+          DB_URL=$(az keyvault secret show --vault-name "$KV_NAME" -n mcp-database-url --query value -o tsv)
+          SECRET_KEY=$(az keyvault secret show --vault-name "$KV_NAME" -n mcp-secret-key --query value -o tsv)
+          ENC_KEYS=$(az keyvault secret show --vault-name "$KV_NAME" -n mcp-encryption-keys --query value -o tsv)
+          APPI=$(az keyvault secret show --vault-name "$KV_NAME" -n appinsights-connection-string --query value -o tsv)
+          DOC_INTEL_ENDPOINT=$(az keyvault secret show --vault-name "$KV_NAME" -n azure-doc-intel-endpoint --query value -o tsv)
+          DOC_INTEL_KEY=$(az keyvault secret show --vault-name "$KV_NAME" -n azure-doc-intel-key --query value -o tsv)
+          DEEPSEEK_KEY=$(az keyvault secret show --vault-name "$KV_NAME" -n deepseek-api-key --query value -o tsv)
+          # OpenRouter — Meto AI primary gateway (Claude Sonnet 4.5). DeepSeek stays as fallback.
+          OPENROUTER_KEY=$(az keyvault secret show --vault-name "$KV_NAME" -n openrouter-api-key --query value -o tsv)
+          echo "::add-mask::$DB_URL"; echo "::add-mask::$SECRET_KEY"
+          echo "::add-mask::$ENC_KEYS"; echo "::add-mask::$DOC_INTEL_KEY"; echo "::add-mask::$DEEPSEEK_KEY"; echo "::add-mask::$OPENROUTER_KEY"
+          {
+            echo "DB_URL<<EOF"; echo "$DB_URL"; echo "EOF"
+            echo "SECRET_KEY<<EOF"; echo "$SECRET_KEY"; echo "EOF"
+            echo "ENC_KEYS<<EOF"; echo "$ENC_KEYS"; echo "EOF"
+            echo "APPI<<EOF"; echo "$APPI"; echo "EOF"
+            echo "DOC_INTEL_ENDPOINT<<EOF"; echo "$DOC_INTEL_ENDPOINT"; echo "EOF"
+            echo "DOC_INTEL_KEY<<EOF"; echo "$DOC_INTEL_KEY"; echo "EOF"
+            echo "DEEPSEEK_KEY<<EOF"; echo "$DEEPSEEK_KEY"; echo "EOF"
+            echo "OPENROUTER_KEY<<EOF"; echo "$OPENROUTER_KEY"; echo "EOF"
+          } >> "$GITHUB_ENV"
+
+      # ── Pre-migration soft-delete audit (automated gate, replaces manual step) ─
+      # DATABASE_URL must be the Key Vault mcp-database-url (same source as the
+      # migration job) — the GitHub DATABASE_URL secret is not a full psql URL.
+      # MEDICATION_SOFT_DELETE_MAPPINGS: per-record review approvals
+      # ("<id>:<status>,..."), a SECRET so ids never reach the public log.
+      # Remove the secret once the P0 migration has run.
+      - name: Pre-migration soft-delete audit
+        run: bash scripts/pre_migration_audit.sh
+        env:
+          DATABASE_URL: ${{ env.DB_URL }}
+          POSTGRES_SERVER_NAME: ${{ secrets.POSTGRES_SERVER_NAME }}
+          RESOURCE_GROUP: ${{ secrets.RESOURCE_GROUP }}
+          MEDICATION_SOFT_DELETE_MAPPINGS: ${{ secrets.MEDICATION_SOFT_DELETE_MAPPINGS }}
+
+      # ── Pre-migration DB backup (RISK-4 fix) ─────────────────────────────
+      # ENV arg is literal "staging" — env.ENVIRONMENT is only defined in the
+      # test jobs, so referencing it here expands to empty and the script's
+      # usage check fails.
+      - name: Pre-migration DB backup
+        run: bash scripts/pre_migration_backup.sh staging $(date +%Y%m%dT%H%M%S) ${{ github.sha }}
+        env:
+          AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
+          POSTGRES_SERVER_NAME: ${{ secrets.POSTGRES_SERVER_NAME }}
+          RESOURCE_GROUP: ${{ secrets.RESOURCE_GROUP }}
+
+      # ── Run Alembic migration (one-shot Container Apps Job) ───────────────
+      - name: Run Alembic migration
+        run: |
+          IMG="${REGISTRY}/${{ github.repository_owner }}/metocare-backend:${{ steps.tag.outputs.tag }}"
+          JOB="caj-metocare-migrate"
+          az containerapp job delete -g "$RG" -n "$JOB" --yes -o none 2>/dev/null || true
+          az containerapp job create \
+            --name "$JOB" --resource-group "$RG" --environment "$ENV_NAME" \
+            --image "$IMG" \
+            --trigger-type Manual \
+            --replica-timeout 600 --replica-retry-limit 1 \
+            --parallelism 1 --replica-completion-count 1 \
+            --cpu 0.5 --memory 1.0Gi \
+            --secrets "db-url=$DB_URL" \
+            --env-vars "MCP_DATABASE_URL=secretref:db-url" "MCP_ENV=production" \
+            --command "alembic" --args "upgrade" "head" \
+            -o none
+          az containerapp job start -g "$RG" -n "$JOB" -o none
+          for i in $(seq 1 40); do
+            ST=$(az containerapp job execution list -g "$RG" -n "$JOB" \
+              --query "[0].properties.status" -o tsv 2>/dev/null || echo Running)
+            echo "  $i: $ST"
+            [ "$ST" = "Succeeded" ] && break
+            [ "$ST" = "Failed" ] && { echo "::error::Alembic migration failed"; exit 1; }
+            sleep 10
+          done
+
+      # ── Deploy backend Container App ──────────────────────────────────────
+      - name: Deploy backend to ACA
+        run: |
+          IMG="${REGISTRY}/${{ github.repository_owner }}/metocare-backend:${{ steps.tag.outputs.tag }}"
+          COMMON_SECRETS="db-url=$DB_URL secret-key=$SECRET_KEY enc-keys=$ENC_KEYS appi=$APPI doc-intel-key=$DOC_INTEL_KEY deepseek-api-key=$DEEPSEEK_KEY openrouter-api-key=$OPENROUTER_KEY"
+          COMMON_ENV="MCP_ENV=production MCP_DEBUG=false \
+            MCP_DATABASE_URL=secretref:db-url MCP_SECRET_KEY=secretref:secret-key \
+            MCP_ENCRYPTION_KEYS=secretref:enc-keys \
+            APPLICATIONINSIGHTS_CONNECTION_STRING=secretref:appi \
+            MCP_CORS_ALLOWED_ORIGINS=https://${FRONTEND_FQDN},https://app.metocare.me \
+            MCP_AI_MODE=production MCP_LLM_PROVIDER=deepseek MCP_OCR_MODE=mock \
+            MCP_OCR_WORKER_ENABLED=false MCP_RAG_ENABLED=false \
+            MCP_STORAGE_MODE=local MCP_RATELIMIT_BACKEND=memory \
+            MCP_METRICS_ENABLED=true MCP_ENABLE_DOCS=false \
+            MCP_FEATURE_OCR=true MCP_FEATURE_OCR_CLOUD_FALLBACK=true \
+            MCP_OCR_CLOUD_PROVIDER=azure \
+            AZURE_DOC_INTEL_ENDPOINT=${DOC_INTEL_ENDPOINT} \
+            AZURE_DOC_INTEL_KEY=secretref:doc-intel-key \
+            MCP_DEEPSEEK_API_KEY=secretref:deepseek-api-key \
+            MCP_OPENROUTER_API_KEY=secretref:openrouter-api-key \
+            MCP_OPENROUTER_PRIMARY_MODEL=anthropic/claude-sonnet-4.5 \
+            MCP_OPENROUTER_FALLBACK_MODEL=openai/gpt-4o-mini"
+          SUFFIX="be-${{ steps.tag.outputs.sha8 }}-$(date +%s)"
+          if az containerapp show -g "$RG" -n "$BACKEND_APP" -o none 2>/dev/null; then
+            az containerapp secret set -g "$RG" -n "$BACKEND_APP" --secrets $COMMON_SECRETS -o none
+            az containerapp update -g "$RG" -n "$BACKEND_APP" --image "$IMG" \
+              --revision-suffix "$SUFFIX" \
+              --min-replicas 1 --set-env-vars $COMMON_ENV -o none
+          else
+            az containerapp create -g "$RG" -n "$BACKEND_APP" --environment "$ENV_NAME" \
+              --image "$IMG" --target-port 8000 --ingress external \
+              --min-replicas 1 --max-replicas 1 --cpu 0.5 --memory 1.0Gi \
+              --revision-suffix "$SUFFIX" \
+              --secrets $COMMON_SECRETS --env-vars $COMMON_ENV -o none
+          fi
+
+      # ── Deploy frontend Container App ─────────────────────────────────────
+      - name: Deploy frontend to ACA
+        run: |
+          IMG="${REGISTRY}/${{ github.repository_owner }}/metocare-frontend:${{ steps.tag.outputs.tag }}"
+          API_URL="https://${BACKEND_FQDN}/api/v1"
+          SUFFIX="fe-${{ steps.tag.outputs.sha8 }}-$(date +%s)"
+          if az containerapp show -g "$RG" -n "$FRONTEND_APP" -o none 2>/dev/null; then
+            az containerapp update -g "$RG" -n "$FRONTEND_APP" --image "$IMG" \
+              --revision-suffix "$SUFFIX" \
+              --min-replicas 1 --set-env-vars "NEXT_PUBLIC_API_URL=$API_URL" -o none
+          else
+            az containerapp create -g "$RG" -n "$FRONTEND_APP" --environment "$ENV_NAME" \
+              --image "$IMG" --target-port 3000 --ingress external \
+              --min-replicas 1 --max-replicas 1 --cpu 0.25 --memory 0.5Gi \
+              --revision-suffix "$SUFFIX" \
+              --env-vars "NEXT_PUBLIC_API_URL=$API_URL" -o none
+          fi
+
+      # ── CORS guard — ensure app.metocare.me survives every deploy ─────────
+      - name: CORS guard
+        run: |
+          CURRENT=$(az containerapp show -g "$RG" -n "$BACKEND_APP" \
+            --query "properties.template.containers[0].env[?name=='MCP_CORS_ALLOWED_ORIGINS'].value" \
+            -o tsv)
+          if echo "$CURRENT" | grep -q "app.metocare.me"; then
+            echo "✅ CORS OK: $CURRENT"
+          else
+            echo "⚠️ Patching CORS: $CURRENT"
+            az containerapp update -g "$RG" -n "$BACKEND_APP" \
+              --set-env-vars "MCP_CORS_ALLOWED_ORIGINS=${CURRENT},https://app.metocare.me" \
+              -o none
+            echo "✅ CORS patched"
+          fi
+
+      # ── Health gate — wait for backend ready ──────────────────────────────
+      - name: Wait for backend healthy
+        run: |
+          echo "Polling https://${BACKEND_FQDN}/api/v1/health ..."
+          for i in $(seq 1 18); do
+            H=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "https://${BACKEND_FQDN}/api/v1/health" || echo 000)
+            echo "  $i: /api/v1/health -> $H"
+            [ "$H" = "200" ] && { echo "✅ Backend healthy"; break; }
+            [ "$i" = "18" ] && { echo "::error::Backend unhealthy after 3 min — ACA keeps previous healthy revision (auto-rollback)"; exit 1; }
+            sleep 10
+          done
+
+      # ── Health gate — wait for frontend ready ─────────────────────────────
+      - name: Wait for frontend healthy
+        run: |
+          echo "Polling https://${FRONTEND_FQDN}/ ..."
+          for i in $(seq 1 18); do
+            H=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "https://${FRONTEND_FQDN}/" || echo 000)
+            echo "  $i: / -> $H"
+            [ "$H" = "200" ] && { echo "✅ Frontend healthy"; break; }
+            [ "$i" = "18" ] && { echo "::error::Frontend unhealthy after 3 min"; exit 1; }
+            sleep 10
+          done
+
+      # ── Smoke tests ───────────────────────────────────────────────────────
+      # Routes sourced from scripts/smoke-routes.sh (auto-generated from OpenAPI).
+      # To regenerate: cd backend && python3 ../scripts/generate-smoke-routes.py > ../scripts/smoke-routes.sh
+      - name: Smoke tests
+        run: |
+          BASE_BE="https://${BACKEND_FQDN}"
+          BASE_FE="https://${FRONTEND_FQDN}"
+          PASS=true
+
+          check() {
+            local desc="$1" url="$2" expected="${3:-200}" method="${4:-GET}"
+            local code
+            code=$(curl -s -o /dev/null -w "%{http_code}" -X "$method" "$url" --max-time 30)
+            if [ "$code" = "$expected" ]; then
+              echo "✅ $desc: $code"
+            else
+              echo "❌ $desc: expected $expected got $code"
+              PASS=false
+            fi
+          }
+
+          # Frontend health (not in OpenAPI schema)
+          check "Frontend /" "$BASE_FE/" "200" "GET"
+
+          # Backend routes sourced from OpenAPI-generated smoke list
+          # shellcheck source=scripts/smoke-routes.sh
+          source scripts/smoke-routes.sh
+
+          if $PASS; then
+            echo "✅ All smoke checks passed"
+          else
+            echo "::error::One or more smoke tests failed — see above"
+            exit 1
+          fi

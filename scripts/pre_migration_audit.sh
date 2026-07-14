@@ -116,8 +116,19 @@ append_summary() {
 }
 
 # ---------------------------------------------------------------------------
-# Step 2: Skip when the P0 migration has already been applied
+# Step 2: Skip on a fresh database (no medications table at all — e.g. the
+# first production deploy) or when the P0 migration has already been applied
 # ---------------------------------------------------------------------------
+HAS_TABLE=$(run_psql \
+    "SELECT 1 FROM information_schema.tables WHERE table_name = 'medications';") || {
+    die "psql table probe failed. Connection error. Raw error: ${HAS_TABLE}"
+}
+if [[ "$HAS_TABLE" != "1" ]]; then
+    log "✅ AUDIT SKIPPED — medications table does not exist yet (fresh database)."
+    append_summary "## ✅ Pre-migration Soft-Delete Audit — SKIPPED (fresh database)"
+    exit 0
+fi
+
 HAS_LIFECYCLE=$(run_psql \
     "SELECT 1 FROM information_schema.columns
      WHERE table_name = 'medications' AND column_name = 'lifecycle_status';") || {
