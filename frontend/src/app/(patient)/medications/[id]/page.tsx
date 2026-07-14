@@ -7,7 +7,6 @@ import {
   Pill,
   Layers,
   Clock,
-  FileText,
   Activity,
   CheckCircle2,
   XCircle,
@@ -19,6 +18,7 @@ import { LifecycleBadges, DiscontinueModal } from '@/components/patient/medicati
 import { AdherenceStatusBadge } from '@/components/patient/medications/today-status'
 import { MedModal } from '@/components/patient/medications/med-modal'
 import { MedicationOverflowMenu } from '@/components/patient/medications/overflow-menu'
+import { UsageInstructionsCard } from '@/components/patient/medications/usage-instructions'
 import {
   getMedications,
   updateMedicationLifecycle,
@@ -462,6 +462,9 @@ export default function MedicationDetailPage() {
         )}
       </NeuCard>
 
+      {/* Cách sử dụng — M3: user note vs professional guidance, kept apart */}
+      <UsageInstructionsCard note={medication.note} />
+
       {/* Dose / timing chips */}
       {(medication.dose || medication.frequency) && (
         <div className="grid grid-cols-2 gap-2.5">
@@ -505,17 +508,6 @@ export default function MedicationDetailPage() {
           <StatChip label="Số lần đã ghi" value={String(history.length)} color="#8B6400" />
         </div>
       </div>
-
-      {/* Notes */}
-      {medication.note && (
-        <NeuCard className="!p-4">
-          <div className="mb-2 flex items-center gap-2">
-            <FileText className="size-4 text-neu-green" aria-hidden="true" />
-            <p className="text-[13px] font-bold text-neu-text">Ghi chú</p>
-          </div>
-          <p className="text-[14px] leading-relaxed text-neu-secondary">{medication.note}</p>
-        </NeuCard>
-      )}
 
       {/* Adherence history list */}
       {history.length > 0 && <AdherenceHistoryList records={history} />}
