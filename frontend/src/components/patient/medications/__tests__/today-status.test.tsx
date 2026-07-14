@@ -67,32 +67,50 @@ describe('computeAdherenceStatus', () => {
     })
   })
 
-  test('returns "Đã bỏ lỡ nhiều liều" when the last taken dose is over 48h old', () => {
+  test('returns "Đã bỏ lỡ một số liều" when a dose was explicitly skipped today', () => {
     const med = makeMedication()
-    const today = makeToday({ last_taken_at: '2026-07-11T12:00:00Z' }) // 72h before NOW
+    const today = makeToday({ skipped_today: true })
     expect(computeAdherenceStatus(med, today, NOW)).toEqual({
-      tier: 'missed',
-      label: 'Đã bỏ lỡ nhiều liều',
+      tier: 'watch',
+      label: 'Đã bỏ lỡ một số liều',
     })
   })
 
-  test('returns "Cần chú ý lịch uống" (not "missed") when there is no positive taken history', () => {
-    // Absence of a last_taken_at is not evidence of *multiple* missed doses —
-    // it could be one skip or a medication the patient has never logged.
-    // Overclaiming severity from missing data is exactly what must not happen.
+  test('returns "Chưa ghi nhận liều gần đây" when there is no adherence history at all', () => {
     const med = makeMedication()
     expect(computeAdherenceStatus(med, undefined, NOW)).toEqual({
-      tier: 'watch',
-      label: 'Cần chú ý lịch uống',
+      tier: 'missed',
+      label: 'Chưa ghi nhận liều gần đây',
     })
   })
 
-  test('returns "Cần chú ý lịch uống" when not logged today but recently taken', () => {
+  test('returns "Chưa ghi nhận liều gần đây" when the last taken dose is over 36h old', () => {
+    const med = makeMedication()
+    const today = makeToday({ last_taken_at: '2026-07-12T12:00:00Z' }) // 48h before NOW
+    expect(computeAdherenceStatus(med, today, NOW)).toEqual({
+      tier: 'missed',
+      label: 'Chưa ghi nhận liều gần đây',
+    })
+  })
+
+  test('returns null (no badge) when not logged today but the last dose is recent', () => {
+    // 18h ago is still "recent" — this must not claim "chưa ghi nhận liều gần
+    // đây" (haven't logged a recent dose), which would be false.
     const med = makeMedication()
     const today = makeToday({ last_taken_at: '2026-07-13T18:00:00Z' }) // 18h before NOW
-    expect(computeAdherenceStatus(med, today, NOW)).toEqual({
+    expect(computeAdherenceStatus(med, today, NOW)).toBeNull()
+  })
+
+  test('taken_today and skipped_today are mutually exclusive by backend design — either alone is enough', () => {
+    // adherence_summary() derives both flags from today's single
+    // most-recent record ("last action wins"), so the backend can never
+    // return both true — this test documents that contract rather than
+    // exercising a both-true branch.
+    const med = makeMedication()
+    const skipped = makeToday({ skipped_today: true })
+    expect(computeAdherenceStatus(med, skipped, NOW)).toEqual({
       tier: 'watch',
-      label: 'Cần chú ý lịch uống',
+      label: 'Đã bỏ lỡ một số liều',
     })
   })
 })

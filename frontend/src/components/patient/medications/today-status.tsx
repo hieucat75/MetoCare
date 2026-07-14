@@ -7,13 +7,22 @@ import type { Medication, TodayMedication } from '@/lib/api/patient'
 
 // ── Adherence status (per active medication) ──────────────────────────────────
 //
-// Real-data only: derived from today's adherence log + last_taken_at. This
-// never implies a clinical/safety judgement — proving a dose was taken on
-// schedule is not the same as proving the medication is safe or effective,
-// which needs a CDS/interaction engine this system does not have (Gate 2).
+// Real-data only: derived purely from *today's* adherence log
+// (taken_today/skipped_today). This never implies a clinical/safety
+// judgement — proving a dose was taken on schedule is not the same as
+// proving the medication is safe or effective, which needs a CDS/interaction
+// engine this system does not have (Gate 2).
+//
+// M2 revision (2026-07-14): today's two booleans decide the ok/watch split
+// directly (simpler and more precisely truthful about "today" than deriving
+// it from a multi-day staleness computation). The "missed" (🔴) tier still
+// needs a staleness check, though: "not logged today" alone doesn't mean
+// "no recent dose" — a once-daily medication taken 18h ago is still recent.
+// Only the *absence of any recent record* earns the 🔴 claim; a recent-but-
+// not-today record renders no badge (nothing to flag yet).
 
 const GRACE_PERIOD_HOURS = 24
-const MISSED_THRESHOLD_HOURS = 48
+const STALE_THRESHOLD_HOURS = 36
 
 export type AdherenceStatusTier = 'ok' | 'watch' | 'missed'
 
@@ -38,19 +47,23 @@ export function computeAdherenceStatus(
   const hoursSinceAdded = (now.getTime() - new Date(med.created_at).getTime()) / 3_600_000
   if (hoursSinceAdded < GRACE_PERIOD_HOURS) return null // too new to judge
 
+  // taken_today/skipped_today are mutually exclusive by backend design
+  // (adherence_summary derives both from today's single most-recent record —
+  // "last action wins"), so check order here doesn't change behavior. That
+  // backend design has a real, disclosed limitation: an earlier same-day
+  // action (e.g. a missed morning dose) becomes invisible once a later one
+  // (e.g. an evening dose taken) supersedes it — out of scope to fix here,
+  // since it needs the summary to aggregate today's records instead of just
+  // reading the latest one.
+  if (today?.skipped_today) return { tier: 'watch', label: 'Đã bỏ lỡ một số liều' }
   if (today?.taken_today) return { tier: 'ok', label: 'Đang dùng đúng lịch' }
 
-  // No positive taken-history is not evidence of "missed *nhiều* liều" — that
-  // overclaims from an absence of data (could be one skip, could be a med the
-  // patient never logs). Only classify as "missed" when we have an actual
-  // prior taken timestamp that crosses the threshold; otherwise it's "watch".
-  if (!today?.last_taken_at) return { tier: 'watch', label: 'Cần chú ý lịch uống' }
-
-  const hoursSinceLast = (now.getTime() - new Date(today.last_taken_at).getTime()) / 3_600_000
-  if (hoursSinceLast > MISSED_THRESHOLD_HOURS) {
-    return { tier: 'missed', label: 'Đã bỏ lỡ nhiều liều' }
+  const lastTakenMs = today?.last_taken_at ? new Date(today.last_taken_at).getTime() : null
+  const hoursSinceLast = lastTakenMs !== null ? (now.getTime() - lastTakenMs) / 3_600_000 : Infinity
+  if (hoursSinceLast > STALE_THRESHOLD_HOURS) {
+    return { tier: 'missed', label: 'Chưa ghi nhận liều gần đây' }
   }
-  return { tier: 'watch', label: 'Cần chú ý lịch uống' }
+  return null // recent enough — nothing to flag yet today
 }
 
 export function AdherenceStatusBadge({

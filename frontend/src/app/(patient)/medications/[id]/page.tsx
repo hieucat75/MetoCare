@@ -12,14 +12,16 @@ import {
   CheckCircle2,
   XCircle,
   Lock,
-  PauseCircle,
-  PlayCircle,
+  MoreVertical,
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth/context'
 import {
   LifecycleBadges,
   DiscontinueModal,
 } from '@/components/patient/medications/lifecycle'
+import { AdherenceStatusBadge } from '@/components/patient/medications/today-status'
+import { MedModal } from '@/components/patient/medications/med-modal'
+import { MedicationOverflowMenu } from '@/components/patient/medications/overflow-menu'
 import {
   getMedications,
   updateMedicationLifecycle,
@@ -209,6 +211,9 @@ export default function MedicationDetailPage() {
   const [logging, setLogging] = React.useState(false)
   const [actionError, setActionError] = React.useState<string | null>(null)
   const [discontinueOpen, setDiscontinueOpen] = React.useState(false)
+  const [menuOpen, setMenuOpen] = React.useState(false)
+  const [medModalOpen, setMedModalOpen] = React.useState(false)
+  const [medModalDeleteMode, setMedModalDeleteMode] = React.useState(false)
 
   const load = React.useCallback(async () => {
     if (!patientId) return
@@ -285,6 +290,21 @@ export default function MedicationDetailPage() {
     }
   }, [patientId, id, logging, load])
 
+  const handleTogglePause = React.useCallback(async () => {
+    if (!patientId || !medication || logging) return
+    const target = medication.lifecycle_status === 'active' ? 'paused' : 'active'
+    setLogging(true)
+    setActionError(null)
+    try {
+      await updateMedicationLifecycle(patientId, id, target)
+      await load()
+    } catch (err: unknown) {
+      setActionError(err instanceof Error ? err.message : 'Không cập nhật được trạng thái.')
+    } finally {
+      setLogging(false)
+    }
+  }, [patientId, id, medication, logging, load])
+
   if (!patientId) {
     return (
       <div className="p-4 max-w-md mx-auto mt-10">
@@ -325,6 +345,7 @@ export default function MedicationDetailPage() {
 
   const isActiveMed = medication.lifecycle_status === 'active'
   const isPausedMed = medication.lifecycle_status === 'paused'
+  const canManage = isActiveMed || isPausedMed
 
   return (
     <div className="p-4 max-w-md mx-auto pb-28 space-y-4">
@@ -343,9 +364,11 @@ export default function MedicationDetailPage() {
         </h1>
       </header>
 
-      {/* Hero — name + dose/frequency */}
+      {/* Hero — consolidated identity + adherence status + today's dose + primary
+          action + overflow (M2: answers "thuốc gì / đúng không / bấm gì" in one
+          card, replacing the old 4-side-by-side-button layout). */}
       <NeuCard className="!p-5">
-        <div className="flex items-center gap-4">
+        <div className="flex items-start gap-4">
           <span
             className="grid size-16 shrink-0 place-items-center rounded-[16px] text-white"
             style={{ background: PILL_GRADIENT, boxShadow: '0 10px 20px -8px rgba(37,99,235,0.5)' }}
@@ -353,108 +376,91 @@ export default function MedicationDetailPage() {
           >
             <Pill className="size-8" />
           </span>
-          <div className="min-w-0">
-            <p className="text-[21px] font-extrabold tracking-[-0.01em] text-neu-text">
+          <div className="min-w-0 flex-1">
+            <p className="text-[21px] font-extrabold tracking-[-0.01em] text-neu-text break-words">
               {medication.name}
             </p>
             {subtitle && <p className="mt-1 text-[13.5px] text-neu-secondary">{subtitle}</p>}
-            <LifecycleBadges med={medication} />
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+              <LifecycleBadges med={medication} />
+              {isActiveMed && <AdherenceStatusBadge med={medication} today={todayStatus ?? undefined} />}
+            </div>
           </div>
+          {canManage && (
+            <button
+              type="button"
+              aria-label="Thêm tuỳ chọn"
+              aria-haspopup="dialog"
+              aria-expanded={menuOpen}
+              onClick={() => setMenuOpen(true)}
+              className="neu-icon-btn !h-11 !w-11 shrink-0 !rounded-full text-neu-muted"
+            >
+              <MoreVertical className="size-5" />
+            </button>
+          )}
         </div>
+
         {medication.status_reason && !isActiveMed && (
           <p className="mt-3 rounded-[12px] bg-[#F4F7F5] px-3 py-2 text-[13px] text-neu-secondary">
             Lý do: {medication.status_reason}
           </p>
         )}
+
+        {medication.lifecycle_status === 'on_hold' && (
+          <p className="mt-3 flex items-start gap-2 rounded-[14px] bg-[#EFF4FF] px-4 py-3 text-[13.5px] font-medium text-[#2563EB]">
+            <Lock className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+            Bác sĩ yêu cầu tạm ngừng thuốc này. Không tự ý dùng lại — liên hệ bác sĩ nếu có thắc mắc.
+          </p>
+        )}
+
+        {actionError && (
+          <p role="alert" className="mt-3 text-[13px] font-semibold text-[#D92D20]">
+            {actionError}
+          </p>
+        )}
+
+        {/* Today's dose status + primary/secondary action — active only.
+            taken_today/skipped_today are mutually exclusive by backend design
+            (last-action-wins on today's most-recent record) — see the note
+            on computeAdherenceStatus in today-status.tsx for the disclosed
+            limitation this implies. */}
+        {isActiveMed && (
+          <div className="mt-4 border-t border-[#E8F0ED] pt-4">
+            {takenToday ? (
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="size-5 text-[#0F9C6E]" aria-hidden="true" />
+                <p className="text-[14px] font-bold text-[#0F9C6E]">Đã uống hôm nay</p>
+              </div>
+            ) : (
+              <>
+                {skippedToday && (
+                  <p className="mb-2 text-[13px] font-semibold text-neu-muted">
+                    Hôm nay: đã bỏ qua
+                  </p>
+                )}
+                <div className="flex items-center gap-3">
+                  <NeuButton
+                    variant="primary"
+                    className="flex-[2] !text-[15px]"
+                    onClick={handleTaken}
+                    disabled={logging}
+                  >
+                    {logging ? 'Đang lưu…' : 'Đã uống'}
+                  </NeuButton>
+                  <button
+                    type="button"
+                    onClick={handleSkipped}
+                    disabled={logging}
+                    className="flex-1 py-3 text-center text-[14px] font-semibold text-neu-muted underline underline-offset-2 disabled:opacity-50"
+                  >
+                    Bỏ qua
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </NeuCard>
-
-      {actionError && (
-        <p role="alert" className="px-1 text-[13px] font-semibold text-[#D92D20]">
-          {actionError}
-        </p>
-      )}
-
-      {/* Lifecycle controls */}
-      {isActiveMed && (
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={async () => {
-              if (logging) return
-              setLogging(true)
-              setActionError(null)
-              try {
-                await updateMedicationLifecycle(patientId, id, 'paused')
-                await load()
-              } catch (err: unknown) {
-                setActionError(
-                  err instanceof Error ? err.message : 'Không cập nhật được trạng thái.'
-                )
-              } finally {
-                setLogging(false)
-              }
-            }}
-            disabled={logging}
-            className="flex flex-1 items-center justify-center gap-1.5 rounded-[12px] bg-[#FEF6E7] py-2.5 text-[13px] font-semibold text-[#8B6400] transition-transform active:scale-95 disabled:opacity-50"
-          >
-            <PauseCircle className="size-4" aria-hidden="true" />
-            Tạm ngưng
-          </button>
-          <button
-            type="button"
-            onClick={() => setDiscontinueOpen(true)}
-            disabled={logging}
-            className="flex flex-1 items-center justify-center gap-1.5 rounded-[12px] bg-[#F4F4F4] py-2.5 text-[13px] font-semibold text-neu-muted transition-transform active:scale-95 disabled:opacity-50"
-          >
-            <XCircle className="size-4" aria-hidden="true" />
-            Ngừng thuốc
-          </button>
-        </div>
-      )}
-      {isPausedMed && (
-        <div className="flex gap-2">
-        <button
-          type="button"
-          onClick={async () => {
-            if (logging) return
-            setLogging(true)
-            setActionError(null)
-            try {
-              await updateMedicationLifecycle(patientId, id, 'active')
-              await load()
-            } catch (err: unknown) {
-              setActionError(
-                err instanceof Error ? err.message : 'Không cập nhật được trạng thái.'
-              )
-            } finally {
-              setLogging(false)
-            }
-          }}
-          disabled={logging}
-          className="flex w-full items-center justify-center gap-1.5 rounded-[12px] bg-[#E8F7F2] py-2.5 text-[13px] font-semibold text-[#0F9C6E] transition-transform active:scale-95 disabled:opacity-50"
-        >
-          <PlayCircle className="size-4" aria-hidden="true" />
-          {logging ? 'Đang lưu…' : 'Tiếp tục uống'}
-        </button>
-        <button
-          type="button"
-          onClick={() => setDiscontinueOpen(true)}
-          disabled={logging}
-          className="flex flex-1 items-center justify-center gap-1.5 rounded-[12px] bg-[#F4F4F4] py-2.5 text-[13px] font-semibold text-neu-muted transition-transform active:scale-95 disabled:opacity-50"
-        >
-          <XCircle className="size-4" aria-hidden="true" />
-          Ngừng thuốc
-        </button>
-        </div>
-      )}
-
-      {/* on_hold clinical lock notice */}
-      {medication.lifecycle_status === 'on_hold' && (
-        <p className="flex items-start gap-2 rounded-[14px] bg-[#EFF4FF] px-4 py-3 text-[13.5px] font-medium text-[#2563EB]">
-          <Lock className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-          Bác sĩ yêu cầu tạm ngừng thuốc này. Không tự ý dùng lại — liên hệ bác sĩ nếu có thắc mắc.
-        </p>
-      )}
 
       {/* Dose / timing chips */}
       {(medication.dose || medication.frequency) && (
@@ -500,39 +506,6 @@ export default function MedicationDetailPage() {
         </div>
       </div>
 
-      {/* Quick-log section — active medications only (backend enforces too) */}
-      {isActiveMed &&
-        (takenToday ? (
-        <NeuCard className="!p-4">
-          <div className="flex items-center gap-2">
-            <CheckCircle2 className="size-5 text-[#0F9C6E]" aria-hidden="true" />
-            <p className="text-[14px] font-bold text-[#0F9C6E]">Đã uống hôm nay</p>
-          </div>
-        </NeuCard>
-      ) : (
-        <NeuCard className="!p-4">
-          <p className="mb-3 text-[13px] font-bold text-neu-text">Ghi hôm nay</p>
-          <div className="flex gap-2.5">
-            <NeuButton
-              variant="primary"
-              className="flex-1 !text-[13px]"
-              onClick={handleTaken}
-              disabled={logging}
-            >
-              {logging ? 'Đang lưu…' : 'Đã uống'}
-            </NeuButton>
-            <NeuButton
-              variant="secondary"
-              className="flex-1 !text-[13px]"
-              onClick={handleSkipped}
-              disabled={logging}
-            >
-              Bỏ qua
-            </NeuButton>
-          </div>
-        </NeuCard>
-        ))}
-
       {/* Notes */}
       {medication.note && (
         <NeuCard className="!p-4">
@@ -554,6 +527,33 @@ export default function MedicationDetailPage() {
       <NeuButton variant="secondary" onClick={() => router.push('/medications')}>
         Xem tất cả thuốc
       </NeuButton>
+
+      <MedicationOverflowMenu
+        open={menuOpen}
+        onClose={() => setMenuOpen(false)}
+        med={medication}
+        busy={logging}
+        onTogglePause={handleTogglePause}
+        onDiscontinue={() => setDiscontinueOpen(true)}
+        onEdit={() => {
+          setMedModalDeleteMode(false)
+          setMedModalOpen(true)
+        }}
+        onDelete={() => {
+          setMedModalDeleteMode(true)
+          setMedModalOpen(true)
+        }}
+      />
+
+      <MedModal
+        open={medModalOpen}
+        onClose={() => setMedModalOpen(false)}
+        onSaved={load}
+        onDeleted={() => router.push('/medications')}
+        patientId={patientId}
+        editing={medication}
+        deleteMode={medModalDeleteMode}
+      />
 
       <DiscontinueModal
         open={discontinueOpen}

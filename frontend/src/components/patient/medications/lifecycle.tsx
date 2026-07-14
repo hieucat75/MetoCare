@@ -75,6 +75,7 @@ export function DiscontinueModal({
   const [submitting, setSubmitting] = React.useState(false)
   const [formError, setFormError] = React.useState<string | null>(null)
   const titleId = React.useId()
+  const closeButtonRef = React.useRef<HTMLButtonElement>(null)
 
   React.useEffect(() => {
     if (open) {
@@ -82,6 +83,13 @@ export function DiscontinueModal({
       setDetail('')
       setFormError(null)
     }
+  }, [open])
+
+  // Claim focus on open — matters most when this modal opens immediately
+  // after another sheet closes (e.g. the overflow menu's Ngừng thuốc
+  // handoff), where focus would otherwise land back on a now-hidden trigger.
+  React.useEffect(() => {
+    if (open) closeButtonRef.current?.focus()
   }, [open])
 
   // Escape closes (a11y)
@@ -132,6 +140,7 @@ export function DiscontinueModal({
               Ngừng thuốc
             </h2>
             <button
+              ref={closeButtonRef}
               type="button"
               onClick={onClose}
               aria-label="Đóng"
