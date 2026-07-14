@@ -3,11 +3,7 @@
 import * as React from 'react'
 import { X, Lock, ShieldCheck } from 'lucide-react'
 import { NeuCard, NeuButton } from '@/components/patient/neu'
-import {
-  updateMedicationLifecycle,
-  DISCONTINUE_REASONS,
-  type Medication,
-} from '@/lib/api/patient'
+import { updateMedicationLifecycle, DISCONTINUE_REASONS, type Medication } from '@/lib/api/patient'
 
 // ── Lifecycle badges (shared: list + detail) ──────────────────────────────────
 
@@ -75,6 +71,7 @@ export function DiscontinueModal({
   const [submitting, setSubmitting] = React.useState(false)
   const [formError, setFormError] = React.useState<string | null>(null)
   const titleId = React.useId()
+  const closeButtonRef = React.useRef<HTMLButtonElement>(null)
 
   React.useEffect(() => {
     if (open) {
@@ -82,6 +79,13 @@ export function DiscontinueModal({
       setDetail('')
       setFormError(null)
     }
+  }, [open])
+
+  // Claim focus on open — matters most when this modal opens immediately
+  // after another sheet closes (e.g. the overflow menu's Ngừng thuốc
+  // handoff), where focus would otherwise land back on a now-hidden trigger.
+  React.useEffect(() => {
+    if (open) closeButtonRef.current?.focus()
   }, [open])
 
   // Escape closes (a11y)
@@ -132,6 +136,7 @@ export function DiscontinueModal({
               Ngừng thuốc
             </h2>
             <button
+              ref={closeButtonRef}
               type="button"
               onClick={onClose}
               aria-label="Đóng"
@@ -142,8 +147,8 @@ export function DiscontinueModal({
           </div>
 
           <p className="mb-4 text-[15px] text-neu-muted">
-            Ngừng <span className="font-bold text-neu-text">{med.name}</span>? Thuốc sẽ được lưu
-            vào lịch sử (không bị xoá) và ngừng nhắc uống.
+            Ngừng <span className="font-bold text-neu-text">{med.name}</span>? Thuốc sẽ được lưu vào
+            lịch sử (không bị xoá) và ngừng nhắc uống.
           </p>
 
           {formError && (
