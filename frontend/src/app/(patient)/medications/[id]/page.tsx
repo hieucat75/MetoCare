@@ -15,10 +15,7 @@ import {
   MoreVertical,
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth/context'
-import {
-  LifecycleBadges,
-  DiscontinueModal,
-} from '@/components/patient/medications/lifecycle'
+import { LifecycleBadges, DiscontinueModal } from '@/components/patient/medications/lifecycle'
 import { AdherenceStatusBadge } from '@/components/patient/medications/today-status'
 import { MedModal } from '@/components/patient/medications/med-modal'
 import { MedicationOverflowMenu } from '@/components/patient/medications/overflow-menu'
@@ -383,7 +380,9 @@ export default function MedicationDetailPage() {
             {subtitle && <p className="mt-1 text-[13.5px] text-neu-secondary">{subtitle}</p>}
             <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
               <LifecycleBadges med={medication} />
-              {isActiveMed && <AdherenceStatusBadge med={medication} today={todayStatus ?? undefined} />}
+              {isActiveMed && (
+                <AdherenceStatusBadge med={medication} today={todayStatus ?? undefined} />
+              )}
             </div>
           </div>
           {canManage && (
@@ -409,7 +408,8 @@ export default function MedicationDetailPage() {
         {medication.lifecycle_status === 'on_hold' && (
           <p className="mt-3 flex items-start gap-2 rounded-[14px] bg-[#EFF4FF] px-4 py-3 text-[13.5px] font-medium text-[#2563EB]">
             <Lock className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-            Bác sĩ yêu cầu tạm ngừng thuốc này. Không tự ý dùng lại — liên hệ bác sĩ nếu có thắc mắc.
+            Bác sĩ yêu cầu tạm ngừng thuốc này. Không tự ý dùng lại — liên hệ bác sĩ nếu có thắc
+            mắc.
           </p>
         )}
 

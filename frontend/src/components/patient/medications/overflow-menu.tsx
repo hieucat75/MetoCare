@@ -68,9 +68,8 @@ export function MedicationOverflowMenu({
     if (!open) return
     function onKeyDown(e: KeyboardEvent) {
       if (e.key !== 'Tab') return
-      const focusable = sheetRef.current?.querySelectorAll<HTMLButtonElement>(
-        'button:not(:disabled)'
-      )
+      const focusable =
+        sheetRef.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')
       if (!focusable || focusable.length === 0) return
       const first = focusable[0]
       const last = focusable[focusable.length - 1]
@@ -88,7 +87,13 @@ export function MedicationOverflowMenu({
 
   if (!open) return null
 
-  type Item = { key: string; label: string; icon: React.ReactNode; onClick: () => void; danger?: boolean }
+  type Item = {
+    key: string
+    label: string
+    icon: React.ReactNode
+    onClick: () => void
+    danger?: boolean
+  }
   const items: Item[] = []
   if (isActive) {
     items.push({

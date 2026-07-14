@@ -3,11 +3,7 @@
 import * as React from 'react'
 import { X, Lock, ShieldCheck } from 'lucide-react'
 import { NeuCard, NeuButton } from '@/components/patient/neu'
-import {
-  updateMedicationLifecycle,
-  DISCONTINUE_REASONS,
-  type Medication,
-} from '@/lib/api/patient'
+import { updateMedicationLifecycle, DISCONTINUE_REASONS, type Medication } from '@/lib/api/patient'
 
 // ── Lifecycle badges (shared: list + detail) ──────────────────────────────────
 
@@ -151,8 +147,8 @@ export function DiscontinueModal({
           </div>
 
           <p className="mb-4 text-[15px] text-neu-muted">
-            Ngừng <span className="font-bold text-neu-text">{med.name}</span>? Thuốc sẽ được lưu
-            vào lịch sử (không bị xoá) và ngừng nhắc uống.
+            Ngừng <span className="font-bold text-neu-text">{med.name}</span>? Thuốc sẽ được lưu vào
+            lịch sử (không bị xoá) và ngừng nhắc uống.
           </p>
 
           {formError && (

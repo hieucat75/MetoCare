@@ -117,9 +117,7 @@ describe('computeAdherenceStatus', () => {
 
 describe('TodayStatusCard', () => {
   test('renders nothing when there are no active medications and nothing to flag', () => {
-    const { container } = render(
-      <TodayStatusCard meds={[]} adherence={{}} currentStreak={0} />
-    )
+    const { container } = render(<TodayStatusCard meds={[]} adherence={{}} currentStreak={0} />)
     expect(container).toBeEmptyDOMElement()
   })
 
@@ -173,9 +171,7 @@ describe('TodayStatusCard', () => {
     const adherence = { 'med-1': makeToday({ skipped_today: true }) }
     render(<TodayStatusCard meds={meds} adherence={adherence} currentStreak={0} />)
     expect(screen.getByText('1 thuốc bị bỏ qua hôm nay')).toBeInTheDocument()
-    expect(
-      screen.queryByText('Không có việc gì cần xử lý thêm hôm nay.')
-    ).not.toBeInTheDocument()
+    expect(screen.queryByText('Không có việc gì cần xử lý thêm hôm nay.')).not.toBeInTheDocument()
   })
 
   test('never renders interaction or safety-check copy', () => {
@@ -189,8 +185,6 @@ describe('TodayStatusCard', () => {
     const meds = [makeMedication()]
     const adherence = { 'med-1': makeToday({ taken_today: true }) }
     render(<TodayStatusCard meds={meds} adherence={adherence} currentStreak={0} />)
-    expect(
-      screen.getByText('Không có việc gì cần xử lý thêm hôm nay.')
-    ).toBeInTheDocument()
+    expect(screen.getByText('Không có việc gì cần xử lý thêm hôm nay.')).toBeInTheDocument()
   })
 })

@@ -26,11 +26,11 @@ import {
   type AdherenceSummary,
   type TodayMedication,
 } from '@/lib/api/patient'
+import { LifecycleBadges, DiscontinueModal } from '@/components/patient/medications/lifecycle'
 import {
-  LifecycleBadges,
-  DiscontinueModal,
-} from '@/components/patient/medications/lifecycle'
-import { TodayStatusCard, AdherenceStatusBadge } from '@/components/patient/medications/today-status'
+  TodayStatusCard,
+  AdherenceStatusBadge,
+} from '@/components/patient/medications/today-status'
 import { MedModal } from '@/components/patient/medications/med-modal'
 import {
   AdherenceSummaryCard,
@@ -261,72 +261,72 @@ function MedRow({
 
       {/* Adherence quick-log — active medications only (backend enforces too) */}
       {isActive && (
-      <div className="mt-3 border-t border-[#E8F0ED] pt-3">
-        {isTaken ? (
-          // Taken state: green badge + allow correcting to skipped
-          <div className="flex items-center gap-2">
-            <span
-              className="flex flex-1 items-center gap-1.5 rounded-[12px] px-3 py-2 text-[13px] font-semibold"
-              style={{ background: '#E8F7F2', color: '#0F9C6E' }}
-            >
-              <CheckCircle2 className="size-4 shrink-0" aria-hidden="true" />
-              Đã uống hôm nay
-            </span>
-            <button
-              type="button"
-              onClick={handleSkipped}
-              disabled={logging}
-              aria-label="Đánh dấu bỏ qua"
-              className="flex items-center justify-center gap-1.5 rounded-[12px] bg-[#F4F4F4] px-3 py-2 text-[13px] font-semibold text-neu-muted transition-transform active:scale-95 disabled:opacity-50"
-            >
-              <XCircle className="size-4" aria-hidden="true" />
-              Bỏ qua
-            </button>
-          </div>
-        ) : isSkipped ? (
-          // Skipped state: gray badge + allow marking as taken
-          <div className="flex items-center gap-2">
-            <span className="flex flex-1 items-center gap-1.5 rounded-[12px] bg-[#F4F4F4] px-3 py-2 text-[13px] font-semibold text-neu-muted">
-              <XCircle className="size-4 shrink-0" aria-hidden="true" />
-              Đã bỏ qua hôm nay
-            </span>
-            <button
-              type="button"
-              onClick={handleTaken}
-              disabled={logging}
-              aria-label="Đánh dấu đã uống"
-              className="flex items-center justify-center gap-1.5 rounded-[12px] bg-[#E8F7F2] px-3 py-2 text-[13px] font-semibold text-[#0F9C6E] transition-transform active:scale-95 disabled:opacity-50"
-            >
-              <CheckCircle2 className="size-4" aria-hidden="true" />
-              Đã uống
-            </button>
-          </div>
-        ) : (
-          // Default state: two action buttons
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={handleTaken}
-              disabled={logging}
-              aria-label="Đánh dấu đã uống"
-              className="flex flex-1 items-center justify-center gap-1.5 rounded-[12px] bg-[#E8F7F2] py-2 text-[13px] font-semibold text-[#0F9C6E] transition-transform active:scale-95 disabled:opacity-50"
-            >
-              <CheckCircle2 className="size-4" aria-hidden="true" />
-              {logging ? 'Đang lưu…' : 'Đã uống'}
-            </button>
-            <button
-              type="button"
-              onClick={handleSkipped}
-              disabled={logging}
-              aria-label="Đánh dấu bỏ qua"
-              className="flex flex-1 items-center justify-center gap-1.5 rounded-[12px] bg-[#F4F4F4] py-2 text-[13px] font-semibold text-neu-muted transition-transform active:scale-95 disabled:opacity-50"
-            >
-              <XCircle className="size-4" aria-hidden="true" />
-              {logging ? 'Đang lưu…' : 'Bỏ qua'}
-            </button>
-          </div>
-        )}
-      </div>
+        <div className="mt-3 border-t border-[#E8F0ED] pt-3">
+          {isTaken ? (
+            // Taken state: green badge + allow correcting to skipped
+            <div className="flex items-center gap-2">
+              <span
+                className="flex flex-1 items-center gap-1.5 rounded-[12px] px-3 py-2 text-[13px] font-semibold"
+                style={{ background: '#E8F7F2', color: '#0F9C6E' }}
+              >
+                <CheckCircle2 className="size-4 shrink-0" aria-hidden="true" />
+                Đã uống hôm nay
+              </span>
+              <button
+                type="button"
+                onClick={handleSkipped}
+                disabled={logging}
+                aria-label="Đánh dấu bỏ qua"
+                className="flex items-center justify-center gap-1.5 rounded-[12px] bg-[#F4F4F4] px-3 py-2 text-[13px] font-semibold text-neu-muted transition-transform active:scale-95 disabled:opacity-50"
+              >
+                <XCircle className="size-4" aria-hidden="true" />
+                Bỏ qua
+              </button>
+            </div>
+          ) : isSkipped ? (
+            // Skipped state: gray badge + allow marking as taken
+            <div className="flex items-center gap-2">
+              <span className="flex flex-1 items-center gap-1.5 rounded-[12px] bg-[#F4F4F4] px-3 py-2 text-[13px] font-semibold text-neu-muted">
+                <XCircle className="size-4 shrink-0" aria-hidden="true" />
+                Đã bỏ qua hôm nay
+              </span>
+              <button
+                type="button"
+                onClick={handleTaken}
+                disabled={logging}
+                aria-label="Đánh dấu đã uống"
+                className="flex items-center justify-center gap-1.5 rounded-[12px] bg-[#E8F7F2] px-3 py-2 text-[13px] font-semibold text-[#0F9C6E] transition-transform active:scale-95 disabled:opacity-50"
+              >
+                <CheckCircle2 className="size-4" aria-hidden="true" />
+                Đã uống
+              </button>
+            </div>
+          ) : (
+            // Default state: two action buttons
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={handleTaken}
+                disabled={logging}
+                aria-label="Đánh dấu đã uống"
+                className="flex flex-1 items-center justify-center gap-1.5 rounded-[12px] bg-[#E8F7F2] py-2 text-[13px] font-semibold text-[#0F9C6E] transition-transform active:scale-95 disabled:opacity-50"
+              >
+                <CheckCircle2 className="size-4" aria-hidden="true" />
+                {logging ? 'Đang lưu…' : 'Đã uống'}
+              </button>
+              <button
+                type="button"
+                onClick={handleSkipped}
+                disabled={logging}
+                aria-label="Đánh dấu bỏ qua"
+                className="flex flex-1 items-center justify-center gap-1.5 rounded-[12px] bg-[#F4F4F4] py-2 text-[13px] font-semibold text-neu-muted transition-transform active:scale-95 disabled:opacity-50"
+              >
+                <XCircle className="size-4" aria-hidden="true" />
+                {logging ? 'Đang lưu…' : 'Bỏ qua'}
+              </button>
+            </div>
+          )}
+        </div>
       )}
 
       {/* Lifecycle actions — active medications only */}
