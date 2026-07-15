@@ -3,7 +3,7 @@
 **Version:** 1.1 (revised after Codex review round 1 — see Section F)
 **Date:** 2026-07-15
 **PR scope:** K1-M01 — Medication Knowledge Repository schema (EC-01 + EC-02 only, excluding `drug_interactions` — see Section F)
-**Branch:** `feat/k1-knowledge-schema` (PR #123), rebased on `docs/k1-adr13-adr14-index` (PR #124)
+**Branch:** `feat/k1-knowledge-schema` (PR #123), rebased on `main` after PR #124 merged (`21e817a`)
 **Reviewer:** Tech Lead (self-review) + independent Codex CLI review (round 1: 3×P1 + 3×P2, all resolved below)
 **Purpose:** Pre-merge gate answering: does this PR comply with ADR-01 and ADR-13?
 
@@ -11,7 +11,7 @@
 
 ---
 
-## Section A — ADR-01 Reconciliation Gap (resolved, contingent on PR #124)
+## Section A — ADR-01 Reconciliation Gap (resolved — PR #124 merged 2026-07-15, `21e817a`)
 
 **Round-1 finding (self-review):** ADR-01's "Consequences" section proposes a
 single generic `drug_ingredient_knowledge(knowledge_type, value_json)` table.
@@ -30,11 +30,13 @@ honestly cite.
 `docs/k1-adr13-adr14-index`) — ADR-13, ADR-14, the updated
 `ARCHITECTURE_DECISION_INDEX.md` (v1.1), `MEDICATION_K1_PRE_VALIDATION.md`,
 and `MEDICATION_K1_EXIT_CRITERIA.md`, all previously reviewed and signed off
-by PTH in-session but never committed. This PR (#123) is rebased on top of
-that branch. **This PR must not merge before PR #124 merges to `main`** —
-tracked as an explicit PR dependency, not a soft note.
+by PTH in-session but never committed. **PR #124 merged to `main` on
+2026-07-15 (`21e817a`)** — verified live: `ADR-13` and the v1.1 decision
+index are now present on `main`. This PR (#123) has been rebased on the
+post-merge `main` (single migration head confirmed: `k1_m01_knowledge_schema`;
+CI green on the rebased base).
 
-Once #124 lands, the remaining reconciliation (ADR-01's generic-table
+The remaining reconciliation (ADR-01's generic-table
 proposal vs. ADR-13's typed tables) is a real but non-blocking gap: this PR
 implements ADR-01's relational core (unambiguous, still current) and ADR-13's
 typed tables on top of it, not the abandoned generic-table shape. Recommend a
