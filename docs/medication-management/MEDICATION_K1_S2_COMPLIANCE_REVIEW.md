@@ -56,6 +56,14 @@ Documented in full in `MEDICATION_K1_S2_CATALOG_MIGRATION_REPORT.md`. Summary: p
 4. **Technical debt?** One item: `drug_ingredients.name_inn` stores the source's salt-form string verbatim (e.g. "metformin hydrochloride") rather than a normalized pure-INN + salt-form split — flagged in the migration report as a deliberate non-guess, not fixed here.
 5. **Rollback loss?** Nothing — `drug_catalog` (the only pre-existing data) is untouched; the 5 relational-core tables this migration populates had zero prior data (shipped empty by K1-M01), so downgrade loses only what this PR itself created.
 
-### Codex review
+### Codex review (round 1) — 2 P1 + 3 P2, all resolved
 
-See below (added after independent review).
+| # | Finding | Severity | Resolution |
+|---|---|---|---|
+| 1 | `downgrade()` unconditionally cleared all 5 tables — safe only at initial deploy; if a later migration/service ever wrote to these tables under different keys, downgrading this revision would destroy that data too. | P1 | Rewrote `downgrade()` to delete only rows matching business keys re-derived from `drug_catalog` (product `display_name`, ingredient `name_inn`, class `name`), never a blanket `DELETE`. |
+| 2 | `row.active_ingredients[0]` would silently truncate a future combination product to its first ingredient — contradicted the report's "not silently generalized" claim, which described intent, not enforced behavior. | P1 | Added an explicit `RuntimeError` if `len(active_ingredients) != 1`, before any write. Verified: the report's claim is now actually true, not aspirational. |
+| 3 | The pre-loop 41-row count guard doesn't prove every source row produced a product+ingredient+link — only that the total count matched. | P2 | Added a post-loop reconciliation pass: for every source row, verify a matching `drug_products` row and at least one `drug_product_ingredients` link exist, raising `RuntimeError` otherwise. |
+| 4 | Query-then-insert idempotency is proven for serial re-runs only, not concurrent migration execution. | P2 | Documented as an explicit, accepted limitation in the migration's module docstring — this project's deploy process never runs `alembic upgrade` concurrently against the same database; a race would fail loudly (UNIQUE violation) rather than duplicate data. |
+| 5 | The migration report's per-entry mapping list had factual errors — several entries transcribed from memory instead of the actual migrated values (e.g. "pioglitazone→pioglitazone" vs. the true "pioglitazone hydrochloride"). | P2 | Regenerated the entire list by querying the live migrated database directly, not from memory. Report now states this explicitly, including the error it caught in itself. |
+
+All fixes re-verified: 14/14 integration tests pass, upgrade/downgrade/upgrade rehearsal clean, full backend unit suite green.

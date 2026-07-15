@@ -18,6 +18,15 @@ caught by the database, not just trusted from the ORM's own existence
 checks. Re-running upgrade() a second time inserts zero new rows (verified
 by integration test).
 
+Concurrency note (Codex review): the query-then-insert pattern is idempotent
+across *serial* re-runs (verified), not against two migration runs executing
+concurrently against the same database — a genuine race there could raise a
+UNIQUE-constraint IntegrityError on the loser rather than silently
+duplicating data. This project's deploy process runs one migration job at a
+time (no parallel `alembic upgrade` invocations against the same database),
+so this is a documented limitation, not a runtime hazard — fail-safe (an
+error), not fail-silent (a duplicate), if the assumption is ever violated.
+
 Revision ID: k1_s2_m01_catalog_migration
 Revises: k1_m01_knowledge_schema
 Create Date: 2026-07-15
@@ -123,14 +132,25 @@ def migrate_catalog_rows(session: Session) -> dict[str, int]:
             class_cache[row.drug_class] = cls
 
         # 2. drug_ingredients — every one of the 41 entries has exactly one
-        # active_ingredient (verified during design; no combination products
-        # in this catalog). name_inn is the source value verbatim (often the
-        # salt form actually prescribed, e.g. "metformin hydrochloride") —
-        # not decomposed into a purer INN base name, which would require
-        # clinical judgment this migration does not have grounds to guess.
-        # name_vietnamese / cas_number: no dedicated ingredient-level source
-        # field exists (vietnamese_common_names is a PRODUCT/brand list, not
-        # an ingredient name) — left NULL rather than mis-mapped.
+        # active_ingredient today (verified during design; no combination
+        # products in this catalog). Codex review correctly flagged that
+        # `active_ingredients[0]` alone would silently truncate a future
+        # combination product added to the catalog — fail loudly instead.
+        if len(row.active_ingredients) != 1:
+            raise RuntimeError(
+                f"K1-S2 does not support combination products: "
+                f"{row.generic_name!r} has {len(row.active_ingredients)} "
+                f"active_ingredients {row.active_ingredients!r}. This migration's "
+                "one-ingredient-per-row assumption no longer holds — extend the "
+                "mapping logic before re-running, do not just take [0]."
+            )
+        # name_inn is the source value verbatim (often the salt form actually
+        # prescribed, e.g. "metformin hydrochloride") — not decomposed into a
+        # purer INN base name, which would require clinical judgment this
+        # migration does not have grounds to guess. name_vietnamese /
+        # cas_number: no dedicated ingredient-level source field exists
+        # (vietnamese_common_names is a PRODUCT/brand list, not an ingredient
+        # name) — left NULL rather than mis-mapped.
         ing_name = row.active_ingredients[0].strip()
         ingredient = session.query(DrugIngredient).filter_by(name_inn=ing_name).one_or_none()
         if ingredient is None:
@@ -201,6 +221,30 @@ def migrate_catalog_rows(session: Session) -> dict[str, int]:
                     )
                     stats["product_names"] += 1
 
+    session.flush()
+
+    # Post-loop reconciliation — Codex review correctly flagged that the
+    # pre-loop count guard alone doesn't prove every source row actually
+    # produced a product+ingredient+link; verify it explicitly rather than
+    # trusting the loop completed without error.
+    for row in catalog_rows:
+        product = session.query(DrugProduct).filter_by(display_name=row.generic_name).one_or_none()
+        if product is None:
+            raise RuntimeError(
+                f"K1-S2 zero-loss check failed: no drug_products row for "
+                f"{row.generic_name!r} after migration."
+            )
+        link = (
+            session.query(DrugProductIngredient)
+            .filter_by(drug_product_id=product.id)
+            .one_or_none()
+        )
+        if link is None:
+            raise RuntimeError(
+                f"K1-S2 zero-loss check failed: {row.generic_name!r} has no "
+                "drug_product_ingredients link after migration."
+            )
+
     session.commit()
     stats["source_rows_seen"] = len(catalog_rows)
     return stats
@@ -215,12 +259,19 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Remove only the rows this migration created. drug_catalog is never touched.
+    """Remove only the rows THIS migration created, matched by business key
+    re-derived from drug_catalog — never a blanket DELETE of the whole
+    table. drug_catalog is never touched.
 
-    Safe to unconditionally clear all 5 relational-core tables: K1-M01
-    shipped them empty and nothing else has written to them since — this is
-    the only migration/service that has ever populated them.
+    Codex review correctly flagged that unconditionally clearing all 5
+    tables was only safe at initial deploy (when K1-M01 had just shipped
+    them empty) — if a later migration or service ever adds rows under
+    different keys, a blanket delete here would destroy them too. Scoping
+    every delete to keys derived from the current drug_catalog contents
+    makes this safe regardless of what else may have written to these
+    tables since.
     """
+    from app.models.drug_catalog import DrugEntry
     from app.models.drug_knowledge_core import (
         DrugClass,
         DrugIngredient,
@@ -231,11 +282,36 @@ def downgrade() -> None:
 
     bind = op.get_bind()
     session = Session(bind=bind)
-    session.query(DrugProductName).delete()
-    session.query(DrugProductIngredient).delete()
-    session.query(DrugProduct).delete()
-    session.query(DrugIngredient).delete()
-    session.query(DrugClass).delete()
+
+    catalog_rows = session.query(DrugEntry).all()
+    product_names = [row.generic_name for row in catalog_rows]
+    ingredient_names = [row.active_ingredients[0].strip() for row in catalog_rows]
+    class_names = [row.drug_class for row in catalog_rows]
+
+    products = session.query(DrugProduct).filter(DrugProduct.display_name.in_(product_names)).all()
+    product_ids = [p.id for p in products]
+    ingredients = (
+        session.query(DrugIngredient).filter(DrugIngredient.name_inn.in_(ingredient_names)).all()
+    )
+    ingredient_ids = [i.id for i in ingredients]
+
+    if product_ids:
+        session.query(DrugProductName).filter(
+            DrugProductName.drug_product_id.in_(product_ids)
+        ).delete(synchronize_session=False)
+        session.query(DrugProductIngredient).filter(
+            DrugProductIngredient.drug_product_id.in_(product_ids)
+        ).delete(synchronize_session=False)
+        session.query(DrugProduct).filter(DrugProduct.id.in_(product_ids)).delete(
+            synchronize_session=False
+        )
+    if ingredient_ids:
+        session.query(DrugIngredient).filter(DrugIngredient.id.in_(ingredient_ids)).delete(
+            synchronize_session=False
+        )
+    session.query(DrugClass).filter(DrugClass.name.in_(class_names)).delete(
+        synchronize_session=False
+    )
     session.commit()
 
     _drop_business_key_constraints()
