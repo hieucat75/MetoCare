@@ -27,6 +27,8 @@
 | [ADR-10](ADR-10-DRUG-KNOWLEDGE-DATA-SOURCES.md) | Drug Knowledge Data Sources | 🔵 Proposed (Gate 2) | Gate 2 | Data Sources | v1.0 | — | — |
 | [ADR-11](ADR-11-MEDICATION-LIFECYCLE.md) | Medication Lifecycle | ✅ Accepted | Gate 1 | Lifecycle | v1.0 | — | — |
 | [ADR-12](ADR-12-PHI-PRIVACY-AND-ENCRYPTION.md) | PHI, Privacy & Encryption | 🔵 Proposed (Gate 2) | Gate 2 | Privacy | v1.0 | — | — |
+| [ADR-13](ADR-13-KNOWLEDGE-CONTENT-LIFECYCLE.md) | Knowledge Content Lifecycle | ✅ Accepted (PTH 07-15) — see `MEDICATION_K1_PRE_VALIDATION.md` | Gate 1 | Knowledge Governance | v1.1 | — | — |
+| [ADR-14](ADR-14-PATIENT-CONTEXT-RESOLUTION.md) | Patient Context Resolution | 🟡 Approved in principle (PTH 07-15) — boundary binding now, Accepted deferred to K4 | Gate 1 (boundary) / Gate 2 (execution) | Personalization / Context | v1.1 | — | — |
 
 **Legend:**
 - ✅ Accepted — Gate approved by PTH. Implementation may proceed.
@@ -52,7 +54,8 @@
 | Gate | ADRs | Status | Unblocks |
 |------|------|--------|---------|
 | **Gate 1** | ADR-01, 03, 04, 09, 11 | ✅ All approved (2026-07-11) | P0 implementation |
-| **Gate 2** | ADR-02, 08, 10, 12 | 🔵 Pending PTH approval | P3: interaction, allergy, production launch |
+| **Gate 1 (v1.1 addition)** | ADR-13 (✅ Accepted 07-15), ADR-14 (boundary only, approved in principle) | ADR-13 cleared; ADR-14 boundary binding, formal Accepted deferred to K4 | K1 knowledge writes unblocked (ADR-13); Context/CDS boundary clarity (ADR-14) |
+| **Gate 2** | ADR-02, 08, 10, 12, ADR-14 (execution) | 🔵 Pending PTH approval | P3/K4–K5: interaction, allergy, context notes, production launch |
 | **Gate 3** | ADR-05, 06, 07 | 🟡 Pending design + PTH approval | P2–P4: OCR, AI, traditional medicine |
 
 ---
@@ -68,12 +71,13 @@
 | OQ-5 | LLM provider DPA for health data | Gate 3 | ⏳ Pending PTH |
 | OQ-6 | Vietnamese data deletion vs anonymization policy | Gate 2 | ⏳ Pending PTH |
 | OQ-7 | Designated Vietnamese clinical advisor (identity) | Gate 1 sign-offs | ⏳ Pending PTH |
+| OQ-8 | Clinical advisor specialty roster (which specialist reviews which drug class — endocrinology, cardiology, clinical pharmacy, etc., per ADR-13 `review_specialty`) | K1.5 Clinical Review | ⏳ Pending PTH |
 
 ---
 
 ## How to Add a New ADR
 
-1. Number sequentially: next available is **ADR-13**.
+1. Number sequentially: next available is **ADR-15**.
 2. Copy [ADR template](#adr-template) below.
 3. Fill in `Supersedes` if replacing an existing decision.
 4. Update the superseded ADR: set `Superseded By: ADR-XX` in its metadata block.
@@ -149,3 +153,4 @@ Gate N — [what this blocks or unblocks]
 | Version | Tag | Date | Key Changes |
 |---------|-----|------|-------------|
 | v1.0 | `medication-architecture-v1.0` | 2026-07-11 | Gate 1 approved. ADR-01/03/04/09/11 signed. P0 Implementation Plan v1.1. |
+| v1.1 | `medication-architecture-v1.1` | 2026-07-15 | K0 Medication Knowledge Architecture doc (patient-facing usage/interaction/side-effect cards). ADR-13 (Knowledge Content Lifecycle) and ADR-14 (Patient Context Resolution) proposed per PTH review round 1 — pending sign-off. |
