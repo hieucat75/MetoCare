@@ -148,6 +148,7 @@ jobs:
       - name: Run PostgreSQL integration tests
         run: |
           python -m pytest tests/integration/test_medication_p0_migrations.py \
+            tests/integration/test_medication_k1_knowledge_migration.py \
             -v --tb=short -m integration \
             --junit-xml=test-results-postgres.xml
         env:
