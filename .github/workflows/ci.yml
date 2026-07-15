@@ -149,6 +149,7 @@ jobs:
         run: |
           python -m pytest tests/integration/test_medication_p0_migrations.py \
             tests/integration/test_medication_k1_knowledge_migration.py \
+            tests/integration/test_medication_k1_s2_catalog_migration.py \
             -v --tb=short -m integration \
             --junit-xml=test-results-postgres.xml
         env:
