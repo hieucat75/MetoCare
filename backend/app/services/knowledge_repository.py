@@ -22,6 +22,7 @@ from __future__ import annotations
 import datetime as dt
 from typing import TypeVar
 
+from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from app.models.drug_knowledge_content import (
@@ -146,18 +147,32 @@ def submit_for_review(
     """draft -> clinical_review. ADR-13: any authenticated content author
     may do this — no specialty or self-approval check applies here (those
     only gate clinical_review -> approved, which this module never performs).
+
+    Uses an atomic UPDATE ... WHERE status = 'draft' (matching this
+    codebase's existing optimistic-concurrency convention in
+    app/services/medication.py) rather than validate-then-write against the
+    in-memory `row.status` — Codex review correctly flagged that two
+    concurrent callers could otherwise both pass validation against a
+    stale in-memory read and both commit, silently double-transitioning
+    a row.
     """
     validate_transition(
         row.status, "clinical_review", authored_by=row.authored_by, actor_user_id=actor_user_id
     )
-    row.status = "clinical_review"
-    row.status_changed_by = actor_user_id
-    row.status_changed_at = dt.datetime.now(dt.UTC)
-    try:
-        db.commit()
-    except Exception:
+    model_cls = type(row)
+    now = dt.datetime.now(dt.UTC)
+    result = db.execute(
+        update(model_cls)
+        .where(model_cls.id == row.id, model_cls.status == "draft")
+        .values(status="clinical_review", status_changed_by=actor_user_id, status_changed_at=now)
+    )
+    if result.rowcount != 1:
         db.rollback()
-        raise
+        raise TransitionError(
+            f"Row {row.id!r} was not in 'draft' status at commit time — "
+            "another transition won the race. Re-fetch and re-check before retrying."
+        )
+    db.commit()
     db.refresh(row)
     return row
 
@@ -192,12 +207,25 @@ def record_specialty_review(
 def check_specialty_completeness(db: Session, row: KnowledgeModel) -> bool:
     """True iff every specialty code in the row's ingredient's drug_class
     .required_specialties has at least one knowledge_review_specialties row
-    for this exact row. Pure read — does not mutate anything."""
+    for this exact row. Pure read — does not mutate anything.
+
+    Fails closed (returns False), never raises, if the ingredient, its
+    class, or a referenced specialty is missing — Codex review correctly
+    flagged that `db.get()` returning None would otherwise crash with an
+    AttributeError on the next attribute access. Production FKs prevent
+    the ingredient/class case in practice, but `knowledge_review_specialties
+    .specialty_id` is not FK-enforced against a live row being deleted
+    later, so this stays defensive rather than trusting the constraint.
+    """
     model_cls = type(row)
     table_name = KNOWLEDGE_TABLE_NAME[model_cls]
 
     ingredient = db.get(DrugIngredient, row.drug_ingredient_id)
+    if ingredient is None:
+        return False
     drug_class = db.get(DrugClass, ingredient.drug_class_id)
+    if drug_class is None:
+        return False
     required_codes = set(drug_class.required_specialties or [])
     if not required_codes:
         return True
@@ -210,6 +238,8 @@ def check_specialty_completeness(db: Session, row: KnowledgeModel) -> bool:
     reviewed_codes = set()
     for r in reviewed:
         specialty = db.get(ClinicalSpecialty, r.specialty_id)
+        if specialty is None:
+            continue
         reviewed_codes.add(specialty.code)
 
     return required_codes.issubset(reviewed_codes)

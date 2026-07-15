@@ -54,6 +54,14 @@ Create draft (2), published-query exclusion + zero-approved-rows (2), transition
 4. **Technical debt?** (a) `KNOWLEDGE_TABLE_NAME` in this module duplicates `KNOWLEDGE_TABLES` in `drug_knowledge_governance.py` by hand (no shared import to avoid a circular dependency) — must be kept in sync manually if either changes. (b) The `approved→deprecated` automatic-transition behavior ADR-13 describes is not implemented (nothing can reach `approved` to trigger it) — deferred to whichever future PR adds the real approval path.
 5. **Rollback loss?** N/A at the schema level (no migration in this PR). At the service level: `create_draft`/`submit_for_review`/`record_specialty_review` each roll back their own transaction on error, verified by `test_missing_required_field_rolls_back_cleanly`.
 
-### Codex review
+### Codex review (round 1) — 1 P1 + 2 P2, all resolved
 
-See below (added after independent review).
+| # | Finding | Severity | Resolution |
+|---|---|---|---|
+| 1 | `submit_for_review()` validated the in-memory `row.status`, then committed an unconditional UPDATE — two concurrent callers reading `draft` could both pass validation and both commit, silently double-transitioning a row. | P1 | Rewrote to an atomic `UPDATE ... WHERE id = :id AND status = 'draft'`, matching this codebase's existing optimistic-concurrency convention (`app/services/medication.py`). Raises `TransitionError` if `rowcount != 1`. Verified with a genuine two-session concurrency test (`test_concurrent_submit_for_review_only_one_wins`). |
+| 2 | `check_specialty_completeness()` crashed with `AttributeError` (not a return value) if the ingredient, its class, or a referenced specialty was missing — `db.get()` returns `None`, and the next attribute access on `None` raises. | P2 | Now fails closed (`return False`) at each lookup instead of crashing. Verified with two new tests: missing ingredient, and a `knowledge_review_specialties.specialty_id` pointing at a deleted specialty (that column is not FK-enforced). |
+| 3 | `test_zero_approved_rows_exist_anywhere` only checked `DrugUsage`, not all 5 in-scope tables; there was no explicit regression test proving a caller can't pass `status='approved'` through `create_draft`'s `**fields`. | P2 | Parameterized the zero-approved-rows test across all 5 model classes. Added `test_status_kwarg_cannot_override_draft`, which locks in the `TypeError` behavior Codex confirmed already prevents this (duplicate keyword argument), rather than leaving it as an incidental property of the implementation. |
+
+Also confirmed clean by Codex: no code path sets `status='approved'` (the `TypeError` on duplicate kwargs is real, not assumed); `list_published()`'s `filter_by(**business_key_filter)` is injection-safe and can't override the fixed `status='approved'` filter for the same reason; the self-approval check and the 4-pair transition set are both correct with no missing edge cases.
+
+Re-verified: 22/22 unit tests pass (up from 14 — added concurrency + missing-reference + status-override regression tests), full backend unit suite green.
