@@ -55,6 +55,22 @@ from .consultation import (
     PaymentStatus,
 )
 from .drug_catalog import DrugEntry
+from .drug_knowledge_content import (
+    DrugContraindication,
+    DrugInteraction,
+    DrugMonitoring,
+    DrugPatientEducation,
+    DrugSideEffect,
+    DrugUsage,
+)
+from .drug_knowledge_core import (
+    DrugClass,
+    DrugIngredient,
+    DrugProduct,
+    DrugProductIngredient,
+    DrugProductName,
+)
+from .drug_knowledge_governance import ClinicalSpecialty, KnowledgeReviewSpecialty
 from .governance import AuditLog, Consent
 from .meto import MetoAuditLog, MetoConsent, MetoConversation, MetoMessage
 from .notification import Notification
@@ -122,6 +138,19 @@ __all__ = [
     "OCRCase",
     "SymptomLog",
     "DrugEntry",
+    "ClinicalSpecialty",
+    "KnowledgeReviewSpecialty",
+    "DrugClass",
+    "DrugIngredient",
+    "DrugProduct",
+    "DrugProductIngredient",
+    "DrugProductName",
+    "DrugUsage",
+    "DrugPatientEducation",
+    "DrugSideEffect",
+    "DrugMonitoring",
+    "DrugContraindication",
+    "DrugInteraction",
     "TriageLog",
     "User",
     "UserRole",
