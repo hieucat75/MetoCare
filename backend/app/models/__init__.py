@@ -57,7 +57,6 @@ from .consultation import (
 from .drug_catalog import DrugEntry
 from .drug_knowledge_content import (
     DrugContraindication,
-    DrugInteraction,
     DrugMonitoring,
     DrugPatientEducation,
     DrugSideEffect,
@@ -150,7 +149,6 @@ __all__ = [
     "DrugSideEffect",
     "DrugMonitoring",
     "DrugContraindication",
-    "DrugInteraction",
     "TriageLog",
     "User",
     "UserRole",

@@ -1,4 +1,7 @@
-"""Six typed knowledge tables — ADR-13 (Knowledge Content Lifecycle).
+"""Five of ADR-13's six typed knowledge tables (Knowledge Content Lifecycle).
+
+`drug_interactions` is intentionally NOT included here — see the note at the
+bottom of this file and MEDICATION_K1_PR1_COMPLIANCE_REVIEW.md.
 
 Each table shares a provenance + lifecycle mixin (`KnowledgeLifecycleMixin`):
 status enum, who authored/changed status and when, and the source/version/
@@ -203,53 +206,9 @@ class DrugContraindication(KnowledgeLifecycleMixin, UUIDPrimaryKey, TimestampMix
     )
 
 
-class DrugInteraction(UUIDPrimaryKey, TimestampMixin, Base):
-    """Ingredient-pair interaction (ADR-13; subjects generalized per ADR-02).
-
-    Does NOT inherit KnowledgeLifecycleMixin's drug_ingredient_id — an
-    interaction is keyed by a pair of subjects, not a single ingredient.
-    subject_a/b are intentionally not FK-constrained: `subject_a_type` can
-    vary (ingredient today, drug class or herb later per ADR-06), the same
-    polymorphic-association rationale ADR-13 already accepts for
-    `knowledge_review_specialties`.
-    """
-
-    __tablename__ = "drug_interactions"
-
-    subject_a_type: Mapped[str] = mapped_column(String(32), nullable=False)
-    subject_a_id: Mapped[str] = mapped_column(String(36), nullable=False)
-    subject_b_type: Mapped[str] = mapped_column(String(32), nullable=False)
-    subject_b_id: Mapped[str] = mapped_column(String(36), nullable=False)
-    # Computed at write time by the service layer (never client-supplied) —
-    # sorted so a bidirectional A<->B rule produces the same key regardless
-    # of insert order. Schema only stores it; no service layer exists yet.
-    canonical_pair_key: Mapped[str] = mapped_column(String(128), nullable=False)
-
-    mechanism_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    severity: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    clinical_effect: Mapped[str | None] = mapped_column(Text, nullable=True)
-    management: Mapped[str | None] = mapped_column(Text, nullable=True)
-
-    source: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    version: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    evidence_level: Mapped[str | None] = mapped_column(String(16), nullable=True)
-    reviewed_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    last_reviewed_at: Mapped[dt.datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default=text("'draft'"))
-    status_changed_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    status_changed_by: Mapped[str] = mapped_column(String(255), nullable=False)
-    authored_by: Mapped[str] = mapped_column(String(255), nullable=False)
-
-    __table_args__ = (
-        _status_check("drug_interactions"),
-        _approved_invariants_check("drug_interactions"),
-        Index(
-            "uq_drug_interactions_approved_key",
-            "canonical_pair_key",
-            unique=True,
-            postgresql_where=text("status = 'approved'"),
-            sqlite_where=text("status = 'approved'"),
-        ),
-    )
+# drug_interactions is deliberately NOT modeled in this PR. Codex review
+# flagged that a single-approved-per-canonical_pair_key design cannot
+# represent ADR-02's directional/conditional interaction rules (dose/lab/
+# route/condition-dependent — multiple approved rules can legitimately share
+# the same subject pair). Deferred to a follow-up PR scoped to full ADR-02
+# compliance.

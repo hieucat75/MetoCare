@@ -93,16 +93,17 @@ NEW_TABLES = (
     "drug_side_effects",
     "drug_monitoring",
     "drug_contraindications",
-    "drug_interactions",
 )
 
+# drug_interactions is deliberately excluded from this PR — see
+# MEDICATION_K1_PR1_COMPLIANCE_REVIEW.md (deferred to a follow-up PR scoped
+# to ADR-02 compliance, per Codex review finding).
 KNOWLEDGE_TABLES = (
     "drug_usage",
     "drug_patient_education",
     "drug_side_effects",
     "drug_monitoring",
     "drug_contraindications",
-    "drug_interactions",
 )
 
 
@@ -158,9 +159,7 @@ class TestStatusCheckConstraint:
     @pytest.mark.parametrize("table", KNOWLEDGE_TABLES)
     def test_invalid_status_rejected(self, migrated_schema: sa.Engine, table: str) -> None:
         with migrated_schema.connect() as conn:
-            ingredient_id = None
-            if table != "drug_interactions":
-                ingredient_id = _seed_class_and_ingredient(conn)
+            ingredient_id = _seed_class_and_ingredient(conn)
             with pytest.raises(sa.exc.IntegrityError):
                 _insert_minimal_row(conn, table, ingredient_id, status="bogus")
             conn.rollback()
@@ -172,9 +171,7 @@ class TestApprovedInvariantsCheck:
         self, migrated_schema: sa.Engine, table: str
     ) -> None:
         with migrated_schema.connect() as conn:
-            ingredient_id = None
-            if table != "drug_interactions":
-                ingredient_id = _seed_class_and_ingredient(conn)
+            ingredient_id = _seed_class_and_ingredient(conn)
             with pytest.raises(sa.exc.IntegrityError):
                 _insert_minimal_row(conn, table, ingredient_id, status="approved")
             conn.rollback()
@@ -184,9 +181,7 @@ class TestApprovedInvariantsCheck:
         self, migrated_schema: sa.Engine, table: str
     ) -> None:
         with migrated_schema.connect() as conn:
-            ingredient_id = None
-            if table != "drug_interactions":
-                ingredient_id = _seed_class_and_ingredient(conn)
+            ingredient_id = _seed_class_and_ingredient(conn)
             _insert_minimal_row(
                 conn,
                 table,
@@ -310,11 +305,11 @@ class TestRollback:
 def _insert_minimal_row(
     conn: sa.Connection,
     table: str,
-    drug_ingredient_id: str | None,
+    drug_ingredient_id: str,
     status: str,
     with_provenance: bool = False,
 ) -> None:
-    """Insert a minimal row into any of the 6 knowledge tables for testing."""
+    """Insert a minimal row into any of the 5 knowledge tables for testing."""
     row_id = str(uuid.uuid4())
     now = datetime.now(UTC)
     provenance = (
@@ -381,15 +376,6 @@ def _insert_minimal_row(
             ":evidence_level, :reviewed_by, :last_reviewed_at, :status, :now, "
             "'tester', 'tester', :now, :now)"
         ),
-        "drug_interactions": (
-            "INSERT INTO drug_interactions "
-            "(id, subject_a_type, subject_a_id, subject_b_type, subject_b_id, canonical_pair_key, "
-            "source, version, evidence_level, reviewed_by, last_reviewed_at, status, "
-            "status_changed_at, status_changed_by, authored_by, created_at, updated_at) "
-            "VALUES (:id, 'ingredient', :ing_a, 'ingredient', :ing_b, :pair_key, "
-            ":source, :version, :evidence_level, :reviewed_by, :last_reviewed_at, :status, :now, "
-            "'tester', 'tester', :now, :now)"
-        ),
     }
 
     params = {
@@ -399,9 +385,5 @@ def _insert_minimal_row(
         "now": now,
         **provenance,
     }
-    if table == "drug_interactions":
-        params["ing_a"] = str(uuid.uuid4())
-        params["ing_b"] = str(uuid.uuid4())
-        params["pair_key"] = row_id  # unique per test call unless testing collision
 
     conn.execute(sa.text(table_specific[table]), params)

@@ -10,7 +10,15 @@ for clinical content itself.
 
 from __future__ import annotations
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -18,9 +26,14 @@ from app.core.database import Base
 from ._mixins import UUIDPrimaryKey
 
 # Valid values for knowledge_review_specialties.knowledge_table — the six
-# ADR-13 knowledge tables. Kept as a plain tuple (not a DB enum type) so it
-# stays a single source of truth referenced by both the model CHECK
-# constraint and the Alembic migration.
+# ADR-13 knowledge tables (drug_interactions is allowed here even though its
+# content table isn't created until a follow-up PR — see
+# drug_knowledge_content.py — since this column is a polymorphic reference,
+# not an FK, and reserving the value now avoids a second migration later).
+# Kept as a plain tuple so it stays a single source of truth referenced by
+# both the model CHECK constraint below and the Alembic migration's literal
+# CHECK (the migration can't import this module, so keep the two in sync by
+# hand if this tuple ever changes).
 KNOWLEDGE_TABLES = (
     "drug_usage",
     "drug_patient_education",
@@ -36,10 +49,12 @@ class ClinicalSpecialty(UUIDPrimaryKey, Base):
 
     __tablename__ = "clinical_specialties"
 
-    code: Mapped[str] = mapped_column(String(32), nullable=False, unique=True)
+    code: Mapped[str] = mapped_column(String(32), nullable=False)
     display_name_vi: Mapped[str] = mapped_column(String(128), nullable=False)
     display_name_en: Mapped[str] = mapped_column(String(128), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+    __table_args__ = (UniqueConstraint("code", name="uq_clinical_specialties_code"),)
 
 
 class KnowledgeReviewSpecialty(UUIDPrimaryKey, Base):
@@ -58,6 +73,10 @@ class KnowledgeReviewSpecialty(UUIDPrimaryKey, Base):
     reviewed_at: Mapped[object] = mapped_column(DateTime(timezone=True), nullable=False)
 
     __table_args__ = (
+        CheckConstraint(
+            "knowledge_table IN (" + ",".join(f"'{t}'" for t in KNOWLEDGE_TABLES) + ")",
+            name="ck_krs_knowledge_table",
+        ),
         Index(
             "ix_knowledge_review_specialties_row",
             "knowledge_table",

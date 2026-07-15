@@ -390,39 +390,16 @@ def upgrade() -> None:
         sqlite_where=sa.text("status = 'approved'"),
     )
 
-    op.create_table(
-        "drug_interactions",
-        sa.Column("id", sa.String(36), nullable=False),
-        sa.Column("subject_a_type", sa.String(32), nullable=False),
-        sa.Column("subject_a_id", sa.String(36), nullable=False),
-        sa.Column("subject_b_type", sa.String(32), nullable=False),
-        sa.Column("subject_b_id", sa.String(36), nullable=False),
-        sa.Column("canonical_pair_key", sa.String(128), nullable=False),
-        sa.Column("mechanism_type", sa.String(32), nullable=True),
-        sa.Column("severity", sa.String(32), nullable=True),
-        sa.Column("clinical_effect", sa.Text(), nullable=True),
-        sa.Column("management", sa.Text(), nullable=True),
-        *_lifecycle_columns(),
-        *_timestamp_columns(),
-        sa.PrimaryKeyConstraint("id"),
-        sa.CheckConstraint(f"status IN ({STATUS_VALUES})", name="ck_drug_interactions_status"),
-        sa.CheckConstraint(
-            _approved_invariants_sql(), name="ck_drug_interactions_approved_invariants"
-        ),
-    )
-    op.create_index(
-        "uq_drug_interactions_approved_key",
-        "drug_interactions",
-        ["canonical_pair_key"],
-        unique=True,
-        postgresql_where=sa.text("status = 'approved'"),
-        sqlite_where=sa.text("status = 'approved'"),
-    )
+    # NOTE: drug_interactions is deliberately NOT created in this PR. Codex
+    # review flagged that a single-approved-per-canonical_pair_key design
+    # cannot represent ADR-02's directional/conditional interaction rules
+    # (dose/lab/route/condition-dependent — multiple approved rules can
+    # legitimately share the same subject pair). Deferred to a follow-up PR
+    # scoped to full ADR-02 compliance, not bundled into this schema PR.
 
 
 def downgrade() -> None:
     """Reverse creation order. Safe: no deployed code writes to these tables."""
-    op.drop_table("drug_interactions")
     op.drop_table("drug_contraindications")
     op.drop_table("drug_monitoring")
     op.drop_table("drug_side_effects")

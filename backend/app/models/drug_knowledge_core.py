@@ -19,7 +19,7 @@ current: the relational core (`drug_classes`, `drug_ingredients`,
 
 from __future__ import annotations
 
-from sqlalchemy import Boolean, ForeignKey, String
+from sqlalchemy import Boolean, ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import JSON
 
@@ -33,7 +33,7 @@ class DrugClass(UUIDPrimaryKey, TimestampMixin, Base):
 
     __tablename__ = "drug_classes"
 
-    name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
     atc_code: Mapped[str | None] = mapped_column(String(16), nullable=True, index=True)
     atc_level: Mapped[str | None] = mapped_column(String(8), nullable=True)
     parent_class_id: Mapped[str | None] = mapped_column(
@@ -46,18 +46,26 @@ class DrugClass(UUIDPrimaryKey, TimestampMixin, Base):
     # same convention as clinic.py's doctor_ids/branch_ids JSON columns.
     required_specialties: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
 
+    # Named explicitly (not inline unique=True) so the ORM's metadata-driven
+    # DDL (SQLite dev/test create_all) matches the migration's constraint
+    # name exactly — Codex review flagged this drift for name_inn below;
+    # applying the same fix here for consistency.
+    __table_args__ = (UniqueConstraint("name", name="uq_drug_classes_name"),)
+
 
 class DrugIngredient(UUIDPrimaryKey, TimestampMixin, Base):
     """Normalized ingredient entity, canonical name = INN (ADR-01 OQ-2)."""
 
     __tablename__ = "drug_ingredients"
 
-    name_inn: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
+    name_inn: Mapped[str] = mapped_column(String(255), nullable=False)
     name_vietnamese: Mapped[str | None] = mapped_column(String(255), nullable=True)
     cas_number: Mapped[str | None] = mapped_column(String(32), nullable=True)
     drug_class_id: Mapped[str] = mapped_column(
         ForeignKey("drug_classes.id"), nullable=False, index=True
     )
+
+    __table_args__ = (UniqueConstraint("name_inn", name="uq_drug_ingredients_name_inn"),)
 
 
 class DrugProduct(UUIDPrimaryKey, TimestampMixin, Base):
