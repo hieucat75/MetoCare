@@ -114,8 +114,20 @@ Independent Codex CLI review (`gpt-5.6-terra`, reasoning effort high, 82K tokens
 
 All fixes verified: full Postgres integration suite re-run (24/24 pass, down from 27 — the 3 `drug_interactions`-parametrized cases removed), upgrade/downgrade rehearsal re-run clean, full backend unit suite re-run clean (exit 0).
 
+### Codex round 2
+
+Round-1 fixes were re-reviewed independently. One incomplete fix found:
+
+| # | Finding | Severity | Resolution |
+|---|---------|----------|------------|
+| 7 | `drug_interactions` was removed as a table but left in the `knowledge_table` CHECK's allowed values (migration AND ORM `KNOWLEDGE_TABLES`) — a review row could claim `knowledge_table='drug_interactions'` pointing at a `knowledge_row_id` that can never exist, since no such table exists. | P1 | Removed `'drug_interactions'` from both the migration's literal CHECK and the ORM's `KNOWLEDGE_TABLES` tuple. Re-verified live on Postgres: `\d knowledge_review_specialties` now shows the CHECK's `ANY (ARRAY[...])` listing only the 5 real tables. |
+
+Everything else confirmed correct on re-review: `knowledge_table` CHECK exists on both migration and ORM (the mechanism was right, only the value list was stale); all three ORM uniqueness constraints are explicit and name-matched; CI invokes the new test module.
+
+Round-2 fix re-verified: full downgrade → upgrade rehearsal clean, 24/24 integration tests still pass.
+
 ---
 
 ## Overall Verdict
 
-**No unresolved CRITICAL/P1 findings** after round-1 fixes. One documented, non-blocking scope limitation remains (C9 — cross-table completeness check, deferred to service layer). This PR is contingent on PR #124 merging first (Section A). Recommend a Codex round-2 review to confirm the fixes before merge, per PTH's standing instruction not to merge before a clean Codex pass.
+**No unresolved CRITICAL/P1 findings** after round-1 + round-2 fixes. One documented, non-blocking scope limitation remains (C9 — cross-table completeness check, deferred to service layer). This PR is contingent on PR #124 merging first (Section A). Recommend a Codex round-3 spot-check to confirm before merge, per PTH's standing instruction not to merge before a clean Codex pass.

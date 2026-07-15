@@ -25,11 +25,13 @@ from app.core.database import Base
 
 from ._mixins import UUIDPrimaryKey
 
-# Valid values for knowledge_review_specialties.knowledge_table — the six
-# ADR-13 knowledge tables (drug_interactions is allowed here even though its
-# content table isn't created until a follow-up PR — see
-# drug_knowledge_content.py — since this column is a polymorphic reference,
-# not an FK, and reserving the value now avoids a second migration later).
+# Valid values for knowledge_review_specialties.knowledge_table — the five
+# ADR-13 knowledge tables this PR creates. `drug_interactions` is
+# deliberately NOT included: it doesn't exist as a table yet (deferred to a
+# follow-up PR per Codex review — see drug_knowledge_content.py), and
+# allowing it here would let a review row reference a knowledge_row_id that
+# can never exist (Codex round-2 finding). Add it back only when that
+# follow-up PR actually creates the table.
 # Kept as a plain tuple so it stays a single source of truth referenced by
 # both the model CHECK constraint below and the Alembic migration's literal
 # CHECK (the migration can't import this module, so keep the two in sync by
@@ -40,7 +42,6 @@ KNOWLEDGE_TABLES = (
     "drug_side_effects",
     "drug_monitoring",
     "drug_contraindications",
-    "drug_interactions",
 )
 
 

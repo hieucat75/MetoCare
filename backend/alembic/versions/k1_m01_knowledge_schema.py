@@ -1,6 +1,6 @@
 """K1-M01: Medication Knowledge Repository schema (ADR-01 core + ADR-13 lifecycle).
 
-Creates 13 new tables. Schema-only — no clinical content is authored here
+Creates 12 new tables. Schema-only — no clinical content is authored here
 (K1 Exit Criteria EC-07/EC-09), no API route reads/writes these tables
 (EC-08), no frontend or AI change (EC-09/EC-10).
 
@@ -9,9 +9,11 @@ drug_product_ingredients, drug_product_names.
 
 ADR-13 knowledge governance: clinical_specialties, knowledge_review_specialties.
 
-ADR-13 six typed knowledge tables (lifecycle + per-table business-key partial
-unique index): drug_usage, drug_patient_education, drug_side_effects,
-drug_monitoring, drug_contraindications, drug_interactions.
+ADR-13 knowledge tables (lifecycle + per-table business-key partial unique
+index): drug_usage, drug_patient_education, drug_side_effects,
+drug_monitoring, drug_contraindications. `drug_interactions` (the sixth
+ADR-13 table) is deliberately NOT created here — see the note before
+downgrade() and MEDICATION_K1_PR1_COMPLIANCE_REVIEW.md Section F.
 
 See docs/medication-management/MEDICATION_K1_PR1_COMPLIANCE_REVIEW.md for the
 Architecture Compliance Review and the ADR-01/ADR-13 reconciliation note.
@@ -201,7 +203,7 @@ def upgrade() -> None:
         sa.CheckConstraint(
             "knowledge_table IN ("
             "'drug_usage','drug_patient_education','drug_side_effects',"
-            "'drug_monitoring','drug_contraindications','drug_interactions'"
+            "'drug_monitoring','drug_contraindications'"
             ")",
             name="ck_krs_knowledge_table",
         ),
