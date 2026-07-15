@@ -37,7 +37,7 @@ Documented in full in `MEDICATION_K1_S2_CATALOG_MIGRATION_REPORT.md`. Summary: p
 
 ## Requirement 4 — Rollback-safe
 
-- `downgrade()` deletes only the 5 tables this migration (and K1-M01, which shipped them empty) ever wrote to — `drug_catalog` is never referenced in `downgrade()`.
+- `downgrade()` reads `drug_catalog` only to compute the expected row counts it verifies against before deleting anything (Codex round-2 fix, see below) — it never modifies or deletes a `drug_catalog` row.
 - Verified: `TestRollback.test_downgrade_removes_all_migrated_rows_but_keeps_catalog` — all 5 relational-core tables empty after downgrade, `drug_catalog` still 41 rows.
 - `TestRollback.test_upgrade_downgrade_upgrade_idempotent` — full cycle restores exact same counts (25/41/41/255).
 - The two new UNIQUE constraints are dropped in `downgrade()`, restoring K1-M01's exact original schema.
@@ -67,3 +67,13 @@ Documented in full in `MEDICATION_K1_S2_CATALOG_MIGRATION_REPORT.md`. Summary: p
 | 5 | The migration report's per-entry mapping list had factual errors — several entries transcribed from memory instead of the actual migrated values (e.g. "pioglitazone→pioglitazone" vs. the true "pioglitazone hydrochloride"). | P2 | Regenerated the entire list by querying the live migrated database directly, not from memory. Report now states this explicitly, including the error it caught in itself. |
 
 All fixes re-verified: 14/14 integration tests pass, upgrade/downgrade/upgrade rehearsal clean, full backend unit suite green.
+
+### Codex review (round 2) — 2 P1 + 1 P2, all resolved
+
+| # | Finding | Severity | Resolution |
+|---|---|---|---|
+| 6 | The round-1 cardinality check (`len(active_ingredients) != 1`) ran inside the per-row loop, after earlier rows' writes had already flushed — functionally safe under Alembic's transactional DDL (an uncaught exception rolls the whole migration transaction back), but not validated up front. | P1 | Moved to a dedicated validation pass over all 41 rows, executed before any write. |
+| 7 | The round-1 `downgrade()` fix (delete rows matching current `drug_catalog` keys) was itself unsound: it can over-delete (a later service adding an alias to an existing migrated product would have that alias deleted too, since it shares the product's row) and under-delete (if catalog data changes after upgrade, this migration's own rows go unmatched). | P1 | Replaced key-matching with a **count-verification-then-refuse** approach: `downgrade()` computes the expected row counts for `drug_classes`/`drug_ingredients`/`drug_products` from the current `drug_catalog` and compares against actual counts. If they don't match — meaning something else wrote to these tables since `upgrade()` ran — it raises and refuses to delete anything, rather than guessing in either direction. There is no created-by-migration marker column to delete against precisely without a schema change, which stays out of scope for this data-only PR. |
+| 8 | This report's rollback section claimed `drug_catalog` "is never referenced in `downgrade()`" — no longer true once round-1's fix started querying it for keys. | P2 | Corrected the wording (in both this doc and the migration's own docstring) to state precisely: `drug_catalog` is read to compute expected counts, never modified or deleted. |
+
+Re-verified again: 14/14 integration tests pass, upgrade/downgrade/upgrade rehearsal clean, full backend unit suite green.

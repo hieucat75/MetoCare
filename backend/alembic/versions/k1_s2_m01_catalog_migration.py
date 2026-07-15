@@ -114,6 +114,22 @@ def migrate_catalog_rows(session: Session) -> dict[str, int]:
             "migration was authored)."
         )
 
+    # Validate EVERY row before writing anything (Codex round-2 finding: the
+    # original per-row check let earlier rows' class/ingredient/product
+    # writes flush before a later malformed row was caught — functionally
+    # safe under Alembic's transactional DDL, since an uncaught exception
+    # rolls the whole migration transaction back, but validating up front
+    # is clearer and doesn't rely on that transactional guarantee).
+    for row in catalog_rows:
+        if len(row.active_ingredients) != 1:
+            raise RuntimeError(
+                f"K1-S2 does not support combination products: "
+                f"{row.generic_name!r} has {len(row.active_ingredients)} "
+                f"active_ingredients {row.active_ingredients!r}. This migration's "
+                "one-ingredient-per-row assumption no longer holds — extend the "
+                "mapping logic before re-running, do not just take [0]."
+            )
+
     class_cache: dict[str, DrugClass] = {}
     stats = {"classes": 0, "ingredients": 0, "products": 0, "product_names": 0}
 
@@ -133,17 +149,7 @@ def migrate_catalog_rows(session: Session) -> dict[str, int]:
 
         # 2. drug_ingredients — every one of the 41 entries has exactly one
         # active_ingredient today (verified during design; no combination
-        # products in this catalog). Codex review correctly flagged that
-        # `active_ingredients[0]` alone would silently truncate a future
-        # combination product added to the catalog — fail loudly instead.
-        if len(row.active_ingredients) != 1:
-            raise RuntimeError(
-                f"K1-S2 does not support combination products: "
-                f"{row.generic_name!r} has {len(row.active_ingredients)} "
-                f"active_ingredients {row.active_ingredients!r}. This migration's "
-                "one-ingredient-per-row assumption no longer holds — extend the "
-                "mapping logic before re-running, do not just take [0]."
-            )
+        # products in this catalog; cardinality already validated above).
         # name_inn is the source value verbatim (often the salt form actually
         # prescribed, e.g. "metformin hydrochloride") — not decomposed into a
         # purer INN base name, which would require clinical judgment this
@@ -259,17 +265,26 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Remove only the rows THIS migration created, matched by business key
-    re-derived from drug_catalog — never a blanket DELETE of the whole
-    table. drug_catalog is never touched.
+    """Verify the 5 relational-core tables hold EXACTLY what this migration
+    created before deleting anything; refuse otherwise. drug_catalog is
+    never touched or queried for deletion purposes.
 
-    Codex review correctly flagged that unconditionally clearing all 5
-    tables was only safe at initial deploy (when K1-M01 had just shipped
-    them empty) — if a later migration or service ever adds rows under
-    different keys, a blanket delete here would destroy them too. Scoping
-    every delete to keys derived from the current drug_catalog contents
-    makes this safe regardless of what else may have written to these
-    tables since.
+    Codex review round 1 flagged that unconditionally clearing all 5 tables
+    assumed forever that nothing else would ever write to them. Round 2
+    then showed that "delete rows matching drug_catalog's current keys"
+    doesn't actually fix this: it can over-delete (a later SERVICE adding
+    an alias name to an existing migrated product would have that alias
+    deleted too, since it shares the product's id) and under-delete (if
+    catalog data changes after upgrade, this migration's own rows become
+    unmatched). There is no created-by-migration marker column to delete
+    against precisely without a schema change, which is out of scope here.
+
+    Given that, the honest and safe fix is: verify row counts in all 5
+    tables exactly match what THIS migration produced (re-derived from the
+    current drug_catalog) before doing anything. If they don't match —
+    meaning something else touched these tables since upgrade() ran — this
+    refuses to guess and raises, requiring manual intervention, instead of
+    silently deleting the wrong set in either direction.
     """
     from app.models.drug_catalog import DrugEntry
     from app.models.drug_knowledge_core import (
@@ -284,34 +299,35 @@ def downgrade() -> None:
     session = Session(bind=bind)
 
     catalog_rows = session.query(DrugEntry).all()
-    product_names = [row.generic_name for row in catalog_rows]
-    ingredient_names = [row.active_ingredients[0].strip() for row in catalog_rows]
-    class_names = [row.drug_class for row in catalog_rows]
+    expected_products = len(catalog_rows)
+    expected_ingredients = len({row.active_ingredients[0].strip() for row in catalog_rows})
+    expected_classes = len({row.drug_class for row in catalog_rows})
 
-    products = session.query(DrugProduct).filter(DrugProduct.display_name.in_(product_names)).all()
-    product_ids = [p.id for p in products]
-    ingredients = (
-        session.query(DrugIngredient).filter(DrugIngredient.name_inn.in_(ingredient_names)).all()
-    )
-    ingredient_ids = [i.id for i in ingredients]
+    actual = {
+        "drug_classes": session.query(DrugClass).count(),
+        "drug_ingredients": session.query(DrugIngredient).count(),
+        "drug_products": session.query(DrugProduct).count(),
+    }
+    expected = {
+        "drug_classes": expected_classes,
+        "drug_ingredients": expected_ingredients,
+        "drug_products": expected_products,
+    }
+    if actual != expected:
+        raise RuntimeError(
+            "K1-S2 downgrade refused: relational-core table counts "
+            f"{actual} do not match what this migration created {expected}. "
+            "Something else has written to drug_classes/drug_ingredients/"
+            "drug_products since upgrade() ran — this migration cannot "
+            "safely guess which rows are its own. Manual review required "
+            "before rolling back."
+        )
 
-    if product_ids:
-        session.query(DrugProductName).filter(
-            DrugProductName.drug_product_id.in_(product_ids)
-        ).delete(synchronize_session=False)
-        session.query(DrugProductIngredient).filter(
-            DrugProductIngredient.drug_product_id.in_(product_ids)
-        ).delete(synchronize_session=False)
-        session.query(DrugProduct).filter(DrugProduct.id.in_(product_ids)).delete(
-            synchronize_session=False
-        )
-    if ingredient_ids:
-        session.query(DrugIngredient).filter(DrugIngredient.id.in_(ingredient_ids)).delete(
-            synchronize_session=False
-        )
-    session.query(DrugClass).filter(DrugClass.name.in_(class_names)).delete(
-        synchronize_session=False
-    )
+    session.query(DrugProductName).delete()
+    session.query(DrugProductIngredient).delete()
+    session.query(DrugProduct).delete()
+    session.query(DrugIngredient).delete()
+    session.query(DrugClass).delete()
     session.commit()
 
     _drop_business_key_constraints()
