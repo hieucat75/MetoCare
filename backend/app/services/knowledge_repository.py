@@ -172,7 +172,11 @@ def submit_for_review(
             f"Row {row.id!r} was not in 'draft' status at commit time — "
             "another transition won the race. Re-fetch and re-check before retrying."
         )
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     db.refresh(row)
     return row
 
@@ -239,7 +243,14 @@ def check_specialty_completeness(db: Session, row: KnowledgeModel) -> bool:
     for r in reviewed:
         specialty = db.get(ClinicalSpecialty, r.specialty_id)
         if specialty is None:
-            continue
+            # A dangling knowledge_review_specialties.specialty_id (not
+            # FK-enforced) means this row's review data is not trustworthy
+            # — fail closed immediately rather than silently ignoring the
+            # bad reference and evaluating completeness on the rest
+            # (Codex round-2: skipping it could let an unrelated dangling
+            # row coexist with valid required-specialty reviews and still
+            # return True, understating the actual data-integrity problem).
+            return False
         reviewed_codes.add(specialty.code)
 
     return required_codes.issubset(reviewed_codes)

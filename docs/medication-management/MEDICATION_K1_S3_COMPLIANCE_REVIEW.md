@@ -65,3 +65,14 @@ Create draft (2), published-query exclusion + zero-approved-rows (2), transition
 Also confirmed clean by Codex: no code path sets `status='approved'` (the `TypeError` on duplicate kwargs is real, not assumed); `list_published()`'s `filter_by(**business_key_filter)` is injection-safe and can't override the fixed `status='approved'` filter for the same reason; the self-approval check and the 4-pair transition set are both correct with no missing edge cases.
 
 Re-verified: 22/22 unit tests pass (up from 14 — added concurrency + missing-reference + status-override regression tests), full backend unit suite green.
+
+### Codex review (round 2, scoped to the round-1 diff) — 2 P2, both resolved
+
+| # | Finding | Severity | Resolution |
+|---|---|---|---|
+| 4 | `check_specialty_completeness()` skipped a dangling `knowledge_review_specialties.specialty_id` reference and continued evaluating the rest — a valid required-specialty review coexisting with an unrelated dangling review row would still return `True`, understating the data-integrity problem. | P2 | Now returns `False` immediately on any dangling specialty reference encountered, rather than silently skipping it. Verified with a new test: valid review + unrelated dangling review together now correctly fail closed. |
+| 5 | The atomic-UPDATE rewrite of `submit_for_review()` dropped the `try/except: rollback(); raise` guard around the final `db.commit()` — a commit failure there would leave the caller's session unusable, breaking this module's transaction-cleanup convention. | P2 | Restored the guard. |
+
+Confirmed clean otherwise: the atomic `UPDATE ... WHERE status = 'draft'` + rowcount check correctly closes the round-1 race.
+
+Re-verified again: 23/23 unit tests pass, full backend unit suite green.

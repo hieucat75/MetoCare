@@ -269,6 +269,45 @@ class TestSpecialtyCompletenessFailsClosed:
         )
         assert repo.check_specialty_completeness(db, row) is False
 
+    def test_returns_false_when_valid_review_coexists_with_dangling_one(self, db) -> None:
+        """A legitimate review for the required specialty existing alongside
+        an unrelated dangling review row must still fail closed — the
+        dangling reference is itself a data-integrity problem worth
+        surfacing, not something to silently ignore while evaluating the
+        rest (Codex round 2)."""
+        suffix = uuid.uuid4().hex[:8]
+        specialty = ClinicalSpecialty(
+            code=f"cardiology-{suffix}", display_name_vi="Tim mạch", display_name_en="Cardiology"
+        )
+        db.add(specialty)
+        db.commit()
+
+        ingredient = _make_ingredient(db, required_specialties=[specialty.code])
+        row = repo.create_draft(
+            db,
+            DrugUsage,
+            authored_by="author-1",
+            drug_ingredient_id=ingredient.id,
+            locale="vi",
+            audience="patient",
+            content="content",
+        )
+        repo.record_specialty_review(
+            db,
+            knowledge_table="drug_usage",
+            knowledge_row_id=row.id,
+            specialty_id=specialty.id,
+            reviewed_by="reviewer-1",
+        )
+        repo.record_specialty_review(
+            db,
+            knowledge_table="drug_usage",
+            knowledge_row_id=row.id,
+            specialty_id="does-not-exist",
+            reviewed_by="reviewer-2",
+        )
+        assert repo.check_specialty_completeness(db, row) is False
+
 
 class TestSpecialtyCompleteness:
     def test_no_required_specialties_is_trivially_complete(self, db) -> None:
