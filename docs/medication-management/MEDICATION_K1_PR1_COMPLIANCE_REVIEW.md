@@ -126,8 +126,12 @@ Everything else confirmed correct on re-review: `knowledge_table` CHECK exists o
 
 Round-2 fix re-verified: full downgrade → upgrade rehearsal clean, 24/24 integration tests still pass.
 
+### Codex round 3 (spot-check of the round-2 fix)
+
+Scoped to the delta since round 2 only. **Result: no [P1] or [P2] findings.** Confirmed: migration CHECK and ORM `KNOWLEDGE_TABLES` both list only the five existing tables; repository-wide scan found remaining `drug_interactions` mentions only in comments explaining its deliberate omission, none functional.
+
 ---
 
 ## Overall Verdict
 
-**No unresolved CRITICAL/P1 findings** after round-1 + round-2 fixes. One documented, non-blocking scope limitation remains (C9 — cross-table completeness check, deferred to service layer). This PR is contingent on PR #124 merging first (Section A). Recommend a Codex round-3 spot-check to confirm before merge, per PTH's standing instruction not to merge before a clean Codex pass.
+**Codex review is clean (round 3).** No unresolved CRITICAL/P1/P2 findings from any round. One documented, non-blocking scope limitation remains (C9 — cross-table completeness check, deferred to service layer). This PR is contingent on PR #124 merging first (Section A) — ready to merge once that lands.
