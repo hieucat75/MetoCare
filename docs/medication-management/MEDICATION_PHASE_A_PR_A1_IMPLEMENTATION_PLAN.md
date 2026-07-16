@@ -62,7 +62,7 @@ Proposed package: **`backend/app/services/medication_knowledge_import/`** (new s
 
 **Explicit reinterpretation (per PTH's own note in the request):** "Publish pipeline" in the original spec is implemented as **publish preparation**, not publish execution. It stages/validates a batch and produces a report; it never calls `create_draft`/`submit_for_review` with a target beyond `clinical_review`, and never touches `approved`. The actual approve workflow (Clinical Advisor role, K1.5+) is out of scope for both Phase A and Phase B.
 
-Tests live flat under `backend/tests/`, matching existing convention (`test_knowledge_repository.py` precedent): `test_medication_knowledge_import_loader.py`, `test_medication_knowledge_import_validation.py`, `test_medication_knowledge_import_versioning.py`, `test_medication_knowledge_import_orchestrator.py`, `test_medication_knowledge_import_preview.py`.
+Tests live flat under `backend/tests/`, matching existing convention (`test_knowledge_repository.py` precedent): `test_medication_knowledge_import_loader.py`, `test_medication_knowledge_import_validators.py`, `test_medication_knowledge_import_versioning.py`, `test_medication_knowledge_import_orchestrator.py`, `test_medication_knowledge_import_preview.py`.
 
 ---
 
@@ -102,6 +102,7 @@ review_metadata:                           # required
   reviewed_at: "2026-07-01"                # required — becomes DrugXxx.last_reviewed_at
   authored_by: "content-team@metocare.me"  # required — becomes DrugXxx.authored_by / status_changed_by at draft creation
   ai_generated: false                      # required, MUST be false — see validation rules
+  specialty_codes: []                      # optional, defaults to empty — see Finding 2 (clinical_specialties seed); validated structurally against the 7-code allowlist regardless of DB seed state
 
 disclaimer:
   acknowledged: true                       # required, MUST be true — see resolution below
@@ -200,15 +201,15 @@ All of the spec's required rules, plus two resolved above:
 | Test | File | Notes |
 |---|---|---|
 | Valid import | `test_medication_knowledge_import_orchestrator.py` | End-to-end: valid YAML file → draft row created with correct fields. |
-| Invalid import (each validation rule from §5) | `test_medication_knowledge_import_validation.py` | One test per rule — missing source, missing disclaimer ack, `ai_generated=true`, unsupported locale, malformed references, etc. |
+| Invalid import (each validation rule from §5) | `test_medication_knowledge_import_validators.py` | One test per rule — missing source, missing disclaimer ack, `ai_generated=true`, unsupported locale, malformed references, etc. |
 | Duplicate import (same file twice) | `test_medication_knowledge_import_versioning.py` | Asserts idempotent no-op — row count unchanged, no duplicate. |
 | Version bump | `test_medication_knowledge_import_versioning.py` | Same business key, new version, new content → new draft row; old row untouched (content + id unchanged). |
 | Version conflict (same version, different content) | `test_medication_knowledge_import_versioning.py` | Asserts rejection, zero rows written. |
 | Rollback (partial batch failure) | `test_medication_knowledge_import_orchestrator.py` | Batch of N files where file K is invalid → asserts zero rows written for the *entire* batch, not just file K. |
 | Concurrency | `test_medication_knowledge_import_orchestrator.py` | Two importer calls against the same business key at once (mirrors K1-S3's own two-session concurrency test pattern) — asserts the worst case is a harmless duplicate draft, not a crash or corrupted row. |
 | Malformed YAML/JSON | `test_medication_knowledge_import_loader.py` | Syntactically broken file → clean validation error, not an unhandled parser exception. |
-| Prohibited status | `test_medication_knowledge_import_validation.py` | Input file attempting to set `status` directly is ignored/rejected — importer only ever produces `draft`/`clinical_review`. |
-| Prohibited AI source | `test_medication_knowledge_import_validation.py` | `ai_generated: true` → hard reject (also listed under "invalid import" — called out separately since it's the one direct check for the non-negotiable "no AI-generated clinical facts" rule). |
+| Prohibited status | `test_medication_knowledge_import_validators.py` | Input file attempting to set `status` directly is ignored/rejected — importer only ever produces `draft`/`clinical_review`. |
+| Prohibited AI source | `test_medication_knowledge_import_validators.py` | `ai_generated: true` → hard reject (also listed under "invalid import" — called out separately since it's the one direct check for the non-negotiable "no AI-generated clinical facts" rule). |
 | Zero approved rows after tests | `test_medication_knowledge_import_orchestrator.py` (assertion added to every test, matching K1-S3's `test_zero_approved_rows_exist_anywhere` convention) | Every test in this suite asserts `status='approved'` count is 0 across all 5 tables at teardown, regardless of what else it tests. |
 | No API/frontend/AI changes | Not a runtime test — a **CI/PR-diff check**, same as EC-08/09/10 in this session's K1-S4 review: `git diff` for the PR must touch zero files under `frontend/`, zero files under `backend/app/api/`, zero files under `backend/app/ai/`, and zero files under the pre-existing `backend/app/knowledge/` package. |
 
@@ -262,7 +263,7 @@ backend/app/services/medication_knowledge_import/
 
 backend/tests/
   test_medication_knowledge_import_loader.py
-  test_medication_knowledge_import_validation.py
+  test_medication_knowledge_import_validators.py
   test_medication_knowledge_import_versioning.py
   test_medication_knowledge_import_orchestrator.py
   test_medication_knowledge_import_preview.py
