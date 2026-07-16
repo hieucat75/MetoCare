@@ -168,6 +168,38 @@ def test_side_effect_content_valid_shape_accepted() -> None:
     assert knowledge_file.typed_content().concept_code == "nausea"
 
 
+def test_usage_content_valid_shape_accepted() -> None:
+    data = _valid_file_dict()
+    data["metadata"]["knowledge_type"] = "usage"
+    data["content"] = {"body": "synthetic test usage narrative"}
+    knowledge_file = KnowledgeFile.model_validate(data)
+    assert knowledge_file.typed_content().body == "synthetic test usage narrative"
+
+
+def test_monitoring_content_valid_shape_accepted() -> None:
+    data = _valid_file_dict()
+    data["metadata"]["knowledge_type"] = "monitoring"
+    data["content"] = {
+        "parameter": "eGFR",
+        "patient_context": "baseline",
+        "guidance": "synthetic test monitoring guidance",
+    }
+    knowledge_file = KnowledgeFile.model_validate(data)
+    assert knowledge_file.typed_content().parameter == "eGFR"
+
+
+def test_contraindication_content_valid_shape_accepted() -> None:
+    data = _valid_file_dict()
+    data["metadata"]["knowledge_type"] = "contraindication"
+    data["content"] = {
+        "condition_type": "renal",
+        "condition_key": "egfr_lt_30",
+        "condition_detail": "synthetic test contraindication detail",
+    }
+    knowledge_file = KnowledgeFile.model_validate(data)
+    assert knowledge_file.typed_content().condition_key == "egfr_lt_30"
+
+
 def test_source_does_not_mutate_input_dict() -> None:
     """Guard against accidental in-place mutation (project immutability rule)."""
     data = _valid_file_dict()

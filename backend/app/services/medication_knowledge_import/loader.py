@@ -36,14 +36,13 @@ def load_file(path: Path) -> dict:
     if not path.is_file():
         raise LoaderError(f"knowledge file not found: {path}")
 
-    text = path.read_text(encoding="utf-8")
-
     try:
+        text = path.read_text(encoding="utf-8")
         if path.suffix.lower() == ".json":
             data = json.loads(text)
         else:
             data = yaml.safe_load(text)
-    except (yaml.YAMLError, json.JSONDecodeError) as exc:
+    except (yaml.YAMLError, json.JSONDecodeError, UnicodeDecodeError) as exc:
         raise LoaderError(f"malformed {path.suffix} in {path}: {exc}") from exc
 
     if not isinstance(data, dict):

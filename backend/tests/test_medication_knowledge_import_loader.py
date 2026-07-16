@@ -54,3 +54,13 @@ def test_rejects_non_mapping_top_level(tmp_path: Path) -> None:
     f.write_text("- 1\n- 2\n", encoding="utf-8")
     with pytest.raises(LoaderError, match="did not parse to a mapping"):
         load_file(f)
+
+
+def test_rejects_non_utf8_file(tmp_path: Path) -> None:
+    """Regression test: a file with invalid UTF-8 bytes must be wrapped as
+    LoaderError, not leak a raw UnicodeDecodeError past this module's own
+    documented "never raise a raw parser exception" contract."""
+    f = tmp_path / "bad-encoding.yaml"
+    f.write_bytes(b"a: \xff\xfe invalid utf-8 bytes\n")
+    with pytest.raises(LoaderError, match="malformed"):
+        load_file(f)
