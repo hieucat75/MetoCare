@@ -132,23 +132,46 @@ class DrugPatientEducation(KnowledgeLifecycleMixin, UUIDPrimaryKey, TimestampMix
 
 
 class DrugSideEffect(KnowledgeLifecycleMixin, UUIDPrimaryKey, TimestampMixin, Base):
-    """Side effects per ingredient+level (ADR-13)."""
+    """Side effects per ingredient (ADR-13, revised A1b-F1 per PTH's review
+    of the Knowledge Template, 2026-07-16).
+
+    The original `level` enum (common/uncommon/rare/serious) conflated two
+    independent axes: how OFTEN a side effect occurs (`frequency`) and what
+    the patient should DO about it (`action_level`) — a side effect can be
+    simultaneously rare and urgent, which a single enum couldn't express.
+
+    Business key is now `(drug_ingredient_id, concept_code)` alone, not
+    `(..., level, concept_code)` — frequency/action_level are attributes of
+    one canonical side-effect fact, not partition keys. One row per named
+    side effect per ingredient.
+    """
 
     __tablename__ = "drug_side_effects"
 
-    level: Mapped[str] = mapped_column(String(16), nullable=False)
     # New normalized short identifier (ADR-13 round-2) distinct from the
     # free-text `description` — this is what the business-key index keys on.
     concept_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    # Short chip-style label for list/card UI (Companion's SideEffectsCard) —
+    # distinct from the long-form `description` below.
+    label: Mapped[str] = mapped_column(String(80), nullable=False)
+    frequency: Mapped[str] = mapped_column(String(16), nullable=False)
+    action_level: Mapped[str] = mapped_column(String(24), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
 
     __table_args__ = (
         _status_check("drug_side_effects"),
         _approved_invariants_check("drug_side_effects"),
+        CheckConstraint(
+            "frequency IN ('common','uncommon','rare','unknown')",
+            name="ck_drug_side_effects_frequency",
+        ),
+        CheckConstraint(
+            "action_level IN ('self_monitor','contact_clinician','urgent_medical_help')",
+            name="ck_drug_side_effects_action_level",
+        ),
         Index(
             "uq_drug_side_effects_approved_key",
             "drug_ingredient_id",
-            "level",
             "concept_code",
             unique=True,
             postgresql_where=text("status = 'approved'"),
