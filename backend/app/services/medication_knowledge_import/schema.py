@@ -31,7 +31,14 @@ Locale = Literal["vi"]
 Audience = Literal["patient", "caregiver"]
 EvidenceLevel = Literal["strong", "moderate", "emerging", "expert_opinion"]
 SourceType = Literal["formulary", "clinical_guideline", "product_label", "peer_reviewed", "other"]
-SideEffectLevel = Literal["common", "uncommon", "rare", "serious"]
+# Two independent axes, not one severity enum (A1b-F1, PTH review of the
+# Knowledge Template, 2026-07-16): SideEffectLevel (common/uncommon/
+# rare/serious) conflated frequency with recommended action — a side
+# effect can be rare AND urgent, which one enum can't express. Matches
+# app.models.drug_knowledge_content.DrugSideEffect's frequency/
+# action_level columns exactly.
+SideEffectFrequency = Literal["common", "uncommon", "rare", "unknown"]
+SideEffectActionLevel = Literal["self_monitor", "contact_clinician", "urgent_medical_help"]
 
 # ADR-13's own example for a normalized identifier is lowercase snake_case
 # ("egfr_lt_30"). Applied to concept_code/condition_key specifically —
@@ -81,8 +88,10 @@ class PatientEducationContent(_StrictModel):
 
 
 class SideEffectContent(_StrictModel):
-    level: SideEffectLevel
+    frequency: SideEffectFrequency
+    action_level: SideEffectActionLevel
     concept_code: str = Field(min_length=1, max_length=64, pattern=_NORMALIZED_IDENTIFIER_PATTERN)
+    label: str = Field(min_length=1, max_length=80)  # matches drug_side_effects.label VARCHAR(80)
     description: str = Field(min_length=1)
 
 
