@@ -130,13 +130,84 @@ def test_unsupported_source_type_rejected() -> None:
         KnowledgeFile.model_validate(data)
 
 
-def test_prohibited_status_field_has_no_effect() -> None:
-    """The schema has no `status` field at all — an authoring file cannot
-    set one, whether or not it tries to include one."""
+def test_prohibited_status_field_rejected() -> None:
+    """The schema has no `status` field — extra="forbid" means an authoring
+    file that tries to set one is a hard validation error, not a silently
+    ignored no-op (Codex review P2: unknown fields were previously accepted
+    silently)."""
     data = _valid_file_dict()
     data["status"] = "approved"  # extraneous — KnowledgeFile has no such field
-    knowledge_file = KnowledgeFile.model_validate(data)
-    assert not hasattr(knowledge_file, "status")
+    with pytest.raises(ValidationError, match="status"):
+        KnowledgeFile.model_validate(data)
+
+
+def test_unknown_field_in_review_metadata_rejected() -> None:
+    data = _valid_file_dict()
+    data["review_metadata"]["reviewer_notes"] = "not a real field"
+    with pytest.raises(ValidationError):
+        KnowledgeFile.model_validate(data)
+
+
+def test_unknown_field_in_content_rejected() -> None:
+    data = _valid_file_dict()
+    data["content"]["extra_unexpected_field"] = "x"
+    with pytest.raises(ValidationError, match="content does not match the shape"):
+        KnowledgeFile.model_validate(data)
+
+
+def test_whitespace_only_source_rejected() -> None:
+    data = _valid_file_dict()
+    data["review_metadata"]["source"] = "   "
+    with pytest.raises(ValidationError):
+        KnowledgeFile.model_validate(data)
+
+
+def test_whitespace_only_document_identifier_rejected() -> None:
+    data = _valid_file_dict()
+    data["references"][0]["url"] = None
+    data["references"][0]["document_identifier"] = "   "
+    with pytest.raises(ValidationError):
+        KnowledgeFile.model_validate(data)
+
+
+def test_malformed_url_rejected() -> None:
+    data = _valid_file_dict()
+    data["references"][0]["url"] = "not a url"
+    with pytest.raises(ValidationError):
+        KnowledgeFile.model_validate(data)
+
+
+def test_version_over_32_chars_rejected() -> None:
+    """review_metadata.version maps directly to KnowledgeLifecycleMixin.version,
+    a VARCHAR(32) — a longer value would pass A1a and fail A1b's DB write."""
+    data = _valid_file_dict()
+    data["review_metadata"]["version"] = "v" * 33
+    with pytest.raises(ValidationError):
+        KnowledgeFile.model_validate(data)
+
+
+def test_non_normalized_concept_code_rejected() -> None:
+    data = _valid_file_dict()
+    data["metadata"]["knowledge_type"] = "side_effect"
+    data["content"] = {
+        "level": "common",
+        "concept_code": "Not Normalized!",
+        "description": "synthetic test description",
+    }
+    with pytest.raises(ValidationError, match="content does not match the shape"):
+        KnowledgeFile.model_validate(data)
+
+
+def test_non_normalized_condition_key_rejected() -> None:
+    data = _valid_file_dict()
+    data["metadata"]["knowledge_type"] = "contraindication"
+    data["content"] = {
+        "condition_type": "renal",
+        "condition_key": "Bad Key With Spaces",
+        "condition_detail": "synthetic test detail",
+    }
+    with pytest.raises(ValidationError, match="content does not match the shape"):
+        KnowledgeFile.model_validate(data)
 
 
 @pytest.mark.parametrize(

@@ -22,11 +22,13 @@ class LoaderError(ValueError):
 def load_file(path: Path) -> dict:
     """Load one knowledge authoring file into a raw dict.
 
-    Raises LoaderError for: unsupported extension, missing file, or a
-    syntactically broken YAML/JSON body. Never raises a raw parser
-    exception (PyYAML's YAMLError, json.JSONDecodeError) to the caller —
-    those are wrapped so orchestrator.py can collect batch-wide errors
-    uniformly (see MEDICATION_PHASE_A_PR_A1_IMPLEMENTATION_PLAN.md Section 4).
+    Raises LoaderError for: unsupported extension, missing file, an
+    unreadable file (permission error, or a TOCTOU race where the file
+    disappears between the is_file() check and the read), or a
+    syntactically broken YAML/JSON body. Never raises a raw parser or OS
+    exception to the caller — those are wrapped so orchestrator.py can
+    collect batch-wide errors uniformly (see
+    MEDICATION_PHASE_A_PR_A1_IMPLEMENTATION_PLAN.md Section 4).
     """
     if path.suffix.lower() not in _SUPPORTED_SUFFIXES:
         raise LoaderError(
@@ -42,8 +44,8 @@ def load_file(path: Path) -> dict:
             data = json.loads(text)
         else:
             data = yaml.safe_load(text)
-    except (yaml.YAMLError, json.JSONDecodeError, UnicodeDecodeError) as exc:
-        raise LoaderError(f"malformed {path.suffix} in {path}: {exc}") from exc
+    except (yaml.YAMLError, json.JSONDecodeError, UnicodeDecodeError, OSError) as exc:
+        raise LoaderError(f"malformed or unreadable {path.suffix} at {path}: {exc}") from exc
 
     if not isinstance(data, dict):
         raise LoaderError(
