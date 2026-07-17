@@ -48,9 +48,15 @@ def _write_file(
     concept_code: str,
     version: str = "1.0.0",
     title: str = "Test Title",
+    url: str | None = None,
     reviewed_at: str = "2026-01-01",
     specialty_codes: list[str] | None = None,
 ) -> Path:
+    # A random per-call default (unless the caller pins one explicitly) —
+    # since artifact_hash now covers url (PTH round-1 P1 fix), two calls
+    # that want to produce a genuinely IDENTICAL artifact must pass the
+    # SAME explicit url; otherwise each file is a distinct new artifact.
+    resolved_url = url if url is not None else f"https://example.invalid/{uuid.uuid4().hex[:8]}"
     data = {
         "metadata": {
             "knowledge_type": "side_effect",
@@ -70,7 +76,7 @@ def _write_file(
                 "publisher": "Test Publisher",
                 "title": title,
                 "source_type": "formulary",
-                "url": f"https://example.invalid/{uuid.uuid4().hex[:8]}",
+                "url": resolved_url,
                 "publication_date": "2024-01-01",
                 "source_version": "1.0",
                 "accessed_at": "2026-01-01",
@@ -214,8 +220,15 @@ class TestBatchLocalResolution:
     def test_two_files_same_new_business_key_identical_no_op(
         self, db, tmp_path, ingredient_name
     ) -> None:
-        path1 = _write_file(tmp_path, ingredient_name, concept_code="itch", title="Same Ref")
-        path2 = _write_file(tmp_path, ingredient_name, concept_code="itch", title="Same Ref")
+        # Same explicit url on both — a truly identical artifact, not just
+        # a matching title (url is now part of the hash, PTH round-1 P1 fix).
+        shared_url = f"https://example.invalid/{uuid.uuid4().hex[:8]}"
+        path1 = _write_file(
+            tmp_path, ingredient_name, concept_code="itch", title="Same Ref", url=shared_url
+        )
+        path2 = _write_file(
+            tmp_path, ingredient_name, concept_code="itch", title="Same Ref", url=shared_url
+        )
         fresh_db = SessionLocal()
         result = import_batch(fresh_db, [path1, path2])
         fresh_db.close()
@@ -303,6 +316,17 @@ class TestDryRun:
         dry_result = import_batch(db1, [path1, path2], dry_run=True)
         db1.close()
         assert dry_result.success
+        assert dry_result.planned is not None
+        assert len(dry_result.planned) == 2
+        planned_by_path = {p.path: p for p in dry_result.planned}
+        first, second = planned_by_path[path1], planned_by_path[path2]
+        assert (first.references_created, first.references_reused) == (1, 0), (
+            "the first file to cite a brand-new reference must report it as created"
+        )
+        assert (second.references_created, second.references_reused) == (0, 1), (
+            "the second file citing the SAME new reference must report reuse, "
+            "not a second create"
+        )
 
         db2 = SessionLocal()
         real_result = import_batch(db2, [path1, path2])
@@ -314,6 +338,23 @@ class TestDryRun:
             "both files cite the same new reference — only one row, real run "
             "must match dry-run's plan"
         )
+
+    def test_dry_run_reports_zero_created_when_reference_already_committed(
+        self, db, tmp_path, ingredient_name
+    ) -> None:
+        shared_title = f"Existing {uuid.uuid4().hex[:8]}"
+        path1 = _write_file(tmp_path, ingredient_name, concept_code="dryrun_a", title=shared_title)
+        db1 = SessionLocal()
+        assert import_batch(db1, [path1]).success
+        db1.close()
+
+        path2 = _write_file(tmp_path, ingredient_name, concept_code="dryrun_b", title=shared_title)
+        db2 = SessionLocal()
+        dry_result = import_batch(db2, [path2], dry_run=True)
+        db2.close()
+        assert dry_result.success
+        assert dry_result.planned[0].references_created == 0
+        assert dry_result.planned[0].references_reused == 1
 
 
 class TestWholeBatchRollback:
@@ -350,6 +391,49 @@ class TestWholeBatchRollback:
         result = import_batch(fresh_db, [path])
         fresh_db.close()
         assert not result.success
+
+
+class TestMultiRowSameVersionResolution:
+    def test_two_existing_rows_same_version_different_hash_always_rejects(
+        self, db, tmp_path, ingredient_name
+    ) -> None:
+        """No unique constraint prevents two draft rows sharing the same
+        business key + version (append-only schema; a real concurrent
+        import race can produce this). resolve_version_action must reject
+        regardless of DB query ordering — never silently NO_OP just
+        because one of the two conflicting rows happens to be read first."""
+        from app.services.knowledge_repository import add_draft, build_draft
+
+        ingredient = db.query(DrugIngredient).filter_by(name_inn=ingredient_name).one()
+        for hash_value in ("a" * 64, "b" * 64):
+            row = build_draft(
+                DrugSideEffect,
+                authored_by="tester",
+                artifact_hash=hash_value,
+                drug_ingredient_id=ingredient.id,
+                concept_code="dup_version_effect",
+                label="Label",
+                frequency="common",
+                action_level="self_monitor",
+                description="desc",
+                version="1.0.0",
+            )
+            add_draft(db, row)
+        db.commit()
+
+        path = _write_file(
+            tmp_path, ingredient_name, concept_code="dup_version_effect", version="1.0.0"
+        )
+        fresh_db = SessionLocal()
+        result = import_batch(fresh_db, [path])
+        fresh_db.close()
+        assert not result.success
+        assert "conflict" in result.errors[0].message.lower()
+
+        count = (
+            db.query(DrugSideEffect).filter_by(concept_code="dup_version_effect").count()
+        )
+        assert count == 2, "the pre-existing conflicting pair must be untouched, no 3rd row added"
 
 
 class TestZeroApprovedRows:

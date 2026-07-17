@@ -77,28 +77,56 @@ def business_key_for(knowledge_file: KnowledgeFile, ingredient_id: str) -> tuple
     raise ValueError(f"unknown knowledge_type {knowledge_type!r}")
 
 
-def _reference_identity_key(ref: ReferenceEntry) -> tuple:
-    """Matches F1's own two-tiered citation identity exactly (see
-    app/models/drug_knowledge_references.py) — the document-identifier
-    branch when present, else the publisher/title/publication_date
-    fallback, both including accessed_at."""
-    if ref.document_identifier:
-        return (ref.document_identifier, ref.source_version, ref.accessed_at.isoformat())
-    return (
-        ref.publisher,
-        ref.title,
-        ref.publication_date.isoformat(),
-        ref.source_version,
-        ref.accessed_at.isoformat(),
-    )
+_REFERENCE_ARTIFACT_FIELDS = (
+    "publisher",
+    "title",
+    "source_type",
+    "url",
+    "document_identifier",
+    "publication_date",
+    "source_version",
+    "accessed_at",
+)
 
 
-def _canonicalize_references(references: list[ReferenceEntry]) -> list[tuple]:
+def _reference_artifact(ref: ReferenceEntry) -> dict:
+    """The FULL authored reference representation — every field an author
+    can change, not just the subset F1's citation identity uses to find/
+    reuse a `DrugReference` row (PTH round-1 P1 fix: hashing only the
+    identity fields let an author silently change `url`, `source_type`, or
+    — on the document-identifier branch — `publisher`/`title`/
+    `publication_date` under an unchanged version, and the importer would
+    classify it NO_OP since the identity fields alone hadn't moved. This is
+    the exact same class of bug that motivated switching from
+    `content_hash` to `artifact_hash` in the first place — see that
+    function's own docstring)."""
+    return {
+        "publisher": ref.publisher,
+        "title": ref.title,
+        "source_type": ref.source_type,
+        "url": str(ref.url) if ref.url is not None else None,
+        "document_identifier": ref.document_identifier,
+        "publication_date": ref.publication_date.isoformat(),
+        "source_version": ref.source_version,
+        "accessed_at": ref.accessed_at.isoformat(),
+    }
+
+
+def _reference_sort_key(artifact: dict) -> tuple:
+    """`(is_none, value)` per field so `None` (only possible for
+    `document_identifier`) sorts deterministically without ever comparing
+    `None` to `str` — Python raises TypeError on that comparison directly."""
+    return tuple((artifact[field] is None, artifact[field]) for field in _REFERENCE_ARTIFACT_FIELDS)
+
+
+def _canonicalize_references(references: list[ReferenceEntry]) -> list[dict]:
     """Sorted so reordering the `references:` list in a YAML file never
     manufactures a spurious version conflict — but an actual reference
-    addition/removal/identity change always does, since the sorted key
-    list itself changes."""
-    return sorted(_reference_identity_key(ref) for ref in references)
+    addition/removal/or ANY authored-field change always does, since each
+    reference's full artifact (not just its identity fields) is part of
+    the sort key and the hashed payload alike."""
+    artifacts = [_reference_artifact(ref) for ref in references]
+    return sorted(artifacts, key=_reference_sort_key)
 
 
 def artifact_hash(knowledge_file: KnowledgeFile) -> str:
@@ -110,9 +138,13 @@ def artifact_hash(knowledge_file: KnowledgeFile) -> str:
     have the importer silently classify it NO_OP).
 
     Included: knowledge_type, type-specific content fields, locale,
-    audience, references (canonicalized + sorted, order-independent),
-    review_metadata.source/evidence_level/reviewed_at, specialty_codes
-    (sorted), ai_generated, disclaimer.acknowledged.
+    audience, references — EVERY authored field per reference (publisher,
+    title, source_type, url, document_identifier, publication_date,
+    source_version, accessed_at; canonicalized + sorted, order-independent
+    — not just the subset F1's citation identity uses for DB dedup, see
+    `_reference_artifact`'s own docstring), review_metadata.source/
+    evidence_level/reviewed_at, specialty_codes (sorted), ai_generated,
+    disclaimer.acknowledged.
 
     Excluded: authored_by, the source file's path, any runtime timestamp,
     database-generated IDs, status/lifecycle fields — none of these change
@@ -156,12 +188,21 @@ def resolve_version_action(
     fetched list of (version, artifact_hash) pairs. Kept DB-free so the
     same function proves both the DB-seeded case (known_versions_for) and
     the batch-local case (orchestrator._resolve_phase1's sequential fold)
-    without duplicating the 4-rule matrix twice."""
-    exact_version_match = next((h for v, h in known_versions if v == version), None)
-    if exact_version_match is not None:
+    without duplicating the 4-rule matrix twice.
+
+    Considers the FULL SET of hashes recorded under `version`, not just
+    the first match (PTH round-1 P1 fix): this schema has no unique
+    constraint on (business_key, version) — append-only plus a real
+    concurrent-import race can leave two rows sharing the same version
+    string with two DIFFERENT hashes. Picking only the first row found
+    would make the NO_OP-vs-REJECT outcome depend on unspecified query
+    ordering, and could silently NO_OP an import even though a genuine
+    artifact conflict already exists under that version."""
+    same_version_hashes = {h for v, h in known_versions if v == version}
+    if same_version_hashes:
         return (
             VersionAction.NO_OP_ALREADY_IMPORTED
-            if exact_version_match == artifact_hash_value
+            if same_version_hashes == {artifact_hash_value}
             else VersionAction.REJECT_VERSION_CONFLICT
         )
     if any(h == artifact_hash_value for _, h in known_versions):

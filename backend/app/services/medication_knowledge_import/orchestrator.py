@@ -73,10 +73,19 @@ class WrittenRow:
 
 @dataclass
 class PlannedWrite:
-    """Dry-run-only report of what Phase 2 *would* do for one file."""
+    """Dry-run-only report of what Phase 2 *would* do for one file.
+
+    `references_reused`/`references_created` (PTH round-1 P2 fix — the
+    plan's own dry-run output contract requires reference reused-vs-created
+    counts, not just the version_action) count this plan's own references
+    against the SAME batch-local resolution order dry-run's cache uses, so
+    a reference another file earlier in this batch will create counts as
+    "reused" here, matching what the real run would also do."""
 
     path: Path
     version_action: v.VersionAction
+    references_reused: int = 0
+    references_created: int = 0
 
 
 @dataclass
@@ -250,17 +259,37 @@ def _build_dry_run_report(db: Session, plans: list[ImportPlan]) -> list[PlannedW
     citing the same brand-new reference correctly reports reuse instead of
     double-counting a create. Never calls `find_or_create_reference` itself
     (that function may insert) — uses the read-only `find_existing_reference`
-    query directly."""
+    query directly.
+
+    Tracks reused-vs-created per plan (PTH round-1 P2 fix) so the report
+    tells the caller which references each file's real run would insert
+    versus which it would find-and-reuse — not just the version_action."""
     ref_cache: dict[tuple, str] = {}
+    planned: list[PlannedWrite] = []
     for plan in plans:
+        reused = 0
+        created = 0
         for ref in plan.references:
             cache_key = citation_identity_key(ref)
             if cache_key in ref_cache:
+                reused += 1
                 continue
             existing = find_existing_reference(db, ref)
-            placeholder = f"planned:{len(ref_cache)}"
-            ref_cache[cache_key] = existing.id if existing is not None else placeholder
-    return [PlannedWrite(path=plan.path, version_action=plan.version_action) for plan in plans]
+            if existing is not None:
+                ref_cache[cache_key] = existing.id
+                reused += 1
+            else:
+                ref_cache[cache_key] = f"planned:{len(ref_cache)}"
+                created += 1
+        planned.append(
+            PlannedWrite(
+                path=plan.path,
+                version_action=plan.version_action,
+                references_reused=reused,
+                references_created=created,
+            )
+        )
+    return planned
 
 
 def import_batch(db: Session, paths: list[Path], *, dry_run: bool = False) -> BatchResult:

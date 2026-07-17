@@ -36,10 +36,26 @@ def _side_effect_file(
     concept_code="nausea",
     version="1.0.0",
     title="Test Title",
+    publisher="Test Publisher",
+    source_type="formulary",
+    url="https://example.invalid/x",
+    document_identifier=None,
+    publication_date="2024-01-01",
     reviewed_at="2026-01-01",
     evidence_level="moderate",
     specialty_codes=None,
 ) -> dict:
+    reference: dict = {
+        "publisher": publisher,
+        "title": title,
+        "source_type": source_type,
+        "url": url,
+        "publication_date": publication_date,
+        "source_version": "1.0",
+        "accessed_at": "2026-01-01",
+    }
+    if document_identifier is not None:
+        reference["document_identifier"] = document_identifier
     return {
         "metadata": {
             "knowledge_type": "side_effect",
@@ -54,17 +70,7 @@ def _side_effect_file(
             "label": "Label",
             "description": "synthetic test description",
         },
-        "references": [
-            {
-                "publisher": "Test Publisher",
-                "title": title,
-                "source_type": "formulary",
-                "url": "https://example.invalid/x",
-                "publication_date": "2024-01-01",
-                "source_version": "1.0",
-                "accessed_at": "2026-01-01",
-            }
-        ],
+        "references": [reference],
         "review_metadata": {
             "source": "Test Source",
             "version": version,
@@ -193,6 +199,40 @@ class TestArtifactHash:
         h2 = v.artifact_hash(_kf(concept_code="dizziness"))
         assert h1 != h2
 
+    def test_reference_url_change_changes_hash(self) -> None:
+        """PTH round-1 P1 fix: url is persisted on DrugReference but was
+        NOT part of the old identity-only hash — changing it under an
+        unchanged version must not be silently NO_OP."""
+        h1 = v.artifact_hash(_kf(url="https://example.invalid/original"))
+        h2 = v.artifact_hash(_kf(url="https://example.invalid/changed"))
+        assert h1 != h2
+
+    def test_reference_source_type_change_changes_hash(self) -> None:
+        h1 = v.artifact_hash(_kf(source_type="formulary"))
+        h2 = v.artifact_hash(_kf(source_type="peer_reviewed"))
+        assert h1 != h2
+
+    def test_reference_publisher_change_with_document_identifier_changes_hash(self) -> None:
+        """On the document-identifier branch, F1's citation identity does
+        NOT include publisher/title/publication_date — those fields must
+        still be part of the artifact hash even though they're not part of
+        the DB-dedup identity."""
+        h1 = v.artifact_hash(_kf(document_identifier="ISBN-1", publisher="Publisher A"))
+        h2 = v.artifact_hash(_kf(document_identifier="ISBN-1", publisher="Publisher B"))
+        assert h1 != h2
+
+    def test_reference_title_change_with_document_identifier_changes_hash(self) -> None:
+        h1 = v.artifact_hash(_kf(document_identifier="ISBN-1", title="Title A"))
+        h2 = v.artifact_hash(_kf(document_identifier="ISBN-1", title="Title B"))
+        assert h1 != h2
+
+    def test_reference_publication_date_change_with_document_identifier_changes_hash(
+        self,
+    ) -> None:
+        h1 = v.artifact_hash(_kf(document_identifier="ISBN-1", publication_date="2024-01-01"))
+        h2 = v.artifact_hash(_kf(document_identifier="ISBN-1", publication_date="2024-06-01"))
+        assert h1 != h2
+
 
 class TestResolveVersionAction:
     def test_new_business_key_is_new_draft(self) -> None:
@@ -231,6 +271,58 @@ class TestResolveVersionAction:
         assert (
             v.resolve_version_action(known, "3.0.0", "hash-v1")
             == v.VersionAction.WARN_PROCEED_REPEATED_ARTIFACT
+        )
+
+    def test_two_rows_same_version_same_hash_is_no_op(self) -> None:
+        """PTH round-1 P1 fix: no unique constraint prevents two rows
+        sharing (business_key, version) — a real concurrent-import race
+        can leave duplicates. If both share the incoming hash, NO_OP."""
+        known = [("1.0.0", "hash-a"), ("1.0.0", "hash-a")]
+        assert (
+            v.resolve_version_action(known, "1.0.0", "hash-a")
+            == v.VersionAction.NO_OP_ALREADY_IMPORTED
+        )
+
+    def test_two_rows_same_version_different_hash_always_rejects(self) -> None:
+        """Two existing rows under the same version already disagree with
+        each other — a real artifact conflict exists regardless of what
+        the incoming file's hash is. Must always reject, never NO_OP just
+        because the incoming hash happens to match ONE of the two."""
+        known = [("1.0.0", "hash-a"), ("1.0.0", "hash-b")]
+        assert (
+            v.resolve_version_action(known, "1.0.0", "hash-a")
+            == v.VersionAction.REJECT_VERSION_CONFLICT
+        )
+        assert (
+            v.resolve_version_action(known, "1.0.0", "hash-b")
+            == v.VersionAction.REJECT_VERSION_CONFLICT
+        )
+        assert (
+            v.resolve_version_action(known, "1.0.0", "hash-c")
+            == v.VersionAction.REJECT_VERSION_CONFLICT
+        )
+
+    def test_matching_and_conflicting_hash_both_present_rejects(self) -> None:
+        """Incoming hash matches one of two existing same-version rows,
+        but a second, conflicting row also exists under that version — the
+        old first-match-only logic could resolve NO_OP here depending on
+        query order; the fixed logic must always reject."""
+        known = [("1.0.0", "hash-a"), ("1.0.0", "hash-b")]
+        assert (
+            v.resolve_version_action(known, "1.0.0", "hash-a")
+            == v.VersionAction.REJECT_VERSION_CONFLICT
+        )
+
+    def test_same_version_conflict_result_is_order_independent(self) -> None:
+        """The old bug made NO_OP-vs-REJECT depend on unspecified DB query
+        ordering. The fix must give the identical result regardless of the
+        order `known_versions` happens to arrive in."""
+        known_order_a = [("1.0.0", "hash-a"), ("1.0.0", "hash-b")]
+        known_order_b = [("1.0.0", "hash-b"), ("1.0.0", "hash-a")]
+        assert (
+            v.resolve_version_action(known_order_a, "1.0.0", "hash-a")
+            == v.resolve_version_action(known_order_b, "1.0.0", "hash-a")
+            == v.VersionAction.REJECT_VERSION_CONFLICT
         )
 
 
