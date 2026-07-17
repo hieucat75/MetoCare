@@ -80,6 +80,17 @@ class KnowledgeLifecycleMixin:
     status_changed_by: Mapped[str] = mapped_column(String(255), nullable=False)
     authored_by: Mapped[str] = mapped_column(String(255), nullable=False)
 
+    # A1b orchestrator idempotency (MEDICATION_PHASE_A1B_ORCHESTRATOR_IMPLEMENTATION_PLAN.md
+    # §3). SHA-256 hex digest over the full authoring artifact (content +
+    # references + provenance) computed once at import time — nullable, not
+    # NOT NULL: several hashed inputs (specialty_codes, ai_generated,
+    # disclaimer.acknowledged) have no independent persistence path, so a
+    # pre-existing row can never be backfilled with a real hash. Rows written
+    # by the A1b importer always populate this; rows written by any other
+    # caller (K1-S3's own direct tests) leave it NULL, and versioning.py's
+    # known_versions_for() fails closed on a NULL hash rather than guessing.
+    artifact_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
 
 class DrugUsage(KnowledgeLifecycleMixin, UUIDPrimaryKey, TimestampMixin, Base):
     """Usage narrative per ingredient/locale/audience (ADR-13)."""
