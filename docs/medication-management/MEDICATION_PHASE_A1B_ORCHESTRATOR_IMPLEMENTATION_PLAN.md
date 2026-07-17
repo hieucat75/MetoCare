@@ -900,12 +900,25 @@ into two tests instead:
   invariant on both dialects; this one is extra assurance for Postgres's
   real concurrency model specifically).
 
-`test_two_files_same_batch_new_reference_reused_via_batch_cache` (two
-files in one batch cite an identical brand-new citation; assert exactly
-one `DrugReference` row is created — proves the batch-local cache prevents
-the deterministic-not-a-race unique-index rejection that would otherwise
-occur, since neither file's independent find-query would see the other's
-unflushed insert), `test_duplicate_reference_within_file_creates_one_link`
+`test_two_files_same_batch_new_reference_reused_via_batch_cache`
+(**corrected after Codex round-6** — the earlier description's premise was
+wrong: since both files are processed sequentially within the *same*
+session/transaction, file 1's reference insert is already flushed by the
+time file 2 runs, so a plain DB query — with no cache involved at all —
+would already find and correctly reuse it; asserting "exactly one
+`DrugReference` row" alone therefore passes identically whether or not the
+batch-local cache exists, and does not actually regression-test the
+cache). Fixed: two files in one batch cite an identical brand-new
+citation; assert exactly one `DrugReference` row is created **and** assert,
+via a query-count spy/mock on the `Session` (or an explicit call-count on
+`find_or_create_reference`'s internal DB-query step), that file 2's
+resolution issues **zero** additional `drug_references` queries — served
+entirely from the batch-local cache populated by file 1, not from a
+redundant (even if correct) DB round-trip. The row-count assertion alone
+proves correctness; the query-count assertion is what actually proves the
+cache is the mechanism, not incidental same-session flush visibility.
+
+`test_duplicate_reference_within_file_creates_one_link`
 (one file's `references:` list has two entries sharing a
 `document_identifier` but different `publisher`/`title` — passes A1a's
 structural duplicate check, which doesn't key on `document_identifier` —
@@ -1098,14 +1111,22 @@ against `POSTGRES_TEST_URL`).
   this session's own F1 rehearsal already exercises this at the migration
   level; A1b's tests exercise it at the application/orchestrator level).
 - **§5's corrected reference-race behavior is dialect-load-bearing, not
-  incidental:** the losing transaction's `IntegrityError` (§5) must fire
-  identically on both dialects — `test_reference_unique_index_violation_rolls_back_entire_batch`
-  (§5, deterministic ordering, not true concurrency — see §5's note on why
-  a genuinely simultaneous race is not portably testable) runs on both
-  SQLite and Postgres, asserting the same outcome (loser rolls back,
-  winner's single row survives, zero duplicates) on each. A best-effort,
-  Postgres-only true-concurrency variant is optional, not required for
-  parity.
+  incidental:** the `IntegrityError` from a duplicate citation-identity
+  insert (§5) must fire identically on both dialects —
+  `test_reference_unique_index_violation_rolls_back_entire_batch` (§5,
+  same-session defense-in-depth trigger, not true concurrency — see §5's
+  note on why a genuinely simultaneous cross-session race is not portably
+  testable) runs on both SQLite and Postgres, asserting the same outcome:
+  **zero rows survive** for either the legitimate first reference or the
+  duplicate-attempt second one (Codex round-6 fix — since both inserts are
+  in the *same* transaction here, a full rollback undoes both together;
+  there is no persisting "winner" in this test, unlike the optional
+  cross-session true-concurrency variant below, where each side really is
+  a separate transaction and one genuinely can commit while the other
+  rolls back). A best-effort, Postgres-only true-concurrency variant (two
+  real, separate transactions) is optional, not required for parity — that
+  is the one where a winner's row surviving is the correct, expected
+  outcome.
 - **§2's commit-ownership rule is likewise tested on both dialects** —
   `test_batch_rollback_uses_real_write_path_not_mock` (§2a) runs on both
   SQLite and Postgres, since a commit/rollback ownership bug could in
