@@ -1,10 +1,10 @@
 # Medication Knowledge — Phase A Blocking Findings
 
-**Date:** 2026-07-16
-**Status:** Open — tracked separately per PTH's explicit instruction, not resolved by weakening provenance or bypassing validation.
-**Related:** `MEDICATION_PHASE_A_PR_A1_IMPLEMENTATION_PLAN.md`
+**Date:** 2026-07-16 (both findings resolved 2026-07-17)
+**Status:** ✅ **Both findings resolved.** Finding 1 resolved by PR #128 (F1 schema completion, merged to `main` @ `cc4d6c1`). Finding 2 resolved by PR #129 (F2 specialty seed, merged to `main` @ `b2c4f26`). A1b is now unblocked per this doc's own gate — see `MEDICATION_PHASE_A1B_ORCHESTRATOR_IMPLEMENTATION_PLAN.md` for the A1b implementation plan this unblocks.
+**Related:** `MEDICATION_PHASE_A_PR_A1_IMPLEMENTATION_PLAN.md`, `MEDICATION_PHASE_A1B_ORCHESTRATOR_IMPLEMENTATION_PLAN.md`
 
-Two findings from PR-A1 planning that block **A1b** (persistence), not A1a (loader/validation, no DB writes). Both must be resolved via their own small, explicit changes — not by dropping requirements or silently bypassing checks.
+Two findings from PR-A1 planning that block **A1b** (persistence), not A1a (loader/validation, no DB writes). Both were resolved via their own small, explicit changes — not by dropping requirements or silently bypassing checks.
 
 ---
 
@@ -35,7 +35,7 @@ A single `VARCHAR(255)` cannot represent any of this. Storing `source="curated:m
 
 ### Status
 
-🔴 **Not started.** A1a proceeds without this (it only validates the `references:` field's structure in the input file — that validation is correct regardless of where persistence eventually lands). **A1b must not begin persisting knowledge content until this migration exists and the orchestrator writes real reference rows** — not a placeholder, not a re-serialization into the existing `source` string.
+✅ **Resolved by PR #128** (2026-07-17, `main` @ `cc4d6c1`) — `drug_references` + `knowledge_reference_links` exist, with a two-tiered citation identity (prefers `document_identifier`, falls back to publisher/title/publication_date, both including `accessed_at`) and a fail-closed downgrade guard on both tables. A1b's implementation plan (`MEDICATION_PHASE_A1B_ORCHESTRATOR_IMPLEMENTATION_PLAN.md` §5) is the piece that will actually write real reference rows through the orchestrator — not built yet, planning-only as of this date.
 
 ---
 
@@ -66,7 +66,7 @@ Requirements per PTH:
 
 ### Status
 
-🟡 **Not started.** A1a's validator can and should implement the *structural* half of this check now — a hardcoded Python-level allowlist of the 7 codes above, requiring no DB access — so file-shape validation works immediately. The *DB-existence* half (in `provenance.py`, confirming a referenced code actually has a `clinical_specialties` row) can be coded in A1a too, but its integration test cannot meaningfully pass until this seed exists — that test is written and marked pending real seed data, not skipped or weakened. **Recommend the seed script land as part of, or immediately before, A1b** (small enough to bundle, but tracked here as its own explicit prerequisite so it isn't silently forgotten).
+✅ **Resolved by PR #129** (2026-07-17, `main` @ `b2c4f26`) — `clinical_specialties` is seeded with the 7 codes above (idempotent, no reviewer identity assigned). `provenance.check_specialty_exists` is now a meaningful DB-existence check, no longer vacuously true/false. A1a's structural allowlist (`validators.ALLOWED_SPECIALTY_CODES`) is unchanged and still runs alongside it. A1b's implementation plan (`MEDICATION_PHASE_A1B_ORCHESTRATOR_IMPLEMENTATION_PLAN.md` §6) is the piece that will actually call this DB-existence check from the orchestrator's batch validation — not built yet, planning-only as of this date.
 
 ---
 

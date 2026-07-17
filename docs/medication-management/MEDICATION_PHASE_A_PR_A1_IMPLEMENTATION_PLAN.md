@@ -23,7 +23,7 @@ This plan answers PTH's 10-point brief for PR-A1 ("Knowledge Import Framework").
 | `check_specialty_completeness` / `record_specialty_review` | Specialty sign-off bookkeeping | **Out of scope for Phase A.** Only matters for the `clinical_review→approved` leg, which Phase A never reaches. |
 | `list_published` | Read-only, `status='approved'` filter | Not needed — Phase A produces no approved rows to list. |
 
-Phase A's importer is therefore an **orchestration layer on top of `knowledge_repository`**, not a replacement for it. No new write primitive is needed — `create_draft` + `submit_for_review` already cover everything ADR-13 permits before a Clinical Advisor role exists.
+Phase A's importer is therefore an **orchestration layer on top of `knowledge_repository`**, not a replacement for it. **Superseded by `MEDICATION_PHASE_A1B_ORCHESTRATOR_IMPLEMENTATION_PLAN.md` §2a/§14:** that plan's round-2/round-3 review found `create_draft` cannot be called directly from a multi-file batch (it commits internally, breaking one-commit-per-batch) — A1b does add two small, backward-compatible write primitives to `knowledge_repository.py` (`build_draft`/`add_draft`), with `create_draft` itself becoming a thin wrapper over them for existing callers. Treat this paragraph as historical context for A1a's scope, not as A1b's actual design.
 
 ### The 5 knowledge tables in scope (confirmed against `backend/app/models/drug_knowledge_content.py`)
 
@@ -56,7 +56,7 @@ Proposed package: **`backend/app/services/medication_knowledge_import/`** (new s
 | `validators.py` | Business-rule validation beyond structural typing: controlled-vocabulary checks (locale, audience, status), forbidden-AI-source check, malformed-reference check. Pure functions, no DB writes (may read reference tables e.g. `clinical_specialties`). | Returns a list of validation errors rather than raising on the first one, so a single import attempt reports everything wrong at once (matches K1-S2 migration's own "validate everything before writing anything" convention). |
 | `provenance.py` | Checks specifically for source/version/reviewed_at/disclaimer-flag presence, and resolves `medication identity → drug_ingredient_id` (fail closed if the ingredient doesn't exist — this is exactly where the Calcium gap surfaces at Phase-B time). | Separated from `validators.py` because provenance/identity resolution needs a DB session; the rest of validation doesn't. |
 | `versioning.py` | Business-key computation per knowledge type (mirrors ADR-13's per-table key), content hashing, and the idempotency/version-conflict decision (§4). | Pure logic + read-only DB queries. No writes. |
-| `orchestrator.py` | Ties it together: `loader → schema → validators → provenance → versioning → knowledge_repository.create_draft [→ submit_for_review]`, wrapped in one transaction per batch. **This is the only file that calls `knowledge_repository` write functions.** | Never calls `validate_transition(..., new_status="approved")`. Never calls anything that could reach `approved`. |
+| `orchestrator.py` | Ties it together: `loader → schema → validators → provenance → versioning → knowledge_repository.build_draft/add_draft [→ references.find_or_create_reference/link_reference_to_row]`, one transaction per batch, `orchestrator.import_batch` as the sole commit/rollback owner (superseded from `create_draft` — see `MEDICATION_PHASE_A1B_ORCHESTRATOR_IMPLEMENTATION_PLAN.md` §2a; `create_draft` commits internally and cannot participate in a shared batch transaction). **This is the only file that calls `knowledge_repository` write functions.** | Never calls `validate_transition(..., new_status="approved")`. Never calls anything that could reach `approved`. |
 | `preview.py` | Draft preview (render one knowledge item to Markdown), diff preview (render a content diff between two versions of the same business key). Sanitizes Markdown (no raw HTML passthrough). | Pure rendering — no DB writes, adds no clinical claims (renders exactly what's in the row, no synthesis). |
 | `publish_prep.py` | "Publish pipeline" reinterpreted per the note below — a dry-run validation summary over a batch of already-imported `clinical_review` rows, answering "is this batch ready for a future human approval step," producing a report. **Does not transition anything.** | This satisfies the spec's "publish pipeline" deliverable without building an approve path. |
 
@@ -158,7 +158,7 @@ No DB column exists for this. The exact Vietnamese disclaimer text from Phase B'
 
 **Content hash** = SHA-256 over the type-specific content fields only (not provenance/metadata) — same technique used in this session's own EC-04 checksum verification of the K1-S2 catalog migration.
 
-**Partial import failure → whole-batch rollback.** One importer invocation processes a batch (e.g., all files for one drug, or a directory). `orchestrator.py` runs the full loader→schema→validators→provenance→versioning pipeline for **every file in the batch first (pure, no DB writes)**, collects all errors, and only if the entire batch is error-free does it open one DB transaction and call `create_draft` (+ optional `submit_for_review`) for every item, committing once at the end. Any unexpected exception during the write phase triggers `db.rollback()` (mirroring `create_draft`'s own existing try/except convention) — zero partial rows survive a failed batch. This two-phase "validate everything, then write everything" design is the same pattern K1-S2's catalog migration already used successfully.
+**Partial import failure → whole-batch rollback.** One importer invocation processes a batch (e.g., all files for one drug, or a directory). `orchestrator.py` runs the full loader→schema→validators→provenance→versioning pipeline for **every file in the batch first (pure, no DB writes)**, collects all errors, and only if the entire batch is error-free does it write every item, committing once at the end. **Superseded (this paragraph is now historical context, not the locked design):** `MEDICATION_PHASE_A1B_ORCHESTRATOR_IMPLEMENTATION_PLAN.md` §2a/§2b lock the exact mechanics — Phase 1 and Phase 2 share one already-open `Session` transaction (not "opens one DB transaction" after Phase 1 ends), writes go through `build_draft`/`add_draft` (not committing `create_draft`) with `import_batch` as the sole commit/rollback owner, and any Phase 2 failure returns `BatchResult(success=False, ...)` rather than propagating an exception. Zero partial rows survive a failed batch either way — that outcome is unchanged; only the mechanics of how it's guaranteed were corrected. This two-phase "validate everything, then write everything" design is the same pattern K1-S2's catalog migration already used successfully.
 
 **Concurrency:** two importer invocations targeting the *same business key* at the same time have a TOCTOU race between the idempotency lookup and the insert (same class of race K1-S3's Codex review caught in `submit_for_review`, fixed there with an atomic `UPDATE...WHERE`). Recommend **not** building distributed locking for this: Phase A/B's importer is an authoring tool run by a human or a CI job, not a concurrent multi-user API — document "single-writer per business key at a time" as an accepted operational constraint. Worst-case failure mode if violated is two draft rows with identical content (harmless, cleanable), never data corruption, since nothing here ever reaches `approved`. The test matrix (§7) includes a concurrency test to *prove* that bound, not to eliminate the race.
 
@@ -222,7 +222,7 @@ Test DB: unit-style tests (loader, validators, versioning-logic) run against the
 Recommend **3 sequential PRs**, mirroring K1's own S1/S2/S3 rationale (each has a genuinely different risk profile and reviewer focus — not splitting for its own sake):
 
 - **PR-A1a — Loader + schema + validation** (`loader.py`, `schema.py`, `validators.py`, `provenance.py`). Pure functions, no DB writes except the read-only `drug_ingredients`/`clinical_specialties` lookups in `provenance.py`. Lowest risk, reviewable in isolation, unblocks writing real Phase B content files for review even before A1b lands.
-- **PR-A1b — Versioning + orchestrator** (`versioning.py`, `orchestrator.py`, plus structured reference persistence). The only PR that touches `knowledge_repository`'s write path (`create_draft`/`submit_for_review`) and owns transaction/rollback/idempotency semantics — the highest-risk, highest-review-attention piece, same category as K1-S2's migration PR. Depends on A1a. **Blocked per PTH until Finding 1 (reference-persistence schema) and Finding 2 (specialty seed) are resolved** — A1b must not persist knowledge content while references would be silently dropped or specialty validation silently bypassed.
+- **PR-A1b — Versioning + orchestrator** (`versioning.py`, `orchestrator.py`, plus structured reference persistence). The only PR that touches `knowledge_repository`'s write path (`create_draft`/`submit_for_review`) and owns transaction/rollback/idempotency semantics — the highest-risk, highest-review-attention piece, same category as K1-S2's migration PR. Depends on A1a. Finding 1 (reference-persistence schema, #128) and Finding 2 (specialty seed, #129) are both **✅ resolved** — A1b planning is now GO; see `MEDICATION_PHASE_A1B_ORCHESTRATOR_IMPLEMENTATION_PLAN.md` for the locked design. Implementation itself still awaits plan approval (not GO yet).
 - **PR-A1c — Preview + diff renderer** (`preview.py`, `publish_prep.py`, the disclaimer constant). Independent of A1b's DB-writing logic (only needs A1a's validated schema shape) — could in principle land in parallel with A1b, but sequencing after keeps review load manageable and lets A1c's tests use real drafted rows from A1b instead of only in-memory fixtures.
 
 A single combined PR is viable if PTH prefers fewer review cycles — the three pieces are not so large individually that splitting is mandatory, only recommended for the same reason K1 split its schema/data/service concerns.
@@ -237,7 +237,7 @@ A single combined PR is viable if PTH prefers fewer review cycles — the three 
 | "Drug References" and "disclaimer" have no DB column — risk of someone "just adding a column" mid-PR to make the spec literally match | **Governance** | This plan's resolution (§3) is the agreed interpretation; any deviation requiring a new column/table is a schema change and needs its own ADR + PTH sign-off, out of scope for Phase A. |
 | Calcium has no `drug_ingredients` row — Phase B cannot import Calcium content without a prerequisite data step | **Technical, Phase-B-blocking** | Flagged now (§1); resolution (a small data-only insert, not a migration) is explicitly deferred to whoever starts Phase B, not built in Phase A. |
 | Idempotency/versioning race on concurrent same-business-key imports | **Technical, low severity** | Documented as an accepted single-writer operational constraint (§4); test proves the failure mode is bounded (harmless duplicate), not corruption. |
-| `clinical_specialties` unseeded — specialty validation is currently inert | **Governance** | Rule implemented per spec for forward-compatibility; Phase B content should not declare specialties (not required while nothing reaches `approved`). |
+| `clinical_specialties` unseeded — specialty validation is currently inert | **Governance — ✅ resolved 2026-07-17 by PR #129.** `clinical_specialties` is now seeded (7-code vocabulary); `provenance.check_specialty_exists` is a meaningful DB-existence check, not vacuous. | Rule implemented per spec for forward-compatibility; Phase B content should not declare specialties (not required while nothing reaches `approved`). |
 | A future contributor extends `orchestrator.py` to call `validate_transition(..., "approved")` "just to see if it works" | **Clinical misinformation risk** | This is the actual mechanism that would let unreviewed content reach patients. Stop gate: PR review (Codex + compliance + architecture, all mandatory) must explicitly grep for any `"approved"` string literal or `validate_transition` call with a non-`clinical_review` target anywhere in the diff, same check this session's own EC-07 verification used. |
 | Phase B content authored without real, checkable references (silently AI-assisted despite the `ai_generated` flag) | **Clinical misinformation risk** | Out of Phase A's ability to fully prevent (it's a process/authorship question, not a code question) — the `ai_generated` flag and mandatory `references` list are the only automatable proxies; ultimate responsibility sits with whoever authors Phase B content, per PTH's own "do not invent medical facts" instruction. |
 | Scope creep: Phase A's preview renderer becomes a stepping-stone someone wires into a route "since it's basically an API already" | **Governance** | Stop gate: no file under `medication_knowledge_import/` may be imported by anything under `backend/app/api/`. Same CI/PR-diff check as the "no API changes" test in §7. |
@@ -287,19 +287,32 @@ Per §7 — unit tests on SQLite (`db` fixture) for pure logic, `pytest.mark.int
 - Any schema migration (new column/table for references or disclaimer).
 - Any API route, any frontend change, any AI/context-builder change.
 - Any transition to `approved`, any Clinical Advisor role/permission system.
-- Seeding `clinical_specialties` or creating the missing Calcium `drug_ingredients` row (both deferred to whoever starts Phase B).
+- Seeding `clinical_specialties` (**this scope line is now historical — done
+  by #129 on 2026-07-17, ahead of Phase B, not deferred to it as originally
+  planned here**) or creating the missing Calcium `drug_ingredients` row
+  (still deferred to whoever starts Phase B — unaffected by the above).
 - Authoring any real clinical content (Phase A's tests use only synthetic fixtures).
 - New ADRs — this plan resolves the "Drug References"/"disclaimer" schema gaps by keeping them out of the DB entirely (versioned source file + rendering-time constant, respectively), not by proposing new schema.
 
-### Verdict (updated post-PTH-review, 2026-07-16)
+### Verdict (as of 2026-07-16 — frozen historical snapshot, superseded below)
 
-| Item | Status |
+**⚠️ This table is a frozen record of the 2026-07-16 PTH review and is now
+stale in two rows (Codex round-4 flagged this document had no single
+unambiguous GO/NO-GO state without this note).** For the current,
+authoritative status, see `MEDICATION_PHASE_A1B_ORCHESTRATOR_IMPLEMENTATION_PLAN.md`
+§17. Summary of what changed: Finding 1 and Finding 2 (referenced in the
+"A1b" and "Specialty validation" rows below as blockers) are both
+**✅ resolved** (#128, #129) — A1b is no longer blocked at the *finding*
+level; A1b's own implementation is now gated on its *own* plan's approval
+(a different, later gate) rather than on these two findings.
+
+| Item | Status as of 2026-07-16 (historical) |
 |---|---|
 | A1a — loader/schema/validation/provenance | ✅ **GO** — no persistence, no migration, proceed now |
-| A1b — orchestrator + persistence | 🟡 **Blocked** until structured reference persistence exists (Finding 1) |
+| A1b — orchestrator + persistence | 🟡 **Blocked** until structured reference persistence exists (Finding 1) — **superseded: resolved by #128, see note above** |
 | A1c — preview/diff | ✅ Can proceed after A1b, or partially in parallel (schema-shape-only work) |
-| Calcium content (Phase B) | 🔴 **Blocked** until salt-specific catalog identity is resolved (separate small PR, see findings doc) |
-| Specialty validation | 🟡 Structural check buildable now in A1a; DB-existence check's integration test needs real seed (Finding 2) before A1b |
+| Calcium content (Phase B) | 🔴 **Blocked** until salt-specific catalog identity is resolved (separate small PR, see findings doc) — **still accurate, unaffected by #128/#129** |
+| Specialty validation | 🟡 Structural check buildable now in A1a; DB-existence check's integration test needs real seed (Finding 2) before A1b — **superseded: resolved by #129, see note above** |
 | Disclaimer constant | ✅ Approved, unchanged |
 
-**No part of A1a requires a migration, an API, a frontend change, an AI wiring change, or new clinical content.** A1b will require one small migration (`drug_references` + join) before it can proceed — tracked as Finding 1, not started as part of this plan or A1a.
+**No part of A1a requires a migration, an API, a frontend change, an AI wiring change, or new clinical content.** A1b's required migration (`drug_references` + join, tracked as Finding 1) **has since landed** — #128, merged 2026-07-17. This sentence is left in its original historical wording deliberately; do not edit it to sound current, use the note above instead.
