@@ -98,6 +98,14 @@ def _assert_table_empty(table: str, context: str) -> None:
 
 
 def upgrade() -> None:
+    # Run every fail-closed guard before any DDL (Codex round-2 P2): SQLite
+    # DDL isn't transactional here, so checking drug_side_effects only right
+    # before its own column swap would leave drug_references and
+    # knowledge_reference_links already created — with alembic_version still
+    # at the parent revision — if the guard fires, making the upgrade
+    # unretryable (drug_references already exists on the next attempt).
+    _assert_side_effects_empty("frequency/action_level column swap")
+
     # -------------------------------------------------------------------
     # Structured references (Finding 1)
     # -------------------------------------------------------------------
@@ -189,7 +197,7 @@ def upgrade() -> None:
     # -------------------------------------------------------------------
     # drug_side_effects: frequency/action_level split
     # -------------------------------------------------------------------
-    _assert_side_effects_empty("frequency/action_level column swap")
+    # (guard already ran at the top of upgrade())
 
     # batch_alter_table: SQLite has no native ALTER-of-constraint support
     # (this repo's test_sqlite_upgrade_downgrade_roundtrip runs the full
