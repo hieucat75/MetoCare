@@ -1,7 +1,7 @@
 # Medication Knowledge — Phase A1b Orchestrator Implementation Plan
 
-**Date:** 2026-07-17 (revised same day — round 2 PTH review, rounds 3-4
-Codex re-verification of the round-2/round-3 fixes)
+**Date:** 2026-07-17 (revised same day — round 2 PTH review, rounds 3-5
+Codex re-verification of the round-2/3/4 fixes)
 **Status:** 🟡 **Planning GO — implementation NOT GO.** This document is itself
 subject to review/approval before any `versioning.py`/`orchestrator.py` code
 is written. Phase B authoring has not started and is not authorized by this
@@ -91,6 +91,32 @@ round-3 fix was directionally correct but still had 4 P1s and 4 P2s:
   described Finding 1/2 as unresolved/deferred in several places beyond the
   one line already fixed in round 2 — added an explicit superseding note
   rather than silently editing the dated historical record.
+
+**Round-5 revision note (Codex re-verification of the round-4 fix — no
+P1s this round, 3 P2s, all in test descriptions rather than the design
+itself):**
+- the "ordered collision" reference-race test (§5) and the transaction-
+  ownership rollback test (§2a) both had the *same* flaw: they had a
+  separate session insert+commit a colliding row while the batch's own
+  session already held SQLite's file-level write lock from earlier
+  flushes — SQLite would raise `OperationalError: database is locked`
+  there instead of letting the separate session commit, so the described
+  trigger wasn't actually reachable on that dialect. Both rewritten to use
+  a same-session, same-transaction "bypass the normal dedup path"
+  technique (a deliberate second insert under an identity already
+  occupied by an earlier flushed-but-uncommitted row in the *same*
+  transaction) — a defense-in-depth trigger, not a race reproduction,
+  fully deterministic on both dialects with no locking/ordering concerns.
+- `test_import_batch_requires_fresh_session` only tested pending
+  `db.new`/`db.dirty` state, which the *superseded* round-3 check would
+  also have caught — added the actual distinguishing case (a session that
+  ran a bare `SELECT`, leaving new/dirty/deleted empty but
+  `db.in_transaction()` true) so the test actually regression-tests the
+  round-4 tightening.
+- the §3 concurrency-test description still read as endorsing "same
+  business key racing" generically as harmless — restricted its scope to
+  identical-content races explicitly, matching the narrowed claim the
+  round-4 fix already made in the surrounding prose.
 
 **Depends on (both merged):**
 - PR #128 — F1 schema completion (`drug_references`, `knowledge_reference_links`,
@@ -391,31 +417,41 @@ mix of "some worked."
 round-2 requirement):**
 
 `test_batch_rollback_uses_real_write_path_not_mock`:
-1. Import 3 files in one batch, all valid per Phase 1.
-2. Files 1 and 2 reach `add_draft` and are flushed (visible in-transaction,
-   not yet committed).
-3. The test triggers file 3's failure with an **explicit, deterministic
-   ordering** (Codex round-4 correction — the earlier wording implied a
-   fuzzy "isn't visible without a fresh read" race, which doesn't actually
-   describe a reliable trigger: if the other session's insert commits
-   *before* file 3's find-query runs, a plain read WOULD see it, no
-   "freshness" ambiguity involved): call file 3's own
-   `find_or_create_reference` find-step directly first (confirms it finds
-   nothing for this citation identity, since nothing exists yet); *then*, a
-   **separate** session/connection inserts and commits a colliding
-   `drug_references` row under that exact citation identity (matching F1's
-   two-tiered partial unique index, not a FK); *then* the test resumes file
-   3's own insert attempt, which now flushes against a citation identity
-   that a committed row already occupies, raising a real `IntegrityError` —
-   the actual code path, not a stand-in exception, and not dependent on any
-   thread-timing ambiguity. **Chosen over an FK-violation trigger
-   deliberately:** this codebase's SQLite test fixture does not enable
-   `PRAGMA foreign_keys=ON` (verified — `backend/app/core/database.py`/
-   `tests/conftest.py` set no such pragma), so an FK-violation trigger would
-   silently succeed on SQLite instead of raising, and this test must
-   produce identical behavior on both dialects (§11). A unique-index
-   violation is enforced natively by both SQLite and Postgres regardless of
-   any pragma, making it the reliable, dialect-agnostic choice.
+1. Import 3 files in one batch, all valid per Phase 1. File 1's reference
+   resolves to some citation identity X.
+2. Files 1 and 2 reach `add_draft`/reference persistence and are flushed
+   (visible in-transaction, not yet committed) — file 1's reference X is
+   now a real, flushed (not committed) `DrugReference` row.
+3. File 3's failure is triggered **within the same session/transaction, no
+   cross-session ordering at all** (Codex round-5 correction — a round-4
+   version of this test had a *separate* session insert+commit a colliding
+   row while this batch's session already held an open write transaction
+   from step 2's flushes; on SQLite's file-backed single-writer lock, that
+   separate session would raise `OperationalError: database is locked`
+   waiting on this transaction, never reaching its own commit — not a
+   reliable, dialect-portable trigger). Fixed: file 3's test fixture is
+   constructed so its own reference has the **same citation identity X**
+   as file 1's already-flushed reference, and the test forces file 3's
+   write path to skip the batch-local cache/find-or-create dedup (§5) that
+   would normally correctly reuse X — simulating "if the application-level
+   dedup had a bug for this one file, does the database constraint still
+   catch it and does the whole batch still roll back correctly?" This is a
+   **defense-in-depth** trigger, not a race reproduction: a direct second
+   `add()`+`flush()` of a `DrugReference` under an identity already
+   occupied by an earlier, uncommitted-but-flushed row in the *same*
+   transaction still violates the partial unique index (Postgres and
+   SQLite both enforce uniqueness against a session's own uncommitted-but-
+   flushed rows, not only committed ones), raising a real `IntegrityError`
+   — the actual code path, not a stand-in exception, fully deterministic
+   on both dialects, no locking or ordering concerns. **Chosen over an
+   FK-violation trigger deliberately:** this codebase's SQLite test fixture
+   does not enable `PRAGMA foreign_keys=ON` (verified — `backend/app/core/
+   database.py`/`tests/conftest.py` set no such pragma), so an FK-violation
+   trigger would silently succeed on SQLite instead of raising, and this
+   test must produce identical behavior on both dialects (§11). A
+   unique-index violation is enforced natively by both SQLite and Postgres
+   regardless of any pragma, making it the reliable, dialect-agnostic
+   choice.
 4. After the caught exception triggers exactly one `db.rollback()` (and
    `import_batch` returns `BatchResult(success=False, ...)` per the locked
    never-raises contract above — the test asserts the return value, not a
@@ -435,9 +471,19 @@ round-2 requirement):**
    trigger and the rollback behavior must be identical on both.
 
 A **second, dedicated test** (`test_import_batch_requires_fresh_session`)
-proves the session precondition above: calling `import_batch` with a
-`Session` that already has pending `db.new`/`db.dirty` raises `ValueError`
-immediately, before touching any file.
+proves the session precondition above — with two cases, not one (Codex
+round-5 fix: a test that only supplies pending `db.new`/`db.dirty` would
+still pass under the superseded round-3 check and doesn't actually
+regression-test the round-4 tightening to `db.in_transaction()`):
+1. A `Session` with pending `db.new`/`db.dirty` (e.g. an unflushed `add()`)
+   raises `ValueError` immediately, before touching any file.
+2. A `Session` that has only executed a bare read (e.g.
+   `db.execute(sa.text("SELECT 1"))`) — leaving `db.new`/`db.dirty`/
+   `db.deleted` all empty, but with `db.in_transaction()` now `True` via
+   SQLAlchemy's autobegin — **also** raises `ValueError` immediately. This
+   second case is the one that actually distinguishes the round-4 fix from
+   the round-3 check it replaced; without it, the test suite would not
+   catch a regression back to the weaker check.
 
 ---
 
@@ -561,10 +607,18 @@ promise that its content is fixed" (original plan §4, unchanged).
 
 **Tests:** `test_medication_knowledge_import_versioning.py` — one test per
 `VersionAction` outcome, plus the concurrency test already specified in the
-original plan §7 (two importer invocations racing the same business key;
-worst case is a harmless duplicate draft row, proven bounded, not
-eliminated — no distributed locking, matching the accepted single-writer
-operational constraint), plus two new tests for the round-3 fixes:
+original plan §7, **scope restricted to identical content only** (Codex
+round-5 fix — the test as originally described covered "the same business
+key" racing generically, which reads as endorsing the overbroad "harmless
+duplicate" claim this plan's own round-4 fix retracted below): two importer
+invocations racing the same business key **and identical content** — worst
+case is a harmless duplicate draft row, proven bounded, not eliminated, no
+distributed locking, matching the accepted single-writer operational
+constraint. A race with the same business key/version but **differing**
+content is a documented, undefended gap (see "harmless claim narrowed"
+below) — not something this test claims to bound, and not something a test
+should assert is "fine," since it isn't. Plus two new tests for the round-3
+fixes:
 - `test_content_hash_match_against_older_non_latest_version` — seed v1 and
   v2 for a business key, then import v1's exact content again under a new
   version string v3 → asserts `WARN_PROCEED_REPEATED_CONTENT` (proves
@@ -810,24 +864,41 @@ into two tests instead:
   existing row via the fallback query is dialect-consistent" check, not a
   race proof.
 - `test_reference_unique_index_violation_rolls_back_entire_batch`
-  (dialect-neutral, both SQLite and Postgres): force the *find* step to
-  miss deterministically (not via true concurrency) by having a **separate
-  session insert and commit** a colliding reference **after** this batch's
-  find-query has already run but **before** this batch's own insert
-  attempts to flush — achievable in a single-process test via an explicit
-  ordering (call the batch's find step directly, then have the test insert
-  and commit the collision, then resume the batch's insert) rather than
-  relying on true thread/process concurrency. Assert the resulting
-  `IntegrityError` triggers a full rollback of the whole batch (drafts and
-  references alike), and that no duplicate reference row exists afterward.
-  This is the test that actually proves §5's corrected race-handling logic,
-  without depending on non-portable true-concurrency timing.
+  (dialect-neutral, both SQLite and Postgres — **redesigned after Codex
+  round-5**, single-session, no cross-session ordering at all): the
+  round-4 version tried to have a *separate* session insert+commit a
+  colliding row while the batch's own session held an open write
+  transaction (from earlier files' `add_draft` flushes) — on SQLite,
+  file-backed single-writer locking means that separate session would
+  raise `OperationalError: database is locked` waiting for the batch's
+  still-open transaction to release the lock, never reaching its own
+  commit, so the test couldn't actually exercise the intended path on that
+  dialect. Fixed by removing the cross-session element entirely: within
+  the **same** batch/transaction, deliberately construct two references
+  with identical citation identity and route the *second* one past
+  `find_or_create_reference`'s own find-check (a direct `add()`+`flush()`
+  of a second `DrugReference` with the same identity, bypassing the
+  find-or-create wrapper — simulating "if the application-level find logic
+  had a bug and let a duplicate through, does the DB constraint itself
+  still catch it and does the batch still roll back correctly?"). This is
+  a **defense-in-depth** test, not a race reproduction — it needs no
+  locking, no ordering, no true concurrency, and is fully deterministic on
+  both dialects, since a plain second insert under an already-unique
+  identity always violates the partial index regardless of dialect or
+  timing. Assert the resulting `IntegrityError` triggers a full rollback of
+  the whole batch (drafts and references alike, including the first,
+  legitimately-inserted reference), and that no duplicate reference row
+  exists afterward.
 - A **best-effort, Postgres-only** true-concurrency test (two real threads/
-  connections, no artificial ordering) may additionally be added at
-  implementation time to validate real-world MVCC behavior, but is
-  explicitly **not** a required dialect-parity test — SQLite's single-writer
-  file-locking model makes a "genuine simultaneous race" a different, less
-  meaningful scenario there than on Postgres.
+  connections, no artificial ordering, no bypassing find-or-create) may
+  additionally be added at implementation time to validate real-world MVCC
+  behavior under genuine concurrent load, but is explicitly **not** a
+  required dialect-parity test — SQLite's single-writer file-locking model
+  makes a "genuine simultaneous race between two separate batches" a
+  fundamentally different, less meaningful scenario there than on
+  Postgres (the defense-in-depth test above is what actually proves the
+  invariant on both dialects; this one is extra assurance for Postgres's
+  real concurrency model specifically).
 
 `test_two_files_same_batch_new_reference_reused_via_batch_cache` (two
 files in one batch cite an identical brand-new citation; assert exactly
