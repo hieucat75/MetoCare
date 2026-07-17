@@ -70,6 +70,7 @@ from .drug_knowledge_core import (
     DrugProductName,
 )
 from .drug_knowledge_governance import ClinicalSpecialty, KnowledgeReviewSpecialty
+from .drug_knowledge_references import DrugReference, KnowledgeReferenceLink
 from .governance import AuditLog, Consent
 from .meto import MetoAuditLog, MetoConsent, MetoConversation, MetoMessage
 from .notification import Notification
@@ -139,6 +140,8 @@ __all__ = [
     "DrugEntry",
     "ClinicalSpecialty",
     "KnowledgeReviewSpecialty",
+    "DrugReference",
+    "KnowledgeReferenceLink",
     "DrugClass",
     "DrugIngredient",
     "DrugProduct",
