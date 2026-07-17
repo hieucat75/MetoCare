@@ -129,13 +129,18 @@ class ReferenceEntry(_StrictModel):
     is non-blank when present — a whitespace-only or unparseable value can
     no longer satisfy the mandatory traceability gate (Codex review P1)."""
 
-    publisher: str = Field(min_length=1)
-    title: str = Field(min_length=1)
+    # max_length values mirror DrugReference's column widths (A1b-F1,
+    # backend/app/models/drug_knowledge_references.py) so a validated
+    # reference is guaranteed to persist once A1b wires the write path —
+    # Codex round-3 flagged that unbounded fields here could pass validation
+    # but fail on insert (Postgres VARCHAR truncation).
+    publisher: str = Field(min_length=1, max_length=255)
+    title: str = Field(min_length=1, max_length=500)
     source_type: SourceType
     url: HttpUrl | None = None
-    document_identifier: str | None = Field(default=None, min_length=1)
+    document_identifier: str | None = Field(default=None, min_length=1, max_length=255)
     publication_date: dt.date
-    source_version: str = Field(min_length=1)
+    source_version: str = Field(min_length=1, max_length=32)
     accessed_at: dt.date
 
     @model_validator(mode="after")
@@ -144,6 +149,15 @@ class ReferenceEntry(_StrictModel):
             raise ValueError(
                 "reference must have a url or a document_identifier — "
                 "an untraceable citation is not a structured reference"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _url_fits_storage_column(self) -> ReferenceEntry:
+        # HttpUrl permits up to 2083 chars; DrugReference.url is VARCHAR(2048).
+        if self.url is not None and len(str(self.url)) > 2048:
+            raise ValueError(
+                f"url must be at most 2048 characters, got {len(str(self.url))}"
             )
         return self
 

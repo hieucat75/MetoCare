@@ -116,6 +116,46 @@ def test_reference_with_document_identifier_instead_of_url_accepted() -> None:
     KnowledgeFile.model_validate(data)  # does not raise
 
 
+@pytest.mark.parametrize(
+    ("field", "max_length"),
+    [
+        ("publisher", 255),
+        ("title", 500),
+        ("document_identifier", 255),
+        ("source_version", 32),
+    ],
+)
+def test_reference_field_over_storage_column_width_rejected(
+    field: str, max_length: int
+) -> None:
+    """max_length values mirror DrugReference's column widths (A1b-F1) so
+    validation success guarantees persistence once A1b wires the write path."""
+    data = _valid_file_dict()
+    data["references"][0][field] = "x" * (max_length + 1)
+    with pytest.raises(ValidationError):
+        KnowledgeFile.model_validate(data)
+
+
+def test_reference_field_at_storage_column_width_accepted() -> None:
+    data = _valid_file_dict()
+    data["references"][0]["publisher"] = "x" * 255
+    data["references"][0]["title"] = "x" * 500
+    data["references"][0]["source_version"] = "x" * 32
+    KnowledgeFile.model_validate(data)  # does not raise
+
+
+def test_reference_url_over_storage_column_width_rejected() -> None:
+    """HttpUrl permits up to 2083 chars; DrugReference.url is VARCHAR(2048)
+    — a value in that gap must fail here, not at insert time."""
+    prefix = "https://example.invalid/"
+    url = prefix + "a" * (2083 - len(prefix))
+    assert len(url) == 2083
+    data = _valid_file_dict()
+    data["references"][0]["url"] = url
+    with pytest.raises(ValidationError, match="2048"):
+        KnowledgeFile.model_validate(data)
+
+
 def test_unsupported_locale_rejected() -> None:
     data = _valid_file_dict()
     data["metadata"]["locale"] = "en"
