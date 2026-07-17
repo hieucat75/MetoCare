@@ -699,17 +699,27 @@ non-null only at `approved` — the same "schema allows, application-layer
 gate enforces" split this codebase already uses elsewhere.
 
 **Application-level rules (not a schema constraint):**
-- `build_draft`, called only from `orchestrator.py`, **always** supplies a
-  64-character SHA-256 `artifact_hash` — enforced by `orchestrator.py`
-  itself (e.g. an assertion or a required, non-optional parameter with no
-  default), not by the DB. Every row A1b's importer ever creates has a real
-  hash.
-- Existing/legacy callers of `create_draft`(K1-S3's own tests, any future
+- `build_draft`'s own signature stays permissive —
+  `artifact_hash: str | None = None` — since it is a **shared primitive**
+  called from two places (Codex round-9 fix: an earlier wording said
+  "called only from `orchestrator.py`," which contradicts §2a/§14's own
+  design where `create_draft` also calls `build_draft` internally as its
+  backward-compatible wrapper; if `build_draft` itself required a
+  non-optional hash, `create_draft`'s existing legacy callers would break):
+  - `orchestrator.py` **always** passes a real 64-character SHA-256
+    `artifact_hash` when it calls `build_draft` — enforced at
+    `orchestrator.py`'s own call site (e.g. an assertion immediately before
+    the call), not by `build_draft`'s signature. Every row A1b's importer
+    ever creates has a real hash, by the importer's own discipline.
+  - `create_draft` (the refactored backward-compatible wrapper, §2a) calls
+    `build_draft` without requiring its own callers to supply a hash —
+    `artifact_hash` defaults to `None` there, preserving 100% backward
+    compatibility for K1-S3's existing tests and any future non-importer
+    caller.
+- Existing/legacy callers of `create_draft` (K1-S3's own tests, any future
   non-importer caller) may continue to create rows with `artifact_hash =
   NULL` — those rows are not managed by the importer and the column
-  simply doesn't apply to them. `create_draft`'s existing signature is
-  unchanged (§2a); `artifact_hash` defaults to `None` for any caller that
-  doesn't pass it, preserving 100% backward compatibility.
+  simply doesn't apply to them.
 - **`known_versions_for` must fail closed on a `NULL` hash, never
   interpret it (PTH round-8 fix):** if any non-`retired` row for a
   business key has `artifact_hash IS NULL`, the entire batch touching that
