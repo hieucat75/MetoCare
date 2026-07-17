@@ -113,9 +113,10 @@ def _reference_artifact(ref: ReferenceEntry) -> dict:
 
 
 def _reference_sort_key(artifact: dict) -> tuple:
-    """`(is_none, value)` per field so `None` (only possible for
-    `document_identifier`) sorts deterministically without ever comparing
-    `None` to `str` — Python raises TypeError on that comparison directly."""
+    """`(is_none, value)` per field — both `document_identifier` and `url`
+    can independently be `None` (schema only requires at least one of the
+    two present) — so `None` sorts deterministically without ever
+    comparing `None` to `str` directly, which Python raises TypeError on."""
     return tuple((artifact[field] is None, artifact[field]) for field in _REFERENCE_ARTIFACT_FIELDS)
 
 

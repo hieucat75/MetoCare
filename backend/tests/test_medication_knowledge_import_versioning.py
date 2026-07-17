@@ -194,6 +194,40 @@ class TestArtifactHash:
         kf_b = KnowledgeFile.model_validate(reordered)
         assert v.artifact_hash(kf_a) == v.artifact_hash(kf_b)
 
+    def test_reference_reorder_is_no_op_with_mixed_document_identifier(self) -> None:
+        """Codex round-1 P2: the reorder test above uses two references
+        that both have `document_identifier=None` — this proves
+        `_reference_sort_key`'s `(is_none, value)` design is genuinely
+        total-order-safe for a MIXED pair (one None, one string-valued),
+        not just when both share the same None-ness, and that no
+        TypeError is raised from a direct None-vs-str comparison."""
+        data = _side_effect_file()
+        data["references"] = [
+            {
+                "publisher": "p1",
+                "title": "t1",
+                "source_type": "formulary",
+                "url": "https://example.invalid/1",
+                "publication_date": "2024-01-01",
+                "source_version": "1.0",
+                "accessed_at": "2026-01-01",
+            },
+            {
+                "publisher": "p2",
+                "title": "t2",
+                "source_type": "peer_reviewed",
+                "document_identifier": "ISBN-mixed",
+                "publication_date": "2024-01-01",
+                "source_version": "1.0",
+                "accessed_at": "2026-01-01",
+            },
+        ]
+        kf_a = KnowledgeFile.model_validate(data)
+        reordered = copy.deepcopy(data)
+        reordered["references"] = list(reversed(reordered["references"]))
+        kf_b = KnowledgeFile.model_validate(reordered)
+        assert v.artifact_hash(kf_a) == v.artifact_hash(kf_b)
+
     def test_content_change_changes_hash(self) -> None:
         h1 = v.artifact_hash(_kf(concept_code="nausea"))
         h2 = v.artifact_hash(_kf(concept_code="dizziness"))

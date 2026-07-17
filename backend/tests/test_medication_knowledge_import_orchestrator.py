@@ -394,40 +394,62 @@ class TestWholeBatchRollback:
 
 
 class TestMultiRowSameVersionResolution:
-    def test_two_existing_rows_same_version_different_hash_always_rejects(
+    def test_two_existing_rows_same_version_incoming_matches_one_still_rejects(
         self, db, tmp_path, ingredient_name
     ) -> None:
         """No unique constraint prevents two draft rows sharing the same
         business key + version (append-only schema; a real concurrent
-        import race can produce this). resolve_version_action must reject
-        regardless of DB query ordering — never silently NO_OP just
-        because one of the two conflicting rows happens to be read first."""
-        from app.services.knowledge_repository import add_draft, build_draft
+        import race can produce this).
 
-        ingredient = db.query(DrugIngredient).filter_by(name_inn=ingredient_name).one()
-        for hash_value in ("a" * 64, "b" * 64):
-            row = build_draft(
-                DrugSideEffect,
-                authored_by="tester",
-                artifact_hash=hash_value,
-                drug_ingredient_id=ingredient.id,
-                concept_code="dup_version_effect",
-                label="Label",
-                frequency="common",
-                action_level="self_monitor",
-                description="desc",
-                version="1.0.0",
-            )
-            add_draft(db, row)
-        db.commit()
+        Codex round-1 P2: seeding two arbitrary fake hashes (neither
+        matching the incoming file) doesn't actually exercise the bug —
+        even the OLD `next()`-based implementation rejects a hash that
+        matches neither seeded row. The real bug only surfaces when the
+        incoming file's hash EXACTLY matches ONE of the two conflicting
+        rows: this reproduces that by importing the real file once first
+        (capturing its real hash), then planting a second, differently-
+        hashed row under the SAME version directly, then re-importing the
+        identical file again — its real hash now matches row 1 exactly,
+        but row 2 still conflicts, so the correct outcome is REJECT, never
+        NO_OP."""
+        from app.services.knowledge_repository import add_draft, build_draft
 
         path = _write_file(
             tmp_path, ingredient_name, concept_code="dup_version_effect", version="1.0.0"
         )
+        db1 = SessionLocal()
+        first_result = import_batch(db1, [path])
+        db1.close()
+        assert first_result.success, first_result.errors
+        real_row = db.query(DrugSideEffect).filter_by(id=first_result.written[0].row_id).one()
+        real_hash = real_row.artifact_hash
+        assert real_hash is not None
+
+        ingredient = db.query(DrugIngredient).filter_by(name_inn=ingredient_name).one()
+        conflicting_hash = "f" * 64
+        assert conflicting_hash != real_hash
+        conflicting_row = build_draft(
+            DrugSideEffect,
+            authored_by="tester",
+            artifact_hash=conflicting_hash,
+            drug_ingredient_id=ingredient.id,
+            concept_code="dup_version_effect",
+            label="Label",
+            frequency="common",
+            action_level="self_monitor",
+            description="desc",
+            version="1.0.0",
+        )
+        add_draft(db, conflicting_row)
+        db.commit()
+
         fresh_db = SessionLocal()
         result = import_batch(fresh_db, [path])
         fresh_db.close()
-        assert not result.success
+        assert not result.success, (
+            "incoming hash exactly matches row 1, but row 2 still conflicts under "
+            "the same version — must reject, not silently NO_OP against row 1 alone"
+        )
         assert "conflict" in result.errors[0].message.lower()
 
         count = (

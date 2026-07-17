@@ -95,6 +95,20 @@ def find_or_create_reference(
     function also participates in for true races between separate
     `import_batch` invocations.
 
+    Known limitation (Codex round-1 review, not fixed here — see PR #132
+    discussion): reuse is keyed on F1's citation identity, which is
+    narrower than the reference's full authored fields. If a later
+    version of a knowledge file changes `url`/`source_type` (or, on the
+    document-identifier branch, `publisher`/`title`/`publication_date`)
+    while keeping the same citation identity, `versioning.artifact_hash`
+    correctly detects the change (forcing a NEW_DRAFT rather than a
+    silent NO_OP), but the new draft is linked to the EXISTING
+    `DrugReference` row — whose stored fields still reflect whichever
+    import created it first, not the newer file's values. Widening reuse
+    to require full-field equality (rejecting or versioning the reference
+    itself on a partial match) is a real design change to F1's dedup
+    model, out of scope for this PR; flagged to PTH for a future decision.
+
     Never commits/rolls back — `add()` + `flush()` only.
     """
     cache_key = citation_identity_key(ref)
