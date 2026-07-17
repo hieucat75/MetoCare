@@ -107,6 +107,46 @@ def validate_transition(
             )
 
 
+def build_draft(
+    model_cls: type[KnowledgeModel],
+    *,
+    authored_by: str,
+    artifact_hash: str | None = None,
+    **fields: object,
+) -> KnowledgeModel:
+    """Pure construction — no DB interaction at all. Always `status='draft'`
+    (A1b orchestrator plan §7: draft-only, enforced by construction, never
+    a runtime flag).
+
+    `artifact_hash` defaults to `None` for backward compatibility with
+    every caller that predates the A1b orchestrator (K1-S3's own tests,
+    `create_draft` below). The A1b orchestrator itself always passes a real
+    64-character SHA-256 hash here — enforced at the orchestrator's own
+    call site (plan §3), not by this function's signature, since this is a
+    *shared* primitive used by both the orchestrator and `create_draft`'s
+    legacy callers and must not reject either."""
+    now = dt.datetime.now(dt.UTC)
+    return model_cls(
+        authored_by=authored_by,
+        status="draft",
+        status_changed_by=authored_by,
+        status_changed_at=now,
+        artifact_hash=artifact_hash,
+        **fields,
+    )
+
+
+def add_draft(db: Session, row: KnowledgeModel) -> None:
+    """`db.add(row)` + `db.flush()`. Never commits, never rolls back (A1b
+    orchestrator plan §2a) — flushing surfaces constraint violations
+    immediately at the point of the failing row while leaving the caller's
+    transaction open and reversible. The caller (a batch transaction owner
+    such as `orchestrator.import_batch`, or `create_draft` below) is solely
+    responsible for committing or rolling back."""
+    db.add(row)
+    db.flush()
+
+
 def create_draft(
     db: Session,
     model_cls: type[KnowledgeModel],
@@ -119,17 +159,16 @@ def create_draft(
     content means calling this again with the same business-key fields and
     new content, producing a second row, never an UPDATE of the first
     (ADR-13 append-only; verified by test_create_new_version_does_not_overwrite).
+
+    A thin, backward-compatible wrapper over `build_draft`/`add_draft` (A1b
+    orchestrator plan §2a) — external signature and behavior unchanged for
+    every existing caller. `orchestrator.py` never calls this; it calls
+    `build_draft`/`add_draft` directly so it can own the batch transaction
+    itself (this function commits, which a multi-row batch cannot allow).
     """
-    now = dt.datetime.now(dt.UTC)
-    row = model_cls(
-        authored_by=authored_by,
-        status="draft",
-        status_changed_by=authored_by,
-        status_changed_at=now,
-        **fields,
-    )
-    db.add(row)
+    row = build_draft(model_cls, authored_by=authored_by, **fields)
     try:
+        add_draft(db, row)
         db.commit()
     except Exception:
         db.rollback()
