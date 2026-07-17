@@ -217,7 +217,9 @@ class TestDrugReferences:
             {"id": str(uuid.uuid4())},
         )
 
-    def test_duplicate_natural_key_rejected(self, conn: sa.Connection) -> None:
+    def test_duplicate_title_key_same_access_date_rejected(self, conn: sa.Connection) -> None:
+        """No document_identifier — identity falls back to publisher/title/
+        publication_date/source_version/accessed_at."""
         params = {
             "publisher": "Dup Publisher",
             "title": "Dup Title",
@@ -243,6 +245,101 @@ class TestDrugReferences:
                 ),
                 {"id": str(uuid.uuid4()), **params},
             )
+
+    def test_same_source_different_access_date_creates_new_citation(
+        self, conn: sa.Connection
+    ) -> None:
+        """Codex round-1 P2: re-consulting the same document at a later date
+        must create a new provenance row, not collide with or overwrite the
+        earlier citation's access date."""
+        params = {
+            "publisher": "Revisit Publisher",
+            "title": "Revisit Title",
+            "publication_date": date(2024, 1, 1),
+            "source_version": "1.0",
+        }
+        conn.execute(
+            sa.text(
+                "INSERT INTO drug_references "
+                "(id, publisher, title, source_type, url, publication_date, source_version, accessed_at) "
+                "VALUES (:id, :publisher, :title, 'formulary', 'https://example.invalid/a', "
+                ":publication_date, :source_version, '2026-01-01')"
+            ),
+            {"id": str(uuid.uuid4()), **params},
+        )
+        conn.execute(
+            sa.text(
+                "INSERT INTO drug_references "
+                "(id, publisher, title, source_type, url, publication_date, source_version, accessed_at) "
+                "VALUES (:id, :publisher, :title, 'formulary', 'https://example.invalid/a', "
+                ":publication_date, :source_version, '2026-06-01')"
+            ),
+            {"id": str(uuid.uuid4()), **params},
+        )
+        rows = conn.execute(
+            sa.text(
+                "SELECT accessed_at FROM drug_references "
+                "WHERE publisher = :publisher AND title = :title ORDER BY accessed_at"
+            ),
+            {"publisher": params["publisher"], "title": params["title"]},
+        ).fetchall()
+        assert [r[0] for r in rows] == [date(2026, 1, 1), date(2026, 6, 1)]
+
+    def test_duplicate_document_identifier_key_rejected(self, conn: sa.Connection) -> None:
+        """Preferred identity path when a stable document_identifier exists —
+        differing publisher/title must NOT bypass the dedup."""
+        conn.execute(
+            sa.text(
+                "INSERT INTO drug_references "
+                "(id, publisher, title, source_type, document_identifier, publication_date, "
+                "source_version, accessed_at) "
+                "VALUES (:id, 'Publisher A', 'Title A', 'peer_reviewed', 'ISBN-DUP', "
+                "'2024-01-01', '1.0', '2026-01-01')"
+            ),
+            {"id": str(uuid.uuid4())},
+        )
+        with pytest.raises(sa.exc.IntegrityError):
+            conn.execute(
+                sa.text(
+                    "INSERT INTO drug_references "
+                    "(id, publisher, title, source_type, document_identifier, publication_date, "
+                    "source_version, accessed_at) "
+                    "VALUES (:id, 'Publisher B', 'Title B', 'peer_reviewed', 'ISBN-DUP', "
+                    "'2024-06-01', '1.0', '2026-01-01')"
+                ),
+                {"id": str(uuid.uuid4())},
+            )
+
+    def test_document_identifier_present_bypasses_title_key(self, conn: sa.Connection) -> None:
+        """Same publisher/title/publication_date/source_version but distinct
+        document_identifier must NOT collide — the title-based key only
+        applies when document_identifier IS NULL."""
+        params = {
+            "publisher": "Same Publisher",
+            "title": "Same Title",
+            "publication_date": date(2024, 1, 1),
+            "source_version": "1.0",
+        }
+        conn.execute(
+            sa.text(
+                "INSERT INTO drug_references "
+                "(id, publisher, title, source_type, document_identifier, publication_date, "
+                "source_version, accessed_at) "
+                "VALUES (:id, :publisher, :title, 'peer_reviewed', 'ISBN-AAA', "
+                ":publication_date, :source_version, '2026-01-01')"
+            ),
+            {"id": str(uuid.uuid4()), **params},
+        )
+        conn.execute(
+            sa.text(
+                "INSERT INTO drug_references "
+                "(id, publisher, title, source_type, document_identifier, publication_date, "
+                "source_version, accessed_at) "
+                "VALUES (:id, :publisher, :title, 'peer_reviewed', 'ISBN-BBB', "
+                ":publication_date, :source_version, '2026-01-01')"
+            ),
+            {"id": str(uuid.uuid4()), **params},
+        )
 
 
 class TestKnowledgeReferenceLinks:
@@ -453,4 +550,96 @@ class TestRollback:
             assert not {"label", "frequency", "action_level"} & cols
 
         # Leave the DB at head for any subsequent test module reusing it.
+        command.upgrade(cfg, "head")
+
+
+class TestDowngradeGuardsReferenceData:
+    """Codex round-1 P2: downgrade must refuse to drop drug_references /
+    knowledge_reference_links while either still holds data, regardless of
+    which knowledge type wrote it. These tests use pg_engine directly (not
+    the auto-rollback `conn` fixture) because they exercise real DDL via
+    alembic — matching TestRollback's convention above."""
+
+    def test_downgrade_refuses_when_citations_populated(self, pg_engine: sa.Engine) -> None:
+        db_url = pg_engine.url.render_as_string(hide_password=False)
+        cfg = _make_alembic_config(db_url)
+        command.upgrade(cfg, "k1_a1b_f1_schema_complete")
+
+        ref_id = str(uuid.uuid4())
+        with pg_engine.begin() as conn:
+            conn.execute(
+                sa.text(
+                    "INSERT INTO drug_references "
+                    "(id, publisher, title, source_type, url, publication_date, source_version, accessed_at) "
+                    "VALUES (:id, 'p', 't', 'formulary', 'https://example.invalid/x', "
+                    "'2024-01-01', '1.0', '2026-01-01')"
+                ),
+                {"id": ref_id},
+            )
+
+        with pytest.raises(RuntimeError, match="drug_references"):
+            command.downgrade(cfg, "k1_s2_m01_catalog_migration")
+
+        with pg_engine.connect() as conn:
+            tabs = {
+                row[0]
+                for row in conn.execute(
+                    sa.text(
+                        "SELECT table_name FROM information_schema.tables "
+                        "WHERE table_name = 'drug_references'"
+                    )
+                ).fetchall()
+            }
+            assert tabs == {"drug_references"}, "guard must refuse before dropping the table"
+
+        with pg_engine.begin() as conn:
+            conn.execute(sa.text("DELETE FROM drug_references WHERE id = :id"), {"id": ref_id})
+
+        # Guard cleared — downgrade now succeeds; restore head for other tests.
+        command.downgrade(cfg, "k1_s2_m01_catalog_migration")
+        command.upgrade(cfg, "head")
+
+    def test_downgrade_refuses_when_links_populated(self, pg_engine: sa.Engine) -> None:
+        """Link a citation to drug_usage (not drug_side_effects) — proves the
+        guard checks knowledge_reference_links independently of the
+        side-effects-emptiness guard, and isn't scoped to side effects only.
+        knowledge_row_id is a polymorphic string with no physical FK, so a
+        synthetic id is a valid row here (matches production: the row it
+        points at may live in usage/monitoring/contraindications/patient
+        education, none of which this migration is allowed to assume empty)."""
+        db_url = pg_engine.url.render_as_string(hide_password=False)
+        cfg = _make_alembic_config(db_url)
+        command.upgrade(cfg, "k1_a1b_f1_schema_complete")
+
+        ref_id = str(uuid.uuid4())
+        link_id = str(uuid.uuid4())
+        with pg_engine.begin() as conn:
+            conn.execute(
+                sa.text(
+                    "INSERT INTO drug_references "
+                    "(id, publisher, title, source_type, url, publication_date, source_version, accessed_at) "
+                    "VALUES (:id, 'p', 't', 'formulary', 'https://example.invalid/x', "
+                    "'2024-01-01', '1.0', '2026-01-01')"
+                ),
+                {"id": ref_id},
+            )
+            conn.execute(
+                sa.text(
+                    "INSERT INTO knowledge_reference_links "
+                    "(id, knowledge_table, knowledge_row_id, drug_reference_id, created_at, updated_at) "
+                    "VALUES (:id, 'drug_usage', :row_id, :ref_id, now(), now())"
+                ),
+                {"id": link_id, "row_id": str(uuid.uuid4()), "ref_id": ref_id},
+            )
+
+        with pytest.raises(RuntimeError, match="knowledge_reference_links"):
+            command.downgrade(cfg, "k1_s2_m01_catalog_migration")
+
+        with pg_engine.begin() as conn:
+            conn.execute(
+                sa.text("DELETE FROM knowledge_reference_links WHERE id = :id"), {"id": link_id}
+            )
+            conn.execute(sa.text("DELETE FROM drug_references WHERE id = :id"), {"id": ref_id})
+
+        command.downgrade(cfg, "k1_s2_m01_catalog_migration")
         command.upgrade(cfg, "head")

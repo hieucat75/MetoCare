@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from sqlalchemy import CheckConstraint, Date, ForeignKey, Index, String, UniqueConstraint
+from sqlalchemy import CheckConstraint, Date, ForeignKey, Index, String, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -46,13 +46,6 @@ class DrugReference(UUIDPrimaryKey, TimestampMixin, Base):
     accessed_at: Mapped[dt.date] = mapped_column(Date, nullable=False)
 
     __table_args__ = (
-        UniqueConstraint(
-            "publisher",
-            "title",
-            "publication_date",
-            "source_version",
-            name="uq_drug_references_natural_key",
-        ),
         CheckConstraint(
             "source_type IN "
             "('formulary','clinical_guideline','product_label','peer_reviewed','other')",
@@ -61,6 +54,33 @@ class DrugReference(UUIDPrimaryKey, TimestampMixin, Base):
         CheckConstraint(
             "url IS NOT NULL OR document_identifier IS NOT NULL",
             name="ck_drug_references_locator_present",
+        ),
+        # Two-tiered citation identity (Codex round-1 P2): prefer the stable
+        # document_identifier when present — the same document cited under a
+        # different title/publisher spelling still resolves to one identity —
+        # falling back to publisher/title/publication_date only when no
+        # identifier exists. Both branches include accessed_at so re-citing
+        # the same source at a later date creates a new provenance row
+        # instead of colliding with, or overwriting, the earlier citation.
+        Index(
+            "uq_drug_references_by_document_identifier",
+            "document_identifier",
+            "source_version",
+            "accessed_at",
+            unique=True,
+            postgresql_where=text("document_identifier IS NOT NULL"),
+            sqlite_where=text("document_identifier IS NOT NULL"),
+        ),
+        Index(
+            "uq_drug_references_by_title",
+            "publisher",
+            "title",
+            "publication_date",
+            "source_version",
+            "accessed_at",
+            unique=True,
+            postgresql_where=text("document_identifier IS NULL"),
+            sqlite_where=text("document_identifier IS NULL"),
         ),
     )
 

@@ -81,6 +81,22 @@ def _assert_side_effects_empty(context: str) -> None:
         )
 
 
+def _assert_table_empty(table: str, context: str) -> None:
+    """Fail closed (Codex round-1 P2): the downgrade must not silently drop
+    populated reference data. Citations/links may back usage, monitoring,
+    contraindications, or patient-education content — not just side effects
+    — so this checks the reference tables themselves, independent of which
+    knowledge type wrote them."""
+    conn = op.get_bind()
+    count = conn.execute(sa.text(f"SELECT COUNT(*) FROM {table}")).scalar()
+    if count != 0:
+        raise RuntimeError(
+            f"{table} has {count} row(s) — refusing to run the {context}. "
+            "This migration will not silently discard provenance data; remove "
+            "or migrate the rows out first if this downgrade is intentional."
+        )
+
+
 def upgrade() -> None:
     # -------------------------------------------------------------------
     # Structured references (Finding 1)
@@ -98,13 +114,6 @@ def upgrade() -> None:
         sa.Column("accessed_at", sa.Date(), nullable=False),
         *_timestamp_columns(),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint(
-            "publisher",
-            "title",
-            "publication_date",
-            "source_version",
-            name="uq_drug_references_natural_key",
-        ),
         sa.CheckConstraint(
             "source_type IN "
             "('formulary','clinical_guideline','product_label','peer_reviewed','other')",
@@ -114,6 +123,28 @@ def upgrade() -> None:
             "url IS NOT NULL OR document_identifier IS NOT NULL",
             name="ck_drug_references_locator_present",
         ),
+    )
+    # Two-tiered citation identity (Codex round-1 P2): prefer the stable
+    # document_identifier when present, falling back to publisher/title/
+    # publication_date only when no identifier exists. Both branches include
+    # accessed_at so re-citing the same source at a later date creates a new
+    # provenance row instead of colliding with, or overwriting, the earlier
+    # citation's access date.
+    op.create_index(
+        "uq_drug_references_by_document_identifier",
+        "drug_references",
+        ["document_identifier", "source_version", "accessed_at"],
+        unique=True,
+        postgresql_where=sa.text("document_identifier IS NOT NULL"),
+        sqlite_where=sa.text("document_identifier IS NOT NULL"),
+    )
+    op.create_index(
+        "uq_drug_references_by_title",
+        "drug_references",
+        ["publisher", "title", "publication_date", "source_version", "accessed_at"],
+        unique=True,
+        postgresql_where=sa.text("document_identifier IS NULL"),
+        sqlite_where=sa.text("document_identifier IS NULL"),
     )
 
     op.create_table(
@@ -195,8 +226,20 @@ def downgrade() -> None:
     single `level` column — not information-preserving (frequency and
     action_level collapse into one field), which is acceptable ONLY
     because the table is guaranteed empty; re-asserted here so a
-    downgrade never silently discards real data either."""
+    downgrade never silently discards real data either.
+
+    All three guards below run before any DDL so a raised RuntimeError
+    leaves the database completely untouched, regardless of whether the
+    two changes in this revision are transactionally linked."""
     _assert_side_effects_empty("downgrade of the frequency/action_level split")
+    _assert_table_empty(
+        "knowledge_reference_links",
+        "downgrade of structured references (links still present)",
+    )
+    _assert_table_empty(
+        "drug_references",
+        "downgrade of structured references (citations still present)",
+    )
 
     op.drop_index("uq_drug_side_effects_approved_key", table_name=_SIDE_EFFECTS_TABLE)
     with op.batch_alter_table(_SIDE_EFFECTS_TABLE) as batch_op:
@@ -221,4 +264,6 @@ def downgrade() -> None:
     )
     op.drop_index("ix_knowledge_reference_links_row", table_name="knowledge_reference_links")
     op.drop_table("knowledge_reference_links")
+    op.drop_index("uq_drug_references_by_title", table_name="drug_references")
+    op.drop_index("uq_drug_references_by_document_identifier", table_name="drug_references")
     op.drop_table("drug_references")
