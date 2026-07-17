@@ -1,10 +1,23 @@
 # Medication Knowledge — Phase A1b Orchestrator Implementation Plan
 
-**Date:** 2026-07-17
+**Date:** 2026-07-17 (revised same day — round 2, PTH review of PR #131)
 **Status:** 🟡 **Planning GO — implementation NOT GO.** This document is itself
 subject to review/approval before any `versioning.py`/`orchestrator.py` code
 is written. Phase B authoring has not started and is not authorized by this
 plan.
+
+**Round-2 revision note:** PTH's review of the first draft found one P1
+(transaction-ownership architectural conflict — an earlier version said
+"reuse `create_draft` unchanged" while also requiring one-commit-per-batch;
+those two claims contradict each other, since `create_draft` commits
+internally) and two P2s (SQLAlchemy transaction-lifecycle wording that
+implied a fresh transaction opens after Phase 1, and an incorrect "harmless
+duplicate reference row" framing for a race that a working unique index
+should never actually allow). All three are fixed in §2 (rewritten, now
+§2a/§2b) and §5 (race semantics corrected) — see those sections for the
+before/after reasoning, not just the conclusion. §14's module-layout claim
+that `knowledge_repository.py` would be untouched is also corrected, since
+the P1 fix requires a small, backward-compatible addition there.
 **Depends on (both merged):**
 - PR #128 — F1 schema completion (`drug_references`, `knowledge_reference_links`,
   `drug_side_effects.frequency`/`action_level` split) → `main` @ `cc4d6c1`
@@ -75,6 +88,16 @@ Each file's outcome is either a fully-resolved `ImportPlan` (validated
 content + resolved ingredient id + resolved specialty ids + version action)
 or a list of errors. Nothing is written to the database in this phase.
 
+**Phase 1 and Phase 2 share one transaction, never two** (locked in §2 —
+revised after PTH's round-2 review: SQLAlchemy's `Session` autobegins a
+transaction on first use, so Phase 1's read-only queries already have one
+open by the time Phase 1 finishes; there is no clean point to "start a new
+transaction" after Phase 1 without first ending the one already open, which
+this plan does not do). Phase 1 writing zero rows (above) is what makes
+this safe — if Phase 1 finds errors, nothing needs to be undone, because
+nothing was written; the existing open transaction is simply never
+committed.
+
 **Phase 2 — write, only entered if Phase 1 produced zero errors across the
 entire batch** (see §2 for the transaction, §7 for what "zero errors" means
 under partial failure).
@@ -96,25 +119,111 @@ that `add`/`commit` are never called during Phase 1, only queries).
 
 ## 2. Transaction boundary
 
-**Rule:** one batch = one transaction. All-or-nothing.
+**Rule:** one batch = one transaction = one commit. All-or-nothing.
 
-**Design:** matches K1-S2's own migration-write pattern and the existing
-plan's §4 language exactly: Phase 2 opens exactly one `db` transaction
-(the same `Session` used for Phase 1's read-only queries — no new
-connection), performs every write for every `ImportPlan` in the batch
-(`create_draft` calls + reference find-or-create + link creation, §4/§5),
-then commits **once** at the end. Any exception anywhere in Phase 2 —
-expected (a constraint violation we didn't predict) or unexpected (a bug) —
-triggers `db.rollback()` before re-raising, mirroring
-`knowledge_repository.create_draft`'s own existing
-`try: db.commit() except: db.rollback(); raise` convention (reused, not
-reinvented — `orchestrator.py` should call the existing `create_draft`, not
-duplicate its commit/rollback logic).
+**Revised after PTH's round-2 review — the earlier draft of this plan had
+two real defects here, both fixed below:**
+
+### 2a. Transaction ownership (P1 fix)
+
+**The defect:** the earlier draft said "reuse `knowledge_repository.create_draft`
+unchanged" for Phase 2's writes. `create_draft` commits internally
+(`db.commit()` / `except: db.rollback(); raise`) — it is designed for a
+single, standalone draft creation, not for participating in someone else's
+multi-row transaction. If `orchestrator.py` called it once per file in a
+loop, the first two drafts in a 3-file batch would already be **committed**
+by the time the third file's error occurs — no rollback can undo an already
+-committed transaction. This directly breaks "all-or-nothing."
+
+**The fix — transaction ownership is now explicit and singular:**
+
+> Low-level functions participating in a batch transaction must never call
+> `commit()` or `rollback()`. Only the transaction owner (`import_batch`)
+> may end the transaction.
+
+`knowledge_repository.py` gains two new, commit-free primitives (this is a
+change from an earlier draft of this plan, which claimed
+`knowledge_repository.py` would not be touched — see the corrected §14):
+
+- `build_draft(model_cls, *, authored_by, **fields) -> KnowledgeModel` — pure
+  construction, no DB interaction at all.
+- `add_draft(db: Session, row: KnowledgeModel) -> None` — `db.add(row)` +
+  `db.flush()`. **Never commits, never rolls back.** Flushing (not
+  committing) still surfaces constraint violations immediately at the point
+  of the failing file, while leaving the transaction open and reversible.
+
+`create_draft` itself **keeps its existing signature and behavior
+unchanged** for its existing callers (K1-S3's own tests, any future
+single-call use case) — it becomes a thin, backward-compatible wrapper:
+`build_draft(...)` + `add_draft(db, row)` + `db.commit()` + `db.refresh(row)`,
+wrapped in the same `try/except: db.rollback(); raise` it already has today.
+K1-S3's existing tests must pass unchanged against this refactor — that is
+itself a required regression test for the A1b implementation PR, not
+optional.
+
+`orchestrator.py` **never calls `create_draft`.** It calls `build_draft`/
+`add_draft` directly, so no commit happens mid-batch. Same rule applies to
+`references.py`'s `find_or_create_reference`/`link_reference_to_row` (§5):
+`db.add()`/`db.flush()` only, never `commit()`/`rollback()`.
+
+`import_batch` is the **only** function in this call graph allowed to call
+`db.commit()` or `db.rollback()`:
+
+```python
+def import_batch(db: Session, paths: list[Path], *, dry_run: bool = False) -> BatchResult:
+    plans_or_errors = [_resolve_phase1(db, p) for p in paths]  # reads only, §1
+    if any_errors(plans_or_errors):
+        return BatchResult(success=False, errors=..., written=[], dry_run=dry_run)
+    if dry_run:
+        return BatchResult(success=True, errors=[], written=[], dry_run=True, planned=...)
+
+    written = []
+    try:
+        for plan in plans_or_errors:
+            row = build_draft(plan.model_cls, authored_by=plan.authored_by, **plan.fields)
+            add_draft(db, row)                                  # add + flush, no commit
+            for ref in plan.references:
+                ref_id = find_or_create_reference(db, ref)      # add + flush, no commit
+                link_reference_to_row(db, row, ref_id)           # add + flush, no commit
+            written.append(row)
+        db.commit()                                              # the ONE commit for the whole batch
+    except Exception:
+        db.rollback()
+        raise
+    return BatchResult(success=True, errors=[], written=written, dry_run=False)
+```
+
+(Illustrative code — exact signatures finalized at implementation time; the
+commit/rollback ownership shown here is **locked**, not illustrative.)
+
+### 2b. SQLAlchemy transaction lifecycle (locked)
+
+**The defect:** the earlier draft said Phase 2 "opens exactly one `db`
+transaction ... the same `Session` used for Phase 1's read-only queries" —
+worded as if a fresh transaction begins after Phase 1 ends. SQLAlchemy's
+`Session` autobegins a transaction on first statement execution, so Phase
+1's own read-only queries already have one open; there is no clean "begin a
+new one" point after Phase 1 without first explicitly ending the existing
+one (and if we did, we would need to revalidate every Phase 1 decision
+against a fresh read before writing, to close the race window — real
+complexity this plan does not want to take on).
+
+**Locked decision (PTH's stated preference, §2b of the review): one outer
+transaction for the entire `import_batch` invocation.** Phase 1 runs inside
+it read-only (writes zero rows — §1); Phase 2 writes inside the same,
+already-open transaction; `import_batch` commits it exactly once at the
+end, or rolls it back exactly once on any exception. For this tool's actual
+operating profile (single-writer, human-run, batch sizes in the tens-to-
+low-hundreds of files, not a high-throughput service) holding one
+transaction open for the duration of one invocation is an accepted cost,
+not a risk — the same judgment call the original plan already made for
+"not building distributed locking" (§4/concurrency).
 
 **Explicit non-goal:** per-file sub-transactions / savepoints inside the
 batch. A single flat transaction is sufficient and simpler; savepoints would
 only matter if partial-batch-success were an acceptable outcome, which §7
-already rules out.
+already rules out (see also §5's reference-race handling, which explicitly
+rejects a savepoint-based per-reference retry for the same reason).
 
 **Single caller-visible outcome shape:** `orchestrator.import_batch(...)`
 returns a `BatchResult` (dataclass) with `success: bool`,
@@ -123,11 +232,34 @@ returns a `BatchResult` (dataclass) with `success: bool`,
 script, never a route — see §12) gets one object to inspect, not a partial
 mix of "some worked."
 
-**Tests:** `test_batch_write_is_atomic_across_files` (N files, force an
-exception on write of file K via a monkeypatched `create_draft` that raises
-on the Kth call → assert zero rows across all 5 knowledge tables + zero
-`drug_references`/`knowledge_reference_links` rows after rollback, on both
-SQLite and Postgres per §11).
+**Tests (real implementation, not monkeypatch-only — PTH's explicit
+round-2 requirement):**
+
+`test_batch_rollback_uses_real_write_path_not_mock`:
+1. Import 3 files in one batch, all valid per Phase 1.
+2. Files 1 and 2 reach `add_draft` and are flushed (visible in-transaction,
+   not yet committed).
+3. Before file 3's `add_draft` flush, the test deletes file 3's resolved
+   `drug_ingredient_id` row via a **separate** session/connection —
+   simulating a genuine TOCTOU race between Phase 1's identity resolution
+   and Phase 2's write, not an artificial mock. File 3's `add_draft` then
+   raises a real `IntegrityError` (FK violation) at flush time — the actual
+   code path, not a stand-in exception.
+4. After the caught exception triggers exactly one `db.rollback()`, assert
+   all 7 tables (5 knowledge + `drug_references` + `knowledge_reference_links`)
+   have zero rows for this test's data — files 1 and 2's flushed-but-
+   uncommitted rows must be gone too, proving they were never independently
+   committed.
+5. A commit-call spy (wrapping `Session.commit`, e.g. via
+   `event.listens_for(Session, "after_commit")` or a monkeypatch on the
+   bound method with `wraps=`) asserts `commit()` was invoked **zero times**
+   in this failing-batch test, and — in the companion all-valid-batch
+   variant of this test — invoked **exactly once**, from `import_batch`'s
+   own stack frame (assert via `inspect.stack()` or by asserting no
+   `commit()` call is observed before `import_batch`'s loop over
+   `plans_or_errors` completes).
+6. Run this test on both SQLite and Postgres (§11) — the FK-violation
+   trigger and the rollback behavior must be identical on both.
 
 ---
 
@@ -181,25 +313,44 @@ worst case is a harmless duplicate draft row, proven bounded, not
 eliminated — no distributed locking, matching the accepted single-writer
 operational constraint).
 
+**Why this race is harmless but §5's reference race (below) is not:**
+knowledge-content tables have no DB-level uniqueness constraint on business
+key — ADR-13's append-only model *intentionally* allows multiple draft rows
+to coexist for the same business key (that is what version history is). A
+race here produces two informationally-redundant rows, which is a real but
+accepted operational cost, not a constraint violation. `drug_references`,
+by contrast, **does** have a real partial unique index on citation identity
+— a race there hits an actual `IntegrityError`, not a benign duplicate, and
+is handled accordingly (§5: whole-batch rollback, not "accept the
+duplicate"). Do not generalize this section's "harmless duplicate" language
+to §5; the two tables have different constraint shapes and therefore
+different correct race behaviors.
+
 ---
 
 ## 4. New version creates a new row, never overwrites history
 
-**Rule:** `NEW_DRAFT` and `WARN_PROCEED_REPEATED_CONTENT` both mean "call
-`create_draft`" — an INSERT. There is no code path in `orchestrator.py` that
-calls `UPDATE` against a knowledge-content row's fields. (The one existing
-`UPDATE` in this codebase's knowledge stack, `submit_for_review`'s
-status-only atomic transition, is untouched by A1b — orchestrator never
-calls it; see §6.)
+**Rule:** `NEW_DRAFT` and `WARN_PROCEED_REPEATED_CONTENT` both mean
+"`build_draft` + `add_draft`" (§2a) — an INSERT. There is no code path in
+`orchestrator.py` that calls `UPDATE` against a knowledge-content row's
+fields. (The one existing `UPDATE` in this codebase's knowledge stack,
+`submit_for_review`'s status-only atomic transition, is untouched by A1b —
+orchestrator never calls it; see §6.)
 
-**Design:** `orchestrator.py` reuses `knowledge_repository.create_draft`
-unchanged (no new "upsert" helper is added to that module — adding one
-would be the exact overwrite footgun this invariant forbids). Old rows for
-the same business key are left byte-for-byte untouched; the new row is a
-sibling, not a replacement. This is the same guarantee K1-S3's own
-`test_create_new_version_does_not_overwrite` already proves at the
-`create_draft` level — A1b's tests prove it at the batch/orchestrator level
-on top.
+**Design:** `orchestrator.py` calls the new commit-free `build_draft`/
+`add_draft` primitives (§2a — not `create_draft` directly, since
+`create_draft` commits and orchestrator must own the transaction). Neither
+`build_draft` nor `add_draft` has any update capability — they only ever
+construct and INSERT a new row — so no new "upsert" helper exists anywhere
+in this design; adding one would be the exact overwrite footgun this
+invariant forbids. Old rows for the same business key are left
+byte-for-byte untouched; the new row is a sibling, not a replacement. This
+is the same guarantee K1-S3's own `test_create_new_version_does_not_overwrite`
+already proves at the `create_draft` level (and, per §2a, `create_draft`'s
+own behavior is unchanged for its existing callers, so that existing test
+keeps passing without modification) — A1b's tests prove the same guarantee
+again at the batch/orchestrator level, using `build_draft`/`add_draft`
+directly.
 
 **Tests:** `test_version_bump_creates_sibling_row_old_row_unchanged`
 (asserts old row's `id`, `created_at`, and content fields are bit-identical
@@ -215,23 +366,62 @@ a real `knowledge_reference_links` row joining it to the new draft. This is
 the actual "A1b must not persist knowledge content while references would be
 silently dropped" gate from Finding 1 — now buildable since F1 (#128) exists.
 
-**Design — find-or-create, using F1's two-tiered identity (not a naive
-INSERT that could race the partial unique indexes):**
+**Design — find-or-create, using F1's two-tiered identity. Race semantics
+corrected after PTH's round-2 review — the earlier draft's "harmless
+duplicate reference row" framing was wrong and is retracted below:**
 
 1. If `reference.document_identifier` is set: query
    `drug_references WHERE document_identifier = :doc_id AND source_version = :v AND accessed_at = :d`.
 2. Else: query
    `drug_references WHERE publisher = :p AND title = :t AND publication_date = :pd AND source_version = :v AND accessed_at = :d`.
-3. If found, reuse its `id`. If not, INSERT a new `DrugReference` row inside
-   the same open transaction (§2) — a genuine race here (two batches citing
-   the same new reference concurrently) is the same accepted class of risk
-   as §3's business-key race; not solved with locking, bounded to "harmless
-   duplicate reference row," which is itself dedup-able later since the
-   partial unique index still prevents a *third* duplicate.
-4. INSERT a `KnowledgeReferenceLink` row: `knowledge_table` = the model's
-   table name (reusing `knowledge_repository.KNOWLEDGE_TABLE_NAME`),
+3. If found, reuse its `id`. If not found, `add()` + `flush()` (never
+   `commit()` — §2a) a new `DrugReference` row inside the batch's one open
+   transaction.
+4. `add()` + `flush()` a `KnowledgeReferenceLink` row: `knowledge_table` =
+   the model's table name (reusing `knowledge_repository.KNOWLEDGE_TABLE_NAME`),
    `knowledge_row_id` = the new draft row's id, `drug_reference_id` = the
    resolved reference id.
+
+**Corrected race semantics:** the earlier draft claimed a concurrent
+find-then-insert race would produce a "harmless duplicate reference row,"
+bounded by the partial unique index preventing "a third duplicate." That is
+wrong — **if the unique index is doing its job, a genuine duplicate row
+can never exist at all.** The real sequence under a race is:
+
+1. Two concurrent batches (in separate transactions) both query and both
+   find nothing for the same citation identity.
+2. Both `add()`+`flush()` an insert for what each believes is a new
+   reference.
+3. One transaction's flush succeeds.
+4. The other transaction's flush raises a real `IntegrityError` against
+   F1's partial unique index (`uq_drug_references_by_document_identifier`
+   or `uq_drug_references_by_title`) — not a duplicate row, a **rejected**
+   one.
+
+**This is treated as a whole-batch failure, not a recoverable duplicate.**
+Per this invariant's own fail-closed requirement, and consistent with §2's
+single-transaction, no-savepoints design: the `IntegrityError` from step 4
+propagates directly to `import_batch`'s exception handler exactly like any
+other Phase 2 failure — the **entire losing batch rolls back**, including
+any drafts and references it had already flushed for other files. There is
+no per-reference savepoint-and-retry (that would be a legitimate future
+optimization but is explicitly out of scope here, per §2b's non-goal on
+savepoints) — the simplest correct behavior in this tool's single-writer
+operating profile is: on a genuine citation-identity race, the batch that
+loses fails outright, and re-running it afterward succeeds (this time the
+find step sees the winner's already-committed row and reuses it). **A
+duplicate citation-identity row never exists in the database at any point**
+— the partial unique index's guarantee is upheld, not merely "usually"
+upheld with a documented escape hatch.
+
+**Dialect parity is load-bearing here, not incidental (see also §11):**
+F1's two-tiered identity is implemented as partial unique indexes with
+`postgresql_where=`/`sqlite_where=` on both dialects — the race-losing
+transaction must raise an integrity-equivalent error on **both** SQLite and
+PostgreSQL, surfaced identically through SQLAlchemy's dialect-normalized
+`IntegrityError`. This must be proven by a real two-session concurrency
+test on both dialects (§11), not assumed from the migration-level
+rehearsal already done for F1 alone.
 
 **Never a placeholder / never re-serialized into `source: VARCHAR(255)`:**
 the existing `source` column on each knowledge row is still populated from
@@ -241,14 +431,21 @@ per the original plan §3) — but it is not where reference persistence
 queryable relation Finding 1 required.
 
 **Fail-closed:** if reference persistence fails for any reason mid-batch
-(FK violation, unexpected constraint hit), the whole-batch rollback (§2)
-applies — a knowledge row is never left committed without its references.
+(FK violation, unique-index rejection per above, unexpected constraint
+hit), the whole-batch rollback (§2) applies — a knowledge row is never left
+committed without its references, and a reference row is never left
+duplicated.
 
 **Tests:** `test_reference_persisted_and_linked_to_new_draft`,
 `test_reference_reused_not_duplicated_across_two_items_same_citation`,
 `test_reference_reused_across_different_access_dates_creates_two_rows`
 (exercises F1's `accessed_at`-inclusive identity directly at the
-orchestrator level, not just the migration level).
+orchestrator level, not just the migration level),
+`test_concurrent_reference_race_loser_rolls_back_entire_batch` (two real
+sessions, both find-nothing then both insert the same citation identity;
+assert the loser's `IntegrityError` triggers a full rollback of that
+batch's own drafts/references, the winner's single row survives, and no
+duplicate row exists — run on both SQLite and Postgres per §11).
 
 ---
 
@@ -283,14 +480,17 @@ a genuine DB check and not a re-implementation of the Python allowlist).
 explicitly here because A1b is the PR that actually writes rows.
 
 **Design (enforced by construction, not by a runtime flag):**
-- `orchestrator.py` calls `knowledge_repository.create_draft` exclusively.
-  It never calls `submit_for_review` (which only ever targets
-  `'clinical_review'`, never `'approved'`, per K1-S3's own scope lock — but
-  A1b doesn't call it at all, since nothing in the importer flow submits
-  content for review; that's a separate human action after drafting).
+- `orchestrator.py` calls `build_draft`/`add_draft` exclusively (§2a) — both
+  of which, like `create_draft` before the refactor, always hardcode
+  `status="draft"`. It never calls `submit_for_review` (which only ever
+  targets `'clinical_review'`, never `'approved'`, per K1-S3's own scope
+  lock — but A1b doesn't call it at all, since nothing in the importer flow
+  submits content for review; that's a separate human action after
+  drafting).
 - `orchestrator.py` never imports or calls `validate_transition` with any
-  target other than none at all — it doesn't need to call it, since
-  `create_draft` always hardcodes `status="draft"`.
+  target at all — it doesn't need to, since `build_draft` always hardcodes
+  `status="draft"`, the same guarantee `create_draft` already had before
+  its §2a refactor.
 - No new "bulk approve" or "auto-approve trusted sources" helper is added
   anywhere in this PR, ever, under any flag.
 
@@ -408,6 +608,17 @@ against `POSTGRES_TEST_URL`).
   partial index catches must also be caught on SQLite, and vice versa —
   this session's own F1 rehearsal already exercises this at the migration
   level; A1b's tests exercise it at the application/orchestrator level).
+- **§5's corrected reference-race behavior is dialect-load-bearing, not
+  incidental:** the race-losing transaction's `IntegrityError` (§5) must
+  fire identically on both dialects — `test_concurrent_reference_race_loser_rolls_back_entire_batch`
+  (§5) runs on both SQLite and Postgres, asserting the same outcome (loser
+  rolls back, winner's single row survives, zero duplicates) on each.
+- **§2's commit-ownership rule is likewise tested on both dialects** —
+  `test_batch_rollback_uses_real_write_path_not_mock` (§2a) runs on both
+  SQLite and Postgres, since a commit/rollback ownership bug could in
+  principle manifest differently under each dialect's own transaction
+  semantics even though the application-level rule (only `import_batch`
+  commits) is dialect-agnostic by design.
 - Batch transaction rollback behavior (§2/§10) — SQLite's DDL is
   non-transactional in general, but this PR only performs DML (INSERT),
   which is transactional on both dialects; still worth an explicit
@@ -421,7 +632,7 @@ against `POSTGRES_TEST_URL`).
 `test_medication_knowledge_import_references.py`) runs its full suite
 against SQLite (default `db` fixture) and has a `pytest.mark.integration`
 parallel suite against Postgres for the parts that touch F1's partial
-unique indexes specifically.
+unique indexes specifically, plus the two dialect-load-bearing tests above.
 
 ---
 
@@ -470,11 +681,30 @@ backend/app/services/medication_knowledge_import/
                         #        different DB tables, independently testable)
 ```
 
-`knowledge_repository.py` (K1-S3, existing) is imported by `orchestrator.py`
-for `create_draft` and `KNOWLEDGE_TABLE_NAME` — not modified. No new function
-is added to `knowledge_repository.py` by A1b; all new write logic lives in
-the three new modules above, keeping K1-S3's own scope lock (draft-only,
-already-reviewed) undisturbed.
+**Correction from an earlier draft of this plan (P1 fix, §2a):**
+`knowledge_repository.py` (K1-S3, existing) **is** modified by A1b — a
+small, additive, backward-compatible refactor, not left untouched as an
+earlier draft claimed:
+- Adds `build_draft(model_cls, *, authored_by, **fields) -> KnowledgeModel`
+  (pure construction) and `add_draft(db, row) -> None` (`add()` + `flush()`,
+  never `commit()`/`rollback()`).
+- `create_draft` is refactored to call `build_draft` + `add_draft` +
+  `db.commit()` + `db.refresh()` internally — its external signature and
+  behavior are **unchanged** for existing callers.
+- `KNOWLEDGE_TABLE_NAME` is unchanged, still imported by `orchestrator.py`
+  and now also by `references.py` (for the `knowledge_table` column on
+  `KnowledgeReferenceLink`, §5).
+- K1-S3's own existing test suite (`create_draft`, `submit_for_review`,
+  `check_specialty_completeness`, etc.) must pass unmodified against this
+  refactor — a required regression-proof for the A1b implementation PR,
+  since this touches an already-reviewed, previously-"draft-only-locked"
+  module.
+
+All *new* write logic beyond `build_draft`/`add_draft` (versioning
+decisions, reference find-or-create, transaction ownership) still lives in
+the three new modules above — this refactor does not reopen K1-S3's
+draft-only scope lock (§7 still holds: nothing added here can reach
+`approved`).
 
 ---
 
@@ -482,10 +712,11 @@ already-reviewed) undisturbed.
 
 | File | Covers |
 |---|---|
-| `test_medication_knowledge_import_versioning.py` | §3, §4 — all 4 `VersionAction` outcomes, concurrency race (bounded harmless-duplicate), business-key derivation per type, content-hash stability/sensitivity |
-| `test_medication_knowledge_import_references.py` | §5, §8 — find-or-create both identity branches, reuse vs. new-row creation, `accessed_at` differentiation at the app level, fail-closed on unexpected persistence error |
-| `test_medication_knowledge_import_orchestrator.py` | §1, §2, §6, §7, §9, §10, §12 — end-to-end valid batch, specialty DB-check rejection, zero-approved-rows assertion on every test, dry-run report accuracy, whole-batch rollback per failure point, CI/PR-diff checks for API/frontend/AI/`app/knowledge/` isolation |
-| `tests/integration/test_medication_a1b_orchestrator_postgres.py` | §11 — Postgres-specific partial-unique-index parity for reference dedup, real-transaction rollback proof |
+| `test_medication_knowledge_import_versioning.py` | §3, §4 — all 4 `VersionAction` outcomes, concurrency race (bounded harmless-duplicate — distinct from §5's reference race, see §3's explicit distinction), business-key derivation per type, content-hash stability/sensitivity |
+| `test_medication_knowledge_import_references.py` | §5, §8 — find-or-create both identity branches, reuse vs. new-row creation, `accessed_at` differentiation at the app level, fail-closed on unexpected persistence error, `test_concurrent_reference_race_loser_rolls_back_entire_batch` |
+| `test_medication_knowledge_import_orchestrator.py` | §1, §2, §6, §7, §9, §10, §12 — end-to-end valid batch, `test_batch_rollback_uses_real_write_path_not_mock` (commit-ownership spy, §2a), specialty DB-check rejection, zero-approved-rows assertion on every test, dry-run report accuracy, whole-batch rollback per failure point, CI/PR-diff checks for API/frontend/AI/`app/knowledge/` isolation |
+| `test_knowledge_repository.py` (existing, K1-S3) | §2a, §14 — regression suite proving `create_draft`'s external behavior is unchanged after the `build_draft`/`add_draft` refactor; no new tests needed here, existing tests must simply keep passing |
+| `tests/integration/test_medication_a1b_orchestrator_postgres.py` | §11 — Postgres-specific partial-unique-index parity for reference dedup, real-transaction rollback proof, both dialect-load-bearing races (§2a, §5) run against real Postgres |
 
 Total new test count target: comparable density to F1 (23 integration +
 unit) and A1a (41 unit) — exact count TBD at implementation time, not fixed
@@ -497,10 +728,16 @@ by this plan.
 
 - No `versioning.py`, `orchestrator.py`, or `references.py` code — this PR
   is the plan only.
+- No `knowledge_repository.py` code either — §2a/§14 describe the required
+  `build_draft`/`add_draft` addition as a locked *design decision*, not as
+  code shipped in this PR. The actual diff lands in the implementation PR.
 - No Phase B content authoring.
 - No API route, frontend screen, or AI wiring of any kind.
-- No change to `knowledge_repository.py`'s existing scope lock (still
-  draft-only; still no `approved`-reaching path).
+- No change to `knowledge_repository.py`'s existing draft-only *scope lock*
+  (still no `approved`-reaching path anywhere) — §2a's planned refactor adds
+  two new commit-free primitives and makes `create_draft` a wrapper over
+  them, but does not loosen that lock; K1-S3's own tests must keep passing
+  unmodified as proof.
 - No new ADR — this plan implements decisions already made in ADR-13 and
   the two Accepted findings (Finding 1/2), it does not introduce a new
   architectural decision.
