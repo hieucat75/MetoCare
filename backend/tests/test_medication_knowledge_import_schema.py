@@ -116,6 +116,46 @@ def test_reference_with_document_identifier_instead_of_url_accepted() -> None:
     KnowledgeFile.model_validate(data)  # does not raise
 
 
+@pytest.mark.parametrize(
+    ("field", "max_length"),
+    [
+        ("publisher", 255),
+        ("title", 500),
+        ("document_identifier", 255),
+        ("source_version", 32),
+    ],
+)
+def test_reference_field_over_storage_column_width_rejected(
+    field: str, max_length: int
+) -> None:
+    """max_length values mirror DrugReference's column widths (A1b-F1) so
+    validation success guarantees persistence once A1b wires the write path."""
+    data = _valid_file_dict()
+    data["references"][0][field] = "x" * (max_length + 1)
+    with pytest.raises(ValidationError):
+        KnowledgeFile.model_validate(data)
+
+
+def test_reference_field_at_storage_column_width_accepted() -> None:
+    data = _valid_file_dict()
+    data["references"][0]["publisher"] = "x" * 255
+    data["references"][0]["title"] = "x" * 500
+    data["references"][0]["source_version"] = "x" * 32
+    KnowledgeFile.model_validate(data)  # does not raise
+
+
+def test_reference_url_over_storage_column_width_rejected() -> None:
+    """HttpUrl permits up to 2083 chars; DrugReference.url is VARCHAR(2048)
+    — a value in that gap must fail here, not at insert time."""
+    prefix = "https://example.invalid/"
+    url = prefix + "a" * (2083 - len(prefix))
+    assert len(url) == 2083
+    data = _valid_file_dict()
+    data["references"][0]["url"] = url
+    with pytest.raises(ValidationError, match="2048"):
+        KnowledgeFile.model_validate(data)
+
+
 def test_unsupported_locale_rejected() -> None:
     data = _valid_file_dict()
     data["metadata"]["locale"] = "en"
@@ -190,8 +230,10 @@ def test_non_normalized_concept_code_rejected() -> None:
     data = _valid_file_dict()
     data["metadata"]["knowledge_type"] = "side_effect"
     data["content"] = {
-        "level": "common",
+        "frequency": "common",
+        "action_level": "self_monitor",
         "concept_code": "Not Normalized!",
+        "label": "Test Label",
         "description": "synthetic test description",
     }
     with pytest.raises(ValidationError, match="content does not match the shape"):
@@ -214,7 +256,7 @@ def test_non_normalized_condition_key_rejected() -> None:
     "knowledge_type,bad_content",
     [
         ("usage", {"wrong_field": "x"}),
-        ("side_effect", {"level": "common"}),  # missing concept_code/description
+        ("side_effect", {"frequency": "common"}),  # missing action_level/concept_code/label/description
         ("monitoring", {"parameter": "eGFR"}),  # missing patient_context/guidance
         ("contraindication", {"condition_type": "renal"}),  # missing condition_key/detail
     ],
@@ -231,12 +273,74 @@ def test_side_effect_content_valid_shape_accepted() -> None:
     data = _valid_file_dict()
     data["metadata"]["knowledge_type"] = "side_effect"
     data["content"] = {
-        "level": "common",
+        "frequency": "common",
+        "action_level": "self_monitor",
         "concept_code": "nausea",
+        "label": "Nausea",
         "description": "synthetic test description",
     }
     knowledge_file = KnowledgeFile.model_validate(data)
     assert knowledge_file.typed_content().concept_code == "nausea"
+
+
+def test_side_effect_rare_frequency_and_urgent_action_level_coexist() -> None:
+    """The exact scenario the old single-enum SideEffectLevel couldn't
+    express — proves the schema-level split, not just the DB-level one."""
+    data = _valid_file_dict()
+    data["metadata"]["knowledge_type"] = "side_effect"
+    data["content"] = {
+        "frequency": "rare",
+        "action_level": "urgent_medical_help",
+        "concept_code": "rare_urgent_symptom",
+        "label": "Test Label",
+        "description": "synthetic test description",
+    }
+    knowledge_file = KnowledgeFile.model_validate(data)
+    typed = knowledge_file.typed_content()
+    assert typed.frequency == "rare"
+    assert typed.action_level == "urgent_medical_help"
+
+
+def test_side_effect_invalid_frequency_rejected() -> None:
+    data = _valid_file_dict()
+    data["metadata"]["knowledge_type"] = "side_effect"
+    data["content"] = {
+        "frequency": "sometimes",
+        "action_level": "self_monitor",
+        "concept_code": "x",
+        "label": "x",
+        "description": "x",
+    }
+    with pytest.raises(ValidationError, match="content does not match the shape"):
+        KnowledgeFile.model_validate(data)
+
+
+def test_side_effect_invalid_action_level_rejected() -> None:
+    data = _valid_file_dict()
+    data["metadata"]["knowledge_type"] = "side_effect"
+    data["content"] = {
+        "frequency": "common",
+        "action_level": "call_911",
+        "concept_code": "x",
+        "label": "x",
+        "description": "x",
+    }
+    with pytest.raises(ValidationError, match="content does not match the shape"):
+        KnowledgeFile.model_validate(data)
+
+
+def test_side_effect_label_over_80_chars_rejected() -> None:
+    data = _valid_file_dict()
+    data["metadata"]["knowledge_type"] = "side_effect"
+    data["content"] = {
+        "frequency": "common",
+        "action_level": "self_monitor",
+        "concept_code": "x",
+        "label": "x" * 81,
+        "description": "x",
+    }
+    with pytest.raises(ValidationError, match="content does not match the shape"):
+        KnowledgeFile.model_validate(data)
 
 
 def test_usage_content_valid_shape_accepted() -> None:

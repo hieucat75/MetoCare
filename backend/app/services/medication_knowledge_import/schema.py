@@ -31,7 +31,14 @@ Locale = Literal["vi"]
 Audience = Literal["patient", "caregiver"]
 EvidenceLevel = Literal["strong", "moderate", "emerging", "expert_opinion"]
 SourceType = Literal["formulary", "clinical_guideline", "product_label", "peer_reviewed", "other"]
-SideEffectLevel = Literal["common", "uncommon", "rare", "serious"]
+# Two independent axes, not one severity enum (A1b-F1, PTH review of the
+# Knowledge Template, 2026-07-16): SideEffectLevel (common/uncommon/
+# rare/serious) conflated frequency with recommended action — a side
+# effect can be rare AND urgent, which one enum can't express. Matches
+# app.models.drug_knowledge_content.DrugSideEffect's frequency/
+# action_level columns exactly.
+SideEffectFrequency = Literal["common", "uncommon", "rare", "unknown"]
+SideEffectActionLevel = Literal["self_monitor", "contact_clinician", "urgent_medical_help"]
 
 # ADR-13's own example for a normalized identifier is lowercase snake_case
 # ("egfr_lt_30"). Applied to concept_code/condition_key specifically —
@@ -81,8 +88,10 @@ class PatientEducationContent(_StrictModel):
 
 
 class SideEffectContent(_StrictModel):
-    level: SideEffectLevel
+    frequency: SideEffectFrequency
+    action_level: SideEffectActionLevel
     concept_code: str = Field(min_length=1, max_length=64, pattern=_NORMALIZED_IDENTIFIER_PATTERN)
+    label: str = Field(min_length=1, max_length=80)  # matches drug_side_effects.label VARCHAR(80)
     description: str = Field(min_length=1)
 
 
@@ -120,13 +129,18 @@ class ReferenceEntry(_StrictModel):
     is non-blank when present — a whitespace-only or unparseable value can
     no longer satisfy the mandatory traceability gate (Codex review P1)."""
 
-    publisher: str = Field(min_length=1)
-    title: str = Field(min_length=1)
+    # max_length values mirror DrugReference's column widths (A1b-F1,
+    # backend/app/models/drug_knowledge_references.py) so a validated
+    # reference is guaranteed to persist once A1b wires the write path —
+    # Codex round-3 flagged that unbounded fields here could pass validation
+    # but fail on insert (Postgres VARCHAR truncation).
+    publisher: str = Field(min_length=1, max_length=255)
+    title: str = Field(min_length=1, max_length=500)
     source_type: SourceType
     url: HttpUrl | None = None
-    document_identifier: str | None = Field(default=None, min_length=1)
+    document_identifier: str | None = Field(default=None, min_length=1, max_length=255)
     publication_date: dt.date
-    source_version: str = Field(min_length=1)
+    source_version: str = Field(min_length=1, max_length=32)
     accessed_at: dt.date
 
     @model_validator(mode="after")
@@ -135,6 +149,15 @@ class ReferenceEntry(_StrictModel):
             raise ValueError(
                 "reference must have a url or a document_identifier — "
                 "an untraceable citation is not a structured reference"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _url_fits_storage_column(self) -> ReferenceEntry:
+        # HttpUrl permits up to 2083 chars; DrugReference.url is VARCHAR(2048).
+        if self.url is not None and len(str(self.url)) > 2048:
+            raise ValueError(
+                f"url must be at most 2048 characters, got {len(str(self.url))}"
             )
         return self
 
