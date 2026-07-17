@@ -18,7 +18,7 @@ from app.services.knowledge_repository import KNOWLEDGE_TABLE_NAME, KnowledgeMod
 from app.services.medication_knowledge_import.schema import ReferenceEntry
 
 
-def _citation_identity_key(ref: ReferenceEntry) -> tuple:
+def citation_identity_key(ref: ReferenceEntry) -> tuple:
     """The batch-local cache key AND the discriminator for which DB query
     branch to run. Explicitly prefixed by branch name ("document_identifier"
     vs "title") so the two branches can never collide even if their other
@@ -38,6 +38,42 @@ def _citation_identity_key(ref: ReferenceEntry) -> tuple:
         ref.publication_date,
         ref.source_version,
         ref.accessed_at,
+    )
+
+
+def find_existing_reference(db: Session, ref: ReferenceEntry) -> DrugReference | None:
+    """Read-only lookup only — the query half of `find_or_create_reference`,
+    using F1's two-tiered citation identity exactly. Exposed separately
+    (not inlined) so `orchestrator.py`'s dry-run mode (plan §9) can reuse
+    the exact same lookup logic without ever inserting — dry-run must
+    never call `find_or_create_reference` itself, since that function may
+    `add()`+`flush()` a new row."""
+    if ref.document_identifier:
+        return (
+            db.query(DrugReference)
+            .filter_by(
+                document_identifier=ref.document_identifier,
+                source_version=ref.source_version,
+                accessed_at=ref.accessed_at,
+            )
+            .one_or_none()
+        )
+    # document_identifier IS NULL is required, not optional: F1's own
+    # title-based partial unique index only applies under that same
+    # condition — without it here, a reference with no document_identifier
+    # could wrongly match and reuse a row that DOES have one set (if the
+    # other fields happen to coincide).
+    return (
+        db.query(DrugReference)
+        .filter_by(
+            publisher=ref.publisher,
+            title=ref.title,
+            publication_date=ref.publication_date,
+            source_version=ref.source_version,
+            accessed_at=ref.accessed_at,
+            document_identifier=None,
+        )
+        .one_or_none()
     )
 
 
@@ -61,40 +97,12 @@ def find_or_create_reference(
 
     Never commits/rolls back — `add()` + `flush()` only.
     """
-    cache_key = _citation_identity_key(ref)
+    cache_key = citation_identity_key(ref)
     cached_id = batch_cache.get(cache_key)
     if cached_id is not None:
         return cached_id
 
-    if ref.document_identifier:
-        existing = (
-            db.query(DrugReference)
-            .filter_by(
-                document_identifier=ref.document_identifier,
-                source_version=ref.source_version,
-                accessed_at=ref.accessed_at,
-            )
-            .one_or_none()
-        )
-    else:
-        # document_identifier IS NULL is required, not optional: F1's own
-        # title-based partial unique index only applies under that same
-        # condition — without it here, a reference with no
-        # document_identifier could wrongly match and reuse a row that
-        # DOES have one set (if the other fields happen to coincide).
-        existing = (
-            db.query(DrugReference)
-            .filter_by(
-                publisher=ref.publisher,
-                title=ref.title,
-                publication_date=ref.publication_date,
-                source_version=ref.source_version,
-                accessed_at=ref.accessed_at,
-                document_identifier=None,
-            )
-            .one_or_none()
-        )
-
+    existing = find_existing_reference(db, ref)
     if existing is not None:
         batch_cache[cache_key] = existing.id
         return existing.id
