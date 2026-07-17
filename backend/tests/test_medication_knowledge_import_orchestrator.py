@@ -23,6 +23,7 @@ from app.models.drug_knowledge_content import DrugSideEffect
 from app.models.drug_knowledge_core import DrugClass, DrugIngredient
 from app.models.drug_knowledge_governance import ClinicalSpecialty
 from app.models.drug_knowledge_references import DrugReference, KnowledgeReferenceLink
+from app.services.medication_knowledge_import import versioning as v
 from app.services.medication_knowledge_import.orchestrator import import_batch
 
 
@@ -628,6 +629,89 @@ class TestReferenceIdentityMetadataConflict:
 
         rows = db.query(DrugSideEffect).filter_by(concept_code="ref_conflict_dryrun").all()
         assert len(rows) == 1, "dry-run must never write, regardless of the conflict"
+
+    def test_dry_run_detects_same_batch_conflict_between_two_new_files(
+        self, db, tmp_path, ingredient_name
+    ) -> None:
+        """Codex round-2 P2: the dry-run test above only exercises a
+        conflict against an ALREADY-PERSISTED row. `_build_dry_run_report`
+        has its OWN independent `ref_cache` (mirroring
+        `find_or_create_reference`'s same-batch check) — this proves that
+        cache also catches two BRAND-NEW files in one batch sharing a
+        citation identity but disagreeing on metadata, not just a
+        cross-batch DB-query mismatch."""
+        doc_id = f"ISBN-{uuid.uuid4().hex[:8]}"
+        path1 = _write_file(
+            tmp_path,
+            ingredient_name,
+            concept_code="ref_conflict_same_batch_a",
+            document_identifier=doc_id,
+            url="https://example.invalid/one",
+        )
+        path2 = _write_file(
+            tmp_path,
+            ingredient_name,
+            concept_code="ref_conflict_same_batch_b",
+            document_identifier=doc_id,
+            url="https://example.invalid/two",
+        )
+        fresh_db = SessionLocal()
+        dry_result = import_batch(fresh_db, [path1, path2], dry_run=True)
+        fresh_db.close()
+        assert not dry_result.success, "same-batch metadata conflict must fail dry-run too"
+        assert "REFERENCE_IDENTITY_METADATA_CONFLICT" in dry_result.errors[0].message
+
+    def test_dry_run_no_op_plan_does_not_contaminate_later_plans_reference_cache(
+        self, db, tmp_path, ingredient_name
+    ) -> None:
+        """Codex round-2 P2: a NO_OP plan's references must never populate
+        `_build_dry_run_report`'s `ref_cache` — proves this two ways in one
+        batch: (1) the NO_OP plan itself reports zero references, and
+        (2) a LATER plan in the same batch that happens to share the
+        NO_OP'd file's citation identity still does its own real lookup
+        (reporting a fresh create), rather than wrongly inheriting a
+        "reused from an earlier planned create" that the real run would
+        never have produced for a skipped NO_OP plan."""
+        shared_title = f"Shared {uuid.uuid4().hex[:8]}"
+        shared_url = f"https://example.invalid/{uuid.uuid4().hex[:8]}"
+        already_imported_path = _write_file(
+            tmp_path,
+            ingredient_name,
+            concept_code="no_op_source",
+            title=shared_title,
+            url=shared_url,
+        )
+        db1 = SessionLocal()
+        assert import_batch(db1, [already_imported_path]).success
+        db1.close()
+
+        # Re-importing the identical file resolves NO_OP_ALREADY_IMPORTED.
+        # A second, genuinely NEW file in the SAME batch shares its
+        # citation identity (same title+url) -- if the NO_OP plan's
+        # reference wrongly populated ref_cache, this would be miscounted
+        # as "reused"; it must instead do its own real DB lookup and
+        # correctly report reuse against the ALREADY-PERSISTED row (from
+        # the real import above), not a phantom cache entry from the
+        # skipped NO_OP plan.
+        new_concept_path = _write_file(
+            tmp_path,
+            ingredient_name,
+            concept_code="no_op_sibling",
+            title=shared_title,
+            url=shared_url,
+        )
+        fresh_db = SessionLocal()
+        dry_result = import_batch(
+            fresh_db, [already_imported_path, new_concept_path], dry_run=True
+        )
+        fresh_db.close()
+        assert dry_result.success, dry_result.errors
+        planned_by_path = {p.path: p for p in dry_result.planned}
+        no_op_plan = planned_by_path[already_imported_path]
+        sibling_plan = planned_by_path[new_concept_path]
+        assert no_op_plan.version_action is v.VersionAction.NO_OP_ALREADY_IMPORTED
+        assert (no_op_plan.references_reused, no_op_plan.references_created) == (0, 0)
+        assert (sibling_plan.references_reused, sibling_plan.references_created) == (1, 0)
 
 
 class TestZeroApprovedRows:
