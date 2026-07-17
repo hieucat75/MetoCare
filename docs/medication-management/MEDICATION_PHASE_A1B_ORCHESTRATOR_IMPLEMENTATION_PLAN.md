@@ -1,23 +1,63 @@
 # Medication Knowledge — Phase A1b Orchestrator Implementation Plan
 
-**Date:** 2026-07-17 (revised same day — round 2, PTH review of PR #131)
+**Date:** 2026-07-17 (revised same day — round 2 PTH review, round 3 Codex
+re-verification of the round-2 fix)
 **Status:** 🟡 **Planning GO — implementation NOT GO.** This document is itself
 subject to review/approval before any `versioning.py`/`orchestrator.py` code
 is written. Phase B authoring has not started and is not authorized by this
 plan.
 
-**Round-2 revision note:** PTH's review of the first draft found one P1
-(transaction-ownership architectural conflict — an earlier version said
-"reuse `create_draft` unchanged" while also requiring one-commit-per-batch;
-those two claims contradict each other, since `create_draft` commits
-internally) and two P2s (SQLAlchemy transaction-lifecycle wording that
-implied a fresh transaction opens after Phase 1, and an incorrect "harmless
-duplicate reference row" framing for a race that a working unique index
-should never actually allow). All three are fixed in §2 (rewritten, now
-§2a/§2b) and §5 (race semantics corrected) — see those sections for the
-before/after reasoning, not just the conclusion. §14's module-layout claim
-that `knowledge_repository.py` would be untouched is also corrected, since
-the P1 fix requires a small, backward-compatible addition there.
+**Round-2 revision note (PTH review):** found one P1 (transaction-ownership
+architectural conflict — an earlier version said "reuse `create_draft`
+unchanged" while also requiring one-commit-per-batch; those two claims
+contradict each other, since `create_draft` commits internally) and two P2s
+(SQLAlchemy transaction-lifecycle wording that implied a fresh transaction
+opens after Phase 1, and an incorrect "harmless duplicate reference row"
+framing for a race that a working unique index should never actually
+allow). All three fixed in §2 (rewritten, now §2a/§2b) and §5 (race
+semantics corrected). §14's module-layout claim that `knowledge_repository.py`
+would be untouched also corrected.
+
+**Round-3 revision note (Codex re-verification of the round-2 fix, run
+proactively per this project's standing "Codex/compliance/architecture
+review sạch" gate):** the round-2 fix was directionally correct but still
+had 6 P1s and 4 P2s Codex caught — all fixed in this revision:
+- **P1** every Phase 1 early-return path (validation errors, dry-run) now
+  explicitly closes the transaction instead of leaving it open (§2a).
+- **P1** `import_batch` now requires and checks a fresh `Session` with no
+  pending work at entry — otherwise the sole-ownership guarantee doesn't
+  hold (§2a).
+- **P1** the illustrative write loop now explicitly skips `NO_OP` plans
+  before calling `build_draft`/`add_draft` — the round-2 draft would have
+  still written a duplicate for an already-imported file (§2a).
+- **P1** version-action resolution is now a **sequential, batch-local fold**
+  across the whole batch, not independent per-file DB queries — two files
+  in one batch sharing a brand-new business key now correctly resolve
+  against each other, not just against DB history (§3).
+- **P1** `known_versions_for` now queries the **full non-retired history**
+  for a business key, not just the most recent row — the decision matrix's
+  own "matches an existing version" rule requires this (§3).
+- **P1** the stale `create_draft`-committing recipe still living in
+  `MEDICATION_PHASE_A_PR_A1_IMPLEMENTATION_PLAN.md` (§4/table/PR-split) is
+  now marked superseded, pointing at this document, instead of standing as
+  a competing instruction.
+- **P2** the reference-race test's SQLite trigger switched from an FK
+  violation (this codebase's SQLite fixture does not enable
+  `PRAGMA foreign_keys=ON`, so it would silently not fire) to a unique-index
+  violation (enforced natively on both dialects) (§2a).
+- **P2** reference persistence now checks a **batch-local cache** before
+  querying the DB — two files in one batch citing the same brand-new
+  reference is a deterministic outcome, not a race, and must not hit the
+  same unique-index-rejection path §5 designed for genuine cross-batch
+  races (§5, and simulated in dry-run too, §9).
+- **P2** `link_reference_to_row` is now itself find-or-create (idempotent),
+  since A1a's file-level duplicate-reference validator keys on
+  publisher/title/date, not F1's actual document-identifier-first identity
+  — a file can have two references that look different to A1a but resolve
+  to the same DB row here (§5).
+- **P2** the write-failure outcome contract is locked to "never raises,
+  always returns `BatchResult`" — the round-2 draft's "re-raised or wrapped"
+  hedge in §10 is retracted.
 **Depends on (both merged):**
 - PR #128 — F1 schema completion (`drug_references`, `knowledge_reference_links`,
   `drug_side_effects.frequency`/`action_level` split) → `main` @ `cc4d6c1`
@@ -78,11 +118,19 @@ For each file in the batch, in order:
    — **new for A1b**: now meaningful, since F2 seeded the table. A code that
    passes A1a's structural allowlist check but fails this DB-existence check
    is a batch error (see §6, fail-closed).
-6. `versioning.resolve_version_action(db, ...)` (new module, §3 below) — a
-   **read-only** decision against current DB state: `NEW_DRAFT` / `NO_OP` /
+6. `versioning.resolve_version_action(db, batch_index, ...)` (new module, §3
+   below) — a **read-only** decision against current DB state *and* against
+   every earlier file already processed in this same batch (§3's round-3
+   fix — Codex correctly caught that two files in one batch, checked only
+   against the DB independently, can both resolve `NEW_DRAFT` for what is
+   actually a duplicate-within-the-batch, or bypass `REJECT_VERSION_CONFLICT`
+   entirely if the DB has no prior row at all): `NEW_DRAFT` / `NO_OP` /
    `REJECT_VERSION_CONFLICT` / `WARN_PROCEED`. `REJECT_VERSION_CONFLICT` is
    collected as a batch error, same severity as a schema/validation failure
-   — not silently skipped, not treated as "that file's problem alone."
+   — not silently skipped, not treated as "that file's problem alone." Files
+   are processed **in order** for this step specifically (not independently
+   in parallel), each one's resolved action folded into `batch_index` before
+   the next file's resolution runs — see §3 for the exact algorithm.
 
 Each file's outcome is either a fully-resolved `ImportPlan` (validated
 content + resolved ingredient id + resolved specialty ids + version action)
@@ -94,9 +142,11 @@ transaction on first use, so Phase 1's read-only queries already have one
 open by the time Phase 1 finishes; there is no clean point to "start a new
 transaction" after Phase 1 without first ending the one already open, which
 this plan does not do). Phase 1 writing zero rows (above) is what makes
-this safe — if Phase 1 finds errors, nothing needs to be undone, because
-nothing was written; the existing open transaction is simply never
-committed.
+this safe **only if every return path explicitly ends that transaction**
+(Codex round-3 fix, §2a) — "never committed" is not the same as "properly
+closed"; an unclosed read-only transaction on a returned-but-still-open
+`Session` can hold locks and lets a later, unrelated use of that `Session`
+accidentally inherit or commit it.
 
 **Phase 2 — write, only entered if Phase 1 produced zero errors across the
 entire batch** (see §2 for the transaction, §7 for what "zero errors" means
@@ -167,34 +217,87 @@ optional.
 `db.add()`/`db.flush()` only, never `commit()`/`rollback()`.
 
 `import_batch` is the **only** function in this call graph allowed to call
-`db.commit()` or `db.rollback()`:
+`db.commit()` or `db.rollback()`. Three additional gaps Codex's round-3
+review found in the illustrative code below, now fixed:
+
+**Session precondition (Codex round-3 P1):** `import_batch` requires a
+`Session` with **no active pending work at entry** — no uncommitted
+`db.new`/`db.dirty`/`db.deleted`. This is checked and enforced, not just
+documented, because the sole-ownership guarantee (`import_batch` is the
+only committer/rollbacker) only holds if the transaction it ends actually
+began with this invocation — a `Session` handed in with someone else's
+pending changes would have those changes silently committed or rolled back
+too. The production entrypoint (a CLI script) constructs one fresh
+`Session` per invocation and disposes it after — this precondition simply
+makes that contract explicit and fail-fast rather than assumed:
 
 ```python
 def import_batch(db: Session, paths: list[Path], *, dry_run: bool = False) -> BatchResult:
-    plans_or_errors = [_resolve_phase1(db, p) for p in paths]  # reads only, §1
+    if db.new or db.dirty or db.deleted:
+        raise ValueError(
+            "import_batch requires a Session with no pending work at entry — "
+            "pass a fresh Session per invocation, never a shared/long-lived one."
+        )
+    ...
+```
+
+**Every return path explicitly closes the transaction (Codex round-3 P1):**
+the earlier illustrative code returned early on validation errors or
+`dry_run` without an explicit `db.rollback()`. Even though nothing was
+written, the read-only queries already opened a transaction (SQLAlchemy
+autobegin) — leaving it open past `import_batch`'s return is a resource
+leak on the caller's `Session`, not merely untidy. Every return path below
+now closes it.
+
+**NO_OP plans must not reach `build_draft`/`add_draft` (Codex round-3 P1):**
+the earlier illustrative code looped over every `ImportPlan` unconditionally
+— an already-imported file (`NO_OP_ALREADY_IMPORTED`) would still get a new
+draft row, directly violating idempotency (§3). Fixed by checking
+`plan.version_action` before writing.
+
+**Locked failure-contract (Codex round-3 P2):** `import_batch` never raises
+for an anticipated failure — Phase 1 validation errors and Phase 2 write
+failures both return `BatchResult(success=False, ...)`, not an exception.
+The earlier draft's "re-raised or wrapped" hedge in §10 is retracted; only a
+genuinely unanticipated interpreter-level failure outside `except
+Exception`'s scope (e.g. `KeyboardInterrupt`) propagates, matching normal
+Python behavior — nothing in this design special-cases that.
+
+```python
+def import_batch(db: Session, paths: list[Path], *, dry_run: bool = False) -> BatchResult:
+    if db.new or db.dirty or db.deleted:
+        raise ValueError("import_batch requires a fresh Session with no pending work.")
+
+    plans_or_errors = _resolve_phase1(db, paths)  # reads only, §1 — sequential fold, §3
     if any_errors(plans_or_errors):
-        return BatchResult(success=False, errors=..., written=[], dry_run=dry_run)
+        db.rollback()  # close the read-only transaction; nothing was written
+        return BatchResult(success=False, errors=collect_errors(plans_or_errors), written=[], dry_run=dry_run)
     if dry_run:
-        return BatchResult(success=True, errors=[], written=[], dry_run=True, planned=...)
+        db.rollback()  # close the read-only transaction; dry-run never writes
+        return BatchResult(success=True, errors=[], written=[], dry_run=True, planned=build_plan_report(plans_or_errors))
 
     written = []
     try:
         for plan in plans_or_errors:
+            if plan.version_action is VersionAction.NO_OP_ALREADY_IMPORTED:
+                continue  # already imported — no draft, no reference writes
             row = build_draft(plan.model_cls, authored_by=plan.authored_by, **plan.fields)
-            add_draft(db, row)                                  # add + flush, no commit
+            add_draft(db, row)                                    # add + flush, no commit
             for ref in plan.references:
-                ref_id = find_or_create_reference(db, ref)      # add + flush, no commit
-                link_reference_to_row(db, row, ref_id)           # add + flush, no commit
+                ref_id = find_or_create_reference(db, ref, batch_cache=ref_cache)  # §5 — batch-local cache first
+                link_reference_to_row(db, row, ref_id)             # add + flush, no commit; idempotent, §5
             written.append(row)
-        db.commit()                                              # the ONE commit for the whole batch
-    except Exception:
+        db.commit()                                                # the ONE commit for the whole batch
+    except Exception as exc:
         db.rollback()
-        raise
+        return BatchResult(success=False, errors=[str(exc)], written=[], dry_run=False)
     return BatchResult(success=True, errors=[], written=written, dry_run=False)
 ```
 
 (Illustrative code — exact signatures finalized at implementation time; the
-commit/rollback ownership shown here is **locked**, not illustrative.)
+commit/rollback ownership, the session precondition, the every-path
+`rollback()`, the `NO_OP` skip, and the never-raises contract shown here are
+all **locked**, not illustrative.)
 
 ### 2b. SQLAlchemy transaction lifecycle (locked)
 
@@ -239,17 +342,29 @@ round-2 requirement):**
 1. Import 3 files in one batch, all valid per Phase 1.
 2. Files 1 and 2 reach `add_draft` and are flushed (visible in-transaction,
    not yet committed).
-3. Before file 3's `add_draft` flush, the test deletes file 3's resolved
-   `drug_ingredient_id` row via a **separate** session/connection —
-   simulating a genuine TOCTOU race between Phase 1's identity resolution
-   and Phase 2's write, not an artificial mock. File 3's `add_draft` then
-   raises a real `IntegrityError` (FK violation) at flush time — the actual
-   code path, not a stand-in exception.
-4. After the caught exception triggers exactly one `db.rollback()`, assert
-   all 7 tables (5 knowledge + `drug_references` + `knowledge_reference_links`)
-   have zero rows for this test's data — files 1 and 2's flushed-but-
-   uncommitted rows must be gone too, proving they were never independently
-   committed.
+3. Before file 3's reference persistence flushes, the test pre-seeds a
+   colliding `drug_references` row via a **separate** session/connection,
+   under the exact citation identity file 3's own reference resolves to
+   (matching F1's two-tiered partial unique index, not a FK). File 3's
+   `find_or_create_reference` genuinely queries first (finds nothing, since
+   the colliding row was inserted by another session and isn't visible to
+   this one without a fresh read after the other session commits) and then
+   flushes an insert that raises a real `IntegrityError` against the unique
+   index — the actual code path, not a stand-in exception. **Chosen over an
+   FK-violation trigger deliberately:** this codebase's SQLite test fixture
+   does not enable `PRAGMA foreign_keys=ON` (verified — `backend/app/core/
+   database.py`/`tests/conftest.py` set no such pragma), so an FK-violation
+   trigger would silently succeed on SQLite instead of raising, and this
+   test must produce identical behavior on both dialects (§11). A unique-
+   index violation is enforced natively by both SQLite and Postgres
+   regardless of any pragma, making it the reliable, dialect-agnostic choice.
+4. After the caught exception triggers exactly one `db.rollback()` (and
+   `import_batch` returns `BatchResult(success=False, ...)` per the locked
+   never-raises contract above — the test asserts the return value, not a
+   raised exception), assert all 7 tables (5 knowledge + `drug_references` +
+   `knowledge_reference_links`) have zero rows for this test's data — files
+   1 and 2's flushed-but-uncommitted rows must be gone too, proving they
+   were never independently committed.
 5. A commit-call spy (wrapping `Session.commit`, e.g. via
    `event.listens_for(Session, "after_commit")` or a monkeypatch on the
    bound method with `wraps=`) asserts `commit()` was invoked **zero times**
@@ -258,8 +373,13 @@ round-2 requirement):**
    own stack frame (assert via `inspect.stack()` or by asserting no
    `commit()` call is observed before `import_batch`'s loop over
    `plans_or_errors` completes).
-6. Run this test on both SQLite and Postgres (§11) — the FK-violation
+6. Run this test on both SQLite and Postgres (§11) — the unique-index
    trigger and the rollback behavior must be identical on both.
+
+A **second, dedicated test** (`test_import_batch_requires_fresh_session`)
+proves the session precondition above: calling `import_batch` with a
+`Session` that already has pending `db.new`/`db.dirty` raises `ValueError`
+immediately, before touching any file.
 
 ---
 
@@ -296,11 +416,78 @@ class VersionAction(enum.Enum):
                                                      # matches an existing (any-status, non-retired) version
 
 def resolve_version_action(
-    db: Session, model_cls: type, business_key: tuple, version: str, content_hash_value: str
+    known_versions: list[tuple[str, str]],  # [(version, content_hash), ...] — see below for where this comes from
+    version: str, content_hash_value: str,
 ) -> VersionAction:
-    """Pure decision (read-only query), no writes. Looks up the most recent
-    non-'retired' row for this business key."""
+    """Pure decision, no DB access, no writes — operates on an already-
+    fetched list of (version, content_hash) pairs. Kept DB-free so the same
+    function proves both the DB-seeded case and the batch-local case below
+    without duplicating the 4-rule matrix twice."""
+    exact_version_match = next((h for v, h in known_versions if v == version), None)
+    if exact_version_match is not None:
+        return VersionAction.NO_OP_ALREADY_IMPORTED if exact_version_match == content_hash_value \
+            else VersionAction.REJECT_VERSION_CONFLICT
+    if any(h == content_hash_value for _, h in known_versions):
+        return VersionAction.WARN_PROCEED_REPEATED_CONTENT
+    return VersionAction.NEW_DRAFT
+
+
+def known_versions_for(db: Session, model_cls: type, business_key: tuple) -> list[tuple[str, str]]:
+    """Read-only query — fetches version + content-hash-equivalent-fields
+    for EVERY non-'retired' row matching this business key, not just the
+    most recent one (Codex round-3 P1 fix: the decision matrix's "matches
+    an existing version" and "same version string" rules both require
+    checking the FULL non-retired history, since a match can be to an
+    older version, not only the latest one)."""
 ```
+
+**Batch-local resolution (Codex round-3 P1 fix — the design above, taken
+alone, is still wrong for a batch):** if two files in the *same* batch
+share a business key that has zero rows in the DB today, each file's
+`known_versions_for(db, ...)` independently returns `[]` (Phase 1 writes
+nothing, so neither file's in-progress plan is visible to the other via a
+DB query) — both would resolve `NEW_DRAFT`, and either both get written as
+duplicates, or (worse) one has different content under the same version
+string and `REJECT_VERSION_CONFLICT` never fires because there was no *DB*
+row to conflict against.
+
+**Fix:** `_resolve_phase1` processes files **sequentially, not
+independently**, threading one evolving `batch_index: dict[tuple, list[tuple[str, str]]]`
+(business key → known versions) through the whole batch:
+
+```python
+def _resolve_phase1(db: Session, paths: list[Path]) -> list[ImportPlan | list[FileError]]:
+    batch_index: dict[tuple, list[tuple[str, str]]] = {}
+    results = []
+    for path in paths:
+        # ... loader/schema/validators/provenance steps (§1) unchanged ...
+        business_key = business_key_for(knowledge_type, ingredient_id, content)
+        version = review_metadata.version
+        hash_value = content_hash(knowledge_type, content)
+
+        known = batch_index.get(business_key)
+        if known is None:
+            known = known_versions_for(db, model_cls, business_key)  # DB-seeded, once per key
+            batch_index[business_key] = known
+
+        action = resolve_version_action(known, version, hash_value)
+        if action is not VersionAction.REJECT_VERSION_CONFLICT:
+            # fold this file's own outcome into the index so a LATER file
+            # in the same batch sees it too — this is what closes the gap.
+            known.append((version, hash_value))
+
+        results.append(ImportPlan(..., version_action=action) if action != REJECT else errors_for(action))
+    return results
+```
+
+A second file in the batch sharing the first file's new business key now
+sees the first file's `(version, hash)` already folded into `known` — so an
+identical repeat correctly resolves `NO_OP_ALREADY_IMPORTED` (against the
+in-batch entry, not just the DB) and a same-version-different-content
+repeat correctly resolves `REJECT_VERSION_CONFLICT`, even though neither
+had a *pre-existing DB row* to conflict against. This is the same 4-rule
+matrix, just fed a superset of "known versions" (DB history *and* earlier
+files in this batch) instead of DB history alone.
 
 **Fail-closed on `REJECT_VERSION_CONFLICT`:** this is a batch error (§1),
 never a silent skip and never a silent overwrite — "a version string is a
@@ -311,7 +498,20 @@ promise that its content is fixed" (original plan §4, unchanged).
 original plan §7 (two importer invocations racing the same business key;
 worst case is a harmless duplicate draft row, proven bounded, not
 eliminated — no distributed locking, matching the accepted single-writer
-operational constraint).
+operational constraint), plus two new tests for the round-3 fixes:
+- `test_content_hash_match_against_older_non_latest_version` — seed v1 and
+  v2 for a business key, then import v1's exact content again under a new
+  version string v3 → asserts `WARN_PROCEED_REPEATED_CONTENT` (proves
+  `known_versions_for` checks the full non-retired history, not just the
+  most recent row — the earlier draft's "most recent row only" design
+  would have missed this).
+- `test_batch_local_duplicate_new_business_key_no_op` /
+  `test_batch_local_duplicate_new_business_key_conflict_rejected` — two
+  files in one batch share a business key with zero DB rows; identical
+  content under the same version → second file resolves `NO_OP`; differing
+  content under the same version → second file resolves
+  `REJECT_VERSION_CONFLICT` and the whole batch fails (§1/§10) — proves the
+  batch-local fold, not just the DB-seeded path.
 
 **Why this race is harmless but §5's reference race (below) is not:**
 knowledge-content tables have no DB-level uniqueness constraint on business
@@ -368,25 +568,61 @@ silently dropped" gate from Finding 1 — now buildable since F1 (#128) exists.
 
 **Design — find-or-create, using F1's two-tiered identity. Race semantics
 corrected after PTH's round-2 review — the earlier draft's "harmless
-duplicate reference row" framing was wrong and is retracted below:**
+duplicate reference row" framing was wrong and is retracted below. Two
+further gaps fixed after Codex's round-3 pass on the round-2 revision:**
 
-1. If `reference.document_identifier` is set: query
+1. Check the **batch-local cache first** (Codex round-3 P2 fix — a `dict`
+   keyed on citation identity, threaded through the whole `import_batch`
+   call, seeded empty at batch start): if this exact citation identity was
+   already resolved earlier in *this same batch* (by an earlier file citing
+   the same source), reuse that id directly — no DB query, no risk of a
+   spurious "duplicate" reference row for something this batch itself
+   already created two lines ago. Without this, two files in one batch
+   citing the same brand-new reference would each independently run the
+   find-query (both see nothing, since neither has flushed yet when both
+   run their reads early), and the second one's insert would hit the exact
+   §5-corrected unique-index rejection above — a fully deterministic,
+   avoidable failure, not a genuine race, so it must not be handled the
+   same way as a true cross-batch race.
+2. If not in the batch-local cache: if `reference.document_identifier` is
+   set, query
    `drug_references WHERE document_identifier = :doc_id AND source_version = :v AND accessed_at = :d`.
-2. Else: query
+3. Else: query
    `drug_references WHERE publisher = :p AND title = :t AND publication_date = :pd AND source_version = :v AND accessed_at = :d`.
-3. If found, reuse its `id`. If not found, `add()` + `flush()` (never
-   `commit()` — §2a) a new `DrugReference` row inside the batch's one open
-   transaction.
-4. `add()` + `flush()` a `KnowledgeReferenceLink` row: `knowledge_table` =
-   the model's table name (reusing `knowledge_repository.KNOWLEDGE_TABLE_NAME`),
-   `knowledge_row_id` = the new draft row's id, `drug_reference_id` = the
-   resolved reference id.
+4. If found (batch-local cache or DB query), reuse its `id` and **store it
+   in the batch-local cache** so later files in this batch see it too. If
+   not found anywhere, `add()` + `flush()` (never `commit()` — §2a) a new
+   `DrugReference` row inside the batch's one open transaction, then store
+   its freshly-flushed `id` in the batch-local cache.
+5. `link_reference_to_row` is itself find-or-create, not a bare insert
+   (Codex round-3 P2 fix): query
+   `knowledge_reference_links WHERE knowledge_table = :t AND knowledge_row_id = :row_id AND drug_reference_id = :ref_id`
+   first. **Why this matters even though A1a's structural validator already
+   rejects duplicate references within one file:** A1a's duplicate check
+   (`validators._validate_no_duplicate_references`, already merged in #130)
+   keys on `(publisher, title, publication_date)` — a file with two
+   `references:` entries sharing the same `document_identifier` but
+   *differing* publisher/title spelling passes that structural check (they
+   look different to it) yet resolves to the **same** `DrugReference` row
+   here (correctly, per F1's document-identifier-first identity) — without
+   this idempotency check, step 4 would then try to `add()` a second,
+   duplicate `KnowledgeReferenceLink` for the identical
+   `(knowledge_table, knowledge_row_id, drug_reference_id)` tuple, hitting
+   `uq_krl_no_duplicate_link` needlessly. If found, skip (no-op, the link
+   already exists); if not, `add()` + `flush()` a new
+   `KnowledgeReferenceLink` row: `knowledge_table` = the model's table name
+   (reusing `knowledge_repository.KNOWLEDGE_TABLE_NAME`), `knowledge_row_id`
+   = the new draft row's id, `drug_reference_id` = the resolved reference id.
 
-**Corrected race semantics:** the earlier draft claimed a concurrent
-find-then-insert race would produce a "harmless duplicate reference row,"
-bounded by the partial unique index preventing "a third duplicate." That is
-wrong — **if the unique index is doing its job, a genuine duplicate row
-can never exist at all.** The real sequence under a race is:
+**Corrected race semantics (this is about a genuine *cross-batch* race —
+two separate `import_batch` invocations in two separate transactions —
+distinct from the batch-local, same-transaction, deterministic-not-a-race
+case the cache above already eliminates):** the earlier draft claimed a
+concurrent find-then-insert race would produce a "harmless duplicate
+reference row," bounded by the partial unique index preventing "a third
+duplicate." That is wrong — **if the unique index is doing its job, a
+genuine duplicate row can never exist at all.** The real sequence under a
+race is:
 
 1. Two concurrent batches (in separate transactions) both query and both
    find nothing for the same citation identity.
@@ -445,7 +681,20 @@ orchestrator level, not just the migration level),
 sessions, both find-nothing then both insert the same citation identity;
 assert the loser's `IntegrityError` triggers a full rollback of that
 batch's own drafts/references, the winner's single row survives, and no
-duplicate row exists — run on both SQLite and Postgres per §11).
+duplicate row exists — run on both SQLite and Postgres per §11),
+`test_two_files_same_batch_new_reference_reused_via_batch_cache` (two
+files in one batch cite an identical brand-new citation; assert exactly
+one `DrugReference` row is created — proves the batch-local cache prevents
+the deterministic-not-a-race unique-index rejection that would otherwise
+occur, since neither file's independent find-query would see the other's
+unflushed insert), `test_duplicate_reference_within_file_creates_one_link`
+(one file's `references:` list has two entries sharing a
+`document_identifier` but different `publisher`/`title` — passes A1a's
+structural duplicate check, which doesn't key on `document_identifier` —
+assert exactly one `DrugReference` row and exactly one
+`KnowledgeReferenceLink` row, proving `link_reference_to_row`'s own
+idempotency check, not reliance on A1a's file-level validator, is what
+prevents the duplicate link).
 
 ---
 
@@ -530,9 +779,21 @@ identity/reference/specialty.
 
 **Rule:** `orchestrator.import_batch(..., dry_run=True)` runs the complete
 Phase 1 pipeline (§1) — including the read-only version-action resolution
-(§3) and the read-only reference find-or-create *lookup* (§5, query only,
-no INSERT) — and returns the same `BatchResult` shape, but never opens the
-write transaction and never calls `db.add`/`db.commit` anywhere.
+(§3, batch-local fold included) and the read-only reference find-or-create
+*lookup* (§5, query only, no INSERT) — and returns the same `BatchResult`
+shape, but never adds/flushes/commits anything, and closes the read-only
+transaction before returning (§2a).
+
+**The reference batch-local cache (§5) must be simulated in dry-run too,**
+not skipped (Codex round-3 P2 fix): if dry-run's reference lookups run
+independently per file (no shared cache), two files citing the same
+brand-new reference would each report "would create" — overcounting new
+references by one and misreporting what a subsequent real run would
+actually do. Dry-run threads the same `batch_cache: dict` through its own
+Phase-1-only pass, populated with a *planned, not-yet-flushed* id
+placeholder on a cache miss (never a DB insert) — so the second file's
+lookup correctly reports "would reuse (new-this-batch)" instead of "would
+create."
 
 **Distinct from PR-A1c's content preview/diff renderer** (original plan
 §6, unbuilt, separate future PR) — that renderer answers "what would this
@@ -550,7 +811,11 @@ only in dry-run mode, describing what Phase 2 *would* have done per file
 
 **Tests:** `test_dry_run_reports_plan_without_writing`
 (assert zero rows in every table touched, `planned` non-empty, matches what
-a subsequent non-dry-run call with identical input actually writes).
+a subsequent non-dry-run call with identical input actually writes),
+`test_dry_run_reference_batch_cache_matches_real_run` (two files citing the
+same brand-new reference, dry-run mode — assert `planned` reports exactly
+one "would create" and one "would reuse (new-this-batch)," matching what
+the same input actually produces when re-run without `dry_run`).
 
 ---
 
@@ -566,15 +831,21 @@ test-matrix commitment since PTH called it out separately.
    with every file's errors listed (not just the first failing file — batch
    validation collects everything, per the existing "validate everything,
    report everything" convention).
-2. **Phase 2 write failure** (an unexpected exception during the write
-   transaction — a bug, a race that slipped past §3/§5's read-then-write
-   window, a constraint violation not predicted by Phase 1's checks) →
-   `db.rollback()`, zero rows survive across every table touched
-   (`drug_usage`/`drug_patient_education`/`drug_side_effects`/
-   `drug_monitoring`/`drug_contraindications`, `drug_references`,
-   `knowledge_reference_links`), exception re-raised or wrapped into
-   `BatchResult.success = False` with the underlying error surfaced (not
-   swallowed).
+2. **Phase 2 write failure** (a cross-batch reference race per §5's
+   corrected semantics, or a genuinely unanticipated constraint violation
+   not predicted by Phase 1's checks) → `db.rollback()`, zero rows survive
+   across every table touched (`drug_usage`/`drug_patient_education`/
+   `drug_side_effects`/`drug_monitoring`/`drug_contraindications`,
+   `drug_references`, `knowledge_reference_links`). **Locked outcome
+   contract (Codex round-3 P2 fix — the earlier draft's "re-raised or
+   wrapped" hedge is retracted):** `import_batch` never raises for this
+   case either — it always returns `BatchResult(success=False, errors=[...])`
+   with the underlying error message surfaced (not swallowed), exactly like
+   a Phase 1 failure. The caller (a CLI script) inspects one return type for
+   every anticipated failure mode; only a truly unanticipated
+   interpreter-level condition outside `except Exception`'s scope would ever
+   propagate, and that is ordinary Python behavior, not something this
+   design special-cases.
 
 **No partial-success outcome exists in this design.** A batch either fully
 succeeds or fully fails — this is a deliberate simplicity choice consistent
@@ -712,11 +983,11 @@ draft-only scope lock (§7 still holds: nothing added here can reach
 
 | File | Covers |
 |---|---|
-| `test_medication_knowledge_import_versioning.py` | §3, §4 — all 4 `VersionAction` outcomes, concurrency race (bounded harmless-duplicate — distinct from §5's reference race, see §3's explicit distinction), business-key derivation per type, content-hash stability/sensitivity |
-| `test_medication_knowledge_import_references.py` | §5, §8 — find-or-create both identity branches, reuse vs. new-row creation, `accessed_at` differentiation at the app level, fail-closed on unexpected persistence error, `test_concurrent_reference_race_loser_rolls_back_entire_batch` |
-| `test_medication_knowledge_import_orchestrator.py` | §1, §2, §6, §7, §9, §10, §12 — end-to-end valid batch, `test_batch_rollback_uses_real_write_path_not_mock` (commit-ownership spy, §2a), specialty DB-check rejection, zero-approved-rows assertion on every test, dry-run report accuracy, whole-batch rollback per failure point, CI/PR-diff checks for API/frontend/AI/`app/knowledge/` isolation |
+| `test_medication_knowledge_import_versioning.py` | §3, §4 — all 4 `VersionAction` outcomes, full-non-retired-history content-hash matching (not most-recent-only), batch-local duplicate/conflict resolution across sibling files, concurrency race (bounded harmless-duplicate — distinct from §5's reference race, see §3's explicit distinction), business-key derivation per type, content-hash stability/sensitivity |
+| `test_medication_knowledge_import_references.py` | §5, §8 — find-or-create both identity branches, reuse vs. new-row creation, `accessed_at` differentiation at the app level, batch-local reference cache (same-batch reuse, no spurious unique-index rejection), idempotent link creation (duplicate DB identity within one file), fail-closed on unexpected persistence error, `test_concurrent_reference_race_loser_rolls_back_entire_batch` |
+| `test_medication_knowledge_import_orchestrator.py` | §1, §2, §6, §7, §9, §10, §12 — end-to-end valid batch, `test_import_batch_requires_fresh_session` (session precondition), `test_batch_rollback_uses_real_write_path_not_mock` (commit-ownership spy + every-return-path transaction closure, §2a), NO_OP plans never reach `build_draft` (no duplicate on re-import), specialty DB-check rejection, zero-approved-rows assertion on every test, dry-run report accuracy including batch-local reference cache simulation, whole-batch rollback per failure point (never raises — always `BatchResult`), CI/PR-diff checks for API/frontend/AI/`app/knowledge/` isolation |
 | `test_knowledge_repository.py` (existing, K1-S3) | §2a, §14 — regression suite proving `create_draft`'s external behavior is unchanged after the `build_draft`/`add_draft` refactor; no new tests needed here, existing tests must simply keep passing |
-| `tests/integration/test_medication_a1b_orchestrator_postgres.py` | §11 — Postgres-specific partial-unique-index parity for reference dedup, real-transaction rollback proof, both dialect-load-bearing races (§2a, §5) run against real Postgres |
+| `tests/integration/test_medication_a1b_orchestrator_postgres.py` | §11 — Postgres-specific partial-unique-index parity for reference dedup, real-transaction rollback proof, both dialect-load-bearing races (§2a's unique-index write-failure trigger, §5's reference race) run against real Postgres |
 
 Total new test count target: comparable density to F1 (23 integration +
 unit) and A1a (41 unit) — exact count TBD at implementation time, not fixed
