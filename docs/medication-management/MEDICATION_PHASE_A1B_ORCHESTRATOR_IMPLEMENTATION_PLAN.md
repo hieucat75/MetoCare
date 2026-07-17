@@ -1,7 +1,8 @@
 # Medication Knowledge — Phase A1b Orchestrator Implementation Plan
 
 **Date:** 2026-07-17 (revised same day — round 2 PTH review, rounds 3-6
-Codex re-verification, round 7 PTH re-review)
+Codex re-verification, round 7 PTH re-review + follow-up Codex pass on
+that fix)
 **Status:** 🟡 **Planning GO — implementation NOT GO.** This document is itself
 subject to review/approval before any `versioning.py`/`orchestrator.py` code
 is written. Phase B authoring has not started and is not authorized by this
@@ -163,6 +164,31 @@ final P1, one wording fix):**
   violations* (a non-fresh `Session`) raise `ValueError` immediately,
   before any file is processed, because that's a caller bug, not an
   import outcome. No code-design change, wording only.
+
+**Round-7 follow-up (self-caught via one more targeted Codex pass on the
+artifact_hash fix above — 1 P1, 2 P2, 1 P3, no design reversal, all
+tightening the same fix):**
+- **P1 — the artifact-hash design wasn't actually implementable as first
+  written:** `known_versions_for` needs a comparable hash on a *later*
+  invocation, but no knowledge table has an `artifact_hash` column and
+  several hashed inputs (`specialty_codes`, `ai_generated`,
+  `disclaimer.acknowledged`) have no other persistence path at all in the
+  current schema. Fixed (§3, §14): `artifact_hash` is computed once at
+  import time from the full in-memory `KnowledgeFile` and stored as a new
+  column on each of the 5 knowledge tables — `known_versions_for` becomes
+  a plain column read, no recomputation or joins needed. This adds one
+  small, disclosed Alembic migration to A1b's scope (same review bar as
+  F1/F2), corrected throughout §3/§14/§16/§17 rather than left implicit.
+- **P2** the concurrency-test scope (§3) said "identical content" as the
+  harmless-race boundary — no longer sufficient once the hash covers
+  references/provenance too; tightened to "identical full artifact" in
+  both the test description and the "harmless claim narrowed" paragraph.
+- **P2** the illustrative code's caption still called the failure contract
+  a blanket "never-raises contract" immediately next to a function that
+  visibly raises `ValueError` for a bad session — annotated in place to
+  point at the round-7 wording fix rather than read as still-unresolved.
+- **P3** §3's own heading still said "content hash" — renamed to
+  "artifact hash."
 
 **Depends on (both merged):**
 - PR #128 — F1 schema completion (`drug_references`, `knowledge_reference_links`,
@@ -426,10 +452,13 @@ def import_batch(db: Session, paths: list[Path], *, dry_run: bool = False) -> Ba
 ```
 
 (Illustrative code — exact signatures finalized at implementation time; the
-commit/rollback ownership, the session precondition, the every-path
-`rollback()`, the `NO_OP` skip, the single try/except spanning both phases,
-the `FileError`-typed errors, and the never-raises contract shown here are
-all **locked**, not illustrative.)
+commit/rollback ownership, the session precondition (which *does* raise
+`ValueError` — a programmer-contract violation, not an import/content
+failure, per the round-7 wording fix below; this is the one intentional
+exception to the "returns `BatchResult`" rule, not an inconsistency), the
+every-path `rollback()`, the `NO_OP` skip, the single try/except spanning
+both phases, the `FileError`-typed errors, and the import/content
+never-raises contract shown here are all **locked**, not illustrative.)
 
 ### 2b. SQLAlchemy transaction lifecycle (locked)
 
@@ -541,7 +570,7 @@ regression-test the round-4 tightening to `db.in_transaction()`):
 
 ---
 
-## 3. Idempotency by business key + content hash
+## 3. Idempotency by business key + artifact hash
 
 **Rule:** re-running the same file (or an equivalent file) must never create
 a duplicate draft. Reuses the exact 4-way decision matrix already specified
@@ -628,16 +657,61 @@ def resolve_version_action(
 
 
 def known_versions_for(db: Session, model_cls: type, business_key: tuple) -> list[tuple[str, str]]:
-    """Read-only query — fetches version + a stored artifact-hash-equivalent
-    for EVERY non-'retired' row matching this business key, not just the
-    most recent one (Codex round-3 P1 fix: the decision matrix's "matches
-    an existing version" and "same version string" rules both require
-    checking the FULL non-retired history, since a match can be to an
-    older version, not only the latest one). Requires the artifact hash (or
-    enough of its inputs to recompute it) to be stored per row at write
-    time — an implementation detail for A1b's write path (§4), not fixed by
-    this plan beyond that requirement."""
+    """Read-only query — fetches version + artifact_hash for EVERY
+    non-'retired' row matching this business key, not just the most recent
+    one (Codex round-3 P1 fix: the decision matrix's "matches an existing
+    version" and "same version string" rules both require checking the
+    FULL non-retired history, since a match can be to an older version, not
+    only the latest one). A plain column read — see the storage design
+    immediately below for why this doesn't need to recompute or join
+    anything."""
 ```
+
+**Storage design (Codex round-7 P1 fix — the round-6 draft said "requires
+the artifact hash... to be stored per row at write time — an
+implementation detail," which is not a real design; it hand-waved the one
+piece that makes this section actually work):**
+
+`artifact_hash` is computed **once, at import time, from the full in-memory
+`KnowledgeFile`** — before anything is persisted — and the resulting
+opaque hash string is stored as a **new column on each of the 5 knowledge
+tables** (`artifact_hash: Mapped[str] = mapped_column(String(64),
+nullable=False)`, populated by `build_draft` alongside the row's other
+fields). `known_versions_for` then reads this column directly — no
+recomputation, no joins, no reconstructing inputs from partial DB state.
+
+**This requires a new, small Alembic migration as part of A1b's own PR** —
+a genuine, disclosed scope addition beyond `versioning.py`/`orchestrator.py`
+/`references.py` (§14 corrected below), analogous in size and review bar to
+F1/F2's own migrations (Codex + compliance + architecture review, same
+gate). This is *not* optional: without a stored column, `known_versions_for`
+has no way to obtain a comparable hash on a later importer invocation,
+since several of the hashed inputs are not independently persisted
+anywhere in the current schema even though they're always present in the
+in-memory `KnowledgeFile` at import time:
+- `specialty_codes` — validated (§6) but never persisted as a declared-set
+  column anywhere; `knowledge_review_specialties` records actual *reviews*,
+  not the file's *declared* list.
+- `ai_generated` — validated (must be `False`) but not a column on any
+  knowledge table.
+- `disclaimer.acknowledged` — per the original A1 plan §3, deliberately has
+  no DB column at all (a validation gate only).
+
+None of that is a problem for computing the hash itself (it's computed from
+the file, which has all these fields, before any of this matters) — it
+would only be a problem if `known_versions_for` tried to *reconstruct* the
+hash from persisted row state instead of reading a stored value. Storing
+the opaque hash sidesteps that entirely.
+
+**`locale`/`audience` are included unconditionally** in the hash formula
+above because they are always present on the in-memory `KnowledgeMetadata`
+(every authoring file declares them, regardless of `knowledge_type`) —
+this is independent of whether a given knowledge table happens to persist
+them as its own columns (`drug_usage`/`drug_patient_education` do;
+`drug_side_effects`/`drug_monitoring`/`drug_contraindications` don't,
+since those types have no locale/audience dimension in their own business
+key). The hash is computed from the artifact, not reconstructed from the
+row, so this asymmetry across tables doesn't matter.
 
 **Batch-local resolution (Codex round-3 P1 fix — the design above, taken
 alone, is still wrong for a batch):** if two files in the *same* batch
@@ -701,18 +775,23 @@ promise that its content is fixed" (original plan §4, unchanged).
 
 **Tests:** `test_medication_knowledge_import_versioning.py` — one test per
 `VersionAction` outcome, plus the concurrency test already specified in the
-original plan §7, **scope restricted to identical content only** (Codex
-round-5 fix — the test as originally described covered "the same business
-key" racing generically, which reads as endorsing the overbroad "harmless
-duplicate" claim this plan's own round-4 fix retracted below): two importer
-invocations racing the same business key **and identical content** — worst
-case is a harmless duplicate draft row, proven bounded, not eliminated, no
-distributed locking, matching the accepted single-writer operational
-constraint. A race with the same business key/version but **differing**
-content is a documented, undefended gap (see "harmless claim narrowed"
-below) — not something this test claims to bound, and not something a test
-should assert is "fine," since it isn't. Plus two new tests for the round-3
-fixes:
+original plan §7, **scope restricted to an identical full artifact** (Codex
+round-5 fix, tightened further in round 7 — "identical content" alone is no
+longer a sufficient boundary now that the hash covers the full artifact:
+two imports can share identical content fields but differ in references or
+provenance, producing *different* artifact hashes under the same version —
+if those race, both inserts can succeed, which is exactly the
+conflicting-version failure mode described below, not a harmless
+duplicate): two importer invocations racing the same business key **and an
+identical full artifact — same content, same references, same
+provenance** — worst case is a harmless duplicate draft row, proven
+bounded, not eliminated, no distributed locking, matching the accepted
+single-writer operational constraint. A race with the same business
+key/version but **any** difference in content, references, or provenance
+(i.e. a different artifact hash) is a documented, undefended gap (see
+"harmless claim narrowed" below) — not something this test claims to
+bound, and not something a test should assert is "fine," since it isn't.
+Plus two new tests for the round-3 fixes:
 - `test_artifact_hash_match_against_older_non_latest_version` — seed v1 and
   v2 for a business key, then import v1's exact artifact again under a new
   version string v3 → asserts `WARN_PROCEED_REPEATED_ARTIFACT` (proves
@@ -772,19 +851,22 @@ tables have different constraint shapes and therefore different correct
 race behaviors.
 
 **The "harmless" claim here is narrower than the round-3 wording implied,
-though:** it holds for two batches racing the *same* business key, version,
-and **identical** content (a genuine re-import of the same file happening
-twice concurrently) — that produces two informationally-redundant rows,
-a real but accepted operational cost. It does **not** hold if two batches
-race the same business key and version with **different** content: since
-there is no DB constraint to catch this, both inserts can succeed, leaving
-two rows that both claim the same version string with conflicting content
-— exactly the situation `REJECT_VERSION_CONFLICT` exists to prevent, except
-the race window means the check-then-insert isn't atomic across two
-separate transactions (only within one batch, via §3's own batch-local
-fold above). This is a real, undefended gap in the single-writer
-assumption, not merely "duplicate rows" — documented here honestly rather
-than folded into the same "harmless" bucket as the identical-content case.
+and narrower still after round 7's widened hash:** it holds for two batches
+racing the *same* business key, version, and **identical full artifact —
+same content, same references, same provenance** (a genuine re-import of
+the same file happening twice concurrently) — that produces two
+informationally-redundant rows, a real but accepted operational cost. It
+does **not** hold if two batches race the same business key and version
+with **any** difference in content, references, or provenance (i.e. a
+different `artifact_hash`): since there is no DB constraint to catch this
+at the draft-row level, both inserts can succeed, leaving two rows that
+both claim the same version string with conflicting artifacts — exactly the
+situation `REJECT_VERSION_CONFLICT` exists to prevent, except the race
+window means the check-then-insert isn't atomic across two separate
+transactions (only within one batch, via §3's own batch-local fold above).
+This is a real, undefended gap in the single-writer assumption, not merely
+"duplicate rows" — documented here honestly rather than folded into the
+same "harmless" bucket as the identical-artifact case.
 Consistent with this plan's stated philosophy (§4/concurrency in the
 original A1 plan, restated here): no distributed locking is built to close
 this window; the mitigation is operational (this is a human-run,
@@ -1339,6 +1421,16 @@ the three new modules above — this refactor does not reopen K1-S3's
 draft-only scope lock (§7 still holds: nothing added here can reach
 `approved`).
 
+**Additional correction (Codex round-7 P1 fix, §3):** A1b's scope also
+includes **one small Alembic migration** — an `artifact_hash` column added
+to each of the 5 knowledge tables (`drug_usage`, `drug_patient_education`,
+`drug_side_effects`, `drug_monitoring`, `drug_contraindications`). This was
+not disclosed in earlier drafts of this plan, which implied A1b touches no
+schema. It's required for §3's idempotency design to be implementable at
+all (`known_versions_for` reads a stored value; several hashed inputs have
+no other persistence path). Same review bar as F1/F2's migrations — Codex +
+compliance + architecture, mandatory before merge.
+
 ---
 
 ## 15. Test file plan
@@ -1364,6 +1456,8 @@ by this plan.
 - No `knowledge_repository.py` code either — §2a/§14 describe the required
   `build_draft`/`add_draft` addition as a locked *design decision*, not as
   code shipped in this PR. The actual diff lands in the implementation PR.
+- No Alembic migration either — §3/§14's `artifact_hash` column addition is
+  a locked design requirement, not a migration file shipped in this PR.
 - No Phase B content authoring.
 - No API route, frontend screen, or AI wiring of any kind.
 - No change to `knowledge_repository.py`'s existing draft-only *scope lock*
@@ -1380,5 +1474,5 @@ by this plan.
 | Item | Status |
 |---|---|
 | A1b planning | ✅ **GO** (this document) |
-| A1b implementation (`versioning.py` + `orchestrator.py` + `references.py` + tests) | 🔴 **NOT GO** — awaits PTH + Codex + compliance + architecture review of this plan |
+| A1b implementation (`versioning.py` + `orchestrator.py` + `references.py` + the `artifact_hash` column migration + tests) | 🔴 **NOT GO** — awaits PTH + Codex + compliance + architecture review of this plan |
 | Phase B authoring | 🔴 **NOT GO** — separate, later gate |
