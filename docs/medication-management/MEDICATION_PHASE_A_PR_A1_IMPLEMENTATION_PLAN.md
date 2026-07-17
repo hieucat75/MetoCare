@@ -81,7 +81,7 @@ metadata:
 content:                                   # required | shape depends on knowledge_type (see per-type fields below)
   # patient_education: { theme: str, body: str }
   # usage:              { body: str }
-  # side_effect:        { level: enum(common|uncommon|rare|serious), concept_code: str, description: str }
+  # side_effect:        { frequency: enum(common|uncommon|rare|unknown), action_level: enum(self_monitor|contact_clinician|urgent_medical_help), concept_code: str, label: str, description: str }
   # monitoring:         { parameter: str, patient_context: str, guidance: str }
   # contraindication:   { condition_type: str, condition_key: str, condition_detail: str }
 
@@ -129,7 +129,7 @@ No DB column exists for this. The exact Vietnamese disclaimer text from Phase B'
 | `metadata.medication_identity.name_inn` | required | must exist in `drug_ingredients` | — |
 | `metadata.locale` | required | yes — currently `vi` only | — |
 | `metadata.audience` | required | yes — `patient`, `caregiver` | — |
-| `content.*` | required, shape varies by type | `level`, `condition_type` are controlled vocab; `concept_code`/`condition_key` are free-form normalized identifiers (author-chosen, validated for format not membership) | **the entire `content` block — clinical facts must be authored by a human, never AI-generated** |
+| `content.*` | required, shape varies by type | `frequency`, `action_level`, `condition_type` are controlled vocab; `concept_code`/`condition_key` are free-form normalized identifiers (author-chosen, validated for format not membership) | **the entire `content` block — clinical facts must be authored by a human, never AI-generated** |
 | `references` | required, min 1 | — | — |
 | `review_metadata.source/version/reviewed_at/authored_by` | all required | `evidence_level` is controlled vocab (4 values) | — |
 | `review_metadata.ai_generated` | required, must be `false` | boolean | this field is the explicit machine-checkable gate for the "no AI-generated clinical facts" non-negotiable |
@@ -145,7 +145,7 @@ No DB column exists for this. The exact Vietnamese disclaimer text from Phase B'
 |---|---|
 | `usage` | `(drug_ingredient_id, locale, audience)` |
 | `patient_education` | `(drug_ingredient_id, theme, locale, audience)` |
-| `side_effect` | `(drug_ingredient_id, level, concept_code)` |
+| `side_effect` | `(drug_ingredient_id, concept_code)` |
 | `monitoring` | `(drug_ingredient_id, parameter, patient_context)` |
 | `contraindication` | `(drug_ingredient_id, condition_type, condition_key)` |
 
