@@ -1,8 +1,8 @@
 # Medication Knowledge — Phase A1b Orchestrator Implementation Plan
 
 **Date:** 2026-07-17 (revised same day — round 2 PTH review, rounds 3-6
-Codex re-verification, round 7 PTH re-review + follow-up Codex pass on
-that fix)
+Codex re-verification, round 7 PTH re-review + follow-up Codex pass, round
+8 PTH re-review of the migration nullability/legacy-row policy)
 **Status:** 🟡 **Planning GO — implementation NOT GO.** This document is itself
 subject to review/approval before any `versioning.py`/`orchestrator.py` code
 is written. Phase B authoring has not started and is not authorized by this
@@ -674,11 +674,61 @@ piece that makes this section actually work):**
 
 `artifact_hash` is computed **once, at import time, from the full in-memory
 `KnowledgeFile`** — before anything is persisted — and the resulting
-opaque hash string is stored as a **new column on each of the 5 knowledge
-tables** (`artifact_hash: Mapped[str] = mapped_column(String(64),
-nullable=False)`, populated by `build_draft` alongside the row's other
-fields). `known_versions_for` then reads this column directly — no
-recomputation, no joins, no reconstructing inputs from partial DB state.
+opaque hash string is stored as a **new, nullable column on each of the 5
+knowledge tables**:
+
+```python
+artifact_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+```
+
+**Nullable, not `NOT NULL` (PTH round-8 fix — the round-7 draft proposed
+`nullable=False`, which cannot be safely added to a table that may already
+have existing rows):** since several hashed inputs
+(`specialty_codes`/`ai_generated`/`disclaimer.acknowledged`, per below)
+have no independent persistence path, there is no way to backfill a real
+`artifact_hash` for any row that existed before this migration. `NOT NULL`
+would force one of: an empty-string placeholder, a hash of incomplete
+data, a sentinel that looks like a valid hash, or a guessed reconstruction
+— all of them mean the importer could later compare a *fabricated* hash
+against a *real* one and reach a wrong `NO_OP`/`REJECT` conclusion for an
+artifact that never actually existed. **The column stays nullable at the
+schema level; immutability is enforced at the application level instead**
+(below), matching how `source`/`version`/`evidence_level` etc. are already
+nullable at the schema level with `ck_*_approved_invariants` enforcing
+non-null only at `approved` — the same "schema allows, application-layer
+gate enforces" split this codebase already uses elsewhere.
+
+**Application-level rules (not a schema constraint):**
+- `build_draft`, called only from `orchestrator.py`, **always** supplies a
+  64-character SHA-256 `artifact_hash` — enforced by `orchestrator.py`
+  itself (e.g. an assertion or a required, non-optional parameter with no
+  default), not by the DB. Every row A1b's importer ever creates has a real
+  hash.
+- Existing/legacy callers of `create_draft`(K1-S3's own tests, any future
+  non-importer caller) may continue to create rows with `artifact_hash =
+  NULL` — those rows are not managed by the importer and the column
+  simply doesn't apply to them. `create_draft`'s existing signature is
+  unchanged (§2a); `artifact_hash` defaults to `None` for any caller that
+  doesn't pass it, preserving 100% backward compatibility.
+- **`known_versions_for` must fail closed on a `NULL` hash, never
+  interpret it (PTH round-8 fix):** if any non-`retired` row for a
+  business key has `artifact_hash IS NULL`, the entire batch touching that
+  business key fails with a distinct, explicit error —
+  `LEGACY_ARTIFACT_HASH_UNAVAILABLE` — stating plainly that this version's
+  immutability cannot be verified and manual remediation is required.
+  Explicitly forbidden as substitutes: silently resolving `NEW_DRAFT`;
+  silently resolving `NO_OP`; comparing against a content-only subset as a
+  fallback; overwriting the legacy row. A `retired` row with a `NULL` hash
+  does **not** block — `known_versions_for` only considers non-`retired`
+  history in the first place (§3, unchanged), so a retired legacy row is
+  simply invisible to this check, same as any other retired row.
+- **Remediation path (documented, not built by this plan):** once a
+  human-run backfill/remediation process establishes real hashes (or
+  explicitly retires the affected rows) and confirms zero remaining
+  `NULL`-hash non-retired rows for any business key the importer will ever
+  touch, a **separate, later migration** tightens the column to
+  `NOT NULL` — that migration is not part of A1b, is not authorized by
+  this plan, and requires its own review when proposed.
 
 **This requires a new, small Alembic migration as part of A1b's own PR** —
 a genuine, disclosed scope addition beyond `versioning.py`/`orchestrator.py`
@@ -701,7 +751,9 @@ None of that is a problem for computing the hash itself (it's computed from
 the file, which has all these fields, before any of this matters) — it
 would only be a problem if `known_versions_for` tried to *reconstruct* the
 hash from persisted row state instead of reading a stored value. Storing
-the opaque hash sidesteps that entirely.
+the opaque hash sidesteps that entirely — and it is exactly why the column
+cannot be backfilled for pre-existing rows, hence nullable + fail-closed
+above.
 
 **`locale`/`audience` are included unconditionally** in the hash formula
 above because they are always present on the in-memory `KnowledgeMetadata`
@@ -837,6 +889,45 @@ Plus two new tests for the round-3 fixes:
   the write phase actually persists the new reference row and links it to
   the new draft (§5) — proves the reference change survives into the DB,
   not just into the version-action decision.
+
+**Nullable-column / legacy-row tests (PTH round-8 fix, required before A1b
+implementation, not just recommended):**
+- `test_migration_upgrade_with_existing_rows_does_not_fail` — run the new
+  migration against a database seeded with pre-existing knowledge rows
+  (simulating a table that already has content, even though K1 dormancy
+  means this shouldn't happen in practice today — the migration itself
+  must not assume it) → upgrade succeeds, every pre-existing row's
+  `artifact_hash` is `NULL`, nothing else about those rows changes.
+- `test_orchestrator_created_rows_always_have_hash` — any row written via
+  `build_draft`/`add_draft` through `orchestrator.py` has a 64-character
+  `artifact_hash` — never `NULL`, never empty string.
+- `test_legacy_null_hash_blocks_whole_batch` — seed a non-`retired` row for
+  a business key with `artifact_hash = NULL` (simulating a legacy or
+  pre-migration row), then attempt to import a file targeting that same
+  business key → the entire batch fails closed with
+  `LEGACY_ARTIFACT_HASH_UNAVAILABLE` (or equivalent), zero writes across
+  all 7 tables — asserts this is **not** silently resolved as `NEW_DRAFT`,
+  **not** `NO_OP`, and does not fall back to any content-only comparison.
+- `test_retired_null_hash_row_does_not_block` — same setup, but the
+  `NULL`-hash row's status is `retired` → import proceeds normally
+  (`known_versions_for` only considers non-`retired` rows, so the retired
+  legacy row is invisible to the check, exactly as for any other retired
+  row).
+- `test_migration_has_no_fake_backfill` — a direct assertion against the
+  migration's own `upgrade()`: no `UPDATE` statement, no default value
+  other than the column's own `NULL` default, touches `artifact_hash` for
+  any pre-existing row. This is a regression test for the migration file
+  itself, not the application code, guarding against a future edit
+  "helpfully" adding a backfill.
+- SQLite/PostgreSQL upgrade+downgrade parity for the new column (§11):
+  same nullable-column behavior, same legacy-row fail-closed behavior, on
+  both dialects.
+- Migration head remains single after this migration lands (same check as
+  every prior K1/A1b migration in this program).
+- Downgrade removes exactly the 5 new `artifact_hash` columns and nothing
+  else — no data loss beyond the columns being introduced by this same
+  migration, matching this program's established downgrade-safety
+  convention (F1 §2a/§2b, restated here for the new migration).
 
 **Why this race is harmless but §5's reference race (below) is not — and a
 correction narrowing that claim (Codex round-4 P2):** knowledge-content
@@ -1422,14 +1513,21 @@ draft-only scope lock (§7 still holds: nothing added here can reach
 `approved`).
 
 **Additional correction (Codex round-7 P1 fix, §3):** A1b's scope also
-includes **one small Alembic migration** — an `artifact_hash` column added
-to each of the 5 knowledge tables (`drug_usage`, `drug_patient_education`,
-`drug_side_effects`, `drug_monitoring`, `drug_contraindications`). This was
-not disclosed in earlier drafts of this plan, which implied A1b touches no
-schema. It's required for §3's idempotency design to be implementable at
-all (`known_versions_for` reads a stored value; several hashed inputs have
-no other persistence path). Same review bar as F1/F2's migrations — Codex +
-compliance + architecture, mandatory before merge.
+includes **one small Alembic migration** — a **nullable** `artifact_hash`
+column (`String(64)`, `nullable=True` — **not** `NOT NULL`, per PTH's
+round-8 fix: see §3 for why a `NOT NULL` column cannot be safely added to
+tables that may already have existing rows, since several hashed inputs
+have no backfill path) added to each of the 5 knowledge tables
+(`drug_usage`, `drug_patient_education`, `drug_side_effects`,
+`drug_monitoring`, `drug_contraindications`). This was not disclosed in
+earlier drafts of this plan, which implied A1b touches no schema. It's
+required for §3's idempotency design to be implementable at all
+(`known_versions_for` reads a stored value; several hashed inputs have no
+other persistence path). Immutability for legacy `NULL`-hash rows is
+enforced at the application layer (§3's fail-closed
+`LEGACY_ARTIFACT_HASH_UNAVAILABLE` rule), not at the schema level — the
+column itself stays permissive. Same review bar as F1/F2's migrations —
+Codex + compliance + architecture, mandatory before merge.
 
 ---
 
@@ -1441,6 +1539,7 @@ compliance + architecture, mandatory before merge.
 | `test_medication_knowledge_import_references.py` | §5, §8 — find-or-create both identity branches (including the `document_identifier IS NULL` fallback-query restriction), reuse vs. new-row creation, `accessed_at` differentiation at the app level, batch-local reference cache (same-batch reuse, no spurious unique-index rejection), idempotent link creation (duplicate DB identity within one file), fail-closed on unexpected persistence error, `test_reference_unique_index_violation_rolls_back_entire_batch` (deterministic ordering, both dialects) |
 | `test_medication_knowledge_import_orchestrator.py` | §1, §2, §6, §7, §9, §10, §12 — end-to-end valid batch, `test_import_batch_requires_fresh_session` (session precondition), `test_batch_rollback_uses_real_write_path_not_mock` (commit-ownership spy + every-return-path transaction closure, §2a), NO_OP plans never reach `build_draft` (no duplicate on re-import), specialty DB-check rejection, zero-approved-rows assertion on every test, dry-run report accuracy including batch-local reference cache simulation, whole-batch rollback per failure point (never raises — always `BatchResult`), CI/PR-diff checks for API/frontend/AI/`app/knowledge/` isolation |
 | `test_knowledge_repository.py` (existing, K1-S3) | §2a, §14 — regression suite proving `create_draft`'s external behavior is unchanged after the `build_draft`/`add_draft` refactor; no new tests needed here, existing tests must simply keep passing |
+| `test_medication_a1b_artifact_hash_migration.py` (new, both dialects) | §3, §14 — nullable-column migration upgrade against pre-existing rows, no fake backfill, orchestrator-created rows always hashed, legacy `NULL`-hash non-retired row fails the whole batch closed (`LEGACY_ARTIFACT_HASH_UNAVAILABLE`), retired `NULL`-hash row doesn't block, single migration head, downgrade removes exactly the 5 new columns |
 | `tests/integration/test_medication_a1b_orchestrator_postgres.py` | §11 — Postgres-specific partial-unique-index parity for reference dedup, real-transaction rollback proof, both dialect-load-bearing races (§2a's unique-index write-failure trigger, §5's reference race) run against real Postgres |
 
 Total new test count target: comparable density to F1 (23 integration +
