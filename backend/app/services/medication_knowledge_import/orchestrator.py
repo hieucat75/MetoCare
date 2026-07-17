@@ -32,10 +32,12 @@ from app.services.knowledge_repository import add_draft, build_draft
 from app.services.medication_knowledge_import import loader, provenance, validators
 from app.services.medication_knowledge_import import versioning as v
 from app.services.medication_knowledge_import.references import (
+    ReferenceIdentityMetadataConflictError,
     citation_identity_key,
-    find_existing_reference,
+    find_existing_reference_or_raise_conflict,
     find_or_create_reference,
     link_reference_to_row,
+    reference_artifact,
 )
 from app.services.medication_knowledge_import.schema import KnowledgeFile, ReferenceEntry
 
@@ -258,28 +260,61 @@ def _build_dry_run_report(db: Session, plans: list[ImportPlan]) -> list[PlannedW
     placeholder instead of inserting, so a second file in the same batch
     citing the same brand-new reference correctly reports reuse instead of
     double-counting a create. Never calls `find_or_create_reference` itself
-    (that function may insert) — uses the read-only `find_existing_reference`
-    query directly.
+    (that function may insert) — uses the read-only
+    `find_existing_reference_or_raise_conflict` query directly, which lets
+    a `ReferenceIdentityMetadataConflictError` propagate up through
+    `import_batch`'s own catch-all exactly like a real Phase 2 write
+    failure would (PTH round-2 P1 fix) — dry-run must detect the same
+    conflict the real run would, never report success only for the real
+    run to fail afterward.
 
-    Tracks reused-vs-created per plan (PTH round-1 P2 fix) so the report
-    tells the caller which references each file's real run would insert
-    versus which it would find-and-reuse — not just the version_action."""
-    ref_cache: dict[tuple, str] = {}
+    `NO_OP_ALREADY_IMPORTED` plans are skipped entirely, same as the real
+    write path's own `continue` (PTH round-2 P2 fix) — their references
+    are never looked up and never populate `ref_cache`, so a later plan
+    in the same batch sharing that citation correctly does its own real
+    lookup instead of wrongly counting it as "reused from an earlier
+    planned create" that the real run would never have performed.
+
+    `ref_cache` stores `(id_or_placeholder, artifact)` pairs, mirroring
+    `find_or_create_reference`'s own same-batch conflict check (PTH
+    round-2 P1 fix) — a cache HIT here also re-verifies the full artifact,
+    so a same-batch metadata conflict is caught in dry-run identically to
+    the real run, not just a cross-batch DB-query mismatch."""
+    ref_cache: dict[tuple, tuple[str, dict]] = {}
     planned: list[PlannedWrite] = []
     for plan in plans:
+        if plan.version_action is v.VersionAction.NO_OP_ALREADY_IMPORTED:
+            planned.append(
+                PlannedWrite(
+                    path=plan.path,
+                    version_action=plan.version_action,
+                    references_reused=0,
+                    references_created=0,
+                )
+            )
+            continue
         reused = 0
         created = 0
         for ref in plan.references:
             cache_key = citation_identity_key(ref)
-            if cache_key in ref_cache:
+            incoming_artifact = reference_artifact(ref)
+            cached = ref_cache.get(cache_key)
+            if cached is not None:
+                _cached_id, cached_artifact = cached
+                if cached_artifact != incoming_artifact:
+                    raise ReferenceIdentityMetadataConflictError(
+                        f"REFERENCE_IDENTITY_METADATA_CONFLICT: an earlier file in "
+                        f"this SAME batch already resolved citation identity "
+                        f"{cache_key!r} with different authored metadata."
+                    )
                 reused += 1
                 continue
-            existing = find_existing_reference(db, ref)
+            existing = find_existing_reference_or_raise_conflict(db, ref)
             if existing is not None:
-                ref_cache[cache_key] = existing.id
+                ref_cache[cache_key] = (existing.id, incoming_artifact)
                 reused += 1
             else:
-                ref_cache[cache_key] = f"planned:{len(ref_cache)}"
+                ref_cache[cache_key] = (f"planned:{len(ref_cache)}", incoming_artifact)
                 created += 1
         planned.append(
             PlannedWrite(
@@ -319,7 +354,7 @@ def import_batch(db: Session, paths: list[Path], *, dry_run: bool = False) -> Ba
             return BatchResult(success=True, errors=[], written=[], dry_run=True, planned=planned)
 
         written: list[WrittenRow] = []
-        ref_cache: dict[tuple, str] = {}
+        ref_cache: dict[tuple, tuple[str, dict]] = {}
         for plan in plans:
             if plan.version_action is v.VersionAction.NO_OP_ALREADY_IMPORTED:
                 continue  # already imported — no draft, no reference writes

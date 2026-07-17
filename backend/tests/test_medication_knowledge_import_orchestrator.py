@@ -47,16 +47,38 @@ def _write_file(
     *,
     concept_code: str,
     version: str = "1.0.0",
-    title: str = "Test Title",
+    title: str | None = None,
     url: str | None = None,
+    source_type: str = "formulary",
+    document_identifier: str | None = None,
     reviewed_at: str = "2026-01-01",
     specialty_codes: list[str] | None = None,
 ) -> Path:
-    # A random per-call default (unless the caller pins one explicitly) —
-    # since artifact_hash now covers url (PTH round-1 P1 fix), two calls
-    # that want to produce a genuinely IDENTICAL artifact must pass the
-    # SAME explicit url; otherwise each file is a distinct new artifact.
+    # Random per-call defaults (unless the caller pins them explicitly) —
+    # the fallback citation identity is (publisher, title, publication_date,
+    # source_version, accessed_at), all otherwise-fixed literals across
+    # this file's calls; a shared conftest.py SQLite DB across the WHOLE
+    # test session (no per-test rollback) means two calls that don't pin a
+    # distinct title would otherwise collide on the SAME reference
+    # identity. PTH round-2 P1 fix: reference reuse now requires every
+    # authored field (including url/source_type) to match the identity's
+    # existing row, not just the identity fields — so two calls that WANT
+    # to share one reference must pass the SAME explicit title AND url;
+    # otherwise each call must get its own independent, non-colliding
+    # identity by default.
+    resolved_title = title if title is not None else f"Test Title {uuid.uuid4().hex[:8]}"
     resolved_url = url if url is not None else f"https://example.invalid/{uuid.uuid4().hex[:8]}"
+    reference: dict = {
+        "publisher": "Test Publisher",
+        "title": resolved_title,
+        "source_type": source_type,
+        "url": resolved_url,
+        "publication_date": "2024-01-01",
+        "source_version": "1.0",
+        "accessed_at": "2026-01-01",
+    }
+    if document_identifier is not None:
+        reference["document_identifier"] = document_identifier
     data = {
         "metadata": {
             "knowledge_type": "side_effect",
@@ -71,17 +93,7 @@ def _write_file(
             "label": "Label",
             "description": "synthetic test description",
         },
-        "references": [
-            {
-                "publisher": "Test Publisher",
-                "title": title,
-                "source_type": "formulary",
-                "url": resolved_url,
-                "publication_date": "2024-01-01",
-                "source_version": "1.0",
-                "accessed_at": "2026-01-01",
-            }
-        ],
+        "references": [reference],
         "review_metadata": {
             "source": "Test Source",
             "version": version,
@@ -305,11 +317,12 @@ class TestDryRun:
         self, db, tmp_path, ingredient_name
     ) -> None:
         shared_title = f"Shared {uuid.uuid4().hex[:8]}"
+        shared_url = f"https://example.invalid/{uuid.uuid4().hex[:8]}"
         path1 = _write_file(
-            tmp_path, ingredient_name, concept_code="chills_a", title=shared_title
+            tmp_path, ingredient_name, concept_code="chills_a", title=shared_title, url=shared_url
         )
         path2 = _write_file(
-            tmp_path, ingredient_name, concept_code="chills_b", title=shared_title
+            tmp_path, ingredient_name, concept_code="chills_b", title=shared_title, url=shared_url
         )
 
         db1 = SessionLocal()
@@ -343,12 +356,17 @@ class TestDryRun:
         self, db, tmp_path, ingredient_name
     ) -> None:
         shared_title = f"Existing {uuid.uuid4().hex[:8]}"
-        path1 = _write_file(tmp_path, ingredient_name, concept_code="dryrun_a", title=shared_title)
+        shared_url = f"https://example.invalid/{uuid.uuid4().hex[:8]}"
+        path1 = _write_file(
+            tmp_path, ingredient_name, concept_code="dryrun_a", title=shared_title, url=shared_url
+        )
         db1 = SessionLocal()
         assert import_batch(db1, [path1]).success
         db1.close()
 
-        path2 = _write_file(tmp_path, ingredient_name, concept_code="dryrun_b", title=shared_title)
+        path2 = _write_file(
+            tmp_path, ingredient_name, concept_code="dryrun_b", title=shared_title, url=shared_url
+        )
         db2 = SessionLocal()
         dry_result = import_batch(db2, [path2], dry_run=True)
         db2.close()
@@ -456,6 +474,160 @@ class TestMultiRowSameVersionResolution:
             db.query(DrugSideEffect).filter_by(concept_code="dup_version_effect").count()
         )
         assert count == 2, "the pre-existing conflicting pair must be untouched, no 3rd row added"
+
+
+class TestReferenceIdentityMetadataConflict:
+    """PTH round-2 P1 fix, end-to-end: artifact_hash correctly detects a
+    new version (never silently NO_OP), but the new draft must not link
+    to an EXISTING DrugReference row whose authored metadata (url, title,
+    publisher, source_type) disagrees with what this version's file
+    actually wrote — the knowledge row would claim one artifact while the
+    DB relationship it links to holds another. Fails the whole batch
+    closed instead: zero draft/reference/link writes survive."""
+
+    def test_version_bump_same_document_identifier_different_url_fails_closed(
+        self, db, tmp_path, ingredient_name
+    ) -> None:
+        doc_id = f"ISBN-{uuid.uuid4().hex[:8]}"
+        path1 = _write_file(
+            tmp_path,
+            ingredient_name,
+            concept_code="ref_conflict_url",
+            version="1.0.0",
+            document_identifier=doc_id,
+            url="https://example.invalid/original",
+        )
+        db1 = SessionLocal()
+        assert import_batch(db1, [path1]).success
+        db1.close()
+
+        path2 = _write_file(
+            tmp_path,
+            ingredient_name,
+            concept_code="ref_conflict_url",
+            version="2.0.0",
+            document_identifier=doc_id,
+            url="https://example.invalid/changed",
+        )
+        fresh_db = SessionLocal()
+        result = import_batch(fresh_db, [path2])
+        fresh_db.close()
+        assert not result.success
+        assert "REFERENCE_IDENTITY_METADATA_CONFLICT" in result.errors[0].message
+
+        rows = db.query(DrugSideEffect).filter_by(concept_code="ref_conflict_url").all()
+        assert len(rows) == 1, "no 2nd draft row must survive the conflict"
+        assert db.query(DrugReference).filter_by(document_identifier=doc_id).count() == 1
+
+    def test_version_bump_same_fallback_identity_different_source_type_fails_closed(
+        self, db, tmp_path, ingredient_name
+    ) -> None:
+        shared = f"Shared {uuid.uuid4().hex[:8]}"
+        shared_url = f"https://example.invalid/{uuid.uuid4().hex[:8]}"
+        path1 = _write_file(
+            tmp_path,
+            ingredient_name,
+            concept_code="ref_conflict_source_type",
+            version="1.0.0",
+            title=shared,
+            url=shared_url,
+            source_type="formulary",
+        )
+        db1 = SessionLocal()
+        assert import_batch(db1, [path1]).success
+        db1.close()
+
+        # Same fallback identity (publisher/title/publication_date/
+        # source_version/accessed_at all still equal via `title=shared` +
+        # `url=shared_url`) but a DIFFERENT source_type -- an authored
+        # field the identity query doesn't cover.
+        path2 = _write_file(
+            tmp_path,
+            ingredient_name,
+            concept_code="ref_conflict_source_type",
+            version="2.0.0",
+            title=shared,
+            url=shared_url,
+            source_type="peer_reviewed",
+        )
+        fresh_db = SessionLocal()
+        result = import_batch(fresh_db, [path2])
+        fresh_db.close()
+        assert not result.success
+        assert "REFERENCE_IDENTITY_METADATA_CONFLICT" in result.errors[0].message
+
+        rows = db.query(DrugSideEffect).filter_by(concept_code="ref_conflict_source_type").all()
+        assert len(rows) == 1
+
+    def test_matching_metadata_across_versions_reuses_without_conflict(
+        self, db, tmp_path, ingredient_name
+    ) -> None:
+        """Sanity counterpart: a version bump that keeps the SAME full
+        reference metadata must still resolve cleanly (new draft, reused
+        reference), proving the conflict check doesn't over-fire on a
+        genuinely unchanged citation."""
+        shared = f"Shared {uuid.uuid4().hex[:8]}"
+        shared_url = f"https://example.invalid/{uuid.uuid4().hex[:8]}"
+        path1 = _write_file(
+            tmp_path,
+            ingredient_name,
+            concept_code="ref_no_conflict",
+            version="1.0.0",
+            title=shared,
+            url=shared_url,
+        )
+        db1 = SessionLocal()
+        assert import_batch(db1, [path1]).success
+        db1.close()
+
+        path2 = _write_file(
+            tmp_path,
+            ingredient_name,
+            concept_code="ref_no_conflict",
+            version="2.0.0",
+            title=shared,
+            url=shared_url,
+        )
+        fresh_db = SessionLocal()
+        result = import_batch(fresh_db, [path2])
+        fresh_db.close()
+        assert result.success, result.errors
+        assert db.query(DrugReference).filter_by(title=shared).count() == 1
+
+    def test_dry_run_detects_same_conflict_as_real_run(
+        self, db, tmp_path, ingredient_name
+    ) -> None:
+        """Dry-run must fail on the SAME conflict the real run would —
+        never report success only for a subsequent real run to fail."""
+        doc_id = f"ISBN-{uuid.uuid4().hex[:8]}"
+        path1 = _write_file(
+            tmp_path,
+            ingredient_name,
+            concept_code="ref_conflict_dryrun",
+            version="1.0.0",
+            document_identifier=doc_id,
+            url="https://example.invalid/original",
+        )
+        db1 = SessionLocal()
+        assert import_batch(db1, [path1]).success
+        db1.close()
+
+        path2 = _write_file(
+            tmp_path,
+            ingredient_name,
+            concept_code="ref_conflict_dryrun",
+            version="2.0.0",
+            document_identifier=doc_id,
+            url="https://example.invalid/changed",
+        )
+        fresh_db = SessionLocal()
+        dry_result = import_batch(fresh_db, [path2], dry_run=True)
+        fresh_db.close()
+        assert not dry_result.success, "dry-run must detect the conflict, not report success"
+        assert "REFERENCE_IDENTITY_METADATA_CONFLICT" in dry_result.errors[0].message
+
+        rows = db.query(DrugSideEffect).filter_by(concept_code="ref_conflict_dryrun").all()
+        assert len(rows) == 1, "dry-run must never write, regardless of the conflict"
 
 
 class TestZeroApprovedRows:

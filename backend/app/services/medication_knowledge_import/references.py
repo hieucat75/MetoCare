@@ -41,6 +41,94 @@ def citation_identity_key(ref: ReferenceEntry) -> tuple:
     )
 
 
+class ReferenceIdentityMetadataConflictError(ValueError):
+    """REFERENCE_IDENTITY_METADATA_CONFLICT — raised when a `DrugReference`
+    row matches this file's citation identity (PTH round-2 P1 fix), but
+    its other authored fields (publisher/title/source_type/url/
+    publication_date) differ from what the incoming file actually wrote.
+    F1's citation identity is deliberately narrower than the full authored
+    artifact (see `versioning.artifact_hash`'s own docstring), so a
+    version bump that changes e.g. `url` while keeping the same DOI would
+    otherwise silently reuse a reference row whose stored fields no
+    longer match what this version's artifact_hash claims — the knowledge
+    row would assert one artifact while the DB relationship it links to
+    holds another. Never silently reused, never updated in place, never
+    inserted as a second row that would violate F1's own unique identity
+    index — fails the whole batch closed instead. Manual remediation
+    (retire the stale row, or correct the newer file back to the
+    original's metadata) is required before this citation can be
+    imported again."""
+
+
+def reference_artifact(ref: ReferenceEntry) -> dict:
+    """Normalized dict of every authored reference field — the full
+    comparison unit for `ReferenceIdentityMetadataConflictError`, both
+    against a persisted `DrugReference` row (`_reference_metadata_matches`)
+    and against another `ReferenceEntry` seen earlier in the SAME batch
+    (the `batch_cache` value in `find_or_create_reference` and
+    `orchestrator._build_dry_run_report`). Exported (no underscore)
+    because both this module and `orchestrator.py` need it."""
+    return {
+        "publisher": ref.publisher,
+        "title": ref.title,
+        "source_type": ref.source_type,
+        "url": str(ref.url) if ref.url is not None else None,
+        "document_identifier": ref.document_identifier,
+        "publication_date": ref.publication_date,
+        "source_version": ref.source_version,
+        "accessed_at": ref.accessed_at,
+    }
+
+
+def _drug_reference_artifact(existing: DrugReference) -> dict:
+    """Same field set as `reference_artifact`, read off a persisted row."""
+    return {
+        "publisher": existing.publisher,
+        "title": existing.title,
+        "source_type": existing.source_type,
+        "url": existing.url,
+        "document_identifier": existing.document_identifier,
+        "publication_date": existing.publication_date,
+        "source_version": existing.source_version,
+        "accessed_at": existing.accessed_at,
+    }
+
+
+def _reference_metadata_matches(existing: DrugReference, ref: ReferenceEntry) -> bool:
+    """True iff `existing` (already matched on citation identity) also
+    matches every OTHER authored field of `ref`. Citation identity alone
+    guarantees equality on some fields already (e.g. document_identifier/
+    source_version/accessed_at on that branch) — checking all 8 fields
+    here is simply defensive, not redundant-but-wrong, since the fields
+    the identity query does NOT cover are exactly the ones that can
+    silently drift (see `ReferenceIdentityMetadataConflictError`)."""
+    return _drug_reference_artifact(existing) == reference_artifact(ref)
+
+
+def find_existing_reference_or_raise_conflict(
+    db: Session, ref: ReferenceEntry
+) -> DrugReference | None:
+    """`find_existing_reference` plus the identity/metadata consistency
+    check (PTH round-2 P1 fix). Returns `None` if no row matches the
+    citation identity at all (a genuine new reference — safe to create).
+    Raises `ReferenceIdentityMetadataConflictError` if a row DOES match
+    the identity but its other authored fields differ. Read-only — used
+    by both `find_or_create_reference` (real write path) and
+    `orchestrator._build_dry_run_report` (dry-run), so a conflict is
+    detected identically in both, never surfacing only on the real run
+    after a dry-run reported success."""
+    existing = find_existing_reference(db, ref)
+    if existing is not None and not _reference_metadata_matches(existing, ref):
+        raise ReferenceIdentityMetadataConflictError(
+            f"REFERENCE_IDENTITY_METADATA_CONFLICT: an existing drug_references "
+            f"row matches this file's citation identity {citation_identity_key(ref)!r} "
+            "but its publisher/title/source_type/url/publication_date differ from "
+            "what this file authored — refusing to silently reuse a reference row "
+            "under stale metadata."
+        )
+    return existing
+
+
 def find_existing_reference(db: Session, ref: ReferenceEntry) -> DrugReference | None:
     """Read-only lookup only — the query half of `find_or_create_reference`,
     using F1's two-tiered citation identity exactly. Exposed separately
@@ -81,7 +169,7 @@ def find_or_create_reference(
     db: Session,
     ref: ReferenceEntry,
     *,
-    batch_cache: dict[tuple, str],
+    batch_cache: dict[tuple, tuple[str, dict]],
 ) -> str:
     """Find-or-create one `DrugReference` row for one authoring-file
     reference entry, using F1's two-tiered citation identity exactly.
@@ -93,32 +181,42 @@ def find_or_create_reference(
     unflushed insert), not a genuine race — it must be resolved from the
     cache, not by hitting the cross-batch unique-index-rejection path this
     function also participates in for true races between separate
-    `import_batch` invocations.
+    `import_batch` invocations. `batch_cache` values are `(id, artifact)`
+    pairs, not bare ids (PTH round-2 P1 fix, same-batch case): a cache HIT
+    still re-checks the incoming reference's full artifact against what
+    was cached, so two files in the SAME batch sharing a citation identity
+    but disagreeing on another authored field raise the same conflict a
+    cross-batch DB-query mismatch would — the batch-local cache is a
+    dedup optimization, not an escape hatch from the consistency check.
 
-    Known limitation (Codex round-1 review, not fixed here — see PR #132
-    discussion): reuse is keyed on F1's citation identity, which is
-    narrower than the reference's full authored fields. If a later
-    version of a knowledge file changes `url`/`source_type` (or, on the
-    document-identifier branch, `publisher`/`title`/`publication_date`)
-    while keeping the same citation identity, `versioning.artifact_hash`
-    correctly detects the change (forcing a NEW_DRAFT rather than a
-    silent NO_OP), but the new draft is linked to the EXISTING
-    `DrugReference` row — whose stored fields still reflect whichever
-    import created it first, not the newer file's values. Widening reuse
-    to require full-field equality (rejecting or versioning the reference
-    itself on a partial match) is a real design change to F1's dedup
-    model, out of scope for this PR; flagged to PTH for a future decision.
+    Identity/metadata consistency (PTH round-2 P1 fix): a row matching
+    citation identity but disagreeing on another authored field (url,
+    source_type, or — on the fallback branch — the fields the identity
+    query doesn't cover) raises `ReferenceIdentityMetadataConflictError`
+    rather than silently reusing stale metadata, updating the row in
+    place, or inserting a second row that would violate F1's own unique
+    identity index.
 
     Never commits/rolls back — `add()` + `flush()` only.
     """
     cache_key = citation_identity_key(ref)
-    cached_id = batch_cache.get(cache_key)
-    if cached_id is not None:
+    incoming_artifact = reference_artifact(ref)
+    cached = batch_cache.get(cache_key)
+    if cached is not None:
+        cached_id, cached_artifact = cached
+        if cached_artifact != incoming_artifact:
+            raise ReferenceIdentityMetadataConflictError(
+                f"REFERENCE_IDENTITY_METADATA_CONFLICT: an earlier file in this "
+                f"SAME batch already resolved citation identity {cache_key!r} with "
+                "different authored metadata (publisher/title/source_type/url/"
+                "publication_date) — refusing to silently share one reference row "
+                "across two disagreeing authored artifacts within one batch."
+            )
         return cached_id
 
-    existing = find_existing_reference(db, ref)
+    existing = find_existing_reference_or_raise_conflict(db, ref)
     if existing is not None:
-        batch_cache[cache_key] = existing.id
+        batch_cache[cache_key] = (existing.id, incoming_artifact)
         return existing.id
 
     new_reference = DrugReference(
@@ -137,7 +235,7 @@ def find_or_create_reference(
     # semantics treat this as a whole-batch failure, not a recoverable
     # duplicate.
     db.flush()
-    batch_cache[cache_key] = new_reference.id
+    batch_cache[cache_key] = (new_reference.id, incoming_artifact)
     return new_reference.id
 
 

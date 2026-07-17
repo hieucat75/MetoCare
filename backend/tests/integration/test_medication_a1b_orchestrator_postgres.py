@@ -112,8 +112,27 @@ def _write_file(
     ingredient_name: str,
     *,
     concept_code: str,
+    version: str = "1.0.0",
     title: str = "Test Title",
+    url: str | None = None,
+    document_identifier: str | None = None,
 ) -> Path:
+    # PTH round-2 P1 fix: reference reuse now requires the full authored
+    # artifact (including url) to match, not just F1's narrower citation
+    # identity — two calls that want to share ONE reference must pass the
+    # SAME explicit title AND url, not just a shared title.
+    resolved_url = url if url is not None else f"https://example.invalid/{uuid.uuid4().hex[:8]}"
+    reference: dict = {
+        "publisher": "Test Publisher",
+        "title": title,
+        "source_type": "formulary",
+        "url": resolved_url,
+        "publication_date": "2024-01-01",
+        "source_version": "1.0",
+        "accessed_at": "2026-01-01",
+    }
+    if document_identifier is not None:
+        reference["document_identifier"] = document_identifier
     data = {
         "metadata": {
             "knowledge_type": "side_effect",
@@ -128,20 +147,10 @@ def _write_file(
             "label": "Label",
             "description": "synthetic test description",
         },
-        "references": [
-            {
-                "publisher": "Test Publisher",
-                "title": title,
-                "source_type": "formulary",
-                "url": f"https://example.invalid/{uuid.uuid4().hex[:8]}",
-                "publication_date": "2024-01-01",
-                "source_version": "1.0",
-                "accessed_at": "2026-01-01",
-            }
-        ],
+        "references": [reference],
         "review_metadata": {
             "source": "Test Source",
-            "version": "1.0.0",
+            "version": version,
             "evidence_level": "moderate",
             "reviewed_at": "2026-01-01",
             "authored_by": "test-author",
@@ -164,8 +173,9 @@ class TestReferenceDedupParityOnRealIndex:
         self, session_factory, ingredient, tmp_path
     ) -> None:
         shared_title = f"Shared {uuid.uuid4().hex[:8]}"
+        shared_url = f"https://example.invalid/{uuid.uuid4().hex[:8]}"
         path1 = _write_file(
-            tmp_path, ingredient["name"], concept_code="pg_ref_a", title=shared_title
+            tmp_path, ingredient["name"], concept_code="pg_ref_a", title=shared_title, url=shared_url
         )
         db1 = session_factory()
         result1 = import_batch(db1, [path1])
@@ -175,7 +185,7 @@ class TestReferenceDedupParityOnRealIndex:
         # Fresh session, fresh batch-local cache — must reuse via the real
         # DB query against the partial unique index, not fail or duplicate.
         path2 = _write_file(
-            tmp_path, ingredient["name"], concept_code="pg_ref_b", title=shared_title
+            tmp_path, ingredient["name"], concept_code="pg_ref_b", title=shared_title, url=shared_url
         )
         db2 = session_factory()
         result2 = import_batch(db2, [path2])
@@ -186,6 +196,57 @@ class TestReferenceDedupParityOnRealIndex:
         try:
             refs = verify_db.query(DrugReference).filter_by(title=shared_title).all()
             assert len(refs) == 1, "must reuse the existing committed reference, not duplicate it"
+        finally:
+            verify_db.close()
+
+
+class TestReferenceIdentityMetadataConflict:
+    """PTH round-2 P1 fix, on the real Postgres partial unique index: a
+    version bump that changes an authored reference field (url) while
+    keeping the same citation identity must fail the whole batch closed,
+    never silently link to the existing row's stale metadata."""
+
+    def test_version_bump_same_document_identifier_different_url_fails_closed(
+        self, session_factory, ingredient, tmp_path
+    ) -> None:
+        doc_id = f"ISBN-{uuid.uuid4().hex[:8]}"
+        path1 = _write_file(
+            tmp_path,
+            ingredient["name"],
+            concept_code="pg_ref_conflict",
+            version="1.0.0",
+            document_identifier=doc_id,
+            url="https://example.invalid/original",
+        )
+        db1 = session_factory()
+        assert import_batch(db1, [path1]).success
+        db1.close()
+
+        path2 = _write_file(
+            tmp_path,
+            ingredient["name"],
+            concept_code="pg_ref_conflict",
+            version="2.0.0",
+            document_identifier=doc_id,
+            url="https://example.invalid/changed",
+        )
+        db2 = session_factory()
+        result = import_batch(db2, [path2])
+        db2.close()
+        assert not result.success
+        assert "REFERENCE_IDENTITY_METADATA_CONFLICT" in result.errors[0].message
+
+        verify_db = session_factory()
+        try:
+            rows = (
+                verify_db.query(DrugSideEffect)
+                .filter_by(concept_code="pg_ref_conflict")
+                .all()
+            )
+            assert len(rows) == 1, "no 2nd draft row must survive the conflict"
+            assert (
+                verify_db.query(DrugReference).filter_by(document_identifier=doc_id).count() == 1
+            )
         finally:
             verify_db.close()
 

@@ -8,11 +8,13 @@ from __future__ import annotations
 
 import uuid
 
+import pytest
 from app.models.drug_knowledge_content import DrugSideEffect
 from app.models.drug_knowledge_core import DrugClass, DrugIngredient
 from app.models.drug_knowledge_references import DrugReference, KnowledgeReferenceLink
 from app.services.knowledge_repository import add_draft, build_draft
 from app.services.medication_knowledge_import.references import (
+    ReferenceIdentityMetadataConflictError,
     find_existing_reference,
     find_or_create_reference,
     link_reference_to_row,
@@ -115,23 +117,92 @@ class TestFindOrCreateReference:
             == 2
         )
 
-    def test_document_identifier_preferred_over_title(self, db) -> None:
-        """Same document_identifier, different publisher/title -> same row."""
+    def test_document_identifier_match_with_identical_metadata_reuses(self, db) -> None:
+        """Same document_identifier AND identical publisher/title/etc,
+        constructed via two SEPARATE ReferenceEntry objects (not the same
+        Python object) — must reuse, proving the metadata-equality check
+        itself passes on genuinely matching field VALUES, not by object
+        identity accident."""
         doc_id = f"ISBN-{uuid.uuid4().hex[:8]}"
+        shared_url = f"https://example.invalid/{uuid.uuid4().hex[:8]}"
         id1 = find_or_create_reference(
             db,
-            _ref(document_identifier=doc_id, publisher="A", title="Title A"),
+            _ref(
+                document_identifier=doc_id, publisher="Same Pub", title="Same Title", url=shared_url
+            ),
             batch_cache={},
         )
         db.flush()
         id2 = find_or_create_reference(
             db,
-            _ref(document_identifier=doc_id, publisher="B", title="Title B"),
+            _ref(
+                document_identifier=doc_id, publisher="Same Pub", title="Same Title", url=shared_url
+            ),
             batch_cache={},
         )
         db.commit()
         assert id1 == id2
         assert db.query(DrugReference).filter_by(document_identifier=doc_id).count() == 1
+
+    def test_document_identifier_match_but_publisher_title_differ_raises_conflict(
+        self, db
+    ) -> None:
+        """PTH round-2 P1 fix: F1's citation identity on the document-
+        identifier branch does not include publisher/title — reusing a
+        row whose publisher/title differ from what THIS file authored
+        would link a new knowledge draft to stale reference metadata even
+        though its own artifact_hash reflects the NEW values. Must raise,
+        never silently reuse, never update the existing row, never insert
+        a second row that would violate F1's own unique identity index."""
+        doc_id = f"ISBN-{uuid.uuid4().hex[:8]}"
+        find_or_create_reference(
+            db,
+            _ref(document_identifier=doc_id, publisher="A", title="Title A"),
+            batch_cache={},
+        )
+        db.commit()
+
+        with pytest.raises(
+            ReferenceIdentityMetadataConflictError, match="REFERENCE_IDENTITY_METADATA_CONFLICT"
+        ):
+            find_or_create_reference(
+                db,
+                _ref(document_identifier=doc_id, publisher="B", title="Title B"),
+                batch_cache={},
+            )
+        assert db.query(DrugReference).filter_by(document_identifier=doc_id).count() == 1
+
+    def test_fallback_identity_match_but_source_type_differs_raises_conflict(self, db) -> None:
+        shared = f"Shared {uuid.uuid4().hex[:8]}"
+        find_or_create_reference(
+            db,
+            _ref(publisher=shared, title=shared, source_type="formulary"),
+            batch_cache={},
+        )
+        db.commit()
+
+        with pytest.raises(ReferenceIdentityMetadataConflictError):
+            find_or_create_reference(
+                db,
+                _ref(publisher=shared, title=shared, source_type="peer_reviewed"),
+                batch_cache={},
+            )
+
+    def test_fallback_identity_match_but_url_differs_raises_conflict(self, db) -> None:
+        shared = f"Shared {uuid.uuid4().hex[:8]}"
+        find_or_create_reference(
+            db,
+            _ref(publisher=shared, title=shared, url="https://example.invalid/original"),
+            batch_cache={},
+        )
+        db.commit()
+
+        with pytest.raises(ReferenceIdentityMetadataConflictError):
+            find_or_create_reference(
+                db,
+                _ref(publisher=shared, title=shared, url="https://example.invalid/changed"),
+                batch_cache={},
+            )
 
     def test_no_document_identifier_never_matches_row_that_has_one(self, db) -> None:
         """A reference with document_identifier set must not be matched by
@@ -196,16 +267,17 @@ class TestLinkReferenceToRow:
 
     def test_duplicate_reference_within_file_creates_one_link(self, db) -> None:
         """Two references in the same file sharing a document_identifier
-        but different publisher/title resolve to the SAME DrugReference
-        row (per document-identifier-first identity) -- both linking to
-        the same row must still produce exactly one link, not a duplicate
-        insert attempt against uq_krl_no_duplicate_link."""
+        AND identical authored metadata resolve to the SAME DrugReference
+        row -- both linking to the same row must still produce exactly
+        one link, not a duplicate insert attempt against
+        uq_krl_no_duplicate_link."""
         ingredient = _make_ingredient(db)
         row = _make_row(db, ingredient.id)
         doc_id = f"ISBN-{uuid.uuid4().hex[:8]}"
+        shared_url = f"https://example.invalid/{uuid.uuid4().hex[:8]}"
         cache: dict = {}
-        ref_a = _ref(document_identifier=doc_id, publisher="A", title="Title A")
-        ref_b = _ref(document_identifier=doc_id, publisher="B", title="Title B")
+        ref_a = _ref(document_identifier=doc_id, publisher="Same", title="Same Title", url=shared_url)
+        ref_b = _ref(document_identifier=doc_id, publisher="Same", title="Same Title", url=shared_url)
         ref_id_a = find_or_create_reference(db, ref_a, batch_cache=cache)
         ref_id_b = find_or_create_reference(db, ref_b, batch_cache=cache)
         assert ref_id_a == ref_id_b
@@ -214,3 +286,21 @@ class TestLinkReferenceToRow:
         db.commit()
         assert db.query(DrugReference).filter_by(document_identifier=doc_id).count() == 1
         assert db.query(KnowledgeReferenceLink).filter_by(knowledge_row_id=row.id).count() == 1
+
+    def test_same_batch_conflicting_metadata_under_shared_identity_raises_conflict(
+        self, db
+    ) -> None:
+        """PTH round-2 P1 fix, same-batch case: the batch-local cache
+        stores `(id, artifact)`, not a bare id — a cache HIT still
+        re-verifies the incoming reference's full artifact, so two
+        references in the SAME batch sharing a citation identity but
+        disagreeing on another authored field must raise, not silently
+        share one reference row (the gap the original version of this
+        test class exercised as a false 'reuse' case)."""
+        doc_id = f"ISBN-{uuid.uuid4().hex[:8]}"
+        cache: dict = {}
+        ref_a = _ref(document_identifier=doc_id, publisher="A", title="Title A")
+        ref_b = _ref(document_identifier=doc_id, publisher="B", title="Title B")
+        find_or_create_reference(db, ref_a, batch_cache=cache)
+        with pytest.raises(ReferenceIdentityMetadataConflictError):
+            find_or_create_reference(db, ref_b, batch_cache=cache)
