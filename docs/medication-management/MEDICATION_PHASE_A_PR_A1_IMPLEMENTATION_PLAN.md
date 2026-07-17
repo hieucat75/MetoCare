@@ -237,7 +237,7 @@ A single combined PR is viable if PTH prefers fewer review cycles — the three 
 | "Drug References" and "disclaimer" have no DB column — risk of someone "just adding a column" mid-PR to make the spec literally match | **Governance** | This plan's resolution (§3) is the agreed interpretation; any deviation requiring a new column/table is a schema change and needs its own ADR + PTH sign-off, out of scope for Phase A. |
 | Calcium has no `drug_ingredients` row — Phase B cannot import Calcium content without a prerequisite data step | **Technical, Phase-B-blocking** | Flagged now (§1); resolution (a small data-only insert, not a migration) is explicitly deferred to whoever starts Phase B, not built in Phase A. |
 | Idempotency/versioning race on concurrent same-business-key imports | **Technical, low severity** | Documented as an accepted single-writer operational constraint (§4); test proves the failure mode is bounded (harmless duplicate), not corruption. |
-| `clinical_specialties` unseeded — specialty validation is currently inert | **Governance** | Rule implemented per spec for forward-compatibility; Phase B content should not declare specialties (not required while nothing reaches `approved`). |
+| `clinical_specialties` unseeded — specialty validation is currently inert | **Governance — ✅ resolved 2026-07-17 by PR #129.** `clinical_specialties` is now seeded (7-code vocabulary); `provenance.check_specialty_exists` is a meaningful DB-existence check, not vacuous. | Rule implemented per spec for forward-compatibility; Phase B content should not declare specialties (not required while nothing reaches `approved`). |
 | A future contributor extends `orchestrator.py` to call `validate_transition(..., "approved")` "just to see if it works" | **Clinical misinformation risk** | This is the actual mechanism that would let unreviewed content reach patients. Stop gate: PR review (Codex + compliance + architecture, all mandatory) must explicitly grep for any `"approved"` string literal or `validate_transition` call with a non-`clinical_review` target anywhere in the diff, same check this session's own EC-07 verification used. |
 | Phase B content authored without real, checkable references (silently AI-assisted despite the `ai_generated` flag) | **Clinical misinformation risk** | Out of Phase A's ability to fully prevent (it's a process/authorship question, not a code question) — the `ai_generated` flag and mandatory `references` list are the only automatable proxies; ultimate responsibility sits with whoever authors Phase B content, per PTH's own "do not invent medical facts" instruction. |
 | Scope creep: Phase A's preview renderer becomes a stepping-stone someone wires into a route "since it's basically an API already" | **Governance** | Stop gate: no file under `medication_knowledge_import/` may be imported by anything under `backend/app/api/`. Same CI/PR-diff check as the "no API changes" test in §7. |
@@ -287,19 +287,32 @@ Per §7 — unit tests on SQLite (`db` fixture) for pure logic, `pytest.mark.int
 - Any schema migration (new column/table for references or disclaimer).
 - Any API route, any frontend change, any AI/context-builder change.
 - Any transition to `approved`, any Clinical Advisor role/permission system.
-- Seeding `clinical_specialties` or creating the missing Calcium `drug_ingredients` row (both deferred to whoever starts Phase B).
+- Seeding `clinical_specialties` (**this scope line is now historical — done
+  by #129 on 2026-07-17, ahead of Phase B, not deferred to it as originally
+  planned here**) or creating the missing Calcium `drug_ingredients` row
+  (still deferred to whoever starts Phase B — unaffected by the above).
 - Authoring any real clinical content (Phase A's tests use only synthetic fixtures).
 - New ADRs — this plan resolves the "Drug References"/"disclaimer" schema gaps by keeping them out of the DB entirely (versioned source file + rendering-time constant, respectively), not by proposing new schema.
 
-### Verdict (updated post-PTH-review, 2026-07-16)
+### Verdict (as of 2026-07-16 — frozen historical snapshot, superseded below)
 
-| Item | Status |
+**⚠️ This table is a frozen record of the 2026-07-16 PTH review and is now
+stale in two rows (Codex round-4 flagged this document had no single
+unambiguous GO/NO-GO state without this note).** For the current,
+authoritative status, see `MEDICATION_PHASE_A1B_ORCHESTRATOR_IMPLEMENTATION_PLAN.md`
+§17. Summary of what changed: Finding 1 and Finding 2 (referenced in the
+"A1b" and "Specialty validation" rows below as blockers) are both
+**✅ resolved** (#128, #129) — A1b is no longer blocked at the *finding*
+level; A1b's own implementation is now gated on its *own* plan's approval
+(a different, later gate) rather than on these two findings.
+
+| Item | Status as of 2026-07-16 (historical) |
 |---|---|
 | A1a — loader/schema/validation/provenance | ✅ **GO** — no persistence, no migration, proceed now |
-| A1b — orchestrator + persistence | 🟡 **Blocked** until structured reference persistence exists (Finding 1) |
+| A1b — orchestrator + persistence | 🟡 **Blocked** until structured reference persistence exists (Finding 1) — **superseded: resolved by #128, see note above** |
 | A1c — preview/diff | ✅ Can proceed after A1b, or partially in parallel (schema-shape-only work) |
-| Calcium content (Phase B) | 🔴 **Blocked** until salt-specific catalog identity is resolved (separate small PR, see findings doc) |
-| Specialty validation | 🟡 Structural check buildable now in A1a; DB-existence check's integration test needs real seed (Finding 2) before A1b |
+| Calcium content (Phase B) | 🔴 **Blocked** until salt-specific catalog identity is resolved (separate small PR, see findings doc) — **still accurate, unaffected by #128/#129** |
+| Specialty validation | 🟡 Structural check buildable now in A1a; DB-existence check's integration test needs real seed (Finding 2) before A1b — **superseded: resolved by #129, see note above** |
 | Disclaimer constant | ✅ Approved, unchanged |
 
-**No part of A1a requires a migration, an API, a frontend change, an AI wiring change, or new clinical content.** A1b will require one small migration (`drug_references` + join) before it can proceed — tracked as Finding 1, not started as part of this plan or A1a.
+**No part of A1a requires a migration, an API, a frontend change, an AI wiring change, or new clinical content.** A1b's required migration (`drug_references` + join, tracked as Finding 1) **has since landed** — #128, merged 2026-07-17. This sentence is left in its original historical wording deliberately; do not edit it to sound current, use the note above instead.
