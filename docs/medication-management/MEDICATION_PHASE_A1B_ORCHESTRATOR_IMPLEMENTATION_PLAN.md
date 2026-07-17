@@ -1,7 +1,7 @@
 # Medication Knowledge — Phase A1b Orchestrator Implementation Plan
 
-**Date:** 2026-07-17 (revised same day — round 2 PTH review, rounds 3-5
-Codex re-verification of the round-2/3/4 fixes)
+**Date:** 2026-07-17 (revised same day — round 2 PTH review, rounds 3-6
+Codex re-verification, round 7 PTH re-review)
 **Status:** 🟡 **Planning GO — implementation NOT GO.** This document is itself
 subject to review/approval before any `versioning.py`/`orchestrator.py` code
 is written. Phase B authoring has not started and is not authorized by this
@@ -117,6 +117,52 @@ itself):**
   business key racing" generically as harmless — restricted its scope to
   identical-content races explicitly, matching the narrowed claim the
   round-4 fix already made in the surrounding prose.
+
+**Round-6 revision note (Codex re-verification of the round-5 test
+rewrites — 2 P2s, both precise test-correctness catches, no design
+flaws):**
+- `test_two_files_same_batch_new_reference_reused_via_batch_cache`'s
+  premise was wrong: sequential same-session processing means file 1's
+  reference is already flushed (and query-visible) by the time file 2
+  runs — its "exactly one row" assertion would pass identically with the
+  batch-local cache removed. Added a query-count assertion (zero
+  additional DB queries for file 2) as what actually proves the cache is
+  the mechanism, not incidental same-session visibility.
+- The §11 dialect-parity summary still said "winner's single row
+  survives" for the round-5-redesigned same-transaction test — but a full
+  rollback of one transaction undoes both the legitimate and duplicate
+  inserts together; there is no persisting winner there (that framing
+  belongs only to the optional cross-session true-concurrency variant).
+
+**Round-7 revision note (PTH re-review of the round-6 revision — one
+final P1, one wording fix):**
+- **P1 — idempotency hash was ignoring references and provenance.** The
+  design named the hash function `content_hash` and hashed only
+  type-specific content fields. A concrete failure this enabled: import
+  v1.0.0 with reference R1; author changes the reference to R2 but keeps
+  version and content identical; re-import sees the same version + same
+  content hash and classifies `NO_OP` — R2 is never persisted or linked,
+  while the importer reports success. Fixed: renamed to `artifact_hash`
+  and widened to cover `knowledge_type`, content fields, `locale`/
+  `audience`, `references` (canonicalized via F1's own two-tiered identity,
+  sorted before hashing so YAML reordering isn't load-bearing but identity
+  changes are), `review_metadata.source`/`evidence_level`/`reviewed_at`,
+  `specialty_codes` (sorted), `ai_generated`, and
+  `disclaimer.acknowledged`. Excludes `authored_by`, file path, runtime
+  timestamps, DB IDs, and status fields. `WARN_PROCEED_REPEATED_CONTENT`
+  renamed to `WARN_PROCEED_REPEATED_ARTIFACT` throughout, matching the
+  wider hash it now represents. Six new required tests added (§3):
+  reference-only change, provenance-only change, reference/specialty
+  reorder-is-no-op (×2), and new-version-same-content-new-reference
+  actually persisting the reference.
+- **Wording fix** — the "`import_batch` never raises" contract (§2a) was
+  ambiguous against the session precondition, which itself deliberately
+  raises `ValueError`. Reworded to distinguish two categories explicitly:
+  *import/content failures* (Phase 1 validation, version conflicts, Phase
+  2 write failures) always return `BatchResult`; *programmer-contract
+  violations* (a non-fresh `Session`) raise `ValueError` immediately,
+  before any file is processed, because that's a caller bug, not an
+  import outcome. No code-design change, wording only.
 
 **Depends on (both merged):**
 - PR #128 — F1 schema completion (`drug_references`, `knowledge_reference_links`,
@@ -302,12 +348,20 @@ illustrative code block for `import_batch`, immediately following):
   every `ImportPlan` unconditionally would still write a new draft row for
   an already-imported file (`NO_OP_ALREADY_IMPORTED`), directly violating
   idempotency (§3).
-- **Locked failure-contract:** `import_batch` never raises for an
-  anticipated failure — Phase 1 validation errors and Phase 2 write
-  failures both return `BatchResult(success=False, ...)`, not an exception.
-  Only a genuinely unanticipated interpreter-level failure outside `except
-  Exception`'s scope (e.g. `KeyboardInterrupt`) propagates, matching normal
-  Python behavior — nothing in this design special-cases that.
+- **Locked failure-contract, precisely worded (PTH round-6 wording fix —
+  the prior phrasing "never raises for an anticipated failure" was
+  ambiguous against the session precondition, which itself is an anticipated,
+  deliberately-raised check):** *import/content failures* — anything about
+  the files being imported (Phase 1 validation, version conflicts, Phase 2
+  write failures) — always return `BatchResult(success=False, ...)`, never
+  an exception. *Programmer-contract violations* — a caller passing a
+  non-fresh `Session`, i.e. the precondition above — raise `ValueError`
+  immediately, before any file is processed, because that is a bug in the
+  caller's own code, not an outcome of importing anything, and should fail
+  loudly at the call site rather than surface as a misleading "no files
+  succeeded" result. Only a genuinely unanticipated interpreter-level
+  failure outside `except Exception`'s scope (e.g. `KeyboardInterrupt`)
+  propagates beyond that, matching normal Python behavior.
 
 **Codex round-4 fixes to the illustrative code, both real gaps in the
 round-3 version:**
@@ -506,43 +560,83 @@ def business_key_for(knowledge_type: str, ingredient_id: str, content: BaseModel
     contraindication: (ingredient_id, condition_type, condition_key)
     """
 
-def content_hash(knowledge_type: str, content: BaseModel) -> str:
-    """SHA-256 over the type-specific content fields ONLY (never provenance/
-    metadata fields) — same technique as this session's own K1-S2 catalog
-    checksum verification. Field set per type is fixed and explicit (no
-    reliance on dict ordering)."""
+def artifact_hash(knowledge_file: KnowledgeFile, content: BaseModel) -> str:
+    """SHA-256 over the FULL authoring artifact — not just type-specific
+    content fields (PTH round-6 P1 fix: an earlier draft named this
+    `content_hash` and hashed content fields only, excluding references and
+    provenance. That let an author change a citation, or the reviewer
+    metadata backing it, under an unchanged version+content and have the
+    importer classify it NO_OP — silently dropping the reference/provenance
+    change while reporting success. Renamed to `artifact_hash` because
+    "content" no longer describes what's hashed).
+
+    Included (this IS the artifact whose immutability a version string
+    promises):
+    - `knowledge_type`
+    - type-specific content fields (unchanged from the original design)
+    - `locale`, `audience`
+    - `references`, canonicalized and order-independent (see below) —
+      sorted before hashing so a YAML author reordering the `references:`
+      list does not manufacture a spurious version change, but an actual
+      reference addition/removal/identity change DOES change the hash
+    - `review_metadata.source`, `review_metadata.evidence_level`,
+      `review_metadata.reviewed_at`
+    - `review_metadata.specialty_codes`, sorted (same reordering-independence
+      reasoning as references)
+    - `review_metadata.ai_generated`
+    - `disclaimer.acknowledged`
+
+    Excluded (these do not change what the artifact IS, only how/when/by
+    whom it was produced):
+    - `authored_by`
+    - the source file's path
+    - any runtime timestamp not explicitly listed above (`created_at` etc.)
+    - database-generated IDs
+    - `status`/lifecycle fields (draft never carries these at authoring time)
+
+    **Reference canonicalization matches F1's own two-tiered identity
+    exactly** (§5) — for each reference, the canonical key is
+    `(document_identifier, source_version, accessed_at)` when
+    `document_identifier` is set, else
+    `(publisher, title, publication_date, source_version, accessed_at)`;
+    the list of these keys is sorted before hashing, so reference order in
+    the YAML file is never load-bearing but reference *identity* always is.
+    """
 
 class VersionAction(enum.Enum):
-    NEW_DRAFT = "new_draft"                    # new business key, or new version + new content
-    NO_OP_ALREADY_IMPORTED = "no_op"            # same key, same version, same content hash
-    REJECT_VERSION_CONFLICT = "reject"          # same key, same version, DIFFERENT content hash
-    WARN_PROCEED_REPEATED_CONTENT = "warn_proceed"  # same key, new version, but content hash
-                                                     # matches an existing (any-status, non-retired) version
+    NEW_DRAFT = "new_draft"                    # new business key, or new version + new artifact
+    NO_OP_ALREADY_IMPORTED = "no_op"            # same key, same version, same artifact hash
+    REJECT_VERSION_CONFLICT = "reject"          # same key, same version, DIFFERENT artifact hash
+    WARN_PROCEED_REPEATED_ARTIFACT = "warn_proceed"  # same key, new version, but artifact hash
+                                                      # matches an existing (any-status, non-retired) version
 
 def resolve_version_action(
-    known_versions: list[tuple[str, str]],  # [(version, content_hash), ...] — see below for where this comes from
-    version: str, content_hash_value: str,
+    known_versions: list[tuple[str, str]],  # [(version, artifact_hash), ...] — see below for where this comes from
+    version: str, artifact_hash_value: str,
 ) -> VersionAction:
     """Pure decision, no DB access, no writes — operates on an already-
-    fetched list of (version, content_hash) pairs. Kept DB-free so the same
+    fetched list of (version, artifact_hash) pairs. Kept DB-free so the same
     function proves both the DB-seeded case and the batch-local case below
     without duplicating the 4-rule matrix twice."""
     exact_version_match = next((h for v, h in known_versions if v == version), None)
     if exact_version_match is not None:
-        return VersionAction.NO_OP_ALREADY_IMPORTED if exact_version_match == content_hash_value \
+        return VersionAction.NO_OP_ALREADY_IMPORTED if exact_version_match == artifact_hash_value \
             else VersionAction.REJECT_VERSION_CONFLICT
-    if any(h == content_hash_value for _, h in known_versions):
-        return VersionAction.WARN_PROCEED_REPEATED_CONTENT
+    if any(h == artifact_hash_value for _, h in known_versions):
+        return VersionAction.WARN_PROCEED_REPEATED_ARTIFACT
     return VersionAction.NEW_DRAFT
 
 
 def known_versions_for(db: Session, model_cls: type, business_key: tuple) -> list[tuple[str, str]]:
-    """Read-only query — fetches version + content-hash-equivalent-fields
+    """Read-only query — fetches version + a stored artifact-hash-equivalent
     for EVERY non-'retired' row matching this business key, not just the
     most recent one (Codex round-3 P1 fix: the decision matrix's "matches
     an existing version" and "same version string" rules both require
     checking the FULL non-retired history, since a match can be to an
-    older version, not only the latest one)."""
+    older version, not only the latest one). Requires the artifact hash (or
+    enough of its inputs to recompute it) to be stored per row at write
+    time — an implementation detail for A1b's write path (§4), not fixed by
+    this plan beyond that requirement."""
 ```
 
 **Batch-local resolution (Codex round-3 P1 fix — the design above, taken
@@ -575,7 +669,7 @@ def _resolve_phase1(db: Session, paths: list[Path]) -> list[ImportPlan | list[Fi
         business_key = business_key_for(knowledge_type, ingredient_id, content)
         index_key = (model_cls, business_key)   # namespaced by table — the round-4 fix
         version = review_metadata.version
-        hash_value = content_hash(knowledge_type, content)
+        hash_value = artifact_hash(knowledge_file, content)  # full artifact — §3's round-6 fix
 
         known = batch_index.get(index_key)
         if known is None:
@@ -619,17 +713,17 @@ content is a documented, undefended gap (see "harmless claim narrowed"
 below) — not something this test claims to bound, and not something a test
 should assert is "fine," since it isn't. Plus two new tests for the round-3
 fixes:
-- `test_content_hash_match_against_older_non_latest_version` — seed v1 and
-  v2 for a business key, then import v1's exact content again under a new
-  version string v3 → asserts `WARN_PROCEED_REPEATED_CONTENT` (proves
+- `test_artifact_hash_match_against_older_non_latest_version` — seed v1 and
+  v2 for a business key, then import v1's exact artifact again under a new
+  version string v3 → asserts `WARN_PROCEED_REPEATED_ARTIFACT` (proves
   `known_versions_for` checks the full non-retired history, not just the
   most recent row — the earlier draft's "most recent row only" design
   would have missed this).
 - `test_batch_local_duplicate_new_business_key_no_op` /
   `test_batch_local_duplicate_new_business_key_conflict_rejected` — two
   files in one batch share a business key with zero DB rows; identical
-  content under the same version → second file resolves `NO_OP`; differing
-  content under the same version → second file resolves
+  artifact under the same version → second file resolves `NO_OP`; differing
+  artifact under the same version → second file resolves
   `REJECT_VERSION_CONFLICT` and the whole batch fails (§1/§10) — proves the
   batch-local fold, not just the DB-seeded path.
 - `test_batch_index_namespaced_by_model_not_just_business_key` (Codex
@@ -639,6 +733,31 @@ fixes:
   the same positions) → assert both resolve `NEW_DRAFT` independently, each
   querying its own table's history, proving the batch index does not
   cross-contaminate across knowledge types.
+- `test_reference_change_under_same_version_rejected` (PTH round-6 P1 —
+  the actual bug report: an author changes a reference from R1 to R2 while
+  keeping version and content-fields unchanged) → same business key, same
+  version, content fields identical, but the `references:` list differs
+  (R1 replaced by R2) → asserts `REJECT_VERSION_CONFLICT`, **not** `NO_OP` —
+  proves `artifact_hash` actually changes when references change, closing
+  the exact gap the earlier `content_hash` design had.
+- `test_provenance_change_under_same_version_rejected` — same business key,
+  version, and content, but `review_metadata.reviewed_at` (or
+  `evidence_level`) differs → asserts `REJECT_VERSION_CONFLICT` — proves
+  provenance fields are inside the hash, not just content.
+- `test_reference_reorder_only_is_no_op` /
+  `test_specialty_codes_reorder_only_is_no_op` — same business key,
+  version, and content, but the `references:` list (respectively
+  `specialty_codes:` list) is reordered with no actual change to the set of
+  items → asserts `NO_OP_ALREADY_IMPORTED` — proves canonicalization/sorting
+  before hashing prevents YAML reordering from manufacturing a spurious
+  version conflict.
+- `test_new_version_same_content_new_reference_persists` — new version
+  string, content fields unchanged, but a new reference added → resolves
+  `NEW_DRAFT` or `WARN_PROCEED_REPEATED_ARTIFACT` per the artifact rule (the
+  hash differs because references differ, so this is never `NO_OP`), and
+  the write phase actually persists the new reference row and links it to
+  the new draft (§5) — proves the reference change survives into the DB,
+  not just into the version-action decision.
 
 **Why this race is harmless but §5's reference race (below) is not — and a
 correction narrowing that claim (Codex round-4 P2):** knowledge-content
@@ -676,7 +795,7 @@ the same content concurrently), not a code-level guarantee.
 
 ## 4. New version creates a new row, never overwrites history
 
-**Rule:** `NEW_DRAFT` and `WARN_PROCEED_REPEATED_CONTENT` both mean
+**Rule:** `NEW_DRAFT` and `WARN_PROCEED_REPEATED_ARTIFACT` both mean
 "`build_draft` + `add_draft`" (§2a) — an INSERT. There is no code path in
 `orchestrator.py` that calls `UPDATE` against a knowledge-content row's
 fields. (The one existing `UPDATE` in this codebase's knowledge stack,
@@ -999,7 +1118,7 @@ invariant:
 | Specialty | code doesn't exist / is inactive in `clinical_specialties` | `provenance.check_specialty_exists` | Batch error (§1), same severity as any other validation failure. |
 
 None of these three has a "proceed anyway with a warning" path — that
-distinction is reserved for `WARN_PROCEED_REPEATED_CONTENT` (§3), which is
+distinction is reserved for `WARN_PROCEED_REPEATED_ARTIFACT` (§3), which is
 about re-citing *already-valid, already-resolved* content under a new
 version string, a fundamentally different situation from an invalid
 identity/reference/specialty.
@@ -1188,7 +1307,7 @@ backend/app/services/medication_knowledge_import/
   schema.py          # existing (A1a, now F1-aligned per #130)
   validators.py       # existing (A1a)
   provenance.py       # existing (A1a) — check_specialty_exists now meaningful (F2 seeded)
-  versioning.py        # NEW — §3, §4: business_key_for, content_hash, VersionAction, resolve_version_action
+  versioning.py        # NEW — §3, §4: business_key_for, artifact_hash, VersionAction, resolve_version_action
   orchestrator.py      # NEW — §1, §2, §9, §10: import_batch(db, paths, dry_run=...) -> BatchResult
   references.py        # NEW — §5: find_or_create_reference, link_reference_to_row
                         #       (kept separate from versioning.py — different concern,
@@ -1226,7 +1345,7 @@ draft-only scope lock (§7 still holds: nothing added here can reach
 
 | File | Covers |
 |---|---|
-| `test_medication_knowledge_import_versioning.py` | §3, §4 — all 4 `VersionAction` outcomes, full-non-retired-history content-hash matching (not most-recent-only), batch-local duplicate/conflict resolution across sibling files, concurrency race (bounded harmless-duplicate — distinct from §5's reference race, see §3's explicit distinction), business-key derivation per type, content-hash stability/sensitivity |
+| `test_medication_knowledge_import_versioning.py` | §3, §4 — all 4 `VersionAction` outcomes, full-non-retired-history artifact-hash matching (not most-recent-only), batch-local duplicate/conflict resolution across sibling files, concurrency race (bounded harmless-duplicate, identical-artifact only — distinct from §5's reference race, see §3's explicit distinction), business-key derivation per type, artifact-hash stability/sensitivity **including references and provenance, not just content fields** (reference-only change → reject, provenance-only change → reject, reference/specialty reorder → no-op, new-version-same-content-new-reference → persists) |
 | `test_medication_knowledge_import_references.py` | §5, §8 — find-or-create both identity branches (including the `document_identifier IS NULL` fallback-query restriction), reuse vs. new-row creation, `accessed_at` differentiation at the app level, batch-local reference cache (same-batch reuse, no spurious unique-index rejection), idempotent link creation (duplicate DB identity within one file), fail-closed on unexpected persistence error, `test_reference_unique_index_violation_rolls_back_entire_batch` (deterministic ordering, both dialects) |
 | `test_medication_knowledge_import_orchestrator.py` | §1, §2, §6, §7, §9, §10, §12 — end-to-end valid batch, `test_import_batch_requires_fresh_session` (session precondition), `test_batch_rollback_uses_real_write_path_not_mock` (commit-ownership spy + every-return-path transaction closure, §2a), NO_OP plans never reach `build_draft` (no duplicate on re-import), specialty DB-check rejection, zero-approved-rows assertion on every test, dry-run report accuracy including batch-local reference cache simulation, whole-batch rollback per failure point (never raises — always `BatchResult`), CI/PR-diff checks for API/frontend/AI/`app/knowledge/` isolation |
 | `test_knowledge_repository.py` (existing, K1-S3) | §2a, §14 — regression suite proving `create_draft`'s external behavior is unchanged after the `build_draft`/`add_draft` refactor; no new tests needed here, existing tests must simply keep passing |
