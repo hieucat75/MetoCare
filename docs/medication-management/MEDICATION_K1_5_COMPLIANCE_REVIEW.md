@@ -1,11 +1,11 @@
 # MetoCare Medication — K1.5 Compliance Review
 
-**Version:** 1.5 (implementation session, post-Codex-review-round-4 fixes)
+**Version:** 1.6 (final PR gate update, post-Codex-review-round-5)
 **Date:** 2026-07-21
 **PR scope:** K1.5 — Clinical Review & Approval Write Path (`approve_row`, `retire_row`, RBAC gate)
 **Branch:** `feat/medication-k1-5-approval-workflow`
 **Baseline:** `main` @ `988e8f85cfd8a93819165fdc0f42fb44c8dfc683` (A1b orchestrator, PR #132)
-**Reviewer:** Implementer self-review + four independent Codex CLI review rounds. **PTH sign-off has NOT yet run** — this document is an implementation-session checkpoint artifact per the plan's own governance gate (§9.4), not a merge-readiness record.
+**Reviewer:** Implementer self-review + **five** independent Codex CLI review rounds, all complete — round 5 found 0 new P0/P1/P2/P3. **PTH sign-off has been GRANTED** (K1.5 approved READY TO COMMIT). The implementation has been committed (`615c44fd35cfe889eab2e0c4c6f721862e9e08f3`) and is open as **PR #133** against `main`. **Not yet merged, not yet deployed** as of this document update.
 
 **PTH checkpoint review round 1 (2026-07-20):** both deviations reported in v1.0 approved. Gates A (real two-distinct-row PostgreSQL concurrency test) and B (transaction ownership verified against plan §5) closed in v1.1.
 
@@ -15,7 +15,13 @@
 
 **Codex review round 3 (2026-07-21):** 0 P0, 2 P1, 2 P2, 2 P3 — 7 findings total, 6 accepted and 1 (P1-3) classified as a **false positive** after independent reproduction failed to reproduce it from a clean session. All 6 accepted findings fixed in v1.4 — see §Codex Round-3 Fixes.
 
-**Codex review round 4 (2026-07-21):** 1 P1, 1 P2, 3 P3 — reviewed round 3's own fixes by direct, independent reproduction (not taken on faith). Found that round 3's own P1-1 fix (the pending-delete guard) checked the WRONG object — a spoofed/detached caller argument bypassed it, reproduced directly against the round-3 code. All 5 findings fixed in this revision (v1.5) — see §Codex Round-4 Fixes.
+**Codex review round 4 (2026-07-21):** 1 P1, 1 P2, 3 P3 — reviewed round 3's own fixes by direct, independent reproduction (not taken on faith). Found that round 3's own P1-1 fix (the pending-delete guard) checked the WRONG object — a spoofed/detached caller argument bypassed it, reproduced directly against the round-3 code. All 5 findings fixed in v1.5 — see §Codex Round-4 Fixes.
+
+**Codex review round 5 (2026-07-21):** 0 P0, 0 P1, 0 P2, 0 new P3 — independent re-read of the fully-fixed source, tests, and integration tests, with no new findings. **PTH sign-off granted: K1.5 approved READY TO COMMIT.**
+
+## Round 5 / Final PR Gate Update
+
+This revision (v1.6) is a **documentation-accuracy update only** — no code, test, or behavior change. It brings this document's header and closing verdict in line with events that happened after v1.5 was written: Codex round 5 completed (0 new findings), PTH sign-off was granted, the implementation was committed (`615c44fd35cfe889eab2e0c4c6f721862e9e08f3`), and PR #133 was opened against `main` with all required CI checks passing (`mergeStateStatus: CLEAN`, `mergeable: MERGEABLE`). As of this update, the PR has **not been merged and nothing has been deployed** — this document does not assert either. No technical finding, fix, or Round 1–4 history recorded elsewhere in this document is altered by this revision.
 
 ---
 
@@ -368,10 +374,18 @@ Running the whole `tests/integration/` directory together in one pytest session 
 
 ## Codex review status
 
-**Four rounds complete:**
+**Five rounds complete:**
 - Round 1 (2026-07-20): 0 P0, 3 P1, 3 P2 — all 6 fixed (v1.2).
 - Round 2 (2026-07-20): 0 P0, 1 P1, 3 P2, 2 P3 — all 6 fixed (v1.3), including corrections to three of round 1's own fixes that round 2 found insufficient.
 - Round 3 (2026-07-21): 0 P0, 2 P1, 2 P2, 2 P3 — 6 of 7 accepted and fixed (v1.4); 1 (P1-3) independently investigated and classified as a false positive (did not reproduce from a clean session).
-- Round 4 (2026-07-21): 1 P1, 1 P2, 3 P3 — all 5 fixed (this revision, v1.5), including a correction to round 3's own P1-1 fix (the pending-delete guard checked the wrong object — a spoofed/detached argument bypassed it) and round 3's own P1-2 fix (one of three `db.get()` lookups in the same function was left without `populate_existing=True`). Both were reproduced directly against the round-3 code before being accepted, not taken on faith.
+- Round 4 (2026-07-21): 1 P1, 1 P2, 3 P3 — all 5 fixed (v1.5), including a correction to round 3's own P1-1 fix (the pending-delete guard checked the wrong object — a spoofed/detached argument bypassed it) and round 3's own P1-2 fix (one of three `db.get()` lookups in the same function was left without `populate_existing=True`). Both were reproduced directly against the round-3 code before being accepted, not taken on faith.
+- Round 5 (2026-07-21): 0 P0, 0 P1, 0 P2, 0 new P3 — independent re-read of the fully-fixed source/tests/integration tests. No new findings.
 
-**Verdict: READY FOR CODEX REVIEW ROUND 5.** Zero unresolved P0/P1/P2 from rounds 1–4; the sole open item (P3-2, `NOWAIT`/lock-timeout) remains explicitly recorded as non-blocking technical debt, not a defect requiring a fix in this slice. Per this program's standing convention (§9.4), a Codex round with 0 new P0/P1 and explicit PTH sign-off are still required before merge. **No commit/PR/merge has happened.**
+**Verdict: Codex Round 5 completed, 0 new P0/P1/P2/P3 findings. READY TO MERGE, subject to CI and final PR gate.** Zero unresolved P0/P1/P2 across all five rounds; the sole open item (P3-2, `NOWAIT`/lock-timeout) remains explicitly recorded as non-blocking technical debt, not a defect requiring a fix in this slice.
+
+**Current PR gate status (as of this document update):**
+- Commit: `615c44fd35cfe889eab2e0c4c6f721862e9e08f3`
+- PR: **#133**, open against `main`
+- CI required checks: passed
+- `mergeStateStatus`: `CLEAN` / `mergeable`: `MERGEABLE`
+- **Not yet merged, not yet deployed.**
