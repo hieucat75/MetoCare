@@ -1,20 +1,19 @@
-"""Draft-only repository/service layer for the 5 ADR-13 knowledge tables (K1-S3).
+"""Repository/service layer for the 5 ADR-13 knowledge tables.
 
-Scope lock (PTH, K1-S3 GO): create/edit draft content only. There is no
-function anywhere in this module that can set a row's status to 'approved'
-— `validate_transition` implements ADR-13's full transition rule set
-(including the clinical_review -> approved rule) as a pure, directly
-testable function, but nothing calls it with a target of 'approved' from a
-real write path. That path does not exist yet; adding it is a separate,
-future PR requiring an actual Clinical Advisor role, which this codebase
-does not have wired up (per ADR-13's own "Production Schema Must Not Encode
-Test Data" section: "the service-layer role capable of approving content
-does not exist in test/CI environments at all").
+Full lifecycle write path (K1.5): `create_draft`/`submit_for_review` (K1-S3)
+plus `approve_row`/`retire_row` (K1.5) together implement every transition
+`validate_transition` allows — draft -> clinical_review -> approved ->
+deprecated (automatic, on supersession) -> retired. `approve_row`/
+`retire_row` are gated by `can_approve_knowledge`/`assert_can_approve_knowledge`
+(an interim role-based check — see their docstrings; no dedicated Clinical
+Advisor role exists yet, ADR-13 OQ-7/OQ-8).
 
 `drug_interactions` is out of scope — not one of the 5 tables this module
 touches (deferred to its own ADR-02-compliant PR, per K1-M01/K1-S2).
 
-No API route, no frontend, no AI wiring touches this module.
+No API route, no frontend, no AI wiring touches this module yet (K1
+dormancy discipline: a write path existing here does not mean anything
+calls it — that is a separate, later, explicitly-gated phase, K2+).
 """
 
 from __future__ import annotations
@@ -22,7 +21,9 @@ from __future__ import annotations
 import datetime as dt
 from typing import TypeVar
 
+from sqlalchemy import inspect as sa_inspect
 from sqlalchemy import update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.drug_knowledge_content import (
@@ -220,6 +221,445 @@ def submit_for_review(
     return row
 
 
+# --- Interim RBAC gate (K1.5) -----------------------------------------
+#
+# No dedicated Clinical Advisor role exists yet (ADR-13 OQ-7/OQ-8 both
+# "Pending PTH" per ARCHITECTURE_DECISION_INDEX.md). MEDICAL_REVIEWER is
+# deliberately NOT used here: app/core/rbac.py documents it as
+# "read-only — bypass read checks, blocked on writes elsewhere"
+# (rbac.py:7) — reusing it for an approval WRITE would silently grant a
+# capability that role was never audited for, platform-wide. This
+# constant is the single place that decision lives; revisit it the
+# moment a real Clinical Advisor role/identity is established (OQ-7).
+_APPROVAL_CAPABLE_ROLES = frozenset({"internal_admin", "super_admin"})
+
+
+class KnowledgeApprovalAuthorizationError(ValueError):
+    """Raised when actor_role lacks approve/retire capability. Distinct
+    from TransitionError (an illegal *state* transition) so a future API
+    layer can map this to 403 and TransitionError to 409/400 separately."""
+
+
+def can_approve_knowledge(actor_role: str) -> bool:
+    """The ONE place the interim approval-capable role set is named
+    (PTH review, 2026-07-17, non-negotiable invariant #2 — see
+    MEDICATION_K1_5_APPROVAL_WORKFLOW_IMPLEMENTATION_PLAN.md §3.4/§3.5).
+    No other function in this module, and no future caller (a K2+ API
+    route, a script, anything), may inline its own
+    `actor_role in {...}` comparison — always call this predicate (or
+    assert_can_approve_knowledge below) instead. When a real Clinical
+    Advisor role is established (ADR-13 OQ-7), only this function's body
+    changes; approve_row/retire_row/every other caller stay untouched.
+
+    A pure boolean predicate (not just the raising assert below) so a
+    future read-only caller — e.g. an API route deciding whether to show
+    an "Approve" button — can query capability without triggering an
+    exception."""
+    return actor_role in _APPROVAL_CAPABLE_ROLES
+
+
+def assert_can_approve_knowledge(actor_role: str) -> None:
+    if not can_approve_knowledge(actor_role):
+        raise KnowledgeApprovalAuthorizationError(
+            f"actor_role={actor_role!r} is not authorized to approve or "
+            f"retire knowledge content. Allowed: {sorted(_APPROVAL_CAPABLE_ROLES)}."
+        )
+
+
+# --- Business-key lookup for auto-deprecation ---------------------------
+#
+# Mirrors medication_knowledge_import/versioning.py's _BUSINESS_KEY_FIELDS
+# exactly (ADR-13 "Per-Table Business Key & Uniqueness Policy"). Kept as
+# this module's own copy, same convention as KNOWLEDGE_TABLE_NAME above
+# (the two files can't share a live import without a circular dependency;
+# keep in sync by hand if either ever changes).
+_BUSINESS_KEY_FIELDS: dict[type, tuple[str, ...]] = {
+    DrugUsage: ("drug_ingredient_id", "locale", "audience"),
+    DrugPatientEducation: ("drug_ingredient_id", "theme", "locale", "audience"),
+    DrugSideEffect: ("drug_ingredient_id", "concept_code"),
+    DrugMonitoring: ("drug_ingredient_id", "parameter", "patient_context"),
+    DrugContraindication: ("drug_ingredient_id", "condition_type", "condition_key"),
+}
+
+# The partial unique index name per model (k1_m01_knowledge_schema — NOT
+# added by K1.5, see plan §3.3). Used only to recognize, by name, the ONE
+# specific IntegrityError this module is entitled to remap into the
+# TransitionError taxonomy (Codex round-1 finding P1-3) — every other
+# IntegrityError (a CHECK violation, an FK violation, an unrelated unique
+# constraint) must surface completely unmodified, never silently absorbed
+# into a business-logic exception type it doesn't actually represent.
+_APPROVED_KEY_CONSTRAINT_NAME: dict[type, str] = {
+    DrugUsage: "uq_drug_usage_approved_key",
+    DrugPatientEducation: "uq_drug_patient_education_approved_key",
+    DrugSideEffect: "uq_drug_side_effects_approved_key",
+    DrugMonitoring: "uq_drug_monitoring_approved_key",
+    DrugContraindication: "uq_drug_contraindications_approved_key",
+}
+
+
+def _is_approved_key_violation(exc: IntegrityError, model_cls: type) -> bool:
+    """True iff `exc` is DEFINITIVELY a violation of THIS model's own
+    approved-key partial unique index, verified via the underlying DB
+    driver's own structured diagnostics (psycopg's `exc.orig.diag.
+    constraint_name` on Postgres) — never by searching the rendered
+    exception string.
+
+    Codex round-2 P2-1: the original implementation matched the
+    constraint name as a substring of `str(exc)` — but SQLAlchemy's
+    rendered `IntegrityError` includes the bound SQL parameters (e.g.
+    `[parameters: ('approved', ..., 'reviewer-1', ...)]`). A caller
+    passing `actor_user_id="uq_drug_usage_approved_key"` made the
+    string-match implementation misclassify an UNRELATED CHECK-constraint
+    violation (missing provenance fields) as a lost approval race —
+    reproduced directly: a CHECK failure became a `TransitionError`
+    purely because that string happened to appear in a bound parameter,
+    not because it was the actual constraint that fired. Exact structured
+    lookup makes this class of false positive (and any false negative)
+    impossible.
+
+    SQLite's driver (`sqlite3.IntegrityError`) exposes no equivalent
+    structured diagnostics — `exc.orig` there has no `.diag` attribute at
+    all — so on SQLite this always returns False. There is no reliable
+    signal to parse there, and guessing would risk the same
+    misclassification this fix exists to prevent; never mapping on SQLite
+    is the safe default, not a gap (the real, load-bearing proof of the
+    mapping is the Postgres integration test, against the real driver)."""
+    diag = getattr(getattr(exc, "orig", None), "diag", None)
+    constraint_name = getattr(diag, "constraint_name", None)
+    if constraint_name is None:
+        return False
+    return constraint_name == _APPROVED_KEY_CONSTRAINT_NAME[model_cls]
+
+
+def _deprecate_superseded(
+    db: Session, row: KnowledgeModel, *, actor_user_id: str, now: dt.datetime
+) -> int:
+    """ADR-13: "approved -> deprecated: automatic when a newer approved
+    row exists for the same business key — the old row is never deleted
+    or edited." This is non-negotiable invariant #1 (PTH review,
+    2026-07-17, plan §3.5): at most one approved row per business key at
+    any instant. Must be called only from inside approve_row's own
+    transaction (no independent commit here), and BEFORE that transaction's
+    own approve UPDATE (see approve_row's inline comment — calling this
+    after would transiently violate the partial unique index within the
+    same uncommitted transaction, since the index is not deferred), so a
+    crash or rollback between deprecating the old row and approving the
+    new one is impossible — either both happen or neither does. The
+    partial unique index on `status='approved'` is a second, independent
+    backstop if this function is ever bypassed
+    (verified directly by test_partial_unique_index_backstop_rejects_
+    second_approved_row, plan §4.3 — the invariant is enforced twice, not
+    trusted to one layer). Expected rowcount is 0 or 1 (the unique index
+    caps live approved rows at 1 per business key); if it is ever >1
+    (e.g. a pre-existing integrity violation), this still correctly
+    deprecates all of them — fail-open here is safe, since deprecating
+    extra approved rows only reduces exposure, never increases it."""
+    model_cls = type(row)
+    fields = _BUSINESS_KEY_FIELDS[model_cls]
+    key_filters = [getattr(model_cls, f) == getattr(row, f) for f in fields]
+    result = db.execute(
+        update(model_cls)
+        .where(model_cls.status == "approved", model_cls.id != row.id, *key_filters)
+        .values(status="deprecated", status_changed_by=actor_user_id, status_changed_at=now)
+    )
+    return result.rowcount
+
+
+def _lock_canonical_row(db: Session, model_cls: type, row_id: str) -> KnowledgeModel:
+    """Resolve the real, currently-committed row by id, locked FOR UPDATE
+    (Codex round-1 finding P1-1). `approve_row`/`retire_row` must never
+    trust any field on the caller-supplied `row` object other than its
+    identity (`row.id`, used only to locate the row) — a detached or
+    spoofed object with the right id but forged `authored_by`/business-key/
+    `status` fields must not be able to influence self-approval, specialty-
+    completeness, or deprecation-target checks. Every check downstream of
+    this call reads the canonical row this function returns, never the
+    caller's original object.
+
+    Codex round-2 finding P1-1: a plain `SELECT ... FOR UPDATE` is NOT
+    enough — if the row is already present in this Session's identity map
+    (the ordinary case: a caller loaded it via `db.get()` earlier in the
+    same session, then mutated an attribute in memory without persisting
+    it), SQLAlchemy's default querying behavior returns the SAME cached
+    Python object *without* overwriting already-loaded attributes from the
+    fresh query result. Combined with this codebase's `SessionLocal`
+    (`autoflush=False`, `app/core/database.py`), a caller-side in-memory
+    mutation (e.g. `row.authored_by = "forged-author"`) would silently
+    survive this "reload" and defeat the self-approval check — reproduced
+    directly against the pre-fix code (`approve_row` incorrectly
+    succeeded and persisted the forged value). `populate_existing=True`
+    forces SQLAlchemy to unconditionally overwrite every already-loaded
+    attribute on the identity-mapped object from this query's actual
+    result row — the caller's in-memory mutation is discarded, not
+    flushed (no `db.add()`/`db.merge()` involved, and `SessionLocal`
+    already never autoflushes regardless). This is the ONLY change from
+    the round-1 fix; `with_for_update` is unchanged.
+
+    FOR UPDATE also gives a second benefit: it serializes concurrent
+    approvers targeting the SAME row on this very statement (Postgres) —
+    a second caller's SELECT...FOR UPDATE for the same id genuinely blocks
+    here until the first transaction ends, ahead of and independent of the
+    atomic-UPDATE rowcount check further down. SQLite does not support
+    FOR UPDATE; SQLAlchemy's SQLite dialect silently omits the clause
+    there (single-writer file locking makes it moot), so this is safe to
+    issue unconditionally for both dialects.
+
+    Fails closed (raises TransitionError) if the row does not exist —
+    never returns None for the caller to accidentally dereference."""
+    canonical = db.get(model_cls, row_id, populate_existing=True, with_for_update=True)
+    if canonical is None:
+        raise TransitionError(f"Row {row_id!r} does not exist.")
+    return canonical
+
+
+def _reject_if_pending_delete(db: Session, canonical: KnowledgeModel) -> None:
+    """Fail closed if the CANONICAL row (the object `_lock_canonical_row`
+    just resolved by id — never the caller-supplied `row` argument itself)
+    has been marked for deletion in this session.
+
+    Codex round-4 (finding: Codex round-3's own fix checked the wrong
+    object): the round-3 version of this check ran on the caller-supplied
+    `row` argument, BEFORE `_lock_canonical_row` was even called. That is
+    exactly the anti-pattern every OTHER check in `approve_row`/
+    `retire_row` was already hardened against (Codex round-1/2 P1-1): a
+    caller can pass a DETACHED object sharing a real row's `id` but never
+    itself touched by `db.delete()`. Reproduced directly against the
+    round-3 code: `db.delete(real_row)` (unflushed) on the genuine
+    identity-mapped object, then `approve_row(db, spoofed, ...)` where
+    `spoofed = DrugUsage(id=real_row.id, ...)` was never added to `db` —
+    `spoofed in db.deleted` and `sa_inspect(spoofed).deleted` were both
+    `False`, so the round-3 check passed, `approve_row` returned
+    `status='approved'`, and the session's still-pending `DELETE` on the
+    real object fired regardless at `db.commit()` time — the row was
+    gone from a fresh session despite the "successful" approval. Fixed by
+    moving this check to run on `canonical` — the same object
+    `_lock_canonical_row` resolved BY ID via the identity map — so it is
+    the genuine, currently-tracked instance regardless of what object
+    (real, detached, or spoofed) the caller happened to pass in. A
+    detached caller-supplied object is a normal, supported case (only its
+    `.id` is ever used, here and everywhere else in these two functions)
+    — this check does not require or assume the caller's object is
+    attached to `db` at all.
+
+    Two checks, matching the two points in a session's lifecycle this can
+    be observed at:
+    - `canonical in db.deleted`: `session.delete()` called (on this same
+      canonical object, via any reference to it) but not yet flushed
+      (this `SessionLocal` has `autoflush=False`, so this is the common
+      case — the check this module's own regression tests exercise).
+    - `sa_inspect(canonical).deleted`: the DELETE already flushed within
+      the CURRENT still-open transaction (pending commit) by some earlier
+      statement in this same session.
+
+    Does not special-case a transient, pending, or detached CALLER object
+    — that is irrelevant here, since this function never receives the
+    caller's object at all anymore, only the canonical one resolved by id.
+    """
+    if canonical in db.deleted or sa_inspect(canonical).deleted:
+        raise TransitionError(
+            f"Row {canonical.id!r} is marked for deletion in this session "
+            "and cannot be approved or retired."
+        )
+
+
+def approve_row(
+    db: Session,
+    row: KnowledgeModel,
+    *,
+    actor_user_id: str,
+    actor_role: str,
+) -> KnowledgeModel:
+    """clinical_review -> approved (ADR-13). Atomically approves this row
+    AND deprecates any prior approved row sharing its business key, in one
+    transaction — see _deprecate_superseded's docstring for why these must
+    not be split across two commits.
+
+    Only `row.id` from the caller-supplied `row` argument is trusted (to
+    locate the row); every check (self-approval, specialty completeness,
+    business key, current status, pending-delete state) reads the
+    canonical row this function re-fetches from the DB via `db` itself
+    (Codex round-1 P1-1) — never a caller-supplied field, and never a
+    stale or spoofed value.
+
+    Caller-object precondition (Codex round-4): `row` may be transient,
+    pending, or fully DETACHED from `db` (or from any session at all) —
+    that is a normal, supported case, since only `row.id` is ever read
+    from it. `canonical` is always resolved via `db.get(...)` on `db`
+    itself, so it is always attached to `db` specifically — every state
+    check performed on `canonical` (including the pending-delete guard)
+    reflects `db`'s own session state, never a different session's
+    bookkeeping, even if `row` happens to be attached elsewhere.
+
+    The entire function — including the canonical-row fetch, the specialty
+    check, and transition validation, not just the final UPDATE/commit —
+    runs inside one transaction boundary: any exception at any point
+    rolls back and never leaves the session mid-transaction (Codex
+    round-1 P1-2; plan §5's own stated invariant).
+    """
+    model_cls = type(row)
+    now = dt.datetime.now(dt.UTC)
+    try:
+        # Codex round-3 P1-3 (classified false positive — see
+        # MEDICATION_K1_5_COMPLIANCE_REVIEW.md §Codex Round-3 Fixes): this
+        # was already a pure-Python check with no DB interaction, so
+        # calling it before the `try:` never actually left the session
+        # mid-transaction. Moved inside anyway, as defensive hardening,
+        # so it stays inside this function's one transaction boundary
+        # even if a future change ever makes it perform a DB read.
+        assert_can_approve_knowledge(actor_role)
+        # Only `row.id` is ever read from the caller-supplied `row` here —
+        # canonical is resolved by id FIRST, and every check after this
+        # point (including the pending-delete guard) reads canonical, never
+        # `row` itself (Codex round-4: round-3's pending-delete check ran
+        # on `row` before canonical existed — see
+        # _reject_if_pending_delete's docstring for the bypass that fixed).
+        canonical = _lock_canonical_row(db, model_cls, row.id)
+        _reject_if_pending_delete(db, canonical)
+
+        # Specialty completeness is re-checked against the DB at write time
+        # (never trusts a caller-supplied bool) — the same reasoning as
+        # every other check in this module: a stale or spoofed value must
+        # not be able to force an approval.
+        specialty_complete = check_specialty_completeness(db, canonical)
+        validate_transition(
+            canonical.status,
+            "approved",
+            authored_by=canonical.authored_by,
+            actor_user_id=actor_user_id,
+            specialty_complete=specialty_complete,
+        )
+
+        # Deprecate any prior approved row for this business key BEFORE
+        # approving the new one (not after, despite the plan's narrative
+        # ordering) — the partial unique index on status='approved' is not
+        # deferred, so if the new row's approval UPDATE ran first, the
+        # statement itself would transiently leave two 'approved' rows for
+        # the same business key (the not-yet-deprecated old one and the
+        # freshly-approved new one) and the index would reject it
+        # immediately, before _deprecate_superseded ever got a chance to
+        # run. Deprecating first avoids that transient double-approved
+        # state entirely. Atomicity (invariant #1) is unaffected either
+        # way: if the approve UPDATE below loses its race (rowcount != 1),
+        # the whole transaction is rolled back, undoing the deprecation
+        # too — so this is still all-or-nothing, just reordered.
+        _deprecate_superseded(db, canonical, actor_user_id=actor_user_id, now=now)
+        result = db.execute(
+            update(model_cls)
+            .where(model_cls.id == canonical.id, model_cls.status == "clinical_review")
+            .values(status="approved", status_changed_by=actor_user_id, status_changed_at=now)
+        )
+        if result.rowcount != 1:
+            raise TransitionError(
+                f"Row {canonical.id!r} was not in 'clinical_review' status at "
+                "commit time — another transition won the race. Re-fetch and "
+                "re-check before retrying."
+            )
+        # Codex round-2 P2-2: refresh BEFORE commit, not after. The bulk
+        # `UPDATE` above (Core-style, via db.execute) does not sync its
+        # new values back onto `canonical`'s Python attributes on its
+        # own — refresh is still needed so the returned object correctly
+        # reflects the new status. But `SessionLocal` defaults to
+        # `expire_on_commit=True` (unchanged here, per instruction not to
+        # touch global session config), so refreshing — or any other
+        # query — *after* `db.commit()` would autobegin a brand new
+        # transaction that this function then returns while still open,
+        # contradicting plan §5's "never leaves the session
+        # mid-transaction" — reproduced directly against the pre-fix
+        # code: `db.in_transaction()` was True immediately after a
+        # successful approve_row call. Refreshing here, while still
+        # inside the same open (uncommitted) transaction, sees our own
+        # just-executed UPDATE and requires no second transaction.
+        db.refresh(canonical)
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        # Codex round-1 P1-3: two DIFFERENT clinical_review rows can both
+        # pass every in-process check above (each is individually a valid
+        # clinical_review -> approved transition) and only collide at the
+        # DB's partial unique index — a legitimate lost concurrency race,
+        # same category as the rowcount!=1 case above, but arriving as a
+        # raw IntegrityError instead of a TransitionError. Map ONLY that
+        # specific, identified constraint violation into the same
+        # TransitionError taxonomy plan §7 already specifies for "lost
+        # optimistic-concurrency race" — chained with `from exc` so the
+        # original IntegrityError is never actually discarded, just
+        # re-typed. Any other IntegrityError (a CHECK violation, an FK
+        # violation, a genuinely different unique constraint) is NOT this
+        # module's to reinterpret — it must propagate completely
+        # unmodified, since silently reclassifying an unrelated
+        # programmer/data error as "someone else won a race" would hide
+        # the real problem.
+        if isinstance(exc, IntegrityError) and _is_approved_key_violation(exc, model_cls):
+            raise TransitionError(
+                f"Row {row.id!r} lost a concurrent approval race for its "
+                "business key (partial unique index "
+                f"{_APPROVED_KEY_CONSTRAINT_NAME[model_cls]!r})."
+            ) from exc
+        raise
+    return canonical
+
+
+def retire_row(
+    db: Session,
+    row: KnowledgeModel,
+    *,
+    actor_user_id: str,
+    actor_role: str,
+) -> KnowledgeModel:
+    """deprecated -> retired (ADR-13, manual). The exact grace period
+    between deprecation and retirement is an operational/process decision,
+    not a code constraint ("a K1.5 operational decision, not architectural"
+    per ADR-13) — this function does not check how long the row has been
+    deprecated; if PTH wants a minimum-wait policy enforced later, that is
+    a follow-up change to this function, not assumed here.
+
+    Same canonical-row-resolution and whole-function transaction-boundary
+    discipline as approve_row (Codex round-1 P1-1/P1-2; round-4
+    caller-object precondition — see approve_row's docstring) — only
+    `row.id` is trusted from the caller-supplied object, which may be
+    transient or fully detached from any session. No partial unique index
+    applies to 'retired' status, so unlike approve_row there is no
+    IntegrityError to remap here (P1-3 is approve_row-specific).
+    """
+    model_cls = type(row)
+    now = dt.datetime.now(dt.UTC)
+    try:
+        # See approve_row's matching comments (Codex round-3 P1-3
+        # defensive hardening; Codex round-4 pending-delete guard checks
+        # canonical, resolved first, never the caller-supplied `row`).
+        assert_can_approve_knowledge(actor_role)
+        canonical = _lock_canonical_row(db, model_cls, row.id)
+        _reject_if_pending_delete(db, canonical)
+        validate_transition(
+            canonical.status,
+            "retired",
+            authored_by=canonical.authored_by,
+            actor_user_id=actor_user_id,
+        )
+        result = db.execute(
+            update(model_cls)
+            .where(model_cls.id == canonical.id, model_cls.status == "deprecated")
+            .values(status="retired", status_changed_by=actor_user_id, status_changed_at=now)
+        )
+        if result.rowcount != 1:
+            raise TransitionError(
+                f"Row {canonical.id!r} was not in 'deprecated' status at "
+                "commit time — another transition won the race. Re-fetch and "
+                "re-check before retrying."
+            )
+        # See approve_row's matching comment (Codex round-2 P2-2): refresh
+        # must happen before commit, inside the same open transaction —
+        # never after, since `expire_on_commit=True` would otherwise make
+        # any post-commit access autobegin a new transaction this
+        # function then returns while still open.
+        db.refresh(canonical)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return canonical
+
+
 def record_specialty_review(
     db: Session,
     *,
@@ -259,14 +699,39 @@ def check_specialty_completeness(db: Session, row: KnowledgeModel) -> bool:
     the ingredient/class case in practice, but `knowledge_review_specialties
     .specialty_id` is not FK-enforced against a live row being deleted
     later, so this stays defensive rather than trusting the constraint.
+
+    Codex round-3 P1-2 / round-4: every `db.get()` call below passes
+    `populate_existing=True` — without it, if `DrugIngredient`/`DrugClass`/
+    `ClinicalSpecialty` were already present in this session's identity map
+    (the realistic case: some earlier code in the same request/session
+    loaded one, then mutated an attribute in memory without persisting it
+    — `SessionLocal` has `autoflush=False`, so this is never silently
+    flushed), `db.get()` would return the SAME cached, dirty Python object
+    instead of querying the DB — letting an in-memory-only
+    `DrugClass.required_specialties`, `DrugIngredient.drug_class_id`, or
+    `ClinicalSpecialty.code` mutation silently decide this gate.
+    `populate_existing=True` forces an unconditional reload of every
+    already-loaded attribute from the actual persisted row (same
+    technique as `_lock_canonical_row`) with no `db.add()`/`db.merge()`
+    and no flush of anything — the caller's in-memory mutation is
+    discarded, never persisted. The `ClinicalSpecialty` lookup further
+    below was the last of the three missing this in round 3 — reproduced
+    directly: forging an already-attached `ClinicalSpecialty.code` in
+    memory (never flushed) flipped this gate's result away from the real,
+    persisted code's actual match/mismatch, in both directions (a
+    matching persisted code forged to a non-matching one incorrectly
+    returned incomplete; a non-matching persisted code forged to the
+    required one incorrectly returned complete — the latter would have
+    let an approval bypass a specialty review that never actually
+    happened).
     """
     model_cls = type(row)
     table_name = KNOWLEDGE_TABLE_NAME[model_cls]
 
-    ingredient = db.get(DrugIngredient, row.drug_ingredient_id)
+    ingredient = db.get(DrugIngredient, row.drug_ingredient_id, populate_existing=True)
     if ingredient is None:
         return False
-    drug_class = db.get(DrugClass, ingredient.drug_class_id)
+    drug_class = db.get(DrugClass, ingredient.drug_class_id, populate_existing=True)
     if drug_class is None:
         return False
     required_codes = set(drug_class.required_specialties or [])
@@ -280,7 +745,7 @@ def check_specialty_completeness(db: Session, row: KnowledgeModel) -> bool:
     )
     reviewed_codes = set()
     for r in reviewed:
-        specialty = db.get(ClinicalSpecialty, r.specialty_id)
+        specialty = db.get(ClinicalSpecialty, r.specialty_id, populate_existing=True)
         if specialty is None:
             # A dangling knowledge_review_specialties.specialty_id (not
             # FK-enforced) means this row's review data is not trustworthy
@@ -301,12 +766,12 @@ def list_published(
     **business_key_filter: object,
 ) -> list[KnowledgeModel]:
     """Query intended for future patient-facing consumption (not wired to any
-    API in K1-S3) — filters status='approved' unconditionally, matching
-    ADR-13's "GET /medications/{id}/knowledge filters status='approved'
-    unconditionally — not a parameter clients can override" rule. In K1-S3
-    this always returns an empty list (nothing can reach 'approved' yet) —
-    the point of testing it is to prove the filter itself is correct, not
-    that it happens to be empty because no approved rows exist.
+    API yet — K1 dormancy, see module docstring) — filters status='approved'
+    unconditionally, matching ADR-13's "GET /medications/{id}/knowledge
+    filters status='approved' unconditionally — not a parameter clients can
+    override" rule. Since K1.5, `approve_row` is a real write path, so this
+    can genuinely return rows once something calls it; before K1.5 it always
+    returned an empty list because nothing could reach 'approved' at all.
     """
     return (
         db.query(model_cls)
