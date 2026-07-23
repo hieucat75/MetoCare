@@ -35,6 +35,7 @@ from .routes import (
     lab_reference,
     lab_upload,
     marketplace,
+    medication_knowledge,
     medications,
     meto,
     narrative,
@@ -70,6 +71,10 @@ api_router.include_router(notifications.router)
 api_router.include_router(patient_insight.router)
 api_router.include_router(narrative.router)
 api_router.include_router(medications.router)
+# Medication Knowledge K2 Slice 1 — read-only retrieval (gated by
+# FeatureFlag.MEDICATION_KNOWLEDGE_RETRIEVAL, fail-closed default; see
+# app/api/deps_medication_knowledge.py).
+api_router.include_router(medication_knowledge.router)
 api_router.include_router(doctor.router)
 api_router.include_router(marketplace.router)
 api_router.include_router(consultations.router)
