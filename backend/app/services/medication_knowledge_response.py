@@ -200,34 +200,48 @@ def _merged(db: Session, model_cls, ingredient_ids: list[str], *, audience: str)
     return merged
 
 
-def _references_out(db: Session, model_cls, row_id: str) -> list[ReferenceOut]:
-    """K2 plan §7 — `row_id` is always server-resolved from a row this same
-    request already fetched through the approved+audience/locale filter,
-    never client-supplied. Never fabricates a citation (invariant 2): an
-    empty `references[]` here means no link exists, nothing more."""
-    references = knowledge_retrieval.list_references_for(db, model_cls, row_id)
-    out: list[ReferenceOut] = []
-    for reference in references:
-        if reference.source_type not in _SOURCE_TYPE_VALUES:
-            _log_vocabulary_drift(
-                knowledge_table="drug_references",
-                row_id=reference.id,
-                field="source_type",
-                value=reference.source_type,
-            )
-            continue
-        out.append(
-            ReferenceOut(
-                publisher=reference.publisher,
-                title=reference.title,
-                source_type=reference.source_type,
-                url=reference.url,
-                document_identifier=reference.document_identifier,
-                publication_date=reference.publication_date,
-                source_version=reference.source_version,
-            )
+def _reference_out(reference) -> ReferenceOut | None:
+    """Map one `DrugReference` row to `ReferenceOut`, or `None` if its
+    `source_type` fails ADR-15 §E's fail-soft check (never fabricates,
+    never substitutes — invariant 2)."""
+    if reference.source_type not in _SOURCE_TYPE_VALUES:
+        _log_vocabulary_drift(
+            knowledge_table="drug_references",
+            row_id=reference.id,
+            field="source_type",
+            value=reference.source_type,
         )
-    return out
+        return None
+    return ReferenceOut(
+        publisher=reference.publisher,
+        title=reference.title,
+        source_type=reference.source_type,
+        url=reference.url,
+        document_identifier=reference.document_identifier,
+        publication_date=reference.publication_date,
+        source_version=reference.source_version,
+    )
+
+
+def _batch_references_out(
+    db: Session, model_cls, row_ids: list[str]
+) -> dict[str, list[ReferenceOut]]:
+    """K2 plan §7 — every `row_id` is always server-resolved from rows this
+    same request already fetched through the approved+audience/locale
+    filter, never client-supplied. One query per knowledge-item category
+    (`list_references_for_batch`, K1.6), not one query per row — avoids the
+    N+1 the per-row `list_references_for` form would produce for a doctor
+    endpoint response with many approved rows. `list_references_for_batch`
+    already returns every requested id as a key (empty list if no
+    citations), so no id is ever silently dropped, and its own ordering
+    (`knowledge_row_id`, then `publication_date desc`, then `id`) is
+    preserved exactly — this function only filters and maps, it never
+    reorders."""
+    references_by_row = knowledge_retrieval.list_references_for_batch(db, model_cls, row_ids)
+    return {
+        row_id: [out for ref in references if (out := _reference_out(ref)) is not None]
+        for row_id, references in references_by_row.items()
+    }
 
 
 def build_patient_response(
@@ -318,6 +332,13 @@ def build_doctor_response(db: Session, drug_ingredient_id: str) -> DoctorIngredi
         )
         for row in _filtered(db, DrugPatientEducation, drug_ingredient_id, audience="doctor")
     ]
+
+    # References are batch-loaded ONCE per category (not once per row) —
+    # avoids the N+1 a per-row list_references_for call inside each
+    # comprehension below would produce. Fetch this category's approved
+    # rows first, batch-load references for all of them together, then map.
+    side_effect_rows = _filtered(db, DrugSideEffect, drug_ingredient_id, audience="doctor")
+    side_effect_refs = _batch_references_out(db, DrugSideEffect, [r.id for r in side_effect_rows])
     side_effects_out = [
         DoctorSideEffectOut(
             concept_code=row.concept_code,
@@ -326,11 +347,14 @@ def build_doctor_response(db: Session, drug_ingredient_id: str) -> DoctorIngredi
             source=row.source,
             version=row.version,
             last_reviewed_at=row.last_reviewed_at,
-            references=_references_out(db, DrugSideEffect, row.id),
+            references=side_effect_refs[row.id],
             **_evidence_kwargs(row, knowledge_table="drug_side_effects"),
         )
-        for row in _filtered(db, DrugSideEffect, drug_ingredient_id, audience="doctor")
+        for row in side_effect_rows
     ]
+
+    monitoring_rows = _filtered(db, DrugMonitoring, drug_ingredient_id, audience="doctor")
+    monitoring_refs = _batch_references_out(db, DrugMonitoring, [r.id for r in monitoring_rows])
     monitoring_out = [
         DoctorMonitoringOut(
             parameter=row.parameter,
@@ -339,11 +363,18 @@ def build_doctor_response(db: Session, drug_ingredient_id: str) -> DoctorIngredi
             source=row.source,
             version=row.version,
             last_reviewed_at=row.last_reviewed_at,
-            references=_references_out(db, DrugMonitoring, row.id),
+            references=monitoring_refs[row.id],
             **_evidence_kwargs(row, knowledge_table="drug_monitoring"),
         )
-        for row in _filtered(db, DrugMonitoring, drug_ingredient_id, audience="doctor")
+        for row in monitoring_rows
     ]
+
+    contraindication_rows = _filtered(
+        db, DrugContraindication, drug_ingredient_id, audience="doctor"
+    )
+    contraindication_refs = _batch_references_out(
+        db, DrugContraindication, [r.id for r in contraindication_rows]
+    )
     contraindications_out = [
         DoctorContraindicationOut(
             condition_type=row.condition_type,
@@ -352,10 +383,10 @@ def build_doctor_response(db: Session, drug_ingredient_id: str) -> DoctorIngredi
             source=row.source,
             version=row.version,
             last_reviewed_at=row.last_reviewed_at,
-            references=_references_out(db, DrugContraindication, row.id),
+            references=contraindication_refs[row.id],
             **_evidence_kwargs(row, knowledge_table="drug_contraindications"),
         )
-        for row in _filtered(db, DrugContraindication, drug_ingredient_id, audience="doctor")
+        for row in contraindication_rows
     ]
 
     return DoctorIngredientKnowledgeOut(
