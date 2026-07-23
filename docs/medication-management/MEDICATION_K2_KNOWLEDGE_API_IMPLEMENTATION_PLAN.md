@@ -204,7 +204,18 @@ list, or locale/audience override.
 - Frontend consumption, AI/Meto wiring, `drug_interactions`, and any write endpoint — all
   unchanged from the first draft's exclusions.
 
-**Migration:** None. Pure read API over existing tables/indexes.
+**Migration:** None for K2 Slice 1's own endpoints — still true; they are a
+pure read API over existing tables/indexes and write nothing. **Corrected
+2026-07-23 (Revision 7):** this claim does not extend to the program as a
+whole. K2 Slice 1's own PostgreSQL verification gate found that ADR-15
+§D's locked `evidence_level` vocabulary does not fit the pre-existing
+`evidence_level VARCHAR(16)` column (`clinical_guideline` and
+`peer_reviewed_literature` both exceed 16 characters) — a K1/ADR-13 schema
+compatibility prerequisite, not a K2/AI/provenance expansion, closed by
+migration `k2_s1_widen_evidence_level` (widens to `VARCHAR(32)`, additive,
+no rename/vocabulary/default change — see § Revision 7 and the migration's
+own docstring for the full account). K2 Slice 1's endpoints still require
+no migration of their own; the vocabulary they read from now does.
 
 ### 2.3 Locale/audience filtering (new — closes the gap in §1.3 fact 4)
 
@@ -1037,7 +1048,60 @@ IMPLEMENTATION) is still outstanding before gate 6 (PTH GO) can be sought.
 
 ## Revision summary
 
-### Revision 6 (this revision) — Corrected §1.3 fact 4: locale/audience exist on only 2 of 5 tables
+### Revision 7 (this revision) — Compatibility migration + final hardening round
+
+Closes the four remaining pre-merge findings from the 2026-07-23 final
+hardening round, on top of Revision 6's schema correction:
+
+1. **`evidence_level` PostgreSQL incompatibility — FIXED, not just
+   documented.** Migration `k2_s1_widen_evidence_level` widens
+   `evidence_level` from `VARCHAR(16)` to `VARCHAR(32)` on all 5 knowledge
+   tables (additive, no rename, no vocabulary change, no default change).
+   This is a **K1/ADR-13 schema compatibility prerequisite that K2 Slice
+   1's own PostgreSQL verification gate discovered**, not an AI/
+   ingestion/provenance scope expansion — §2.1's "Migration: None" claim
+   is corrected above to make this distinction explicit: K2 Slice 1's own
+   endpoints still add no migration; the vocabulary they read now needs
+   one that predates K2 entirely. Downgrade refuses (raises `RuntimeError`)
+   rather than silently truncating if any persisted value would no longer
+   fit — verified on both PostgreSQL and SQLite, plus a dedicated
+   migration test file
+   (`tests/integration/test_medication_k2_widen_evidence_level_migration.py`)
+   and a regression test proving the existing K1.5 approval path
+   (`approve_row`) accepts both long ADR-15 §D values end-to-end on
+   Postgres.
+2. **Doctor authorization hardened.** `require_verified_doctor`
+   (`app/api/deps_medication_knowledge.py`) now requires both
+   `verification_status == VERIFIED` **and** `Doctor.is_active == True`,
+   matching the established defense-in-depth pattern already used by
+   `consultation.py`/`consultation_access.py` for the same threat model
+   (a suspended/deactivated doctor must not retain clinical-content
+   access). Same generic 403 regardless of which check fails.
+3. **Reference-loading N+1 removed.** `build_doctor_response`
+   (`app/services/medication_knowledge_response.py`) now batch-loads
+   references once per category (`side_effects`/`monitoring`/
+   `contraindications`) via K1.6's existing `list_references_for_batch`,
+   instead of calling `list_references_for` once per approved row inside
+   each response-list comprehension. Deterministic ordering, response
+   schema, and field-level fail-soft behavior are all unchanged — only the
+   query count changed. Proven by a live query-count regression test
+   (`tests/test_medication_knowledge_routes.py`,
+   `TestReferenceQueryCountDoesNotScaleWithRowCount`), not just code
+   inspection.
+4. **Rate-limit identity — documented as an open follow-up, explicitly not
+   fixed.** `docs/medication-management/
+   MEDICATION_K2_FOLLOWUP_RATE_LIMIT_IDENTITY.md` records that
+   `enforce_rate_limit` (pre-existing, unmodified) keys on client IP, not
+   authenticated principal identity, for both of K2 Slice 1's endpoints —
+   per PTH's explicit instruction, this round does not redesign the
+   app-wide rate limiter.
+
+No AI, ingestion, or frontend scope was added by any of the four items
+above. `frequency`, `action_level`, and
+`medication_knowledge_import/schema.py`'s `ai_generated: Literal[False]`
+remain untouched.
+
+### Revision 6 (carried over) — Corrected §1.3 fact 4: locale/audience exist on only 2 of 5 tables
 
 **Documentation defect found and corrected 2026-07-23, during K2 Slice 1 pre-merge review
 (Gate 2).** Verified directly against `app/models/drug_knowledge_content.py` while implementing
