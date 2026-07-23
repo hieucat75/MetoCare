@@ -110,7 +110,9 @@ def _seed_patient(db) -> dict[str, str]:
     return {"user_id": user.id, "patient_id": profile.id}
 
 
-def _seed_doctor(db, *, verification_status: str = DoctorVerificationStatus.VERIFIED) -> dict[str, str]:
+def _seed_doctor(
+    db, *, verification_status: str = DoctorVerificationStatus.VERIFIED, is_active: bool = True
+) -> dict[str, str]:
     suffix = uuid.uuid4().hex[:8]
     user = User(
         email=f"k2-doctor-{suffix}@example.com",
@@ -120,7 +122,12 @@ def _seed_doctor(db, *, verification_status: str = DoctorVerificationStatus.VERI
     )
     db.add(user)
     db.flush()
-    doctor = Doctor(user_id=user.id, full_name="Test Doctor", verification_status=verification_status)
+    doctor = Doctor(
+        user_id=user.id,
+        full_name="Test Doctor",
+        verification_status=verification_status,
+        is_active=is_active,
+    )
     db.add(doctor)
     db.commit()
     return {"user_id": user.id, "doctor_id": doctor.id}
@@ -264,8 +271,10 @@ class TestPatientEndpointAuthorization:
 
 
 class TestDoctorEndpointAuthorization:
-    def test_verified_doctor_gets_200(self, db):
-        doctor = _seed_doctor(db, verification_status=DoctorVerificationStatus.VERIFIED)
+    def test_verified_and_active_doctor_gets_200(self, db):
+        doctor = _seed_doctor(
+            db, verification_status=DoctorVerificationStatus.VERIFIED, is_active=True
+        )
         ingredient = _make_ingredient(db)
         resp = client.get(
             f"/api/v1/doctor/ingredients/{ingredient.id}/knowledge",
@@ -273,12 +282,36 @@ class TestDoctorEndpointAuthorization:
         )
         assert resp.status_code == 200
 
+    def test_verified_but_inactive_doctor_gets_403(self, db):
+        """Hardened 2026-07-23 — require_verified_doctor now also checks
+        is_active, matching consultation.py/consultation_access.py's
+        established defense-in-depth pattern."""
+        doctor = _seed_doctor(
+            db, verification_status=DoctorVerificationStatus.VERIFIED, is_active=False
+        )
+        ingredient = _make_ingredient(db)
+        resp = client.get(
+            f"/api/v1/doctor/ingredients/{ingredient.id}/knowledge",
+            headers=_mint(doctor["user_id"], "doctor"),
+        )
+        assert resp.status_code == 403
+
     def test_pending_verification_doctor_gets_403(self, db):
         doctor = _seed_doctor(db, verification_status=DoctorVerificationStatus.PENDING_VERIFICATION)
         ingredient = _make_ingredient(db)
         resp = client.get(
             f"/api/v1/doctor/ingredients/{ingredient.id}/knowledge",
             headers=_mint(doctor["user_id"], "doctor"),
+        )
+        assert resp.status_code == 403
+
+    def test_doctor_role_with_no_linked_doctor_row_gets_403(self, db):
+        """DOCTOR-role JWT for a user_id with no Doctor row at all (e.g. an
+        account created without ever completing doctor onboarding) —
+        distinct from PENDING_VERIFICATION, which has a Doctor row."""
+        resp = client.get(
+            f"/api/v1/doctor/ingredients/{_make_ingredient(db).id}/knowledge",
+            headers=_mint(str(uuid.uuid4()), "doctor"),
         )
         assert resp.status_code == 403
 
@@ -722,3 +755,68 @@ class TestNoAiFrontendRegression:
                 if path.is_file() and any(name in path.read_text(errors="ignore") for name in table_names):
                     hits.append(str(path))
         assert hits == [], f"K2 scope violated — found references in: {hits}"
+
+
+class TestReferenceQueryCountDoesNotScaleWithRowCount:
+    """Regression test for the N+1 fix (2026-07-23) — the doctor endpoint
+    must issue ONE reference query per category (side_effects/monitoring/
+    contraindications), not one per approved row. Instruments the actual
+    SQL statements issued during a live request via a `before_cursor_
+    execute` event listener on the app's real engine — proof by
+    observation, not by reading the code and assuming it's right."""
+
+    def test_five_side_effect_rows_produce_one_reference_query_not_five(self, db):
+        from app.core.database import engine as app_engine
+        from sqlalchemy import event
+
+        ingredient = _make_ingredient(db)
+        for i in range(5):
+            row = _approved_row(
+                db, DrugSideEffect, ingredient.id, variant=f"v{i}",
+                evidence_level="clinical_guideline", concept_code=f"concept-{i}",
+            )
+            ref = DrugReference(
+                publisher=f"Publisher {i}",
+                title=f"Title {i}",
+                source_type="product_label",
+                document_identifier=f"DOC-{uuid.uuid4().hex[:8]}",
+                publication_date=__import__("datetime").date(2026, 1, 1),
+                source_version="1.0",
+                accessed_at=__import__("datetime").date(2026, 1, 2),
+            )
+            db.add(ref)
+            db.flush()
+            db.add(
+                KnowledgeReferenceLink(
+                    knowledge_table="drug_side_effects", knowledge_row_id=row.id, drug_reference_id=ref.id
+                )
+            )
+        db.commit()
+        doctor = _seed_doctor(db)
+
+        statements: list[str] = []
+
+        def _capture(conn, cursor, statement, parameters, context, executemany):
+            statements.append(statement)
+
+        event.listen(app_engine, "before_cursor_execute", _capture)
+        try:
+            resp = client.get(
+                f"/api/v1/doctor/ingredients/{ingredient.id}/knowledge",
+                headers=_mint(doctor["user_id"], "doctor"),
+            )
+        finally:
+            event.remove(app_engine, "before_cursor_execute", _capture)
+
+        assert resp.status_code == 200
+        assert len(resp.json()["side_effects"]) == 5
+        for item in resp.json()["side_effects"]:
+            assert len(item["references"]) == 1
+
+        reference_queries = [
+            s for s in statements if "drug_references" in s or "knowledge_reference_links" in s
+        ]
+        assert len(reference_queries) == 1, (
+            f"expected exactly 1 batched reference query for 5 approved rows "
+            f"(1 per category, not 1 per row), got {len(reference_queries)}: {reference_queries}"
+        )

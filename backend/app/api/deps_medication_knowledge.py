@@ -75,11 +75,23 @@ def require_verified_doctor(
 ) -> None:
     """Endpoint #2's verification-status gate (K2 plan §4, PTH decision
     2026-07-22): `require_roles(DOCTOR)` alone is not sufficient — the
-    caller's own `Doctor.verification_status` must be `VERIFIED`. Same
-    403, same generic body as any other unauthorized role — never reveals
-    verification state to a caller who shouldn't have access at all."""
+    caller's own `Doctor.verification_status` must be `VERIFIED` AND
+    `Doctor.is_active` must be `True`. Same established defense-in-depth
+    pattern as `consultation.py:119` and `consultation_access.py:80-83`
+    (the latter's own comment: "a suspended/rejected/deactivated doctor is
+    denied even if a stale grant somehow survives") — added 2026-07-23
+    after independent review flagged this endpoint as the one clinical-
+    content access point in this codebase checking verification_status
+    without also checking is_active. Same 403, same generic body,
+    regardless of which of the three reasons (no Doctor row, not VERIFIED,
+    not active) applies — never reveals which one to a caller who
+    shouldn't have access at all."""
     doctor = get_doctor_by_user_id(db, user.id)
-    if doctor is None or doctor.verification_status != DoctorVerificationStatus.VERIFIED:
+    if (
+        doctor is None
+        or doctor.verification_status != DoctorVerificationStatus.VERIFIED
+        or not doctor.is_active
+    ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not authorized.",

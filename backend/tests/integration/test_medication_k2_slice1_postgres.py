@@ -263,7 +263,9 @@ def _seed_patient(db) -> dict[str, str]:
     return {"user_id": user.id, "patient_id": profile.id}
 
 
-def _seed_doctor(db, *, verification_status: str = DoctorVerificationStatus.VERIFIED) -> dict[str, str]:
+def _seed_doctor(
+    db, *, verification_status: str = DoctorVerificationStatus.VERIFIED, is_active: bool = True
+) -> dict[str, str]:
     suffix = uuid.uuid4().hex[:8]
     user = User(
         email=f"k2-pg-doctor-{suffix}@example.com",
@@ -273,7 +275,12 @@ def _seed_doctor(db, *, verification_status: str = DoctorVerificationStatus.VERI
     )
     db.add(user)
     db.flush()
-    doctor = Doctor(user_id=user.id, full_name="Test Doctor", verification_status=verification_status)
+    doctor = Doctor(
+        user_id=user.id,
+        full_name="Test Doctor",
+        verification_status=verification_status,
+        is_active=is_active,
+    )
     db.add(doctor)
     db.commit()
     return {"user_id": user.id, "doctor_id": doctor.id}
@@ -351,14 +358,27 @@ class TestPostgresAntiEnumeration:
 
 
 class TestPostgresDoctorVerification:
-    def test_verified_doctor_returns_200(self, db, client):
+    def test_verified_and_active_doctor_returns_200(self, db, client):
         ingredient = _make_ingredient(db)
-        doctor = _seed_doctor(db, verification_status=DoctorVerificationStatus.VERIFIED)
+        doctor = _seed_doctor(db, verification_status=DoctorVerificationStatus.VERIFIED, is_active=True)
         resp = client.get(
             f"/api/v1/doctor/ingredients/{ingredient.id}/knowledge",
             headers=_mint(doctor["user_id"], "doctor"),
         )
         assert resp.status_code == 200
+
+    def test_verified_but_inactive_doctor_returns_403(self, db, client):
+        """Hardened 2026-07-23 — require_verified_doctor now also checks
+        is_active, matching consultation.py/consultation_access.py."""
+        ingredient = _make_ingredient(db)
+        doctor = _seed_doctor(
+            db, verification_status=DoctorVerificationStatus.VERIFIED, is_active=False
+        )
+        resp = client.get(
+            f"/api/v1/doctor/ingredients/{ingredient.id}/knowledge",
+            headers=_mint(doctor["user_id"], "doctor"),
+        )
+        assert resp.status_code == 403
 
     def test_pending_verification_doctor_returns_403(self, db, client):
         ingredient = _make_ingredient(db)
@@ -366,6 +386,14 @@ class TestPostgresDoctorVerification:
         resp = client.get(
             f"/api/v1/doctor/ingredients/{ingredient.id}/knowledge",
             headers=_mint(doctor["user_id"], "doctor"),
+        )
+        assert resp.status_code == 403
+
+    def test_doctor_role_with_no_linked_doctor_row_returns_403(self, db, client):
+        ingredient = _make_ingredient(db)
+        resp = client.get(
+            f"/api/v1/doctor/ingredients/{ingredient.id}/knowledge",
+            headers=_mint(str(uuid.uuid4()), "doctor"),
         )
         assert resp.status_code == 403
 
@@ -527,36 +555,14 @@ class TestPostgresAuditAndNoWritePath:
         assert _knowledge_row_count(db) == before
 
 
-class TestPostgresSchemaDefectEvidenceLevelColumnWidth:
-    """Documents, does NOT fix, a pre-existing K1/ADR-13 schema defect found
-    while running this gate: `evidence_level VARCHAR(16)`
-    (`KnowledgeLifecycleMixin`, `app/models/drug_knowledge_content.py`)
-    cannot hold 2 of ADR-15 §D's 6 locked v1 values —
-    "clinical_guideline" (18 chars) and "peer_reviewed_literature" (24
-    chars) both exceed the column's 16-character limit. SQLite does not
-    enforce VARCHAR length at all, so this was invisible in every SQLite
-    test (50/50 pass) and the earlier code review; only a real Postgres
-    engine catches it. This is orthogonal to K2 Slice 1 (a read-only
-    endpoint never writes this column) — it would block K1.5's OWN write
-    path (`approve_row`) the moment content authoring tries to persist
-    either value, on Postgres, today. Fixing it needs a migration
-    (`ALTER COLUMN evidence_level TYPE VARCHAR(32)` or similar), which is
-    out of Slice 1's authorized "no migrations" scope — reported instead,
-    not silently patched around here or in any other test in this file."""
-
-    def test_18_char_clinical_guideline_value_is_rejected_by_postgres(self, db):
-        import sqlalchemy as sa
-
-        ingredient = _make_ingredient(db)
-        fields = dict(
-            drug_ingredient_id=ingredient.id,
-            concept_code="nausea",
-            label="Nausea",
-            frequency="common",
-            action_level="self_monitor",
-            description="synthetic test description",
-            **_approval_provenance_fields(evidence_level="clinical_guideline"),
-        )
-        with pytest.raises(sa.exc.DataError, match="StringDataRightTruncation"):
-            repo.create_draft(db, DrugSideEffect, authored_by="author-1", **fields)
-        db.rollback()
+# A prior revision of this file had a
+# TestPostgresSchemaDefectEvidenceLevelColumnWidth class here, documenting
+# that evidence_level VARCHAR(16) could not hold ADR-15 §D's
+# "clinical_guideline"/"peer_reviewed_literature" values. That defect is
+# now FIXED by migration k2_s1_widen_evidence_level (VARCHAR(16) ->
+# VARCHAR(32)) — keeping a test asserting the old narrow-column rejection
+# would now be actively wrong (the insert succeeds post-migration). The
+# migration itself, its upgrade/downgrade safety, and both long canonical
+# values round-tripping through the real approval path are now covered by
+# tests/integration/test_medication_k2_widen_evidence_level_migration.py,
+# which supersedes this class entirely.
