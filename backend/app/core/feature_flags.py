@@ -36,6 +36,12 @@ class FeatureFlag(enum.StrEnum):
     # module — default OFF (fail-closed) until the tenant-isolation surface is
     # verified end-to-end, same precedent as CLINICAL_COPILOT/AI_SESSION_ENABLED.
     CLINIC_SAAS = "clinic_saas"
+    # Medication Knowledge K2 Slice 1: read-only patient/doctor knowledge
+    # retrieval over the 5 ADR-13 knowledge tables (mandatory reversible
+    # control per ADR-15 §K.1) — default OFF, same fail-closed precedent as
+    # CLINICAL_COPILOT/CLINIC_SAAS. Disabling stops new requests from
+    # reaching either route; never deletes stored knowledge or provenance.
+    MEDICATION_KNOWLEDGE_RETRIEVAL = "medication_knowledge_retrieval"
 
 
 _DEFAULTS = {
@@ -59,6 +65,7 @@ _DEFAULTS = {
     FeatureFlag.CLINICAL_INSIGHT_AI: False,  # LLM rephrasing OFF in v1 (rules-only)
     FeatureFlag.CLINICAL_COPILOT: False,  # fail-closed — calls a real LLM over PHI
     FeatureFlag.CLINIC_SAAS: False,  # fail-closed — new multi-tenant module
+    FeatureFlag.MEDICATION_KNOWLEDGE_RETRIEVAL: False,  # fail-closed — new read surface
 }
 
 

@@ -68,7 +68,10 @@ class KnowledgeLifecycleMixin:
     # once a row reaches 'approved').
     source: Mapped[str | None] = mapped_column(String(255), nullable=True)
     version: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    evidence_level: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # Widened 16->32 chars (k2_s1_widen_evidence_level) — ADR-15 §D's locked
+    # v1 vocabulary includes "clinical_guideline" (18) and
+    # "peer_reviewed_literature" (24), both longer than the original 16.
+    evidence_level: Mapped[str | None] = mapped_column(String(32), nullable=True)
     reviewed_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
     last_reviewed_at: Mapped[dt.datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
