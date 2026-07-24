@@ -770,16 +770,18 @@ class TestReferenceQueryCountDoesNotScaleWithRowCount:
         from sqlalchemy import event
 
         ingredient = _make_ingredient(db)
+        expected_document_identifier_by_concept_code: dict[str, str] = {}
         for i in range(5):
             row = _approved_row(
                 db, DrugSideEffect, ingredient.id, variant=f"v{i}",
                 evidence_level="clinical_guideline", concept_code=f"concept-{i}",
             )
+            document_identifier = f"DOC-{uuid.uuid4().hex[:8]}"
             ref = DrugReference(
                 publisher=f"Publisher {i}",
                 title=f"Title {i}",
                 source_type="product_label",
-                document_identifier=f"DOC-{uuid.uuid4().hex[:8]}",
+                document_identifier=document_identifier,
                 publication_date=__import__("datetime").date(2026, 1, 1),
                 source_version="1.0",
                 accessed_at=__import__("datetime").date(2026, 1, 2),
@@ -791,6 +793,7 @@ class TestReferenceQueryCountDoesNotScaleWithRowCount:
                     knowledge_table="drug_side_effects", knowledge_row_id=row.id, drug_reference_id=ref.id
                 )
             )
+            expected_document_identifier_by_concept_code[f"concept-{i}"] = document_identifier
         db.commit()
         doctor = _seed_doctor(db)
 
@@ -809,9 +812,18 @@ class TestReferenceQueryCountDoesNotScaleWithRowCount:
             event.remove(app_engine, "before_cursor_execute", _capture)
 
         assert resp.status_code == 200
-        assert len(resp.json()["side_effects"]) == 5
-        for item in resp.json()["side_effects"]:
+        side_effects = resp.json()["side_effects"]
+        assert len(side_effects) == 5
+        for item in side_effects:
             assert len(item["references"]) == 1
+            expected_document_identifier = expected_document_identifier_by_concept_code[
+                item["concept_code"]
+            ]
+            assert item["references"][0]["document_identifier"] == expected_document_identifier, (
+                f"row {item['concept_code']} received a reference belonging to a different "
+                f"row — batch-loading must map references back to their own knowledge row, "
+                f"not just the right count"
+            )
 
         reference_queries = [
             s for s in statements if "drug_references" in s or "knowledge_reference_links" in s
