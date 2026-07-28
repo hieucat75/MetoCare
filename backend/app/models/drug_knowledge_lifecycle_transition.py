@@ -35,6 +35,7 @@ from sqlalchemy import CheckConstraint, DateTime, Index, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, validates
 
 from app.core.database import Base
+from app.core.system_actors import assert_no_forged_system_actor
 
 from ._mixins import TimestampMixin, UUIDPrimaryKey
 from .drug_knowledge_content import STATUS_VALUES
@@ -121,4 +122,20 @@ class KnowledgeLifecycleTransition(UUIDPrimaryKey, TimestampMixin, Base):
                 f"{key}={value!r} is not one of the 6 canonical lifecycle "
                 f"values {STATUS_VALUES}."
             )
+        return value
+
+    @validates("actor_id")
+    def _validate_actor_id(self, key: str, value: str) -> str:
+        """PR #136 Codex Round 1 finding #4 (fix round 1, 2026-07-28): this
+        column's own docstring above documents it as ALWAYS a real human
+        identity today, with the reserved `system:*` namespace held open
+        only for a future automated writer that does not exist yet. This
+        validator does not foreclose that future use (unlike
+        KnowledgeAIGeneration.created_by, which unconditionally requires a
+        registered SystemActor) — it only rejects a FORGED, unregistered
+        `system:*` string, via `assert_no_forged_system_actor`, matching
+        this codebase's "reserve the whole namespace, not just today's
+        registered members" principle everywhere an actor identity is
+        recorded."""
+        assert_no_forged_system_actor(value)
         return value

@@ -37,7 +37,7 @@ from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core.system_actors import is_system_actor
+from app.core.system_actors import SystemActor, is_reserved_namespace
 from app.models.drug_knowledge_ai_generation import KnowledgeAIGeneration
 from app.models.drug_knowledge_content import (
     DrugContraindication,
@@ -215,7 +215,24 @@ def build_draft(
     64-character SHA-256 hash here — enforced at the orchestrator's own
     call site (plan §3), not by this function's signature, since this is a
     *shared* primitive used by both the orchestrator and `create_draft`'s
-    legacy callers and must not reject either."""
+    legacy callers and must not reject either.
+
+    PR #136 Codex Round 1 finding #6 (fix round 1, 2026-07-28): `reviewed_by`
+    may never be supplied here. Before this fix, a caller could pre-populate
+    `reviewed_by` at draft-construction time with any string — a system
+    actor, an unrelated user, or the author's own identity — and it would
+    survive untouched all the way through `approve_row`, so the row's
+    recorded reviewer had no relationship to whichever human actually
+    approved it. `reviewed_by` is now bound exclusively to the approving
+    actor inside `approve_row`'s own UPDATE (see its docstring) — draft
+    creation is not a legitimate place to assert reviewer identity, since
+    nothing has been reviewed yet."""
+    if "reviewed_by" in fields:
+        raise ValueError(
+            "build_draft/create_draft may not be called with an explicit "
+            "reviewed_by= — reviewer identity is bound to the approving "
+            "actor at approve_row time, never pre-supplied at draft creation."
+        )
     now = dt.datetime.now(dt.UTC)
     return model_cls(
         authored_by=authored_by,
@@ -387,13 +404,26 @@ def assert_actor_is_not_system(actor_user_id: str) -> None:
     This is a second, independent identity check — never a real human
     `actor_user_id` collides with a `SystemActor` value (they are drawn
     from disjoint namespaces: real user ids vs. `system:*` strings), so
-    this never rejects a real human approver."""
-    if is_system_actor(actor_user_id):
+    this never rejects a real human approver.
+
+    PR #136 Codex Round 1 finding #4 (fix round 1, 2026-07-28): this
+    previously called `is_system_actor` alone, which is True only for
+    REGISTERED members — an unregistered value like `"system:attacker"`
+    made `is_system_actor` return False, so it silently passed this gate as
+    if it were an ordinary human identity and could approve/reject/retire.
+    The reserved `system:` namespace itself must be rejected here, not just
+    the finitely many values already registered in it — `is_reserved_namespace`
+    catches both the registered and the forged/unregistered case in one
+    check; a real human `actor_user_id` never legitimately starts with
+    `"system:"`, so this never rejects a real human approver."""
+    if is_reserved_namespace(actor_user_id):
         raise KnowledgeApprovalAuthorizationError(
-            f"actor_user_id={actor_user_id!r} is a reserved system-actor "
-            "identity. System/AI actors may never approve, reject, or "
-            "retire knowledge content — only a real, authenticated human "
-            "actor may perform this action."
+            f"actor_user_id={actor_user_id!r} is in the reserved system-actor "
+            "namespace ('system:*'). System/AI actors may never approve, "
+            "reject, or retire knowledge content — only a real, "
+            "authenticated human actor may perform this action. This is "
+            "rejected whether or not the value is a registered SystemActor "
+            "member."
         )
 
 
@@ -621,54 +651,122 @@ def _reject_if_pending_delete(db: Session, canonical: KnowledgeModel) -> None:
         )
 
 
-def _assert_ai_provenance_complete(
-    db: Session, model_cls: type, canonical: KnowledgeModel
+_AI_SYNTHESIS_ACTOR = SystemActor.MEDICATION_AI_SYNTHESIS.value
+
+
+def _select_and_promote_ai_generation(
+    db: Session, model_cls: type, canonical: KnowledgeModel, *, actor_user_id: str, now: dt.datetime
 ) -> None:
-    """Slice 0 §B2.3. No-op for any row whose ORIGIN (read from `canonical`
-    — the re-fetched, session-locked row, never a caller-supplied field,
-    same discipline as every other check in this module) is not
-    `ai_synthesized`. For an `ai_synthesized` row, requires a
-    `KnowledgeAIGeneration` that: targets this exact row
-    (`knowledge_table`+`target_row_id`), succeeded
-    (`generation_status='succeeded'`), is not superseded
-    (`superseded_by_generation_id IS NULL`), and carries complete
-    provenance (`model_identifier`, `prompt_template_id`,
-    `prompt_template_version` all present) — raises
-    `AIProvenanceIncompleteError` otherwise. A generation record
-    existing is necessary but never sufficient to approve on its own:
-    the human-actor gate (`assert_can_approve_knowledge`, checked before
-    this function is ever reached) still independently applies."""
+    """Slice 0 §B2.3, redesigned per PR #136 Codex Round 1 finding #5 (fix
+    round 1, 2026-07-28 — formerly `_assert_ai_provenance_complete`, which
+    only asserted and never promoted). No-op for any row whose ORIGIN (read
+    from `canonical` — the re-fetched, session-locked row, never a
+    caller-supplied field, same discipline as every other check in this
+    module) is not `ai_synthesized`.
+
+    For an `ai_synthesized` row, resolves the SINGLE most recent
+    non-superseded `KnowledgeAIGeneration` targeting this exact row
+    (`knowledge_table`+`target_row_id`) — ordered by `created_at` DESC,
+    locked `FOR UPDATE` (serializes concurrent approvals racing to promote
+    the same generation, mirrors `_lock_canonical_row`'s discipline; a
+    no-op on SQLite, which has no FOR UPDATE) — REGARDLESS of its
+    `generation_status`. Codex Round 1 finding #5: the prior implementation
+    filtered `generation_status='succeeded'` BEFORE ordering, so an OLDER
+    succeeded attempt could still authorize approval even when the actual
+    latest attempt had since failed — silently contradicting its own "the
+    latest retry is authoritative" comment. Ordering first, then checking
+    the single latest record's own status, makes a failed latest retry
+    block approval outright rather than falling back to stale history.
+
+    That single latest record must ALSO satisfy every one of:
+      - `generation_status == 'succeeded'`;
+      - `origin == 'ai_synthesized'` (the generation's own record of what
+        kind of process produced it — independent of the knowledge row's
+        own `origin`, see drug_knowledge_ai_generation.py's module
+        docstring for why the two are not the same fact);
+      - `created_by == SystemActor.MEDICATION_AI_SYNTHESIS.value` exactly
+        (a registered, semantically AI-synthesis actor — Codex Round 1:
+        `created_by` was previously an unrestricted string that could name
+        any actor, including a human, or a differently-purposed registered
+        system actor such as `MEDICATION_MIGRATION`);
+      - `review_status == 'pending'` (not already promoted/rejected/
+        superseded by an earlier decision on this exact generation —
+        prevents reusing an already-decided generation to authorize a
+        second approval);
+      - complete provenance (`model_identifier`, `prompt_template_id`,
+        `prompt_template_version` all present);
+      - a non-empty `output_hash` (Codex Round 1: a null/empty output hash
+        previously still qualified).
+
+    On success, ATOMICALLY promotes that generation's `review_status` to
+    `'promoted'` — an `UPDATE ... WHERE review_status = 'pending'`, the
+    same optimistic-concurrency idiom every other transition in this
+    module already uses — inside the caller's own open transaction. This
+    is the other half of Codex Round 1 finding #5: approval previously
+    never marked the generation it relied on, so provenance stayed
+    `'pending'` forever even after a successful approval. If the promotion
+    UPDATE loses a race (rowcount != 1 — a concurrent transaction changed
+    this exact generation's `review_status` between the `FOR UPDATE` read
+    above and this UPDATE; `FOR UPDATE` on Postgres actually prevents this
+    from happening, but SQLite has no equivalent lock), raises
+    `AIProvenanceIncompleteError` and the whole approval rolls back with
+    it — a generation is never left promoted without its row also being
+    approved, and a row is never approved on a generation this function
+    failed to promote.
+
+    Raises `AIProvenanceIncompleteError` if no record satisfies every
+    check above. A generation record existing is necessary but never
+    sufficient to approve on its own: the human-actor gate
+    (`assert_can_approve_knowledge`, checked before this function is ever
+    reached) still independently applies. `actor_user_id`/`now` are
+    accepted only to keep this function's signature self-contained for a
+    future caller that might want to log who/when a promotion happened;
+    Slice 0 does not use them beyond that (the promotion UPDATE itself
+    carries no actor/timestamp columns of its own)."""
     if canonical.origin != "ai_synthesized":
         return
+    _ = actor_user_id, now  # reserved for a future promotion-audit column
     table_name = KNOWLEDGE_TABLE_NAME[model_cls]
-    # 2026-07-27 final-checkpoint fix: multiple qualifying generations can
-    # legitimately exist for the same row (retries each leave their own
-    # record, per the append-only design) — without an explicit ordering,
-    # `.first()` picks an arbitrary one (implementation-defined query-plan
-    # behavior, not a real contract), so approval could pass or fail
-    # depending on which happened to come back first. Ordering by
-    # `created_at` descending makes the MOST RECENT qualifying attempt
-    # authoritative, deterministically — the natural "the latest retry is
-    # the one that counts" semantics.
-    generation = (
+    latest = (
         db.query(KnowledgeAIGeneration)
-        .filter_by(
-            knowledge_table=table_name,
-            target_row_id=canonical.id,
-            generation_status="succeeded",
-        )
+        .filter_by(knowledge_table=table_name, target_row_id=canonical.id)
         .filter(KnowledgeAIGeneration.superseded_by_generation_id.is_(None))
         .order_by(KnowledgeAIGeneration.created_at.desc())
+        .populate_existing()
+        .with_for_update()
         .first()
     )
-    if generation is None or not (
-        generation.model_identifier
-        and generation.prompt_template_id
-        and generation.prompt_template_version
+    if (
+        latest is None
+        or latest.generation_status != "succeeded"
+        or latest.origin != "ai_synthesized"
+        or latest.created_by != _AI_SYNTHESIS_ACTOR
+        or latest.review_status != "pending"
+        or not latest.output_hash
+        or not (
+            latest.model_identifier
+            and latest.prompt_template_id
+            and latest.prompt_template_version
+        )
     ):
         raise AIProvenanceIncompleteError(
             f"Row {canonical.id!r} has origin='ai_synthesized' but no complete, "
-            "non-superseded successful generation record exists — refusing to approve."
+            "non-superseded, pending, successful AI-synthesis generation record "
+            "exists — refusing to approve."
+        )
+    promotion = db.execute(
+        update(KnowledgeAIGeneration)
+        .where(
+            KnowledgeAIGeneration.id == latest.id,
+            KnowledgeAIGeneration.review_status == "pending",
+        )
+        .values(review_status="promoted")
+    )
+    if promotion.rowcount != 1:
+        raise AIProvenanceIncompleteError(
+            f"Generation {latest.id!r} lost a concurrent promotion/rejection "
+            "race — another transaction changed its review_status first. "
+            "Re-fetch and re-check before retrying."
         )
 
 
@@ -738,7 +836,9 @@ def approve_row(
         # _reject_if_pending_delete's docstring for the bypass that fixed).
         canonical = _lock_canonical_row(db, model_cls, row.id)
         _reject_if_pending_delete(db, canonical)
-        _assert_ai_provenance_complete(db, model_cls, canonical)
+        _select_and_promote_ai_generation(
+            db, model_cls, canonical, actor_user_id=actor_user_id, now=now
+        )
 
         # Specialty completeness is re-checked against the DB at write time
         # (never trusts a caller-supplied bool) — the same reasoning as
@@ -770,7 +870,18 @@ def approve_row(
         result = db.execute(
             update(model_cls)
             .where(model_cls.id == canonical.id, model_cls.status == "clinical_review")
-            .values(status="approved", status_changed_by=actor_user_id, status_changed_at=now)
+            .values(
+                status="approved",
+                status_changed_by=actor_user_id,
+                status_changed_at=now,
+                # Codex Round 1 finding #6 (fix round 1, 2026-07-28):
+                # reviewed_by is bound to the actor performing THIS
+                # approval, never to whatever a draft may have pre-supplied
+                # (build_draft now rejects an explicit reviewed_by= kwarg
+                # outright — see its docstring). This is the only place
+                # reviewed_by is ever written for Slice 0.
+                reviewed_by=actor_user_id,
+            )
         )
         if result.rowcount != 1:
             raise TransitionError(

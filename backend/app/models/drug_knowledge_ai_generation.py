@@ -32,6 +32,7 @@ from sqlalchemy.orm import Mapped, mapped_column, validates
 from sqlalchemy.types import JSON
 
 from app.core.database import Base
+from app.core.system_actors import is_system_actor
 
 from ._mixins import TimestampMixin, UUIDPrimaryKey
 from .drug_knowledge_content import ORIGIN_VALUES
@@ -136,6 +137,12 @@ class KnowledgeAIGeneration(UUIDPrimaryKey, TimestampMixin, Base):
 
     # Reserved system-actor identity (app/core/system_actors.py) — never a
     # real human user_id, never attributed to a real admin account.
+    # PR #136 Codex Round 1 finding #4 (fix round 1, 2026-07-28): this was
+    # previously an unrestricted string — validated below to be a
+    # registered SystemActor, closing the "created_by is also an
+    # unrestricted string" gap. Note this only validates ORM-path inserts;
+    # the DB-level CHECK added in k2_s0_integrity_guards additionally
+    # closes the same gap for raw-SQL inserts that bypass the ORM entirely.
     created_by: Mapped[str] = mapped_column(String(255), nullable=False)
 
     __table_args__ = (
@@ -171,4 +178,25 @@ class KnowledgeAIGeneration(UUIDPrimaryKey, TimestampMixin, Base):
         """ORM-level mirror of the DB CHECK constraint above."""
         if value not in ORIGIN_VALUES:
             raise ValueError(f"origin={value!r} is not one of {ORIGIN_VALUES}.")
+        return value
+
+    @validates("created_by")
+    def _validate_created_by(self, key: str, value: str) -> str:
+        """PR #136 Codex Round 1 finding #4: `created_by` on this table is
+        documented as always machine-authored (never a real human,
+        app/core/system_actors.py's own module docstring), so this
+        requires a REGISTERED SystemActor unconditionally — not merely
+        `assert_no_forged_system_actor`'s narrower "reject only the forged
+        namespace" check, which would still accept an ordinary human
+        string here. Every existing caller in this codebase already passes
+        `SystemActor.MEDICATION_AI_SYNTHESIS.value`; this only closes the
+        gap for a future caller that might pass an arbitrary string."""
+        if not is_system_actor(value):
+            raise ValueError(
+                f"created_by={value!r} is not a registered SystemActor "
+                f"(app/core/system_actors.py). knowledge_ai_generations rows are "
+                "always machine-authored — created_by must name the "
+                "registered system actor that produced this generation, "
+                "never a human identity or an arbitrary string."
+            )
         return value
