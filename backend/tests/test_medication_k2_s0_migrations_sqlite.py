@@ -4,7 +4,10 @@
         -> k2_s0_knowledge_origin        (add `origin` to the 5 knowledge tables)
         -> k2_s0_ai_generation_history   (create knowledge_ai_generations)
         -> k2_s0_lifecycle_transitions   (create knowledge_lifecycle_transitions)
-        -> k2_s0_add_rejected_status     (widen status CHECK to include 'rejected'; head)
+        -> k2_s0_add_rejected_status     (widen status CHECK to include 'rejected')
+        -> k2_s0_integrity_guards        (fix round 1: persistence-level integrity guards)
+        -> k2_s0_round3_hardening        (fix round 3: generation ordering, content
+                                           immutability, hash-format enforcement; head)
 
 Not integration-marked, no POSTGRES_TEST_URL — every test builds its own
 throwaway SQLite database FILE (never `:memory:`, never the shared
@@ -34,17 +37,22 @@ database lands at the revision immediately preceding the one whose
 `downgrade()` raised, NOT at the revision it started the call from.
 `TestSqliteMultiStepDowngradeRefusalLandingBehavior` below demonstrates
 this directly: downgrading from head with a blocking row present in
-`knowledge_ai_generations`* lands the SQLite DB at
+`knowledge_lifecycle_transitions`* lands the SQLite DB at
 `k2_s0_lifecycle_transitions` (the revision immediately above the one
 whose downgrade refused), never at head — the opposite of what the
 equivalent Postgres scenario proves in the sibling integration test file.
 Do not port the Postgres file's "unchanged from before" assertion here —
 it is not true on this dialect.
 
-*Chosen because it is the first migration hit walking down from head
-(k2_s0_add_rejected_status -> k2_s0_lifecycle_transitions ->
-k2_s0_ai_generation_history is where the refusal fires), giving the
-clearest 2-step-committed-then-refused demonstration.
+*Fix round 3, 2026-07-28: this used to block on a `knowledge_ai_
+generations` row, but `k2_s0_round3_hardening` (the new head) now ALSO
+guards that same table's non-emptiness (dropping `sequence_number` would
+discard real ordering data) — being the very first step attempted from
+head, it would always intercept before the older, deeper guard ever ran.
+Blocking on `knowledge_lifecycle_transitions` instead (a table
+round3_hardening never touches) still gives a genuine multi-step
+(3 steps committed, 4th refused) demonstration — see that test's own
+docstring for the exact step-by-step chain.
 
 Synthetic fixtures only — never real clinical content.
 """
@@ -70,11 +78,12 @@ ORIGIN_REV = "k2_s0_knowledge_origin"
 AI_GEN_REV = "k2_s0_ai_generation_history"
 LIFECYCLE_REV = "k2_s0_lifecycle_transitions"
 REJECTED_REV = "k2_s0_add_rejected_status"
-# Fix round 1, 2026-07-28: k2_s0_integrity_guards is now the actual head,
-# one revision past REJECTED_REV — every place that used to assert
-# `_current_revision(...) == REJECTED_REV` to mean "at head" now asserts
+INTEGRITY_GUARDS_REV = "k2_s0_integrity_guards"
+# Fix round 3, 2026-07-28: k2_s0_round3_hardening is now the actual head,
+# one revision past INTEGRITY_GUARDS_REV — every place that used to assert
+# `_current_revision(...) == HEAD_REV` to mean "at head" now asserts
 # against this instead.
-HEAD_REV = "k2_s0_integrity_guards"
+HEAD_REV = "k2_s0_round3_hardening"
 
 _KNOWLEDGE_TABLES = (
     "drug_usage",
@@ -726,46 +735,47 @@ class TestAddRejectedStatusMigrationSQLite:
 
 class TestSqliteMultiStepDowngradeRefusalLandingBehavior:
     def test_multistep_downgrade_refusal_lands_one_step_above_the_failure_not_at_head(self, sqlite_db):
-        """From head (k2_s0_integrity_guards, fix round 1, 2026-07-28 —
-        formerly k2_s0_add_rejected_status before that migration landed),
-        request a downgrade all the way down to AI_GEN_REV. Since
-        k2_s0_integrity_guards' own downgrade never raises (it only drops
-        triggers/constraints, no data-loss guard applies to it — see its
-        own docstring), the leading `k2_s0_integrity_guards ->
-        k2_s0_add_rejected_status` step always commits harmlessly, landing
-        exactly where this test's chain used to start. From there it's the
-        same 2-step chain as before: k2_s0_add_rejected_status ->
-        k2_s0_lifecycle_transitions (no blocking data, commits) ->
-        k2_s0_ai_generation_history (the target — never entered because
-        knowledge_ai_generations is non-empty, so its own downgrade would
-        be entered next but the chain stops at the boundary we ask for).
-        To actually exercise a REFUSAL mid-chain, request a downgrade past
-        AI_GEN_REV's own migration (to ORIGIN_REV): the leading guard step
-        commits, then add_rejected_status -> lifecycle_transitions
-        commits, lifecycle_transitions -> ai_generation_history commits,
-        and ai_generation_history -> knowledge_origin is where
-        knowledge_ai_generations' non-empty guard raises.
+        """Fix round 3, 2026-07-28: this test used to block on a
+        `knowledge_ai_generations` row, refusing at the `k2_s0_ai_
+        generation_history` downgrade step. `k2_s0_round3_hardening` (the
+        new head) now ALSO guards `knowledge_ai_generations` non-emptiness
+        (dropping `sequence_number` would silently discard real ordering
+        data) — and since it is the very first step attempted from head,
+        it would always intercept before the older, deeper guard ever ran,
+        making the old blocking data unable to exercise a genuinely
+        multi-step chain any more. Blocking on a `knowledge_lifecycle_
+        transitions` row instead (a table round3_hardening never touches)
+        restores a real multi-step scenario: round3_hardening's own
+        downgrade commits cleanly (its guard sees an empty
+        knowledge_ai_generations table), then k2_s0_integrity_guards'
+        downgrade commits (never raises — see its own docstring), then
+        k2_s0_add_rejected_status's downgrade also commits (no 'rejected'
+        rows exist), landing at LIFECYCLE_REV — where the NEXT step,
+        k2_s0_lifecycle_transitions' own downgrade, is where the
+        non-empty-table guard actually raises.
 
         On Postgres the equivalent multi-step call would leave the DB
         unchanged at head (the whole call is one transaction). On SQLite,
         every earlier step is already committed independently by the time
-        the failing step raises — the DB lands at AI_GEN_REV (the revision
-        immediately above the one whose downgrade refused), not at head."""
+        the failing step raises — the DB lands at LIFECYCLE_REV (the
+        revision immediately above the one whose downgrade refused), not
+        at head."""
         engine, cfg = sqlite_db
         command.upgrade(cfg, "head")
         assert _current_revision(engine) == HEAD_REV
 
         with engine.connect() as conn:
-            generation_id = _insert_ai_generation(conn)
+            ingredient_id = _seed_ingredient(conn)
+            transition_id = _insert_lifecycle_transition(conn, ingredient_id)
 
         with pytest.raises(RuntimeError, match="Refusing to downgrade"):
             command.downgrade(cfg, ORIGIN_REV)
 
         landed_at = _current_revision(engine)
-        assert landed_at == AI_GEN_REV, (
+        assert landed_at == LIFECYCLE_REV, (
             "SQLite's non-transactional-per-step DDL means a mid-chain "
             "refusal leaves earlier steps committed — expected to land at "
-            f"{AI_GEN_REV!r} (one step above the failure), got {landed_at!r}. "
+            f"{LIFECYCLE_REV!r} (one step above the failure), got {landed_at!r}. "
             "This is NOT the same invariant the Postgres integration file "
             "asserts (there, the same scenario leaves the DB unchanged at "
             "whatever revision the call started from)."
@@ -777,23 +787,297 @@ class TestSqliteMultiStepDowngradeRefusalLandingBehavior:
             "assuming this test is simply flaky"
         )
 
-        # Confirm the two earlier steps really did commit: lifecycle
-        # transitions history table (dropped by the step-1 downgrade) is
-        # gone, but knowledge_ai_generations (the blocking table) is not.
-        assert _table_exists(engine, "knowledge_lifecycle_transitions") is False
-        assert _table_exists(engine, "knowledge_ai_generations") is True
+        # Confirm the three earlier steps really did commit:
+        # round3_hardening's sequence_number column is gone, but
+        # knowledge_lifecycle_transitions (the blocking table) is not.
+        assert _column_info(engine, "knowledge_ai_generations", "sequence_number") is None
+        assert _table_exists(engine, "knowledge_lifecycle_transitions") is True
 
         # Not a permanent wedge: remediate, then the interrupted downgrade
         # can be completed, and a subsequent upgrade back to head succeeds
-        # without error (no partial/corrupted state).
+        # without error (no partial/corrupted state). integrity_guards'
+        # append-only trigger already dropped in the step that committed
+        # above (it lives closer to head than LIFECYCLE_REV), so this
+        # plain DELETE needs no trigger-disable escape hatch here.
         with engine.connect() as conn:
             conn.execute(
-                sa.text("DELETE FROM knowledge_ai_generations WHERE id = :id"), {"id": generation_id}
+                sa.text("DELETE FROM knowledge_lifecycle_transitions WHERE id = :id"), {"id": transition_id}
             )
             conn.commit()
         command.downgrade(cfg, ORIGIN_REV)
         assert _current_revision(engine) == ORIGIN_REV
-        assert _table_exists(engine, "knowledge_ai_generations") is False
+        assert _table_exists(engine, "knowledge_lifecycle_transitions") is False
 
         command.upgrade(cfg, "head")
         assert _current_revision(engine) == HEAD_REV
+
+
+class TestGenerationOrderingOnSQLite:
+    """Fix round 3, 2026-07-28: the `k2_s0_round3_hardening` AFTER INSERT
+    trigger that auto-assigns `sequence_number` only exists on a database
+    built by a real `alembic upgrade head` — this suite's `sqlite_db`
+    fixture does exactly that (unlike tests/test_knowledge_repository.py's
+    shared `create_all()`-built database, which never runs the trigger and
+    so cannot prove this behavior; see that file's comments on the
+    equivalent tests it sets `sequence_number` explicitly for instead).
+    Mirrors tests/integration/test_medication_k2_s0_round3_hardening_postgres.py's
+    TestGenerationOrderingOnPostgres, minus the concurrency test (SQLite's
+    serialized single-writer model makes an equivalent race trivially
+    impossible to construct)."""
+
+    _ROLE = "internal_admin"
+
+    def _session_factory(self, engine: sa.Engine):
+        from sqlalchemy.orm import sessionmaker
+
+        return sessionmaker(bind=engine, expire_on_commit=False)
+
+    def _ai_synthesized_row(self, db, ingredient_id: str):
+        from app.core.system_actors import SystemActor
+        from app.models.drug_knowledge_content import DrugUsage
+        from app.services import knowledge_repository as repo
+
+        row = repo.create_draft(
+            db,
+            DrugUsage,
+            authored_by=SystemActor.MEDICATION_AI_SYNTHESIS.value,
+            drug_ingredient_id=ingredient_id,
+            locale="vi",
+            audience="patient",
+            content="synthetic AI-generated test content — never staged/production",
+            origin="ai_synthesized",
+            source="Synthetic Test Source",
+            version="1.0",
+            evidence_level="expert_opinion",
+            last_reviewed_at=dt.datetime.now(dt.UTC),
+        )
+        repo.submit_for_review(db, row, actor_user_id=SystemActor.MEDICATION_AI_SYNTHESIS.value)
+        return row
+
+    def _make_generation(self, db, *, target_row_id: str, **overrides):
+        from app.core.system_actors import SystemActor
+        from app.models.drug_knowledge_ai_generation import KnowledgeAIGeneration
+
+        fields = dict(
+            knowledge_table="drug_usage",
+            target_row_id=target_row_id,
+            model_provider="synthetic-provider",
+            model_identifier="synthetic-model-v1",
+            prompt_template_id="synthetic-prompt",
+            prompt_template_version="1.0",
+            input_source_ids=[],
+            input_hash="a" * 64,
+            output_hash="b" * 64,
+            generation_status="succeeded",
+            created_by=SystemActor.MEDICATION_AI_SYNTHESIS.value,
+        )
+        fields.update(overrides)
+        gen = KnowledgeAIGeneration(**fields)
+        db.add(gen)
+        db.commit()
+        db.refresh(gen)
+        return gen
+
+    def _seed_ingredient_orm(self, db):
+        from app.models.drug_knowledge_core import DrugClass, DrugIngredient
+
+        suffix = uuid.uuid4().hex[:8]
+        drug_class = DrugClass(name=f"test-class-{suffix}", required_specialties=[])
+        db.add(drug_class)
+        db.flush()
+        ingredient_row = DrugIngredient(name_inn=f"test-ingredient-{suffix}", drug_class_id=drug_class.id)
+        db.add(ingredient_row)
+        db.commit()
+        return ingredient_row.id
+
+    def test_identical_created_at_values_get_deterministic_sequence_numbers(self, sqlite_db) -> None:
+        engine, cfg = sqlite_db
+        command.upgrade(cfg, "head")
+        Session = self._session_factory(engine)
+        db = Session()
+        try:
+            ingredient_id = self._seed_ingredient_orm(db)
+            row = self._ai_synthesized_row(db, ingredient_id)
+            same_ts = dt.datetime.now(dt.UTC)
+            first = self._make_generation(db, target_row_id=row.id, created_at=same_ts)
+            second = self._make_generation(db, target_row_id=row.id, created_at=same_ts)
+            assert first.created_at == second.created_at, "the tie must be real, not accidental"
+            assert first.sequence_number is not None
+            assert second.sequence_number is not None
+            assert second.sequence_number > first.sequence_number, (
+                "insertion order, not created_at, must break the tie"
+            )
+
+            from app.services import knowledge_repository as repo
+
+            approved = repo.approve_row(db, row, actor_user_id="reviewer-1", actor_role=self._ROLE)
+            assert approved.status == "approved"
+            db.refresh(first)
+            db.refresh(second)
+            assert second.review_status == "promoted"
+            assert first.review_status == "pending"
+        finally:
+            db.close()
+
+    def test_succeeded_then_failed_same_timestamp_blocks_promotion_of_older_succeeded(self, sqlite_db) -> None:
+        engine, cfg = sqlite_db
+        command.upgrade(cfg, "head")
+        Session = self._session_factory(engine)
+        db = Session()
+        try:
+            ingredient_id = self._seed_ingredient_orm(db)
+            row = self._ai_synthesized_row(db, ingredient_id)
+            same_ts = dt.datetime.now(dt.UTC)
+            succeeded = self._make_generation(
+                db, target_row_id=row.id, generation_status="succeeded", created_at=same_ts
+            )
+            failed = self._make_generation(db, target_row_id=row.id, generation_status="failed", created_at=same_ts)
+            assert succeeded.created_at == failed.created_at
+            assert failed.sequence_number > succeeded.sequence_number
+
+            from app.services import knowledge_repository as repo
+
+            with pytest.raises(repo.AIProvenanceIncompleteError):
+                repo.approve_row(db, row, actor_user_id="reviewer-1", actor_role=self._ROLE)
+            db.refresh(row)
+            assert row.status == "clinical_review"
+            db.refresh(succeeded)
+            assert succeeded.review_status == "pending", (
+                "an older succeeded attempt must never be promotable just because a "
+                "later attempt sharing the same timestamp failed"
+            )
+        finally:
+            db.close()
+
+    def test_deterministic_selection_survives_reload(self, sqlite_db) -> None:
+        engine, cfg = sqlite_db
+        command.upgrade(cfg, "head")
+        Session = self._session_factory(engine)
+        db = Session()
+        try:
+            ingredient_id = self._seed_ingredient_orm(db)
+            row = self._ai_synthesized_row(db, ingredient_id)
+            self._make_generation(db, target_row_id=row.id, generation_status="failed")
+            authoritative = self._make_generation(db, target_row_id=row.id, generation_status="succeeded")
+            row_id = row.id
+            authoritative_id = authoritative.id
+        finally:
+            db.close()
+
+        from app.models.drug_knowledge_ai_generation import KnowledgeAIGeneration
+        from app.models.drug_knowledge_content import DrugUsage
+        from app.services import knowledge_repository as repo
+
+        reload_db = Session()
+        try:
+            approved = repo.approve_row(
+                reload_db,
+                reload_db.get(DrugUsage, row_id),
+                actor_user_id="reviewer-1",
+                actor_role=self._ROLE,
+            )
+            assert approved.status == "approved"
+            promoted = reload_db.get(KnowledgeAIGeneration, authoritative_id)
+            assert promoted.review_status == "promoted", (
+                "the same authoritative generation must be selected after a full "
+                "session/connection reload, not merely within one process's cache"
+            )
+        finally:
+            reload_db.close()
+
+
+class TestPromotedToSupersededBlockedOnSQLite:
+    """User Fix Round 3 requirement: 'Keep promoted-to-superseded blocked
+    for Slice 0, but document and test that this is intentional and
+    requires an explicit future migration for Slice 3.' Already enforced
+    by `k2_s0_integrity_guards`' `trg_knowledge_ai_generations_guard_
+    review_status_final` (Round 1, unchanged by Round 3): 'review_status
+    is already finalized' fires for ANY change once `review_status !=
+    'pending'` — this already covers promoted -> superseded, not just
+    promoted -> rejected or promoted -> promoted. Slice 0's application
+    code never assigns 'superseded' anywhere (grep `knowledge_repository.py`
+    for `superseded_by_generation_id =` — no such assignment exists), so
+    the absence of this transition today is a deliberate design choice, not
+    an oversight: Slice 3 will need its own migration to relax this guard
+    specifically for a well-defined supersession lifecycle (e.g. when a
+    corrected AI generation replaces an already-promoted one), rather than
+    silently already being possible."""
+
+    _ROLE = "internal_admin"
+
+    def test_promoted_generation_cannot_be_moved_to_superseded(self, sqlite_db) -> None:
+        from sqlalchemy.orm import sessionmaker
+
+        engine, cfg = sqlite_db
+        command.upgrade(cfg, "head")
+        Session = sessionmaker(bind=engine, expire_on_commit=False)
+        db = Session()
+        try:
+            from app.core.system_actors import SystemActor
+            from app.models.drug_knowledge_ai_generation import KnowledgeAIGeneration
+            from app.models.drug_knowledge_content import DrugUsage
+            from app.models.drug_knowledge_core import DrugClass, DrugIngredient
+            from app.services import knowledge_repository as repo
+
+            suffix = uuid.uuid4().hex[:8]
+            drug_class = DrugClass(name=f"test-class-{suffix}", required_specialties=[])
+            db.add(drug_class)
+            db.flush()
+            ingredient = DrugIngredient(name_inn=f"test-ingredient-{suffix}", drug_class_id=drug_class.id)
+            db.add(ingredient)
+            db.commit()
+
+            row = repo.create_draft(
+                db,
+                DrugUsage,
+                authored_by=SystemActor.MEDICATION_AI_SYNTHESIS.value,
+                drug_ingredient_id=ingredient.id,
+                locale="vi",
+                audience="patient",
+                content="synthetic AI-generated test content — never staged/production",
+                origin="ai_synthesized",
+                source="Synthetic Test Source",
+                version="1.0",
+                evidence_level="expert_opinion",
+                last_reviewed_at=dt.datetime.now(dt.UTC),
+            )
+            repo.submit_for_review(db, row, actor_user_id=SystemActor.MEDICATION_AI_SYNTHESIS.value)
+            generation = KnowledgeAIGeneration(
+                knowledge_table="drug_usage",
+                target_row_id=row.id,
+                model_provider="synthetic-provider",
+                model_identifier="synthetic-model-v1",
+                prompt_template_id="synthetic-prompt",
+                prompt_template_version="1.0",
+                input_source_ids=[],
+                input_hash="a" * 64,
+                output_hash="b" * 64,
+                generation_status="succeeded",
+                created_by=SystemActor.MEDICATION_AI_SYNTHESIS.value,
+            )
+            db.add(generation)
+            db.commit()
+
+            approved = repo.approve_row(db, row, actor_user_id="reviewer-1", actor_role=self._ROLE)
+            assert approved.status == "approved"
+            db.refresh(generation)
+            assert generation.review_status == "promoted"
+
+            with pytest.raises(sa.exc.IntegrityError, match="already finalized"):
+                db.execute(
+                    sa.text("UPDATE knowledge_ai_generations SET review_status = 'superseded' WHERE id = :id"),
+                    {"id": generation.id},
+                )
+                db.commit()
+            db.rollback()
+            db.refresh(generation)
+            assert generation.review_status == "promoted", (
+                "Slice 0 has no code path that ever assigns 'superseded' — this is "
+                "intentional (not yet designed) and enforced at the persistence "
+                "boundary by the same 'review_status is already finalized' guard "
+                "that protects every other finalized value. Relaxing this for a "
+                "genuine promoted -> superseded transition requires an explicit "
+                "Slice 3 migration, not a silent capability already present."
+            )
+        finally:
+            db.close()

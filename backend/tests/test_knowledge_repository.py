@@ -2477,12 +2477,15 @@ class TestAIProvenanceApprovalGuard:
             prompt_template_id="synthetic-prompt",
             prompt_template_version="1.0",
             input_source_ids=[],
-            input_hash="synthetic-hash",
+            # Fix round 3, 2026-07-28 (Codex Round 3 hash-format
+            # enforcement): must be a real 64-char lowercase hex string —
+            # "synthetic-hash" no longer passes ORM validation.
+            input_hash="a" * 64,
             # Fix round 1, 2026-07-28 (Codex Round 1 finding #5): approval
             # now requires a non-empty output_hash — every test exercising
-            # the SUCCESS path needs one by default; tests proving the
-            # missing-output_hash case override it explicitly to "".
-            output_hash="synthetic-output-hash",
+            # the SUCCESS path needs one by default; the test proving the
+            # missing-output_hash case overrides it explicitly to None.
+            output_hash="b" * 64,
             generation_status="succeeded",
             created_by=SystemActor.MEDICATION_AI_SYNTHESIS.value,
         )
@@ -2558,13 +2561,37 @@ class TestAIProvenanceApprovalGuard:
         # Fix round 1 finding #6: reviewed_by is bound to the approving actor.
         assert approved.reviewed_by == "reviewer-1"
 
-    def test_empty_output_hash_cannot_support_approval(self, db) -> None:
+    def test_missing_output_hash_cannot_support_approval(self, db) -> None:
+        """Fix round 3, 2026-07-28: output_hash is nullable — "" is no
+        longer a constructible value (fails ORM hash-format validation
+        outright), so the missing-hash case is now represented by None,
+        which still correctly fails the truthiness check inside
+        `_select_and_promote_ai_generation`."""
         row = self._ai_synthesized_row(db)
-        self._generation(db, target_row_id=row.id, output_hash="")
+        self._generation(db, target_row_id=row.id, output_hash=None)
         with pytest.raises(repo.AIProvenanceIncompleteError):
             repo.approve_row(db, row, actor_user_id="reviewer-1", actor_role=self._ROLE)
         db.refresh(row)
         assert row.status == "clinical_review"
+
+    def test_malformed_output_hash_rejected_by_orm(self, db) -> None:
+        """Codex Round 3: a structurally invalid hash (wrong length, or
+        containing non-hex/uppercase characters) must be rejected at
+        construction time, not silently accepted as "some string"."""
+        with pytest.raises(ValueError, match="SHA-256"):
+            KnowledgeAIGeneration(
+                knowledge_table="drug_usage",
+                target_row_id=None,
+                model_provider="p",
+                model_identifier="m",
+                prompt_template_id="pt",
+                prompt_template_version="1",
+                input_source_ids=[],
+                input_hash="a" * 64,
+                output_hash="not-a-valid-hash",
+                generation_status="succeeded",
+                created_by=SystemActor.MEDICATION_AI_SYNTHESIS.value,
+            )
 
     def test_generation_by_non_ai_synthesis_actor_cannot_support_approval(self, db) -> None:
         """created_by must name the specific AI-synthesis actor — a
@@ -2595,12 +2622,24 @@ class TestAIProvenanceApprovalGuard:
         """Codex Round 1 finding #5: the authoritative generation is the
         single MOST RECENT non-superseded attempt, checked by its OWN
         status — an older succeeded attempt must not let approval succeed
-        if the actual latest attempt has since failed."""
+        if the actual latest attempt has since failed.
+
+        `sequence_number` set explicitly (fix round 3, 2026-07-28): this
+        suite's SQLite database is built via `create_all()`, not a real
+        `alembic upgrade head` — so the SQLite AFTER INSERT trigger that
+        auto-assigns `sequence_number` in production/migrated databases
+        never runs here, and the column would otherwise stay NULL for
+        every row. Setting it directly proves the higher-level ordering
+        behavior (`_select_and_promote_ai_generation` picks the highest
+        `sequence_number`) independent of trigger auto-assignment, which
+        is instead verified against a real migrated database in
+        tests/test_medication_k2_s0_migrations_sqlite.py and
+        tests/integration/test_medication_k2_s0_round3_hardening_postgres.py."""
         row = self._ai_synthesized_row(db)
         base = dt.datetime.now(dt.UTC)
-        self._generation(db, target_row_id=row.id, created_at=base - dt.timedelta(hours=1))
+        self._generation(db, target_row_id=row.id, created_at=base - dt.timedelta(hours=1), sequence_number=1)
         self._generation(
-            db, target_row_id=row.id, generation_status="failed", created_at=base
+            db, target_row_id=row.id, generation_status="failed", created_at=base, sequence_number=2
         )
         with pytest.raises(repo.AIProvenanceIncompleteError):
             repo.approve_row(db, row, actor_user_id="reviewer-1", actor_role=self._ROLE)
@@ -2664,22 +2703,23 @@ class TestAIProvenanceApprovalGuard:
         assert row.status == "clinical_review"
 
     def test_multiple_generations_choose_the_most_recent_qualifying_record(self, db) -> None:
-        """2026-07-27 fix: `_assert_ai_provenance_complete` now orders by
-        `created_at DESC` so the MOST RECENT qualifying (succeeded,
-        non-superseded) generation is authoritative, deterministically.
-        An older COMPLETE generation must not let approval succeed if a
-        NEWER qualifying generation is incomplete — the newest attempt's
-        provenance is what's actually being approved. `created_at` is set
-        explicitly (SQLite's CURRENT_TIMESTAMP is second-resolution —
-        two rows created microseconds apart in the same test can tie —
-        so this proves the ordering logic itself, not wall-clock luck)."""
+        """Ordering is by `sequence_number` (fix round 3, 2026-07-28 —
+        formerly `created_at DESC`, replaced because `created_at` can
+        genuinely tie; see `k2_s0_round3_hardening`). The MOST RECENT
+        qualifying (succeeded, non-superseded) generation is authoritative,
+        deterministically. An older COMPLETE generation must not let
+        approval succeed if a NEWER qualifying generation is incomplete —
+        the newest attempt's provenance is what's actually being approved.
+        `sequence_number` is set explicitly (this suite's `create_all()`
+        SQLite database never runs the real trigger that auto-assigns it —
+        see the sibling test above for the full explanation)."""
         row = self._ai_synthesized_row(db)
         base = dt.datetime.now(dt.UTC)
         older = self._generation(
-            db, target_row_id=row.id, created_at=base - dt.timedelta(hours=1)
+            db, target_row_id=row.id, created_at=base - dt.timedelta(hours=1), sequence_number=1
         )
         newer = self._generation(
-            db, target_row_id=row.id, prompt_template_version="", created_at=base
+            db, target_row_id=row.id, prompt_template_version="", created_at=base, sequence_number=2
         )
         assert newer.created_at > older.created_at
         with pytest.raises(repo.AIProvenanceIncompleteError):
@@ -2703,6 +2743,40 @@ class TestAIProvenanceApprovalGuard:
             repo.approve_row(db, row, actor_user_id="reviewer-1", actor_role=self._ROLE)
         db.refresh(row)
         assert row.status == "clinical_review"
+
+    def test_deterministic_selection_survives_reload(self, db) -> None:
+        """Same requirement as the Postgres equivalent — the authoritative
+        generation must be re-derived identically from a brand-new session,
+        not merely cached within the session that created it.
+        `sequence_number` set explicitly — see
+        test_latest_generation_failing_blocks_approval_even_if_an_older_one_succeeded
+        for why this suite's `create_all()` SQLite database never
+        auto-assigns it. The trigger-based tie-breaking behavior itself is
+        covered by tests/test_medication_k2_s0_migrations_sqlite.py and
+        tests/integration/test_medication_k2_s0_round3_hardening_postgres.py,
+        both of which run against a real `alembic upgrade head` database."""
+        row = self._ai_synthesized_row(db)
+        self._generation(db, target_row_id=row.id, generation_status="failed", sequence_number=1)
+        authoritative = self._generation(
+            db, target_row_id=row.id, generation_status="succeeded", sequence_number=2
+        )
+        row_id = row.id
+        authoritative_id = authoritative.id
+        db.close()
+
+        reload_db = SessionLocal()
+        try:
+            approved = repo.approve_row(
+                reload_db,
+                reload_db.get(DrugUsage, row_id),
+                actor_user_id="reviewer-1",
+                actor_role=self._ROLE,
+            )
+            assert approved.status == "approved"
+            promoted = reload_db.get(KnowledgeAIGeneration, authoritative_id)
+            assert promoted.review_status == "promoted"
+        finally:
+            reload_db.close()
 
 
 class TestConcurrentAIPromotion:
@@ -2758,8 +2832,8 @@ class TestConcurrentAIPromotion:
                 prompt_template_id="synthetic-prompt",
                 prompt_template_version="1.0",
                 input_source_ids=[],
-                input_hash="synthetic-hash",
-                output_hash="synthetic-output-hash",
+                input_hash="a" * 64,
+                output_hash="b" * 64,
                 generation_status="succeeded",
                 created_by=SystemActor.MEDICATION_AI_SYNTHESIS.value,
             )
@@ -2855,8 +2929,8 @@ class TestConcurrentAIPromotion:
             prompt_template_id="synthetic-prompt",
             prompt_template_version="1.0",
             input_source_ids=[],
-            input_hash="synthetic-hash",
-            output_hash="synthetic-output-hash",
+            input_hash="a" * 64,
+            output_hash="b" * 64,
             generation_status="succeeded",
             created_by=SystemActor.MEDICATION_AI_SYNTHESIS.value,
         )
@@ -3152,7 +3226,7 @@ class TestAppendOnlyHistoryEnforcement:
             prompt_template_id="pt",
             prompt_template_version="1",
             input_source_ids=[],
-            input_hash="h1",
+            input_hash="a" * 64,
             generation_status="failed",
             failure_reason="Synthetic transient failure.",
             created_by=SystemActor.MEDICATION_AI_SYNTHESIS.value,
@@ -3167,7 +3241,7 @@ class TestAppendOnlyHistoryEnforcement:
             prompt_template_id="pt",
             prompt_template_version="1",
             input_source_ids=[],
-            input_hash="h2",
+            input_hash="b" * 64,
             generation_status="succeeded",
             created_by=SystemActor.MEDICATION_AI_SYNTHESIS.value,
         )
@@ -3195,7 +3269,7 @@ class TestAppendOnlyHistoryEnforcement:
             prompt_template_id="pt",
             prompt_template_version="1",
             input_source_ids=[],
-            input_hash="h1",
+            input_hash="a" * 64,
             generation_status="succeeded",
             created_by=SystemActor.MEDICATION_AI_SYNTHESIS.value,
         )
@@ -3209,7 +3283,7 @@ class TestAppendOnlyHistoryEnforcement:
             prompt_template_id="pt",
             prompt_template_version="2",
             input_source_ids=[],
-            input_hash="h2",
+            input_hash="b" * 64,
             generation_status="succeeded",
             created_by=SystemActor.MEDICATION_AI_SYNTHESIS.value,
         )
