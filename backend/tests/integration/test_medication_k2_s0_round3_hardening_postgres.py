@@ -362,18 +362,20 @@ class TestGenerationOrderingOnPostgres:
         finally:
             verify_db.close()
         assert None not in sequence_numbers, "every concurrently created row must get a sequence_number"
-        # The sequence is table-wide, not per-target-row, so it need not
-        # start at 1 in this test — other tests in the same run may have
-        # already advanced it. What matters: all distinct, and contiguous
-        # (no ties, no gaps) among themselves.
-        ordered = sorted(sequence_numbers)
-        assert len(set(ordered)) == thread_count, (
+        # Codex Round 3 finding (P2-1, dispositioned): a PostgreSQL SEQUENCE
+        # is deliberately NOT gap-free — PostgreSQL's own docs state
+        # nextval() calls are never reclaimed by a rolled-back transaction
+        # or a concurrent session's own advancement of the same sequence
+        # (verified empirically here: values can be non-contiguous even
+        # across this test's own 8 concurrent inserts). Gaplessness was
+        # never the actual requirement — determinism and uniqueness are.
+        # This assertion was originally (incorrectly) written to demand
+        # contiguity; fixed to check only what the design actually
+        # guarantees: every concurrently created row gets its own distinct
+        # value, with no two ever tying.
+        assert len(set(sequence_numbers)) == thread_count, (
             f"{thread_count} concurrent inserts must get {thread_count} DISTINCT "
             f"sequence_number values (no ties), got {sequence_numbers}"
-        )
-        assert ordered == list(range(ordered[0], ordered[0] + thread_count)), (
-            f"{thread_count} concurrent inserts must get consecutive sequence_number "
-            f"values with no gaps, got {sequence_numbers}"
         )
 
     def test_deterministic_selection_survives_reload(self, session_factory, ingredient) -> None:
@@ -403,6 +405,25 @@ class TestGenerationOrderingOnPostgres:
             )
         finally:
             reload_db.close()
+
+    def test_client_supplied_sequence_number_is_overridden_by_the_database(
+        self, session_factory, ingredient
+    ) -> None:
+        """Codex Round 3 P1-4: a caller (ORM or raw SQL) explicitly setting
+        `sequence_number` at construction time must never have that value
+        honored — only the database's own trigger-assigned value may ever
+        persist, or "DB-governed, never a random identifier" is not a real
+        guarantee."""
+        db = session_factory()
+        try:
+            row = _ai_synthesized_row(db, ingredient["id"])
+            gen = _make_generation(db, target_row_id=row.id, sequence_number=9_000_000_000)
+            assert gen.sequence_number != 9_000_000_000, (
+                "a client-supplied sequence_number must be overridden by the "
+                f"database, not honored verbatim — got {gen.sequence_number}"
+            )
+        finally:
+            db.close()
 
 
 class TestContentDeleteOrphanIntegrityOnPostgres:
@@ -487,6 +508,25 @@ class TestContentDeleteOrphanIntegrityOnPostgres:
                 sa.text("SELECT review_status FROM knowledge_ai_generations WHERE id = :id"), {"id": gen.id}
             ).scalar()
             assert still_gen == "pending"
+        finally:
+            db.close()
+
+    def test_truncate_is_also_blocked(self, session_factory, ingredient) -> None:
+        """Codex Round 3 P1-2: `TRUNCATE` does not fire ordinary `ON DELETE`
+        row-level triggers on Postgres — a separate statement-level
+        `BEFORE TRUNCATE` trigger is required to close this bypass, since
+        the row-level no-hard-delete trigger alone does not cover it."""
+        db = session_factory()
+        try:
+            row = _approved_row(db, ingredient["id"])
+            with pytest.raises(ProgrammingError, match="must not be hard-deleted"):
+                db.execute(sa.text("TRUNCATE TABLE drug_usage"))
+                db.commit()
+            db.rollback()
+            still_there = db.execute(
+                sa.text("SELECT status FROM drug_usage WHERE id = :id"), {"id": row.id}
+            ).scalar()
+            assert still_there == "approved"
         finally:
             db.close()
 

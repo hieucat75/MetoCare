@@ -93,6 +93,27 @@ _KNOWLEDGE_TABLES = (
     "drug_contraindications",
 )
 
+# Mirrors k2_s0_integrity_guards.py's own _SYSTEM_ACTOR_VALUES /
+# _system_actor_check_sql — duplicated rather than cross-imported
+# (migrations stay self-contained), used to close Codex Round 3 P1-6
+# (content tables' `authored_by` had no DB-level guard against a forged
+# `system:*` value, unlike knowledge_ai_generations.created_by /
+# knowledge_lifecycle_transitions.actor_id, which k2_s0_integrity_guards
+# already protects).
+_SYSTEM_ACTOR_VALUES = (
+    "system:medication-ingestion",
+    "system:medication-normalization",
+    "system:medication-ai-synthesis",
+    "system:medication-migration",
+    "system:medication-backfill",
+)
+
+
+def _system_actor_check_sql(column: str) -> str:
+    values = ",".join(f"'{v}'" for v in _SYSTEM_ACTOR_VALUES)
+    return f"{column} NOT LIKE 'system:%' OR {column} IN ({values})"
+
+
 # Mirrors k2_s0_integrity_guards.py's own _AI_GENERATION_IMMUTABLE_COLUMNS
 # (Round 1) — duplicated rather than cross-imported (migrations stay
 # self-contained), used only to rebuild that revision's SQLite triggers
@@ -288,6 +309,59 @@ def upgrade() -> None:
             _hash_format_check_sql("output_hash"),
         )
 
+    # --- Guard 9: content authored_by cannot forge the system:* namespace -
+    # (Codex Round 3 P1-6): k2_s0_integrity_guards' actor CHECKs cover
+    # knowledge_ai_generations.created_by and knowledge_lifecycle_
+    # transitions.actor_id, but never added an equivalent DB-level guard to
+    # the 5 content tables' own `authored_by` column — the ORM's
+    # `assert_no_forged_system_actor` validator (drug_knowledge_content.py)
+    # was the ONLY thing stopping a forged `authored_by='system:attacker'`
+    # value, and any raw SQL/Core INSERT bypasses it entirely.
+    #
+    # MUST run here, on SQLite, before `_recreate_sqlite_round1_ai_
+    # generation_triggers()` below: `trg_knowledge_lifecycle_transitions_
+    # target_exists` (created by an EARLIER migration, k2_s0_integrity_
+    # guards, and never touched by this one) references all 5 content
+    # tables by name in its own WHEN clause — SQLite raises "error in
+    # trigger ...: no such table" mid-RENAME the moment ANY of those 5
+    # tables' `batch_alter_table` briefly drops and recreates them, because
+    # SQLite re-validates every trigger whose body references the renamed
+    # table. Reproduced directly. Temporarily dropping that one
+    # cross-table trigger for the duration of these 5 batch operations,
+    # then recreating it verbatim immediately after, sidesteps this
+    # entirely — and running before `trg_knowledge_ai_generations_target_
+    # exists` is even recreated means there is nothing else to drop/restore
+    # around this same hazard on the ai_generations side.
+    if dialect == "postgresql":
+        for table in _KNOWLEDGE_TABLES:
+            op.execute(
+                f"ALTER TABLE {table} ADD CONSTRAINT ck_{table}_authored_by_not_forged_system "
+                f"CHECK ({_system_actor_check_sql('authored_by')});"
+            )
+    else:
+        op.execute("DROP TRIGGER IF EXISTS trg_knowledge_lifecycle_transitions_target_exists;")
+        for table in _KNOWLEDGE_TABLES:
+            with op.batch_alter_table(table, schema=None) as batch_op:
+                batch_op.create_check_constraint(
+                    f"ck_{table}_authored_by_not_forged_system",
+                    _system_actor_check_sql("authored_by"),
+                )
+        _transition_when = "\n            OR ".join(
+            f"(NEW.knowledge_table = '{t}' AND NOT EXISTS (SELECT 1 FROM {t} WHERE id = NEW.knowledge_row_id))"
+            for t in _KNOWLEDGE_TABLES
+        )
+        op.execute(
+            f"""
+            CREATE TRIGGER trg_knowledge_lifecycle_transitions_target_exists
+            BEFORE INSERT ON knowledge_lifecycle_transitions
+            FOR EACH ROW
+            WHEN {_transition_when}
+            BEGIN
+                SELECT RAISE(ABORT, 'no row exists in the declared knowledge_table for this polymorphic reference');
+            END;
+            """
+        )
+
     if dialect != "postgresql":
         _recreate_sqlite_round1_ai_generation_triggers()
 
@@ -297,13 +371,37 @@ def upgrade() -> None:
         "CREATE UNIQUE INDEX ux_knowledge_ai_generations_sequence_number "
         "ON knowledge_ai_generations (sequence_number);"
     )
-    if dialect != "postgresql":
+    # Codex Round 3 P1-4: a `DEFAULT`/`WHEN ... IS NULL` trigger only ever
+    # fills in an OMITTED value — it does nothing to stop a caller (ORM,
+    # raw SQL, any future code) from explicitly supplying its own
+    # `sequence_number` and having it persisted verbatim, silently
+    # defeating "a server/DB-governed monotonic sequence rather than a
+    # random identifier" (PTH's own directive for this fix). Both branches
+    # below now unconditionally OVERWRITE whatever value was supplied,
+    # every single insert, so the DB is the only real source of this
+    # value regardless of what the client sends.
+    if dialect == "postgresql":
+        op.execute(
+            """
+            CREATE OR REPLACE FUNCTION fn_ai_generations_assign_sequence()
+            RETURNS TRIGGER AS $$
+            BEGIN
+                NEW.sequence_number := nextval('knowledge_ai_generations_sequence_number_seq');
+                RETURN NEW;
+            END;
+            $$ LANGUAGE plpgsql;
+
+            CREATE TRIGGER trg_knowledge_ai_generations_assign_sequence
+            BEFORE INSERT ON knowledge_ai_generations
+            FOR EACH ROW EXECUTE FUNCTION fn_ai_generations_assign_sequence();
+            """
+        )
+    else:
         op.execute(
             """
             CREATE TRIGGER trg_knowledge_ai_generations_assign_sequence
             AFTER INSERT ON knowledge_ai_generations
             FOR EACH ROW
-            WHEN NEW.sequence_number IS NULL
             BEGIN
                 UPDATE knowledge_ai_generations
                 SET sequence_number = (
@@ -347,6 +445,9 @@ def upgrade() -> None:
             CREATE OR REPLACE FUNCTION fn_knowledge_content_no_hard_delete()
             RETURNS TRIGGER AS $$
             BEGIN
+                IF TG_OP = 'TRUNCATE' THEN
+                    RAISE EXCEPTION 'persisted medication knowledge content must not be hard-deleted (table=%) — retire it through the lifecycle state machine instead', TG_TABLE_NAME;
+                END IF;
                 RAISE EXCEPTION 'persisted medication knowledge content must not be hard-deleted (table=%, id=%) — retire it through the lifecycle state machine instead', TG_TABLE_NAME, OLD.id;
             END;
             $$ LANGUAGE plpgsql;
@@ -358,6 +459,10 @@ def upgrade() -> None:
                 CREATE TRIGGER trg_{table}_no_hard_delete
                 BEFORE DELETE ON {table}
                 FOR EACH ROW EXECUTE FUNCTION fn_knowledge_content_no_hard_delete();
+
+                CREATE TRIGGER trg_{table}_no_truncate
+                BEFORE TRUNCATE ON {table}
+                FOR EACH STATEMENT EXECUTE FUNCTION fn_knowledge_content_no_hard_delete();
                 """
             )
     else:
@@ -380,6 +485,29 @@ def downgrade() -> None:
     bind = op.get_bind()
     dialect = bind.dialect.name
 
+    # Guard 5 non-emptiness check — MUST run before any other statement in
+    # this function (Codex Round 3 P1-1): on SQLite, every DDL statement
+    # below is independently auto-committed the instant it runs (SQLite has
+    # no transactional DDL) — if the check ran later (as it originally did,
+    # after Guards 8/7/6 had already dropped the hash CHECKs, content
+    # DELETE triggers, and restored the pre-round-3 append-only function),
+    # a refused downgrade would still leave the database durably
+    # de-hardened while `alembic_version` stays stamped at this revision's
+    # head, since raising here never updates that stamp. Reproduced
+    # directly: upgrade to head, insert one knowledge_ai_generations row,
+    # attempt this downgrade — with the check running late, sqlite_master
+    # showed the Round 1 AI-generation triggers and the 5 content
+    # no-hard-delete triggers already gone even though the refusal fired.
+    # Checking first, before any DDL, makes a refusal genuinely a no-op.
+    count = bind.execute(sa.text("SELECT COUNT(*) FROM knowledge_ai_generations")).scalar()
+    if count:
+        raise RuntimeError(
+            f"Refusing to downgrade: knowledge_ai_generations has {count} row(s) — "
+            "dropping sequence_number would silently discard real generation-"
+            "ordering data. Remediate (export/archive the data first) before "
+            "downgrading past this revision."
+        )
+
     # Guard 8
     with op.batch_alter_table("knowledge_ai_generations", schema=None) as batch_op:
         batch_op.drop_constraint("ck_knowledge_ai_generations_output_hash_format", type_="check")
@@ -388,11 +516,43 @@ def downgrade() -> None:
     # Guard 7
     if dialect == "postgresql":
         for table in _KNOWLEDGE_TABLES:
+            op.execute(f"DROP TRIGGER IF EXISTS trg_{table}_no_truncate ON {table};")
             op.execute(f"DROP TRIGGER IF EXISTS trg_{table}_no_hard_delete ON {table};")
         op.execute("DROP FUNCTION IF EXISTS fn_knowledge_content_no_hard_delete();")
     else:
         for table in _KNOWLEDGE_TABLES:
             op.execute(f"DROP TRIGGER IF EXISTS trg_{table}_no_hard_delete;")
+
+    # Guard 9 removal. On SQLite, `trg_knowledge_lifecycle_transitions_
+    # target_exists` (untouched so far in this downgrade — Guard 8 only
+    # rebuilt knowledge_ai_generations) references all 5 content tables by
+    # name in its WHEN clause, same hazard as in upgrade(): dropped here
+    # for the duration of these 5 batch operations, then recreated
+    # immediately after, restoring exactly the state k2_s0_integrity_guards
+    # (the revision this downgrade lands on) expects to find.
+    if dialect == "postgresql":
+        for table in _KNOWLEDGE_TABLES:
+            op.execute(f"ALTER TABLE {table} DROP CONSTRAINT IF EXISTS ck_{table}_authored_by_not_forged_system;")
+    else:
+        op.execute("DROP TRIGGER IF EXISTS trg_knowledge_lifecycle_transitions_target_exists;")
+        for table in _KNOWLEDGE_TABLES:
+            with op.batch_alter_table(table, schema=None) as batch_op:
+                batch_op.drop_constraint(f"ck_{table}_authored_by_not_forged_system", type_="check")
+        _transition_when = "\n            OR ".join(
+            f"(NEW.knowledge_table = '{t}' AND NOT EXISTS (SELECT 1 FROM {t} WHERE id = NEW.knowledge_row_id))"
+            for t in _KNOWLEDGE_TABLES
+        )
+        op.execute(
+            f"""
+            CREATE TRIGGER trg_knowledge_lifecycle_transitions_target_exists
+            BEFORE INSERT ON knowledge_lifecycle_transitions
+            FOR EACH ROW
+            WHEN {_transition_when}
+            BEGIN
+                SELECT RAISE(ABORT, 'no row exists in the declared knowledge_table for this polymorphic reference');
+            END;
+            """
+        )
 
     # Guard 6 (restore the pre-round-3 append_only function body on
     # Postgres; drop the SQLite-only guard trigger)
@@ -403,18 +563,9 @@ def downgrade() -> None:
     else:
         op.execute("DROP TRIGGER IF EXISTS trg_knowledge_ai_generations_guard_sequence_number;")
 
-    # Guard 5 — refuses if the table is non-empty (real generation records
-    # would silently lose their sequence_number, same discipline as every
-    # other Slice 0 column-removal downgrade).
-    count = bind.execute(sa.text("SELECT COUNT(*) FROM knowledge_ai_generations")).scalar()
-    if count:
-        raise RuntimeError(
-            f"Refusing to downgrade: knowledge_ai_generations has {count} row(s) — "
-            "dropping sequence_number would silently discard real generation-"
-            "ordering data. Remediate (export/archive the data first) before "
-            "downgrading past this revision."
-        )
     if dialect == "postgresql":
+        op.execute("DROP TRIGGER IF EXISTS trg_knowledge_ai_generations_assign_sequence ON knowledge_ai_generations;")
+        op.execute("DROP FUNCTION IF EXISTS fn_ai_generations_assign_sequence();")
         op.execute("DROP INDEX IF EXISTS ux_knowledge_ai_generations_sequence_number;")
         op.execute("ALTER TABLE knowledge_ai_generations DROP COLUMN sequence_number;")
         op.execute("DROP SEQUENCE IF EXISTS knowledge_ai_generations_sequence_number_seq;")

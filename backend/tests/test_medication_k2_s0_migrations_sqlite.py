@@ -985,6 +985,26 @@ class TestGenerationOrderingOnSQLite:
         finally:
             reload_db.close()
 
+    def test_client_supplied_sequence_number_is_rejected(self, sqlite_db) -> None:
+        """Codex Round 3 P1-4: a caller explicitly setting `sequence_number`
+        must never have it persisted. On SQLite this fails CLOSED (the
+        unconditional AFTER INSERT assignment trigger's own UPDATE trips
+        the pre-existing write-once guard, aborting the whole INSERT) —
+        stronger than silently overriding, and just as acceptable a way to
+        guarantee the client-supplied value never survives."""
+        engine, cfg = sqlite_db
+        command.upgrade(cfg, "head")
+        Session = self._session_factory(engine)
+        db = Session()
+        try:
+            ingredient_id = self._seed_ingredient_orm(db)
+            row = self._ai_synthesized_row(db, ingredient_id)
+            with pytest.raises(sa.exc.IntegrityError, match="write-once"):
+                self._make_generation(db, target_row_id=row.id, sequence_number=9_000_000_000)
+        finally:
+            db.rollback()
+            db.close()
+
 
 class TestPromotedToSupersededBlockedOnSQLite:
     """User Fix Round 3 requirement: 'Keep promoted-to-superseded blocked
