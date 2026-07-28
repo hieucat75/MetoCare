@@ -260,8 +260,11 @@ def _cleanup_seeded_ingredient(conn: sa.Connection, ingredient_id: str) -> None:
             "(SELECT id FROM drug_side_effects WHERE drug_ingredient_id = :id)",
             {"id": ingredient_id},
         )
-    conn.execute(
-        sa.text("DELETE FROM drug_side_effects WHERE drug_ingredient_id = :id"),
+    _force_delete(
+        conn,
+        "drug_side_effects",
+        "trg_drug_side_effects_no_hard_delete",
+        "drug_ingredient_id = :id",
         {"id": ingredient_id},
     )
     conn.execute(sa.text("DELETE FROM drug_ingredients WHERE id = :id"), {"id": ingredient_id})
@@ -619,8 +622,9 @@ class TestKnowledgeOriginMigration:
 
             # Remediate, then prove the same downgrade now succeeds.
             with pg_engine.connect() as conn:
-                conn.execute(sa.text("DELETE FROM drug_side_effects WHERE id = :id"), {"id": row_id})
-                conn.commit()
+                _force_delete(
+                    conn, "drug_side_effects", "trg_drug_side_effects_no_hard_delete", "id = :id", {"id": row_id}
+                )
             command.downgrade(cfg, PRE_ORIGIN_REV)
             for table in _KNOWLEDGE_TABLES:
                 assert _column_info(pg_engine, table, "origin") is None, table
@@ -969,8 +973,9 @@ class TestAddRejectedStatusMigration:
             assert still_there == "rejected"
 
             with pg_engine.connect() as conn:
-                conn.execute(sa.text("DELETE FROM drug_side_effects WHERE id = :id"), {"id": row_id})
-                conn.commit()
+                _force_delete(
+                    conn, "drug_side_effects", "trg_drug_side_effects_no_hard_delete", "id = :id", {"id": row_id}
+                )
             command.downgrade(cfg, LIFECYCLE_REV)
             for table in _KNOWLEDGE_TABLES:
                 defn = _constraint_def(pg_engine, f"ck_{table}_status")

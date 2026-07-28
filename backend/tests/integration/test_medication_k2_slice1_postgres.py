@@ -211,6 +211,21 @@ _ISOLATION_CLEANUP_TABLES = (
     "drug_references",
 )
 
+# Tables carrying a persistence-boundary DELETE guard trigger: the
+# knowledge_lifecycle_transitions append-only trigger (fix round 1) and the
+# 5 ADR-13 content tables' no-hard-delete trigger (fix round 3,
+# k2_s0_round3_hardening, 2026-07-28). Every _ISOLATION_CLEANUP_TABLES entry
+# not in this map (knowledge_reference_links, drug_products,
+# drug_ingredients, drug_classes, drug_references) carries no such guard.
+_GUARDED_TABLE_TRIGGERS = {
+    "knowledge_lifecycle_transitions": "trg_knowledge_lifecycle_transitions_append_only",
+    "drug_usage": "trg_drug_usage_no_hard_delete",
+    "drug_patient_education": "trg_drug_patient_education_no_hard_delete",
+    "drug_side_effects": "trg_drug_side_effects_no_hard_delete",
+    "drug_monitoring": "trg_drug_monitoring_no_hard_delete",
+    "drug_contraindications": "trg_drug_contraindications_no_hard_delete",
+}
+
 
 @pytest.fixture(autouse=True)
 def _cleanup_knowledge_domain_rows(
@@ -272,20 +287,15 @@ def _cleanup_knowledge_domain_rows(
         cleanup = pg_sessionmaker()
         try:
             for table in _ISOLATION_CLEANUP_TABLES:
-                # k2_s0_integrity_guards' append-only trigger (fix round 1,
-                # 2026-07-28) blocks any DELETE against
-                # knowledge_lifecycle_transitions outright — temporarily
-                # disabled for exactly this test-only cleanup statement,
-                # same escape-hatch pattern as the K1.5/K1.6 integration
-                # files.
-                guarded = table == "knowledge_lifecycle_transitions"
-                if guarded:
-                    cleanup.execute(
-                        sa.text(
-                            "ALTER TABLE knowledge_lifecycle_transitions "
-                            "DISABLE TRIGGER trg_knowledge_lifecycle_transitions_append_only"
-                        )
-                    )
+                # k2_s0_integrity_guards' append-only trigger (fix round 1)
+                # and k2_s0_round3_hardening's no-hard-delete trigger (fix
+                # round 3, 2026-07-28) block any DELETE against their
+                # respective tables outright — temporarily disabled for
+                # exactly this test-only cleanup statement, same
+                # escape-hatch pattern as the K1.5/K1.6 integration files.
+                trigger_name = _GUARDED_TABLE_TRIGGERS.get(table)
+                if trigger_name is not None:
+                    cleanup.execute(sa.text(f"ALTER TABLE {table} DISABLE TRIGGER {trigger_name}"))
                 try:
                     cleanup.execute(
                         sa.text(f"DELETE FROM {table} WHERE id NOT IN :before_ids").bindparams(
@@ -294,13 +304,8 @@ def _cleanup_knowledge_domain_rows(
                         {"before_ids": before_ids[table] or ["__none_existed__"]},
                     )
                 finally:
-                    if guarded:
-                        cleanup.execute(
-                            sa.text(
-                                "ALTER TABLE knowledge_lifecycle_transitions "
-                                "ENABLE TRIGGER trg_knowledge_lifecycle_transitions_append_only"
-                            )
-                        )
+                    if trigger_name is not None:
+                        cleanup.execute(sa.text(f"ALTER TABLE {table} ENABLE TRIGGER {trigger_name}"))
             cleanup.commit()
         finally:
             cleanup.close()

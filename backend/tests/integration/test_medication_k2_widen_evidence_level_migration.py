@@ -170,6 +170,23 @@ def _insert_side_effect(
     return row_id
 
 
+def _trigger_exists(conn: sa.Connection, table: str, trigger: str) -> bool:
+    """This module's tests call `_cleanup_seeded_ingredient` at different
+    schema revisions — some at head (past k2_s0_round3_hardening, where the
+    drug_side_effects no-hard-delete guard trigger exists) and some at
+    PRE_WIDEN_REVISION (long before that trigger was ever created). Checking
+    existence first (fix round 3, 2026-07-28) lets one helper serve both
+    call sites without erroring on `ALTER TABLE ... DISABLE TRIGGER` for a
+    trigger that isn't there yet."""
+    return (
+        conn.execute(
+            sa.text("SELECT 1 FROM pg_trigger WHERE tgname = :trigger AND tgrelid = CAST(:table AS regclass)"),
+            {"trigger": trigger, "table": table},
+        ).scalar()
+        is not None
+    )
+
+
 def _cleanup_seeded_ingredient(conn: sa.Connection, ingredient_id: str) -> None:
     """FK-safe, ID-scoped teardown for everything `_seed_ingredient` (and
     any drug_side_effects rows created against it) can have left behind.
@@ -183,10 +200,17 @@ def _cleanup_seeded_ingredient(conn: sa.Connection, ingredient_id: str) -> None:
         sa.text("SELECT drug_class_id FROM drug_ingredients WHERE id = :id"),
         {"id": ingredient_id},
     ).scalar()
-    conn.execute(
-        sa.text("DELETE FROM drug_side_effects WHERE drug_ingredient_id = :id"),
-        {"id": ingredient_id},
-    )
+    guarded = _trigger_exists(conn, "drug_side_effects", "trg_drug_side_effects_no_hard_delete")
+    if guarded:
+        conn.execute(sa.text("ALTER TABLE drug_side_effects DISABLE TRIGGER trg_drug_side_effects_no_hard_delete"))
+    try:
+        conn.execute(
+            sa.text("DELETE FROM drug_side_effects WHERE drug_ingredient_id = :id"),
+            {"id": ingredient_id},
+        )
+    finally:
+        if guarded:
+            conn.execute(sa.text("ALTER TABLE drug_side_effects ENABLE TRIGGER trg_drug_side_effects_no_hard_delete"))
     conn.execute(sa.text("DELETE FROM drug_ingredients WHERE id = :id"), {"id": ingredient_id})
     if class_id is not None:
         conn.execute(sa.text("DELETE FROM drug_classes WHERE id = :id"), {"id": class_id})
@@ -344,9 +368,13 @@ class TestDowngradeSafety:
             # condition that blocked it is gone: the refusal is
             # data-conditional, never a permanent wedge.
             with pg_engine.connect() as conn:
-                conn.execute(
-                    sa.text("DELETE FROM drug_side_effects WHERE id = :id"), {"id": row_id}
-                )
+                conn.execute(sa.text("ALTER TABLE drug_side_effects DISABLE TRIGGER trg_drug_side_effects_no_hard_delete"))
+                try:
+                    conn.execute(
+                        sa.text("DELETE FROM drug_side_effects WHERE id = :id"), {"id": row_id}
+                    )
+                finally:
+                    conn.execute(sa.text("ALTER TABLE drug_side_effects ENABLE TRIGGER trg_drug_side_effects_no_hard_delete"))
                 conn.commit()
             command.downgrade(cfg, PRE_WIDEN_REVISION)
             for table in _KNOWLEDGE_TABLES:
@@ -461,7 +489,11 @@ class TestApprovalPathRegressionOnPostgres:
                     )
                 finally:
                     db.execute(sa.text("ALTER TABLE knowledge_lifecycle_transitions ENABLE TRIGGER trg_knowledge_lifecycle_transitions_append_only"))
-                db.query(DrugSideEffect).filter(DrugSideEffect.drug_ingredient_id == ingredient.id).delete()
+                db.execute(sa.text("ALTER TABLE drug_side_effects DISABLE TRIGGER trg_drug_side_effects_no_hard_delete"))
+                try:
+                    db.query(DrugSideEffect).filter(DrugSideEffect.drug_ingredient_id == ingredient.id).delete()
+                finally:
+                    db.execute(sa.text("ALTER TABLE drug_side_effects ENABLE TRIGGER trg_drug_side_effects_no_hard_delete"))
                 db.query(DrugIngredient).filter(DrugIngredient.id == ingredient.id).delete()
                 db.query(DrugClass).filter(DrugClass.id == drug_class.id).delete()
                 db.commit()

@@ -75,6 +75,20 @@ def _delete_lifecycle_transitions_for_ingredient(db: Session, ingredient_id: str
         db.execute(sa.text("ALTER TABLE knowledge_lifecycle_transitions ENABLE TRIGGER trg_knowledge_lifecycle_transitions_append_only"))
 
 
+def _delete_content_rows(db: Session, table: str, where_sql: str, params: dict) -> None:
+    """Test-only escape hatch (fix round 3, 2026-07-28): k2_s0_round3_hardening's
+    content-immutability trigger blocks every DELETE against the 5
+    knowledge tables in real usage. Temporarily disabling the one
+    specific table's guard trigger for the duration of this DELETE is a
+    test-harness-only privilege; always re-enabled before returning."""
+    trigger_name = f"trg_{table}_no_hard_delete"
+    db.execute(sa.text(f"ALTER TABLE {table} DISABLE TRIGGER {trigger_name}"))
+    try:
+        db.execute(sa.text(f"DELETE FROM {table} WHERE {where_sql}"), params)
+    finally:
+        db.execute(sa.text(f"ALTER TABLE {table} ENABLE TRIGGER {trigger_name}"))
+
+
 def _make_alembic_config(db_url: str) -> Config:
     os.environ["MCP_DATABASE_URL"] = db_url
     from app.core.config import get_settings
@@ -158,8 +172,8 @@ def ingredient(session_factory: sessionmaker[Session]) -> Generator[dict, None, 
         cleanup_db = session_factory()
         try:
             _delete_lifecycle_transitions_for_ingredient(cleanup_db, ids["id"])
-            cleanup_db.execute(
-                sa.text("DELETE FROM drug_usage WHERE drug_ingredient_id = :ingredient_id"),
+            _delete_content_rows(
+                cleanup_db, "drug_usage", "drug_ingredient_id = :ingredient_id",
                 {"ingredient_id": ids["id"]},
             )
             cleanup_db.execute(
@@ -912,8 +926,8 @@ class TestRepeatedApprovalCyclesDoNotBlockMigrationDowngrade:
         cleanup_db = session_factory()
         try:
             _delete_lifecycle_transitions_for_ingredient(cleanup_db, ingredient_id)
-            cleanup_db.execute(
-                sa.text("DELETE FROM drug_usage WHERE drug_ingredient_id = :ingredient_id"),
+            _delete_content_rows(
+                cleanup_db, "drug_usage", "drug_ingredient_id = :ingredient_id",
                 {"ingredient_id": ingredient_id},
             )
             cleanup_db.execute(
