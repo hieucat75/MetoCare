@@ -90,7 +90,29 @@ def session_factory(migrated_schema: sa.Engine) -> sessionmaker[Session]:
 
 
 @pytest.fixture()
-def ingredient(session_factory: sessionmaker[Session]) -> dict:
+def ingredient(session_factory: sessionmaker[Session]) -> Generator[dict, None, None]:
+    """Every DrugUsage row any test in this module creates uses this
+    fixture's `id` as its `drug_ingredient_id` (the shared business-key
+    field, via `_submitted_row`/direct construction) — so it alone is
+    enough to scope a full, FK-safe teardown of everything a single test
+    created.
+
+    Test-isolation fix (2026-07-27): since Slice 0, `submit_for_review`/
+    `approve_row` also append a row to `knowledge_lifecycle_transitions`
+    (real, append-only history — its own migration's `downgrade()`
+    refuses to run while any row exists, by design). Before this fix nothing
+    ever deleted those rows, so repeated runs against the shared disposable
+    mcp_test database accumulated history that eventually made the module's
+    own `migrated_schema` teardown downgrade fail. This finally block
+    deletes, by direct SQL scoped strictly to this fixture's own captured
+    ids (never table-wide/unpredicated), everything this one test could
+    have created — in FK-safe order (transitions/usage rows before their
+    parent ingredient/class) — and runs even if the test body raised.
+    Deletion is plain SQL issued by the test itself, never through
+    knowledge_repository.py (which exposes no delete path at all, by
+    design, per ADR-13 append-only) — the production append-only guarantee
+    is untouched.
+    """
     suffix = uuid.uuid4().hex[:8]
     db = session_factory()
     try:
@@ -102,9 +124,42 @@ def ingredient(session_factory: sessionmaker[Session]) -> dict:
         )
         db.add(ingredient_row)
         db.commit()
-        return {"id": ingredient_row.id}
+        ids = {"id": ingredient_row.id, "drug_class_id": drug_class.id}
     finally:
         db.close()
+
+    try:
+        yield ids
+    finally:
+        cleanup_db = session_factory()
+        try:
+            cleanup_db.execute(
+                sa.text(
+                    "DELETE FROM knowledge_lifecycle_transitions "
+                    "WHERE knowledge_table = 'drug_usage' "
+                    "AND knowledge_row_id IN "
+                    "(SELECT id FROM drug_usage WHERE drug_ingredient_id = :ingredient_id)"
+                ),
+                {"ingredient_id": ids["id"]},
+            )
+            cleanup_db.execute(
+                sa.text("DELETE FROM drug_usage WHERE drug_ingredient_id = :ingredient_id"),
+                {"ingredient_id": ids["id"]},
+            )
+            cleanup_db.execute(
+                sa.text("DELETE FROM drug_ingredients WHERE id = :ingredient_id"),
+                {"ingredient_id": ids["id"]},
+            )
+            cleanup_db.execute(
+                sa.text("DELETE FROM drug_classes WHERE id = :drug_class_id"),
+                {"drug_class_id": ids["drug_class_id"]},
+            )
+            cleanup_db.commit()
+        except Exception:
+            cleanup_db.rollback()
+            raise
+        finally:
+            cleanup_db.close()
 
 
 def _approval_provenance_fields() -> dict[str, object]:
@@ -781,3 +836,100 @@ class TestSameRowRaceProvesRealLockContention:
             assert approved_count == 1, "exactly one session's approval must have won"
         finally:
             verify_db.close()
+
+
+class TestRepeatedApprovalCyclesDoNotBlockMigrationDowngrade:
+    """Regression, 2026-07-27 (test-isolation fix above): proves that
+    cleaning up after each test actually keeps the shared, disposable
+    mcp_test database clean enough for a REAL Alembic downgrade past
+    k2_s0_lifecycle_transitions to succeed — not just that domain rows are
+    gone. k2_s0_lifecycle_transitions.downgrade() refuses to run while
+    `knowledge_lifecycle_transitions` holds any row (real append-only
+    history); before the `ingredient` fixture's teardown fix, every
+    submit_for_review/approve_row call in this module left rows behind
+    there forever, so a second consecutive run (or the module's own final
+    teardown) would eventually hit that RuntimeError guard.
+
+    Runs a full create -> submit -> approve -> ID-scoped cleanup cycle
+    TWICE in a row against the same schema (simulating two consecutive
+    test-suite runs against the same disposable database), then performs
+    the real downgrade past every Slice 0 revision and back to head. The
+    downgrade raising RuntimeError is exactly the failure mode this test
+    exists to catch.
+    """
+
+    def _one_full_cycle(self, session_factory: sessionmaker[Session], label: str) -> None:
+        setup_db = session_factory()
+        try:
+            suffix = f"{label}-{uuid.uuid4().hex[:8]}"
+            drug_class = DrugClass(name=f"repeat-class-{suffix}", required_specialties=[])
+            setup_db.add(drug_class)
+            setup_db.flush()
+            ingredient_row = DrugIngredient(
+                name_inn=f"repeat-ingredient-{suffix}", drug_class_id=drug_class.id
+            )
+            setup_db.add(ingredient_row)
+            setup_db.commit()
+            ingredient_id, drug_class_id = ingredient_row.id, drug_class.id
+        finally:
+            setup_db.close()
+
+        approve_db = session_factory()
+        try:
+            row = _submitted_row(approve_db, ingredient_id)
+            approved = repo.approve_row(
+                approve_db, row, actor_user_id="reviewer-1", actor_role="internal_admin"
+            )
+            assert approved.status == "approved"
+        finally:
+            approve_db.close()
+
+        cleanup_db = session_factory()
+        try:
+            cleanup_db.execute(
+                sa.text(
+                    "DELETE FROM knowledge_lifecycle_transitions "
+                    "WHERE knowledge_table = 'drug_usage' "
+                    "AND knowledge_row_id IN "
+                    "(SELECT id FROM drug_usage WHERE drug_ingredient_id = :ingredient_id)"
+                ),
+                {"ingredient_id": ingredient_id},
+            )
+            cleanup_db.execute(
+                sa.text("DELETE FROM drug_usage WHERE drug_ingredient_id = :ingredient_id"),
+                {"ingredient_id": ingredient_id},
+            )
+            cleanup_db.execute(
+                sa.text("DELETE FROM drug_ingredients WHERE id = :ingredient_id"),
+                {"ingredient_id": ingredient_id},
+            )
+            cleanup_db.execute(
+                sa.text("DELETE FROM drug_classes WHERE id = :drug_class_id"),
+                {"drug_class_id": drug_class_id},
+            )
+            cleanup_db.commit()
+        except Exception:
+            cleanup_db.rollback()
+            raise
+        finally:
+            cleanup_db.close()
+
+    def test_two_consecutive_cycles_leave_downgrade_unblocked(
+        self, session_factory: sessionmaker[Session], migrated_schema: sa.Engine
+    ) -> None:
+        self._one_full_cycle(session_factory, "run1")
+        self._one_full_cycle(session_factory, "run2")
+
+        db_url = migrated_schema.url.render_as_string(hide_password=False)
+        cfg = _make_alembic_config(db_url)
+        try:
+            # Must not raise: if either cycle above left a row in
+            # knowledge_lifecycle_transitions, this raises RuntimeError
+            # (k2_s0_lifecycle_transitions.downgrade()'s own non-empty-table
+            # guard) — the exact contamination this regression test exists
+            # to prevent from recurring.
+            command.downgrade(cfg, "k1_a1b_f2_specialty_seed")
+        finally:
+            # Always restore head, so this module's own migrated_schema
+            # fixture (and any test running after this one) is unaffected.
+            command.upgrade(cfg, "head")

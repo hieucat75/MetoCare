@@ -1,12 +1,23 @@
 """Repository/service layer for the 5 ADR-13 knowledge tables.
 
-Full lifecycle write path (K1.5): `create_draft`/`submit_for_review` (K1-S3)
-plus `approve_row`/`retire_row` (K1.5) together implement every transition
-`validate_transition` allows — draft -> clinical_review -> approved ->
-deprecated (automatic, on supersession) -> retired. `approve_row`/
-`retire_row` are gated by `can_approve_knowledge`/`assert_can_approve_knowledge`
-(an interim role-based check — see their docstrings; no dedicated Clinical
-Advisor role exists yet, ADR-13 OQ-7/OQ-8).
+Full lifecycle write path (K1.5 + Slice 0): `create_draft`/
+`submit_for_review` (K1-S3) plus `approve_row`/`reject_row`/`retire_row`
+(K1.5 + Slice 0) together implement every transition `validate_transition`
+allows — draft -> clinical_review -> {approved -> deprecated (automatic,
+on supersession) -> retired} | rejected (terminal). `approve_row`/
+`reject_row`/`retire_row` are gated by
+`can_approve_knowledge`/`assert_can_approve_knowledge` (an interim
+role-based check — see their docstrings; no dedicated Clinical Advisor
+role exists yet, ADR-13 OQ-7/OQ-8).
+
+Slice 0 (docs/medication-management/
+MEDICATION_KNOWLEDGE_SLICE0_ORIGIN_PROVENANCE_FLAGS_IMPLEMENTATION_PLAN.md)
+adds: the `rejected` terminal status + `reject_row`; an origin-awareness
+guard in `approve_row` requiring complete AI-generation provenance before
+an `origin='ai_synthesized'` row can be approved
+(`_assert_ai_provenance_complete`, `AIProvenanceIncompleteError`); and a
+`knowledge_lifecycle_transitions` history row recorded by every transition
+function, inside the same transaction.
 
 `drug_interactions` is out of scope — not one of the 5 tables this module
 touches (deferred to its own ADR-02-compliant PR, per K1-M01/K1-S2).
@@ -26,6 +37,8 @@ from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.system_actors import is_system_actor
+from app.models.drug_knowledge_ai_generation import KnowledgeAIGeneration
 from app.models.drug_knowledge_content import (
     DrugContraindication,
     DrugMonitoring,
@@ -35,6 +48,7 @@ from app.models.drug_knowledge_content import (
 )
 from app.models.drug_knowledge_core import DrugClass, DrugIngredient
 from app.models.drug_knowledge_governance import ClinicalSpecialty, KnowledgeReviewSpecialty
+from app.models.drug_knowledge_lifecycle_transition import KnowledgeLifecycleTransition
 
 KnowledgeModel = TypeVar(
     "KnowledgeModel",
@@ -60,9 +74,18 @@ KNOWLEDGE_TABLE_NAME: dict[type, str] = {
 
 # ADR-13: "No transition ever skips clinical_review — a draft row can never
 # become approved directly, even by an admin." Only these pairs are legal.
+#
+# ("clinical_review", "rejected") — Slice 0 §B2.3: the modeled destination
+# for a clinical_review row a reviewer declines. 'rejected' is terminal —
+# no transition out of it exists in this table, so a rejected row can
+# never be silently mutated back to 'reviewed'/'approved'; the only way
+# to supersede it is a brand-new draft row through the normal
+# create_draft -> submit_for_review -> approve_row path (ADR-13
+# append-only discipline, unchanged).
 _ALLOWED_TRANSITIONS = {
     ("draft", "clinical_review"),
     ("clinical_review", "approved"),
+    ("clinical_review", "rejected"),
     ("approved", "deprecated"),
     ("deprecated", "retired"),
 }
@@ -70,6 +93,73 @@ _ALLOWED_TRANSITIONS = {
 
 class TransitionError(ValueError):
     """Raised when a lifecycle status transition violates ADR-13."""
+
+
+class AIProvenanceIncompleteError(ValueError):
+    """Raised by `approve_row` when an `origin='ai_synthesized'` row has no
+    complete, non-superseded, successful `KnowledgeAIGeneration` record
+    (Slice 0 §B2.3). Distinct from `TransitionError` (an illegal *status*
+    transition) and `KnowledgeApprovalAuthorizationError` (wrong actor) —
+    this is specifically "the actor and status transition are both legal,
+    but this AI-authored row's provenance is not proven complete enough to
+    approve.\""""
+
+
+# "Every transition records actor, timestamp, reason code and PHI-free
+# rationale" is a binding PTH implementation instruction (2026-07-27,
+# Medication Knowledge Slice 0 final checkpoint) — not text quoted from
+# MEDICATION_KNOWLEDGE_SLICE0_ORIGIN_PROVENANCE_FLAGS_IMPLEMENTATION_PLAN.md
+# (that plan's own §B3 names only three migrations and predates this
+# instruction). See docs/medication-management/adrs/
+# ADR-13-KNOWLEDGE-CONTENT-LIFECYCLE.md, Amendment 1, for the authorizing
+# record of `_record_transition`/`knowledge_lifecycle_transitions`.
+#
+# Applied as an OPTIONAL, backward-compatible addition to every existing
+# transition function (submit_for_review, approve_row, retire_row) so
+# none of K1.5's existing call sites/tests need to change. Callers that
+# don't care about a specific reason get this generic, still-honest
+# default; reject_row (new in Slice 0, no legacy callers to preserve)
+# requires a real reason_code/rationale explicitly — a rejection should
+# always say why.
+_DEFAULT_REASON_CODE = "standard_transition"
+_DEFAULT_RATIONALE = "Routine ADR-13 lifecycle transition."
+_AUTO_DEPRECATION_REASON_CODE = "auto_deprecated_superseded"
+_AUTO_DEPRECATION_RATIONALE = (
+    "Automatically deprecated: a newer approved row now exists for the same business key."
+)
+
+
+def _record_transition(
+    db: Session,
+    model_cls: type,
+    *,
+    knowledge_row_id: str,
+    from_status: str,
+    to_status: str,
+    actor_id: str,
+    actor_role: str | None,
+    reason_code: str,
+    rationale: str,
+    now: dt.datetime,
+) -> None:
+    """Append one lifecycle-transition history row, inside the caller's own
+    open transaction (no independent commit here — same discipline as
+    `_deprecate_superseded`). Never called outside a transition function's
+    own try/except block; a failure here rolls back the whole transition,
+    same as any other write in that block."""
+    db.add(
+        KnowledgeLifecycleTransition(
+            knowledge_table=KNOWLEDGE_TABLE_NAME[model_cls],
+            knowledge_row_id=knowledge_row_id,
+            from_status=from_status,
+            to_status=to_status,
+            actor_id=actor_id,
+            actor_role=actor_role,
+            reason_code=reason_code,
+            rationale=rationale,
+            transitioned_at=now,
+        )
+    )
 
 
 def validate_transition(
@@ -183,6 +273,8 @@ def submit_for_review(
     row: KnowledgeModel,
     *,
     actor_user_id: str,
+    reason_code: str = _DEFAULT_REASON_CODE,
+    rationale: str = _DEFAULT_RATIONALE,
 ) -> KnowledgeModel:
     """draft -> clinical_review. ADR-13: any authenticated content author
     may do this — no specialty or self-approval check applies here (those
@@ -195,6 +287,10 @@ def submit_for_review(
     concurrent callers could otherwise both pass validation against a
     stale in-memory read and both commit, silently double-transitioning
     a row.
+
+    `reason_code`/`rationale` (Slice 0, optional/backward-compatible —
+    every existing caller keeps working unmodified) are recorded to
+    `knowledge_lifecycle_transitions` alongside this transition.
     """
     validate_transition(
         row.status, "clinical_review", authored_by=row.authored_by, actor_user_id=actor_user_id
@@ -213,6 +309,18 @@ def submit_for_review(
             "another transition won the race. Re-fetch and re-check before retrying."
         )
     try:
+        _record_transition(
+            db,
+            model_cls,
+            knowledge_row_id=row.id,
+            from_status="draft",
+            to_status="clinical_review",
+            actor_id=actor_user_id,
+            actor_role=None,
+            reason_code=reason_code,
+            rationale=rationale,
+            now=now,
+        )
         db.commit()
     except Exception:
         db.rollback()
@@ -263,6 +371,29 @@ def assert_can_approve_knowledge(actor_role: str) -> None:
         raise KnowledgeApprovalAuthorizationError(
             f"actor_role={actor_role!r} is not authorized to approve or "
             f"retire knowledge content. Allowed: {sorted(_APPROVAL_CAPABLE_ROLES)}."
+        )
+
+
+def assert_actor_is_not_system(actor_user_id: str) -> None:
+    """Slice 0 (app/core/system_actors.py — 'Callers that need to assert a
+    value is NOT a system actor, e.g. a self-approval check, should use
+    this'). `assert_can_approve_knowledge` alone only checks `actor_role`,
+    which this module never authenticates itself — it trusts whatever
+    string a caller supplies. `validate_transition`'s self-approval check
+    (`actor_user_id == authored_by`) only catches a system actor approving
+    ITS OWN row; it does not catch a *different* reserved system-actor
+    identity being passed as `actor_user_id` to approve/reject/retire
+    someone else's (or its own, under a different reserved string) row.
+    This is a second, independent identity check — never a real human
+    `actor_user_id` collides with a `SystemActor` value (they are drawn
+    from disjoint namespaces: real user ids vs. `system:*` strings), so
+    this never rejects a real human approver."""
+    if is_system_actor(actor_user_id):
+        raise KnowledgeApprovalAuthorizationError(
+            f"actor_user_id={actor_user_id!r} is a reserved system-actor "
+            "identity. System/AI actors may never approve, reject, or "
+            "retire knowledge content — only a real, authenticated human "
+            "actor may perform this action."
         )
 
 
@@ -361,8 +492,36 @@ def _deprecate_superseded(
         update(model_cls)
         .where(model_cls.status == "approved", model_cls.id != row.id, *key_filters)
         .values(status="deprecated", status_changed_by=actor_user_id, status_changed_at=now)
+        .returning(model_cls.id)
     )
-    return result.rowcount
+    # Slice 0: record one transition-history row per row actually
+    # deprecated by this statement (ordinarily 0 or 1 — see docstring
+    # above for the >1 fail-open case). `superseded_ids` is derived from
+    # this UPDATE's own `.returning()` clause — not a separate preceding
+    # SELECT — so it is provably exactly the set of rows this statement
+    # itself mutated, never a stale snapshot a concurrent transaction
+    # could have raced between "select" and "update" (2026-07-27
+    # final-checkpoint fix: the prior SELECT-then-UPDATE version could, in
+    # principle, record deprecation history for a row this statement
+    # never actually touched). Uses the fixed auto-deprecation reason,
+    # never a caller-supplied one — this is always a system consequence
+    # of approving a newer row, never a discretionary human decision with
+    # its own stated reason.
+    superseded_ids = [r[0] for r in result.fetchall()]
+    for superseded_id in superseded_ids:
+        _record_transition(
+            db,
+            model_cls,
+            knowledge_row_id=superseded_id,
+            from_status="approved",
+            to_status="deprecated",
+            actor_id=actor_user_id,
+            actor_role=None,
+            reason_code=_AUTO_DEPRECATION_REASON_CODE,
+            rationale=_AUTO_DEPRECATION_RATIONALE,
+            now=now,
+        )
+    return len(superseded_ids)
 
 
 def _lock_canonical_row(db: Session, model_cls: type, row_id: str) -> KnowledgeModel:
@@ -462,17 +621,80 @@ def _reject_if_pending_delete(db: Session, canonical: KnowledgeModel) -> None:
         )
 
 
+def _assert_ai_provenance_complete(
+    db: Session, model_cls: type, canonical: KnowledgeModel
+) -> None:
+    """Slice 0 §B2.3. No-op for any row whose ORIGIN (read from `canonical`
+    — the re-fetched, session-locked row, never a caller-supplied field,
+    same discipline as every other check in this module) is not
+    `ai_synthesized`. For an `ai_synthesized` row, requires a
+    `KnowledgeAIGeneration` that: targets this exact row
+    (`knowledge_table`+`target_row_id`), succeeded
+    (`generation_status='succeeded'`), is not superseded
+    (`superseded_by_generation_id IS NULL`), and carries complete
+    provenance (`model_identifier`, `prompt_template_id`,
+    `prompt_template_version` all present) — raises
+    `AIProvenanceIncompleteError` otherwise. A generation record
+    existing is necessary but never sufficient to approve on its own:
+    the human-actor gate (`assert_can_approve_knowledge`, checked before
+    this function is ever reached) still independently applies."""
+    if canonical.origin != "ai_synthesized":
+        return
+    table_name = KNOWLEDGE_TABLE_NAME[model_cls]
+    # 2026-07-27 final-checkpoint fix: multiple qualifying generations can
+    # legitimately exist for the same row (retries each leave their own
+    # record, per the append-only design) — without an explicit ordering,
+    # `.first()` picks an arbitrary one (implementation-defined query-plan
+    # behavior, not a real contract), so approval could pass or fail
+    # depending on which happened to come back first. Ordering by
+    # `created_at` descending makes the MOST RECENT qualifying attempt
+    # authoritative, deterministically — the natural "the latest retry is
+    # the one that counts" semantics.
+    generation = (
+        db.query(KnowledgeAIGeneration)
+        .filter_by(
+            knowledge_table=table_name,
+            target_row_id=canonical.id,
+            generation_status="succeeded",
+        )
+        .filter(KnowledgeAIGeneration.superseded_by_generation_id.is_(None))
+        .order_by(KnowledgeAIGeneration.created_at.desc())
+        .first()
+    )
+    if generation is None or not (
+        generation.model_identifier
+        and generation.prompt_template_id
+        and generation.prompt_template_version
+    ):
+        raise AIProvenanceIncompleteError(
+            f"Row {canonical.id!r} has origin='ai_synthesized' but no complete, "
+            "non-superseded successful generation record exists — refusing to approve."
+        )
+
+
 def approve_row(
     db: Session,
     row: KnowledgeModel,
     *,
     actor_user_id: str,
     actor_role: str,
+    reason_code: str = _DEFAULT_REASON_CODE,
+    rationale: str = _DEFAULT_RATIONALE,
 ) -> KnowledgeModel:
     """clinical_review -> approved (ADR-13). Atomically approves this row
     AND deprecates any prior approved row sharing its business key, in one
     transaction — see _deprecate_superseded's docstring for why these must
     not be split across two commits.
+
+    Slice 0 provenance guard (§B2.3): an `origin='ai_synthesized'` row may
+    only be approved when a complete, non-superseded, successful
+    `KnowledgeAIGeneration` record exists for it — see the check inside
+    the transaction below. This is in ADDITION to, not instead of, the
+    existing human-actor gate (`assert_can_approve_knowledge`): AI/system
+    actors were already structurally unable to approve anything (the
+    closed `_APPROVAL_CAPABLE_ROLES` set never includes one), so this
+    guard's whole job is proving the AI-authored row's OWN provenance is
+    complete enough for the human approver to be approving something real.
 
     Only `row.id` from the caller-supplied `row` argument is trusted (to
     locate the row); every check (self-approval, specialty completeness,
@@ -507,6 +729,7 @@ def approve_row(
         # so it stays inside this function's one transaction boundary
         # even if a future change ever makes it perform a DB read.
         assert_can_approve_knowledge(actor_role)
+        assert_actor_is_not_system(actor_user_id)
         # Only `row.id` is ever read from the caller-supplied `row` here —
         # canonical is resolved by id FIRST, and every check after this
         # point (including the pending-delete guard) reads canonical, never
@@ -515,6 +738,7 @@ def approve_row(
         # _reject_if_pending_delete's docstring for the bypass that fixed).
         canonical = _lock_canonical_row(db, model_cls, row.id)
         _reject_if_pending_delete(db, canonical)
+        _assert_ai_provenance_complete(db, model_cls, canonical)
 
         # Specialty completeness is re-checked against the DB at write time
         # (never trusts a caller-supplied bool) — the same reasoning as
@@ -569,6 +793,18 @@ def approve_row(
         # successful approve_row call. Refreshing here, while still
         # inside the same open (uncommitted) transaction, sees our own
         # just-executed UPDATE and requires no second transaction.
+        _record_transition(
+            db,
+            model_cls,
+            knowledge_row_id=canonical.id,
+            from_status="clinical_review",
+            to_status="approved",
+            actor_id=actor_user_id,
+            actor_role=actor_role,
+            reason_code=reason_code,
+            rationale=rationale,
+            now=now,
+        )
         db.refresh(canonical)
         db.commit()
     except Exception as exc:
@@ -605,6 +841,8 @@ def retire_row(
     *,
     actor_user_id: str,
     actor_role: str,
+    reason_code: str = _DEFAULT_REASON_CODE,
+    rationale: str = _DEFAULT_RATIONALE,
 ) -> KnowledgeModel:
     """deprecated -> retired (ADR-13, manual). The exact grace period
     between deprecation and retirement is an operational/process decision,
@@ -628,6 +866,7 @@ def retire_row(
         # defensive hardening; Codex round-4 pending-delete guard checks
         # canonical, resolved first, never the caller-supplied `row`).
         assert_can_approve_knowledge(actor_role)
+        assert_actor_is_not_system(actor_user_id)
         canonical = _lock_canonical_row(db, model_cls, row.id)
         _reject_if_pending_delete(db, canonical)
         validate_transition(
@@ -652,6 +891,89 @@ def retire_row(
         # never after, since `expire_on_commit=True` would otherwise make
         # any post-commit access autobegin a new transaction this
         # function then returns while still open.
+        _record_transition(
+            db,
+            model_cls,
+            knowledge_row_id=canonical.id,
+            from_status="deprecated",
+            to_status="retired",
+            actor_id=actor_user_id,
+            actor_role=actor_role,
+            reason_code=reason_code,
+            rationale=rationale,
+            now=now,
+        )
+        db.refresh(canonical)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return canonical
+
+
+def reject_row(
+    db: Session,
+    row: KnowledgeModel,
+    *,
+    actor_user_id: str,
+    actor_role: str,
+    reason_code: str,
+    rationale: str,
+) -> KnowledgeModel:
+    """clinical_review -> rejected (Slice 0 §B2.3). Structurally identical
+    to `retire_row`: same canonical-row resolution, same
+    transaction-boundary discipline, same `assert_can_approve_knowledge`
+    gate — no partial-unique-index interaction needed, since a rejected
+    row was never approved and can never collide with the
+    `status='approved'` partial unique index.
+
+    Unlike `submit_for_review`/`approve_row`/`retire_row`,
+    `reason_code`/`rationale` are REQUIRED (no default) — this is a new
+    call site with no legacy callers to preserve, and a reviewer
+    declining content should always be required to state why. Both must
+    be PHI-free (no patient content, no free-text clinical detail beyond
+    a short workflow rationale) — same discipline as
+    `app/services/audit.py`'s `details` field.
+
+    No origin-awareness guard is needed here (unlike `approve_row`) —
+    rejecting is always safe regardless of a row's origin; there is no
+    provenance-completeness precondition for declining content."""
+    model_cls = type(row)
+    now = dt.datetime.now(dt.UTC)
+    try:
+        assert_can_approve_knowledge(actor_role)
+        assert_actor_is_not_system(actor_user_id)
+        canonical = _lock_canonical_row(db, model_cls, row.id)
+        _reject_if_pending_delete(db, canonical)
+        validate_transition(
+            canonical.status,
+            "rejected",
+            authored_by=canonical.authored_by,
+            actor_user_id=actor_user_id,
+        )
+        result = db.execute(
+            update(model_cls)
+            .where(model_cls.id == canonical.id, model_cls.status == "clinical_review")
+            .values(status="rejected", status_changed_by=actor_user_id, status_changed_at=now)
+        )
+        if result.rowcount != 1:
+            raise TransitionError(
+                f"Row {canonical.id!r} was not in 'clinical_review' status at "
+                "commit time — another transition won the race. Re-fetch and "
+                "re-check before retrying."
+            )
+        _record_transition(
+            db,
+            model_cls,
+            knowledge_row_id=canonical.id,
+            from_status="clinical_review",
+            to_status="rejected",
+            actor_id=actor_user_id,
+            actor_role=actor_role,
+            reason_code=reason_code,
+            rationale=rationale,
+            now=now,
+        )
         db.refresh(canonical)
         db.commit()
     except Exception:

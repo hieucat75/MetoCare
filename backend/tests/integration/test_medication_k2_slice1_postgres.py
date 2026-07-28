@@ -185,6 +185,104 @@ def _reset_rate_limiter():
     get_rate_limiter().reset()
 
 
+# FK-safe order: knowledge_lifecycle_transitions has no physical FK to
+# anything (polymorphic association); the 5 ADR-13 content tables each FK
+# to drug_ingredients, which FKs to drug_classes — content tables must be
+# deleted before their parent ingredient, and ingredients before their
+# parent class.
+_ISOLATION_CLEANUP_TABLES = (
+    "knowledge_lifecycle_transitions",
+    "knowledge_reference_links",  # must precede drug_references (FK)
+    "drug_usage",
+    "drug_patient_education",
+    "drug_side_effects",
+    "drug_monitoring",
+    "drug_contraindications",
+    # drug_products must precede drug_ingredients: fk_dpi_product (product
+    # -> drug_product_ingredients) is ON DELETE CASCADE, but
+    # fk_dpi_ingredient (ingredient -> drug_product_ingredients) is ON
+    # DELETE RESTRICT — deleting the product first cascades away the
+    # linking row that would otherwise block the ingredient delete below
+    # (_seed_product creates exactly this link). drug_product_names also
+    # CASCADEs from drug_products, so it needs no entry of its own here.
+    "drug_products",
+    "drug_ingredients",
+    "drug_classes",
+    "drug_references",
+)
+
+
+@pytest.fixture(autouse=True)
+def _cleanup_knowledge_domain_rows(
+    pg_sessionmaker: sessionmaker[Session],
+) -> Generator[None, None, None]:
+    """Test-isolation fix (2026-07-27): most test methods in this file call
+    `_make_ingredient`/`_approved_side_effect` (and a few construct
+    DrugPatientEducation/DrugMonitoring/DrugContraindication rows directly
+    via `repo.create_draft`/`submit_for_review`/`approve_row`), creating
+    real rows in the knowledge domain tables above — none of which this
+    file ever cleaned up. Two distinct problems from that:
+
+    1. `knowledge_lifecycle_transitions` (Slice 0, append-only — its
+       migration's `downgrade()` refuses to run while the table holds any
+       row) accumulated rows that eventually blocked this module's own
+       `migrated_schema` teardown downgrade past
+       `k2_s0_lifecycle_transitions`.
+    2. `drug_classes`/`drug_ingredients`/the 5 content tables accumulated
+       plain garbage rows every run (no downgrade guard on these, so this
+       didn't block anything, but it is still real synthetic-data pollution
+       of the shared disposable mcp_test database).
+
+    Since tests here don't share one common parent id the way
+    test_medication_k1_5_approval_workflow_postgres.py's `ingredient`
+    fixture does, each table is scoped via an actual before/after ID
+    snapshot — captures every row id that already existed before the test
+    runs, and afterward deletes only ids NOT in that captured set. That is
+    real ID-scoping (a captured set used as the delete predicate), never
+    an unpredicated/table-wide delete — if nothing existed before, the
+    whole table is fair game precisely because everything in it is then
+    provably this test's own output. Runs in `finally` so it fires even if
+    the test body raised.
+
+    `drug_products` IS included (required, not optional — see the ordering
+    comment on `_ISOLATION_CLEANUP_TABLES`: without it, `_seed_product`'s
+    `drug_product_ingredients` link row RESTRICTs the `drug_ingredients`
+    delete below and this whole cleanup transaction rolls back, silently
+    re-leaking every table above it too). Does NOT extend to
+    `patient_profiles`/`medications`/`doctors`/`users` etc. that some tests
+    also seed — `medications.drug_product_id` has no FK constraint at all
+    (a pre-existing, unrelated schema gap), so those rows are never
+    blocked by anything cleaned up here; they are shared platform tables
+    used across many unrelated test files, and cleaning them up here would
+    be a much larger, separate hygiene change outside the scope of closing
+    this migration regression.
+    """
+    session = pg_sessionmaker()
+    try:
+        before_ids = {
+            table: [row[0] for row in session.execute(sa.text(f"SELECT id FROM {table}"))]
+            for table in _ISOLATION_CLEANUP_TABLES
+        }
+    finally:
+        session.close()
+
+    try:
+        yield
+    finally:
+        cleanup = pg_sessionmaker()
+        try:
+            for table in _ISOLATION_CLEANUP_TABLES:
+                cleanup.execute(
+                    sa.text(f"DELETE FROM {table} WHERE id NOT IN :before_ids").bindparams(
+                        sa.bindparam("before_ids", expanding=True)
+                    ),
+                    {"before_ids": before_ids[table] or ["__none_existed__"]},
+                )
+            cleanup.commit()
+        finally:
+            cleanup.close()
+
+
 def _mint(user_id: str, role: str) -> dict[str, str]:
     token = create_access_token(subject=user_id, role=role)
     return {"Authorization": f"Bearer {token}"}

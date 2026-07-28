@@ -16,6 +16,7 @@ import logging
 
 from sqlalchemy.orm import Session
 
+from app.core.feature_flags import FeatureFlag, is_enabled
 from app.models.drug_knowledge_content import (
     DrugContraindication,
     DrugMonitoring,
@@ -113,7 +114,20 @@ def _evidence_kwargs(row, *, knowledge_table: str) -> dict:
     """`{}` when absent from the response is required (ADR-15 §G) —
     `evidence_level` is NOT NULL on every approved row (`_approved_
     invariants_check`), so a `None` result here always means "value present
-    but outside the locked vocabulary", never "legitimately empty"."""
+    but outside the locked vocabulary", never "legitimately empty".
+
+    Slice 0 (docs/medication-management/
+    MEDICATION_KNOWLEDGE_SLICE0_ORIGIN_PROVENANCE_FLAGS_IMPLEMENTATION_PLAN.md
+    §0.3 item 2): gated behind `MEDICATION_EXPERIMENTAL_VOCABULARY`
+    (default OFF) at this service layer, not just the router — when OFF,
+    every item still gets built and returned (`content`/`last_reviewed_at`/
+    etc. unaffected), only this one field is omitted. Never returns
+    `evidence_level: null`; `response_model_exclude_unset=True` on both K2
+    routes makes an omitted kwarg genuinely absent from the JSON body, not
+    present as null. Never mutates or deletes the stored `row.evidence_level`
+    value — this function only decides what to serialize."""
+    if not is_enabled(FeatureFlag.MEDICATION_EXPERIMENTAL_VOCABULARY):
+        return {}
     value = row.evidence_level
     if value in _EVIDENCE_LEVEL_VALUES:
         return {"evidence_level": value}
@@ -124,6 +138,10 @@ def _evidence_kwargs(row, *, knowledge_table: str) -> dict:
 
 
 def _theme_kwargs(row) -> dict:
+    """Slice 0: same `MEDICATION_EXPERIMENTAL_VOCABULARY` gate as
+    `_evidence_kwargs` above — see that function's docstring."""
+    if not is_enabled(FeatureFlag.MEDICATION_EXPERIMENTAL_VOCABULARY):
+        return {}
     value = row.theme
     if value in _THEME_VALUES:
         return {"theme": value}

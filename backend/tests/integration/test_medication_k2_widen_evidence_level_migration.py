@@ -30,7 +30,6 @@ from alembic.config import Config
 POSTGRES_TEST_URL = os.environ.get("POSTGRES_TEST_URL", "")
 PRE_WIDEN_REVISION = "k1_a1b_artifact_hash"
 WIDEN_REVISION = "k2_s1_widen_evidence_level"
-SHARED_BASELINE = "k1_a1b_f2_specialty_seed"  # what every other integration test file leaves mcp_test at
 
 pytestmark = pytest.mark.integration
 
@@ -83,13 +82,27 @@ def cfg(pg_engine: sa.Engine) -> Config:
 
 
 @pytest.fixture(scope="module", autouse=True)
-def _restore_shared_baseline(pg_engine: sa.Engine, cfg: Config) -> Generator[None, None, None]:
-    """Every other integration test file leaves the shared mcp_test DB at
-    SHARED_BASELINE between runs — restore it at the end of this module
-    too, regardless of which revision individual tests below leave it at."""
+def _restore_head(pg_engine: sa.Engine, cfg: Config) -> Generator[None, None, None]:
+    """Leaves the shared mcp_test database at head after this module's
+    tests run — regardless of which revision an individual test below
+    exercised or left it at, including after a test failure (pytest always
+    runs a module-scoped fixture's finalizer once the last test using it
+    completes, pass or fail).
+
+    Historically this restored to a fixed "SHARED_BASELINE" revision
+    (k1_a1b_f2_specialty_seed) instead, on the premise that every
+    integration test file agreed to leave mcp_test there between runs.
+    That premise doesn't need to hold for correctness: every other
+    integration test file's own `migrated_schema`-style fixture
+    unconditionally re-normalizes to head at ITS OWN start (see e.g.
+    test_medication_k1_5_approval_workflow_postgres.py's
+    `command.upgrade(cfg, "head")`), so landing at head here is a
+    consistent, safe resting point too — a pure upgrade from wherever a
+    test left the DB, with no downgrade (and therefore none of that
+    downgrade's own data-dependent refusal guards) required to get there.
+    """
     yield
-    command.upgrade(cfg, "head")  # ensure a clean, known state before downgrading
-    command.downgrade(cfg, SHARED_BASELINE)
+    command.upgrade(cfg, "head")
 
 
 def _column_max_length(pg_engine: sa.Engine, table: str, column: str) -> int | None:
@@ -157,6 +170,29 @@ def _insert_side_effect(
     return row_id
 
 
+def _cleanup_seeded_ingredient(conn: sa.Connection, ingredient_id: str) -> None:
+    """FK-safe, ID-scoped teardown for everything `_seed_ingredient` (and
+    any drug_side_effects rows created against it) can have left behind.
+    `_seed_ingredient` creates both a drug_classes row and a
+    drug_ingredients row referencing it — earlier versions of this file's
+    tests only ever deleted the ingredient, silently leaking a
+    `class-<id>` row on every run. Looks up the class id via the
+    ingredient's own FK rather than requiring callers to track it
+    separately."""
+    class_id = conn.execute(
+        sa.text("SELECT drug_class_id FROM drug_ingredients WHERE id = :id"),
+        {"id": ingredient_id},
+    ).scalar()
+    conn.execute(
+        sa.text("DELETE FROM drug_side_effects WHERE drug_ingredient_id = :id"),
+        {"id": ingredient_id},
+    )
+    conn.execute(sa.text("DELETE FROM drug_ingredients WHERE id = :id"), {"id": ingredient_id})
+    if class_id is not None:
+        conn.execute(sa.text("DELETE FROM drug_classes WHERE id = :id"), {"id": class_id})
+    conn.commit()
+
+
 def _reset_to_head(cfg: Config) -> None:
     """Every test in this module starts from a deterministic, known
     position, regardless of what a previous test (or a manual `alembic`
@@ -188,62 +224,150 @@ class TestLongCanonicalValuesRoundTrip:
         _reset_to_head(cfg)
         with pg_engine.connect() as conn:
             ingredient_id = _seed_ingredient(conn)
-            row_ids = {}
-            for i, value in enumerate(_LONG_VALUES):
-                assert len(value) > 16, f"{value!r} must exceed the old 16-char limit to be a real test"
-                row_ids[value] = _insert_side_effect(
-                    conn, ingredient_id, value, concept_code=f"concept-{i}"
-                )
+            try:
+                row_ids = {}
+                for i, value in enumerate(_LONG_VALUES):
+                    assert len(value) > 16, (
+                        f"{value!r} must exceed the old 16-char limit to be a real test"
+                    )
+                    row_ids[value] = _insert_side_effect(
+                        conn, ingredient_id, value, concept_code=f"concept-{i}"
+                    )
 
-            for value, row_id in row_ids.items():
-                round_tripped = conn.execute(
-                    sa.text("SELECT evidence_level FROM drug_side_effects WHERE id = :id"),
-                    {"id": row_id},
-                ).scalar()
-                assert round_tripped == value, f"expected exact round-trip of {value!r}, got {round_tripped!r}"
-
-            for row_id in row_ids.values():
-                conn.execute(sa.text("DELETE FROM drug_side_effects WHERE id = :id"), {"id": row_id})
-            conn.execute(
-                sa.text("DELETE FROM drug_ingredients WHERE id = :id"), {"id": ingredient_id}
-            )
-            conn.commit()
+                for value, row_id in row_ids.items():
+                    round_tripped = conn.execute(
+                        sa.text("SELECT evidence_level FROM drug_side_effects WHERE id = :id"),
+                        {"id": row_id},
+                    ).scalar()
+                    assert round_tripped == value, (
+                        f"expected exact round-trip of {value!r}, got {round_tripped!r}"
+                    )
+            finally:
+                # Runs even if an assertion above failed — deletes both
+                # the drug_side_effects rows AND the drug_classes row
+                # _seed_ingredient created (previously leaked every run).
+                _cleanup_seeded_ingredient(conn, ingredient_id)
 
 
 class TestDowngradeSafety:
+    """Empirically verified (2026-07-27, reproduced live against both
+    dialects while fixing this suite): on PostgreSQL, Alembic wraps an
+    ENTIRE multi-step `command.downgrade()`/`command.upgrade()` call in
+    ONE transaction — `alembic/env.py`'s `context.begin_transaction()`
+    wraps the whole `run_migrations()` call and `transaction_per_migration`
+    is never set, confirmed live by Alembic's own "Will assume
+    transactional DDL" log line on Postgres. When any migration in the
+    requested chain raises, every step attempted in that same command
+    call — not just the one whose guard fired — rolls back, leaving the
+    database byte-for-byte identical to whatever it was immediately
+    BEFORE the call. It is never left at "the revision just before the
+    one that failed."
+
+    This is dialect-specific, not a general Alembic guarantee: on SQLite,
+    Alembic logs "Will assume non-transactional DDL" and commits each
+    migration step's DDL independently, so an equivalent refusal partway
+    through a chain WOULD leave every prior step committed and land the
+    database at the revision immediately preceding the one that raised
+    (reproduced live against a throwaway SQLite file while diagnosing
+    this). This module's own tests never exercise SQLite — gated on
+    `POSTGRES_TEST_URL` via `_require_postgres` — so this divergence
+    doesn't affect them, but it is exactly why the original version of
+    the test below asserted "must still be at WIDEN_REVISION": that was
+    only ever true by coincidence, because WIDEN_REVISION was itself head
+    at the time this test was written, making "immediately before the
+    call" and "one step above the failure" the same value. Slice 0
+    stacking 4 more revisions on top broke that coincidence, not this
+    migration's actual behavior — so the assertion below captures "before"
+    dynamically instead of hardcoding a revision name that stops being
+    the right answer every time another migration lands on top.
+    """
+
     def test_downgrade_refuses_when_a_long_value_exists(self, pg_engine, cfg):
         _reset_to_head(cfg)
         with pg_engine.connect() as conn:
             ingredient_id = _seed_ingredient(conn)
-            row_id = _insert_side_effect(conn, ingredient_id, "peer_reviewed_literature")
+        try:
+            with pg_engine.connect() as conn:
+                row_id = _insert_side_effect(conn, ingredient_id, "peer_reviewed_literature")
 
-        with pytest.raises(RuntimeError, match="Refusing to downgrade"):
-            command.downgrade(cfg, PRE_WIDEN_REVISION)
+            with pg_engine.connect() as conn:
+                before = conn.execute(
+                    sa.text("SELECT version_num FROM alembic_version")
+                ).scalar()
 
-        # DB must still be at the widen revision — the refusal must be
-        # all-or-nothing, not a partial downgrade of some tables.
-        with pg_engine.connect() as conn:
-            current = conn.execute(sa.text("SELECT version_num FROM alembic_version")).scalar()
-        assert current == WIDEN_REVISION
-        for table in _KNOWLEDGE_TABLES:
-            assert _column_max_length(pg_engine, table, "evidence_level") == 32, table
+            with pytest.raises(RuntimeError, match="Refusing to downgrade"):
+                command.downgrade(cfg, PRE_WIDEN_REVISION)
 
-        # Data must be untouched by the refused attempt.
-        with pg_engine.connect() as conn:
-            still_there = conn.execute(
-                sa.text("SELECT evidence_level FROM drug_side_effects WHERE id = :id"), {"id": row_id}
-            ).scalar()
+            # The refusal must be all-or-nothing for the ENTIRE requested
+            # multi-step chain: on Postgres this means the revision is
+            # left byte-for-byte where it started — not "at the widen
+            # revision" as a hardcoded assumption, but at whatever `before`
+            # actually was, dynamically captured immediately above.
+            with pg_engine.connect() as conn:
+                after = conn.execute(
+                    sa.text("SELECT version_num FROM alembic_version")
+                ).scalar()
+            assert after == before, (
+                "a refused downgrade must never move the revision at all on "
+                f"Postgres (single-transaction command) — was {before!r}, now {after!r}"
+            )
+            for table in _KNOWLEDGE_TABLES:
+                assert _column_max_length(pg_engine, table, "evidence_level") == 32, table
+
+            # No partial migration state: schema/revision must still be
+            # mutually consistent enough that a normal upgrade to head
+            # succeeds without error (the refusal never actually moved us
+            # off head, so this is a no-op upgrade — but it must not raise).
+            command.upgrade(cfg, "head")
+            with pg_engine.connect() as conn:
+                still_at = conn.execute(
+                    sa.text("SELECT version_num FROM alembic_version")
+                ).scalar()
+            assert still_at == before
+
+            # Data must be untouched — byte-for-byte, not just "truthy
+            # equal" — and no silent narrowing occurred (e.g. a truncated
+            # prefix that happened to compare equal to a shorter string).
+            with pg_engine.connect() as conn:
+                still_there = conn.execute(
+                    sa.text("SELECT evidence_level FROM drug_side_effects WHERE id = :id"),
+                    {"id": row_id},
+                ).scalar()
             assert still_there == "peer_reviewed_literature"
-            conn.execute(sa.text("DELETE FROM drug_side_effects WHERE id = :id"), {"id": row_id})
-            conn.execute(sa.text("DELETE FROM drug_ingredients WHERE id = :id"), {"id": ingredient_id})
-            conn.commit()
+            assert len(still_there) == len("peer_reviewed_literature") == 24, (
+                "value length changed — silent narrowing must never happen even "
+                "on a refused downgrade"
+            )
+
+            # Remediate the blocking data, then prove the SAME downgrade
+            # this test just refused now genuinely succeeds once the data
+            # condition that blocked it is gone: the refusal is
+            # data-conditional, never a permanent wedge.
+            with pg_engine.connect() as conn:
+                conn.execute(
+                    sa.text("DELETE FROM drug_side_effects WHERE id = :id"), {"id": row_id}
+                )
+                conn.commit()
+            command.downgrade(cfg, PRE_WIDEN_REVISION)
+            for table in _KNOWLEDGE_TABLES:
+                assert _column_max_length(pg_engine, table, "evidence_level") == 16, (
+                    f"{table}: downgrade should have succeeded once the blocking "
+                    "row was remediated"
+                )
+        finally:
+            # Runs even if an assertion above failed. Safe regardless of
+            # which schema position the test is currently at — none of
+            # these tables/columns are touched by the widen migration.
+            with pg_engine.connect() as conn:
+                _cleanup_seeded_ingredient(conn, ingredient_id)
+            command.upgrade(cfg, "head")
 
     def test_downgrade_succeeds_when_no_long_values_exist(self, pg_engine, cfg):
-        command.upgrade(cfg, WIDEN_REVISION)
+        _reset_to_head(cfg)
         command.downgrade(cfg, PRE_WIDEN_REVISION)
         for table in _KNOWLEDGE_TABLES:
             assert _column_max_length(pg_engine, table, "evidence_level") == 16, table
-        command.upgrade(cfg, WIDEN_REVISION)  # restore for any later test in this module
+        command.upgrade(cfg, "head")
 
 
 class TestApprovalPathRegressionOnPostgres:
@@ -252,7 +376,12 @@ class TestApprovalPathRegressionOnPostgres:
     long ADR-15 §D values end-to-end on real Postgres, post-migration."""
 
     def test_approve_row_accepts_both_long_evidence_level_values(self, pg_engine, cfg):
-        command.upgrade(cfg, WIDEN_REVISION)
+        # Deterministic starting position regardless of what a previous
+        # test in this module left the DB at (was `command.upgrade(cfg,
+        # WIDEN_REVISION)`, which silently no-ops once the DB is already
+        # past that revision — true for every run since Slice 0 stacked
+        # more revisions on top of it).
+        _reset_to_head(cfg)
 
         os.environ["MCP_DATABASE_URL"] = pg_engine.url.render_as_string(hide_password=False)
         from app.core.config import get_settings
@@ -277,31 +406,52 @@ class TestApprovalPathRegressionOnPostgres:
             db.add(ingredient)
             db.commit()
 
-            for i, value in enumerate(_LONG_VALUES):
-                fields = dict(
-                    drug_ingredient_id=ingredient.id,
-                    concept_code=f"concept-{i}",
-                    label="Test label",
-                    frequency="common",
-                    action_level="self_monitor",
-                    description="synthetic test description",
-                    source="Synthetic Test Source",
-                    version="1.0",
-                    evidence_level=value,
-                    reviewed_by="reviewer-1",
-                    last_reviewed_at=dt.datetime.now(dt.UTC),
+            try:
+                for i, value in enumerate(_LONG_VALUES):
+                    fields = dict(
+                        drug_ingredient_id=ingredient.id,
+                        concept_code=f"concept-{i}",
+                        label="Test label",
+                        frequency="common",
+                        action_level="self_monitor",
+                        description="synthetic test description",
+                        source="Synthetic Test Source",
+                        version="1.0",
+                        evidence_level=value,
+                        reviewed_by="reviewer-1",
+                        last_reviewed_at=dt.datetime.now(dt.UTC),
+                    )
+                    row = repo.create_draft(db, DrugSideEffect, authored_by="author-1", **fields)
+                    repo.submit_for_review(db, row, actor_user_id="author-1")
+                    approved = repo.approve_row(
+                        db, row, actor_user_id="reviewer-1", actor_role="internal_admin"
+                    )
+                    assert approved.status == "approved"
+                    assert approved.evidence_level == value
+            finally:
+                # Test-isolation fix (2026-07-27): submit_for_review/approve_row
+                # above each append a row to knowledge_lifecycle_transitions
+                # (Slice 0, real append-only history — its migration's
+                # downgrade() refuses to run while any row exists). Deleting
+                # it here, scoped strictly to this test's own ingredient.id
+                # (never table-wide), and inside this finally (so it runs even
+                # if an assertion above failed) — same pattern as the K1.5
+                # approval-workflow test's `ingredient` fixture teardown —
+                # keeps the shared disposable mcp_test database clean enough
+                # for a subsequent downgrade past k2_s0_lifecycle_transitions
+                # to succeed.
+                db.execute(
+                    sa.text(
+                        "DELETE FROM knowledge_lifecycle_transitions "
+                        "WHERE knowledge_table = 'drug_side_effects' "
+                        "AND knowledge_row_id IN "
+                        "(SELECT id FROM drug_side_effects WHERE drug_ingredient_id = :ingredient_id)"
+                    ),
+                    {"ingredient_id": ingredient.id},
                 )
-                row = repo.create_draft(db, DrugSideEffect, authored_by="author-1", **fields)
-                repo.submit_for_review(db, row, actor_user_id="author-1")
-                approved = repo.approve_row(
-                    db, row, actor_user_id="reviewer-1", actor_role="internal_admin"
-                )
-                assert approved.status == "approved"
-                assert approved.evidence_level == value
-
-            db.query(DrugSideEffect).filter(DrugSideEffect.drug_ingredient_id == ingredient.id).delete()
-            db.query(DrugIngredient).filter(DrugIngredient.id == ingredient.id).delete()
-            db.query(DrugClass).filter(DrugClass.id == drug_class.id).delete()
-            db.commit()
+                db.query(DrugSideEffect).filter(DrugSideEffect.drug_ingredient_id == ingredient.id).delete()
+                db.query(DrugIngredient).filter(DrugIngredient.id == ingredient.id).delete()
+                db.query(DrugClass).filter(DrugClass.id == drug_class.id).delete()
+                db.commit()
         finally:
             db.close()

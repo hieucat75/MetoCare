@@ -1,6 +1,6 @@
 # ADR-13 — Knowledge Content Lifecycle
 
-**Status:** ✅ ACCEPTED (PTH, 2026-07-15). History: Proposed (2026-07-15) → approved in substance after K0 review round 1 (2026-07-15) → **Accepted** after K1 Pre-Validation update, following the business-key policy and test-fixture-removal revisions in round 2 (2026-07-15). See `MEDICATION_K1_PRE_VALIDATION.md` for the gate record.
+**Status:** ✅ ACCEPTED (PTH, 2026-07-15). History: Proposed (2026-07-15) → approved in substance after K0 review round 1 (2026-07-15) → **Accepted** after K1 Pre-Validation update, following the business-key policy and test-fixture-removal revisions in round 2 (2026-07-15) → **Amended 2026-07-27** (`rejected` status + `knowledge_lifecycle_transitions` append-only history, Medication Knowledge Slice 0 — see Amendment 1). See `MEDICATION_K1_PRE_VALIDATION.md` for the gate record.
 **Date:** 2026-07-15 (revised twice same day per PTH review rounds 1 and 2; Accepted same day)
 **Deciders:** PTH (product), Tech Lead, Clinical Advisor
 
@@ -158,6 +158,65 @@ PTH approved this ADR's substance in the K0 review round, with two required refi
 2. **Authors may not approve their own content**, except via a logged, PTH-approved exception. Resolved via the `authored_by` vs `status_changed_by` distinction in the transition rules.
 
 PTH's explicit condition for this ADR to move from "approved in substance" to formally **Accepted**: it must reach that status *before K1 creates production schema* — this is a K1 pre-validation gate, not a documentation formality. See the K1 Implementation Plan + Pre-Validation doc for how this gate is tracked.
+
+## Amendment 1 (2026-07-27): `rejected` status + lifecycle transition history
+
+**PTH decision, 2026-07-27** (Medication Knowledge Slice 0 checkpoint): both items below are explicitly authorized and now part of this ADR. Nothing else in this document changes.
+
+### 1. `rejected` — sixth lifecycle status
+
+Closes a real gap this ADR's original 5-value enum left open: a `clinical_review` row a reviewer declines had no modeled destination at all before this amendment. `rejected` is reachable only from `clinical_review`, and is terminal — no transition out of it exists. A rejected row is never deleted or edited; it stays for audit, and is excluded from every retrieval path the same way every other non-`approved` status already is (`status = 'approved'` remains the unconditional retrieval filter this ADR established — unchanged).
+
+**Full transition matrix, `rejected` inserted in its one legal position:**
+
+| From | To | Actor | Notes |
+|------|----|----|-------|
+| — | `draft` | any authenticated content author | row creation, not a transition into an existing row |
+| `draft` | `clinical_review` | any authenticated content author | |
+| `clinical_review` | `approved` | role-scoped Clinical Advisor | self-approval blocked (unchanged from this ADR's original text); as of Slice 0, also blocked for any reserved system/AI actor identity, and — for an `origin='ai_synthesized'` row — requires a complete, non-superseded, successful AI generation record |
+| `clinical_review` | `rejected` | role-scoped Clinical Advisor | new in this amendment; requires an explicit `reason_code`/PHI-free `rationale` — no default, a decline must always say why |
+| `approved` | `deprecated` | automatic (recorded under the human actor whose approval of a newer row caused it — see §3 below) | unchanged from this ADR's original text |
+| `deprecated` | `retired` | manual | unchanged from this ADR's original text |
+
+`rejected → approved` is not a transition this table allows, directly or otherwise — declined content is never resurrected in place. The only way for the same underlying fact to reach `approved` after a rejection is a brand new `draft` row through the normal `create_draft → submit_for_review → approve_row` path (this ADR's append-only discipline, unchanged), which is a new row, not a reuse of the rejected one.
+
+### 2. `knowledge_lifecycle_transitions` — append-only transition history
+
+**Why current-state fields alone are insufficient.** Before this amendment, `status`/`status_changed_by`/`status_changed_at` on the knowledge row itself were the *only* record of a transition — each new transition overwrites the previous one's `status_changed_by`/`status_changed_at` in place. That answers "what is this row's state right now and who last changed it," but not "who approved it *the first time*, and why," not "was this row ever rejected before a later version was approved," and not "what did the reviewer's stated reason for declining it say." For clinical-safety-adjacent content, that second class of question is exactly what an audit needs and a single mutable current-state field cannot answer once overwritten.
+
+**Table's exact purpose:** one immutable row per transition, recording what happened, never what the row's state is *now* (that remains the knowledge row's own `status` column — this table is history, not a duplicate source of truth for current state; see §4 for how the two stay consistent).
+
+**Polymorphic relationship model.** Same shape as this ADR's own `knowledge_review_specialties` (see Consequences, above) and `KnowledgeReferenceLink`: keyed by `(knowledge_table, knowledge_row_id)`, no physical foreign key to any of the 5 content tables — acceptable here for the same reason already established in this ADR: this table is metadata-about-history, never joined for clinical content itself.
+
+```
+knowledge_lifecycle_transitions (
+    id,
+    knowledge_table   VARCHAR(32),  -- 'drug_usage' | 'drug_patient_education' | 'drug_side_effects' |
+                                     -- 'drug_monitoring' | 'drug_contraindications'
+    knowledge_row_id  VARCHAR(36),  -- polymorphic, resolved by knowledge_table — same convention as above
+    from_status       VARCHAR(16),
+    to_status         VARCHAR(16),
+    actor_id          VARCHAR(255) NOT NULL,  -- real human user_id, or a reserved SystemActor string
+    actor_role        VARCHAR(64),            -- nullable
+    reason_code       VARCHAR(64) NOT NULL,
+    rationale         TEXT NOT NULL,          -- PHI-free by construction, same discipline as audit_log.details
+    transitioned_at   TIMESTAMPTZ NOT NULL
+)
+```
+
+**Append-only behavior.** No code path in this codebase issues an `UPDATE` or `DELETE` against this table — every write is a single `INSERT`, made inside the same transaction as the status transition it records (so a rollback of the transition rolls back its history row too — never a partial, orphaned history entry). This is enforced today by absence of any other write path, not a database trigger; the migration-level enforcement is the downgrade refusal below.
+
+**Transition actor semantics.** `actor_id` records the real identity responsible for the transition. For every transition a human directly requests (submit, approve, reject, retire), that is the real human `actor_user_id` — never a fabricated system identity. `_deprecate_superseded` (the one *automatically triggered* transition, fired as a side effect of approving a newer row for the same business key) also records the real human `actor_user_id` who performed that approval, not a reserved `SystemActor` string — the human's approval action is what caused the deprecation, so attributing it to them is the more accurate audit record, not a workaround. Reserved `SystemActor` identities (`app/core/system_actors.py`) are for a future automated process (ingestion, normalization, AI synthesis) that writes to this table on its own initiative with no human in the loop — no such process exists yet in this codebase, so no `SystemActor` value has ever been written to `actor_id` as of this amendment.
+
+**Downgrade refusal.** This table's migration (`k2_s0_lifecycle_transitions`) refuses to run its `downgrade()` — raising a named `RuntimeError`, never silently truncating — while the table holds any row. This is intentional and matches this ADR's own append-only philosophy for the knowledge content tables themselves (Consequences, above: "the old row is never deleted or edited"): once real transition history exists, downgrading past this migration is **not available** until that data is explicitly remediated (exported/archived) first. In any environment where the approval workflow has genuinely been used, this means the migration is effectively one-way — the same operational property this ADR already accepts for approved knowledge content never being deleted.
+
+### 3. Reconciling the automatic-deprecation actor rule
+
+To remove any ambiguity for future readers: when approving a new row causes an older approved row for the same business key to become `deprecated` (`approved → deprecated`, this ADR's own pre-existing rule), the transition history row for that deprecation records the **real human approver's** `actor_user_id` — the same identity who approved the new row — never a `SystemActor` value. This is `_deprecate_superseded`'s actual, correct behavior; any prior docstring or comment suggesting otherwise has been corrected to match this amendment, not the reverse.
+
+### 4. Current-state fields vs. transition history — how they stay consistent
+
+The knowledge row's own `status`/`status_changed_by`/`status_changed_at` remain the single source of truth for "what is this row's state right now" — nothing in this amendment changes that, and no query anywhere needs to reconstruct current state from history. `knowledge_lifecycle_transitions` is purely additive audit trail: every transition function writes its history row inside the same database transaction as the status-column `UPDATE` it accompanies (never a separate commit), so the two can never observably diverge — either both happen or neither does, the same transactional guarantee this ADR already requires for `_deprecate_superseded`'s own atomicity (Consequences, above).
 
 ## Approval Required From
 
