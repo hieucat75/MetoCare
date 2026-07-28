@@ -408,6 +408,10 @@ class TestApprovalPathRegressionOnPostgres:
 
             try:
                 for i, value in enumerate(_LONG_VALUES):
+                    # reviewed_by deliberately omitted (fix round 1,
+                    # 2026-07-28, Codex Round 1 finding #6): build_draft
+                    # now rejects an explicit reviewed_by= kwarg — it is
+                    # bound to the approving actor inside approve_row.
                     fields = dict(
                         drug_ingredient_id=ingredient.id,
                         concept_code=f"concept-{i}",
@@ -418,7 +422,6 @@ class TestApprovalPathRegressionOnPostgres:
                         source="Synthetic Test Source",
                         version="1.0",
                         evidence_level=value,
-                        reviewed_by="reviewer-1",
                         last_reviewed_at=dt.datetime.now(dt.UTC),
                     )
                     row = repo.create_draft(db, DrugSideEffect, authored_by="author-1", **fields)
@@ -440,15 +443,24 @@ class TestApprovalPathRegressionOnPostgres:
                 # keeps the shared disposable mcp_test database clean enough
                 # for a subsequent downgrade past k2_s0_lifecycle_transitions
                 # to succeed.
-                db.execute(
-                    sa.text(
-                        "DELETE FROM knowledge_lifecycle_transitions "
-                        "WHERE knowledge_table = 'drug_side_effects' "
-                        "AND knowledge_row_id IN "
-                        "(SELECT id FROM drug_side_effects WHERE drug_ingredient_id = :ingredient_id)"
-                    ),
-                    {"ingredient_id": ingredient.id},
-                )
+                # k2_s0_integrity_guards' append-only trigger (fix round 1,
+                # 2026-07-28) blocks this DELETE outright — temporarily
+                # disabled for exactly this test-only cleanup statement,
+                # same escape-hatch pattern as the K1.5/K1.6 integration
+                # files.
+                db.execute(sa.text("ALTER TABLE knowledge_lifecycle_transitions DISABLE TRIGGER trg_knowledge_lifecycle_transitions_append_only"))
+                try:
+                    db.execute(
+                        sa.text(
+                            "DELETE FROM knowledge_lifecycle_transitions "
+                            "WHERE knowledge_table = 'drug_side_effects' "
+                            "AND knowledge_row_id IN "
+                            "(SELECT id FROM drug_side_effects WHERE drug_ingredient_id = :ingredient_id)"
+                        ),
+                        {"ingredient_id": ingredient.id},
+                    )
+                finally:
+                    db.execute(sa.text("ALTER TABLE knowledge_lifecycle_transitions ENABLE TRIGGER trg_knowledge_lifecycle_transitions_append_only"))
                 db.query(DrugSideEffect).filter(DrugSideEffect.drug_ingredient_id == ingredient.id).delete()
                 db.query(DrugIngredient).filter(DrugIngredient.id == ingredient.id).delete()
                 db.query(DrugClass).filter(DrugClass.id == drug_class.id).delete()

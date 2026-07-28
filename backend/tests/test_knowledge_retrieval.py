@@ -57,12 +57,16 @@ def _make_ingredient(db, *, drug_class_id: str | None = None) -> DrugIngredient:
 def _approval_provenance_fields() -> dict[str, object]:
     """ck_<table>_approved_invariants requires reviewed_by/evidence_level/
     source/version/last_reviewed_at to be non-null once a row reaches
-    'approved'. Synthetic placeholder values only."""
+    'approved'. Synthetic placeholder values only.
+
+    `reviewed_by` deliberately omitted (fix round 1, 2026-07-28, Codex
+    Round 1 finding #6): `build_draft` now rejects an explicit
+    `reviewed_by=` kwarg — it is bound to the approving actor inside
+    `approve_row` itself."""
     return dict(
         source="Synthetic Test Source",
         version="1.0",
         evidence_level="expert_opinion",
-        reviewed_by="reviewer-1",
         last_reviewed_at=dt.datetime.now(dt.UTC),
     )
 
@@ -325,6 +329,13 @@ class TestGetCurrentByBusinessKey:
                     status="approved",
                     status_changed_by="author-1",
                     status_changed_at=now,
+                    # reviewed_by is supplied directly here (not via
+                    # _approval_provenance_fields(), which no longer
+                    # includes it — fix round 1, Codex Round 1 finding #6)
+                    # because this test bypasses approve_row entirely to
+                    # construct an otherwise-impossible already-approved
+                    # row directly.
+                    reviewed_by="reviewer-1",
                     **_approval_provenance_fields(),
                 )
                 db.add(row)
@@ -459,6 +470,13 @@ class TestGetCurrentByBusinessKey:
                     status="approved",
                     status_changed_by="author-1",
                     status_changed_at=now,
+                    # reviewed_by is supplied directly here (not via
+                    # _approval_provenance_fields(), which no longer
+                    # includes it — fix round 1, Codex Round 1 finding #6)
+                    # because this test bypasses approve_row entirely to
+                    # construct an otherwise-impossible already-approved
+                    # row directly.
+                    reviewed_by="reviewer-1",
                     **_approval_provenance_fields(),
                 )
                 db.add(row)
@@ -753,6 +771,9 @@ class TestGetCurrentBatch:
                     status="approved",
                     status_changed_by="author-1",
                     status_changed_at=now,
+                    # reviewed_by supplied directly (see
+                    # test_multiple_approved_rows_raises's comment).
+                    reviewed_by="reviewer-1",
                     **_approval_provenance_fields(),
                 )
                 db.add(row)

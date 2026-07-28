@@ -8,9 +8,11 @@ no PostgreSQL integration marker needed, unlike the migration test files.
 from __future__ import annotations
 
 import datetime as dt
+import threading
 import uuid
 
 import pytest
+from app.core.database import SessionLocal
 from app.core.system_actors import SystemActor
 from app.models.drug_knowledge_ai_generation import KnowledgeAIGeneration
 from app.models.drug_knowledge_content import (
@@ -45,12 +47,19 @@ def _approval_provenance_fields() -> dict[str, object]:
     """ck_<table>_approved_invariants requires reviewed_by/evidence_level/
     source/version/last_reviewed_at to be non-null once a row reaches
     'approved' (drug_knowledge_content.py:48). Synthetic placeholder values
-    only — never real clinical content/sourcing."""
+    only — never real clinical content/sourcing.
+
+    `reviewed_by` is deliberately NOT included here (fix round 1,
+    2026-07-28, Codex Round 1 finding #6): `build_draft` now rejects an
+    explicit `reviewed_by=` kwarg outright — it is bound exclusively to the
+    approving actor inside `approve_row`'s own UPDATE, never pre-supplied
+    at draft creation. The `approved_invariants` CHECK still passes at
+    approval time because `approve_row` sets `reviewed_by` in the same
+    statement as `status='approved'`."""
     return dict(
         source="Synthetic Test Source",
         version="1.0",
         evidence_level="expert_opinion",
-        reviewed_by="reviewer-1",
         last_reviewed_at=dt.datetime.now(dt.UTC),
     )
 
@@ -107,6 +116,23 @@ class TestCreateDraft:
         # not an UPDATE of version 1.
         db.refresh(first)
         assert first.content == "version 1"
+
+    def test_reviewed_by_cannot_be_pre_supplied_at_draft_creation(self, db) -> None:
+        """Codex Round 1 finding #6 (fix round 1, 2026-07-28): draft
+        construction must not accept a caller-supplied reviewed_by — it is
+        bound exclusively to the approving actor at approve_row time."""
+        ingredient = _make_ingredient(db)
+        with pytest.raises(ValueError, match="reviewed_by"):
+            repo.create_draft(
+                db,
+                DrugUsage,
+                authored_by="author-1",
+                drug_ingredient_id=ingredient.id,
+                locale="vi",
+                audience="patient",
+                content="content",
+                reviewed_by="forged-reviewer",
+            )
 
 
 class TestPublishedQueryExcludesDrafts:
@@ -2342,6 +2368,57 @@ class TestSystemActorRestrictions:
         approved = repo.approve_row(db, row, actor_user_id="reviewer-1", actor_role=self._ROLE)
         assert approved.status == "approved"
 
+    def test_forged_unregistered_system_actor_denied_by_approve_row(self, db) -> None:
+        """Codex Round 1 finding #4 (fix round 1, 2026-07-28): before the
+        fix, `assert_actor_is_not_system` called `is_system_actor` alone
+        (True only for REGISTERED members) — an unregistered value like
+        "system:attacker" made `is_system_actor` return False, so it
+        silently passed the human-actor gate. This proves the reserved
+        `system:` namespace itself is rejected, not just its finitely many
+        registered members."""
+        row = self._submitted_row(db)
+        with pytest.raises(repo.KnowledgeApprovalAuthorizationError, match="reserved system-actor namespace"):
+            repo.approve_row(db, row, actor_user_id="system:attacker", actor_role=self._ROLE)
+        db.refresh(row)
+        assert row.status == "clinical_review"
+
+    def test_forged_unregistered_system_actor_denied_by_reject_row(self, db) -> None:
+        row = self._submitted_row(db)
+        with pytest.raises(repo.KnowledgeApprovalAuthorizationError, match="reserved system-actor namespace"):
+            repo.reject_row(
+                db,
+                row,
+                actor_user_id="system:attacker",
+                actor_role=self._ROLE,
+                reason_code="insufficient_evidence",
+                rationale="Synthetic test rationale.",
+            )
+        db.refresh(row)
+        assert row.status == "clinical_review"
+
+    def test_forged_unregistered_system_actor_denied_by_retire_row(self, db) -> None:
+        row = self._submitted_row(db)
+        approved = repo.approve_row(db, row, actor_user_id="reviewer-1", actor_role=self._ROLE)
+        second = repo.create_draft(
+            db,
+            DrugUsage,
+            authored_by="author-1",
+            drug_ingredient_id=approved.drug_ingredient_id,
+            locale="vi",
+            audience="patient",
+            content="version 2",
+            **_approval_provenance_fields(),
+        )
+        repo.submit_for_review(db, second, actor_user_id="author-1")
+        repo.approve_row(db, second, actor_user_id="reviewer-1", actor_role=self._ROLE)
+        db.refresh(approved)
+        assert approved.status == "deprecated"
+
+        with pytest.raises(repo.KnowledgeApprovalAuthorizationError, match="reserved system-actor namespace"):
+            repo.retire_row(db, approved, actor_user_id="system:attacker", actor_role=self._ROLE)
+        db.refresh(approved)
+        assert approved.status == "deprecated"
+
     def test_no_transition_row_written_when_system_actor_denied(self, db) -> None:
         row = self._submitted_row(db)
         before = db.query(KnowledgeLifecycleTransition).count()
@@ -2401,6 +2478,11 @@ class TestAIProvenanceApprovalGuard:
             prompt_template_version="1.0",
             input_source_ids=[],
             input_hash="synthetic-hash",
+            # Fix round 1, 2026-07-28 (Codex Round 1 finding #5): approval
+            # now requires a non-empty output_hash — every test exercising
+            # the SUCCESS path needs one by default; tests proving the
+            # missing-output_hash case override it explicitly to "".
+            output_hash="synthetic-output-hash",
             generation_status="succeeded",
             created_by=SystemActor.MEDICATION_AI_SYNTHESIS.value,
         )
@@ -2465,9 +2547,111 @@ class TestAIProvenanceApprovalGuard:
         self, db
     ) -> None:
         row = self._ai_synthesized_row(db)
-        self._generation(db, target_row_id=row.id)
+        generation = self._generation(db, target_row_id=row.id)
         approved = repo.approve_row(db, row, actor_user_id="reviewer-1", actor_role=self._ROLE)
         assert approved.status == "approved"
+        # Fix round 1, 2026-07-28 (Codex Round 1 finding #5): approval must
+        # atomically promote the authoritative generation — it must never
+        # remain 'pending' after a successful approval relied on it.
+        db.refresh(generation)
+        assert generation.review_status == "promoted"
+        # Fix round 1 finding #6: reviewed_by is bound to the approving actor.
+        assert approved.reviewed_by == "reviewer-1"
+
+    def test_empty_output_hash_cannot_support_approval(self, db) -> None:
+        row = self._ai_synthesized_row(db)
+        self._generation(db, target_row_id=row.id, output_hash="")
+        with pytest.raises(repo.AIProvenanceIncompleteError):
+            repo.approve_row(db, row, actor_user_id="reviewer-1", actor_role=self._ROLE)
+        db.refresh(row)
+        assert row.status == "clinical_review"
+
+    def test_generation_by_non_ai_synthesis_actor_cannot_support_approval(self, db) -> None:
+        """created_by must name the specific AI-synthesis actor — a
+        different, otherwise-legitimate, registered SystemActor (e.g. the
+        migration/backfill actor) must not qualify (Codex Round 1
+        finding #5)."""
+        row = self._ai_synthesized_row(db)
+        self._generation(db, target_row_id=row.id, created_by=SystemActor.MEDICATION_MIGRATION.value)
+        with pytest.raises(repo.AIProvenanceIncompleteError):
+            repo.approve_row(db, row, actor_user_id="reviewer-1", actor_role=self._ROLE)
+        db.refresh(row)
+        assert row.status == "clinical_review"
+
+    def test_non_pending_generation_cannot_support_a_second_approval(self, db) -> None:
+        """A generation already promoted/rejected/superseded by an earlier
+        decision must not be reusable to authorize a second approval
+        (Codex Round 1 finding #5 — "an admissible review_status")."""
+        row = self._ai_synthesized_row(db)
+        self._generation(db, target_row_id=row.id, review_status="promoted")
+        with pytest.raises(repo.AIProvenanceIncompleteError):
+            repo.approve_row(db, row, actor_user_id="reviewer-1", actor_role=self._ROLE)
+        db.refresh(row)
+        assert row.status == "clinical_review"
+
+    def test_latest_generation_failing_blocks_approval_even_if_an_older_one_succeeded(
+        self, db
+    ) -> None:
+        """Codex Round 1 finding #5: the authoritative generation is the
+        single MOST RECENT non-superseded attempt, checked by its OWN
+        status — an older succeeded attempt must not let approval succeed
+        if the actual latest attempt has since failed."""
+        row = self._ai_synthesized_row(db)
+        base = dt.datetime.now(dt.UTC)
+        self._generation(db, target_row_id=row.id, created_at=base - dt.timedelta(hours=1))
+        self._generation(
+            db, target_row_id=row.id, generation_status="failed", created_at=base
+        )
+        with pytest.raises(repo.AIProvenanceIncompleteError):
+            repo.approve_row(db, row, actor_user_id="reviewer-1", actor_role=self._ROLE)
+        db.refresh(row)
+        assert row.status == "clinical_review"
+
+    def test_approval_promotion_only_touches_review_status(self, db) -> None:
+        """Real behavioral proof (Codex Round 1 finding #9), referenced by
+        TestAppendOnlyHistoryEnforcement's grep-guard: the promotion UPDATE
+        inside approve_row must change `review_status` alone — every other
+        column on the generation record (including its own immutable
+        provenance fields) must survive completely unchanged."""
+        row = self._ai_synthesized_row(db)
+        generation = self._generation(db, target_row_id=row.id)
+        before = {
+            "knowledge_table": generation.knowledge_table,
+            "target_row_id": generation.target_row_id,
+            "model_provider": generation.model_provider,
+            "model_identifier": generation.model_identifier,
+            "prompt_template_id": generation.prompt_template_id,
+            "prompt_template_version": generation.prompt_template_version,
+            "input_hash": generation.input_hash,
+            "output_hash": generation.output_hash,
+            "generation_status": generation.generation_status,
+            "origin": generation.origin,
+            "created_by": generation.created_by,
+            "created_at": generation.created_at,
+            "superseded_by_generation_id": generation.superseded_by_generation_id,
+        }
+        assert generation.review_status == "pending"
+
+        repo.approve_row(db, row, actor_user_id="reviewer-1", actor_role=self._ROLE)
+
+        db.refresh(generation)
+        assert generation.review_status == "promoted"
+        after = {
+            "knowledge_table": generation.knowledge_table,
+            "target_row_id": generation.target_row_id,
+            "model_provider": generation.model_provider,
+            "model_identifier": generation.model_identifier,
+            "prompt_template_id": generation.prompt_template_id,
+            "prompt_template_version": generation.prompt_template_version,
+            "input_hash": generation.input_hash,
+            "output_hash": generation.output_hash,
+            "generation_status": generation.generation_status,
+            "origin": generation.origin,
+            "created_by": generation.created_by,
+            "created_at": generation.created_at,
+            "superseded_by_generation_id": generation.superseded_by_generation_id,
+        }
+        assert before == after, "promotion must change review_status alone"
 
     def test_generation_success_never_auto_approves(self, db) -> None:
         """Creating a complete, successful generation record must never,
@@ -2519,6 +2703,190 @@ class TestAIProvenanceApprovalGuard:
             repo.approve_row(db, row, actor_user_id="reviewer-1", actor_role=self._ROLE)
         db.refresh(row)
         assert row.status == "clinical_review"
+
+
+class TestConcurrentAIPromotion:
+    """Codex Round 1 finding #5 / user Fix Round 1 instruction ("Add
+    concurrency and transaction rollback tests for AI promotion"). Two
+    genuinely separate DB sessions/threads race to approve the SAME
+    ai_synthesized row backed by the SAME single qualifying generation —
+    exactly one must win, the other must lose cleanly (no dangling
+    'promoted' generation with no matching approved row, no corrupted
+    row status), proving `_select_and_promote_ai_generation`'s
+    `UPDATE ... WHERE review_status = 'pending'` optimistic-concurrency
+    check is a real backstop, not just a theoretical one."""
+
+    _ROLE = "internal_admin"
+
+    @pytest.fixture(autouse=True)
+    def _cleanup(self, db):
+        existing_ids = {row.id for row in db.query(DrugUsage.id).all()}
+        existing_gen_ids = {g.id for g in db.query(KnowledgeAIGeneration.id).all()}
+        yield
+        db.rollback()
+        _cleanup_domain_rows(db, existing_ids)
+        db.query(KnowledgeAIGeneration).filter(
+            ~KnowledgeAIGeneration.id.in_(existing_gen_ids)
+        ).delete(synchronize_session=False)
+        db.commit()
+
+    def test_two_concurrent_approvals_racing_the_same_generation_only_one_wins(self) -> None:
+        setup_db = SessionLocal()
+        try:
+            ingredient = _make_ingredient(setup_db)
+            row = repo.create_draft(
+                setup_db,
+                DrugUsage,
+                authored_by=SystemActor.MEDICATION_AI_SYNTHESIS.value,
+                drug_ingredient_id=ingredient.id,
+                locale="vi",
+                audience="patient",
+                content="synthetic AI-generated test content — never staged/production",
+                origin="ai_synthesized",
+                source="Synthetic Test Source",
+                version="1.0",
+                evidence_level="expert_opinion",
+                last_reviewed_at=dt.datetime.now(dt.UTC),
+            )
+            repo.submit_for_review(setup_db, row, actor_user_id=SystemActor.MEDICATION_AI_SYNTHESIS.value)
+            row_id = row.id
+            generation = KnowledgeAIGeneration(
+                knowledge_table="drug_usage",
+                target_row_id=row_id,
+                model_provider="synthetic-provider",
+                model_identifier="synthetic-model-v1",
+                prompt_template_id="synthetic-prompt",
+                prompt_template_version="1.0",
+                input_source_ids=[],
+                input_hash="synthetic-hash",
+                output_hash="synthetic-output-hash",
+                generation_status="succeeded",
+                created_by=SystemActor.MEDICATION_AI_SYNTHESIS.value,
+            )
+            setup_db.add(generation)
+            setup_db.commit()
+            generation_id = generation.id
+        finally:
+            setup_db.close()
+
+        results: dict[str, tuple[str, object]] = {}
+        start = threading.Barrier(2, timeout=15)
+
+        def _attempt(actor_user_id: str) -> None:
+            db = SessionLocal()
+            try:
+                start.wait()
+                row_ref = db.get(DrugUsage, row_id)
+                approved = repo.approve_row(
+                    db, row_ref, actor_user_id=actor_user_id, actor_role=self._ROLE
+                )
+                results[actor_user_id] = ("success", approved.status)
+            except Exception as exc:  # noqa: BLE001 — cross-thread result capture only
+                results[actor_user_id] = ("failure", exc)
+            finally:
+                db.close()
+
+        t1 = threading.Thread(target=_attempt, args=("reviewer-a",))
+        t2 = threading.Thread(target=_attempt, args=("reviewer-b",))
+        t1.start()
+        t2.start()
+        t1.join(timeout=15)
+        t2.join(timeout=15)
+
+        outcomes = [results["reviewer-a"][0], results["reviewer-b"][0]]
+        assert outcomes.count("success") == 1, (
+            f"exactly one concurrent approval must win the race, got {results}"
+        )
+        assert outcomes.count("failure") == 1, (
+            f"the loser must fail cleanly (TransitionError or "
+            f"AIProvenanceIncompleteError), got {results}"
+        )
+
+        verify_db = SessionLocal()
+        try:
+            final_row = verify_db.get(DrugUsage, row_id)
+            assert final_row.status == "approved", (
+                "the row must end up approved exactly once — never stuck "
+                "mid-transition, never approved twice"
+            )
+            final_generation = verify_db.get(KnowledgeAIGeneration, generation_id)
+            assert final_generation.review_status == "promoted", (
+                "the winning transaction's promotion must be durably "
+                "committed — never left 'pending' after a successful approval"
+            )
+        finally:
+            verify_db.close()
+
+    def test_rollback_leaves_generation_pending_when_row_transition_is_invalid(self, db) -> None:
+        """Transaction-rollback proof: `_select_and_promote_ai_generation`
+        runs and tentatively promotes the generation BEFORE
+        `validate_transition` checks the row's own current status
+        (approve_row's own call order). If the row's real, persisted
+        status has concurrently moved to something `clinical_review ->
+        approved` no longer legally follows from (simulated here via a
+        direct SQL UPDATE bypassing the service layer, standing in for a
+        concurrent transaction that changed it), `validate_transition`
+        raises AFTER the promotion already ran in the same open
+        transaction — the whole transaction, including that tentative
+        promotion, must roll back. The generation must be left exactly as
+        it was: 'pending', never durably promoted without its row being
+        approved."""
+        ingredient = _make_ingredient(db)
+        row = repo.create_draft(
+            db,
+            DrugUsage,
+            authored_by=SystemActor.MEDICATION_AI_SYNTHESIS.value,
+            drug_ingredient_id=ingredient.id,
+            locale="vi",
+            audience="patient",
+            content="synthetic AI-generated test content — never staged/production",
+            origin="ai_synthesized",
+            source="Synthetic Test Source",
+            version="1.0",
+            evidence_level="expert_opinion",
+            last_reviewed_at=dt.datetime.now(dt.UTC),
+        )
+        repo.submit_for_review(db, row, actor_user_id=SystemActor.MEDICATION_AI_SYNTHESIS.value)
+        generation = KnowledgeAIGeneration(
+            knowledge_table="drug_usage",
+            target_row_id=row.id,
+            model_provider="synthetic-provider",
+            model_identifier="synthetic-model-v1",
+            prompt_template_id="synthetic-prompt",
+            prompt_template_version="1.0",
+            input_source_ids=[],
+            input_hash="synthetic-hash",
+            output_hash="synthetic-output-hash",
+            generation_status="succeeded",
+            created_by=SystemActor.MEDICATION_AI_SYNTHESIS.value,
+        )
+        db.add(generation)
+        db.commit()
+
+        # Simulates a concurrent transaction rejecting the row — raw SQL,
+        # bypassing the ORM @validates hooks and the service layer
+        # entirely, so the row's real persisted status is now 'rejected'
+        # when approve_row re-fetches it, while this test's own stale
+        # `row` object still thinks it is 'clinical_review'.
+        from sqlalchemy import text as sa_text
+
+        db.execute(
+            sa_text("UPDATE drug_usage SET status = 'rejected' WHERE id = :id"),
+            {"id": row.id},
+        )
+        db.commit()
+
+        with pytest.raises(repo.TransitionError):
+            repo.approve_row(db, row, actor_user_id="reviewer-1", actor_role=self._ROLE)
+
+        db.rollback()
+        db.refresh(generation)
+        assert generation.review_status == "pending", (
+            "the generation's tentative promotion must roll back completely "
+            "when the row-level transition it belongs to is illegal"
+        )
+        db.refresh(row)
+        assert row.status == "rejected", "the row's real persisted status is untouched by the failed attempt"
 
 
 class TestOriginAndStatusValidation:
@@ -2743,12 +3111,25 @@ class TestAppendOnlyHistoryEnforcement:
             "delete(" not in source.split(".query(KnowledgeLifecycleTransition)")[1][:200]
         )
 
-    def test_no_production_service_exposes_update_delete_for_ai_generations(self) -> None:
+    def test_no_production_service_exposes_delete_for_ai_generations(self) -> None:
+        """Fix round 1, 2026-07-28 (Codex Round 1 finding #5/#9): this used
+        to assert NO update(KnowledgeAIGeneration) existed at all — that
+        premise is now intentionally false, since `approve_row` must
+        atomically promote the authoritative generation's `review_status`
+        (see `_select_and_promote_ai_generation`). What must still hold:
+        no DELETE ever, and exactly ONE UPDATE call site — the sanctioned
+        promotion, not an incidental or duplicated one. The behavioral
+        proof that this one UPDATE touches only `review_status` is
+        `test_approval_promotion_only_touches_review_status` on
+        `TestAIProvenanceApprovalGuard`."""
         import inspect
 
         source = inspect.getsource(repo)
-        assert "update(KnowledgeAIGeneration)" not in source
         assert "delete(KnowledgeAIGeneration)" not in source
+        assert source.count("update(KnowledgeAIGeneration)") == 1, (
+            "exactly one UPDATE against KnowledgeAIGeneration is expected — "
+            "the review_status promotion inside _select_and_promote_ai_generation"
+        )
 
     def test_retries_create_distinct_generation_rows(self, db) -> None:
         ingredient = _make_ingredient(db)

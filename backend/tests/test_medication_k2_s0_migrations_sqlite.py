@@ -70,6 +70,11 @@ ORIGIN_REV = "k2_s0_knowledge_origin"
 AI_GEN_REV = "k2_s0_ai_generation_history"
 LIFECYCLE_REV = "k2_s0_lifecycle_transitions"
 REJECTED_REV = "k2_s0_add_rejected_status"
+# Fix round 1, 2026-07-28: k2_s0_integrity_guards is now the actual head,
+# one revision past REJECTED_REV — every place that used to assert
+# `_current_revision(...) == REJECTED_REV` to mean "at head" now asserts
+# against this instead.
+HEAD_REV = "k2_s0_integrity_guards"
 
 _KNOWLEDGE_TABLES = (
     "drug_usage",
@@ -314,15 +319,37 @@ def _insert_ai_generation(conn: sa.Connection) -> str:
             "generation_status, origin, review_status, created_by, created_at, updated_at) "
             "VALUES (:id, 'drug_side_effects', NULL, 'openrouter', 'test-model', "
             "'tmpl-1', '1.0', :input_source_ids, :input_hash, "
-            "'succeeded', 'ai_synthesized', 'pending', 'system:test', :now, :now)"
+            "'succeeded', 'ai_synthesized', 'pending', :created_by, :now, :now)"
         ),
-        {"id": row_id, "input_source_ids": "[]", "input_hash": "a" * 64, "now": now},
+        {
+            "id": row_id,
+            "input_source_ids": "[]",
+            "input_hash": "a" * 64,
+            # Fix round 1, 2026-07-28 (Codex Round 1 finding #4): must be a
+            # registered SystemActor — k2_s0_integrity_guards' CHECK
+            # constraint now rejects an unregistered "system:*" value like
+            # the "system:test" this used to hardcode.
+            "created_by": "system:medication-ai-synthesis",
+            "now": now,
+        },
     )
     conn.commit()
     return row_id
 
 
 def _insert_lifecycle_transition(conn: sa.Connection, ingredient_id: str) -> str:
+    """`ingredient_id` seeds a REAL target row (a drug_side_effects draft
+    against that ingredient) — fix round 1, 2026-07-28 (Codex Round 1
+    finding #7): this used to record `ingredient_id` itself as
+    `knowledge_row_id` while declaring `knowledge_table='drug_side_effects'`,
+    the exact mismatched-table repro Codex demonstrated. This file's tests
+    only ever call this before k2_s0_integrity_guards exists in the chain,
+    so the new polymorphic-target-exists trigger does not yet apply here —
+    fixed anyway for correctness/consistency with the Postgres integration
+    file's equivalent fix."""
+    target_row_id = _insert_side_effect_draft(
+        conn, ingredient_id, concept_code=f"lifecycle-transition-target-{uuid.uuid4().hex[:8]}"
+    )
     row_id = str(uuid.uuid4())
     now = dt.datetime.now(dt.UTC)
     conn.execute(
@@ -333,7 +360,7 @@ def _insert_lifecycle_transition(conn: sa.Connection, ingredient_id: str) -> str
             "VALUES (:id, 'drug_side_effects', :row_id, 'draft', 'clinical_review', 'tester', "
             "NULL, 'standard_transition', 'synthetic test transition', :now, :now, :now)"
         ),
-        {"id": row_id, "row_id": ingredient_id, "now": now},
+        {"id": row_id, "row_id": target_row_id, "now": now},
     )
     conn.commit()
     return row_id
@@ -454,7 +481,7 @@ class TestKnowledgeOriginMigrationSQLite:
 
         # No partial/corrupted state: a normal re-upgrade to head still works.
         command.upgrade(cfg, "head")
-        assert _current_revision(engine) == REJECTED_REV
+        assert _current_revision(engine) == HEAD_REV
 
 
 # --------------------------------------------------------------------- #
@@ -699,28 +726,34 @@ class TestAddRejectedStatusMigrationSQLite:
 
 class TestSqliteMultiStepDowngradeRefusalLandingBehavior:
     def test_multistep_downgrade_refusal_lands_one_step_above_the_failure_not_at_head(self, sqlite_db):
-        """From head (k2_s0_add_rejected_status), request a downgrade all
-        the way down to AI_GEN_REV. That's a 2-step chain:
-        k2_s0_add_rejected_status -> k2_s0_lifecycle_transitions (step 1,
-        no blocking data, commits) -> k2_s0_ai_generation_history (step 2,
-        this is the target — never entered because
+        """From head (k2_s0_integrity_guards, fix round 1, 2026-07-28 —
+        formerly k2_s0_add_rejected_status before that migration landed),
+        request a downgrade all the way down to AI_GEN_REV. Since
+        k2_s0_integrity_guards' own downgrade never raises (it only drops
+        triggers/constraints, no data-loss guard applies to it — see its
+        own docstring), the leading `k2_s0_integrity_guards ->
+        k2_s0_add_rejected_status` step always commits harmlessly, landing
+        exactly where this test's chain used to start. From there it's the
+        same 2-step chain as before: k2_s0_add_rejected_status ->
+        k2_s0_lifecycle_transitions (no blocking data, commits) ->
+        k2_s0_ai_generation_history (the target — never entered because
         knowledge_ai_generations is non-empty, so its own downgrade would
         be entered next but the chain stops at the boundary we ask for).
         To actually exercise a REFUSAL mid-chain, request a downgrade past
-        AI_GEN_REV's own migration (to ORIGIN_REV): step 1
-        (add_rejected_status -> lifecycle_transitions) commits, step 2
-        (lifecycle_transitions -> ai_generation_history) commits, step 3
-        (ai_generation_history -> knowledge_origin) is where
+        AI_GEN_REV's own migration (to ORIGIN_REV): the leading guard step
+        commits, then add_rejected_status -> lifecycle_transitions
+        commits, lifecycle_transitions -> ai_generation_history commits,
+        and ai_generation_history -> knowledge_origin is where
         knowledge_ai_generations' non-empty guard raises.
 
-        On Postgres the equivalent 3-step call would leave the DB
+        On Postgres the equivalent multi-step call would leave the DB
         unchanged at head (the whole call is one transaction). On SQLite,
-        steps 1 and 2 are already committed independently by the time step
-        3 raises — the DB lands at AI_GEN_REV (the revision immediately
-        above the one whose downgrade refused), not at head."""
+        every earlier step is already committed independently by the time
+        the failing step raises — the DB lands at AI_GEN_REV (the revision
+        immediately above the one whose downgrade refused), not at head."""
         engine, cfg = sqlite_db
         command.upgrade(cfg, "head")
-        assert _current_revision(engine) == REJECTED_REV
+        assert _current_revision(engine) == HEAD_REV
 
         with engine.connect() as conn:
             generation_id = _insert_ai_generation(conn)
@@ -737,7 +770,7 @@ class TestSqliteMultiStepDowngradeRefusalLandingBehavior:
             "asserts (there, the same scenario leaves the DB unchanged at "
             "whatever revision the call started from)."
         )
-        assert landed_at != REJECTED_REV, (
+        assert landed_at != HEAD_REV, (
             "if this ever equals head again, the SQLite/Postgres divergence "
             "this test exists to document has disappeared or Alembic's "
             "SQLite transaction handling changed — investigate before "
@@ -763,4 +796,4 @@ class TestSqliteMultiStepDowngradeRefusalLandingBehavior:
         assert _table_exists(engine, "knowledge_ai_generations") is False
 
         command.upgrade(cfg, "head")
-        assert _current_revision(engine) == REJECTED_REV
+        assert _current_revision(engine) == HEAD_REV

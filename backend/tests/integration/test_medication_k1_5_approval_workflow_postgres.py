@@ -51,6 +51,30 @@ def _require_postgres() -> None:
         )
 
 
+def _delete_lifecycle_transitions_for_ingredient(db: Session, ingredient_id: str) -> None:
+    """Test-only escape hatch (fix round 1, 2026-07-28): k2_s0_integrity_guards'
+    append-only trigger correctly blocks this raw DELETE in real usage —
+    but this fixture's own teardown still needs to remove the history rows
+    it created, scoped strictly to this one ingredient_id, so the shared
+    disposable mcp_test database stays clean for later downgrade tests.
+    Temporarily disabling the trigger for the duration of this one DELETE
+    is a test-harness-only privilege; it is always re-enabled before this
+    function returns."""
+    db.execute(sa.text("ALTER TABLE knowledge_lifecycle_transitions DISABLE TRIGGER trg_knowledge_lifecycle_transitions_append_only"))
+    try:
+        db.execute(
+            sa.text(
+                "DELETE FROM knowledge_lifecycle_transitions "
+                "WHERE knowledge_table = 'drug_usage' "
+                "AND knowledge_row_id IN "
+                "(SELECT id FROM drug_usage WHERE drug_ingredient_id = :ingredient_id)"
+            ),
+            {"ingredient_id": ingredient_id},
+        )
+    finally:
+        db.execute(sa.text("ALTER TABLE knowledge_lifecycle_transitions ENABLE TRIGGER trg_knowledge_lifecycle_transitions_append_only"))
+
+
 def _make_alembic_config(db_url: str) -> Config:
     os.environ["MCP_DATABASE_URL"] = db_url
     from app.core.config import get_settings
@@ -133,15 +157,7 @@ def ingredient(session_factory: sessionmaker[Session]) -> Generator[dict, None, 
     finally:
         cleanup_db = session_factory()
         try:
-            cleanup_db.execute(
-                sa.text(
-                    "DELETE FROM knowledge_lifecycle_transitions "
-                    "WHERE knowledge_table = 'drug_usage' "
-                    "AND knowledge_row_id IN "
-                    "(SELECT id FROM drug_usage WHERE drug_ingredient_id = :ingredient_id)"
-                ),
-                {"ingredient_id": ids["id"]},
-            )
+            _delete_lifecycle_transitions_for_ingredient(cleanup_db, ids["id"])
             cleanup_db.execute(
                 sa.text("DELETE FROM drug_usage WHERE drug_ingredient_id = :ingredient_id"),
                 {"ingredient_id": ids["id"]},
@@ -167,12 +183,16 @@ def _approval_provenance_fields() -> dict[str, object]:
     source/version/last_reviewed_at to be non-null once a row reaches
     'approved' — same requirement as the SQLite unit tests
     (tests/test_knowledge_repository.py). Synthetic placeholder values
-    only — never real clinical content/sourcing."""
+    only — never real clinical content/sourcing.
+
+    `reviewed_by` deliberately omitted (fix round 1, 2026-07-28, Codex
+    Round 1 finding #6): `build_draft` now rejects an explicit
+    `reviewed_by=` kwarg — it is bound to the approving actor inside
+    `approve_row` itself."""
     return dict(
         source="Synthetic Test Source",
         version="1.0",
         evidence_level="expert_opinion",
-        reviewed_by="reviewer-1",
         last_reviewed_at=dt.datetime.now(dt.UTC),
     )
 
@@ -579,6 +599,11 @@ class TestPartialUniqueIndexBackstop:
                 status="approved",
                 status_changed_by="author-2",
                 status_changed_at=now,
+                # reviewed_by supplied directly (not via
+                # _approval_provenance_fields(), which no longer includes
+                # it — fix round 1, Codex Round 1 finding #6) because this
+                # test bypasses approve_row entirely.
+                reviewed_by="reviewer-1",
                 **_approval_provenance_fields(),
             )
             db2.add(rogue)
@@ -886,15 +911,7 @@ class TestRepeatedApprovalCyclesDoNotBlockMigrationDowngrade:
 
         cleanup_db = session_factory()
         try:
-            cleanup_db.execute(
-                sa.text(
-                    "DELETE FROM knowledge_lifecycle_transitions "
-                    "WHERE knowledge_table = 'drug_usage' "
-                    "AND knowledge_row_id IN "
-                    "(SELECT id FROM drug_usage WHERE drug_ingredient_id = :ingredient_id)"
-                ),
-                {"ingredient_id": ingredient_id},
-            )
+            _delete_lifecycle_transitions_for_ingredient(cleanup_db, ingredient_id)
             cleanup_db.execute(
                 sa.text("DELETE FROM drug_usage WHERE drug_ingredient_id = :ingredient_id"),
                 {"ingredient_id": ingredient_id},

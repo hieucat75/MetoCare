@@ -272,12 +272,35 @@ def _cleanup_knowledge_domain_rows(
         cleanup = pg_sessionmaker()
         try:
             for table in _ISOLATION_CLEANUP_TABLES:
-                cleanup.execute(
-                    sa.text(f"DELETE FROM {table} WHERE id NOT IN :before_ids").bindparams(
-                        sa.bindparam("before_ids", expanding=True)
-                    ),
-                    {"before_ids": before_ids[table] or ["__none_existed__"]},
-                )
+                # k2_s0_integrity_guards' append-only trigger (fix round 1,
+                # 2026-07-28) blocks any DELETE against
+                # knowledge_lifecycle_transitions outright — temporarily
+                # disabled for exactly this test-only cleanup statement,
+                # same escape-hatch pattern as the K1.5/K1.6 integration
+                # files.
+                guarded = table == "knowledge_lifecycle_transitions"
+                if guarded:
+                    cleanup.execute(
+                        sa.text(
+                            "ALTER TABLE knowledge_lifecycle_transitions "
+                            "DISABLE TRIGGER trg_knowledge_lifecycle_transitions_append_only"
+                        )
+                    )
+                try:
+                    cleanup.execute(
+                        sa.text(f"DELETE FROM {table} WHERE id NOT IN :before_ids").bindparams(
+                            sa.bindparam("before_ids", expanding=True)
+                        ),
+                        {"before_ids": before_ids[table] or ["__none_existed__"]},
+                    )
+                finally:
+                    if guarded:
+                        cleanup.execute(
+                            sa.text(
+                                "ALTER TABLE knowledge_lifecycle_transitions "
+                                "ENABLE TRIGGER trg_knowledge_lifecycle_transitions_append_only"
+                            )
+                        )
             cleanup.commit()
         finally:
             cleanup.close()
@@ -318,11 +341,14 @@ def _approval_provenance_fields(**overrides) -> dict[str, object]:
     # Slice 1's own read-path logic (fail-soft, provenance, exclusion)
     # under real Postgres — they do not, and are not meant to, validate
     # the vocabulary/column-width mismatch itself.
+    # `reviewed_by` deliberately omitted (fix round 1, 2026-07-28, Codex
+    # Round 1 finding #6): `build_draft` now rejects an explicit
+    # `reviewed_by=` kwarg — it is bound to the approving actor inside
+    # `approve_row` itself.
     fields = dict(
         source="Synthetic Test Source",
         version="1.0",
         evidence_level="expert_consensus",
-        reviewed_by="reviewer-1",
         last_reviewed_at=dt.datetime.now(dt.UTC),
     )
     fields.update(overrides)

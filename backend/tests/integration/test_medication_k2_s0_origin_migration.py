@@ -198,6 +198,49 @@ def _seed_ingredient(conn: sa.Connection) -> str:
     return ingredient_id
 
 
+def _trigger_exists(conn: sa.Connection, table: str, trigger_name: str) -> bool:
+    return bool(
+        conn.execute(
+            sa.text(
+                "SELECT EXISTS (SELECT 1 FROM pg_trigger "
+                "WHERE tgname = :name AND tgrelid = CAST(:table AS regclass))"
+            ),
+            {"name": trigger_name, "table": table},
+        ).scalar()
+    )
+
+
+def _force_delete(conn: sa.Connection, table: str, trigger_name: str, where_sql: str, params: dict) -> None:
+    """Test-only escape hatch (fix round 1, 2026-07-28): k2_s0_integrity_guards'
+    append-only triggers correctly block EVERY delete against
+    knowledge_lifecycle_transitions/knowledge_ai_generations in real usage
+    — but this test file's own synthetic-fixture teardown still needs to
+    remove rows it created, both for isolation between tests and to keep
+    the shared mcp_test database at zero residue for other tests'
+    "downgrade succeeds when empty" assertions. Temporarily disabling the
+    one specific append-only trigger for the duration of this DELETE is a
+    test-harness-only privilege — nothing in application code ever does
+    this, and the trigger is unconditionally re-enabled before this
+    function returns, success or failure, so it can never leak into a
+    later statement on the same connection.
+
+    This file's own tests exercise many intermediate revisions BEFORE
+    k2_s0_integrity_guards was ever applied (e.g. cleanup running while
+    the DB sits at a pre-remediation revision), where the trigger does
+    not exist yet — `_trigger_exists` makes the disable/enable dance
+    conditional so this helper works unmodified at any revision from the
+    table's own creation onward, not just at head."""
+    guarded = _trigger_exists(conn, table, trigger_name)
+    if guarded:
+        conn.execute(sa.text(f"ALTER TABLE {table} DISABLE TRIGGER {trigger_name}"))
+    try:
+        conn.execute(sa.text(f"DELETE FROM {table} WHERE {where_sql}"), params)
+    finally:
+        if guarded:
+            conn.execute(sa.text(f"ALTER TABLE {table} ENABLE TRIGGER {trigger_name}"))
+    conn.commit()
+
+
 def _cleanup_seeded_ingredient(conn: sa.Connection, ingredient_id: str) -> None:
     """FK-safe, ID-scoped teardown for everything `_seed_ingredient` (and any
     drug_side_effects rows created against it) can have left behind —
@@ -209,13 +252,12 @@ def _cleanup_seeded_ingredient(conn: sa.Connection, ingredient_id: str) -> None:
         {"id": ingredient_id},
     ).scalar()
     if _table_exists_sync(conn, "knowledge_lifecycle_transitions"):
-        conn.execute(
-            sa.text(
-                "DELETE FROM knowledge_lifecycle_transitions "
-                "WHERE knowledge_table = 'drug_side_effects' "
-                "AND knowledge_row_id IN "
-                "(SELECT id FROM drug_side_effects WHERE drug_ingredient_id = :id)"
-            ),
+        _force_delete(
+            conn,
+            "knowledge_lifecycle_transitions",
+            "trg_knowledge_lifecycle_transitions_append_only",
+            "knowledge_table = 'drug_side_effects' AND knowledge_row_id IN "
+            "(SELECT id FROM drug_side_effects WHERE drug_ingredient_id = :id)",
             {"id": ingredient_id},
         )
     conn.execute(
@@ -306,13 +348,18 @@ def _insert_ai_generation(conn: sa.Connection, *, review_status: str = "pending"
             "generation_status, origin, review_status, created_by, created_at, updated_at) "
             "VALUES (:id, 'drug_side_effects', NULL, 'openrouter', 'test-model', "
             "'tmpl-1', '1.0', cast(:input_source_ids as json), :input_hash, "
-            "'succeeded', 'ai_synthesized', :review_status, 'system:test', :now, :now)"
+            "'succeeded', 'ai_synthesized', :review_status, :created_by, :now, :now)"
         ),
         {
             "id": row_id,
             "input_source_ids": "[]",
             "input_hash": "a" * 64,
             "review_status": review_status,
+            # Fix round 1, 2026-07-28 (Codex Round 1 finding #4): must be a
+            # registered SystemActor — k2_s0_integrity_guards' CHECK
+            # constraint now rejects an unregistered "system:*" value like
+            # the "system:test" this used to hardcode.
+            "created_by": "system:medication-ai-synthesis",
             "now": now,
         },
     )
@@ -321,13 +368,32 @@ def _insert_ai_generation(conn: sa.Connection, *, review_status: str = "pending"
 
 
 def _cleanup_ai_generation(conn: sa.Connection, row_id: str) -> None:
-    conn.execute(sa.text("DELETE FROM knowledge_ai_generations WHERE id = :id"), {"id": row_id})
-    conn.commit()
+    _force_delete(
+        conn,
+        "knowledge_ai_generations",
+        "trg_knowledge_ai_generations_append_only",
+        "id = :id",
+        {"id": row_id},
+    )
 
 
 def _insert_lifecycle_transition(
     conn: sa.Connection, ingredient_id: str, *, to_status: str = "clinical_review"
 ) -> str:
+    """`ingredient_id` is used only to seed a REAL target row (a
+    drug_side_effects draft against that ingredient) that the transition
+    can legitimately reference — fix round 1, 2026-07-28 (Codex Round 1
+    finding #7): this used to record `ingredient_id` itself as
+    `knowledge_row_id` while declaring `knowledge_table='drug_side_effects'`,
+    which is exactly the mismatched-table repro Codex demonstrated;
+    k2_s0_integrity_guards' polymorphic-target-exists trigger now rejects
+    it outright. The caller's existing cleanup path
+    (`_cleanup_seeded_ingredient`) already deletes every drug_side_effects
+    row for a given ingredient_id, so this new row needs no separate
+    teardown of its own."""
+    target_row_id = _insert_side_effect_draft(
+        conn, ingredient_id, concept_code=f"lifecycle-transition-target-{uuid.uuid4().hex[:8]}"
+    )
     row_id = str(uuid.uuid4())
     now = dt.datetime.now(dt.UTC)
     conn.execute(
@@ -338,15 +404,20 @@ def _insert_lifecycle_transition(
             "VALUES (:id, 'drug_side_effects', :row_id, 'draft', :to_status, 'tester', NULL, "
             "'standard_transition', 'synthetic test transition', :now, :now, :now)"
         ),
-        {"id": row_id, "row_id": ingredient_id, "to_status": to_status, "now": now},
+        {"id": row_id, "row_id": target_row_id, "to_status": to_status, "now": now},
     )
     conn.commit()
     return row_id
 
 
 def _cleanup_lifecycle_transition(conn: sa.Connection, row_id: str) -> None:
-    conn.execute(sa.text("DELETE FROM knowledge_lifecycle_transitions WHERE id = :id"), {"id": row_id})
-    conn.commit()
+    _force_delete(
+        conn,
+        "knowledge_lifecycle_transitions",
+        "trg_knowledge_lifecycle_transitions_append_only",
+        "id = :id",
+        {"id": row_id},
+    )
 
 
 # --------------------------------------------------------------------- #
@@ -440,6 +511,70 @@ class TestKnowledgeOriginMigration:
             for table in _KNOWLEDGE_TABLES:
                 assert _column_info(pg_engine, table, "origin") is None, table
             command.upgrade(cfg, "head")
+        finally:
+            with pg_engine.connect() as conn:
+                _cleanup_seeded_ingredient(conn, ingredient_id)
+            command.upgrade(cfg, "head")
+
+    def test_populated_row_survives_full_downgrade_reupgrade_round_trip(self, pg_engine, cfg):
+        """Codex Round 1 finding #9: a populated migration round-trip test
+        must actually reload the row and assert every preexisting field
+        survived, not just that the schema shape (column presence/CHECK
+        text) came back correctly. Downgrades all the way to PRE_ORIGIN_REV
+        (dropping origin + the two Slice 0 history tables + narrowing the
+        status CHECK back to 5 values), then re-upgrades to head, then
+        reloads the SAME row by id and compares every field against a
+        snapshot captured before the round trip — not just origin."""
+        _reset_to_head(cfg)
+        with pg_engine.connect() as conn:
+            ingredient_id = _seed_ingredient(conn)
+        try:
+            with pg_engine.connect() as conn:
+                row_id = _insert_side_effect_draft(
+                    conn,
+                    ingredient_id,
+                    concept_code="round-trip-survivor",
+                    status="draft",
+                    origin="human_authored",
+                )
+            with pg_engine.connect() as conn:
+                before = conn.execute(
+                    sa.text(
+                        "SELECT origin, concept_code, label, frequency, action_level, "
+                        "description, status, status_changed_by, authored_by, "
+                        "drug_ingredient_id, created_at "
+                        "FROM drug_side_effects WHERE id = :id"
+                    ),
+                    {"id": row_id},
+                ).mappings().first()
+            assert before is not None
+
+            command.downgrade(cfg, PRE_ORIGIN_REV)
+            for table in _KNOWLEDGE_TABLES:
+                assert _column_info(pg_engine, table, "origin") is None, table
+            assert _table_exists(pg_engine, "knowledge_lifecycle_transitions") is False
+            assert _table_exists(pg_engine, "knowledge_ai_generations") is False
+
+            command.upgrade(cfg, "head")
+            assert _table_exists(pg_engine, "knowledge_lifecycle_transitions") is True
+            assert _table_exists(pg_engine, "knowledge_ai_generations") is True
+
+            with pg_engine.connect() as conn:
+                after = conn.execute(
+                    sa.text(
+                        "SELECT origin, concept_code, label, frequency, action_level, "
+                        "description, status, status_changed_by, authored_by, "
+                        "drug_ingredient_id, created_at "
+                        "FROM drug_side_effects WHERE id = :id"
+                    ),
+                    {"id": row_id},
+                ).mappings().first()
+            assert after is not None
+            assert dict(after) == dict(before), (
+                "every field on the row must survive a full downgrade-to-"
+                "PRE_ORIGIN_REV-and-back-to-head round trip unchanged, not "
+                "just the schema shape"
+            )
         finally:
             with pg_engine.connect() as conn:
                 _cleanup_seeded_ingredient(conn, ingredient_id)
