@@ -105,7 +105,11 @@ _ALLOWED_TRANSITION_PAIRS = (
 # and except updated_at, which TimestampMixin's own onupdate=func.now()
 # deliberately changes on every UPDATE — including the one legitimate
 # review_status/supersession UPDATE this migration still permits).
+# `id` included explicitly (Codex Round 2 fix round 2, 2026-07-28): the
+# primary key is a real persisted column an UPDATE could in principle
+# target, and the original list omitted it.
 _AI_GENERATION_IMMUTABLE_COLUMNS = (
+    "id",
     "knowledge_table",
     "target_row_id",
     "model_provider",
@@ -131,6 +135,29 @@ def _system_actor_check_sql(column: str) -> str:
     return f"{column} NOT LIKE 'system:%' OR {column} IN ({values})"
 
 
+def _registered_actor_check_sql(column: str) -> str:
+    """Codex Round 2 fix round 2, 2026-07-28: stricter than
+    `_system_actor_check_sql` — requires `column` to be EXACTLY one of the
+    registered SystemActor values unconditionally, not merely "if it looks
+    like system:*". Used only for `knowledge_ai_generations.created_by`,
+    which is documented as always machine-authored (never a human), so an
+    ordinary human/arbitrary string must be rejected too, not just a
+    forged system:* one."""
+    values = ",".join(f"'{v}'" for v in _SYSTEM_ACTOR_VALUES)
+    return f"{column} IN ({values})"
+
+
+def _transition_pair_check_sql(column_from: str, column_to: str) -> str:
+    """Codex Round 2 fix round 2, 2026-07-28: `knowledge_lifecycle_transitions`
+    previously constrained `from_status`/`to_status` independently — each
+    had to be one of the 6 canonical values, but the PAIR could be any
+    combination, including impossible ones like `draft -> retired` via raw
+    SQL. Portable string-concat CHECK works identically on both dialects
+    (no row-value CHECK support needed)."""
+    pairs_sql = ",".join(f"'{a}->{b}'" for a, b in _ALLOWED_TRANSITION_PAIRS)
+    return f"({column_from} || '->' || {column_to}) IN ({pairs_sql})"
+
+
 def upgrade() -> None:
     bind = op.get_bind()
     dialect = bind.dialect.name
@@ -147,6 +174,9 @@ def upgrade() -> None:
                 END IF;
                 IF NEW.authored_by IS DISTINCT FROM OLD.authored_by THEN
                     RAISE EXCEPTION 'authored_by is write-once and cannot be changed after creation (table=%, id=%)', TG_TABLE_NAME, OLD.id;
+                END IF;
+                IF OLD.reviewed_by IS NOT NULL AND NEW.reviewed_by IS DISTINCT FROM OLD.reviewed_by THEN
+                    RAISE EXCEPTION 'reviewed_by is write-once once set and cannot be changed again (table=%, id=%)', TG_TABLE_NAME, OLD.id;
                 END IF;
                 IF NEW.status IS DISTINCT FROM OLD.status THEN
                     IF (OLD.status, NEW.status) NOT IN (
@@ -181,8 +211,9 @@ def upgrade() -> None:
                 BEFORE UPDATE ON {table}
                 FOR EACH ROW
                 WHEN NEW.origin IS NOT OLD.origin OR NEW.authored_by IS NOT OLD.authored_by
+                    OR (OLD.reviewed_by IS NOT NULL AND NEW.reviewed_by IS NOT OLD.reviewed_by)
                 BEGIN
-                    SELECT RAISE(ABORT, 'origin/authored_by is write-once and cannot be changed after creation');
+                    SELECT RAISE(ABORT, 'origin/authored_by/reviewed_by is write-once and cannot be changed after creation');
                 END;
                 """
             )
@@ -212,12 +243,16 @@ def upgrade() -> None:
     with op.batch_alter_table("knowledge_ai_generations", schema=None) as batch_op:
         batch_op.create_check_constraint(
             "ck_knowledge_ai_generations_created_by_system_namespace",
-            _system_actor_check_sql("created_by"),
+            _registered_actor_check_sql("created_by"),
         )
     with op.batch_alter_table("knowledge_lifecycle_transitions", schema=None) as batch_op:
         batch_op.create_check_constraint(
             "ck_knowledge_lifecycle_transitions_actor_id_system_namespace",
             _system_actor_check_sql("actor_id"),
+        )
+        batch_op.create_check_constraint(
+            "ck_knowledge_lifecycle_transitions_pair",
+            _transition_pair_check_sql("from_status", "to_status"),
         )
 
     # --- Guard 2a: knowledge_lifecycle_transitions is fully append-only --
@@ -453,6 +488,7 @@ def downgrade() -> None:
     # Guard 3 CHECK constraints — last, now that no trigger remains on
     # either table for a SQLite batch-mode recreate to silently destroy.
     with op.batch_alter_table("knowledge_lifecycle_transitions", schema=None) as batch_op:
+        batch_op.drop_constraint("ck_knowledge_lifecycle_transitions_pair", type_="check")
         batch_op.drop_constraint("ck_knowledge_lifecycle_transitions_actor_id_system_namespace", type_="check")
     with op.batch_alter_table("knowledge_ai_generations", schema=None) as batch_op:
         batch_op.drop_constraint("ck_knowledge_ai_generations_created_by_system_namespace", type_="check")

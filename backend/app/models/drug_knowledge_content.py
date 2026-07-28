@@ -33,6 +33,7 @@ from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, String, Tex
 from sqlalchemy.orm import Mapped, mapped_column, validates
 
 from app.core.database import Base
+from app.core.system_actors import assert_no_forged_system_actor
 
 from ._mixins import TimestampMixin, UUIDPrimaryKey
 
@@ -194,6 +195,21 @@ class KnowledgeLifecycleMixin:
                 "construction; promotion happens exclusively through "
                 "submit_for_review/approve_row."
             )
+        return value
+
+    @validates("authored_by")
+    def _validate_authored_by(self, key: str, value: str) -> str:
+        """Codex Round 2 finding (fix round 2, 2026-07-28): `authored_by`
+        legitimately holds a registered `SystemActor` value for
+        `origin='ai_synthesized'` rows (e.g.
+        `SystemActor.MEDICATION_AI_SYNTHESIS.value`, per this codebase's
+        own test convention) — so this cannot require registration
+        unconditionally the way `KnowledgeAIGeneration.created_by` does.
+        It only rejects a FORGED, unregistered `system:*` value, matching
+        this codebase's "reserve the whole namespace, not just today's
+        registered members" principle applied everywhere an actor identity
+        is recorded."""
+        assert_no_forged_system_actor(value)
         return value
 
 

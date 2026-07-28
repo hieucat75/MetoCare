@@ -29,6 +29,16 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects import postgresql
+
+# PR #136 Codex Round 2 finding (fix round 2, 2026-07-28): plain
+# PostgreSQL `json` has no equality operator, so k2_s0_integrity_guards'
+# append-only trigger comparing these two columns with `IS DISTINCT FROM`
+# raised `operator does not exist: json = json` on every UPDATE —
+# including the one legitimate review_status promotion, breaking approval
+# of every ai_synthesized row on Postgres. `jsonb` supports equality/IS
+# DISTINCT FROM directly; SQLite's own JSON type is unaffected either way.
+_JSON_TYPE = sa.JSON().with_variant(postgresql.JSONB(), "postgresql")
 
 revision: str = "k2_s0_ai_generation_history"
 down_revision: str | None = "k2_s0_knowledge_origin"
@@ -65,10 +75,10 @@ def upgrade() -> None:
         sa.Column("prompt_template_id", sa.String(64), nullable=False),
         sa.Column("prompt_template_version", sa.String(32), nullable=False),
         sa.Column("normalization_pipeline_version", sa.String(32), nullable=True),
-        sa.Column("input_source_ids", sa.JSON(), nullable=False),
+        sa.Column("input_source_ids", _JSON_TYPE, nullable=False),
         sa.Column("input_hash", sa.String(64), nullable=False),
         sa.Column("output_hash", sa.String(64), nullable=True),
-        sa.Column("generation_params", sa.JSON(), nullable=True),
+        sa.Column("generation_params", _JSON_TYPE, nullable=True),
         sa.Column("generation_status", sa.String(16), nullable=False),
         sa.Column("failure_reason", sa.Text(), nullable=True),
         sa.Column("origin", sa.String(24), nullable=False, server_default=sa.text("'ai_synthesized'")),

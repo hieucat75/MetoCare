@@ -27,6 +27,7 @@ from __future__ import annotations
 import datetime as dt
 
 from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, String, Text, text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.sqlite import JSON as SQLITE_JSON
 from sqlalchemy.orm import Mapped, mapped_column, validates
 from sqlalchemy.types import JSON
@@ -38,7 +39,14 @@ from ._mixins import TimestampMixin, UUIDPrimaryKey
 from .drug_knowledge_content import ORIGIN_VALUES
 from .drug_knowledge_governance import KNOWLEDGE_TABLES
 
-_JSON_TYPE = JSON().with_variant(SQLITE_JSON(), "sqlite")
+# PR #136 Codex Round 2 finding (fix round 2, 2026-07-28): plain PostgreSQL
+# `json` has no equality operator, so k2_s0_integrity_guards' append-only
+# trigger comparing these columns with `IS DISTINCT FROM` raised
+# `operator does not exist: json = json` on every UPDATE — including the
+# one legitimate review_status promotion, breaking approval of every
+# ai_synthesized row on Postgres. `jsonb` supports equality/IS DISTINCT
+# FROM directly. SQLite's own JSON type is unaffected either way.
+_JSON_TYPE = JSON().with_variant(JSONB(), "postgresql").with_variant(SQLITE_JSON(), "sqlite")
 
 GENERATION_STATUS_VALUES = ("succeeded", "failed")
 REVIEW_STATUS_VALUES = ("pending", "promoted", "rejected", "superseded")

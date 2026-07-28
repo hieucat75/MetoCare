@@ -538,13 +538,16 @@ class TestKnowledgeOriginMigration:
                     origin="human_authored",
                 )
             with pg_engine.connect() as conn:
+                # Codex Round 2 finding (fix round 2, 2026-07-28): SELECT *
+                # (not a hand-picked subset) so no column — including
+                # updated_at/artifact_hash/source/version/evidence_level/
+                # reviewed_by/last_reviewed_at — is silently excluded from
+                # the survival comparison. Only DDL runs during this
+                # round trip (Postgres batch_alter_table is a plain ALTER
+                # TABLE, never a row rewrite), so every column, including
+                # updated_at, is expected to be bit-for-bit identical.
                 before = conn.execute(
-                    sa.text(
-                        "SELECT origin, concept_code, label, frequency, action_level, "
-                        "description, status, status_changed_by, authored_by, "
-                        "drug_ingredient_id, created_at "
-                        "FROM drug_side_effects WHERE id = :id"
-                    ),
+                    sa.text("SELECT * FROM drug_side_effects WHERE id = :id"),
                     {"id": row_id},
                 ).mappings().first()
             assert before is not None
@@ -561,12 +564,7 @@ class TestKnowledgeOriginMigration:
 
             with pg_engine.connect() as conn:
                 after = conn.execute(
-                    sa.text(
-                        "SELECT origin, concept_code, label, frequency, action_level, "
-                        "description, status, status_changed_by, authored_by, "
-                        "drug_ingredient_id, created_at "
-                        "FROM drug_side_effects WHERE id = :id"
-                    ),
+                    sa.text("SELECT * FROM drug_side_effects WHERE id = :id"),
                     {"id": row_id},
                 ).mappings().first()
             assert after is not None
