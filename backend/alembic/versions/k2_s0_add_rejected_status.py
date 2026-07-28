@@ -64,7 +64,23 @@ def downgrade() -> None:
     """Refuses to narrow the CHECK back to 5 values if any row is
     currently `rejected` — such a row would become invalid under the
     narrower constraint, and this migration never deletes or reclassifies
-    a rejected row to make room for its own downgrade."""
+    a rejected row to make room for its own downgrade.
+
+    PR #136 Codex Round 1 finding #8 (fix round 1, 2026-07-28): this
+    previously checked ONLY the 5 content tables' current `status` column
+    — but `knowledge_lifecycle_transitions` (created earlier in this same
+    Slice 0 chain) can independently hold a `from_status='rejected'` or
+    `to_status='rejected'` history row even after the content row itself
+    was deleted or directly reclassified out of 'rejected' by some other
+    means, since that history table is append-only and never rewritten to
+    track a content row's later fate. A downgrade that only checked
+    current content-row status could narrow the CHECK back to 5 values
+    while such retained history still records a 6th value the narrower
+    schema can no longer represent — not lost data (history rows are never
+    dropped by this downgrade), but a value the post-downgrade schema
+    claims is impossible while genuinely still present in retained
+    history. Extending this guard to also check
+    `knowledge_lifecycle_transitions` closes that gap."""
     bind = op.get_bind()
     offenders: list[str] = []
     for table in _KNOWLEDGE_TABLES:
@@ -74,9 +90,18 @@ def downgrade() -> None:
         if count:
             offenders.append(f"{table} ({count} row(s))")
 
+    history_count = bind.execute(
+        sa.text(
+            "SELECT COUNT(*) FROM knowledge_lifecycle_transitions "
+            "WHERE from_status = 'rejected' OR to_status = 'rejected'"
+        )
+    ).scalar()
+    if history_count:
+        offenders.append(f"knowledge_lifecycle_transitions ({history_count} row(s) referencing 'rejected')")
+
     if offenders:
         raise RuntimeError(
-            "Refusing to downgrade: the following table(s) have rows with "
+            "Refusing to downgrade: the following table(s) reference "
             f"status='rejected', which would become invalid under the narrower "
             f"5-value CHECK constraint: {', '.join(offenders)}. This downgrade is "
             "intentionally irreversible while such rows exist — remediate the "
