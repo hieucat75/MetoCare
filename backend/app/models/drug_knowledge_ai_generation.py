@@ -17,6 +17,20 @@ in this table is ever deleted or content-mutated. A retry after a
 transient failure, or a regeneration producing a materially different
 output, is always a NEW row — never an UPDATE of an existing one.
 
+`review_status` moving from `'promoted'` to `'superseded'` is intentionally
+blocked for the whole of Slice 0 — deliberately, not an oversight: no code
+path anywhere in this codebase ever assigns `'superseded'` at all (no
+retry/regeneration supersession lifecycle exists yet), and the
+persistence-boundary guard that enforces "review_status is already
+finalized and cannot be changed again" (k2_s0_integrity_guards, Round 1;
+still enforced verbatim after k2_s0_round3_hardening's SQLite table
+rebuild had to recreate it) applies uniformly to every already-finalized
+value, `'promoted'` included. Slice 3, when it introduces a genuine
+regeneration-supersedes-an-earlier-promotion lifecycle, must ship an
+explicit migration that narrows this guard for that one specific
+transition — it is not a capability silently already present that later
+code can just start using.
+
 No clinical content is authored by this migration — the table starts and
 stays empty through Slice 0 (no AI provider calls, no synthesis code, no
 caller that would ever insert a row here yet).
@@ -25,8 +39,19 @@ caller that would ever insert a row here yet).
 from __future__ import annotations
 
 import datetime as dt
+import re
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, String, Text, text
+from sqlalchemy import (
+    BigInteger,
+    CheckConstraint,
+    DateTime,
+    FetchedValue,
+    ForeignKey,
+    Index,
+    String,
+    Text,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.sqlite import JSON as SQLITE_JSON
 from sqlalchemy.orm import Mapped, mapped_column, validates
@@ -105,11 +130,55 @@ class KnowledgeAIGeneration(UUIDPrimaryKey, TimestampMixin, Base):
     # from). List of opaque id strings, never resolved-content.
     input_source_ids: Mapped[list] = mapped_column(_JSON_TYPE, nullable=False, default=list)
     # sha256 hex, full-payload hash — same discipline as
-    # medication_knowledge_import/versioning.py's artifact_hash(): hashes
-    # the full authored/generated artifact, not just identity fields.
+    # medication_knowledge_import/versioning.py's artifact_hash()
+    # (`hashlib.sha256(...).hexdigest()`): hashes the full authored/
+    # generated artifact, not just identity fields. PR #136 Codex Round 3
+    # (fix round 3, 2026-07-28): these ARE integrity hashes, not opaque
+    # metadata — the docstring already committed to SHA-256 semantics
+    # matching versioning.py's real implementation, so format is now
+    # enforced (64 lowercase hex chars) both at the DB layer (CHECK,
+    # k2_s0_round3_hardening) and here at the ORM layer. A structurally
+    # invalid value (wrong length, non-hex chars, uppercase) can no longer
+    # pass `_select_and_promote_ai_generation`'s completeness check.
     input_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     output_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     generation_params: Mapped[dict | None] = mapped_column(_JSON_TYPE, nullable=True)
+
+    # PR #136 Codex Round 3 (fix round 3, 2026-07-28): deterministic,
+    # DB-governed monotonic ordering — replaces `created_at` as the
+    # authoritative tiebreaker in `_select_and_promote_ai_generation`,
+    # since `created_at` can genuinely tie (transaction-start time on
+    # Postgres, second-resolution on SQLite — see that comment above).
+    # Assigned by the DATABASE itself, never the application: a Postgres
+    # SEQUENCE default (evaluated inline as part of the INSERT itself,
+    # never ties, never races) on that dialect; an AFTER INSERT trigger
+    # computing MAX+1 on SQLite (safe under SQLite's own serialized-
+    # writer transaction model — see k2_s0_round3_hardening's own
+    # docstring for why a column DEFAULT subquery isn't usable there
+    # instead). Nullable at the ORM/schema level because SQLite's
+    # AFTER INSERT assignment necessarily happens a moment after the
+    # physical INSERT completes — by the time any other statement (even
+    # in the same transaction) can observe the row, the trigger has
+    # already run synchronously, so no caller ever actually observes NULL
+    # here in practice.
+    #
+    # `server_default=FetchedValue()` is load-bearing, not decorative: with
+    # no marker at all, SQLAlchemy's ORM sends this column explicitly as
+    # NULL on every INSERT (a Python-unset attribute still gets bound as a
+    # literal NULL parameter) — which on PostgreSQL VIOLATES the column's
+    # own `NOT NULL DEFAULT nextval(...)` outright, since a DEFAULT clause
+    # only ever applies when a column is OMITTED from the INSERT's
+    # column/value list, never when it is present with an explicit NULL.
+    # Reproduced directly against real Postgres: every ORM-level
+    # `KnowledgeAIGeneration(...)` construction raised `NotNullViolation`
+    # before this marker was added. `FetchedValue()` tells the ORM to omit
+    # this column from the INSERT whenever the caller hasn't explicitly
+    # set it, letting the DB's own SEQUENCE default (Postgres) / AFTER
+    # INSERT trigger (SQLite) apply, and to fetch the resulting
+    # server-assigned value back via RETURNING afterward.
+    sequence_number: Mapped[int | None] = mapped_column(
+        BigInteger, nullable=True, server_default=FetchedValue()
+    )
 
     generation_status: Mapped[str] = mapped_column(String(16), nullable=False)
     # PHI-free, structured failure detail only — never a raw provider
@@ -186,6 +255,24 @@ class KnowledgeAIGeneration(UUIDPrimaryKey, TimestampMixin, Base):
         """ORM-level mirror of the DB CHECK constraint above."""
         if value not in ORIGIN_VALUES:
             raise ValueError(f"origin={value!r} is not one of {ORIGIN_VALUES}.")
+        return value
+
+    @validates("input_hash", "output_hash")
+    def _validate_hash_format(self, key: str, value: str | None) -> str | None:
+        """PR #136 Codex Round 3 (fix round 3, 2026-07-28): these are real
+        SHA-256 integrity hashes (see the column's own docstring above),
+        not opaque metadata — enforce exactly 64 lowercase hex characters.
+        `output_hash` is nullable (a failed generation may have none);
+        `None` is passed through unchanged. `input_hash` is NOT NULL at
+        the schema level, so `None` here would already fail that
+        constraint — this validator does not need to special-case it."""
+        if value is None:
+            return value
+        if not re.fullmatch(r"[0-9a-f]{64}", value):
+            raise ValueError(
+                f"{key}={value!r} is not a valid SHA-256 hex digest — must be "
+                "exactly 64 lowercase hexadecimal characters."
+            )
         return value
 
     @validates("created_by")

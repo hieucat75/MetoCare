@@ -666,8 +666,11 @@ def _select_and_promote_ai_generation(
 
     For an `ai_synthesized` row, resolves the SINGLE most recent
     non-superseded `KnowledgeAIGeneration` targeting this exact row
-    (`knowledge_table`+`target_row_id`) — ordered by `created_at` DESC,
-    locked `FOR UPDATE` (serializes concurrent approvals racing to promote
+    (`knowledge_table`+`target_row_id`) — ordered by the DB-governed
+    `sequence_number` DESC (Codex Round 3 fix, 2026-07-28; formerly
+    `created_at` DESC, which could genuinely tie — see
+    `k2_s0_round3_hardening`'s own docstring), locked `FOR UPDATE`
+    (serializes concurrent approvals racing to promote
     the same generation, mirrors `_lock_canonical_row`'s discipline; a
     no-op on SQLite, which has no FOR UPDATE) — REGARDLESS of its
     `generation_status`. Codex Round 1 finding #5: the prior implementation
@@ -727,11 +730,19 @@ def _select_and_promote_ai_generation(
         return
     _ = actor_user_id, now  # reserved for a future promotion-audit column
     table_name = KNOWLEDGE_TABLE_NAME[model_cls]
+    # PR #136 Codex Round 3 fix (2026-07-28): ordered by the DB-governed
+    # `sequence_number` (k2_s0_round3_hardening), not `created_at` —
+    # `created_at` can genuinely tie (Postgres: transaction-start time;
+    # SQLite: second-resolution text), which made the previous "most
+    # recent attempt" selection nondeterministic under ties.
+    # `sequence_number` is assigned by the database itself and is never
+    # equal for two distinct rows, so this ordering is always
+    # deterministic regardless of how many attempts share one instant.
     latest = (
         db.query(KnowledgeAIGeneration)
         .filter_by(knowledge_table=table_name, target_row_id=canonical.id)
         .filter(KnowledgeAIGeneration.superseded_by_generation_id.is_(None))
-        .order_by(KnowledgeAIGeneration.created_at.desc())
+        .order_by(KnowledgeAIGeneration.sequence_number.desc())
         .populate_existing()
         .with_for_update()
         .first()
