@@ -42,6 +42,24 @@ class FeatureFlag(enum.StrEnum):
     # CLINICAL_COPILOT/CLINIC_SAAS. Disabling stops new requests from
     # reaching either route; never deletes stored knowledge or provenance.
     MEDICATION_KNOWLEDGE_RETRIEVAL = "medication_knowledge_retrieval"
+    # Medication Knowledge Slice 0 (docs/medication-management/
+    # MEDICATION_KNOWLEDGE_SLICE0_ORIGIN_PROVENANCE_FLAGS_IMPLEMENTATION_PLAN.md):
+    # independently-toggleable capability flags for the ingestion/AI
+    # pipeline stages that do not exist yet (Slice 2+) — reserved now so
+    # each future slice ships already gated, per ADR-15 §K.1's mandatory
+    # reversible-controls requirement. All default OFF; enforcement lives
+    # in service/domain logic, not just the router layer, once each
+    # capability's service code exists.
+    MEDICATION_EXTERNAL_SOURCE_INGESTION = "medication_external_source_ingestion"
+    MEDICATION_AI_NORMALIZATION = "medication_ai_normalization"
+    MEDICATION_AI_SYNTHESIS = "medication_ai_synthesis"
+    MEDICATION_AI_DOCTOR_CONTENT = "medication_ai_doctor_content"
+    MEDICATION_AI_PATIENT_CONTENT = "medication_ai_patient_content"
+    # Gates evidence_level/theme exposure in K2 responses (ADR-15 §A: both
+    # are "external but versioned/experimental"). OFF omits both fields
+    # entirely (never null) via response_model_exclude_unset — never
+    # deletes or mutates the stored value.
+    MEDICATION_EXPERIMENTAL_VOCABULARY = "medication_experimental_vocabulary"
 
 
 _DEFAULTS = {
@@ -66,6 +84,13 @@ _DEFAULTS = {
     FeatureFlag.CLINICAL_COPILOT: False,  # fail-closed — calls a real LLM over PHI
     FeatureFlag.CLINIC_SAAS: False,  # fail-closed — new multi-tenant module
     FeatureFlag.MEDICATION_KNOWLEDGE_RETRIEVAL: False,  # fail-closed — new read surface
+    # Medication Knowledge Slice 0 — all fail-closed, no capability exists yet.
+    FeatureFlag.MEDICATION_EXTERNAL_SOURCE_INGESTION: False,
+    FeatureFlag.MEDICATION_AI_NORMALIZATION: False,
+    FeatureFlag.MEDICATION_AI_SYNTHESIS: False,
+    FeatureFlag.MEDICATION_AI_DOCTOR_CONTENT: False,
+    FeatureFlag.MEDICATION_AI_PATIENT_CONTENT: False,
+    FeatureFlag.MEDICATION_EXPERIMENTAL_VOCABULARY: False,
 }
 
 

@@ -64,6 +64,15 @@ def db():
 @pytest.fixture(autouse=True)
 def _enable_flag(monkeypatch):
     monkeypatch.setenv("FEATURE_MEDICATION_KNOWLEDGE_RETRIEVAL", "true")
+    # Slice 0: MEDICATION_EXPERIMENTAL_VOCABULARY now gates evidence_level/
+    # theme exposure and defaults OFF. This file's pre-existing ADR-15
+    # fail-soft/provenance/field-exclusion tests were all written to
+    # exercise the vocabulary-value validity logic itself (valid vs.
+    # out-of-vocabulary), not this new flag — turned on here, file-wide,
+    # so those tests keep testing exactly what they always tested.
+    # TestExperimentalVocabularyFlagOff below explicitly tests the new
+    # default (flag unset/false) behavior on its own.
+    monkeypatch.setenv("FEATURE_MEDICATION_EXPERIMENTAL_VOCABULARY", "true")
 
 
 @pytest.fixture(autouse=True)
@@ -520,6 +529,85 @@ class TestVocabularyFailSoft:
     # would ever run). `_references_out`'s `_SOURCE_TYPE_VALUES` filter is
     # kept as defense-in-depth (ADR-15 §G's general principle), but the
     # scenario it guards against is structurally unreachable today.
+
+
+class TestExperimentalVocabularyFlagOff:
+    """Slice 0: MEDICATION_EXPERIMENTAL_VOCABULARY's actual default
+    (unset/false) — overrides this file's own autouse `_enable_flag`
+    fixture, which turns it ON for every OTHER test in this file so the
+    pre-existing ADR-15 fail-soft tests above keep testing vocabulary-value
+    validity, not this flag."""
+
+    def test_evidence_level_omitted_when_flag_off(self, db, monkeypatch):
+        monkeypatch.setenv("FEATURE_MEDICATION_EXPERIMENTAL_VOCABULARY", "false")
+        ingredient = _make_ingredient(db)
+        row = _approved_row(
+            db, DrugSideEffect, ingredient.id, evidence_level="clinical_guideline"
+        )
+        doctor = _seed_doctor(db)
+        resp = client.get(
+            f"/api/v1/doctor/ingredients/{ingredient.id}/knowledge",
+            headers=_mint(doctor["user_id"], "doctor"),
+        )
+        item = resp.json()["side_effects"][0]
+        assert "evidence_level" not in item
+        # never present as null either — genuinely absent
+        assert "evidence_level" not in resp.json()["side_effects"][0].keys()
+        # rest of the item, and the stored value itself, unaffected
+        assert item["description"] == row.description
+        assert row.evidence_level == "clinical_guideline"
+
+    def test_theme_omitted_when_flag_off(self, db, monkeypatch):
+        monkeypatch.setenv("FEATURE_MEDICATION_EXPERIMENTAL_VOCABULARY", "false")
+        ingredient = _make_ingredient(db)
+        row = _approved_row(
+            db,
+            DrugPatientEducation,
+            ingredient.id,
+            audience="doctor",
+            evidence_level="clinical_guideline",
+            theme="why_this_matters",
+        )
+        doctor = _seed_doctor(db)
+        resp = client.get(
+            f"/api/v1/doctor/ingredients/{ingredient.id}/knowledge",
+            headers=_mint(doctor["user_id"], "doctor"),
+        )
+        item = resp.json()["patient_education"][0]
+        assert "theme" not in item
+        assert item["content"] == row.content
+        assert row.theme == "why_this_matters"  # stored value never mutated
+
+    def test_evidence_level_omitted_by_default_with_no_env_var_set(self, db, monkeypatch):
+        """Proves OFF is the actual default, not just an explicit 'false'
+        override — deletes the env var entirely rather than setting it."""
+        monkeypatch.delenv("FEATURE_MEDICATION_EXPERIMENTAL_VOCABULARY", raising=False)
+        monkeypatch.delenv("MCP_FEATURE_MEDICATION_EXPERIMENTAL_VOCABULARY", raising=False)
+        ingredient = _make_ingredient(db)
+        _approved_row(db, DrugSideEffect, ingredient.id, evidence_level="clinical_guideline")
+        doctor = _seed_doctor(db)
+        resp = client.get(
+            f"/api/v1/doctor/ingredients/{ingredient.id}/knowledge",
+            headers=_mint(doctor["user_id"], "doctor"),
+        )
+        assert "evidence_level" not in resp.json()["side_effects"][0]
+
+    def test_patient_contract_also_omits_evidence_level_when_flag_off(self, db, monkeypatch):
+        monkeypatch.setenv("FEATURE_MEDICATION_EXPERIMENTAL_VOCABULARY", "false")
+        ingredient = _make_ingredient(db)
+        row = _approved_row(
+            db, DrugSideEffect, ingredient.id, evidence_level="clinical_guideline"
+        )
+        product = _seed_product(db, ingredient.id)
+        patient = _seed_patient(db)
+        med = _seed_medication(db, patient["patient_id"], product.id)
+        resp = client.get(
+            f"/api/v1/patient/medications/{med.id}/knowledge",
+            headers=_mint(patient["user_id"], "patient"),
+        )
+        item = resp.json()["side_effects"][0]
+        assert "evidence_level" not in item
+        assert item["description"] == row.description
 
 
 # ---------------------------------------------------------------------------

@@ -55,6 +55,7 @@ from .consultation import (
     PaymentStatus,
 )
 from .drug_catalog import DrugEntry
+from .drug_knowledge_ai_generation import KnowledgeAIGeneration
 from .drug_knowledge_content import (
     DrugContraindication,
     DrugMonitoring,
@@ -70,6 +71,7 @@ from .drug_knowledge_core import (
     DrugProductName,
 )
 from .drug_knowledge_governance import ClinicalSpecialty, KnowledgeReviewSpecialty
+from .drug_knowledge_lifecycle_transition import KnowledgeLifecycleTransition
 from .drug_knowledge_references import DrugReference, KnowledgeReferenceLink
 from .governance import AuditLog, Consent
 from .meto import MetoAuditLog, MetoConsent, MetoConversation, MetoMessage
@@ -142,6 +144,8 @@ __all__ = [
     "KnowledgeReviewSpecialty",
     "DrugReference",
     "KnowledgeReferenceLink",
+    "KnowledgeAIGeneration",
+    "KnowledgeLifecycleTransition",
     "DrugClass",
     "DrugIngredient",
     "DrugProduct",

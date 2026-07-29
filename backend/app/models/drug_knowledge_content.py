@@ -30,19 +30,60 @@ from __future__ import annotations
 import datetime as dt
 
 from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, String, Text, text
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, validates
 
 from app.core.database import Base
+from app.core.system_actors import assert_no_forged_system_actor
 
 from ._mixins import TimestampMixin, UUIDPrimaryKey
 
 # Shared across every knowledge table's status CHECK constraint.
-STATUS_VALUES = ("draft", "clinical_review", "approved", "deprecated", "retired")
+#
+# 'rejected' (Medication Knowledge Slice 0, docs/medication-management/
+# MEDICATION_KNOWLEDGE_SLICE0_ORIGIN_PROVENANCE_FLAGS_IMPLEMENTATION_PLAN.md
+# §B2.3, PTH-approved ADR-13 amendment): closes the gap where a
+# clinical_review row a reviewer declines had no modeled destination.
+# clinical_review -> rejected is the only transition into this status
+# (knowledge_repository._ALLOWED_TRANSITIONS); rejected is terminal — no
+# transition out of it exists. A rejected row is never deleted; it stays
+# for audit, just excluded from K1.6/K2 retrieval (status != 'approved'
+# already excludes it, same as every other non-approved status).
+STATUS_VALUES = ("draft", "clinical_review", "approved", "rejected", "deprecated", "retired")
+
+# Row-level content origin (Slice 0 §B2.2). Every row has exactly one
+# origin — a first-class fact about the row itself, not a mutable
+# workflow field. `human_authored` is also this column's default: every
+# row written before this migration went through create_draft, fed
+# exclusively by the A1b importer's `ai_generated: Literal[False]`
+# -enforced input contract (medication_knowledge_import/schema.py:171) —
+# every legacy row is unambiguously human-authored, never
+# 'source_extracted' (that would misclassify content no ingestion
+# pipeline has ever produced).
+ORIGIN_VALUES = ("source_extracted", "rule_derived", "ai_synthesized", "human_authored")
+
+# Slice 0 §B2.2: an ai_synthesized row must be constructible only at
+# status='draft' — never born reviewed/approved/deprecated/retired, and
+# never born rejected either (rejection is a real reviewer decision that
+# must go through submit_for_review -> reject_row, not be forged at
+# construction). clinical_review is included because ai_synthesized rows
+# reach clinical_review only via submit_for_review's own status-column
+# UPDATE (a Core statement, not ORM attribute assignment — @validates
+# does not fire there), so this set exists purely as a construction-time
+# guard against direct ORM misuse, not a statement about what
+# submit_for_review itself is allowed to do.
+_AI_SYNTHESIZED_FORBIDDEN_STATUSES = frozenset(
+    {"clinical_review", "approved", "rejected", "deprecated", "retired"}
+)
 
 
 def _status_check(table: str) -> CheckConstraint:
     values = ",".join(f"'{v}'" for v in STATUS_VALUES)
     return CheckConstraint(f"status IN ({values})", name=f"ck_{table}_status")
+
+
+def _origin_check(table: str) -> CheckConstraint:
+    values = ",".join(f"'{v}'" for v in ORIGIN_VALUES)
+    return CheckConstraint(f"origin IN ({values})", name=f"ck_{table}_origin")
 
 
 def _approved_invariants_check(table: str) -> CheckConstraint:
@@ -94,6 +135,83 @@ class KnowledgeLifecycleMixin:
     # known_versions_for() fails closed on a NULL hash rather than guessing.
     artifact_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
+    # Slice 0 §B2.2. NOT NULL with a server default so every pre-Slice-0
+    # row backfills to 'human_authored' atomically at ADD COLUMN time (see
+    # k2_s0_knowledge_origin migration) — never a separate UPDATE, and
+    # never left NULL for a caller to accidentally treat as "unknown."
+    origin: Mapped[str] = mapped_column(
+        String(24), nullable=False, server_default=text("'human_authored'")
+    )
+
+    # ------------------------------------------------------------------ #
+    # Slice 0 guard: AI content cannot be born reviewed. Mirrors
+    # AIClinicalRecommendation's stricter unconditional-reject pattern
+    # (app/models/ai.py), not CarePlan's looser combined-check one — see
+    # plan §B2.2 for why. Defense-in-depth against direct ORM
+    # construction/mutation only: the service-layer UPDATE statements
+    # submit_for_review/approve_row/reject_row/retire_row already use are
+    # SQLAlchemy Core statements and do not trigger these hooks. The real
+    # backstop against an ai_synthesized row skipping review is
+    # approve_row's own provenance guard (knowledge_repository.py), not
+    # this hook alone.
+    # ------------------------------------------------------------------ #
+
+    @validates("origin")
+    def _validate_origin(self, key: str, value: str) -> str:
+        # 2026-07-27 final-checkpoint fix: this hook previously only
+        # checked the ai_synthesized/status combination below — an
+        # out-of-vocabulary value (never one of ORIGIN_VALUES at all) was
+        # not rejected at the ORM layer, only by the DB CHECK constraint
+        # at flush/commit time. Mirrors the DB constraint explicitly now,
+        # matching this file's own `_validate_status_against_origin`
+        # sibling hook and the equivalent hooks added to
+        # KnowledgeLifecycleTransition/KnowledgeAIGeneration.
+        if value not in ORIGIN_VALUES:
+            raise ValueError(f"origin={value!r} is not one of {ORIGIN_VALUES}.")
+        if value == "ai_synthesized":
+            status_val = self.__dict__.get("status")
+            if status_val in _AI_SYNTHESIZED_FORBIDDEN_STATUSES:
+                raise ValueError(
+                    "origin='ai_synthesized' may only be constructed with "
+                    "status='draft'. Use the sanctioned AI draft factory; "
+                    "never construct a reviewed/approved/rejected row directly."
+                )
+        return value
+
+    @validates("status")
+    def _validate_status_against_origin(self, key: str, value: str) -> str:
+        # Same 2026-07-27 fix as _validate_origin above: general
+        # vocabulary membership was previously unchecked at the ORM
+        # layer, only the ai_synthesized/status combination was.
+        if value not in STATUS_VALUES:
+            raise ValueError(f"status={value!r} is not one of {STATUS_VALUES}.")
+        if (
+            self.__dict__.get("origin") == "ai_synthesized"
+            and value in _AI_SYNTHESIZED_FORBIDDEN_STATUSES
+        ):
+            raise ValueError(
+                "A row with origin='ai_synthesized' cannot be constructed "
+                f"at status={value!r}. Only draft is allowed at "
+                "construction; promotion happens exclusively through "
+                "submit_for_review/approve_row."
+            )
+        return value
+
+    @validates("authored_by")
+    def _validate_authored_by(self, key: str, value: str) -> str:
+        """Codex Round 2 finding (fix round 2, 2026-07-28): `authored_by`
+        legitimately holds a registered `SystemActor` value for
+        `origin='ai_synthesized'` rows (e.g.
+        `SystemActor.MEDICATION_AI_SYNTHESIS.value`, per this codebase's
+        own test convention) — so this cannot require registration
+        unconditionally the way `KnowledgeAIGeneration.created_by` does.
+        It only rejects a FORGED, unregistered `system:*` value, matching
+        this codebase's "reserve the whole namespace, not just today's
+        registered members" principle applied everywhere an actor identity
+        is recorded."""
+        assert_no_forged_system_actor(value)
+        return value
+
 
 class DrugUsage(KnowledgeLifecycleMixin, UUIDPrimaryKey, TimestampMixin, Base):
     """Usage narrative per ingredient/locale/audience (ADR-13)."""
@@ -106,6 +224,7 @@ class DrugUsage(KnowledgeLifecycleMixin, UUIDPrimaryKey, TimestampMixin, Base):
 
     __table_args__ = (
         _status_check("drug_usage"),
+        _origin_check("drug_usage"),
         _approved_invariants_check("drug_usage"),
         Index(
             "uq_drug_usage_approved_key",
@@ -131,6 +250,7 @@ class DrugPatientEducation(KnowledgeLifecycleMixin, UUIDPrimaryKey, TimestampMix
 
     __table_args__ = (
         _status_check("drug_patient_education"),
+        _origin_check("drug_patient_education"),
         _approved_invariants_check("drug_patient_education"),
         Index(
             "uq_drug_patient_education_approved_key",
@@ -174,6 +294,7 @@ class DrugSideEffect(KnowledgeLifecycleMixin, UUIDPrimaryKey, TimestampMixin, Ba
 
     __table_args__ = (
         _status_check("drug_side_effects"),
+        _origin_check("drug_side_effects"),
         _approved_invariants_check("drug_side_effects"),
         CheckConstraint(
             "frequency IN ('common','uncommon','rare','unknown')",
@@ -205,6 +326,7 @@ class DrugMonitoring(KnowledgeLifecycleMixin, UUIDPrimaryKey, TimestampMixin, Ba
 
     __table_args__ = (
         _status_check("drug_monitoring"),
+        _origin_check("drug_monitoring"),
         _approved_invariants_check("drug_monitoring"),
         Index(
             "uq_drug_monitoring_approved_key",
@@ -230,6 +352,7 @@ class DrugContraindication(KnowledgeLifecycleMixin, UUIDPrimaryKey, TimestampMix
 
     __table_args__ = (
         _status_check("drug_contraindications"),
+        _origin_check("drug_contraindications"),
         _approved_invariants_check("drug_contraindications"),
         Index(
             "uq_drug_contraindications_approved_key",

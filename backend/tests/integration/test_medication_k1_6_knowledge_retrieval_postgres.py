@@ -62,6 +62,44 @@ def _require_postgres() -> None:
         )
 
 
+def _delete_lifecycle_transitions_for_ingredient(db: Session, ingredient_id: str) -> None:
+    """Test-only escape hatch (fix round 1, 2026-07-28): k2_s0_integrity_guards'
+    append-only trigger correctly blocks this raw DELETE in real usage —
+    but this fixture's own teardown still needs to remove the history rows
+    it created, scoped strictly to this one ingredient_id, so the shared
+    disposable mcp_test database stays clean for later downgrade tests.
+    Temporarily disabling the trigger for the duration of this one DELETE
+    is a test-harness-only privilege; it is always re-enabled before this
+    function returns."""
+    db.execute(sa.text("ALTER TABLE knowledge_lifecycle_transitions DISABLE TRIGGER trg_knowledge_lifecycle_transitions_append_only"))
+    try:
+        db.execute(
+            sa.text(
+                "DELETE FROM knowledge_lifecycle_transitions "
+                "WHERE knowledge_table = 'drug_usage' "
+                "AND knowledge_row_id IN "
+                "(SELECT id FROM drug_usage WHERE drug_ingredient_id = :ingredient_id)"
+            ),
+            {"ingredient_id": ingredient_id},
+        )
+    finally:
+        db.execute(sa.text("ALTER TABLE knowledge_lifecycle_transitions ENABLE TRIGGER trg_knowledge_lifecycle_transitions_append_only"))
+
+
+def _delete_content_rows(db: Session, table: str, where_sql: str, params: dict) -> None:
+    """Test-only escape hatch (fix round 3, 2026-07-28): k2_s0_round3_hardening's
+    content-immutability trigger blocks every DELETE against the 5
+    knowledge tables in real usage. Temporarily disabling the one
+    specific table's guard trigger for the duration of this DELETE is a
+    test-harness-only privilege; always re-enabled before returning."""
+    trigger_name = f"trg_{table}_no_hard_delete"
+    db.execute(sa.text(f"ALTER TABLE {table} DISABLE TRIGGER {trigger_name}"))
+    try:
+        db.execute(sa.text(f"DELETE FROM {table} WHERE {where_sql}"), params)
+    finally:
+        db.execute(sa.text(f"ALTER TABLE {table} ENABLE TRIGGER {trigger_name}"))
+
+
 def _make_alembic_config(db_url: str) -> Config:
     os.environ["MCP_DATABASE_URL"] = db_url
     from app.core.config import get_settings
@@ -101,7 +139,20 @@ def session_factory(migrated_schema: sa.Engine) -> sessionmaker[Session]:
 
 
 @pytest.fixture()
-def ingredient(session_factory: sessionmaker[Session]) -> dict:
+def ingredient(session_factory: sessionmaker[Session]) -> Generator[dict, None, None]:
+    """Test-isolation fix (2026-07-27, final-checkpoint verification):
+    every DrugUsage row this file's tests create uses this fixture's `id`
+    as its `drug_ingredient_id`. `submit_for_review`/`approve_row` each
+    append a row to `knowledge_lifecycle_transitions` (Slice 0, real
+    append-only history — its migration's `downgrade()` refuses to run
+    while any row exists). This fixture previously had no teardown at
+    all, so repeated runs against the shared disposable mcp_test database
+    accumulated transition rows that eventually blocked a downstream
+    migration downgrade (same defect independently found and fixed in
+    test_medication_k1_5_approval_workflow_postgres.py's `ingredient`
+    fixture). Cleanup runs in a `finally` block (fires even if the test
+    body raised), scoped strictly by this fixture's own captured
+    `id`/`drug_class_id` — never table-wide."""
     suffix = uuid.uuid4().hex[:8]
     db = session_factory()
     try:
@@ -113,21 +164,52 @@ def ingredient(session_factory: sessionmaker[Session]) -> dict:
         )
         db.add(ingredient_row)
         db.commit()
-        return {"id": ingredient_row.id, "drug_class_id": drug_class.id}
+        ids = {"id": ingredient_row.id, "drug_class_id": drug_class.id}
     finally:
         db.close()
+
+    try:
+        yield ids
+    finally:
+        cleanup_db = session_factory()
+        try:
+            _delete_lifecycle_transitions_for_ingredient(cleanup_db, ids["id"])
+            _delete_content_rows(
+                cleanup_db,
+                "drug_usage",
+                "drug_ingredient_id = :ingredient_id",
+                {"ingredient_id": ids["id"]},
+            )
+            cleanup_db.execute(
+                sa.text("DELETE FROM drug_ingredients WHERE id = :ingredient_id"),
+                {"ingredient_id": ids["id"]},
+            )
+            cleanup_db.execute(
+                sa.text("DELETE FROM drug_classes WHERE id = :drug_class_id"),
+                {"drug_class_id": ids["drug_class_id"]},
+            )
+            cleanup_db.commit()
+        except Exception:
+            cleanup_db.rollback()
+            raise
+        finally:
+            cleanup_db.close()
 
 
 def _approval_provenance_fields() -> dict[str, object]:
     """ck_drug_usage_approved_invariants requires reviewed_by/evidence_level/
     source/version/last_reviewed_at to be non-null once a row reaches
     'approved' — same requirement as the SQLite unit tests. Synthetic
-    placeholder values only — never real clinical content/sourcing."""
+    placeholder values only — never real clinical content/sourcing.
+
+    `reviewed_by` deliberately omitted (fix round 1, 2026-07-28, Codex
+    Round 1 finding #6): `build_draft` now rejects an explicit
+    `reviewed_by=` kwarg — it is bound to the approving actor inside
+    `approve_row` itself."""
     return dict(
         source="Synthetic Test Source",
         version="1.0",
         evidence_level="expert_opinion",
-        reviewed_by="reviewer-1",
         last_reviewed_at=dt.datetime.now(dt.UTC),
     )
 
@@ -368,6 +450,11 @@ class TestPartialUniqueIndexBackstopReadSide:
                 status="approved",
                 status_changed_by="author-2",
                 status_changed_at=now,
+                # reviewed_by supplied directly (not via
+                # _approval_provenance_fields(), which no longer includes
+                # it — fix round 1, Codex Round 1 finding #6) because this
+                # test bypasses approve_row entirely.
+                reviewed_by="reviewer-1",
                 **_approval_provenance_fields(),
             )
             db2.add(rogue)
@@ -396,6 +483,9 @@ class TestPartialUniqueIndexBackstopReadSide:
                         status="approved",
                         status_changed_by="author-1",
                         status_changed_at=now,
+                        # reviewed_by supplied directly (see the sibling
+                        # test above for why).
+                        reviewed_by="reviewer-1",
                         **_approval_provenance_fields(),
                     )
                     db.add(row)
@@ -418,14 +508,15 @@ class TestPartialUniqueIndexBackstopReadSide:
                 # the index, so recreation is never skipped just because
                 # something above it didn't clean up as expected.
                 db.rollback()
-                db.execute(
-                    sa.text(
-                        "DELETE FROM drug_usage WHERE status = 'approved' AND "
-                        "(drug_ingredient_id, locale, audience) IN ("
-                        "SELECT drug_ingredient_id, locale, audience FROM drug_usage "
-                        "WHERE status = 'approved' "
-                        "GROUP BY drug_ingredient_id, locale, audience HAVING COUNT(*) > 1)"
-                    )
+                _delete_content_rows(
+                    db,
+                    "drug_usage",
+                    "status = 'approved' AND "
+                    "(drug_ingredient_id, locale, audience) IN ("
+                    "SELECT drug_ingredient_id, locale, audience FROM drug_usage "
+                    "WHERE status = 'approved' "
+                    "GROUP BY drug_ingredient_id, locale, audience HAVING COUNT(*) > 1)",
+                    {},
                 )
                 db.commit()
                 db.execute(
