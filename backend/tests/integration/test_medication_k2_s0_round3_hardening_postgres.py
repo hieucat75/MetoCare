@@ -565,6 +565,15 @@ _INVALID_HASH_CASES = [
     ("unicode_lookalike", "а" * 64),  # Cyrillic 'а' (U+0430), not ASCII 'a'
     ("too_short", "a" * 63),
     ("too_long", "a" * 65),
+    # Codex Round 4 P1 (2026-07-29): the SQLite-specific embedded-NUL GLOB
+    # bypass (see the sibling SQLite suite's own comment on this case) does
+    # NOT reproduce on PostgreSQL — `text`/`varchar` there cannot store an
+    # embedded NUL (0x00) byte at all, rejected client-side (psycopg raises
+    # before the value ever reaches the `~` regex CHECK). Included here,
+    # not to prove the CHECK closes it (nothing PG-specific needed fixing),
+    # but to document and regression-lock that this dialect asymmetry is
+    # real and intentional, not an oversight.
+    ("embedded_nul_suffix", "a" * 64 + "\x00" + "evil_garbage_after_nul"),
 ]
 
 

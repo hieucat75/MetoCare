@@ -1015,6 +1015,16 @@ _INVALID_HASH_CASES = [
     ("unicode_lookalike", "а" * 64),  # Cyrillic 'а' (U+0430), not ASCII 'a'
     ("too_short", "a" * 63),
     ("too_long", "a" * 65),
+    # Codex Round 4 P1 (2026-07-29): SQLite's GLOB stops matching at an
+    # embedded NUL (U+0000) byte, so `"a" * 64` alone up to the NUL used to
+    # satisfy the 64-class GLOB pattern even though SQLite genuinely stores
+    # every byte after it — reproduced directly against a real migrated
+    # database before the fix (87 bytes persisted, `hex()` showed the full
+    # payload). `LENGTH(CAST(column AS BLOB)) = 64`, added alongside the
+    # GLOB in k2_s0_round3_hardening.py's `_hash_format_check_sql`, closes
+    # this: a BLOB cast has no C-string/NUL-termination semantics, so it
+    # measures genuine byte length regardless of any embedded NUL.
+    ("embedded_nul_suffix", "a" * 64 + "\x00" + "evil_garbage_after_nul"),
 ]
 
 

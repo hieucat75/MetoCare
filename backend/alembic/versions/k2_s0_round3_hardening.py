@@ -245,10 +245,31 @@ def _hash_format_check_sql(column: str, dialect: str) -> str:
     # against SQLite: `'g' * 64`, mixed-case, 63/65-length, and whitespace
     # values are all rejected; a genuine `hashlib.sha256(...).hexdigest()`
     # output is accepted.
+    #
+    # Codex Round 4 P1 (2026-07-29): `GLOB` alone is insufficient on SQLite.
+    # SQLite's own string-matching internals stop at an embedded NUL
+    # (U+0000) byte, so a value like `"a" * 64 + "\x00" + "attacker-
+    # controlled garbage"` satisfies the 64-class GLOB pattern (it matches
+    # up to the NUL) even though SQLite genuinely stores every byte after
+    # it — reproduced directly via a real SQLAlchemy raw-SQL INSERT against
+    # a migrated database: the 87-byte value above was accepted and
+    # persisted verbatim (`hex()` showed all 87 bytes on disk) before this
+    # fix. Ordinary `LENGTH(column)` cannot catch this either — SQLite's
+    # own `LENGTH()` on a TEXT value ALSO stops at the same embedded NUL
+    # and misreports 64. `LENGTH(CAST(column AS BLOB))`, however, measures
+    # genuine byte length independent of any embedded NUL (a BLOB has no
+    # C-string terminator semantics), so combining it with the existing
+    # GLOB closes this exactly: the GLOB half still enforces charset, and
+    # the BLOB-cast length half independently enforces that there is
+    # truly nothing — NUL-prefixed or otherwise — beyond byte 64. This
+    # affects both `input_hash` and `output_hash` identically. PostgreSQL
+    # is not affected: its `text`/`varchar` cannot store an embedded NUL
+    # byte at all (rejected at the client-encoding layer before it ever
+    # reaches a CHECK), so the `~` regex alone was always sufficient there.
     if dialect == "postgresql":
         condition = f"{column} ~ '^[0-9a-f]{{64}}$'"
     else:
-        condition = f"{column} GLOB '{'[0-9a-f]' * 64}'"
+        condition = f"{column} GLOB '{'[0-9a-f]' * 64}' AND LENGTH(CAST({column} AS BLOB)) = 64"
     return f"{column} IS NULL OR ({condition})"
 
 
