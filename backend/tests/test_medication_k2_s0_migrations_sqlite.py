@@ -317,7 +317,7 @@ def _insert_side_effect_draft(
     return row_id
 
 
-def _insert_ai_generation(conn: sa.Connection) -> str:
+def _insert_ai_generation(conn: sa.Connection, *, input_hash: str = "a" * 64, commit: bool = True) -> str:
     row_id = str(uuid.uuid4())
     now = dt.datetime.now(dt.UTC)
     conn.execute(
@@ -333,7 +333,7 @@ def _insert_ai_generation(conn: sa.Connection) -> str:
         {
             "id": row_id,
             "input_source_ids": "[]",
-            "input_hash": "a" * 64,
+            "input_hash": input_hash,
             # Fix round 1, 2026-07-28 (Codex Round 1 finding #4): must be a
             # registered SystemActor — k2_s0_integrity_guards' CHECK
             # constraint now rejects an unregistered "system:*" value like
@@ -342,7 +342,8 @@ def _insert_ai_generation(conn: sa.Connection) -> str:
             "now": now,
         },
     )
-    conn.commit()
+    if commit:
+        conn.commit()
     return row_id
 
 
@@ -1004,6 +1005,210 @@ class TestGenerationOrderingOnSQLite:
         finally:
             db.rollback()
             db.close()
+
+
+_INVALID_HASH_CASES = [
+    ("uppercase", "A" * 64),
+    ("mixed_case", "aA" * 32),
+    ("non_hex_ascii", "g" * 64),
+    ("whitespace", " " * 64),
+    ("unicode_lookalike", "а" * 64),  # Cyrillic 'а' (U+0430), not ASCII 'a'
+    ("too_short", "a" * 63),
+    ("too_long", "a" * 65),
+]
+
+
+class TestHashFormatValidationOnSQLite:
+    """Fix Round 3.1 (2026-07-29, PTH directive after Codex Round 3): the
+    persistence-boundary SHA-256 format CHECK on `knowledge_ai_generations.
+    input_hash`/`output_hash` must reject a same-length, non-hex value, not
+    merely a wrong-length or uppercase one — the Round 3 version of this
+    CHECK (`LENGTH(column) = 64 AND column = LOWER(column)`) could not.
+    Covers the DB-layer CHECK directly via raw SQL (proving no ORM bypass
+    exists) AND the ORM validator (`KnowledgeAIGeneration.
+    _validate_hash_format`), since either path alone leaves the other
+    unproven. Chosen uppercase policy: REJECT, never normalize — matches
+    the ORM validator exactly (see that method's own docstring)."""
+
+    _VALID = "a" * 64
+
+    def test_valid_lowercase_digest_succeeds_via_raw_sql(self, sqlite_db) -> None:
+        engine, cfg = sqlite_db
+        command.upgrade(cfg, "head")
+        with engine.connect() as conn:
+            row_id = _insert_ai_generation(conn, input_hash=self._VALID)
+            stored = conn.execute(
+                sa.text("SELECT input_hash FROM knowledge_ai_generations WHERE id = :id"), {"id": row_id}
+            ).scalar()
+        assert stored == self._VALID
+
+    def test_valid_lowercase_digest_succeeds_via_orm(self, sqlite_db) -> None:
+        from app.core.system_actors import SystemActor
+        from app.models.drug_knowledge_ai_generation import KnowledgeAIGeneration
+        from sqlalchemy.orm import sessionmaker
+
+        engine, cfg = sqlite_db
+        command.upgrade(cfg, "head")
+        Session = sessionmaker(bind=engine, expire_on_commit=False)
+        db = Session()
+        try:
+            gen = KnowledgeAIGeneration(
+                knowledge_table="drug_side_effects",
+                model_provider="openrouter",
+                model_identifier="m",
+                prompt_template_id="t",
+                prompt_template_version="1.0",
+                input_source_ids=[],
+                input_hash=self._VALID,
+                output_hash=self._VALID,
+                generation_status="succeeded",
+                created_by=SystemActor.MEDICATION_AI_SYNTHESIS.value,
+            )
+            db.add(gen)
+            db.commit()
+            db.refresh(gen)
+            assert gen.input_hash == self._VALID
+            assert gen.output_hash == self._VALID
+        finally:
+            db.close()
+
+    def test_output_hash_null_is_still_permitted(self, sqlite_db) -> None:
+        """`output_hash` stays nullable — a failed generation may have
+        none — the CHECK only applies when non-null, on both dialects."""
+        from app.core.system_actors import SystemActor
+        from app.models.drug_knowledge_ai_generation import KnowledgeAIGeneration
+        from sqlalchemy.orm import sessionmaker
+
+        engine, cfg = sqlite_db
+        command.upgrade(cfg, "head")
+        Session = sessionmaker(bind=engine, expire_on_commit=False)
+        db = Session()
+        try:
+            gen = KnowledgeAIGeneration(
+                knowledge_table="drug_side_effects",
+                model_provider="openrouter",
+                model_identifier="m",
+                prompt_template_id="t",
+                prompt_template_version="1.0",
+                input_source_ids=[],
+                input_hash=self._VALID,
+                output_hash=None,
+                generation_status="failed",
+                created_by=SystemActor.MEDICATION_AI_SYNTHESIS.value,
+            )
+            db.add(gen)
+            db.commit()
+            db.refresh(gen)
+            assert gen.output_hash is None
+        finally:
+            db.close()
+
+    @pytest.mark.parametrize("case_name,value", _INVALID_HASH_CASES)
+    def test_db_check_rejects_invalid_hash_via_raw_sql(self, sqlite_db, case_name, value) -> None:
+        engine, cfg = sqlite_db
+        command.upgrade(cfg, "head")
+        with engine.connect() as conn:
+            with pytest.raises(sa.exc.IntegrityError):
+                _insert_ai_generation(conn, input_hash=value)
+            conn.rollback()
+
+    @pytest.mark.parametrize("case_name,value", _INVALID_HASH_CASES)
+    def test_orm_validator_rejects_invalid_hash(self, sqlite_db, case_name, value) -> None:
+        from app.core.system_actors import SystemActor
+        from app.models.drug_knowledge_ai_generation import KnowledgeAIGeneration
+
+        engine, cfg = sqlite_db
+        command.upgrade(cfg, "head")
+        with pytest.raises(ValueError, match="not a valid SHA-256 hex digest"):
+            KnowledgeAIGeneration(
+                knowledge_table="drug_side_effects",
+                model_provider="openrouter",
+                model_identifier="m",
+                prompt_template_id="t",
+                prompt_template_version="1.0",
+                input_source_ids=[],
+                input_hash=value,
+                generation_status="succeeded",
+                created_by=SystemActor.MEDICATION_AI_SYNTHESIS.value,
+            )
+
+    def test_failed_raw_sql_write_rolls_back_cleanly(self, sqlite_db) -> None:
+        """A rejected INSERT must not leave a half-committed row behind, and
+        the connection must remain usable for a subsequent valid write —
+        proving the CHECK failure is a clean rollback, not a corrupted
+        session."""
+        engine, cfg = sqlite_db
+        command.upgrade(cfg, "head")
+        with engine.connect() as conn:
+            before = conn.execute(sa.text("SELECT COUNT(*) FROM knowledge_ai_generations")).scalar()
+            with pytest.raises(sa.exc.IntegrityError):
+                _insert_ai_generation(conn, input_hash="not-a-hash" + "0" * 54)
+            conn.rollback()
+            after_failed = conn.execute(sa.text("SELECT COUNT(*) FROM knowledge_ai_generations")).scalar()
+            assert after_failed == before, "a rejected INSERT must not persist any row"
+
+            row_id = _insert_ai_generation(conn, input_hash=self._VALID)
+            after_valid = conn.execute(sa.text("SELECT COUNT(*) FROM knowledge_ai_generations")).scalar()
+            assert after_valid == before + 1
+            stored = conn.execute(
+                sa.text("SELECT input_hash FROM knowledge_ai_generations WHERE id = :id"), {"id": row_id}
+            ).scalar()
+            assert stored == self._VALID
+
+    def test_valid_hash_survives_downgrade_refusal_while_nonempty(self, sqlite_db) -> None:
+        """k2_s0_round3_hardening's own non-emptiness guard refuses to
+        downgrade past this revision while `knowledge_ai_generations` holds
+        any row (dropping `sequence_number` would discard real ordering
+        data — see that migration's own `downgrade()` docstring). A valid,
+        already-persisted hash is trivially "unchanged" by a downgrade that
+        never actually runs — this proves the refusal fires before any DDL
+        touches the row, exactly like the sibling `sequence_number`-emptiness
+        guard already proven in TestAIGenerationHistoryMigrationSQLite."""
+        engine, cfg = sqlite_db
+        command.upgrade(cfg, "head")
+        with engine.connect() as conn:
+            row_id = _insert_ai_generation(conn, input_hash=self._VALID)
+
+        with pytest.raises(RuntimeError, match="Refusing to downgrade"):
+            command.downgrade(cfg, INTEGRITY_GUARDS_REV)
+        assert _current_revision(engine) == HEAD_REV
+
+        with engine.connect() as conn:
+            stored = conn.execute(
+                sa.text("SELECT input_hash FROM knowledge_ai_generations WHERE id = :id"), {"id": row_id}
+            ).scalar()
+            assert stored == self._VALID
+
+    def test_hash_check_reapplies_correctly_after_downgrade_and_reupgrade(self, sqlite_db) -> None:
+        """Once the table is emptied, the downgrade/re-upgrade round-trip
+        itself (SQLite rebuilds this table via `batch_alter_table` on both
+        the way down and the way back up — see this migration's own module
+        docstring on trigger-loss hazards during table rebuilds) must land
+        on a schema whose hash-format CHECK is still fully enforced, not
+        silently dropped or narrowed by the rebuild. `knowledge_ai_
+        generations` is append-only (no DELETE possible at all, even
+        pre-downgrade — a separate guard from the non-emptiness check
+        proven above), so this round-trips from a table that was never
+        populated in the first place, matching TestAIGenerationHistoryMigrationSQLite.
+        test_downgrade_succeeds_when_empty's own convention."""
+        engine, cfg = sqlite_db
+        command.upgrade(cfg, "head")
+
+        command.downgrade(cfg, INTEGRITY_GUARDS_REV)
+        command.upgrade(cfg, "head")
+
+        with engine.connect() as conn:
+            # A valid hash still succeeds after the round-trip...
+            new_row_id = _insert_ai_generation(conn, input_hash=self._VALID)
+            stored = conn.execute(
+                sa.text("SELECT input_hash FROM knowledge_ai_generations WHERE id = :id"), {"id": new_row_id}
+            ).scalar()
+            assert stored == self._VALID
+            # ...and the CHECK is still enforced, not silently dropped by
+            # the SQLite table-rebuild dance.
+            with pytest.raises(sa.exc.IntegrityError):
+                _insert_ai_generation(conn, input_hash="g" * 64)
+            conn.rollback()
 
 
 class TestPromotedToSupersededBlockedOnSQLite:

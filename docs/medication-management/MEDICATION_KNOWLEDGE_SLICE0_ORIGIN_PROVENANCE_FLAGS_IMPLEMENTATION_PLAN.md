@@ -921,6 +921,7 @@ would fail loudly.
 | Generation-history overwrite | Schema only allows `review_status`/`superseded_by_generation_id` to be mutable; every other column has no code path that ever issues an `UPDATE` against it (§B2.4, enforced by a grep-guard test) |
 | Model/prompt version ambiguity | `model_provider`+`model_identifier`+`model_version_snapshot`+`prompt_template_id`+`prompt_template_version` as 5 distinct fields, not one overloaded string (§B2.4) |
 | Patient-facing exposure of unreviewed AI content | K2 response contracts unchanged (§B4); no route in Slice 0 or Slice 1 can read `origin`/`review_status` at all |
+| Generation-insert vs. in-flight approval race | Not mitigated in Slice 0 — no production writer exists yet (`knowledge_ai_generations` stays empty through Slice 0, no AI provider calls). Formalized as a **hard Slice 3 entry gate**, not a soft follow-up — see the Gates subsection immediately below |
 
 ### Gates
 
@@ -936,6 +937,34 @@ would fail loudly.
   Clinical/legal review of the eventual AI-authored *content* is explicitly out of Slice 0's
   scope (Slice 3+'s own gate) — this plan's job is only to make sure the data model can carry
   whatever policy that later review imposes, without needing to be rebuilt.
+- **Slice 3 entry gate (hard — PR #136 Fix Round 3.1, 2026-07-29):** `approve_row`'s
+  `_select_and_promote_ai_generation` (knowledge_repository.py) selects the single most recent
+  non-superseded `KnowledgeAIGeneration` by `sequence_number DESC`, locked `FOR UPDATE` — but
+  that lock is only ever acquired against rows that already exist at the moment the `SELECT ...
+  FOR UPDATE` runs. A concurrent `INSERT` of a NEW, more-authoritative generation (a later,
+  successful retry superseding an earlier failed or incomplete one) is not covered by that lock
+  and could commit either just before or just after the approval transaction's own read,
+  non-deterministically, if the two ever race against the same `target_row_id`. Slice 0 defers
+  this entirely because **no code path in this codebase inserts a `KnowledgeAIGeneration` row
+  today** — the table is schema-valid and permanently empty through Slice 0 (no AI provider
+  calls, no synthesis code, no caller). This is acceptable ONLY as long as that remains true.
+  **Slice 3 — the first slice to introduce any `KnowledgeAIGeneration` INSERT path — must NOT
+  ship that writer until:**
+  1. generation-creation and `approve_row`'s generation-selection both acquire the SAME
+     target-row-scoped lock/serialization protocol before either reads or writes any
+     `KnowledgeAIGeneration` row for that `(knowledge_table, target_row_id)` pair (e.g. locking
+     the target knowledge row itself — already done via `_lock_canonical_row` in the approval
+     path — as the shared serialization point for both operations, so a concurrent insert and a
+     concurrent approval can never interleave unlocked); and
+  2. a PostgreSQL concurrency test (not SQLite — SQLite's serialized single-writer model cannot
+     construct this race at all, see `k2_s0_round3_hardening_postgres.py`'s own module docstring
+     for why generation-ordering/concurrency claims require real Postgres) proves directly that
+     an approval running concurrently with a new, more-authoritative generation INSERT for the
+     same target row can never miss that newly-authoritative attempt — i.e. either the approval
+     correctly waits and picks it up, or it correctly fails closed (`AIProvenanceIncompleteError`)
+     rather than silently approving against a now-stale "latest" generation.
+  This is a merge-blocking precondition for Slice 3's writer, not an optional follow-up item —
+  Slice 3's own implementation plan must show this test passing before that PR can merge.
 
 ---
 

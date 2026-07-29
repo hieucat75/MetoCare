@@ -43,17 +43,23 @@ closes two remaining integrity gaps before Codex Round 3.
    real SHA-256 hex digests, matching `medication_knowledge_import/
    versioning.py`'s actual `hashlib.sha256(...).hexdigest()` — these are
    INTEGRITY hashes, not opaque metadata, so format is now enforced:
-   exactly 64 lowercase hexadecimal characters. `output_hash` remains
-   nullable (a failed generation may have none) — the CHECK only applies
-   when non-null. A fully portable regex CHECK is not available on both
-   dialects (Postgres has `~`, SQLite has no built-in regex operator
-   without registering a custom function) — so this migration enforces
-   `LENGTH(column) = 64` and `column = LOWER(column)` at the DB layer
-   (catches truncation/case violations on both dialects with no custom
-   function), with the FULL hex-charset check enforced at the ORM layer
-   (`KnowledgeAIGeneration._validate_hash_format`) for the standard ORM
-   write path, and accepted as a known, narrower DB-layer guarantee for
-   any raw-SQL bypass (documented, not silently gapped).
+   exactly 64 lowercase hexadecimal characters, full charset included,
+   at the DB layer on BOTH dialects (Fix Round 3.1, 2026-07-29 — the
+   original Round 3 CHECK only enforced `LENGTH(column) = 64` and
+   `column = LOWER(column)`, which a same-length, all-lowercase,
+   non-hex value — e.g. a Unicode lookalike character, or plain
+   punctuation — could still satisfy). PostgreSQL uses its built-in `~`
+   POSIX regex operator (`^[0-9a-f]{64}$`); SQLite has no `REGEXP`
+   operator without registering a custom function, so it instead uses
+   the built-in, always-case-sensitive `GLOB` operator with a pattern of
+   64 concatenated `[0-9a-f]` single-character classes — anchoring
+   charset, length, AND case in one native construct, no custom function
+   required. `output_hash` remains nullable (a failed generation may
+   have none) — the CHECK only applies when non-null. The ORM validator
+   (`KnowledgeAIGeneration._validate_hash_format`) enforces the identical
+   rule (reject, never normalize, uppercase) for the standard ORM write
+   path; the DB-layer CHECK now closes the same gap for any raw-SQL
+   bypass — no longer a narrower, documented-but-accepted gap.
 
 No clinical content is authored by this migration. No existing row is
 ever touched — `knowledge_ai_generations` remains empty and dormant
@@ -217,11 +223,33 @@ def _recreate_sqlite_round1_ai_generation_triggers() -> None:
     )
 
 
-def _hash_format_check_sql(column: str) -> str:
-    # Portable across both dialects: LENGTH() and LOWER() are standard SQL,
-    # available identically on PostgreSQL and SQLite. The full hex-charset
-    # check is enforced at the ORM layer instead (see module docstring).
-    return f"{column} IS NULL OR (LENGTH({column}) = 64 AND {column} = LOWER({column}))"
+def _hash_format_check_sql(column: str, dialect: str) -> str:
+    # Fix Round 3.1 (2026-07-29, PTH directive after Codex Round 3): the
+    # Round 3 version of this check only enforced LENGTH()=64 and
+    # column=LOWER(column) — a same-length, all-lowercase value containing
+    # non-hex characters (e.g. a Unicode lookalike that LENGTH() counts as
+    # one character, or plain punctuation) still satisfied it, even though
+    # it is not a SHA-256 digest. The full hex-charset is now enforced at
+    # THIS layer too, not only in the ORM validator
+    # (KnowledgeAIGeneration._validate_hash_format) — closing the raw-SQL
+    # bypass the ORM-only check could never cover. Uppercase is REJECTED,
+    # not normalized, matching that same ORM validator's policy exactly.
+    #
+    # PostgreSQL: `~` is POSIX regex, built-in, exact-length anchored.
+    # SQLite: has no REGEXP operator without registering a custom function
+    # (verified — no built-in regex). `GLOB` is a SQLite built-in that is
+    # ALWAYS case-sensitive (unlike `LIKE`, whose case sensitivity depends
+    # on a pragma) — a pattern of exactly 64 single-character classes
+    # `[0-9a-f]`, with no wildcard, anchors to the full string and enforces
+    # charset + length + case in one native construct. Verified directly
+    # against SQLite: `'g' * 64`, mixed-case, 63/65-length, and whitespace
+    # values are all rejected; a genuine `hashlib.sha256(...).hexdigest()`
+    # output is accepted.
+    if dialect == "postgresql":
+        condition = f"{column} ~ '^[0-9a-f]{{64}}$'"
+    else:
+        condition = f"{column} GLOB '{'[0-9a-f]' * 64}'"
+    return f"{column} IS NULL OR ({condition})"
 
 
 _APPEND_ONLY_FUNCTION_SQL = """
@@ -302,11 +330,11 @@ def upgrade() -> None:
     with op.batch_alter_table("knowledge_ai_generations", schema=None) as batch_op:
         batch_op.create_check_constraint(
             "ck_knowledge_ai_generations_input_hash_format",
-            _hash_format_check_sql("input_hash"),
+            _hash_format_check_sql("input_hash", dialect),
         )
         batch_op.create_check_constraint(
             "ck_knowledge_ai_generations_output_hash_format",
-            _hash_format_check_sql("output_hash"),
+            _hash_format_check_sql("output_hash", dialect),
         )
 
     # --- Guard 9: content authored_by cannot forge the system:* namespace -

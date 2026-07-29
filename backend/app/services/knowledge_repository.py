@@ -717,6 +717,25 @@ def _select_and_promote_ai_generation(
     approved, and a row is never approved on a generation this function
     failed to promote.
 
+    HARD SLICE 3 ENTRY GATE (PR #136 Fix Round 3.1, 2026-07-29 PTH
+    directive — see MEDICATION_KNOWLEDGE_SLICE0_ORIGIN_PROVENANCE_FLAGS_
+    IMPLEMENTATION_PLAN.md §B8 "Slice 3 entry gate" for the full writeup):
+    the `FOR UPDATE` lock taken by the query above only ever covers rows
+    that ALREADY EXIST at query time — it cannot serialize against a
+    concurrent INSERT of a new, more-authoritative `KnowledgeAIGeneration`
+    racing this same approval for the same `target_row_id`. Slice 0 defers
+    this entirely because no code path anywhere in this codebase inserts a
+    `KnowledgeAIGeneration` row yet (this table stays permanently empty
+    through Slice 0). Slice 3 — the first slice to add that writer — MUST
+    NOT ship it until (1) generation-creation and this function's
+    generation-selection share the same target-row-scoped locking/
+    serialization protocol, and (2) a PostgreSQL concurrency test proves an
+    approval racing a concurrent, newly-authoritative INSERT can never miss
+    it (either correctly waiting to pick it up, or failing closed via
+    `AIProvenanceIncompleteError`, never silently approving against a
+    stale "latest"). This is a merge-blocking precondition for that
+    writer, not an optional follow-up.
+
     Raises `AIProvenanceIncompleteError` if no record satisfies every
     check above. A generation record existing is necessary but never
     sufficient to approve on its own: the human-actor gate

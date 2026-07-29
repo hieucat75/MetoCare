@@ -36,7 +36,7 @@ from app.models.drug_knowledge_ai_generation import KnowledgeAIGeneration
 from app.models.drug_knowledge_content import DrugUsage
 from app.models.drug_knowledge_core import DrugClass, DrugIngredient
 from app.services import knowledge_repository as repo
-from sqlalchemy.exc import ProgrammingError
+from sqlalchemy.exc import DataError, IntegrityError, ProgrammingError
 from sqlalchemy.orm import Session, sessionmaker
 
 POSTGRES_TEST_URL = os.environ.get("POSTGRES_TEST_URL", "")
@@ -555,3 +555,243 @@ class TestContentDeleteOrphanIntegrityOnPostgres:
             assert still_there == first.id, "retirement is a status transition, never a delete"
         finally:
             db.close()
+
+
+_INVALID_HASH_CASES = [
+    ("uppercase", "A" * 64),
+    ("mixed_case", "aA" * 32),
+    ("non_hex_ascii", "g" * 64),
+    ("whitespace", " " * 64),
+    ("unicode_lookalike", "а" * 64),  # Cyrillic 'а' (U+0430), not ASCII 'a'
+    ("too_short", "a" * 63),
+    ("too_long", "a" * 65),
+]
+
+
+def _delete_ai_generation_by_id(db: Session, row_id: str) -> None:
+    """Same escape-hatch pattern as `_delete_ai_generations_for_ingredient`
+    above, scoped to a single row by id — used by
+    TestHashFormatValidationOnPostgres, whose rows have no ingredient
+    fixture to key off (`target_row_id` is always NULL there). Without
+    this cleanup, rows accumulate across this class's tests and trip
+    k2_s0_round3_hardening's own non-emptiness downgrade guard at this
+    module's `migrated_schema` fixture teardown."""
+    db.execute(
+        sa.text("ALTER TABLE knowledge_ai_generations DISABLE TRIGGER trg_knowledge_ai_generations_append_only")
+    )
+    try:
+        db.execute(sa.text("DELETE FROM knowledge_ai_generations WHERE id = :id"), {"id": row_id})
+    finally:
+        db.execute(
+            sa.text("ALTER TABLE knowledge_ai_generations ENABLE TRIGGER trg_knowledge_ai_generations_append_only")
+        )
+    db.commit()
+
+
+def _insert_ai_generation_raw(db: Session, *, input_hash: str) -> str:
+    """Raw-SQL INSERT bypassing the ORM entirely — proves the DB-layer
+    CHECK constraint itself rejects an invalid hash, not merely the ORM
+    validator (`KnowledgeAIGeneration._validate_hash_format`)."""
+    row_id = str(uuid.uuid4())
+    now = dt.datetime.now(dt.UTC)
+    db.execute(
+        sa.text(
+            "INSERT INTO knowledge_ai_generations "
+            "(id, knowledge_table, target_row_id, model_provider, model_identifier, "
+            "prompt_template_id, prompt_template_version, input_source_ids, input_hash, "
+            "generation_status, origin, review_status, created_by, created_at, updated_at) "
+            "VALUES (:id, 'drug_usage', NULL, 'openrouter', 'test-model', "
+            "'tmpl-1', '1.0', :input_source_ids, :input_hash, "
+            "'succeeded', 'ai_synthesized', 'pending', :created_by, :now, :now)"
+        ),
+        {
+            "id": row_id,
+            "input_source_ids": "[]",
+            "input_hash": input_hash,
+            "created_by": SystemActor.MEDICATION_AI_SYNTHESIS.value,
+            "now": now,
+        },
+    )
+    return row_id
+
+
+class TestHashFormatValidationOnPostgres:
+    """Fix Round 3.1 (2026-07-29, PTH directive after Codex Round 3): the
+    persistence-boundary SHA-256 format CHECK on `knowledge_ai_generations.
+    input_hash`/`output_hash` must reject a same-length, non-hex value on
+    real PostgreSQL, not merely on SQLite (see the sibling suite in
+    tests/test_medication_k2_s0_migrations_sqlite.py::
+    TestHashFormatValidationOnSQLite for that dialect). Covers the DB-layer
+    `~` regex CHECK directly via raw SQL AND the ORM validator, since either
+    path alone leaves the other unproven. Chosen uppercase policy: REJECT,
+    never normalize — matches the ORM validator exactly."""
+
+    _VALID = "a" * 64
+
+    def test_valid_lowercase_digest_succeeds_via_raw_sql(self, session_factory) -> None:
+        db = session_factory()
+        row_id = None
+        try:
+            row_id = _insert_ai_generation_raw(db, input_hash=self._VALID)
+            db.commit()
+            stored = db.execute(
+                sa.text("SELECT input_hash FROM knowledge_ai_generations WHERE id = :id"), {"id": row_id}
+            ).scalar()
+            assert stored == self._VALID
+        finally:
+            if row_id is not None:
+                _delete_ai_generation_by_id(db, row_id)
+            db.close()
+
+    def test_valid_lowercase_digest_succeeds_via_orm(self, session_factory) -> None:
+        db = session_factory()
+        gen = None
+        try:
+            gen = KnowledgeAIGeneration(
+                knowledge_table="drug_usage",
+                target_row_id=None,
+                model_provider="synthetic-provider",
+                model_identifier="synthetic-model-v1",
+                prompt_template_id="synthetic-prompt",
+                prompt_template_version="1.0",
+                input_source_ids=[],
+                input_hash=self._VALID,
+                output_hash=self._VALID,
+                generation_status="succeeded",
+                created_by=SystemActor.MEDICATION_AI_SYNTHESIS.value,
+            )
+            db.add(gen)
+            db.commit()
+            db.refresh(gen)
+            assert gen.input_hash == self._VALID
+            assert gen.output_hash == self._VALID
+        finally:
+            if gen is not None and gen.id is not None:
+                _delete_ai_generation_by_id(db, gen.id)
+            db.close()
+
+    def test_output_hash_null_is_still_permitted(self, session_factory) -> None:
+        db = session_factory()
+        gen = None
+        try:
+            gen = KnowledgeAIGeneration(
+                knowledge_table="drug_usage",
+                target_row_id=None,
+                model_provider="synthetic-provider",
+                model_identifier="synthetic-model-v1",
+                prompt_template_id="synthetic-prompt",
+                prompt_template_version="1.0",
+                input_source_ids=[],
+                input_hash=self._VALID,
+                output_hash=None,
+                generation_status="failed",
+                created_by=SystemActor.MEDICATION_AI_SYNTHESIS.value,
+            )
+            db.add(gen)
+            db.commit()
+            db.refresh(gen)
+            assert gen.output_hash is None
+        finally:
+            if gen is not None and gen.id is not None:
+                _delete_ai_generation_by_id(db, gen.id)
+            db.close()
+
+    @pytest.mark.parametrize("case_name,value", _INVALID_HASH_CASES)
+    def test_db_check_rejects_invalid_hash_via_raw_sql(self, session_factory, case_name, value) -> None:
+        """`too_long` (65 chars) is rejected by the column's own
+        VARCHAR(64) width — a `DataError`, not the `ck_knowledge_ai_
+        generations_input_hash_format` CHECK — since Postgres enforces
+        column width before evaluating any CHECK. Both are genuine
+        persistence-boundary rejections; either is acceptable here."""
+        db = session_factory()
+        try:
+            with pytest.raises((IntegrityError, DataError)):
+                _insert_ai_generation_raw(db, input_hash=value)
+                db.commit()
+            db.rollback()
+        finally:
+            db.close()
+
+    @pytest.mark.parametrize("case_name,value", _INVALID_HASH_CASES)
+    def test_orm_validator_rejects_invalid_hash(self, session_factory, case_name, value) -> None:
+        with pytest.raises(ValueError, match="not a valid SHA-256 hex digest"):
+            KnowledgeAIGeneration(
+                knowledge_table="drug_usage",
+                target_row_id=None,
+                model_provider="synthetic-provider",
+                model_identifier="synthetic-model-v1",
+                prompt_template_id="synthetic-prompt",
+                prompt_template_version="1.0",
+                input_source_ids=[],
+                input_hash=value,
+                generation_status="succeeded",
+                created_by=SystemActor.MEDICATION_AI_SYNTHESIS.value,
+            )
+
+    def test_failed_raw_sql_write_rolls_back_cleanly(self, session_factory) -> None:
+        """A rejected INSERT must not leave a half-committed row behind, and
+        the session must remain usable for a subsequent valid write —
+        proving the CHECK failure is a clean rollback, not a corrupted
+        transaction/connection."""
+        db = session_factory()
+        row_id = None
+        try:
+            before = db.execute(sa.text("SELECT COUNT(*) FROM knowledge_ai_generations")).scalar()
+            with pytest.raises(IntegrityError):
+                _insert_ai_generation_raw(db, input_hash="not-a-hash" + "0" * 54)
+                db.commit()
+            db.rollback()
+            after_failed = db.execute(sa.text("SELECT COUNT(*) FROM knowledge_ai_generations")).scalar()
+            assert after_failed == before, "a rejected INSERT must not persist any row"
+
+            row_id = _insert_ai_generation_raw(db, input_hash=self._VALID)
+            db.commit()
+            after_valid = db.execute(sa.text("SELECT COUNT(*) FROM knowledge_ai_generations")).scalar()
+            assert after_valid == before + 1
+            stored = db.execute(
+                sa.text("SELECT input_hash FROM knowledge_ai_generations WHERE id = :id"), {"id": row_id}
+            ).scalar()
+            assert stored == self._VALID
+        finally:
+            if row_id is not None:
+                _delete_ai_generation_by_id(db, row_id)
+            db.close()
+
+    def test_valid_hash_survives_downgrade_refusal_while_nonempty(self, migrated_schema) -> None:
+        """k2_s0_round3_hardening's own non-emptiness guard refuses to
+        downgrade past this revision while `knowledge_ai_generations` holds
+        any row. A valid, already-persisted hash is trivially "unchanged"
+        by a downgrade that never actually runs against real Postgres —
+        Alembic's transactional-DDL wrap on this dialect means a refused
+        multi-step downgrade rolls back to exactly where it started."""
+        db_url = migrated_schema.url.render_as_string(hide_password=False)
+        cfg = _make_alembic_config(db_url)
+        Session = sessionmaker(bind=migrated_schema, expire_on_commit=False)
+        db = Session()
+        try:
+            row_id = _insert_ai_generation_raw(db, input_hash=self._VALID)
+            db.commit()
+        finally:
+            db.close()
+
+        with pytest.raises(RuntimeError, match="Refusing to downgrade"):
+            command.downgrade(cfg, "k2_s0_integrity_guards")
+
+        verify_db = Session()
+        try:
+            current_rev = verify_db.execute(sa.text("SELECT version_num FROM alembic_version")).scalar()
+            assert current_rev == "k2_s0_round3_hardening"
+            stored = verify_db.execute(
+                sa.text("SELECT input_hash FROM knowledge_ai_generations WHERE id = :id"), {"id": row_id}
+            ).scalar()
+            assert stored == self._VALID
+        finally:
+            verify_db.execute(
+                sa.text("ALTER TABLE knowledge_ai_generations DISABLE TRIGGER trg_knowledge_ai_generations_append_only")
+            )
+            verify_db.execute(sa.text("DELETE FROM knowledge_ai_generations WHERE id = :id"), {"id": row_id})
+            verify_db.execute(
+                sa.text("ALTER TABLE knowledge_ai_generations ENABLE TRIGGER trg_knowledge_ai_generations_append_only")
+            )
+            verify_db.commit()
+            verify_db.close()
