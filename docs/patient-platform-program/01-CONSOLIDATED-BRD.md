@@ -1,8 +1,9 @@
 # MetoCare Patient Platform — Consolidated Business Requirements Document (BRD)
 
-**Version:** 1.0 (single owner-approval gate)
+**Version:** 1.1 (one-time correction — ready for final single owner approval)
 **Date:** 2026-07-30
 **Scope:** The complete remaining patient-platform program, delivered **product-first and mobile-first**. Self-contained — implementable without access to the origination conversation. Grounded in `00-CAPABILITY-AUDIT.md`.
+**Change log:** v1.1 applies the owner's one-time P1/P2 correction round (findings 1–12). See **Appendix Z — Correction Map** (bottom) for finding→section traceability. Deep schema/flow detail lives in the Master Plan; this BRD carries the product-behavior corrections.
 
 ---
 
@@ -32,12 +33,13 @@ Each capability uses a fixed template: **Personas · Problem · Journey · Funct
 
 - **Personas:** New patient; returning patient; low-tech middle-aged metabolic patient (primary VN persona).
 - **Problem:** There is no mobile product today; the patient experience lives only on web.
-- **Journey:** Install → language (VN default) → phone/OTP or email register → consent → onboarding (health profile basics) → land on Dashboard. Returning: biometric/secure-token unlock → Dashboard.
-- **Functional requirements:** Phone-first auth reusing backend `/auth` (JWT + refresh rotation); secure token storage (Keychain/Keystore, **not** AsyncStorage); MFA-aware (respects `mfa_enforcement_enabled`); deep links; environment separation (dev/staging); crash reporting + analytics; global Meto entry point.
+- **Journey:** Install → language (VN default) → **email/password register** → consent → onboarding (health profile basics) → land on Dashboard. Returning: **optional biometric unlock** over a secure-stored session → Dashboard.
+- **Functional requirements (finding 4):** **email/password auth** reusing backend `/auth` (JWT + refresh rotation); **secure session storage** (Keychain/Keystore, **not** AsyncStorage) with **optional biometric unlock**; MFA-aware (respects `mfa_enforcement_enabled`); deep links; environment separation (dev/staging); crash reporting + analytics; global Meto entry point. **Phone/SMS-OTP is explicitly DEFERRED** — the audit did not establish a phone-OTP backend; it is not an implicit net-new requirement and would need a dedicated Identity/SMS workstream.
 - **Acceptance:** Cold start → interactive < 3s on mid-tier Android; token refresh transparent; forced-logout on refresh-reuse; VN copy throughout.
 - **States:** unauthenticated / onboarding-incomplete / authenticated / token-expired / offline.
 - **Authorization:** all patient data keyed to `PatientProfile.id` resolved from `User.id` (honor the dual-namespace rule).
-- **Audit:** login/logout/refresh already audited server-side; add device-id to client calls.
+- **App installation identifier (finding 6):** a **random UUID** generated at first install, securely stored, **reset on reinstall/account unlink** — never a hardware ID, serial, IMEI, ad ID, or fingerprint. Used only for session/device management, push registration, and specifically justified audit events — **not** attached to every API call.
+- **Audit:** login/logout/refresh already audited server-side; installation-id included only on session/device and justified audit events.
 - **Mobile behavior:** keyboard-safe forms, pull-to-refresh, offline banner, retry.
 - **Web/Admin deps:** none new; reuses existing auth backend.
 - **Out-of-scope:** social login, web-app parity beyond patient surfaces.
@@ -61,10 +63,10 @@ Each capability uses a fixed template: **Personas · Problem · Journey · Funct
 - **Personas:** Patient.
 - **Problem:** No generic document capture exists; only lab image upload on web.
 - **Journey:** "Add Document" → choose: **Take prescription photo · Take lab-report photo · Take other medical-document photo · Choose images · Upload PDF** → capture/crop/rotate → auto-classify → route to the correct extractor → review.
-- **Functional requirements:** camera + photo library + PDF + HEIC-where-practical; multi-page; crop/rotate; image-quality feedback + retry; client uploads to **object storage** via signed URL; backend classifies document type; duplicate detection by hash.
-- **Acceptance:** a photographed document is stored durably, classified, and routed; low-quality images prompt re-capture.
-- **States:** uploaded → preprocessing → processing → needs_review → partially_confirmed → confirmed / rejected / failed / superseded (canonical set; see Master Plan §Doc-Intelligence).
-- **Authorization:** patient-owned artifact; access to bytes only via short-lived signed URL, authorization-checked.
+- **Functional requirements (finding 2 — secure ingestion):** camera + photo library + PDF + HEIC-where-practical; multi-page; crop/rotate; image-quality feedback + retry. Upload uses an **upload session** → a **short-lived, write-only** signed URL to a **server-generated quarantine key** (no read/list) → client uploads → **finalize** → server validates owner/hash/size/magic-byte-MIME/page-limits, runs **malware scan or defined quarantine posture**, and only then marks the object **accepted**; OCR workers process **accepted** objects only. Backend classifies document type; **duplicate detection is scoped within the owning patient by hash** (BOLA-safe). Full flow in Master Plan §1.7.
+- **Acceptance:** a photographed document is stored durably in an accepted (post-validation) object, classified, and routed; low-quality images prompt re-capture; a failed-scan object stays quarantined and is never processed.
+- **States:** uploaded → preprocessing → processing → needs_review → partially_confirmed → confirmed / rejected / failed / superseded (canonical set; `quarantined` is an object-storage state, not a document status). See Master Plan §1.5/§1.7.
+- **Authorization:** patient-owned artifact; **every** read of bytes is via a per-request, authorization-checked, short-lived signed URL.
 - **Audit:** upload, classification, retrieval, deletion all audited.
 - **Mobile behavior:** native camera; background upload with progress; offline queue.
 - **Out-of-scope (MVP):** handwriting auto-acceptance (best-effort + mandatory review only).
@@ -74,10 +76,10 @@ Each capability uses a fixed template: **Personas · Problem · Journey · Funct
 
 - **Personas:** Patient (primary); doctor (later verification).
 - **Problem:** Patients manually type medications; error-prone and abandoned.
-- **Journey:** photograph VN printed prescription → extraction → **review screen: one card per medicine** with original-image reference, field-level confidence, uncertain fields highlighted, quick correction → confirm all / confirm individually / reject per medicine → medications created/reconciled.
-- **Functional requirements:** extract where present — facility, prescriber, date, diagnosis, medicine name, active-ingredient candidate, strength, form, quantity, dose/administration, frequency, time, route, duration, instructions. **Never write to canonical medication list without confirmation.** On confirm: create/reconcile via existing `MedicationStatement`→canonical path, avoid duplicates, preserve provenance + original document; create schedule if enough info confirmed. Handwriting → best-effort, low-confidence, mandatory review, raw preserved.
-- **Acceptance:** printed VN prescription yields ≥ target field accuracy (see O); no medication persists pre-confirmation; provenance links original image.
-- **States:** inherits C; per-medicine: extracted / confirmed / rejected.
+- **Journey:** photograph VN printed prescription → extraction → **review screen: one card per medicine candidate** with original-image reference, field-level confidence, uncertain fields highlighted, quick correction → confirm all / confirm individually / reject per candidate → medications created/reconciled.
+- **Functional requirements (finding 1 — one document → many meds):** extract where present — facility, prescriber, date, diagnosis, medicine name, active-ingredient candidate, strength, form, quantity, dose/administration, frequency, time, route, duration, instructions. One prescription yields **many independent medication candidates**, each **confirmed/rejected/merged per-candidate**. **Never write to canonical medication list without confirmation.** On confirm: create/reconcile via existing `MedicationStatement`→canonical path (merge into an existing medication where it matches), **no duplicate promotion on re-upload** (candidate `dedupe_key` + one-promotion-per-candidate rule, Master Plan §1.5); preserve full **bidirectional provenance** back to the exact source candidate + image; create a schedule (§G) **only when frequency is safely structurable**. Handwriting → best-effort, low-confidence, mandatory review, raw preserved.
+- **Acceptance:** printed VN prescription yields ≥ target field accuracy (see O); no medication persists pre-confirmation; each candidate independently actionable; reprocessing never double-promotes; provenance links original image.
+- **States:** inherits C; per medication candidate: extracted / needs_review / confirmed / rejected / merged / superseded.
 - **Authorization:** patient-owned.
 - **Audit:** extraction, each confirm/reject (medication_write with source=ocr).
 - **Mobile behavior:** card carousel; tap-to-zoom original; inline edit.
@@ -89,8 +91,8 @@ Each capability uses a fixed template: **Personas · Problem · Journey · Funct
 - **Problem:** (Web has this; mobile does not.) Bring the proven lab pipeline to mobile.
 - **Journey:** photograph/upload VN lab report → draft with per-field confidence → review/correct → confirm → written to record + timeline + trend charts.
 - **Functional requirements:** reuse existing pipeline (`lab_interpreter`, `lab_provenance`, confirm→promote). Prioritize metabolic panels (glucose, fasting glucose, HbA1c, insulin, lipid panel, AST/ALT/GGT, bilirubin, creatinine/eGFR/urea/uric acid, TSH/FT4, CBC, urinalysis, BP, weight/BMI). Extract analyte, original label, result, unit, reference range, abnormal flag, specimen/report date, facility, method. Preserve original+normalized value/unit, source doc, bounding box, confidence, confirmation status. **Never silently normalize a unit when conversion confidence is insufficient.**
-- **Acceptance:** confirmed results appear on trend charts, comparable across dates; abnormal results surfaced with safe language; per-field accuracy meets O.
-- **States:** inherits D5 lab pipeline states + confirm gate.
+- **Acceptance:** one report yields **many independent lab-result candidates** (finding 1), each confirmed/rejected per-candidate; confirmed results appear on trend charts, comparable across dates; abnormal results surfaced with safe language; reprocessing never double-promotes; per-field accuracy meets O.
+- **States:** inherits D5 lab pipeline states + per-candidate confirm gate (extracted / needs_review / confirmed / rejected / merged / superseded).
 - **Authorization / Audit / Mobile / DoD:** as C/D; "lab photo → confirmed result → trend" e2e on device.
 
 ### F. General Medical Report OCR
@@ -98,17 +100,17 @@ Each capability uses a fixed template: **Personas · Problem · Journey · Funct
 - **Personas:** Patient; doctor (read).
 - **Problem:** Discharge/imaging/pathology/referral documents have no home.
 - **Journey:** photograph/upload → classify (exam/discharge/imaging/ultrasound/CT-MRI/pathology/referral/other) → structured summary + preserved original → added to timeline.
-- **Functional requirements:** extract where present — doc type, facility, clinician, date, symptoms, diagnoses, findings, conclusion, recommendations, follow-up date, medications, procedures. Produce a **structured summary**; **do not** auto-create a confirmed diagnosis.
-- **Acceptance:** report classified + summarized + original retrievable + timelined; diagnoses remain unconfirmed until explicitly promoted.
-- **DoD:** "medical report → timeline entry with summary + source" e2e on device.
+- **Functional requirements (finding 7 — candidate & review model):** extract where present — doc type, facility, clinician, date, symptoms, and typed **candidates**: `diagnosis`, `medication`, `procedure`, `finding`, `recommendation`, `follow_up`. Produce a **structured summary**. Rules: **confirmation is per-field/per-candidate**; patient corrections keep a **correction history**; raw extraction + original document are **immutable provenance**; **diagnosis never becomes canonical without explicit confirmation** (and doctor verification where policy requires); **medication candidates route through reconciliation** (never bypass confirm/verify); a **follow-up task/reminder is created only after confirmation** (never auto-scheduled from raw extraction). Detail in Master Plan §1.9.
+- **Acceptance:** report classified + summarized + original retrievable + timelined; every candidate independently confirmable; unconfirmed diagnoses are display-only and badged.
+- **DoD:** "medical report → candidates → confirmed timeline entry with summary + source" e2e on device.
 
 ### G. Medication Management & Adherence
 
 - **Personas:** Patient; doctor (verify).
 - **Problem:** Adherence loop is passive (no reminders); reconciliation has no UI.
 - **Journey:** active/past meds → detail (linked prescription, schedule, education, knowledge) → reminder fires → taken/skipped (+ skip reason) → adherence trend → side-effect check-in → refill/end.
-- **Functional requirements:** **new structured schedule + reminder engine** (dose times → notifications via F7); reuse CRUD/adherence/verification; **new reconciliation API** to list/accept/merge pending statements; K2 knowledge retrieval behind flag; medication education content. Unverified extracted data must not drive unsafe advice.
-- **Acceptance:** reminder fires at scheduled time; taken/skipped recorded; reconciliation drivable from app; doctor verification visible.
+- **Functional requirements (finding 3 — scheduling design):** **new structured schedule + reminder engine.** A schedule captures **patient timezone, schedule type (fixed_daily / interval / days_of_week / cyclic / PRN), local dose times, recurrence, start/end dates, status (active/paused/stopped/completed), source, verification status**; instants **stored in UTC, rendered in patient local time**; dose occurrences carry an **idempotency/dedupe key** so a **concurrency-safe scheduler retries without duplicate dose events**; schedule edits create a **new version (supersession)**; **paused/stopped** medications materialize no future doses; **PRN** medications fire no timed reminders (ad-hoc taken logging). **Only confirmed data may create a schedule**; when OCR frequency cannot be **safely** structured, **no schedule is created** and the patient sets dose times manually. Reuse CRUD/adherence/verification; **new reconciliation API** to list/accept/merge pending statements; K2 knowledge retrieval behind flag (enabled only after its content/authz gate); medication education content. Unverified extracted data must not drive unsafe advice. Full schema in Master Plan §1.8.
+- **Acceptance:** reminder fires at the scheduled local dose time (deterministic/in-app transport suffices); duplicate-safe on scheduler retry; taken/skipped recorded; reconciliation drivable from app; doctor verification visible; PRN meds never auto-remind.
 - **DoD:** "reminder → adherence logged" + "reconcile extracted med" e2e on device.
 
 ### H. Health Timeline
@@ -157,9 +159,9 @@ Each capability uses a fixed template: **Personas · Problem · Journey · Funct
 
 ### N. Notifications
 
-- **Functional requirements:** **real delivery infrastructure** — push (APNs/FCM) primary, email fallback; categories: medication reminder, new result ready, OCR needs review, appointment, security alert, doctor message. Per-category preferences (persisted server-side, fixing web localStorage gap). Deep-link into the relevant screen.
-- **Acceptance:** scheduled reminder delivered to device; tapping opens correct screen; preferences honored; no PHI in payload.
-- **DoD:** push received on device.
+- **Functional requirements (finding 11 — transports, no assumed fallback):** a `NotificationTransport` with **four capability-gated adapters** — (1) **deterministic test transport** (CI), (2) **in-app transport** (DB-backed, always available), (3) **push adapter** (APNs/FCM) active **only when device credentials are configured**, (4) **email adapter** active **only when an email provider is configured**. Email is **not** assumed to exist. Categories: medication reminder, new result ready, OCR needs review, appointment, security alert, doctor message. Per-category preferences persisted **server-side** (fixes web localStorage gap). Deep-link into the relevant screen; no PHI in payload.
+- **Acceptance:** scheduled reminder delivered via the best **available** transport (deterministic + in-app always suffice); when push/email credentials exist, delivered on that channel; tapping opens correct screen; preferences honored; no PHI in payload.
+- **DoD (ENG-RC):** reminder delivered via deterministic + in-app transport; push delivery is a Distribution-RC add-on.
 
 ### O. Security, Consent & Privacy
 
@@ -184,8 +186,30 @@ Each capability uses a fixed template: **Personas · Problem · Journey · Funct
 
 ---
 
-## Program-level Definition of Done (gate for final owner review)
+## Program-level Definition of Done (finding 5 — two tiers)
 
-Installable iOS + Android internal builds · working staging backend + mobile app · prescription OCR journey · lab-report OCR journey · general medical-document journey · medication confirmation + reminder · unified health timeline · trend charts · Meto AI on confirmed data · doctor marketplace flow · consented doctor access · test accounts · fixture documents · automated tests · migration evidence · security/PHI evidence · performance + accessibility checks · **no unresolved P0/P1** · known-limitations register · rollback/recovery instructions · final demo package.
+**Engineering Release Candidate (ENG-RC) — the gate for final owner assessment; achievable with NO external credential:**
+Android installable development/internal artifact + iOS simulator/EAS development artifact · working staging backend + patient mobile app · prescription OCR journey · lab-report OCR journey · general medical-document journey · medication confirmation + reminder (deterministic + in-app transport) · unified health timeline · trend charts · Meto AI on confirmed data · doctor marketplace flow (mock payment) · consented doctor access · test accounts · fixture documents · automated tests · migration evidence · security/PHI evidence · performance + accessibility checks · **no unresolved P0/P1** · known-limitations register · rollback/recovery instructions · final demo package.
 
-*Backend-only, document-only, or web-only is NOT complete.*
+**Distribution-Ready Release Candidate (DIST-RC) — superset, unlocked only if deferred credentials are provided:** Apple signing / TestFlight · Google Play internal track · APNs/FCM real-device push. Missing external credentials must **not** block ENG-RC or halt the program.
+
+*Every ENG-RC item is achievable without any external credential. Backend-only, document-only, or web-only is NOT complete.*
+
+---
+
+## Appendix Z — Correction Map (v1.1 findings → BRD sections)
+
+| Finding | Correction | BRD section(s) | Master-Plan detail |
+|---|---|---|---|
+| 1 — Promotion cardinality (one→many) | Per-candidate confirm/reject/merge; no duplicate promotion | **D, E** | §1.5 |
+| 2 — Secure object-storage ingestion | Upload-session→quarantine→finalize→accept; authorized reads | **C** | §1.7 |
+| 3 — Medication scheduling | Timezone/type/recurrence/occurrence/idempotency; confirmed-only | **G** | §1.8 |
+| 4 — Phone/OTP scope | Email/password + biometric; OTP deferred | **A** | §1.2 (ADR-02) |
+| 5 — RC split | ENG-RC vs DIST-RC | **Program DoD**, N | §5, §9 |
+| 6 — Device ID | App installation UUID | **A** | §1.2 (ADR-03) |
+| 7 — General-report candidates | Candidate + review model; diagnosis never auto-canonical | **F** | §1.9 |
+| 8 — Calendar → batches | (plan-side) ordered batches | — | §8, §9 |
+| 9 — Migration policy | (plan-side) migration-bearing PR policy | — | §3 |
+| 10 — K2 enable gate | Retrieval enabled only after content/authz/empty-state gate | **G, P** | §1.10, §9 (M-K) |
+| 11 — Notification transports | 4 capability-gated adapters; email not assumed | **N** | §1.1 |
+| 12 — Progressive flags | Enable after each exit criterion | **O, R** | §1.10 |
