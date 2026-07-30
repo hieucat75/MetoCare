@@ -1,0 +1,76 @@
+/**
+ * Vietnamese-first copy for the MetoCare patient mobile app (Journey 1).
+ *
+ * All user-facing strings live here so screens stay declarative and copy
+ * can be reviewed in one place. Vietnamese is the primary (and currently
+ * only) locale — ADR-02 keeps Journey 1 email/password only.
+ */
+
+export const vi = {
+  common: {
+    appName: 'MetoCare',
+    retry: 'Thử lại',
+    loading: 'Đang tải…',
+    cancel: 'Huỷ',
+    continue: 'Tiếp tục',
+    back: 'Quay lại',
+    ok: 'Đồng ý',
+    email: 'Email',
+    password: 'Mật khẩu',
+    fullName: 'Họ và tên',
+  },
+  offline: {
+    banner: 'Bạn đang ngoại tuyến. Một số tính năng có thể không hoạt động.',
+    title: 'Mất kết nối mạng',
+    message: 'Vui lòng kiểm tra kết nối và thử lại.',
+  },
+  errors: {
+    generic: 'Đã có lỗi xảy ra. Vui lòng thử lại.',
+    network: 'Không thể kết nối máy chủ. Vui lòng kiểm tra mạng và thử lại.',
+    invalidCredentials: 'Email hoặc mật khẩu không đúng.',
+    emailRequired: 'Vui lòng nhập email.',
+    emailInvalid: 'Email không hợp lệ.',
+    passwordRequired: 'Vui lòng nhập mật khẩu.',
+    passwordTooShort: 'Mật khẩu phải có ít nhất 6 ký tự.',
+    sessionExpired: 'Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.',
+  },
+  auth: {
+    loginTitle: 'Chào mừng trở lại',
+    loginSubtitle: 'Đăng nhập để tiếp tục theo dõi sức khoẻ chuyển hoá của bạn.',
+    loginCta: 'Đăng nhập',
+    noAccount: 'Chưa có tài khoản?',
+    goRegister: 'Đăng ký ngay',
+    registerTitle: 'Tạo tài khoản MetoCare',
+    registerSubtitle: 'Bắt đầu hành trình chăm sóc sức khoẻ chuyển hoá của bạn.',
+    registerCta: 'Tạo tài khoản',
+    haveAccount: 'Đã có tài khoản?',
+    goLogin: 'Đăng nhập',
+    logout: 'Đăng xuất',
+    biometricPrompt: 'Xác thực để mở khoá MetoCare',
+    biometricUnlock: 'Mở khoá bằng sinh trắc học',
+    usePassword: 'Dùng mật khẩu',
+  },
+  onboarding: {
+    step1Title: 'Theo dõi chỉ số chuyển hoá',
+    step1Body: 'Xem đường huyết, huyết áp, mỡ máu và cân nặng ở cùng một nơi.',
+    step2Title: 'Kết quả xét nghiệm rõ ràng',
+    step2Body: 'Tự động số hoá phiếu xét nghiệm và giải thích ý nghĩa từng chỉ số.',
+    step3Title: 'Đồng hành cùng bác sĩ',
+    step3Body: 'Nhận hướng dẫn cá nhân hoá và nhắc lịch dùng thuốc mỗi ngày.',
+    getStarted: 'Bắt đầu',
+    skip: 'Bỏ qua',
+    next: 'Tiếp theo',
+  },
+  dashboard: {
+    greeting: 'Xin chào',
+    greetingFallback: 'bạn',
+    subtitle: 'Tổng quan sức khoẻ chuyển hoá hôm nay của bạn.',
+    emptyTitle: 'Chưa có dữ liệu',
+    emptyBody: 'Hãy cập nhật chỉ số hoặc tải kết quả xét nghiệm để bắt đầu.',
+    sectionMetrics: 'Chỉ số gần đây',
+    sectionActions: 'Việc cần làm',
+    reload: 'Tải lại',
+  },
+} as const
+
+export type ViCopy = typeof vi

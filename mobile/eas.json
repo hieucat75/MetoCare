@@ -1,0 +1,37 @@
+{
+  "cli": {
+    "version": ">= 20.0.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "channel": "development",
+      "env": {
+        "APP_ENV": "development"
+      }
+    },
+    "android-apk": {
+      "distribution": "internal",
+      "channel": "staging",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "APP_ENV": "staging"
+      }
+    },
+    "ios-simulator": {
+      "distribution": "internal",
+      "channel": "staging",
+      "ios": {
+        "simulator": true
+      },
+      "env": {
+        "APP_ENV": "staging"
+      }
+    }
+  },
+  "submit": {}
+}

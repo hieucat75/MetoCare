@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native
+*.orig.*
+/ios
+/android
+
+# Metro
+.metro-health-check*
+
+# Env — never commit real secrets; profiles are documented in app.config.ts
+.env*.local
+.env
+
+# Testing
+coverage/
+
+# macOS
+.DS_Store
+
+# Debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
