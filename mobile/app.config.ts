@@ -14,13 +14,28 @@ type AppEnv = 'development' | 'staging'
 
 const APP_ENV = (process.env.APP_ENV as AppEnv) ?? 'development'
 
+// The real staging backend FQDN is an Azure/CI deploy value and is NOT committed
+// to this repo (verified: no azurecontainerapps.io host exists in the tree).
+// Staging builds MUST inject EXPO_PUBLIC_API_URL. This placeholder uses the
+// reserved `.invalid` TLD so a mis-configured staging build fails loudly instead
+// of silently pointing at a plausible-but-wrong host. (Review P1 fix.)
+const STAGING_API_PLACEHOLDER = 'https://staging.metocare.invalid/api/v1'
+
 const API_URL_BY_ENV: Record<AppEnv, string> = {
   development: 'http://localhost:8000/api/v1',
-  staging: 'https://metocare-staging.azurecontainerapps.io/api/v1',
+  staging: STAGING_API_PLACEHOLDER,
 }
 
 // EXPO_PUBLIC_API_URL (if provided) always wins so CI/EAS can override.
 const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? API_URL_BY_ENV[APP_ENV]
+
+if (APP_ENV === 'staging' && !process.env.EXPO_PUBLIC_API_URL) {
+  // eslint-disable-next-line no-console
+  console.warn(
+    '[config] APP_ENV=staging without EXPO_PUBLIC_API_URL — using a non-resolving ' +
+      'placeholder host. Inject the real staging FQDN via EXPO_PUBLIC_API_URL.'
+  )
+}
 
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,

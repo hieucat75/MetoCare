@@ -60,7 +60,11 @@ export interface ApiClientConfig {
   baseUrl?: string
   tokens?: TokenStore
   fetchImpl?: FetchLike
-  /** Invoked exactly once when refresh fails / reuse is detected. */
+  /**
+   * Invoked when refresh fails / reuse is detected. May fire more than once if
+   * several requests are in flight at the moment of failure, so the handler
+   * must be idempotent (the AuthContext handler only sets state — safe).
+   */
   onForcedLogout?: () => void
 }
 
