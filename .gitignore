@@ -28,6 +28,12 @@ build/
 data/
 uploads/
 storage/
+# Exception: the mobile app's SOURCE storage layer (secure-store adapters + the
+# onboarding/install-id modules) is application code, NOT runtime data. The
+# unanchored `storage/` rule above otherwise swallows it and breaks EAS builds,
+# which check out only the git tree.
+!mobile/src/storage/
+!mobile/src/storage/**
 # Exception: the curated RAG seed corpus (approved guideline content, NOT PHI)
 # must be version-controlled so fresh checkouts / CI can load it.
 !backend/data/
