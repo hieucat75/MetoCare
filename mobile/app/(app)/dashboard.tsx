@@ -80,6 +80,22 @@ export default function DashboardScreen() {
         />
 
         <PrimaryButton
+          label={vi.dashboard.findDoctor}
+          onPress={() => router.push('/marketplace')}
+          variant="ghost"
+          style={styles.link}
+          testID="dashboard-find-doctor"
+        />
+
+        <PrimaryButton
+          label={vi.dashboard.myConsultations}
+          onPress={() => router.push('/consultations')}
+          variant="ghost"
+          style={styles.link}
+          testID="dashboard-my-consultations"
+        />
+
+        <PrimaryButton
           label={vi.auth.logout}
           onPress={() => void logout()}
           variant="ghost"
@@ -102,5 +118,6 @@ const styles = StyleSheet.create({
   emptyBody: { ...typography.body, color: colors.inkMuted },
   reload: { marginTop: spacing.lg },
   addDoc: { marginTop: spacing.md },
+  link: { marginTop: spacing.md },
   logout: { marginTop: spacing.md },
 })
