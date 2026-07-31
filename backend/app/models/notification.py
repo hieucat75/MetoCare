@@ -33,6 +33,12 @@ NOTIFICATION_TYPES = frozenset(
         "care_plan_update",
         "system",
         "profile_update_requested",
+        # Journey 3 categories (§N)
+        "medication_reminder",
+        "result_ready",
+        "ocr_review",
+        "doctor_message",
+        "security_alert",
     }
 )
 
