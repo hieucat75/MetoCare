@@ -4,7 +4,28 @@ from __future__ import annotations
 
 import datetime as dt
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+# Bounds for patient correction payloads (§O input validation): a flat map of
+# scalar field corrections, not arbitrary/deeply-nested/huge JSON.
+_MAX_CORRECTION_KEYS = 20
+_MAX_CORRECTION_KEY_LEN = 64
+_MAX_CORRECTION_VALUE_LEN = 500
+
+
+def _validate_corrections(v: dict | None) -> dict | None:
+    if v is None:
+        return v
+    if len(v) > _MAX_CORRECTION_KEYS:
+        raise ValueError(f"Tối đa {_MAX_CORRECTION_KEYS} trường chỉnh sửa.")
+    for key, val in v.items():
+        if not isinstance(key, str) or len(key) > _MAX_CORRECTION_KEY_LEN:
+            raise ValueError("Tên trường chỉnh sửa không hợp lệ.")
+        if isinstance(val, (dict, list)):
+            raise ValueError("Giá trị chỉnh sửa phải là văn bản/số, không lồng nhau.")
+        if isinstance(val, str) and len(val) > _MAX_CORRECTION_VALUE_LEN:
+            raise ValueError("Giá trị chỉnh sửa quá dài.")
+    return v
 
 
 # ── ingestion ────────────────────────────────────────────────────────────────
@@ -90,10 +111,16 @@ class ConfirmIn(BaseModel):
         default=None, description="Per-field patient corrections (appended to history)"
     )
 
+    _check_corrections = field_validator("corrections")(_validate_corrections)
+
 
 class MergeIn(BaseModel):
-    merge_target_id: str = Field(..., description="Existing canonical record to merge into")
+    merge_target_id: str = Field(
+        ..., min_length=1, max_length=64, description="Existing canonical record to merge into"
+    )
     corrections: dict | None = None
+
+    _check_corrections = field_validator("corrections")(_validate_corrections)
 
 
 class PromotionOut(BaseModel):

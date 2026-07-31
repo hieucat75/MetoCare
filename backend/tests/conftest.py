@@ -141,6 +141,20 @@ def _reset_llm():
     yield
 
 
+@pytest.fixture(autouse=True)
+def _mdi_registry_defaults():
+    """Guarantee the concrete MDI extractors/promoters are registered before every
+    test. Individual MDI tests reset the global registries in their own teardown;
+    without this, a wiped registry would leak into any later test that exercises a
+    real prescription confirm — an order-dependent flake. Restores defaults after
+    each test too, so state is deterministic regardless of collection order."""
+    from app.services.mdi.bootstrap import register_defaults
+
+    register_defaults()
+    yield
+    register_defaults()
+
+
 @pytest.fixture
 def db():
     session = SessionLocal()

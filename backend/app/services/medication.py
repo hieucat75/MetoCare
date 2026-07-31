@@ -220,12 +220,18 @@ def add_medication(
     data: dict,
     actor_user_id: str | None = None,
     actor_role: str | None = None,
+    source_type: str = "patient_manual",
     commit: bool = True,
 ) -> Medication:
     """Persist a new Medication record for *patient_id* (statement-first).
 
     ``data`` must contain at least ``name``.  Optional keys:
     ``dose``, ``frequency`` and ``note``.
+
+    ``source_type`` provenance stamps both the statement and the canonical row
+    (must be a value allowed by the ``chk_source_type`` CHECK on ``medications``,
+    e.g. ``patient_manual`` (default) or ``ocr_confirmed`` for a confirmed
+    prescription-OCR promotion). Used by the MDI medication promoter (§1.5).
 
     Flow (Implementation Plan §5.2, single transaction):
       statement(pending) → canonical row → statement accepted+merged → audit.
@@ -234,7 +240,7 @@ def add_medication(
     """
     statement = MedicationStatement(
         patient_id=patient_id,
-        source_type="patient_manual",
+        source_type=source_type,
         assertion_type="new_entry",
         raw_drug_name=data["name"],
         raw_dose=data.get("dose"),
@@ -253,6 +259,7 @@ def add_medication(
         dose=data.get("dose"),
         frequency=data.get("frequency"),
         note=data.get("note"),
+        source_type=source_type,
     )
     db.add(record)
     db.flush()

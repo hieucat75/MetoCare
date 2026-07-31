@@ -9,6 +9,7 @@ exercisable end-to-end in CI without cloud OCR.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from hashlib import sha256
 from typing import Protocol
@@ -45,9 +46,13 @@ def make_dedupe_key(candidate_type: str, *parts: str) -> str:
     """Stable dedupe key: sha256 of the candidate type + normalized parts.
 
     Re-extraction of the same document yields the same key for the same logical
-    item, so ``uq_extraction_dedupe_key`` collapses duplicates (§1.5).
+    item, so ``uq_extraction_dedupe_key`` collapses duplicates (§1.5). Internal
+    whitespace is collapsed so OCR whitespace jitter across runs (a real
+    Tesseract nondeterminism source) does not change the key.
     """
-    norm = "|".join(p.strip().lower() for p in parts if p and p.strip())
+    norm = "|".join(
+        re.sub(r"\s+", " ", p).strip().lower() for p in parts if p and p.strip()
+    )
     digest = sha256(f"{candidate_type}::{norm}".encode()).hexdigest()
     return digest[:32]
 

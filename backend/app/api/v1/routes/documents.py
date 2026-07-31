@@ -41,6 +41,7 @@ from app.schemas.medical_document import (
 )
 from app.services.mdi import promoter as promoter_registry
 from app.services.mdi import service as mdi
+from app.services.mdi.bootstrap import register_defaults
 from app.services.storage import (
     BLOB_OP_GET,
     BLOB_OP_PUT,
@@ -57,6 +58,10 @@ from app.services.storage import (
 logger = logging.getLogger("mcp.documents")
 
 router = APIRouter(tags=["documents"])
+
+# Register the concrete prescription extractor + medication promoter at import
+# (app-construction time). Tests may override via the registries' register_* seams.
+register_defaults()
 
 _MIME_BY_EXT = {"jpg": "image/jpeg", "png": "image/png", "pdf": "application/pdf"}
 
@@ -368,6 +373,12 @@ def confirm_candidate(
     except promoter_registry.PromotionUnavailable as exc:
         db.rollback()
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except promoter_registry.PromotionDenied as exc:
+        db.rollback()
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except promoter_registry.PromotionInvalid as exc:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except IntegrityError as exc:
         db.rollback()
         raise HTTPException(status_code=409, detail="Mục này đã được xác nhận trước đó.") from exc
@@ -401,6 +412,12 @@ def merge_candidate(
     except promoter_registry.PromotionUnavailable as exc:
         db.rollback()
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except promoter_registry.PromotionDenied as exc:
+        db.rollback()
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except promoter_registry.PromotionInvalid as exc:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except IntegrityError as exc:
         db.rollback()
         raise HTTPException(status_code=409, detail="Mục này đã được xác nhận trước đó.") from exc

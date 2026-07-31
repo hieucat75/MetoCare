@@ -30,6 +30,16 @@ class PromotionUnavailable(Exception):
     """Raised when no promoter is registered for a candidate type yet."""
 
 
+class PromotionDenied(Exception):
+    """Raised when a promotion is refused for AUTHORIZATION/state reasons — e.g. a
+    merge_target the caller does not own or that is terminal (→ 403)."""
+
+
+class PromotionInvalid(Exception):
+    """Raised when the candidate data itself is invalid for promotion — e.g. a
+    correction left the medicine name empty (→ 422, a validation error)."""
+
+
 @dataclass(frozen=True)
 class PromotionOutcome:
     canonical_type: str
