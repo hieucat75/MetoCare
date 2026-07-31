@@ -24,6 +24,7 @@ from .routes import (
     clinics,
     consent,
     consultations,
+    dashboard,
     doctor,
     doctor_portal,
     doctor_review,
@@ -70,6 +71,8 @@ api_router.include_router(patients.router)
 # Medical Document Intelligence (Journey 2) — secure upload → OCR → per-candidate
 # confirm → promote. Gated by FeatureFlag.OCR (fail-closed default).
 api_router.include_router(documents.router)
+# Journey 3 — action-first patient dashboard (BRD §I).
+api_router.include_router(dashboard.router)
 api_router.include_router(health_timeline.router, prefix="/patients")
 api_router.include_router(booking.router)
 api_router.include_router(notifications.router)

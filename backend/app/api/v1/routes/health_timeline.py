@@ -28,6 +28,13 @@ from app.api.deps import CurrentUser, current_user, get_session
 from app.api.v1.routes.patients import _check_read_access
 from app.domain.health_timeline import HealthTimelineEngine
 from app.models.clinical import HealthMetric, LabResult, LabUploadBatch, Medication, SymptomLog
+from app.models.medical_document import (
+    CAND_STATUS_CONFIRMED,
+    CAND_STATUS_MERGED,
+    ExtractionCandidate,
+    MedicalDocument,
+)
+from app.models.medication_schedule import DoseOccurrence
 
 router = APIRouter(tags=["health_timeline"])
 
@@ -155,6 +162,25 @@ def get_health_timeline(
         symptom_q = symptom_q.filter(SymptomLog.reported_at <= dt.datetime.combine(to_date, dt.time.max))
     symptom_logs = symptom_q.all()
 
+    # Medication dose occurrences (Journey 3) — acted/missed doses are history.
+    dose_q = db.query(DoseOccurrence).filter(DoseOccurrence.patient_id == patient_id)
+    dose_occurrences = dose_q.all()
+
+    # Medical documents + confirmed MDI candidates (Journey 2).
+    documents = (
+        db.query(MedicalDocument)
+        .filter(MedicalDocument.patient_id == patient_id, MedicalDocument.deleted_at.is_(None))
+        .all()
+    )
+    confirmed_candidates = (
+        db.query(ExtractionCandidate)
+        .filter(
+            ExtractionCandidate.patient_id == patient_id,
+            ExtractionCandidate.status.in_((CAND_STATUS_CONFIRMED, CAND_STATUS_MERGED)),
+        )
+        .all()
+    )
+
     # ── Missing sources detection ─────────────────────────────────────────────
     missing_sources: list[str] = []
     if not lab_batches:
@@ -174,6 +200,9 @@ def get_health_timeline(
         health_metrics=health_metrics,
         medications=medications,
         symptom_logs=symptom_logs,
+        dose_occurrences=dose_occurrences,
+        documents=documents,
+        confirmed_candidates=confirmed_candidates,
         from_date=from_date,
         to_date=to_date,
         event_type_filter=event_type,
