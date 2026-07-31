@@ -83,8 +83,22 @@ class Settings(BaseSettings):
     ocr_mode: str = "mock"  # mock | provider
     ocr_provider_url: str = ""
     ocr_api_key: str = ""
-    storage_mode: str = "local"  # local | s3 | minio
+    storage_mode: str = "local"  # local | azure (azure = DIST-RC, deferred)
     storage_local_dir: str = "./storage"
+    # Signed-URL time-to-live (seconds). PUT is short (client uploads immediately);
+    # GET a little longer for the mobile viewer to load an image.
+    storage_upload_url_ttl_seconds: int = 600
+    storage_download_url_ttl_seconds: int = 900
+    # Azure Blob adapter (DIST-RC) — inert until a credential is provided (§1.7/§12).
+    storage_azure_connection_string: str = ""  # MCP_STORAGE_AZURE_CONNECTION_STRING
+    storage_azure_container: str = "documents"
+    # Medical Document Intelligence upload limits (§1.7 finalize validation).
+    document_max_pages: int = 20  # PDF page cap for general medical documents
+    # Malware-scan posture at finalize (§1.7.3). An EXPLICIT decision — never a
+    # silent accept. "skip" = no AV configured, accept + record scan_status=skipped
+    # (ENG-RC default; loud + audited). "hold" = quarantine posture: object stays
+    # quarantined, flagged, never handed to a worker. "clamav" = real scan (DIST-RC).
+    document_scan_mode: str = "skip"  # skip | hold | clamav
 
     # ---- LLM Gateway (P2 #1) — provider abstraction, never calls real LLM in mock ----
     llm_provider: str = "mock"  # mock | openai | anthropic (openai/anthropic = skeleton)

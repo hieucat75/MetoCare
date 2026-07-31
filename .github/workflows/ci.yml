@@ -72,6 +72,24 @@ jobs:
       - name: Ruff lint
         run: ruff check .
 
+      # ── Alembic single-head gate (M0, program §3/§7) ────────────────────────
+      # Divergent migration heads are the top program risk once parallel
+      # workstreams add migrations. Fail the build unless exactly one head exists.
+      - name: Alembic single-head gate
+        run: |
+          HEADS=$(alembic heads 2>/dev/null | grep -c '(head)' || true)
+          echo "Alembic heads detected: $HEADS"
+          if [ "$HEADS" -ne 1 ]; then
+            echo "::error::Expected exactly 1 Alembic head, found $HEADS. Merge divergent migration heads before landing."
+            alembic heads || true
+            exit 1
+          fi
+        env:
+          MCP_DATABASE_URL: ""
+          ANTHROPIC_API_KEY: test-key-mock
+          ENVIRONMENT: test
+          MCP_ENV: test
+
       - name: Run backend tests
         run: python -m pytest tests/ -v --tb=short --junit-xml=test-results.xml -m "not integration"
         env:
@@ -150,6 +168,7 @@ jobs:
           python -m pytest tests/integration/test_medication_p0_migrations.py \
             tests/integration/test_medication_k1_knowledge_migration.py \
             tests/integration/test_medication_k1_s2_catalog_migration.py \
+            tests/integration/test_mdi_migration.py \
             -v --tb=short -m integration \
             --junit-xml=test-results-postgres.xml
         env:

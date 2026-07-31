@@ -27,6 +27,7 @@ from .routes import (
     doctor,
     doctor_portal,
     doctor_review,
+    documents,
     encounters,
     health,
     health_timeline,
@@ -65,6 +66,9 @@ api_router.include_router(doctor_review.router, prefix="/doctor", tags=["doctor_
 api_router.include_router(doctor_portal.router)
 api_router.include_router(clinical_copilot.router)
 api_router.include_router(patients.router)
+# Medical Document Intelligence (Journey 2) — secure upload → OCR → per-candidate
+# confirm → promote. Gated by FeatureFlag.OCR (fail-closed default).
+api_router.include_router(documents.router)
 api_router.include_router(health_timeline.router, prefix="/patients")
 api_router.include_router(booking.router)
 api_router.include_router(notifications.router)

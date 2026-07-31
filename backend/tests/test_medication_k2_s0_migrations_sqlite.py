@@ -490,7 +490,7 @@ class TestKnowledgeOriginMigrationSQLite:
             assert _column_info(engine, table, "origin") is None, table
 
         # No partial/corrupted state: a normal re-upgrade to head still works.
-        command.upgrade(cfg, "head")
+        command.upgrade(cfg, HEAD_REV)
         assert _current_revision(engine) == HEAD_REV
 
 
@@ -762,7 +762,7 @@ class TestSqliteMultiStepDowngradeRefusalLandingBehavior:
         revision immediately above the one whose downgrade refused), not
         at head."""
         engine, cfg = sqlite_db
-        command.upgrade(cfg, "head")
+        command.upgrade(cfg, HEAD_REV)
         assert _current_revision(engine) == HEAD_REV
 
         with engine.connect() as conn:
@@ -809,7 +809,7 @@ class TestSqliteMultiStepDowngradeRefusalLandingBehavior:
         assert _current_revision(engine) == ORIGIN_REV
         assert _table_exists(engine, "knowledge_lifecycle_transitions") is False
 
-        command.upgrade(cfg, "head")
+        command.upgrade(cfg, HEAD_REV)
         assert _current_revision(engine) == HEAD_REV
 
 
@@ -893,7 +893,7 @@ class TestGenerationOrderingOnSQLite:
 
     def test_identical_created_at_values_get_deterministic_sequence_numbers(self, sqlite_db) -> None:
         engine, cfg = sqlite_db
-        command.upgrade(cfg, "head")
+        command.upgrade(cfg, HEAD_REV)
         Session = self._session_factory(engine)
         db = Session()
         try:
@@ -922,7 +922,7 @@ class TestGenerationOrderingOnSQLite:
 
     def test_succeeded_then_failed_same_timestamp_blocks_promotion_of_older_succeeded(self, sqlite_db) -> None:
         engine, cfg = sqlite_db
-        command.upgrade(cfg, "head")
+        command.upgrade(cfg, HEAD_REV)
         Session = self._session_factory(engine)
         db = Session()
         try:
@@ -952,7 +952,7 @@ class TestGenerationOrderingOnSQLite:
 
     def test_deterministic_selection_survives_reload(self, sqlite_db) -> None:
         engine, cfg = sqlite_db
-        command.upgrade(cfg, "head")
+        command.upgrade(cfg, HEAD_REV)
         Session = self._session_factory(engine)
         db = Session()
         try:
@@ -994,7 +994,7 @@ class TestGenerationOrderingOnSQLite:
         stronger than silently overriding, and just as acceptable a way to
         guarantee the client-supplied value never survives."""
         engine, cfg = sqlite_db
-        command.upgrade(cfg, "head")
+        command.upgrade(cfg, HEAD_REV)
         Session = self._session_factory(engine)
         db = Session()
         try:
@@ -1044,7 +1044,7 @@ class TestHashFormatValidationOnSQLite:
 
     def test_valid_lowercase_digest_succeeds_via_raw_sql(self, sqlite_db) -> None:
         engine, cfg = sqlite_db
-        command.upgrade(cfg, "head")
+        command.upgrade(cfg, HEAD_REV)
         with engine.connect() as conn:
             row_id = _insert_ai_generation(conn, input_hash=self._VALID)
             stored = conn.execute(
@@ -1058,7 +1058,7 @@ class TestHashFormatValidationOnSQLite:
         from sqlalchemy.orm import sessionmaker
 
         engine, cfg = sqlite_db
-        command.upgrade(cfg, "head")
+        command.upgrade(cfg, HEAD_REV)
         Session = sessionmaker(bind=engine, expire_on_commit=False)
         db = Session()
         try:
@@ -1090,7 +1090,7 @@ class TestHashFormatValidationOnSQLite:
         from sqlalchemy.orm import sessionmaker
 
         engine, cfg = sqlite_db
-        command.upgrade(cfg, "head")
+        command.upgrade(cfg, HEAD_REV)
         Session = sessionmaker(bind=engine, expire_on_commit=False)
         db = Session()
         try:
@@ -1116,7 +1116,7 @@ class TestHashFormatValidationOnSQLite:
     @pytest.mark.parametrize("case_name,value", _INVALID_HASH_CASES)
     def test_db_check_rejects_invalid_hash_via_raw_sql(self, sqlite_db, case_name, value) -> None:
         engine, cfg = sqlite_db
-        command.upgrade(cfg, "head")
+        command.upgrade(cfg, HEAD_REV)
         with engine.connect() as conn:
             with pytest.raises(sa.exc.IntegrityError):
                 _insert_ai_generation(conn, input_hash=value)
@@ -1128,7 +1128,7 @@ class TestHashFormatValidationOnSQLite:
         from app.models.drug_knowledge_ai_generation import KnowledgeAIGeneration
 
         engine, cfg = sqlite_db
-        command.upgrade(cfg, "head")
+        command.upgrade(cfg, HEAD_REV)
         with pytest.raises(ValueError, match="not a valid SHA-256 hex digest"):
             KnowledgeAIGeneration(
                 knowledge_table="drug_side_effects",
@@ -1148,7 +1148,7 @@ class TestHashFormatValidationOnSQLite:
         proving the CHECK failure is a clean rollback, not a corrupted
         session."""
         engine, cfg = sqlite_db
-        command.upgrade(cfg, "head")
+        command.upgrade(cfg, HEAD_REV)
         with engine.connect() as conn:
             before = conn.execute(sa.text("SELECT COUNT(*) FROM knowledge_ai_generations")).scalar()
             with pytest.raises(sa.exc.IntegrityError):
@@ -1175,7 +1175,7 @@ class TestHashFormatValidationOnSQLite:
         touches the row, exactly like the sibling `sequence_number`-emptiness
         guard already proven in TestAIGenerationHistoryMigrationSQLite."""
         engine, cfg = sqlite_db
-        command.upgrade(cfg, "head")
+        command.upgrade(cfg, HEAD_REV)
         with engine.connect() as conn:
             row_id = _insert_ai_generation(conn, input_hash=self._VALID)
 
@@ -1202,10 +1202,10 @@ class TestHashFormatValidationOnSQLite:
         populated in the first place, matching TestAIGenerationHistoryMigrationSQLite.
         test_downgrade_succeeds_when_empty's own convention."""
         engine, cfg = sqlite_db
-        command.upgrade(cfg, "head")
+        command.upgrade(cfg, HEAD_REV)
 
         command.downgrade(cfg, INTEGRITY_GUARDS_REV)
-        command.upgrade(cfg, "head")
+        command.upgrade(cfg, HEAD_REV)
 
         with engine.connect() as conn:
             # A valid hash still succeeds after the round-trip...
@@ -1244,7 +1244,7 @@ class TestPromotedToSupersededBlockedOnSQLite:
         from sqlalchemy.orm import sessionmaker
 
         engine, cfg = sqlite_db
-        command.upgrade(cfg, "head")
+        command.upgrade(cfg, HEAD_REV)
         Session = sessionmaker(bind=engine, expire_on_commit=False)
         db = Session()
         try:

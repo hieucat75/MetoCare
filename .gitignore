@@ -34,6 +34,14 @@ storage/
 # which check out only the git tree.
 !mobile/src/storage/
 !mobile/src/storage/**
+# Exception: the backend Object Storage ABSTRACTION package (StorageBackend +
+# adapters + signed-URL signing) is application code, NOT the runtime blob dir.
+# The runtime local blob dir is backend/storage/ (settings.storage_local_dir),
+# which stays ignored; only the source package under app/services/ is tracked.
+!backend/app/services/storage/
+!backend/app/services/storage/**
+# …but never the bytecode cache the broad ** negation would otherwise re-include.
+backend/app/services/storage/**/__pycache__/
 # Exception: the curated RAG seed corpus (approved guideline content, NOT PHI)
 # must be version-controlled so fresh checkouts / CI can load it.
 !backend/data/
