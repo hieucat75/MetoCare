@@ -199,7 +199,9 @@ def test_reprocess_carries_forward_no_double_promotion(client, patient, mdi_env)
 
 
 def test_confirm_without_registered_promoter_409(client, patient, mdi_env):
-    # 'general' doc → 'finding' candidate_type has no registered promoter.
+    # With no promoter registered for the candidate's type, confirm → 409
+    # (PromotionUnavailable). All real types now have promoters, so clear the
+    # registry to exercise the unavailable path deterministically.
     doc_id, fin = _upload_and_finalize(
         client, patient["headers"], data=_JPEG, doc_type_hint="general"
     )
@@ -209,6 +211,7 @@ def test_confirm_without_registered_promoter_409(client, patient, mdi_env):
     ).json()["items"]
     if not cands:
         pytest.skip("mock extractor produced no candidates for this fixture")
+    promoter.reset_promoters()  # no promoter registered for any type now
     r = client.post(
         f"/api/v1/candidates/{cands[0]['id']}/confirm", headers=patient["headers"], json={}
     )

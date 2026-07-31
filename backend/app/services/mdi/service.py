@@ -419,7 +419,13 @@ def merge_candidate(
         db, candidate, actor_user_id=actor_user_id, merge_target_id=merge_target_id
     )
     link = _record_promotion(db, candidate, outcome, actor_user_id)
-    candidate.status = CAND_STATUS_MERGED
+    # Reflect what the promoter actually did — a promoter may create rather than
+    # merge; hardcoding "merged" would be internally inconsistent (review P1).
+    candidate.status = (
+        CAND_STATUS_MERGED
+        if outcome.action == promoter_registry.ACTION_MERGED_INTO
+        else CAND_STATUS_CONFIRMED
+    )
     candidate.reviewed_by = actor_user_id
     _stamp_reviewed(candidate)
     _post_review(db, candidate, actor_user_id, action="document.candidate_merge")

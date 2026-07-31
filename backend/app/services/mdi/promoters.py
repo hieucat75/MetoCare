@@ -102,6 +102,34 @@ class MedicationPromoter:
         return PromotionOutcome("medication", target.id, ACTION_MERGED_INTO)
 
 
+class RecordOnlyPromoter:
+    """Promoter for general-report candidate types with NO separate canonical table
+    (diagnosis / procedure / finding / recommendation / follow_up — §1.9).
+
+    Confirming marks the candidate confirmed and records a PromotionLink back to the
+    candidate itself as the confirmed record; the unified timeline (Journey 3) reads
+    confirmed candidates directly. A diagnosis thus becomes a confirmed record ONLY
+    on explicit patient confirmation — never automatically (§1.9). A follow_up's
+    actual reminder is scheduled by the Journey-3 reminder engine; confirmation here
+    records the intent without auto-scheduling.
+    """
+
+    def promote(
+        self,
+        db: Session,
+        candidate: ExtractionCandidate,
+        *,
+        actor_user_id: str,
+        merge_target_id: str | None = None,
+    ) -> PromotionOutcome:
+        if merge_target_id:
+            # These types have no separate canonical record to merge into.
+            raise PromotionDenied("Loại mục này không hỗ trợ gộp.")
+        if not (candidate.fields_json or {}).get("text", "").strip():
+            raise PromotionInvalid("Nội dung mục trống — không thể xác nhận.")
+        return PromotionOutcome(candidate.candidate_type, candidate.id, ACTION_CREATED)
+
+
 def _parse_date(raw: str | None) -> dt.date | None:
     """Parse a VN dd/mm/yyyy (or dd-mm-yyyy) report date.
 
