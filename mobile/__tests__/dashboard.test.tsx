@@ -18,6 +18,10 @@ jest.mock('../src/auth/AuthContext', () => {
   }
 })
 
+jest.mock('expo-router', () => {
+  return { router: { push: jest.fn(), replace: jest.fn(), back: jest.fn() } }
+})
+
 import DashboardScreen from '../app/(app)/dashboard'
 import { vi } from '../src/i18n/vi'
 

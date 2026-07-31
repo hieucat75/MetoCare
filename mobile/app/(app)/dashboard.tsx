@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { Text, StyleSheet, ScrollView } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
+import { router } from 'expo-router'
 import { useAuth } from '../../src/auth/AuthContext'
 import { vi } from '../../src/i18n/vi'
 import { colors, spacing, typography } from '../../src/theme/tokens'
@@ -72,6 +73,13 @@ export default function DashboardScreen() {
         </GlassCard>
 
         <PrimaryButton
+          label={vi.dashboard.addDocument}
+          onPress={() => router.push('/add-document')}
+          style={styles.addDoc}
+          testID="dashboard-add-document"
+        />
+
+        <PrimaryButton
           label={vi.auth.logout}
           onPress={() => void logout()}
           variant="ghost"
@@ -93,5 +101,6 @@ const styles = StyleSheet.create({
   emptyTitle: { ...typography.heading, color: colors.ink, marginBottom: spacing.xs },
   emptyBody: { ...typography.body, color: colors.inkMuted },
   reload: { marginTop: spacing.lg },
+  addDoc: { marginTop: spacing.md },
   logout: { marginTop: spacing.md },
 })
