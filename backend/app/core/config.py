@@ -164,6 +164,17 @@ class Settings(BaseSettings):
     # stay fully functional either way (voluntary MFA keeps working).
     mfa_enforcement_enabled: bool = False
 
+    # ---- Password policy ----
+    # Secure by default; dev/test relax via env. Enforced at every password entry
+    # point (register / change / reset / admin-create) via core.password.
+    password_min_length: int = 8
+    password_require_complexity: bool = True
+
+    # Escape hatch that lets STAGING (never production) boot with relaxed auth
+    # (MFA off or weak password policy) during the build phase — logged loudly.
+    # Production always fails loud on relaxed auth regardless of this flag.
+    allow_relaxed_auth: bool = False
+
     # ---- Observability ----
     log_level: str = "INFO"
     metrics_enabled: bool = True  # exposes /metrics; disable on untrusted edges
@@ -240,6 +251,39 @@ class Settings(BaseSettings):
                     f"Refusing to start in env={self.env!r} with committed insecure "
                     "default secret(s): " + ", ".join(insecure)
                     + ". Set real values via the deployment secret store."
+                )
+
+        # Fail loud on relaxed AUTHENTICATION in real environments (BRD §C).
+        # Production must never run with MFA off or a weak password policy.
+        # Staging may during the build phase ONLY via an explicit, logged override.
+        env = self.env.lower()
+        if env in ("staging", "prod", "production"):
+            relaxed: list[str] = []
+            if not self.mfa_enforcement_enabled:
+                relaxed.append("MFA enforcement off (MCP_MFA_ENFORCEMENT_ENABLED)")
+            if self.skip_mfa_in_dev:
+                relaxed.append("MFA dev-skip on (MCP_SKIP_MFA_IN_DEV)")
+            if self.password_min_length < 8:
+                relaxed.append("password_min_length < 8 (MCP_PASSWORD_MIN_LENGTH)")
+            if not self.password_require_complexity:
+                relaxed.append("password complexity off (MCP_PASSWORD_REQUIRE_COMPLEXITY)")
+            if relaxed:
+                is_production = env in ("prod", "production")
+                if is_production or not self.allow_relaxed_auth:
+                    hint = (
+                        ". Production never permits relaxed auth."
+                        if is_production
+                        else ". Set MCP_ALLOW_RELAXED_AUTH=true to override on staging."
+                    )
+                    raise RuntimeError(
+                        f"Refusing to start in env={self.env!r} with relaxed "
+                        "authentication: " + "; ".join(relaxed) + hint
+                    )
+                import logging
+
+                logging.getLogger(__name__).warning(
+                    "STAGING booting with RELAXED AUTH (build-phase override): %s",
+                    "; ".join(relaxed),
                 )
 
     def warn_if_insecure(self) -> list[str]:

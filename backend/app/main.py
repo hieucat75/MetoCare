@@ -24,6 +24,7 @@ from app.core.crypto import UndecryptablePHIError
 from app.core.logging import setup_logging
 from app.core.metrics import registry
 from app.core.middleware import MfaEnrollmentMiddleware, ObservabilityMiddleware
+from app.core.password import PasswordPolicyError
 from app.services.consent import ConsentError
 from app.services.consent_guard import ConsentDenied
 from app.services.doctor_review import PermissionDenied
@@ -123,6 +124,13 @@ def create_app() -> FastAPI:
         return JSONResponse(
             status_code=422,
             content={"code": "VALIDATION_ERROR", "detail": errors},
+        )
+
+    @app.exception_handler(PasswordPolicyError)
+    async def _password_policy_handler(_: Request, exc: PasswordPolicyError) -> JSONResponse:
+        return JSONResponse(
+            status_code=422,
+            content={"code": "PASSWORD_POLICY", "message": str(exc)},
         )
 
     @app.exception_handler(ConsentDenied)

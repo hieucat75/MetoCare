@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.core.clock import as_naive_utc, utcnow
 from app.core.config import get_settings
+from app.core.password import validate_password_policy
 from app.core.security import (
     create_access_token,
     create_refresh_token,
@@ -79,6 +80,7 @@ def register(
         if existing is not None:
             raise AuthError("phone already registered")
 
+    validate_password_policy(password)
     user = User(
         email=email,
         phone=phone,
@@ -174,6 +176,7 @@ def change_password(db: Session, *, user_id: str, current_password: str, new_pas
         raise AuthError("user not found")
     if not verify_password(current_password, user.password_hash):
         raise AuthError("current password is incorrect")
+    validate_password_policy(new_password)
     user.password_hash = hash_password(new_password)
     audit.record(
         db,

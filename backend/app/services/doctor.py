@@ -17,6 +17,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.clock import utcnow
+from app.core.password import validate_password_policy
 from app.core.security import hash_password
 from app.models.ai import AIClinicalRecommendation, RecommendationStatus
 from app.models.care import Appointment, CarePlan, CarePlanStatus, Doctor, Encounter
@@ -299,6 +300,7 @@ def create_doctor_account(
             detail="Email already registered.",
         )
 
+    validate_password_policy(password)
     user = User(
         email=normalized_email,
         password_hash=hash_password(password),

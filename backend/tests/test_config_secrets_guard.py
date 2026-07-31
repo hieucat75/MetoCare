@@ -21,6 +21,11 @@ def _settings(**overrides) -> Settings:
         database_url="sqlite://",
         secret_key=_REAL_SECRET,
         encryption_keys=_REAL_ENC,
+        # secure auth so the separate auth guard never interferes with these
+        # secrets-focused assertions
+        mfa_enforcement_enabled=True,
+        password_min_length=8,
+        password_require_complexity=True,
     )
     base.update(overrides)
     return Settings(**base)

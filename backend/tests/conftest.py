@@ -13,6 +13,10 @@ import tempfile
 _DB_DIR = tempfile.mkdtemp(prefix="mcp_test_")
 os.environ["MCP_DATABASE_URL"] = f"sqlite:///{_DB_DIR}/test.sqlite3"
 os.environ["MCP_ENV"] = "test"
+# Environment-scoped auth relaxation for the test suite (dev/test only; the
+# startup guard forbids relaxed auth in staging/production).
+os.environ["MCP_PASSWORD_MIN_LENGTH"] = "6"
+os.environ["MCP_PASSWORD_REQUIRE_COMPLEXITY"] = "false"
 os.environ["MCP_AI_MODE"] = "mock"
 os.environ["MCP_OCR_MODE"] = "mock"
 # PR-B: the patient-facing AI/OCR feature flags default OFF (no real AI for MVP).
