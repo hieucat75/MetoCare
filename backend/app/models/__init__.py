@@ -81,6 +81,7 @@ from .medical_document import (
     MedicalDocument,
     PromotionLink,
 )
+from .medication_schedule import DoseOccurrence, MedicationSchedule
 from .meto import MetoAuditLog, MetoConsent, MetoConversation, MetoMessage
 from .notification import Notification
 from .nutrition import NutritionLog
@@ -142,6 +143,8 @@ __all__ = [
     "DocumentExtraction",
     "ExtractionCandidate",
     "PromotionLink",
+    "MedicationSchedule",
+    "DoseOccurrence",
     "Medication",
     "MfaBackupCode",
     "PatientProfile",

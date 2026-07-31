@@ -169,6 +169,7 @@ jobs:
             tests/integration/test_medication_k1_knowledge_migration.py \
             tests/integration/test_medication_k1_s2_catalog_migration.py \
             tests/integration/test_mdi_migration.py \
+            tests/integration/test_medication_schedule_migration.py \
             -v --tb=short -m integration \
             --junit-xml=test-results-postgres.xml
         env:
