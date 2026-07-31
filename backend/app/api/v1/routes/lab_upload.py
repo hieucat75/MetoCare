@@ -14,11 +14,11 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from sqlalchemy import select as _select
 from sqlalchemy.orm import Session
 
-from app.api.deps import CurrentUser, get_session, require_roles
+from app.api.deps import CurrentUser, enforce_rate_limit, get_session, require_roles
 from app.core.config import get_settings
 from app.core.feature_flags import FeatureFlag, is_enabled
 from app.core.ssrf import SSRFError, fetch_url
@@ -39,6 +39,7 @@ router = APIRouter(tags=["lab"])
     summary="OCR a lab image/PDF/URL into a review-only draft (no save)",
 )
 async def create_lab_upload_draft(
+    request: Request,
     file: UploadFile | None = File(default=None),
     url: str | None = Form(default=None),
     user: CurrentUser = Depends(
@@ -46,6 +47,9 @@ async def create_lab_upload_draft(
     ),
     db: Session = Depends(get_session),
 ) -> LabUploadDraftOut:
+    # Throttle first: this drives a synchronous Tesseract OCR pass, so an
+    # unbounded request rate is a CPU/cost DoS. Mirrors documents.py.
+    enforce_rate_limit(request, "lab_upload")
     if not is_enabled(FeatureFlag.OCR):
         raise HTTPException(status_code=503, detail="Tính năng OCR đang tắt.")
 

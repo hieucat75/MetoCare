@@ -217,6 +217,31 @@ class Settings(BaseSettings):
                 "The server cannot start safely. Missing: " + ", ".join(missing)
             )
 
+        # Fail loud on committed insecure default secrets in any real environment.
+        # The defaults are non-empty, so the missing-check above never trips on
+        # them; without this a staging/prod boot where secret injection silently
+        # failed would run with a publicly-known JWT secret (token forgery) and a
+        # committed Fernet key (all PHI decryptable). Local dev/test keep them.
+        if self.env.lower() not in ("dev", "test", "local"):
+            insecure: list[str] = []
+            if self.secret_key.startswith("dev-insecure-secret"):
+                insecure.append("MCP_SECRET_KEY (JWT signing secret)")
+            # Scan every entry in the comma-separated rotation list, not just the
+            # first — the committed default must never appear even as a secondary
+            # decrypt-only key.
+            enc_entries = [k.strip() for k in self.encryption_keys.split(",")]
+            if any(
+                k.startswith("CSuRdJSn8APsbQJ3u91m71ZoHvdpn0IzMj6i7H9kMFg")
+                for k in enc_entries
+            ):
+                insecure.append("MCP_ENCRYPTION_KEYS (PHI field-encryption key)")
+            if insecure:
+                raise RuntimeError(
+                    f"Refusing to start in env={self.env!r} with committed insecure "
+                    "default secret(s): " + ", ".join(insecure)
+                    + ". Set real values via the deployment secret store."
+                )
+
     def warn_if_insecure(self) -> list[str]:
         """Return a list of insecure-config warnings (used at startup)."""
         warnings: list[str] = []
