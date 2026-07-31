@@ -51,6 +51,7 @@ def _seed_cardio_labs(db, profile_id: str) -> str:
                 reference_range=ref,
                 status=status,
                 test_date=dt.date.today(),
+                verified_by_user=True,  # confirmed labs — only these reach Meto (AI2)
             )
         )
     db.commit()

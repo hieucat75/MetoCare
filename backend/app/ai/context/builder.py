@@ -530,11 +530,24 @@ class ContextBuilder:
                           )
                       AND lr.deleted_at IS NULL
                       AND lub.deleted_at IS NULL
+                      -- AI2 fix (§J): Meto may only see CONFIRMED lab data. Unverified
+                      -- OCR rows persist in lab_results with verified_by_user=False and
+                      -- must never enter the AI context. "Confirmed" matches the platform
+                      -- definition used everywhere else (lab_provenance / longitudinal /
+                      -- insight / narrative): patient- OR doctor-verified. Bound param
+                      -- stays dialect-safe.
+                      AND (lr.verified_by_user = :verified
+                           OR lr.verified_by_doctor = :verified)
                       AND (lub.test_date IS NULL OR lub.test_date >= :cutoff_date)
                     ORDER BY lub.test_date DESC, lr.created_at DESC
                     LIMIT :limit
                 """),
-                {"uid": user_id, "cutoff_date": cutoff_date, "limit": _MAX_LABS},
+                {
+                    "uid": user_id,
+                    "cutoff_date": cutoff_date,
+                    "limit": _MAX_LABS,
+                    "verified": True,
+                },
             ).fetchall()
 
             if not rows:
