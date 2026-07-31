@@ -97,6 +97,27 @@ describe('token rotation (transparent refresh)', () => {
     expect(refreshCalls).toBe(1)
   })
 
+  it('rejects a refresh 200 with a malformed body (never persists "undefined")', async () => {
+    const tokens = createTokenStore(memSecure())
+    await tokens.setTokens('old-access', 'refresh-1')
+    const onForcedLogout = jest.fn()
+
+    const fetchImpl = jest
+      .fn<Promise<Response>, [string, RequestInit?]>()
+      // 1) original call → 401
+      .mockResolvedValueOnce(jsonRes(401, { detail: 'expired' }))
+      // 2) refresh → 200 but body is missing the token fields
+      .mockResolvedValueOnce(jsonRes(200, { unexpected: true }))
+
+    const client = createApiClient({ baseUrl: BASE, tokens, fetchImpl, onForcedLogout })
+
+    await expect(client.get('/protected')).rejects.toMatchObject({ status: 401 })
+    expect(onForcedLogout).toHaveBeenCalledTimes(1)
+    // Tokens cleared — the literal string "undefined" must never be stored.
+    await expect(tokens.getAccess()).resolves.toBeNull()
+    await expect(tokens.getRefresh()).resolves.toBeNull()
+  })
+
   it('does not attempt refresh when skipAuth is set', async () => {
     const tokens = createTokenStore(memSecure())
     const fetchImpl = jest

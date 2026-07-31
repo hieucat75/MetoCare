@@ -12,6 +12,7 @@ import { OfflineBanner } from '../../src/components/StateViews'
 import { useNetworkStatus } from '../../src/hooks/useNetworkStatus'
 import { validateCredentials, hasErrors, type FieldErrors } from '../../src/auth/validation'
 import { ApiError } from '../../src/api/client'
+import { NotPatientError } from '../../src/api/auth'
 
 export default function RegisterScreen() {
   const { register } = useAuth()
@@ -25,6 +26,7 @@ export default function RegisterScreen() {
   const [submitting, setSubmitting] = useState(false)
 
   const mapError = useCallback((err: unknown): string => {
+    if (err instanceof NotPatientError) return vi.errors.patientsOnly
     if (err instanceof ApiError) return err.detail || vi.errors.generic
     return vi.errors.network
   }, [])

@@ -33,6 +33,7 @@ export const vi = {
     passwordRequired: 'Vui lòng nhập mật khẩu.',
     passwordTooShort: 'Mật khẩu phải có ít nhất 6 ký tự.',
     sessionExpired: 'Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.',
+    patientsOnly: 'Ứng dụng này chỉ dành cho bệnh nhân. Vui lòng dùng cổng dành cho tài khoản của bạn.',
   },
   auth: {
     loginTitle: 'Chào mừng trở lại',

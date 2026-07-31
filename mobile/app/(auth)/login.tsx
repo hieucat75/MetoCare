@@ -13,6 +13,7 @@ import { useNetworkStatus } from '../../src/hooks/useNetworkStatus'
 import { validateCredentials, hasErrors, type FieldErrors } from '../../src/auth/validation'
 import { getBiometricCapability, authenticateBiometric } from '../../src/auth/biometrics'
 import { ApiError } from '../../src/api/client'
+import { NotPatientError } from '../../src/api/auth'
 
 export default function LoginScreen() {
   const { login, hasStoredSession, restoreSession } = useAuth()
@@ -37,6 +38,7 @@ export default function LoginScreen() {
   }, [hasStoredSession])
 
   const mapError = useCallback((err: unknown): string => {
+    if (err instanceof NotPatientError) return vi.errors.patientsOnly
     if (err instanceof ApiError) {
       if (err.status === 401 || err.status === 400) return vi.errors.invalidCredentials
       return err.detail || vi.errors.generic
@@ -65,7 +67,13 @@ export default function LoginScreen() {
     // Safe fallback: on decline/unavailable we simply keep the password form.
     if (!result.success) return
     const ok = await restoreSession()
-    if (ok) router.replace('/dashboard')
+    if (ok) {
+      router.replace('/dashboard')
+    } else {
+      // Biometric passed but the stored session no longer verifies — tell the
+      // user instead of leaving the button silently inert.
+      setFormError(vi.errors.sessionExpired)
+    }
   }
 
   return (

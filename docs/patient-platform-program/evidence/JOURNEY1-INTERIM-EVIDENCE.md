@@ -1,5 +1,10 @@
 # Journey 1 (First-time Patient) — Interim Evidence Package
 
+> **SUPERSEDED 2026-07-31** by `JOURNEY1-NATIVE-RUNTIME-EVIDENCE.md` — native-runtime
+> verification is now complete (login→dashboard booted on an Android runtime,
+> secure-store at-rest encryption + biometric safe fallback device-verified).
+> This doc is retained as the headless-phase record.
+
 **Status:** IMPLEMENTED TO NATIVE-RUNTIME BOUNDARY · headless-verified · **NOT Journey-1-Done** (native-runtime evidence pending, per Charter 7).
 **Date:** 2026-07-30 · **Branch:** `feat/patient-platform-journey1` (off `main`, not merged) · **Repo:** `hieucat75/MetoCare`
 

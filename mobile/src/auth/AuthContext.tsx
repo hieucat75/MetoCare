@@ -6,10 +6,27 @@ import React, {
   useMemo,
   useState,
 } from 'react'
-import { createApiClient, type ApiClient } from '../api/client'
-import { login as apiLogin, register as apiRegister, logout as apiLogout, me as apiMe } from '../api/auth'
+import { createApiClient, ApiError, type ApiClient } from '../api/client'
+import {
+  login as apiLogin,
+  register as apiRegister,
+  logout as apiLogout,
+  me as apiMe,
+  isPatientRole,
+  NotPatientError,
+} from '../api/auth'
 import type { UserResponse } from '../api/types'
 import { getOrCreateInstallId, unlinkInstallId } from '../storage/installId'
+
+/**
+ * Session-probe retry: a valid stored session must survive a transient
+ * transport error at launch (offline/DNS blip). A real auth failure surfaces as
+ * an ApiError (401 already cleared tokens) and is NOT retried.
+ */
+const SESSION_PROBE_ATTEMPTS = 3
+const SESSION_PROBE_BACKOFF_MS = 500
+const delay = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms))
 
 /**
  * Central auth state + session lifecycle.
@@ -64,19 +81,48 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const id = await getOrCreateInstallId()
       setInstallId(id)
-      const access = await client.tokens.getAccess()
-      if (!access) {
-        setStatus('unauthenticated')
-        return
-      }
-      const profile = await apiMe(client)
-      setUser(profile)
-      setStatus('authenticated')
     } catch {
-      // Invalid/expired session — client already cleared tokens on 401.
-      setUser(null)
-      setStatus('unauthenticated')
+      // Install-id provisioning is non-fatal for session probing — continue.
     }
+
+    const access = await client.tokens.getAccess().catch(() => null)
+    if (!access) {
+      setStatus('unauthenticated')
+      return
+    }
+
+    // Verify the stored session. A real auth failure surfaces as an ApiError
+    // (the client already cleared tokens on 401) → land on login. A transport
+    // error must NOT discard a still-valid session, so retry a few times before
+    // giving up rather than bouncing a healthy user to the login form.
+    for (let attempt = 0; attempt < SESSION_PROBE_ATTEMPTS; attempt++) {
+      try {
+        const profile = await apiMe(client)
+        if (!isPatientRole(profile.role)) {
+          await apiLogout(client)
+          setUser(null)
+          setStatus('unauthenticated')
+          return
+        }
+        setUser(profile)
+        setStatus('authenticated')
+        return
+      } catch (err) {
+        if (err instanceof ApiError) {
+          setUser(null)
+          setStatus('unauthenticated')
+          return
+        }
+        if (attempt < SESSION_PROBE_ATTEMPTS - 1) {
+          await delay(SESSION_PROBE_BACKOFF_MS * (attempt + 1))
+        }
+      }
+    }
+
+    // Sustained transport failure: tokens remain in SecureStore for the next
+    // launch, but we cannot verify now — show login instead of hanging.
+    setUser(null)
+    setStatus('unauthenticated')
   }, [client])
 
   useEffect(() => {
@@ -86,24 +132,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     void bootstrap()
   }, [bootstrap])
 
+  // Reject a non-patient account on this patient-only app: revoke the session
+  // that was just issued, drop to unauthenticated, and signal the screen.
+  const enforcePatient = useCallback(
+    async (profile: UserResponse): Promise<void> => {
+      if (isPatientRole(profile.role)) return
+      await apiLogout(client)
+      setUser(null)
+      setStatus('unauthenticated')
+      throw new NotPatientError()
+    },
+    [client]
+  )
+
   const login = useCallback(
     async (email: string, password: string) => {
       await apiLogin(client, { email, password })
       const profile = await apiMe(client)
+      await enforcePatient(profile)
       setUser(profile)
       setStatus('authenticated')
     },
-    [client]
+    [client, enforcePatient]
   )
 
   const register = useCallback(
     async (email: string, password: string, fullName?: string) => {
       await apiRegister(client, { email, password }, fullName)
       const profile = await apiMe(client)
+      await enforcePatient(profile)
       setUser(profile)
       setStatus('authenticated')
     },
-    [client]
+    [client, enforcePatient]
   )
 
   const logout = useCallback(async () => {
@@ -129,6 +190,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const refresh = await client.tokens.getRefresh()
       if (!access && !refresh) return false
       const profile = await apiMe(client)
+      await enforcePatient(profile)
       setUser(profile)
       setStatus('authenticated')
       return true
@@ -137,7 +199,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setStatus('unauthenticated')
       return false
     }
-  }, [client])
+  }, [client, enforcePatient])
 
   const value = useMemo<AuthContextValue>(
     () => ({

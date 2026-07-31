@@ -101,8 +101,19 @@ export function createApiClient(config: ApiClientConfig = {}): ApiClient {
         return false
       }
       const data = (await res.json()) as {
-        access_token: string
-        refresh_token: string
+        access_token?: unknown
+        refresh_token?: unknown
+      }
+      // Guard against a 200 with a malformed/empty body: persisting undefined
+      // would store the literal "undefined" and 401 every subsequent request.
+      if (
+        typeof data?.access_token !== 'string' ||
+        data.access_token.length === 0 ||
+        typeof data?.refresh_token !== 'string' ||
+        data.refresh_token.length === 0
+      ) {
+        await tokens.clear()
+        return false
       }
       await tokens.setTokens(data.access_token, data.refresh_token)
       return true

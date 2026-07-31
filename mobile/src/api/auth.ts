@@ -66,3 +66,15 @@ export async function me(client: ApiClient): Promise<UserResponse> {
 export function isPatientRole(role: UserRole): boolean {
   return role === 'patient'
 }
+
+/**
+ * Thrown by AuthContext when a non-patient account authenticates on this
+ * patient-only app. Screens map it to `vi.errors.patientsOnly`. The caller has
+ * already revoked the just-issued session before this is thrown.
+ */
+export class NotPatientError extends Error {
+  constructor() {
+    super('This application is for patients only.')
+    this.name = 'NotPatientError'
+  }
+}
