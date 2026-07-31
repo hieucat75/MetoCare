@@ -96,6 +96,14 @@ export default function DashboardScreen() {
         />
 
         <PrimaryButton
+          label={vi.consent.manage}
+          onPress={() => router.push('/consent')}
+          variant="ghost"
+          style={styles.link}
+          testID="dashboard-consent"
+        />
+
+        <PrimaryButton
           label={vi.auth.logout}
           onPress={() => void logout()}
           variant="ghost"

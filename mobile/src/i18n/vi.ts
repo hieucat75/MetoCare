@@ -154,6 +154,26 @@ export const vi = {
     frequency: 'Cách dùng',
     unnamed: 'Mục chưa rõ tên',
   },
+  consent: {
+    title: 'Quyền riêng tư — Meto',
+    subtitle:
+      'Bạn kiểm soát dữ liệu nào được sử dụng. Bật/tắt từng nhóm bất cứ lúc nào.',
+    granted: 'Đang cho phép',
+    revoked: 'Đang tắt',
+    aiDisabledNote:
+      'Tắt "Xử lý bằng AI" sẽ vô hiệu hoá trợ lý Meto. Các nhóm khác chỉ giới hạn dữ liệu Meto được dùng.',
+    // Category display names keyed by backend context_type. The per-category
+    // purpose text comes from the API (`purpose`), never from here.
+    category: {
+      ai_processing: 'Xử lý bằng AI',
+      health_records: 'Hồ sơ sức khoẻ',
+      medications: 'Thuốc',
+      documents: 'Tài liệu y tế',
+      doctor_consultation: 'Tư vấn bác sĩ',
+    } as Record<string, string>,
+    empty: 'Chưa có mục quyền riêng tư nào.',
+    manage: 'Quyền riêng tư & Meto',
+  },
 } as const
 
 export type ViCopy = typeof vi
