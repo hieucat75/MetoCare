@@ -24,6 +24,13 @@ from collections.abc import AsyncGenerator
 
 from sqlalchemy.orm import Session
 
+from app.ai.consent_policy import (
+    CATEGORY_AI_PROCESSING,
+    CATEGORY_PURPOSE,
+    CONSENT_CATEGORIES,
+    CONSENT_POLICY_VERSION,
+    is_granted,
+)
 from app.ai.context.builder import ContextBuilder
 from app.ai.context.schemas import AssembledContext, ScreenContext
 from app.ai.exceptions import MetoAIError
@@ -53,6 +60,13 @@ _UNSAFE_OUTPUT_FALLBACK = (
     "với bác sĩ của mình nhé."
 )
 
+# Shown when the patient has not granted the master AI-processing consent. The
+# chat is refused fail-closed: no PHI context is built and no provider is called.
+_AI_CONSENT_REQUIRED_MSG = (
+    "Để Meto có thể hỗ trợ bạn, vui lòng bật quyền cho phép Meto xử lý dữ liệu "
+    "bằng AI trong phần Cài đặt > Quyền riêng tư."
+)
+
 
 class MetoChatService:
     """Orchestrates Meto chat pipeline: context → safety → prompt → provider → audit."""
@@ -74,6 +88,24 @@ class MetoChatService:
     ) -> MetaChatResponse:
         """Non-streaming chat. Runs full pipeline and returns complete response."""
         request_start = time.monotonic()
+
+        # 0. Master consent gate (§J) — fail-closed. Without ai_processing consent
+        #    we build no PHI context and call no provider.
+        if not is_granted(db, user_id, CATEGORY_AI_PROCESSING):
+            conversation = self._get_or_create_conversation(
+                db, user_id, screen_context, conversation_id
+            )
+            return MetaChatResponse(
+                conversation_id=conversation.id,
+                message_id="",
+                content=_AI_CONSENT_REQUIRED_MSG,
+                safety_flags=[],
+                provider_used="meto",
+                fallback_used=False,
+                quick_follow_ups=[],
+                consent_required=True,
+                missing_consents=[CATEGORY_AI_PROCESSING],
+            )
 
         # 1. Build context using a DEDICATED session so that any SQL errors
         #    inside the context builder do not poison the main `db` session
@@ -217,6 +249,27 @@ class MetoChatService:
         import json
 
         request_start = time.monotonic()
+
+        # Master consent gate (§J) — fail-closed. Without ai_processing consent we
+        # build no PHI context and call no provider; prompt the client to grant it.
+        if not is_granted(db, user_id, CATEGORY_AI_PROCESSING):
+            conversation = self._get_or_create_conversation(
+                db, user_id, screen_context, conversation_id
+            )
+            yield f"data: {json.dumps({'type': 'chunk', 'delta': _AI_CONSENT_REQUIRED_MSG})}\n\n"
+            yield (
+                "data: "
+                + json.dumps(
+                    {
+                        "type": "done",
+                        "conversation_id": str(conversation.id),
+                        "consent_required": True,
+                        "missing_consents": [CATEGORY_AI_PROCESSING],
+                    }
+                )
+                + "\n\n"
+            )
+            return
 
         # Build context in a dedicated session to isolate SQL errors from main db session
         ctx_db = SessionLocal()
@@ -418,26 +471,40 @@ class MetoChatService:
             db.commit()
 
     def get_consent(self, db: Session, user_id: str) -> list[ConsentStatus]:
-        CONSENT_TYPES = ["health_data", "medications", "labs", "metrics", "care_plan", "chat_history"]
-        rows = (
-            db.query(MetoConsent)
-            .filter(MetoConsent.user_id == user_id)
-            .all()
-        )
+        """Return the status of every consent category (BRD §J).
+
+        `granted` is EFFECTIVE — true only when the row is granted, not revoked,
+        and recorded against the current policy version (a stale version reads as
+        not-granted, prompting re-consent).
+        """
+        rows = db.query(MetoConsent).filter(MetoConsent.user_id == user_id).all()
         existing = {r.context_type: r for r in rows}
         result = []
-        for ct in CONSENT_TYPES:
+        for ct in CONSENT_CATEGORIES:
             row = existing.get(ct)
+            effective = bool(
+                row
+                and row.granted
+                and row.revoked_at is None
+                and row.policy_version == CONSENT_POLICY_VERSION
+            )
             result.append(ConsentStatus(
                 context_type=ct,
-                granted=row.granted if row else False,
+                granted=effective,
                 granted_at=row.granted_at if row else None,
+                policy_version=CONSENT_POLICY_VERSION,
+                purpose=CATEGORY_PURPOSE.get(ct, ""),
             ))
         return result
 
     def update_consent(
         self, db: Session, user_id: str, context_type: str, granted: bool
     ) -> None:
+        """Grant or revoke one category. Records the policy version on grant and
+        writes a PHI-free audit entry. Revocation blocks future use immediately."""
+        if context_type not in CONSENT_CATEGORIES:
+            raise ValueError(f"Unknown consent category: {context_type}")
+
         row = (
             db.query(MetoConsent)
             .filter(
@@ -452,6 +519,7 @@ class MetoChatService:
             if granted:
                 row.granted_at = now
                 row.revoked_at = None
+                row.policy_version = CONSENT_POLICY_VERSION
             else:
                 row.revoked_at = now
         else:
@@ -460,8 +528,18 @@ class MetoChatService:
                 context_type=context_type,
                 granted=granted,
                 granted_at=now if granted else None,
+                revoked_at=None if granted else now,
+                policy_version=CONSENT_POLICY_VERSION if granted else None,
             )
             db.add(row)
+
+        # Audit — category key + policy version only, never PHI.
+        db.add(MetoAuditLog(
+            user_id=user_id,
+            action="consent_granted" if granted else "consent_revoked",
+            context_types=[context_type],
+            details={"policy_version": CONSENT_POLICY_VERSION},
+        ))
         db.commit()
 
     # -----------------------------------------------------------------------
@@ -696,8 +774,9 @@ class MetoChatService:
         screen_id = screen_context.screen_id or "dashboard"
         quick_follow_ups = _PROMPT_ASSEMBLER._get_quick_prompts(screen_id)[:3]
 
-        # Per product design: consent_required is always False.
-        # T&C covers consent at registration; Meto reads profile by default.
+        # Surface categories the screen would use but the patient hasn't granted,
+        # so the client can prompt for them. consent_required is reserved for the
+        # master ai_processing gate, which is enforced before we ever reach here.
         return MetaChatResponse(
             conversation_id=conversation.id,
             message_id=msg_id,
@@ -708,7 +787,7 @@ class MetoChatService:
             fallback_used=fallback_used,
             quick_follow_ups=quick_follow_ups,
             consent_required=False,
-            missing_consents=[],
+            missing_consents=list(context.missing_consents or []),
         )
 
 

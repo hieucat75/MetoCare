@@ -212,9 +212,14 @@ async def update_consent(
     current_user=Depends(_patient_required),
     db: Session = Depends(get_session),
 ) -> dict:
-    """Grant or revoke consent for a data type."""
+    """Grant or revoke consent for a data category."""
     svc = _get_chat_service()
-    svc.update_consent(db, current_user.id, req.context_type, req.granted)
+    try:
+        svc.update_consent(db, current_user.id, req.context_type, req.granted)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
     action = "granted" if req.granted else "revoked"
     return {"status": "ok", "context_type": req.context_type, "action": action}
 

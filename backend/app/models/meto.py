@@ -9,7 +9,7 @@ import datetime as dt
 import os as _os
 from typing import Any
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -134,3 +134,12 @@ class MetoConsent(UUIDPrimaryKey, TimestampMixin, Base):
     granted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     granted_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     revoked_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Consent-policy version the patient agreed to. A grant is honored only while
+    # it matches the current CONSENT_POLICY_VERSION, so a policy bump forces
+    # re-consent (versioned consent, BRD §J).
+    policy_version: Mapped[str | None] = mapped_column(String(16), nullable=True)
+
+    # One consent row per (user, category); grant/revoke upserts it.
+    __table_args__ = (
+        UniqueConstraint("user_id", "context_type", name="uq_meto_consent_user_category"),
+    )

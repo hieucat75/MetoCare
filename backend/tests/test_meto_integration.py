@@ -223,24 +223,25 @@ class TestContextIsolation:
 # Test 2 & 3: Consent gating
 # ---------------------------------------------------------------------------
 
+@pytest.mark.real_consent
 class TestConsentGating:
-    """Per product design: consent gate removed from chat.
-    T&C covers consent at registration. Meto reads profile by default.
-    These tests now verify the new behavior.
+    """Per-category consent gate (BRD §J) — fail-closed. A PHI block is included
+    only when its category is actively granted; ungranted categories are excluded
+    and surfaced in missing_consents.
     """
-    def test_no_consent_gate_medications_included_when_data_exists(self):
-        """No consent rows → medications still included (no consent gate)."""
+
+    def test_block_excluded_without_consent(self):
+        """No consent → medications excluded even though data exists."""
         ctx = _build_with_patches(
             "medications",
-            consent_rows=[],  # no consents — but no gate either
+            consent_rows=[],  # nothing granted
             medications=[{"name": "Metformin", "dosage": "500mg", "frequency": "2x/day"}],
         )
-        # Medications IS included (data exists + screen matches)
-        assert ctx.medications is not None
-        assert ctx.medications[0]["name"] == "Metformin"
+        assert ctx.medications is None
+        assert "medications" in ctx.missing_consents
 
-    def test_medications_included_with_or_without_consent(self):
-        """Both with and without consent → medications block populated when data exists."""
+    def test_block_included_with_consent(self):
+        """Granting the medications category includes the block."""
         ctx = _build_with_patches(
             "medications",
             consent_rows=_consents_for("medications"),
@@ -248,27 +249,25 @@ class TestConsentGating:
         )
         assert ctx.medications is not None
         assert ctx.medications[0]["name"] == "Metformin"
+        assert "medications" not in ctx.missing_consents
 
-    def test_missing_consents_always_empty(self):
-        """missing_consents is always empty — no consent gate in chat flow."""
-        ctx = _build_with_patches(
-            "dashboard",
-            consent_rows=[],
-        )
-        assert ctx.missing_consents == []
+    def test_missing_consents_lists_ungranted_categories(self):
+        """missing_consents names the screen's ungranted categories."""
+        ctx = _build_with_patches("dashboard", consent_rows=[])
+        assert "health_records" in ctx.missing_consents
+        assert "medications" in ctx.missing_consents
 
-    def test_all_blocks_included_when_data_exists_regardless_of_consent(self):
-        """All blocks with data are included regardless of consent rows."""
+    def test_partial_consent_includes_only_granted(self):
+        """Only granted categories' data is included; the rest are withheld."""
         ctx = _build_with_patches(
             "labs",
-            consent_rows=[],  # no consent
+            consent_rows=_consents_for("medications"),  # meds granted, health_records not
             medications=[{"name": "Metformin", "dosage": "500mg"}],
             recent_labs=[{"test_name": "HbA1c", "value": "6.5"}],
         )
-        # Both included — no consent gate
-        assert ctx.medications is not None
-        assert ctx.recent_labs is not None
-        assert ctx.missing_consents == []
+        assert ctx.medications is not None       # granted
+        assert ctx.recent_labs is None           # health_records not granted
+        assert "health_records" in ctx.missing_consents
 
 
 # ---------------------------------------------------------------------------
@@ -928,30 +927,30 @@ class TestSafetyEmergencyEscalation:
 # ---------------------------------------------------------------------------
 
 class TestNoConsentBehavior:
-    """Per product design: consent gate removed. Meto reads profile by default.
-    Tests now verify data IS included and missing_consents is always empty.
+    """Fail-closed consent (BRD §J): without a category grant, that category's PHI
+    is withheld from the AI context and reported in missing_consents.
     """
-    def test_no_consent_gate_data_still_included(self):
-        """With no consent rows, data is still included (T&C covers consent at registration)."""
+    @pytest.mark.real_consent
+    def test_ungranted_categories_are_withheld(self):
+        """With no consent rows, clinical blocks are excluded (data-minimizing)."""
         ctx = _build_with_patches(
             "dashboard",
-            consent_rows=[],  # No explicit consent rows
+            consent_rows=[],  # nothing granted
             user_profile={"display_name": "Test User", "preferred_address": "bạn"},
-            health_summary={"primary_conditions": ["Tiểu đường"]},  # data included
-            medications=[{"name": "Metformin"}],  # data included
+            health_summary={"primary_conditions": ["Tiểu đường"]},
+            medications=[{"name": "Metformin"}],
         )
+        # user_profile is non-clinical → still present; clinical blocks withheld.
+        assert ctx.user_profile is not None
+        assert ctx.health_summary is None
+        assert ctx.medications is None
 
-        # Blocks are included — no consent gate
-        assert ctx.health_summary is not None
-        assert ctx.medications is not None
-
-        # missing_consents always empty
-        assert ctx.missing_consents == []
-
-    def test_missing_consents_always_empty(self):
-        """missing_consents list must always be empty — no consent gate in chat."""
+    @pytest.mark.real_consent
+    def test_missing_consents_populated_without_grants(self):
+        """missing_consents lists the ungranted categories the screen would use."""
         ctx = _build_with_patches("dashboard", consent_rows=[])
-        assert ctx.missing_consents == [], "missing_consents must always be empty"
+        assert "health_records" in ctx.missing_consents
+        assert "medications" in ctx.missing_consents
 
     @pytest.mark.asyncio
     async def test_chat_response_returns_content_not_consent_gate(self):

@@ -116,6 +116,29 @@ def _seed_subscription_plans() -> None:
 
 
 @pytest.fixture(autouse=True)
+def _default_meto_consent(request, monkeypatch):
+    """Grant all Meto consent categories by default so existing pipeline tests run
+    without every test having to seed consent. Tests that exercise the real
+    fail-closed consent gate opt out with @pytest.mark.real_consent.
+
+    Patches the names as bound in the consuming modules (import-time binding),
+    not the definition site.
+    """
+    if not request.node.get_closest_marker("real_consent"):
+        from app.ai.consent_policy import CONSENT_CATEGORIES
+
+        monkeypatch.setattr(
+            "app.ai.context.builder.load_granted_categories",
+            lambda db, user_id: set(CONSENT_CATEGORIES),
+        )
+        monkeypatch.setattr(
+            "app.services.meto_chat.is_granted",
+            lambda db, user_id, category: True,
+        )
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _reset_ratelimit():
     """Clear rate-limit + lockout state before each test so it never leaks."""
     from app.core.ratelimit import reset_all

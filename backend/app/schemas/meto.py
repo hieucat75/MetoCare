@@ -76,6 +76,8 @@ class ConsentStatus(BaseModel):
     context_type: str
     granted: bool
     granted_at: dt.datetime | None = None
+    policy_version: str | None = None
+    purpose: str = ""
 
 
 class ConsentUpdateRequest(BaseModel):

@@ -31,8 +31,14 @@ from typing import Any
 from sqlalchemy import bindparam, text
 from sqlalchemy.orm import Session
 
+from app.ai.consent_policy import (
+    BLOCK_CONSENT_CATEGORY,
+    CATEGORY_DOCTOR_CONSULTATION,
+    CATEGORY_HEALTH_RECORDS,
+    CATEGORY_MEDICATIONS,
+    load_granted_categories,
+)
 from app.ai.context.schemas import AssembledContext, ScreenContext
-from app.models.meto import MetoConsent
 from app.models.patient import PatientProfile
 from app.models.user import User
 from app.utils.number_format import format_lab_display, format_lab_value
@@ -60,17 +66,7 @@ _DEFAULT_SCREEN_BLOCKS: set[str] = {
     "recent_labs", "recent_metrics", "today_context",
 }
 
-# Consent keys required per block — kept for reference but NO LONGER used as gate.
-# Per product design: T&C covers consent at registration. Meto reads health profile
-# by default. Consent management is only in Settings > Quyền riêng tư.
-_BLOCK_CONSENT: dict[str, str] = {
-    "health_summary": "health_data",
-    "care_plan": "care_plan",
-    "medications": "medications",
-    "recent_labs": "labs",
-    "recent_metrics": "metrics",
-    "today_context": "care_plan",
-}
+# Per-block consent categories now live in app/ai/consent_policy.BLOCK_CONSENT_CATEGORY.
 
 # Approximate token budget per block
 _TOKEN_BUDGET: dict[str, int] = {
@@ -117,13 +113,25 @@ class ContextBuilder:
         screen_id = screen_context.screen_id or "dashboard"
         screen_blocks = _SCREEN_BLOCKS.get(screen_id, _DEFAULT_SCREEN_BLOCKS)
 
-        # Per product design: T&C covers consent at registration.
-        # Meto reads health profile by default — no consent gate in chat.
-        # Consent management is only in Settings > Quyền riêng tư.
-        # _load_consents is retained for Settings endpoints but NOT used here.
+        # Per-category consent gate (BRD §J) — fail-closed AND data-minimizing:
+        # PHI for a category is neither queried nor included unless that category
+        # is actively granted at the current policy version. Categories the screen
+        # would use but that are not granted are surfaced in missing_consents so
+        # the client can prompt for consent. The master ai_processing gate is
+        # enforced upstream in the chat service (no build without it).
+        granted_categories = load_granted_categories(db, user_id)
+        health_ok = CATEGORY_HEALTH_RECORDS in granted_categories
+        meds_ok = CATEGORY_MEDICATIONS in granted_categories
+        consult_ok = CATEGORY_DOCTOR_CONSULTATION in granted_categories
 
         included_blocks: list[str] = []
-        missing_consents: list[str] = []  # Always empty — no consent gate in chat
+        missing_consents = list(
+            dict.fromkeys(
+                category
+                for block, category in BLOCK_CONSENT_CATEGORY.items()
+                if block in screen_blocks and category not in granted_categories
+            )
+        )
         total_tokens = 0
 
         # ---------------------------------------------------------------
@@ -136,31 +144,33 @@ class ContextBuilder:
         # separate from the main request session, so SQL errors here cannot
         # poison the conversation/message writes in the main session.
 
-        # DB call #1: user profile
+        # DB call #1: user profile (non-clinical identity — always allowed)
         raw_user_profile = self._build_user_profile(db, user_id)
 
+        # Clinical blocks are queried ONLY when their category is consented, so
+        # non-consented PHI is never even loaded into memory (data-minimization).
         # DB call #2: health summary
-        raw_health_summary = self._build_health_summary(db, user_id)
+        raw_health_summary = self._build_health_summary(db, user_id) if health_ok else None
 
         # DB calls #3+#4: care plan + tasks (always called together)
-        raw_care_plan = self._build_care_plan(db, user_id)
+        raw_care_plan = self._build_care_plan(db, user_id) if health_ok else None
 
         # DB call #5: medications
-        raw_medications = self._build_medications(db, user_id)
+        raw_medications = self._build_medications(db, user_id) if meds_ok else None
 
         # DB call #6: recent labs
-        raw_recent_labs = self._build_recent_labs(db, user_id)
+        raw_recent_labs = self._build_recent_labs(db, user_id) if health_ok else None
 
         # DB call #7: recent metrics
-        raw_recent_metrics = self._build_recent_metrics(db, user_id)
+        raw_recent_metrics = self._build_recent_metrics(db, user_id) if health_ok else None
 
         # DB call #8: appointments (for today_context)
-        raw_today_context = self._build_today_context(db, user_id)
+        raw_today_context = self._build_today_context(db, user_id) if consult_ok else None
 
         # ---------------------------------------------------------------
-        # Apply screen filtering only — NO consent gating.
-        # Per product design: T&C covers consent at registration.
-        # All blocks are included if they have data and are relevant to this screen.
+        # Assemble: a block is included when its category was consented (the raw
+        # value is None otherwise, per the gated queries above), the screen uses
+        # it, and it has data.
         # ---------------------------------------------------------------
 
         # user_profile — always included (no consent required, always was)
@@ -223,8 +233,13 @@ class ContextBuilder:
                 included_blocks.append("today_context")
                 total_tokens += _TOKEN_BUDGET["today_context"]
 
-        # safety_flags — always computed from already-fetched data
-        safety_flags = self._build_safety_flags(db, user_id, recent_labs, recent_metrics)
+        # safety_flags — derived from labs/metrics, so gated on health_records
+        # consent. Without it there are no labs/metrics to derive from anyway.
+        safety_flags = (
+            self._build_safety_flags(db, user_id, recent_labs, recent_metrics)
+            if health_ok
+            else []
+        )
         if safety_flags:
             included_blocks.append("safety_flags")
         total_tokens += _TOKEN_BUDGET["safety_flags"]
@@ -243,36 +258,6 @@ class ContextBuilder:
             missing_consents=missing_consents,
             included_blocks=included_blocks,
         )
-
-    # -----------------------------------------------------------------------
-    # Consent loading
-    # -----------------------------------------------------------------------
-
-    def _load_consents(self, db: Session, user_id: str) -> dict[str, bool]:
-        """Load all consent records for user. Returns {context_type: True}."""
-        rows = (
-            db.query(MetoConsent)
-            .filter(
-                MetoConsent.user_id == user_id,
-                MetoConsent.granted.is_(True),
-                MetoConsent.revoked_at.is_(None),
-            )
-            .all()
-        )
-        return {row.context_type: True for row in rows}
-
-    def _check_consent(self, db: Session, user_id: str, context_type: str) -> bool:
-        row = (
-            db.query(MetoConsent)
-            .filter(
-                MetoConsent.user_id == user_id,
-                MetoConsent.context_type == context_type,
-                MetoConsent.granted.is_(True),
-                MetoConsent.revoked_at.is_(None),
-            )
-            .first()
-        )
-        return row is not None
 
     # -----------------------------------------------------------------------
     # Block builders — each consumes exactly ONE db.execute() call
