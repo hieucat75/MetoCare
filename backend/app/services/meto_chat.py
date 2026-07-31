@@ -44,6 +44,15 @@ _SAFETY_GUARD = SafetyGuard()
 _CONTEXT_BUILDER = ContextBuilder()
 _PROMPT_ASSEMBLER = PromptAssembler()
 
+# Shown to the patient in place of a model response that fails the output safety
+# check (provider self-disclosure / diagnosis / dose-change). Detection alone is
+# not enough — the offending content must never be delivered.
+_UNSAFE_OUTPUT_FALLBACK = (
+    "Mình xin lỗi, Meto chưa thể trả lời câu hỏi này một cách an toàn. "
+    "Với các vấn đề về chẩn đoán hay thay đổi thuốc, bạn hãy trao đổi trực tiếp "
+    "với bác sĩ của mình nhé."
+)
+
 
 class MetoChatService:
     """Orchestrates Meto chat pipeline: context → safety → prompt → provider → audit."""
@@ -156,8 +165,17 @@ class MetoChatService:
 
         ai_content = ai_response.content if ai_response else ""
 
-        # 7. Safety check output
+        # 7. Safety check output — ENFORCING. A response that self-discloses the
+        # provider or contains a forbidden diagnosis/dose-change instruction must
+        # be replaced with a safe fallback, never delivered to the patient.
         output_safety = _SAFETY_GUARD.check_output(ai_content)
+        if not output_safety.safe:
+            logger.warning(
+                "Meto output failed safety check for user %s; replacing. flags=%s",
+                user_id,
+                output_safety.flags,
+            )
+            ai_content = _UNSAFE_OUTPUT_FALLBACK
         all_flags = list(set(input_safety.flags + (output_safety.flags if not output_safety.safe else [])))
 
         # Build escalation info if needed
@@ -249,6 +267,7 @@ class MetoChatService:
         fallback_used = False
         input_tokens = 0
         output_tokens = 0
+        stream_failed = False
 
         providers = self._registry.get_available_providers("chat_simple")
         if not providers:
@@ -271,9 +290,12 @@ class MetoChatService:
                         output_tokens = chunk.total_tokens or 0
                         break
                     if chunk.delta:
+                        # Buffer, do NOT emit yet. Output safety must run on the
+                        # full response BEFORE any of it reaches the patient;
+                        # emitting per-chunk would deliver unsafe content that the
+                        # post-hoc check can no longer retract.
                         full_content += chunk.delta
                         chunks_received += 1
-                        yield f"data: {json.dumps({'type': 'chunk', 'delta': chunk.delta})}\n\n"
 
                 # Success
                 self._registry.circuit_breaker().record_success(pname)
@@ -296,11 +318,25 @@ class MetoChatService:
                     error_msg = "Meto gặp lỗi kỹ thuật. Vui lòng thử lại."
                     yield f"data: {json.dumps({'type': 'error', 'message': error_msg})}\n\n"
                     full_content = error_msg
+                    stream_failed = True
+
+        # Enforce output safety on the buffered response BEFORE emitting it, then
+        # deliver the (safe or replaced) content as a single chunk. On the failure
+        # path the error event was already sent and full_content holds the error
+        # copy — don't re-emit it as a chunk.
+        latency_ms = int((time.monotonic() - request_start) * 1000)
+        if not stream_failed:
+            output_safety = _SAFETY_GUARD.check_output(full_content)
+            if not output_safety.safe:
+                logger.warning(
+                    "Meto stream output failed safety check for user %s; replacing. flags=%s",
+                    user_id,
+                    output_safety.flags,
+                )
+                full_content = _UNSAFE_OUTPUT_FALLBACK
+            yield f"data: {json.dumps({'type': 'chunk', 'delta': full_content})}\n\n"
 
         # Save assistant message
-        latency_ms = int((time.monotonic() - request_start) * 1000)
-        _SAFETY_GUARD.check_output(full_content)
-
         assistant_msg_id = self._save_message(
             db, conversation.id, "assistant", full_content,
             screen_context.screen_id,

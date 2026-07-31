@@ -34,7 +34,7 @@ Full program commit chain on this branch: `a500453, f5085cc, 4e5278d, 5542c3b, 1
 
 ## 3. Quality evidence
 
-- **Backend test suite:** green (0 failures) at every committed checkpoint; grew from ~3479 → ~3540+ tests across the program.
+- **Backend test suite:** green (0 failures) at every committed checkpoint; **3761 tests collected** at RC.
 - **Mobile:** `tsc --noEmit` clean; Jest **62/62** across 14 suites; lint 0 errors.
 - **Static:** `ruff` clean; single Alembic head maintained (CI single-head gate); migration up/down/re-up round-trips + Postgres integration tests.
 - **Independent review loop (per slice):** each slice reviewed by the relevant specialist agents (`security-reviewer`, `healthcare-reviewer`, `code-reviewer`, and for mobile `react-reviewer` + `typescript-reviewer`). **All confirmed P0/P1 were fixed in-slice with regression tests** before commit. Notable fixes: MDI TOCTOU-safe accept (2 P0), lab unit-misclassification clinical P0, reminder-for-stopped-schedule + inflated-adherence P1s, Meto debug-endpoint leak P1, marketplace double-charge P1, consent-literal P1.
@@ -44,7 +44,7 @@ Full program commit chain on this branch: `a500453, f5085cc, 4e5278d, 5542c3b, 1
 
 ## 4. Safety & security posture
 
-- **PHI-to-AI:** Meto now sees confirmed clinical data only; fail-closed feature-flag gate; provider name never disclosed; SafetyGuard (diagnosis/dose-change/provider-disclosure) reused.
+- **PHI-to-AI:** Meto now sees confirmed clinical data only; fail-closed feature-flag gate; provider name never disclosed. SafetyGuard output enforcement (diagnosis/dose-change/provider-disclosure) is **enforcing, not detection-only** — a response failing the output check is replaced with a safe fallback before it reaches the patient, on both the non-streaming path and the streaming path (streaming is buffered so the check runs before any content is emitted). *(This was corrected during the post-RC verification audit — see §8.)*
 - **Secrets:** boot now refuses committed default JWT/Fernet secrets in any non-dev/test environment (closes silent-injection-failure risk).
 - **Object storage:** server-generated keys, HMAC signed op-bound short-lived blob tokens (key derived separately from JWT secret), path-traversal guard, TOCTOU-safe accept.
 - **Authorization / BOLA:** verified already-safe — dashboard, lab, medication_schedule, documents, consultations all enforce caller-owns-resource.
@@ -77,3 +77,19 @@ Full program commit chain on this branch: `a500453, f5085cc, 4e5278d, 5542c3b, 1
 2. Schedule the one native-runtime session for the J2–J5 on-device DoD (§6).
 3. On approval, open the integration PR(s) to `main` and enable staging flags.
 4. Address any in-scope §5 items as discrete reviewed slices, then proceed toward DIST-RC (external credentials: Apple/Google signing, APNs/FCM, Azure DI + PHI-cloud authorization, real payment gateway).
+
+---
+
+## 8. Post-RC verification audit (2026-07-31)
+
+Before treating this report as distribution-ready, every claim above was re-verified by four independent adversarial auditors (security, clinical/privacy, migration+API contract, mobile flow), each required to CONFIRM or REFUTE against actual code + tests.
+
+**Result:** Security 7/7, mobile 8/8, migration+API 8/8 all CONFIRMED. The clinical/privacy audit found **one real discrepancy**: the §4 SafetyGuard claim was **overstated** — `check_output` was called but its result was discarded (detection-only), so a forbidden model response (provider self-disclosure / diagnosis / dose-change) could still reach the patient, and in the streaming path content was emitted before the check ran.
+
+**Fixed (`app/services/meto_chat.py`):** output safety is now enforcing — unsafe responses are replaced with a safe fallback on the non-streaming path, and the streaming path is buffered so the check runs before any content is emitted. Regression tests: `tests/test_meto_output_safety.py` (non-stream replacement + stream buffered-replacement, exercising the real SafetyGuard). §4 above corrected to match.
+
+**Minor phrasing corrected:** test count is 3761 (was "~3540+"); the MDI candidate→promotion relation is enforced at-most-once (one-to-one), while document→candidate is the one-to-many.
+
+**Tracked defense-in-depth follow-up (not a current gap):** `_build_recent_metrics` in the AI context builder has no verification filter of its own — it is safe today because `health_metrics` is only written from `self_report` (patient-authored) or from lab→metric promotion that already gates on verified rows. A future writer inserting an unverified metric would not be caught at the builder. Add a source/verification guard (or a verified column) as defense-in-depth before DIST-RC.
+
+With the enforcement fix in place and all other claims verified against code + tests, the report accurately reflects the implementation.
