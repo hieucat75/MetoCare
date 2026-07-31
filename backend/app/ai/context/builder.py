@@ -28,7 +28,7 @@ import json
 import logging
 from typing import Any
 
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 from sqlalchemy.orm import Session
 
 from app.ai.context.schemas import AssembledContext, ScreenContext
@@ -90,6 +90,14 @@ _METRICS_LOOKBACK_DAYS = 30
 _MAX_LABS = 10
 _MAX_METRICS_TYPES = 5
 _MAX_MEDICATIONS = 10
+
+# Defense-in-depth (AI2): health_metrics has no per-row verified flag, so the AI
+# context only trusts metrics from known-confirmed sources — patient-authored
+# entries and the lab->metric promotion, which is itself gated on verified lab
+# rows upstream (lab.py). Any FUTURE automated writer (e.g. an OCR metric
+# extractor) would carry an out-of-list source and is fail-closed excluded from
+# Meto until explicitly vetted and added here. NULL source = legacy patient data.
+_TRUSTED_METRIC_SOURCES = ("manual", "self_report", "lab_result", "device", "vital")
 
 
 class ContextBuilder:
@@ -599,10 +607,17 @@ class ContextBuilder:
                           )
                       AND measured_at >= :cutoff
                       AND deleted_at IS NULL
+                      -- AI2 defense-in-depth: only confirmed-source metrics reach
+                      -- the AI. NULL = legacy patient data (trusted).
+                      AND (source IS NULL OR source IN :sources)
                     ORDER BY measured_at DESC
                     LIMIT 50
-                """),
-                {"uid": user_id, "cutoff": cutoff},
+                """).bindparams(bindparam("sources", expanding=True)),
+                {
+                    "uid": user_id,
+                    "cutoff": cutoff,
+                    "sources": list(_TRUSTED_METRIC_SOURCES),
+                },
             ).fetchall()
 
             if not rows:

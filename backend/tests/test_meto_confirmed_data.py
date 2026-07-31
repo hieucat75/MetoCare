@@ -102,6 +102,47 @@ def test_build_recent_labs_none_when_only_unverified(db, patient):
     assert ContextBuilder()._build_recent_labs(db, patient["user_id"]) is None
 
 
+def test_build_recent_metrics_excludes_untrusted_source(db, patient):
+    """Defense-in-depth: a metric from an untrusted (e.g. future OCR) source is
+    excluded from the AI context; trusted patient/lab sources are included."""
+    from app.models.clinical import HealthMetric
+
+    now = dt.datetime.utcnow()  # naive UTC, as the app stores measured_at
+    db.add_all(
+        [
+            HealthMetric(
+                patient_id=patient["patient_id"],
+                metric_type="glucose_fasting",
+                value=5.5,
+                unit="mmol/L",
+                original_value=5.5,
+                original_unit="mmol/L",
+                measured_at=now,
+                source="manual",
+                status="normal",
+            ),
+            HealthMetric(
+                patient_id=patient["patient_id"],
+                metric_type="body_weight",
+                value=70.0,
+                unit="kg",
+                original_value=70.0,
+                original_unit="kg",
+                measured_at=now,
+                source="ocr_candidate",  # untrusted / unverified future source
+                status="normal",
+            ),
+        ]
+    )
+    db.commit()
+
+    rows = ContextBuilder()._build_recent_metrics(db, patient["user_id"])
+    assert rows is not None
+    types = {r["metric_type"] for r in rows}
+    assert "glucose_fasting" in types  # trusted source included
+    assert "body_weight" not in types  # untrusted source excluded
+
+
 def test_meto_chat_blocked_when_flag_off(patient, client, monkeypatch):
     # FEATURE_ is consulted before MCP_FEATURE_ in is_enabled, so this alone gates.
     monkeypatch.setenv("FEATURE_AI_ASSISTANT", "false")
