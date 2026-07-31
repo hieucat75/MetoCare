@@ -470,6 +470,7 @@ def create_manual_entry(
     file_hash: str | None = None,
     ocr_case_id: str | None = None,
     review_time_seconds: float | None = None,
+    commit: bool = True,
 ) -> tuple[LabDocument, list[LabResult]]:
     """Create a lab document + structured results from manual patient entry (PR-B).
 
@@ -636,9 +637,15 @@ def create_manual_entry(
                 patient_id,
             )
 
-    db.commit()
-    for row in rows:
-        db.refresh(row)
+    # commit=False lets a transaction-owning caller (the MDI lab promoter) keep
+    # the lab document/results/metrics + its candidate status + PromotionLink in
+    # one atomic scope; it flushes instead so ids are available.
+    if commit:
+        db.commit()
+        for row in rows:
+            db.refresh(row)
+    else:
+        db.flush()
     return doc, rows
 
 
