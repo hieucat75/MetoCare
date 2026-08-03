@@ -1,0 +1,122 @@
+# Journey C — Meto consent controls (grant/revoke) + AI-disabled note
+#
+# App: MetoCare patient (Expo React Native) — appId me.metocare.patient
+# Credentials come ONLY from env vars: ${MAESTRO_EMAIL} / ${MAESTRO_PASSWORD}
+#   Run with:  maestro test -e MAESTRO_EMAIL=... -e MAESTRO_PASSWORD=... .maestro/03-meto.yaml
+#
+# NOTE (screen gap found in mobile/app):
+#   There is NO Meto chat screen in mobile/app (grep for "chat"/"meto" finds only
+#   the consent screen and its comments). So the "send a message, assert a
+#   response renders" step cannot be authored — the chat UI does not exist yet.
+#   This flow fully covers the consent journey, which DOES exist:
+#   grant `medications` -> revoke it -> toggle `ai_processing` off/on.
+#
+#   Detail: the AI-disabled note (testID consent-ai-note) is STATIC copy that is
+#   ALWAYS rendered on the consent screen (not conditional on the ai_processing
+#   toggle). We assert it is visible, and separately assert the ai_processing
+#   STATE text flips when toggled off/on.
+appId: me.metocare.patient
+---
+# --- Stage 1: cold launch (independent run) ---
+- launchApp:
+    clearState: true
+
+# --- Stage 2: log in with env credentials ---
+- extendedWaitUntil:
+    visible:
+      id: "login-submit"
+    timeout: 15000
+- tapOn:
+    id: "login-email"
+- inputText: ${MAESTRO_EMAIL}
+- tapOn:
+    id: "login-password"
+- inputText: ${MAESTRO_PASSWORD}
+- hideKeyboard
+- tapOn:
+    id: "login-submit"
+
+# --- Stage 3: dashboard -> open consent screen ---
+- extendedWaitUntil:
+    visible:
+      id: "dashboard-empty"
+    timeout: 15000
+- scrollUntilVisible:
+    element:
+      id: "dashboard-consent"
+    direction: DOWN
+    timeout: 15000
+- tapOn:
+    id: "dashboard-consent"
+
+# --- Stage 4: consent screen loads (network: GET /meto/consent) ---
+- extendedWaitUntil:
+    visible:
+      id: "consent-toggle-medications"
+    timeout: 15000
+- assertVisible:
+    text: "Quyền riêng tư — Meto"   # consent.title
+# The AI-disabled note is always rendered on this screen
+- assertVisible:
+    id: "consent-ai-note"
+
+# --- Stage 5: GRANT medications (seeded UNGRANTED) ---
+- assertVisible:
+    id: "consent-state-medications"
+- tapOn:
+    id: "consent-toggle-medications"
+- extendedWaitUntil:
+    visible:
+      id: "consent-state-medications"
+      text: "Đang cho phép"        # consent.granted
+    timeout: 15000
+
+# --- Stage 6: REVOKE medications again (assert toggle state changes back) ---
+- tapOn:
+    id: "consent-toggle-medications"
+- extendedWaitUntil:
+    visible:
+      id: "consent-state-medications"
+      text: "Đang tắt"             # consent.revoked
+    timeout: 15000
+
+# --- Stage 7: toggle ai_processing OFF (seeded GRANTED) then back ON ---
+- scrollUntilVisible:
+    element:
+      id: "consent-toggle-ai_processing"
+    direction: DOWN
+    timeout: 15000
+- tapOn:
+    id: "consent-toggle-ai_processing"
+- extendedWaitUntil:
+    visible:
+      id: "consent-state-ai_processing"
+      text: "Đang tắt"
+    timeout: 15000
+# AI-disabled note remains visible while AI is off
+- assertVisible:
+    id: "consent-ai-note"
+# Re-enable ai_processing to leave the pilot account as seeded
+- tapOn:
+    id: "consent-toggle-ai_processing"
+- extendedWaitUntil:
+    visible:
+      id: "consent-state-ai_processing"
+      text: "Đang cho phép"
+    timeout: 15000
+
+# ------------------------------------------------------------------------------
+# OPTIONAL — Meto chat send/assert-response (screen does NOT exist yet).
+# Author against these PLACEHOLDER testIDs once a chat screen ships:
+#
+# - tapOn:
+#     id: "dashboard-meto"        # chat entry point (not implemented)
+# - tapOn:
+#     id: "meto-input"
+# - inputText: "Chỉ số đường huyết của tôi thế nào?"
+# - tapOn:
+#     id: "meto-send"
+# - extendedWaitUntil:
+#     visible:
+#       id: "meto-response-.*"
+#     timeout: 15000

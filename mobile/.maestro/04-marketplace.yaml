@@ -1,0 +1,132 @@
+# Journey D — Doctor marketplace: browse -> detail -> book -> consultation detail
+#
+# App: MetoCare patient (Expo React Native) — appId me.metocare.patient
+# Credentials come ONLY from env vars: ${MAESTRO_EMAIL} / ${MAESTRO_PASSWORD}
+#   Run with:  maestro test -e MAESTRO_EMAIL=... -e MAESTRO_PASSWORD=... .maestro/04-marketplace.yaml
+#
+# NOTE:
+#   Doctor cards (testID doctor-<id>) and consultation rows (consultation-<id>)
+#   have dynamic ids, so this flow taps the FIRST match via regex (id: "doctor-.*").
+#   The seeded verified doctor (fee 150000 VND -> "150.000đ") is the expected card.
+#   The review form (testID review-form) only renders when the consultation status
+#   is COMPLETED. A freshly booked consultation is REQUESTED, so the review form is
+#   correctly NOT shown here — asserted as absent. See the OPTIONAL block for the
+#   review-submit path once a consultation reaches COMPLETED.
+appId: me.metocare.patient
+---
+# --- Stage 1: cold launch (independent run) ---
+- launchApp:
+    clearState: true
+
+# Dismiss first-run onboarding if present (clearState shows it)
+- runFlow:
+    when:
+      visible:
+        id: "onboarding-skip"
+    commands:
+      - tapOn:
+          id: "onboarding-skip"
+
+# --- Stage 2: log in with env credentials ---
+- extendedWaitUntil:
+    visible:
+      id: "login-submit"
+    timeout: 15000
+- tapOn:
+    id: "login-email"
+- inputText: ${MAESTRO_EMAIL}
+- tapOn:
+    id: "login-password"
+- inputText: ${MAESTRO_PASSWORD}
+- hideKeyboard
+- tapOn:
+    id: "login-submit"
+
+# --- Stage 3: dashboard -> open marketplace ---
+# Gate on the marketplace CTA (always present) — a seeded account is NOT empty,
+# so dashboard-empty would be absent.
+- extendedWaitUntil:
+    visible:
+      id: "dashboard-find-doctor"
+    timeout: 20000
+- scrollUntilVisible:
+    element:
+      id: "dashboard-find-doctor"
+    direction: DOWN
+    timeout: 15000
+- tapOn:
+    id: "dashboard-find-doctor"
+
+# --- Stage 4: marketplace list loads (network: GET doctors) ---
+- extendedWaitUntil:
+    visible:
+      id: "marketplace-search"
+    timeout: 15000
+- assertVisible:
+    text: "Tìm bác sĩ"   # marketplace.title
+
+# --- Stage 5: open the seeded doctor's detail (first card) ---
+- scrollUntilVisible:
+    element:
+      id: "doctor-.*"
+    direction: DOWN
+    timeout: 15000
+- tapOn:
+    id: "doctor-.*"
+
+# --- Stage 6: doctor detail -> proceed to booking ---
+- extendedWaitUntil:
+    visible:
+      id: "doctor-detail-name"
+    timeout: 15000
+- assertVisible:
+    id: "doctor-book-cta"
+- tapOn:
+    id: "doctor-book-cta"
+
+# --- Stage 7: booking form — fill, accept consent, submit (mock payment) ---
+- extendedWaitUntil:
+    visible:
+      id: "book-submit"
+    timeout: 15000
+- assertVisible:
+    text: "Đặt lịch tư vấn"   # consultations.bookTitle
+- tapOn:
+    id: "book-chief-complaint"
+- inputText: "Đường huyết tăng cao gần đây"
+- hideKeyboard
+# Consent checkbox is required before submit is enabled
+- tapOn:
+    id: "book-consent"
+- tapOn:
+    id: "book-submit"
+
+# --- Stage 8: consultation detail appears after booking ---
+- extendedWaitUntil:
+    visible:
+      id: "detail-status"
+    timeout: 15000
+- assertVisible:
+    text: "Chi tiết tư vấn"   # consultations.detailTitle
+# Freshly booked consultation is not COMPLETED, so the review form is absent
+- assertNotVisible:
+    id: "review-form"
+
+# ------------------------------------------------------------------------------
+# OPTIONAL — leave a review once the consultation reaches COMPLETED status.
+# Only runnable when the seeded consultation is COMPLETED (review-form renders):
+#
+# - assertVisible:
+#     id: "review-form"
+# - tapOn:
+#     id: "star-5"
+# - tapOn:
+#     id: "review-feedback"
+# - inputText: "Bác sĩ tư vấn rất tận tình."
+# - hideKeyboard
+# - tapOn:
+#     id: "review-submit"
+# - extendedWaitUntil:
+#     visible:
+#       id: "review-thanks"
+#     timeout: 15000

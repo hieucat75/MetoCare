@@ -1,0 +1,85 @@
+# Journey B — Medication reminders / dose adherence (mark TAKEN / SKIPPED)
+#
+# App: MetoCare patient (Expo React Native) — appId me.metocare.patient
+# Credentials come ONLY from env vars: ${MAESTRO_EMAIL} / ${MAESTRO_PASSWORD}
+#   Run with:  maestro test -e MAESTRO_EMAIL=... -e MAESTRO_PASSWORD=... .maestro/02-medication.yaml
+#
+# NOTE (BLOCKING GAP — no screen exists yet):
+#   There is NO medication / reminders / schedule / adherence / dose screen in
+#   mobile/app, and no medication feature module under mobile/src/features or
+#   mobile/src/api (verified: features = consent, consultations, documents,
+#   marketplace; api has no medication.ts). The dashboard exposes no doses-due
+#   or reminders CTA either. The J3 medication-reminder loop is backend-only so
+#   far, so the seeded Metformin DUE dose cannot be marked TAKEN/SKIPPED from
+#   the app.
+#
+#   This flow therefore only asserts login -> dashboard succeeds and that NO
+#   medication surface is present. The commented block at the bottom is the
+#   intended flow to enable once a medication/reminders screen ships with the
+#   assumed testIDs.
+appId: me.metocare.patient
+---
+# --- Stage 1: cold launch (independent run) ---
+- launchApp:
+    clearState: true
+
+# --- Stage 2: log in with env credentials (email/password) ---
+- extendedWaitUntil:
+    visible:
+      id: "login-submit"
+    timeout: 15000
+- tapOn:
+    id: "login-email"
+- inputText: ${MAESTRO_EMAIL}
+- tapOn:
+    id: "login-password"
+- inputText: ${MAESTRO_PASSWORD}
+- hideKeyboard
+- tapOn:
+    id: "login-submit"
+
+# --- Stage 3: dashboard loads ---
+- extendedWaitUntil:
+    visible:
+      id: "dashboard-empty"
+    timeout: 15000
+- assertVisible:
+    text: "Xin chào.*"
+
+# --- Stage 4: assert the medication surface is genuinely absent (documents the gap) ---
+- assertNotVisible:
+    text: "Metformin"
+- assertNotVisible:
+    text: "Thuốc hôm nay"   # expected reminders heading (not yet implemented)
+
+# ------------------------------------------------------------------------------
+# OPTIONAL — intended Journey B once a reminders/medication screen exists.
+# Uses PLACEHOLDER testIDs; align them to the real screen when it ships.
+#
+# # Open reminders from the dashboard (CTA does not exist yet)
+# - scrollUntilVisible:
+#     element:
+#       id: "dashboard-reminders"
+#     direction: DOWN
+#     timeout: 15000
+# - tapOn:
+#     id: "dashboard-reminders"
+# # Find the seeded DUE Metformin dose
+# - extendedWaitUntil:
+#     visible:
+#       text: "Metformin"
+#     timeout: 15000
+# - assertVisible:
+#     id: "dose-status-.*"   # e.g. "Đến giờ" / due badge
+# # Mark the due dose TAKEN
+# - tapOn:
+#     id: "dose-take-.*"
+# - extendedWaitUntil:
+#     visible:
+#       text: "Đã uống"      # taken confirmation / adherence update
+#     timeout: 15000
+# # (Alternatively mark SKIPPED)
+# # - tapOn:
+# #     id: "dose-skip-.*"
+# # - assertVisible:
+# #     text: "Đã bỏ qua"
