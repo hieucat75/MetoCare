@@ -70,3 +70,4 @@ Thumbs.db
 # ---- Claude Code local settings (never commit) ----
 .claude/
 frontend/tsconfig.tsbuildinfo
+backend/.pilot-secrets/
