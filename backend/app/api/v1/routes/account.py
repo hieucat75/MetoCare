@@ -9,6 +9,7 @@ caller's PatientProfile by user_id, then compare ids).
 from __future__ import annotations
 
 import datetime as dt
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.encoders import jsonable_encoder
@@ -21,6 +22,9 @@ from app.models.patient import PatientProfile
 from app.models.user import UserRole
 from app.services import account as account_svc
 from app.services import audit
+from app.services.storage.factory import get_storage
+
+logger = logging.getLogger("mcp")
 
 router = APIRouter(tags=["account"])
 
@@ -82,7 +86,7 @@ def delete_account(
     """Soft-delete + anonymize the caller's account (GDPR erasure). Idempotent."""
     _assert_owns(db, user=user, patient_id=patient_id)
 
-    account_svc.delete_account(db, user_id=user.id, patient_id=patient_id)
+    orphaned_keys = account_svc.delete_account(db, user_id=user.id, patient_id=patient_id)
 
     audit.record(
         db,
@@ -94,5 +98,16 @@ def delete_account(
         ip_address=request.client.host if request.client else None,
     )
     db.commit()
+
+    # Erase backing object-storage blobs only AFTER the soft-delete is durable.
+    # Best-effort: a storage failure must not resurrect the (now deleted) account;
+    # it is logged for the orphan-reconciliation sweep to retry.
+    if orphaned_keys:
+        storage = get_storage()
+        for key in orphaned_keys:
+            try:
+                storage.delete(key)
+            except Exception:  # noqa: BLE001 — never fail erasure on a blob error
+                logger.warning("account_delete_blob_failed", extra={"resource_type": "blob"})
 
     return {"status": "deleted", "patient_id": patient_id}

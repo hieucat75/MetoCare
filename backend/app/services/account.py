@@ -21,9 +21,9 @@ import datetime as dt
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models.clinical import HealthMetric, LabResult, LabUploadBatch, Medication
+from app.models.clinical import HealthMetric, LabDocument, LabResult, LabUploadBatch, Medication
 from app.models.consultation import Consultation
-from app.models.medical_document import MedicalDocument
+from app.models.medical_document import DocumentPage, MedicalDocument
 from app.models.meto import MetoConsent, MetoConversation
 from app.models.patient import PatientProfile
 from app.models.user import User
@@ -134,16 +134,26 @@ def build_export_bundle(
     }
 
 
-def delete_account(db: Session, *, user_id: str, patient_id: str) -> None:
+def delete_account(db: Session, *, user_id: str, patient_id: str) -> list[str]:
     """Soft-delete + anonymize the caller's account and clinical data.
 
     Idempotent by construction: soft-delete stamps only touch rows whose
     ``deleted_at`` / ``revoked_at`` is still NULL, and PII anonymization is a
     plain overwrite. The caller (route) owns the commit.
+
+    Returns the list of object-storage keys backing the patient's medical
+    documents / lab uploads / page images so the route can erase those blobs
+    **after** the DB deletion commits (GDPR erasure completeness — the DB is
+    authoritative; blobs are removed only once the soft-delete is durable).
+    Keys are collected across *all* the patient's documents (not just newly
+    stamped ones), so re-running deletion also cleans blobs an earlier run left
+    behind. Storage ``delete`` is a no-op on missing keys, keeping this
+    idempotent.
     """
     from app.models.auth_tokens import RefreshToken
 
     now = _now()
+    orphaned_keys: list[str] = []
 
     # ---- Soft-delete clinical rows (never hard-delete) ----
     for model in (HealthMetric, LabResult, LabUploadBatch, Medication):
@@ -170,17 +180,39 @@ def delete_account(db: Session, *, user_id: str, patient_id: str) -> None:
         consult.deleted_at = now
         consult.deleted_by = user_id
 
-    for doc in (
-        db.execute(
-            select(MedicalDocument).where(
-                MedicalDocument.patient_id == patient_id, MedicalDocument.deleted_at.is_(None)
-            )
-        )
+    # Medical documents: stamp the still-active rows AND collect every blob key
+    # (quarantine + accepted) across all of the patient's documents for erasure.
+    docs = (
+        db.execute(select(MedicalDocument).where(MedicalDocument.patient_id == patient_id))
         .scalars()
         .all()
+    )
+    doc_ids = [doc.id for doc in docs]
+    for doc in docs:
+        if doc.quarantine_key:
+            orphaned_keys.append(doc.quarantine_key)
+        if doc.accepted_key:
+            orphaned_keys.append(doc.accepted_key)
+        if doc.deleted_at is None:
+            doc.deleted_at = now
+            doc.deleted_by = user_id
+
+    # Per-page images (no soft-delete column; collect their blobs for erasure).
+    if doc_ids:
+        for page in (
+            db.execute(select(DocumentPage).where(DocumentPage.document_id.in_(doc_ids)))
+            .scalars()
+            .all()
+        ):
+            if page.storage_key:
+                orphaned_keys.append(page.storage_key)
+
+    # Lab upload binaries (LabDocument holds the raw file object key).
+    for lab_doc in (
+        db.execute(select(LabDocument).where(LabDocument.patient_id == patient_id)).scalars().all()
     ):
-        doc.deleted_at = now
-        doc.deleted_by = user_id
+        if lab_doc.storage_key:
+            orphaned_keys.append(lab_doc.storage_key)
 
     for conv in (
         db.execute(
@@ -231,6 +263,8 @@ def delete_account(db: Session, *, user_id: str, patient_id: str) -> None:
         user.phone = None
         user.full_name = None
         user.is_active = False
+
+    return sorted(set(orphaned_keys))
 
 
 # ---------------------------------------------------------------------------

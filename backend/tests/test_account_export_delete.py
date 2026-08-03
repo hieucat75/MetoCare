@@ -7,10 +7,12 @@ import datetime as dt
 from app.core.security import create_access_token
 from app.main import app
 from app.models.auth_tokens import RefreshToken
-from app.models.clinical import HealthMetric, Medication
+from app.models.clinical import HealthMetric, LabDocument, Medication
+from app.models.medical_document import DocumentPage, MedicalDocument
 from app.models.meto import MetoConsent
 from app.models.patient import PatientProfile
 from app.models.user import User, UserRole
+from app.services import account as account_svc
 from fastapi.testclient import TestClient
 
 
@@ -174,3 +176,26 @@ def test_login_blocked_after_delete(db):
         raise AssertionError("login should have failed after account deletion")
     except auth_svc.AuthError:
         pass
+
+
+def test_delete_returns_object_storage_keys_for_erasure(db, patient):
+    """Privacy-F2 regression: GDPR erasure must surface every backing blob key
+    (medical-document quarantine/accepted, page images, lab uploads) so the
+    route can delete them from object storage after the soft-delete commits."""
+    pid = patient["patient_id"]
+    uid = patient["user_id"]
+
+    doc = MedicalDocument(
+        patient_id=pid, quarantine_key="quar/doc1", accepted_key="acc/doc1"
+    )
+    db.add(doc)
+    db.flush()
+    db.add(DocumentPage(document_id=doc.id, page_no=1, storage_key="page/doc1-1"))
+    db.add(LabDocument(patient_id=pid, storage_key="lab/upload1"))
+    db.commit()
+
+    keys = account_svc.delete_account(db, user_id=uid, patient_id=pid)
+
+    assert set(keys) == {"quar/doc1", "acc/doc1", "page/doc1-1", "lab/upload1"}
+    # Idempotent: keys still surface on a re-run so a failed prior sweep can retry.
+    assert set(account_svc.delete_account(db, user_id=uid, patient_id=pid)) == set(keys)
