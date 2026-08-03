@@ -142,14 +142,40 @@ def test_delete_anonymizes_pii_and_revokes(db, patient):
     assert consent.revoked_at is not None
 
 
-def test_delete_is_idempotent(db, patient):
+def test_delete_revokes_the_callers_token_immediately(db, patient):
+    """SEC-F2: once the account is deleted (is_active=False), the same access
+    token is rejected on the very next request — deletion takes effect against
+    the already-issued token, not only after it expires. (The delete *service*
+    itself remains idempotent — covered by
+    test_delete_returns_object_storage_keys_for_erasure's double call.)"""
     pid = patient["patient_id"]
     client = TestClient(app)
     r1 = client.request("DELETE", f"/api/v1/patients/{pid}/account", headers=patient["headers"])
     assert r1.status_code == 200, r1.text
-    # second call on an already-deleted account must not 500
+    # The token now belongs to a deactivated account → 401, not 200/500.
     r2 = client.request("DELETE", f"/api/v1/patients/{pid}/account", headers=patient["headers"])
-    assert r2.status_code == 200, r2.text
+    assert r2.status_code == 401, r2.text
+
+
+def test_deactivated_account_token_rejected_on_protected_route(db, patient):
+    """SEC-F2: an admin block (is_active=False) invalidates the account's
+    already-issued access token on the next protected request — generic 401,
+    same as an invalid token (no account-state enumeration)."""
+    pid = patient["patient_id"]
+    uid = patient["user_id"]
+    client = TestClient(app)
+
+    # token works while active
+    r_ok = client.get(f"/api/v1/patients/{pid}/export", headers=patient["headers"])
+    assert r_ok.status_code == 200, r_ok.text
+
+    # simulate admin block
+    db.get(User, uid).is_active = False
+    db.commit()
+
+    r_blocked = client.get(f"/api/v1/patients/{pid}/export", headers=patient["headers"])
+    assert r_blocked.status_code == 401, r_blocked.text
+    assert "token" in r_blocked.json()["detail"].lower()
 
 
 def test_login_blocked_after_delete(db):
