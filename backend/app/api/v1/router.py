@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from .routes import (
+    account,
     admin,
     admin_ai_sessions,
     admin_patients,
@@ -50,6 +51,8 @@ from .routes import (
 
 api_router = APIRouter()
 api_router.include_router(system.router)
+# Patient self-service GDPR data-subject rights — export + account deletion.
+api_router.include_router(account.router)
 api_router.include_router(auth.router)
 api_router.include_router(health.router)
 api_router.include_router(lab.router)
