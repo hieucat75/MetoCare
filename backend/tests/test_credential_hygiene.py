@@ -12,8 +12,12 @@ import subprocess
 
 _REPO = pathlib.Path(__file__).resolve().parents[2]
 
-# Assembled so `git grep` does not match this very file.
-_COMPROMISED = "Pilot" + "1234"
+# Known-compromised secrets that must never reappear in tracked files. Each is
+# assembled from parts so `git grep` does not match this very file.
+_COMPROMISED = [
+    "Pilot" + "1234",  # rotated pilot patient password
+    "AkfR8" + "hfhbE5sgRkUUFs6E61j",  # rotated dev Postgres admin password
+]
 
 
 def _git_grep(pattern: str) -> list[str]:
@@ -26,9 +30,10 @@ def _git_grep(pattern: str) -> list[str]:
     return [ln for ln in r.stdout.splitlines() if ln.strip()]
 
 
-def test_compromised_pilot_password_not_in_tracked_files():
-    hits = _git_grep(_COMPROMISED)
-    assert hits == [], f"compromised credential present in tracked files: {hits}"
+def test_compromised_credentials_not_in_tracked_files():
+    for needle in _COMPROMISED:
+        hits = _git_grep(needle)
+        assert hits == [], f"compromised credential present in tracked files: {hits}"
 
 
 def test_pilot_secrets_dir_not_tracked():

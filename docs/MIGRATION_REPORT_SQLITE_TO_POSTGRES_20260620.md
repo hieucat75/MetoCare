@@ -257,7 +257,7 @@ The PostgreSQL server must be provisioned. Two options:
 5. Compute: Burstable, B1ms
 6. Storage: 32 GB
 7. Admin username: mcpadmin
-8. Admin password: AkfR8hfhbE5sgRkUUFs6E61j
+8. Admin password: <REDACTED — committed-then-rotated; store in Key Vault, never in Git>
 9. Networking: Allow public access from any Azure service
 10. Database name: metocare (create after server creation)
 ```
