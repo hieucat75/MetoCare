@@ -82,6 +82,33 @@ FORBIDDEN_RESPONSE_PATTERNS = [
     r"tăng liều.*mg",
     r"giảm liều.*mg",
     r"uống thêm.*mg",
+    # -------------------------------------------------------------------
+    # CLIN PS-1: broadened backstop patterns (the system prompt is the
+    # primary control; this catches responses that slip past it). Patterns
+    # are anchored to unsafe *directive/definitive* phrasing so they do not
+    # fire on safe advice that defers to a doctor ("bạn nên hỏi bác sĩ về
+    # việc tăng liều" is not matched; "hãy tăng liều" is).
+    # -------------------------------------------------------------------
+    # Definitive diagnosis assertions (2nd/1st person)
+    r"chẩn đoán của bạn là",
+    r"bạn (đã |đang |chắc chắn |)mắc bệnh",
+    r"bạn bị bệnh",
+    r"bạn (chắc chắn |chính xác |)bị (tiểu đường|đái tháo đường|ung thư|suy thận|suy tim|tăng huyết áp)",
+    r"you are diagnosed with",
+    r"this is (a )?diagnosis",
+    # Provider / model self-disclosure (broadened, incl. English + provider names)
+    r"tôi là (một )?(mô hình|trợ lý ai|trí tuệ nhân tạo)",
+    r"mình là (một )?(mô hình|trợ lý ai|trí tuệ nhân tạo)",
+    r"i am (an? )?(ai|language model|large language model)",
+    r"as an ai",
+    r"language model",
+    r"\b(anthropic|openrouter|deepseek)\b",
+    # Medication / dose change — imperative-anchored (no 'mg' required)
+    r"(hãy|bạn nên|bạn hãy|tôi khuyên bạn|khuyên bạn nên|bạn cần)\s+(tự\s+)?(tăng|giảm|gấp đôi|tăng gấp đôi)\s*liều",
+    r"(hãy|bạn nên|bạn hãy|tôi khuyên bạn|khuyên bạn nên|bạn cần)\s+(tự\s+)?(ngừng|ngưng|dừng|bỏ|đổi|thay)\s*(uống\s*)?thuốc",
+    r"gấp đôi liều",
+    r"tự ý (tăng|giảm|ngừng|dừng|bỏ|đổi)",
+    r"không cần (đi )?(khám|gặp)",
 ]
 
 # ---------------------------------------------------------------------------

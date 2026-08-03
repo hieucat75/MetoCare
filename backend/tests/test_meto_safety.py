@@ -210,3 +210,62 @@ class TestSafetyResult:
         assert result.safe is False
         assert "đau ngực" in result.flags
         assert result.escalation_tier == "emergency"
+
+
+# ---------------------------------------------------------------------------
+# CLIN PS-1: broadened output-safety detector — must catch unsafe phrasings the
+# original literal list missed, WITHOUT flagging safe advice that defers to a
+# doctor.
+# ---------------------------------------------------------------------------
+
+class TestCheckOutputBroadened:
+    @pytest.mark.parametrize(
+        "response",
+        [
+            # Diagnosis claims (phrasings beyond "tôi chẩn đoán")
+            "Chẩn đoán của bạn là đái tháo đường type 2.",
+            "Bạn chắc chắn bị tiểu đường rồi.",
+            "This is a diagnosis of diabetes.",
+            # Medication change — imperative, no 'mg' present (the PS-1 example)
+            "Bạn nên tăng liều insulin gấp đôi.",
+            "Hãy tăng liều lên nhé.",
+            "Bạn cần ngừng thuốc metformin.",
+            "Bạn có thể tự ý giảm liều nếu thấy mệt.",
+            "Uống gấp đôi liều buổi sáng.",
+            # Dose instruction
+            "Hãy giảm liều xuống một nửa.",
+            # Provider / model impersonation (VN + English)
+            "Thực ra tôi là một mô hình ngôn ngữ lớn.",
+            "As an AI, I cannot feel emotions.",
+            "Tôi là trợ lý AI được huấn luyện bởi Anthropic.",
+            "I am an AI language model.",
+        ],
+    )
+    def test_unsafe_phrasings_are_blocked(self, guard: SafetyGuard, response: str):
+        result = guard.check_output(response)
+        assert result.safe is False, f"should have blocked: {response!r}"
+        assert result.flags
+
+    @pytest.mark.parametrize(
+        "response",
+        [
+            # Safe: defers the dose decision to the doctor (must NOT be flagged)
+            "Bạn nên hỏi bác sĩ về việc có cần tăng liều hay không.",
+            "Việc điều chỉnh liều nên do bác sĩ quyết định.",
+            "Nếu thấy mệt, bạn không nên tự tăng liều mà hãy báo bác sĩ.",
+            # Safe: explains without diagnosing or impersonating
+            "Chỉ số HbA1c 6.5% nằm ở ngưỡng tiền tiểu đường; hãy trao đổi với bác sĩ.",
+            "Meto là trợ lý sức khỏe của bạn, luôn sẵn sàng nhắc lịch uống thuốc.",
+        ],
+    )
+    def test_safe_deferrals_are_not_flagged(self, guard: SafetyGuard, response: str):
+        result = guard.check_output(response)
+        assert result.safe is True, f"false positive on safe advice: {response!r}"
+
+    def test_streaming_and_nonstreaming_use_the_same_detector(self, guard: SafetyGuard):
+        """Parity is structural: both meto_chat paths call this same
+        SafetyGuard.check_output, so a phrase blocked here is blocked in both."""
+        unsafe = "Hãy tăng liều gấp đôi ngay hôm nay."
+        assert guard.check_output(unsafe).safe is False
+        # deterministic across repeated (stream-chunk-buffered) calls
+        assert guard.check_output(unsafe).safe is guard.check_output(unsafe).safe

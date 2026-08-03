@@ -37,10 +37,21 @@ def _compose_dose(fields: dict) -> str | None:
 
 
 def _compose_note(fields: dict) -> str | None:
-    """Roll instructions/route/duration into the free-text note (no PHI beyond
-    what the patient photographed and confirmed)."""
+    """Roll instructions/quantity/route/duration into the free-text note (no PHI
+    beyond what the patient photographed and confirmed).
+
+    CLIN PS-2: the extracted ``quantity`` (a bare number captured from "SL/số
+    lượng: N", "x N", or "N viên/ống…") is preserved here as an explicit
+    "Số lượng" note rather than injected into ``dose``. In VN prescriptions that
+    number is most often the *dispensed total*, not a per-administration amount,
+    so promoting it into the dose could dangerously misstate the dose (e.g. a
+    30-tablet "dose"). Recording it in the note keeps the information on the
+    confirmed medication statement — patient-reviewable and provenance-preserved
+    (the raw value stays in ``candidate.fields_json``) — without that hazard."""
+    quantity = fields.get("quantity")
     bits = [
         fields.get("instructions"),
+        f"Số lượng: {str(quantity).strip()}" if quantity not in (None, "") else None,
         f"Đường dùng: {fields['route']}" if fields.get("route") else None,
         f"Thời gian: {fields['duration']}" if fields.get("duration") else None,
     ]

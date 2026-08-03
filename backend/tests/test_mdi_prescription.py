@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from app.services.mdi.extractors_prescription import PrescriptionExtractor
+from app.services.mdi.promoters import _compose_dose, _compose_note
 
 _RX = """PHÒNG KHÁM ĐA KHOA ABC
 Bác sĩ: Nguyễn Văn A
@@ -17,6 +18,30 @@ Chẩn đoán: Đái tháo đường type 2
 
 def _extract(text: str):
     return PrescriptionExtractor().extract(text=text, doc_type="prescription", ocr_confidence=0.9)
+
+
+def test_promoter_preserves_quantity_in_note_not_dose():
+    """CLIN PS-2: extracted quantity survives promotion (in the note) and is
+    never injected into the dose (dispensed-total safety)."""
+    fields = {
+        "strength": "500mg",
+        "form": "viên",
+        "quantity": "60",
+        "instructions": "uống 2 viên",
+        "route": "uống",
+        "duration": "10 ngày",
+    }
+    note = _compose_note(fields)
+    assert "Số lượng: 60" in note
+    dose = _compose_dose(fields)
+    assert "60" not in (dose or ""), "quantity must not become the dose"
+    assert dose == "500mg viên"
+
+
+def test_promoter_note_omits_quantity_when_absent():
+    """No quantity → no 'Số lượng' clutter; unrelated note fields unaffected."""
+    assert _compose_note({"instructions": "uống sau ăn"}) == "uống sau ăn"
+    assert "Số lượng" not in (_compose_note({"route": "uống"}) or "")
 
 
 def test_one_prescription_yields_many_medication_candidates():
