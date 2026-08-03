@@ -1,0 +1,27 @@
+Running on metocare_pilot_api34
+ > Flow 01-documents
+Launch app "me.metocare.patient" with clear state... COMPLETED
+Assert that id: onboarding-skip is visible... COMPLETED
+Tap on id: onboarding-skip... COMPLETED
+Assert that id: login-submit is visible... COMPLETED
+Tap on id: login-email... COMPLETED
+Input text ${MAESTRO_EMAIL}... COMPLETED
+Tap on id: login-password... COMPLETED
+Input text ${MAESTRO_PASSWORD}... COMPLETED
+Hide Keyboard... COMPLETED
+Tap on id: login-submit... COMPLETED
+Assert that id: dashboard-add-document is visible... COMPLETED
+Assert that "Xin chào.*" is visible... COMPLETED
+Scrolling DOWN until id: dashboard-add-document is visible with speed 40, visibility percentage 100%, timeout 15000 ms, with centering disabled... COMPLETED
+Tap on id: dashboard-add-document... COMPLETED
+Assert that "Thêm tài liệu y tế" is visible... COMPLETED
+Assert that id: doctype-prescription is visible... COMPLETED
+Assert that id: doctype-lab_report is visible... COMPLETED
+Assert that id: doctype-general is visible... COMPLETED
+Assert that id: add-qa-fixture is visible... COMPLETED
+Tap on id: add-qa-fixture... COMPLETED
+Assert that "Kiểm tra & xác nhận" is visible... COMPLETED
+Assert that id: candidate-.* is visible... COMPLETED
+Tap on id: confirm-.*... COMPLETED
+Assert that id: status-.* is visible... COMPLETED
+Assert that "Đã xác nhận" is visible... COMPLETED

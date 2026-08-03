@@ -38,6 +38,27 @@ the per‑journey step logs are committed under `logs/`.
   consultation detail. Review form correctly absent for a `REQUESTED` consultation;
   notes 403‑before‑completion is non‑fatal to the detail view.
 
+## Staging run — standalone release APK vs deployed staging backend
+
+The decisive pilot evidence. A **standalone release APK** (Hermes, minified, debug-keystore
+signed) was built with `EXPO_PUBLIC_API_URL` = the verified HTTPS staging URL baked into
+the bundle (`--rerun-tasks` forced a fresh bundle), installed on the same API-34 arm64 AVD
+with **no `adb reverse`** — so the only reachable backend is the deployed staging Container
+App (revision `d25f109f`, integration branch, `migration_version=j4_m8_consent_versioning`).
+Synthetic pilot data seeded inside Azure via a one-shot Container Apps Job (KV secrets; PG
+firewall untouched). AI mode = `production` (Journey C used real Meto provider).
+
+| Journey | Video file | SHA‑256 | Size | Steps | Failures |
+|---|---|---|---|---|---|
+| A — Document (QA fixture) | `videos-staging/01-documents.mp4` | `342d01e4c61513b53eee2d3677611279cd054832b7bcbe59b86e520c4abd4e02` | 4.1M | 25 | 0 |
+| B — Medication daily care | `videos-staging/02-medication.mp4` | `144aea1263623d7c52132506408a9d657a3fa9baacab25ec5709bb840155eeff` | 4.9M | 29 | 0 |
+| C — Meto (consent‑aware, real AI) | `videos-staging/03-meto.mp4` | `ee87dde68f51bcd4b81b28513f61775764e70c8ae45492cc82c2485344edef3d` | 7.4M | 33 | 0 |
+| D — Doctor marketplace | `videos-staging/04-marketplace.mp4` | `c1278003f5ed11da8d258fc5e77aea79bdc2807f89a7cecf9e5e3308ebd03b1a` | 5.0M | 30 | 0 |
+
+**Backend state mutation verified:** `GET /patients/{id}/reminders/due` returned **1** before
+Journey B and **0** after — the standalone APK marked the seeded due dose taken against the
+real staging DB. Sanitized per-journey step logs under `logs-staging/`.
+
 ## Verifying a file against this manifest
 
 ```bash

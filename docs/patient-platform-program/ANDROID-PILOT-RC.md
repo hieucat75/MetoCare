@@ -49,6 +49,52 @@ See `CREDENTIAL-READINESS-MATRIX.md`. None blocks the Android *internal* pilot e
 4. Testers log in with the email demo accounts.
 5. Collect crash/logs via `adb logcat` / a crash reporter (none wired yet — see rollback).
 
+## 11. Pilot QA Run (2026-08-03) — FINAL
+
+### Verdict: **✅ ANDROID INTERNAL PILOT READY**
+
+All four native journeys pass on a standalone release APK against the deployed staging
+backend (integration branch `d25f109`). Every blocker in the earlier NOT-READY draft was an
+owner-decision item (missing B/C mobile UI = already in the approved BRD; staging deploy of the
+integration branch); both were resolved by owner decision in the final directive and executed.
+
+### Environment
+- AVD `metocare_pilot_api34` — **Android 14 / API 34, arm64-v8a, `-gpu host` (Metal)**. Host is Apple Silicon (aarch64); x86_64 emulation is unsupported here, so arm64-v8a is the correct/only stable ABI (owner spec said x86_64 — documented deviation with reason).
+- **Maestro 2.8.0**; flows in `mobile/.maestro/`.
+- **Backend = deployed STAGING** Container App revision `ca-metocare-backend--d25f109f` (`RunningAtMaxScale`), `migration_version=j4_m8_consent_versioning` (single head), `env=staging`, `consent_gate=true`. Standalone release APK reaches it over **HTTPS with no `adb reverse`** (staging is the only reachable backend).
+
+### Distributable artifact
+- `mobile/android/app/build/outputs/apk/release/app-release.apk` — release (Hermes, minified), `APP_ENV=staging`, `EXPO_PUBLIC_API_URL` = verified staging HTTPS URL baked into a freshly-forced bundle. pkg `me.metocare.patient`. (Checksum recomputed on each rebuild; see build log.)
+- QA document-fixture entry is gated on `IS_NON_PRODUCTION` (build-time) AND backend `qa_fixture_enabled`; production builds omit the button and the backend fails-loud if the flag is set in prod.
+
+### Staging deploy (executed this run)
+- Integration branch pushed to `origin/feat/patient-platform-journey2`; deployed via `azure-staging.yml` (workflow_dispatch, run `30797337153` — **success**). Contained path: **no merge to main, production untouched** (main→staging auto-deploy is the only production-adjacent path and was not used; production deploy is manual `workflow_dispatch` with `confirm=PRODUCTION`).
+- Alembic migrations applied via the one-shot Container Apps Job (approved path) — **success**; single head confirmed.
+- Env-scoped auth: `MCP_ALLOW_RELAXED_AUTH=true` set on staging so the new fail-loud auth guard boots for the pilot (MFA restore is a DIST-RC item; staging relaxation is explicit + logged, prod always fails loud).
+- Synthetic pilot data seeded **inside Azure** via a one-shot ACA job (KV secrets; **PG firewall untouched**).
+
+### Per-journey result (standalone APK vs staging, all recorded)
+| Journey | Result | Evidence |
+|---|---|---|
+| **A — Document (QA fixture → upload-session→quarantine→finalize→OCR→candidate→confirm→promote)** | ✅ PASS (25 steps, 0 fail) | `videos-staging/01-documents.mp4`, `logs-staging/01-documents.log` |
+| **B — Medication daily care (list→detail→schedule→due dose→mark taken→adherence)** | ✅ PASS (29 steps, 0 fail); backend `reminders/due` **1→0** (dose consumed) | `videos-staging/02-medication.mp4` |
+| **C — Meto (consent-aware entry→chat, real production AI)** | ✅ PASS (33 steps, 0 fail) | `videos-staging/03-meto.mp4` |
+| **D — Doctor marketplace (browse→detail→book+consent+mock-pay→consultation detail)** | ✅ PASS (30 steps, 0 fail) | `videos-staging/04-marketplace.mp4` |
+
+Video checksums + local-backend cross-run in `VIDEO-MANIFEST.md`. No fabricated evidence — the one earlier Journey-A/B failures (409-on-repeat fixture, consumed due dose) were root-caused and fixed (per-call nonce; duplicate-tolerant re-runnable seed) before these green runs.
+
+### Independent review (this run)
+- Backend security review: **0 P0/P1** (nonce sound, does not weaken `(patient_id, sha256)` accepted-doc uniqueness; QA route confirmed prod-unreachable). 1 P2 informational (staging fixture rows accumulate — acceptable).
+- Mobile review: **1 P1 fixed** — consultation notes fetch now swallows only the documented 403, rethrowing 5xx/network/401 instead of masking real errors as "no notes".
+- Regression: backend pytest exit 0 (0 failures); mobile jest 88/88; mobile tsc clean.
+
+### Residual (non-blocking, DIST-RC scope per owner)
+- MFA/password restore before DIST-RC (staging relaxation is env-scoped + fail-loud elsewhere).
+- Crash/log capture (`adb logcat` / crash reporter) not yet wired — recommend before wide pilot.
+- Real (non-fixture) camera OCR + real-AI determinism are exercised but not load-tested.
+
+---
+
 ## 10. Rollback
 - **App:** `adb install -r <previous app-release.apk>`; or `adb uninstall me.metocare.patient` then install the prior build. No native DB migration risk (RN app is stateless beyond SecureStore tokens; clearing app data logs the user out safely).
 - **Backend:** staging deploy rollback = redeploy the prior image via `azure-staging.yml` (or ACA revision rollback). Alembic is single-head and additive this program; `alembic downgrade -1` reverses the consent-versioning migration if needed.
