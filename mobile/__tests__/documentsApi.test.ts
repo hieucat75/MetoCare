@@ -2,6 +2,7 @@ import { createApiClient } from '../src/api/client'
 import { createTokenStore } from '../src/storage/tokenStore'
 import {
   confirmCandidate,
+  createQaFixtureDocument,
   createUploadSession,
   finalizeUpload,
   hostOrigin,
@@ -98,6 +99,21 @@ describe('MDI documents API contract', () => {
         fetchImpl,
       })
     ).rejects.toThrow(/403/)
+  })
+
+  it('createQaFixtureDocument POSTs to /documents/qa-fixture and returns the document', async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = []
+    const fetchImpl = jest.fn(async (url: string, init?: RequestInit) => {
+      calls.push({ url, init })
+      return jsonRes(200, { id: 'qa-doc-1', status: 'needs_review', doc_type: 'prescription' })
+    }) as unknown as typeof fetch
+    const client = createApiClient({ baseUrl: BASE, tokens: tokensWithAccess(), fetchImpl })
+
+    const doc = await createQaFixtureDocument(client)
+    expect(doc.id).toBe('qa-doc-1')
+    expect(doc.status).toBe('needs_review')
+    expect(calls[0]!.url).toBe('http://api.test/api/v1/documents/qa-fixture')
+    expect(calls[0]!.init?.method).toBe('POST')
   })
 
   it('finalize / listCandidates / confirm / merge hit the right paths + bodies', async () => {

@@ -8,7 +8,9 @@ import { useAuth } from '../../src/auth/AuthContext'
 import { GlassCard } from '../../src/components/GlassCard'
 import { PrimaryButton } from '../../src/components/PrimaryButton'
 import { LoadingView, OfflineBanner } from '../../src/components/StateViews'
-import type { DocTypeHint } from '../../src/api/documents'
+import { createQaFixtureDocument, type DocTypeHint } from '../../src/api/documents'
+import { toPageError } from '../../src/api/client'
+import { IS_NON_PRODUCTION } from '../../src/config/env'
 import { useAddDocument } from '../../src/features/documents/useAddDocument'
 import { useNetworkStatus } from '../../src/hooks/useNetworkStatus'
 import { vi } from '../../src/i18n/vi'
@@ -31,12 +33,27 @@ export default function AddDocumentScreen() {
   const { isOffline } = useNetworkStatus()
   const { phase, errorMsg, submit } = useAddDocument(client)
   const [docType, setDocType] = useState<DocTypeHint>('prescription')
+  const [qaBusy, setQaBusy] = useState(false)
+  const [qaError, setQaError] = useState<string | undefined>(undefined)
 
   async function handleAsset(result: ImagePicker.ImagePickerResult) {
     const asset = assetFrom(result)
     if (!asset) return
     const documentId = await submit(asset, docType)
     if (documentId) router.push(`/review/${documentId}`)
+  }
+
+  async function handleQaFixture() {
+    setQaBusy(true)
+    setQaError(undefined)
+    try {
+      const doc = await createQaFixtureDocument(client)
+      router.push(`/review/${doc.id}`)
+    } catch (err) {
+      setQaError(toPageError(err).message)
+    } finally {
+      setQaBusy(false)
+    }
   }
 
   async function takePhoto() {
@@ -49,7 +66,7 @@ export default function AddDocumentScreen() {
     await handleAsset(await ImagePicker.launchImageLibraryAsync({ quality: 0.7 }))
   }
 
-  if (phase === 'uploading') return <LoadingView label={vi.documents.uploading} />
+  if (phase === 'uploading' || qaBusy) return <LoadingView label={vi.documents.uploading} />
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -88,11 +105,26 @@ export default function AddDocumentScreen() {
             style={styles.action}
             testID="add-choose-image"
           />
+          {IS_NON_PRODUCTION && (
+            <PrimaryButton
+              label={vi.documents.qaFixture}
+              variant="ghost"
+              onPress={() => void handleQaFixture()}
+              style={styles.action}
+              testID="add-qa-fixture"
+            />
+          )}
         </GlassCard>
 
         {phase === 'error' && errorMsg && (
           <Text style={styles.error} testID="add-error">
             {errorMsg}
+          </Text>
+        )}
+
+        {qaError && (
+          <Text style={styles.error} testID="add-qa-error">
+            {qaError}
           </Text>
         )}
 

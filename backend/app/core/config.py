@@ -175,6 +175,14 @@ class Settings(BaseSettings):
     # Production always fails loud on relaxed auth regardless of this flag.
     allow_relaxed_auth: bool = False
 
+    # ---- QA fixture ingestion (dev/staging automation ONLY) ----
+    # Enables POST /documents/qa-fixture, which ingests a BUNDLED synthetic
+    # document through the real ingestion pipeline so Journey A (document OCR)
+    # can be automated without the native camera. NEVER for production: the
+    # startup guard below refuses to boot prod when this is true. Set
+    # MCP_QA_FIXTURE_ENABLED=true only on dev/staging QA builds.
+    qa_fixture_enabled: bool = False
+
     # ---- Observability ----
     log_level: str = "INFO"
     metrics_enabled: bool = True  # exposes /metrics; disable on untrusted edges
@@ -285,6 +293,16 @@ class Settings(BaseSettings):
                     "STAGING booting with RELAXED AUTH (build-phase override): %s",
                     "; ".join(relaxed),
                 )
+
+        # Fail loud on the QA fixture path in production. The bundled-fixture
+        # ingestion endpoint is a dev/staging automation aid and must be
+        # unreachable in prod; refuse to boot rather than expose it there.
+        if env in ("prod", "production") and self.qa_fixture_enabled:
+            raise RuntimeError(
+                f"Refusing to start in env={self.env!r} with the QA fixture path "
+                "enabled (MCP_QA_FIXTURE_ENABLED). It is a dev/staging automation "
+                "aid only and must never be reachable in production."
+            )
 
     def warn_if_insecure(self) -> list[str]:
         """Return a list of insecure-config warnings (used at startup)."""

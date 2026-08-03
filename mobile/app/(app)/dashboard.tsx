@@ -80,6 +80,29 @@ export default function DashboardScreen() {
         />
 
         <PrimaryButton
+          label={vi.dashboard.chatWithMeto}
+          onPress={() => router.push('/meto')}
+          style={styles.meto}
+          testID="dashboard-meto"
+        />
+
+        <PrimaryButton
+          label={vi.dashboard.myMedications}
+          onPress={() => router.push('/medications')}
+          variant="ghost"
+          style={styles.link}
+          testID="dashboard-my-medications"
+        />
+
+        <PrimaryButton
+          label={vi.dashboard.medicationReminders}
+          onPress={() => router.push('/reminders')}
+          variant="ghost"
+          style={styles.link}
+          testID="dashboard-medication-reminders"
+        />
+
+        <PrimaryButton
           label={vi.dashboard.findDoctor}
           onPress={() => router.push('/marketplace')}
           variant="ghost"
@@ -126,6 +149,7 @@ const styles = StyleSheet.create({
   emptyBody: { ...typography.body, color: colors.inkMuted },
   reload: { marginTop: spacing.lg },
   addDoc: { marginTop: spacing.md },
+  meto: { marginTop: spacing.md },
   link: { marginTop: spacing.md },
   logout: { marginTop: spacing.md },
 })

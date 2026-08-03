@@ -17,6 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.fixtures import QaFixture
 from app.models.medical_document import (
     CAND_STATUS_CONFIRMED,
     CAND_STATUS_EXTRACTED,
@@ -137,9 +138,20 @@ def create_upload_session(
 
 
 def finalize_upload(
-    db: Session, *, patient_id: str, document_id: str, doc_type_hint: str | None = None
+    db: Session,
+    *,
+    patient_id: str,
+    document_id: str,
+    doc_type_hint: str | None = None,
+    ocr_run=None,
 ) -> MedicalDocument:
-    """Validate + scan + accept the quarantined object, then extract (§1.7.3–.4)."""
+    """Validate + scan + accept the quarantined object, then extract (§1.7.3–.4).
+
+    ``ocr_run`` is an optional deterministic OCR callable ``(bytes, mime) ->
+    OcrTextResult`` used only by the QA fixture path so ingestion is reproducible
+    without a camera/real OCR engine. Production callers leave it ``None``, which
+    selects the real engine — this seam never weakens the live upload flow.
+    """
     doc = _load_owned(db, patient_id=patient_id, document_id=document_id)
     if doc.object_state != OBJECT_STATE_QUARANTINED or doc.accepted_key:
         raise InvalidDocumentState("Tài liệu đã được xử lý.")
@@ -245,18 +257,87 @@ def finalize_upload(
     )
 
     # ── extract (workers process accepted objects only) ──────────────────────
-    _run_extraction(db, doc=doc, data=data, doc_type_hint=doc_type_hint or doc.doc_type)
+    _run_extraction(
+        db,
+        doc=doc,
+        data=data,
+        doc_type_hint=doc_type_hint or doc.doc_type,
+        ocr_run=ocr_run,
+    )
     return doc
 
 
+def ingest_qa_fixture(
+    db: Session, *, patient_id: str, fixture: QaFixture
+) -> MedicalDocument:
+    """QA-only: ingest a BUNDLED synthetic fixture through the REAL pipeline.
+
+    Runs the exact ingestion path a camera upload does — ``create_upload_session``
+    → object write → ``finalize_upload`` (validate/scan/accept) → staged
+    extraction → ``needs_review`` candidates. The only differences from a real
+    upload are dev/staging automation aids, NOT pipeline shortcuts:
+
+    * the server writes the fixture bytes to the quarantine key directly instead
+      of issuing an HTTP PUT round-trip (the signed token IS the authz; this is
+      the same ``storage.put_bytes`` the blob-PUT route performs), and
+    * a deterministic OCR callable feeds the fixture's known text into the real
+      classifier + extractors so candidates are reproducible without a camera.
+
+    The caller MUST have already gated this on ``settings.qa_fixture_enabled``.
+    """
+    from app.services.ocr_engine import OcrTextResult
+
+    session = create_upload_session(
+        db,
+        patient_id=patient_id,
+        declared_mime=fixture.mime,
+        declared_sha256=hashlib.sha256(fixture.image_bytes).hexdigest(),
+        declared_size=len(fixture.image_bytes),
+        doc_type_hint=fixture.doc_type_hint,
+    )
+    doc = session.document
+    # Land the bytes in quarantine exactly as the authenticated blob PUT would.
+    get_storage().put_bytes(doc.quarantine_key, fixture.image_bytes)
+    db.flush()
+
+    def _qa_ocr(_image_bytes: bytes, _mime: str) -> OcrTextResult:
+        return OcrTextResult(
+            text=fixture.ocr_text,
+            confidence=fixture.ocr_confidence,
+            provider="qa-fixture",
+        )
+
+    finalized = finalize_upload(
+        db, patient_id=patient_id, document_id=doc.id, ocr_run=_qa_ocr
+    )
+    audit.record(
+        db,
+        actor_type="patient",
+        actor_id=patient_id,
+        action="document.qa_fixture",
+        resource_type="medical_document",
+        resource_id=finalized.id,
+    )
+    return finalized
+
+
 def _run_extraction(
-    db: Session, *, doc: MedicalDocument, data: bytes, doc_type_hint: str | None
+    db: Session,
+    *,
+    doc: MedicalDocument,
+    data: bytes,
+    doc_type_hint: str | None,
+    ocr_run=None,
 ) -> DocumentExtraction:
     """Run the staged pipeline and persist extraction + pages + candidates (§1.5)."""
+    # Default (None) → the real engine via run_pipeline's own default; the QA
+    # fixture path injects a deterministic callable so candidates are reproducible.
+    pipeline_kwargs = {"ocr_run": ocr_run} if ocr_run is not None else {}
     result = run_pipeline(
         page_bytes=[data],
         mime=doc.mime or "application/octet-stream",
         doc_type_hint=doc_type_hint,
+        **pipeline_kwargs,
     )
     doc.doc_type = result.doc_type
     doc.classification_confidence = result.classification_confidence

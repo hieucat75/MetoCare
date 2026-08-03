@@ -124,6 +124,16 @@ export function finalizeUpload(client: ApiClient, uploadId: string): Promise<Doc
   return client.post<DocumentOut>(`/documents/${uploadId}/finalize`)
 }
 
+/**
+ * QA-only: ask the backend to ingest a bundled synthetic document through the
+ * real pipeline and return the resulting needs_review document. Only reachable
+ * on dev/staging builds where the backend has `qa_fixture_enabled` on; the
+ * endpoint 404s otherwise (and can never be enabled in production).
+ */
+export function createQaFixtureDocument(client: ApiClient): Promise<DocumentOut> {
+  return client.post<DocumentOut>('/documents/qa-fixture')
+}
+
 export function listCandidates(client: ApiClient, documentId: string): Promise<CandidateListOut> {
   return client.get<CandidateListOut>(`/documents/${documentId}/candidates`)
 }

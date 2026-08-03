@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import CurrentUser, enforce_rate_limit, get_session, require_roles
 from app.core.config import get_settings
 from app.core.feature_flags import FeatureFlag, is_enabled
+from app.fixtures import load_qa_prescription_fixture
 from app.models.medical_document import (
     OBJECT_STATE_ACCEPTED,
     ExtractionCandidate,
@@ -165,6 +166,34 @@ def create_upload_session(
         expires_at=put.expires_at,
         status=session.document.status,
     )
+
+
+@router.post("/documents/qa-fixture", response_model=DocumentOut)
+def create_qa_fixture_document(
+    request: Request,
+    user: CurrentUser = Depends(_PatientOnly),
+    db: Session = Depends(get_session),
+) -> DocumentOut:
+    """QA-only: ingest a bundled synthetic document through the real pipeline.
+
+    Dev/staging automation aid so Journey A (document OCR) is testable without the
+    native camera. Returns 404 unless ``settings.qa_fixture_enabled`` — which the
+    startup guard forbids in production — so this endpoint is unreachable in prod.
+    The response ``id`` is the new ``needs_review`` document for the review screen.
+    """
+    if not get_settings().qa_fixture_enabled:
+        raise HTTPException(status_code=404, detail="Not Found")
+    _require_flag()
+    enforce_rate_limit(request, "document_upload")
+    patient_id = _resolve_patient_id(db, user)
+    fixture = load_qa_prescription_fixture()
+    try:
+        doc = mdi.ingest_qa_fixture(db, patient_id=patient_id, fixture=fixture)
+    except mdi.MdiError as exc:
+        db.commit()  # persist any rejection/hold state before surfacing the error
+        raise _map_mdi_error(exc) from exc
+    db.commit()
+    return _doc_out(doc)
 
 
 @router.post("/documents/{upload_id}/finalize", response_model=DocumentOut)

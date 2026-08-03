@@ -23,3 +23,10 @@ export const API_BASE_URL: string =
 export const APP_ENV: AppEnv = extra.appEnv ?? 'development'
 
 export const IS_STAGING = APP_ENV === 'staging'
+
+/**
+ * True on non-production (development OR staging) builds. Gates dev/staging-only
+ * affordances such as the QA fixture ingestion entry so they never render in a
+ * production build.
+ */
+export const IS_NON_PRODUCTION: boolean = APP_ENV === 'development' || APP_ENV === 'staging'
