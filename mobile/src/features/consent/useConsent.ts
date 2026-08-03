@@ -61,12 +61,21 @@ export function useConsent(client: ApiClient): ConsentState {
       _patchGranted(contextType, granted) // optimistic
       try {
         await updateConsent(client, contextType, granted)
-        // Re-sync granted_at / policy_version without a full loading flash.
+      } catch (err) {
+        // Only a FAILED mutation means the change didn't happen — revert then.
+        _patchGranted(contextType, !granted)
+        setErrorMsg(toPageError(err).message)
+        setPendingType(null)
+        return
+      }
+      // Mutation committed server-side. Re-sync granted_at/policy_version as a
+      // best effort — a failure here must NOT revert the successful toggle
+      // (that would show a consent state contradicting the server).
+      try {
         const rows = await listConsent(client)
         setItems(rows)
-      } catch (err) {
-        _patchGranted(contextType, !granted) // revert
-        setErrorMsg(toPageError(err).message)
+      } catch {
+        // keep the optimistic value; metadata refreshes on next load
       } finally {
         setPendingType(null)
       }

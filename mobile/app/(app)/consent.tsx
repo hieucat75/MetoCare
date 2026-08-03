@@ -58,6 +58,8 @@ export default function ConsentScreen() {
                   onValueChange={(next) => void toggle(item.context_type, next)}
                   disabled={busy}
                   trackColor={{ true: colors.mint, false: colors.border }}
+                  accessibilityLabel={name}
+                  accessibilityHint={item.purpose}
                   testID={`consent-toggle-${item.context_type}`}
                 />
               </View>

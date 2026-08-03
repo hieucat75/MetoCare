@@ -105,4 +105,22 @@ describe('ConsentScreen', () => {
       expect(mockUpdateConsent).toHaveBeenCalledWith(expect.anything(), 'ai_processing', false)
     })
   })
+
+  it('keeps the committed toggle when the post-mutation resync fails (no bogus revert)', async () => {
+    // Initial load succeeds; the resync GET after the successful mutation fails.
+    mockListConsent.mockReset()
+    mockListConsent.mockResolvedValueOnce(SEEDED).mockRejectedValueOnce(new Error('network'))
+    const view = await render(<ConsentScreen />)
+    const toggle = await waitFor(() => view.getByTestId('consent-toggle-health_records'))
+
+    fireEvent(toggle, 'valueChange', true)
+
+    await waitFor(() => {
+      expect(mockUpdateConsent).toHaveBeenCalledWith(expect.anything(), 'health_records', true)
+    })
+    // Mutation succeeded server-side; a failed resync must NOT revert the switch.
+    await waitFor(() => {
+      expect(view.getByTestId('consent-toggle-health_records').props.value).toBe(true)
+    })
+  })
 })
