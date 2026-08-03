@@ -139,6 +139,13 @@ def _default_meto_consent(request, monkeypatch):
             "app.services.meto_chat.is_granted",
             lambda db, user_id, category: True,
         )
+        # PRIV-F1: the documents pipeline is now gated on `documents` consent.
+        # Grant it by default so existing pipeline tests run without seeding
+        # consent; real fail-closed behavior is exercised under @real_consent.
+        monkeypatch.setattr(
+            "app.api.v1.routes.documents.is_granted",
+            lambda db, user_id, category: True,
+        )
     yield
 
 

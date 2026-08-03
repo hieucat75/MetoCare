@@ -15,6 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.ai.consent_policy import CATEGORY_DOCUMENTS, is_granted
 from app.api.deps import CurrentUser, enforce_rate_limit, get_session, require_roles
 from app.core.config import get_settings
 from app.core.feature_flags import FeatureFlag, is_enabled
@@ -40,6 +41,7 @@ from app.schemas.medical_document import (
     UploadSessionCreate,
     UploadSessionOut,
 )
+from app.services.consent_guard import ConsentDenied
 from app.services.mdi import promoter as promoter_registry
 from app.services.mdi import service as mdi
 from app.services.mdi.bootstrap import register_defaults
@@ -73,12 +75,31 @@ def _require_flag() -> None:
         raise HTTPException(status_code=503, detail="Tính năng OCR đang tắt.")
 
 
+def _require_documents_consent(db: Session, user_id: str) -> None:
+    """PRIV-F1: gate the medical-documents pipeline on the patient's ``documents``
+    consent (fail-closed). Uploading, OCR processing, reviewing candidates,
+    promoting, and accessing document content/OCR text all require an active
+    grant at the CURRENT policy version — revoking it, or a policy-version bump,
+    blocks further processing/access on the very next request (403 CONSENT_DENIED).
+    This makes the patient-facing ``documents`` toggle actually govern the
+    feature it names, and closes any per-endpoint bypass by checking uniformly.
+    """
+    if not is_granted(db, user_id, CATEGORY_DOCUMENTS):
+        raise ConsentDenied(
+            "Bạn cần bật quyền 'Tài liệu y tế' trong phần Quyền riêng tư để "
+            "tải lên, xử lý hoặc xem tài liệu y tế."
+        )
+
+
 def _resolve_patient_id(db: Session, user: CurrentUser) -> str:
     profile = db.execute(
         select(PatientProfile).where(PatientProfile.user_id == user.id)
     ).scalars().first()
     if profile is None:
         raise HTTPException(status_code=404, detail="Không tìm thấy hồ sơ bệnh nhân.")
+    # PRIV-F1: every patient document endpoint resolves through here, so the
+    # fail-closed documents-consent gate lives here — no per-endpoint bypass.
+    _require_documents_consent(db, user.id)
     return profile.id
 
 

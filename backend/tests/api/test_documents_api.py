@@ -9,10 +9,13 @@ BOLA matrix, and the OCR feature-flag gate.
 
 from __future__ import annotations
 
+import datetime as dt
 import hashlib
 
 import pytest
+from app.ai.consent_policy import CATEGORY_DOCUMENTS, CONSENT_POLICY_VERSION
 from app.main import app
+from app.models.meto import MetoConsent
 from app.services.mdi import extractors, promoter
 from app.services.mdi.extractors import CandidateDraft, make_dedupe_key
 from app.services.mdi.promoter import (
@@ -103,6 +106,68 @@ def _upload_and_finalize(client, headers, data=_JPEG, doc_type_hint="prescriptio
     assert put.status_code == 204, put.text
     fin = client.post(f"/api/v1/documents/{body['upload_id']}/finalize", headers=headers)
     return body["upload_id"], fin
+
+
+def _set_documents_consent(db, user_id, *, granted, version=CONSENT_POLICY_VERSION):
+    """Upsert the caller's `documents` MetoConsent grant (test helper)."""
+    row = (
+        db.query(MetoConsent)
+        .filter(
+            MetoConsent.user_id == user_id,
+            MetoConsent.context_type == CATEGORY_DOCUMENTS,
+        )
+        .first()
+    )
+    now = dt.datetime.now(dt.UTC)
+    if row is None:
+        row = MetoConsent(user_id=user_id, context_type=CATEGORY_DOCUMENTS, granted_at=now)
+        db.add(row)
+    row.granted = granted
+    row.policy_version = version
+    if granted:
+        row.granted_at = now
+        row.revoked_at = None
+    else:
+        row.revoked_at = now
+    db.commit()
+
+
+@pytest.mark.real_consent
+def test_documents_pipeline_fail_closed_without_documents_consent(client, patient, db, mdi_env):
+    """PRIV-F1: the documents pipeline is fail-closed on `documents` consent —
+    upload, OCR processing, candidate review, and access all require an active
+    grant at the current policy version; revocation and stale versions block."""
+    h = patient["headers"]
+    uid = patient["user_id"]
+    sha = hashlib.sha256(_JPEG).hexdigest()
+    session_body = {
+        "declared_mime": "image/jpeg",
+        "declared_sha256": sha,
+        "declared_size": len(_JPEG),
+        "doc_type_hint": "prescription",
+    }
+
+    # (1) No grant → fail-closed 403 (CONSENT_DENIED) on read AND write endpoints.
+    assert client.get("/api/v1/documents", headers=h).status_code == 403
+    r = client.post("/api/v1/documents/upload-session", headers=h, json=session_body)
+    assert r.status_code == 403, r.text
+    assert r.json()["code"] == "CONSENT_DENIED"
+
+    # (2) Grant → the pipeline works end to end (upload → finalize/OCR).
+    _set_documents_consent(db, uid, granted=True)
+    assert client.get("/api/v1/documents", headers=h).status_code == 200
+    doc_id, fin = _upload_and_finalize(client, h)
+    assert fin.status_code == 200, fin.text
+
+    # (3) Revoke → immediately blocks review + access again (no per-endpoint bypass).
+    _set_documents_consent(db, uid, granted=False)
+    assert client.get("/api/v1/documents", headers=h).status_code == 403
+    assert client.get(f"/api/v1/documents/{doc_id}/candidates", headers=h).status_code == 403
+    assert client.get(f"/api/v1/documents/{doc_id}/file", headers=h).status_code == 403
+
+    # (4) Stale policy version → treated as NOT granted (fail-closed on a bump).
+    _set_documents_consent(db, uid, granted=True, version="0.0-stale")
+    assert client.get("/api/v1/documents", headers=h).status_code == 403
 
 
 # ── happy path ───────────────────────────────────────────────────────────────
