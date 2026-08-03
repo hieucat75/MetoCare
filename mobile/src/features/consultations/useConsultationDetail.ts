@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 
 import type { ApiClient } from '../../api/client'
-import { toPageError } from '../../api/client'
+import { ApiError, toPageError } from '../../api/client'
 import {
   type ConsultationOut,
   getConsultation,
@@ -45,11 +45,25 @@ export function useConsultationDetail(
     setPhase('loading')
     setErrorMsg(undefined)
     try {
-      const [detail, noteRows] = await Promise.all([
-        getConsultation(client, consultationId),
-        listNotes(client, consultationId),
-      ])
+      // The consultation itself is the primary resource. Notes are OPTIONAL
+      // ONLY for the documented 403 case: the backend returns 403 ("available
+      // only after the consultation is completed") until completion, which must
+      // NOT fail the whole detail view for a freshly-booked (REQUESTED)
+      // consultation — just show no notes yet. Any OTHER failure (5xx, network,
+      // 401 forced-logout) is a genuine error and must surface via the outer
+      // catch, not be silently masked as an empty "no notes" state.
+      const detail = await getConsultation(client, consultationId)
       setConsultation(detail)
+      let noteRows: NoteOut[] = []
+      try {
+        noteRows = await listNotes(client, consultationId)
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 403) {
+          noteRows = []
+        } else {
+          throw err
+        }
+      }
       setNotes(noteRows)
       setPhase('ready')
     } catch (err) {

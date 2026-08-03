@@ -1,0 +1,37 @@
+Running on metocare_pilot_api34
+ > Flow 03-meto
+Launch app "me.metocare.patient" with clear state... COMPLETED
+Assert that id: onboarding-skip is visible... COMPLETED
+Tap on id: onboarding-skip... COMPLETED
+Assert that id: login-submit is visible... COMPLETED
+Tap on id: login-email... COMPLETED
+Input text ${MAESTRO_EMAIL}... COMPLETED
+Tap on id: login-password... COMPLETED
+Input text ${MAESTRO_PASSWORD}... COMPLETED
+Hide Keyboard... COMPLETED
+Tap on id: login-submit... COMPLETED
+Assert that id: dashboard-meto is visible... COMPLETED
+Scrolling DOWN until id: dashboard-meto is visible with speed 40, visibility percentage 100%, timeout 15000 ms, with centering disabled... COMPLETED
+Tap on id: dashboard-meto... COMPLETED
+Assert that "Meto — Trợ lý sức khoẻ" is visible... COMPLETED
+Run flow when id: meto-consent-gate is visible...
+Run flow when id: meto-consent-gate is visible... SKIPPED
+Assert that id: meto-input is visible... COMPLETED
+Tap on id: meto-input... COMPLETED
+Input text Chỉ số đường huyết của tôi thế nào?... COMPLETED
+Hide Keyboard... COMPLETED
+Tap on id: meto-send... COMPLETED
+Assert that id: meto-message-1 is visible... COMPLETED
+Press back... COMPLETED
+Assert that id: dashboard-consent is visible... COMPLETED
+Scrolling DOWN until id: dashboard-consent is visible with speed 40, visibility percentage 100%, timeout 15000 ms, with centering disabled... COMPLETED
+Tap on id: dashboard-consent... COMPLETED
+Assert that id: consent-toggle-medications is visible... COMPLETED
+Assert that "Quyền riêng tư — Meto" is visible... COMPLETED
+Assert that id: consent-ai-note is visible... COMPLETED
+Assert that id: consent-state-medications is visible... COMPLETED
+Tap on id: consent-toggle-medications... COMPLETED
+Assert that "Đang cho phép", id: consent-state-medications is visible... COMPLETED
+Tap on id: consent-toggle-medications... COMPLETED
+Assert that "Đang tắt", id: consent-state-medications is visible... COMPLETED
+Assert that id: consent-ai-note is visible... COMPLETED

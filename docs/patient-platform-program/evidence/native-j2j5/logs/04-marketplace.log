@@ -1,0 +1,32 @@
+Running on metocare_pilot_api34
+ > Flow 04-marketplace
+Launch app "me.metocare.patient" with clear state... COMPLETED
+Assert that id: onboarding-skip is visible... COMPLETED
+Tap on id: onboarding-skip... COMPLETED
+Assert that id: login-submit is visible... COMPLETED
+Tap on id: login-email... COMPLETED
+Input text ${MAESTRO_EMAIL}... COMPLETED
+Tap on id: login-password... COMPLETED
+Input text ${MAESTRO_PASSWORD}... COMPLETED
+Hide Keyboard... COMPLETED
+Tap on id: login-submit... COMPLETED
+Assert that id: dashboard-find-doctor is visible... COMPLETED
+Scrolling DOWN until id: dashboard-find-doctor is visible with speed 40, visibility percentage 100%, timeout 15000 ms, with centering disabled... COMPLETED
+Tap on id: dashboard-find-doctor... COMPLETED
+Assert that id: marketplace-search is visible... COMPLETED
+Assert that "Tìm bác sĩ" is visible... COMPLETED
+Scrolling DOWN until id: doctor-.* is visible with speed 40, visibility percentage 100%, timeout 15000 ms, with centering disabled... COMPLETED
+Tap on id: doctor-.*... COMPLETED
+Assert that id: doctor-detail-name is visible... COMPLETED
+Assert that id: doctor-book-cta is visible... COMPLETED
+Tap on id: doctor-book-cta... COMPLETED
+Assert that id: book-submit is visible... COMPLETED
+Assert that "Đặt lịch tư vấn" is visible... COMPLETED
+Tap on id: book-chief-complaint... COMPLETED
+Input text Đường huyết tăng cao gần đây... COMPLETED
+Hide Keyboard... COMPLETED
+Tap on id: book-consent... COMPLETED
+Tap on id: book-submit... COMPLETED
+Assert that id: detail-status is visible... COMPLETED
+Assert that "Chi tiết tư vấn" is visible... COMPLETED
+Assert that id: review-form is not visible... COMPLETED

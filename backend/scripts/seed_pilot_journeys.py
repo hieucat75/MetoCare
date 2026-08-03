@@ -318,13 +318,18 @@ def _ensure_availability(db, doctor: Doctor, *, days: int = 5) -> int:
 # Journey B: confirmed medication + schedule + guaranteed-due dose
 # ---------------------------------------------------------------------------
 def _get_or_create_medication(db, patient_id: str) -> Medication:
+    # Resilient to pre-existing duplicates from earlier seed runs: take the
+    # oldest matching row rather than asserting exactly one, so a re-run never
+    # aborts on MultipleResultsFound.
     existing = db.execute(
-        select(Medication).where(
+        select(Medication)
+        .where(
             Medication.patient_id == patient_id,
             Medication.name == PILOT_MED_NAME,
             Medication.deleted_at.is_(None),
         )
-    ).scalar_one_or_none()
+        .order_by(Medication.created_at)
+    ).scalars().first()
     if existing is not None:
         return existing
     return medication_svc.add_medication(
@@ -344,13 +349,15 @@ def _get_or_create_medication(db, patient_id: str) -> Medication:
 
 def _get_or_create_schedule(db, *, patient_id: str, medication_id: str) -> MedicationSchedule:
     existing = db.execute(
-        select(MedicationSchedule).where(
+        select(MedicationSchedule)
+        .where(
             MedicationSchedule.medication_id == medication_id,
             MedicationSchedule.patient_id == patient_id,
             MedicationSchedule.status == SCHED_STATUS_ACTIVE,
             MedicationSchedule.superseded_by.is_(None),
         )
-    ).scalar_one_or_none()
+        .order_by(MedicationSchedule.created_at)
+    ).scalars().first()
     if existing is not None:
         return existing
     return schedule_svc.create_schedule(

@@ -4,28 +4,32 @@
 # Credentials come ONLY from env vars: ${MAESTRO_EMAIL} / ${MAESTRO_PASSWORD}
 #   Run with:  maestro test -e MAESTRO_EMAIL=... -e MAESTRO_PASSWORD=... .maestro/01-documents.yaml
 #
-# NOTE (screen gaps found in mobile/app):
-#   * The dashboard has NO "pending review" CTA. Its only document entry point is
-#     "Thêm tài liệu" (testID dashboard-add-document) -> Add-Document screen, which
-#     requires the OS camera/photo-library picker (testIDs add-take-photo /
-#     add-choose-image). Maestro cannot drive the native picker headlessly, and
-#     there is no UI path to a pre-seeded needs_review document.
-#   * The review screen is a dynamic route /review/[documentId] reachable only
-#     AFTER an upload returns a documentId. To exercise the seeded needs_review
-#     doc (Amlodipine + LDL Cholesterol candidates) without a live camera, drive
-#     it via deep link using its id — see the OPTIONAL block at the bottom.
-#   The always-runnable part below covers login -> dashboard -> Add-Document.
+# Flow: login -> dashboard -> Add-Document -> ingest QA fixture (dev/staging only,
+#       no camera) -> review screen -> confirm a candidate -> assert it flips to
+#       the "Đã xác nhận" (confirmed/canonical) status badge.
+#
+# NOTE: the QA-fixture button (testID add-qa-fixture) only renders when the app is
+#       built non-production (IS_NON_PRODUCTION). On a production build this control
+#       is absent and there is no headless path to the review screen.
 appId: me.metocare.patient
 ---
 # --- Stage 1: cold launch (independent run) ---
 - launchApp:
     clearState: true
 
+# Dismiss first-run onboarding if present (clearState shows it)
+- extendedWaitUntil:
+    visible:
+      id: "onboarding-skip"
+    timeout: 60000
+- tapOn:
+    id: "onboarding-skip"
+
 # --- Stage 2: log in with env credentials (email/password) ---
 - extendedWaitUntil:
     visible:
       id: "login-submit"
-    timeout: 15000
+    timeout: 20000
 - tapOn:
     id: "login-email"
 - inputText: ${MAESTRO_EMAIL}
@@ -36,13 +40,14 @@ appId: me.metocare.patient
 - tapOn:
     id: "login-submit"
 
-# --- Stage 3: dashboard loads (network-dependent /auth/me) ---
+# --- Stage 3: dashboard loads (network-dependent /auth/me) — gate on a CTA,
+#     NOT dashboard-empty (the seeded pilot account has a populated dashboard) ---
 - extendedWaitUntil:
     visible:
-      id: "dashboard-empty"
-    timeout: 15000
+      id: "dashboard-add-document"
+    timeout: 20000
 - assertVisible:
-    text: "Xin chào.*"   # dashboard greeting from vi.ts
+    text: "Xin chào.*"   # dashboard.greeting
 
 # --- Stage 4: open the Add-Document entry point ---
 - scrollUntilVisible:
@@ -53,7 +58,7 @@ appId: me.metocare.patient
 - tapOn:
     id: "dashboard-add-document"
 
-# --- Stage 5: assert Add-Document screen + document-type selectors ---
+# --- Stage 5: Add-Document screen + document-type selectors ---
 - extendedWaitUntil:
     visible:
       text: "Thêm tài liệu y tế"   # documents.addTitle
@@ -64,35 +69,35 @@ appId: me.metocare.patient
     id: "doctype-lab_report"
 - assertVisible:
     id: "doctype-general"
-- assertVisible:
-    id: "add-choose-image"
-# Choose the prescription document type (state change, no picker involved)
-- tapOn:
-    id: "doctype-prescription"
 
-# ------------------------------------------------------------------------------
-# OPTIONAL — full OCR review + CONFIRM against the seeded needs_review document.
-# Requires the seeded document's id, passed as env MAESTRO_DOCUMENT_ID, because
-# the review route is dynamic (/review/[documentId]) and has no UI entry point.
-# Uncomment and run with:
-#   maestro test -e MAESTRO_EMAIL=... -e MAESTRO_PASSWORD=... \
-#                -e MAESTRO_DOCUMENT_ID=<seeded-doc-id> .maestro/01-documents.yaml
-#
-# - openLink:
-#     link: "metocare://review/${MAESTRO_DOCUMENT_ID}"
-# - extendedWaitUntil:
-#     visible:
-#       text: "Kiểm tra & xác nhận"   # documents.reviewTitle
-#     timeout: 15000
-# # Candidate cards use testID candidate-<id>; confirm buttons confirm-<id>.
-# # Tap the first open candidate's Confirm (regex matches candidate-scoped ids).
-# - tapOn:
-#     id: "confirm-.*"
-# # After confirm, that candidate flips to the "Đã xác nhận" status badge,
-# # i.e. it landed in the record/timeline.
-# - extendedWaitUntil:
-#     visible:
-#       id: "status-.*"
-#     timeout: 15000
-# - assertVisible:
-#     text: "Đã xác nhận"   # documents.confirmed
+# --- Stage 6: ingest the seeded QA fixture (dev/staging only, no camera) ---
+- extendedWaitUntil:
+    visible:
+      id: "add-qa-fixture"
+    timeout: 15000
+- tapOn:
+    id: "add-qa-fixture"
+
+# --- Stage 7: review screen loads (upload -> stage -> extract candidates) ---
+- extendedWaitUntil:
+    visible:
+      text: "Kiểm tra & xác nhận"   # documents.reviewTitle
+    timeout: 20000
+# Candidate cards use dynamic testID candidate-<id>; wait for the first one.
+- extendedWaitUntil:
+    visible:
+      id: "candidate-.*"
+    timeout: 20000
+
+# --- Stage 8: confirm the first open candidate (confirm buttons: confirm-<id>) ---
+- tapOn:
+    id: "confirm-.*"
+
+# --- Stage 9: assert the candidate flipped to the confirmed/canonical badge ---
+# After confirm the card renders status-<id> with text documents.confirmed.
+- extendedWaitUntil:
+    visible:
+      id: "status-.*"
+    timeout: 20000
+- assertVisible:
+    text: "Đã xác nhận"   # documents.confirmed

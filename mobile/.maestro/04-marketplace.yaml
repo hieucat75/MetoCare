@@ -19,19 +19,18 @@ appId: me.metocare.patient
     clearState: true
 
 # Dismiss first-run onboarding if present (clearState shows it)
-- runFlow:
-    when:
-      visible:
-        id: "onboarding-skip"
-    commands:
-      - tapOn:
-          id: "onboarding-skip"
+- extendedWaitUntil:
+    visible:
+      id: "onboarding-skip"
+    timeout: 60000
+- tapOn:
+    id: "onboarding-skip"
 
-# --- Stage 2: log in with env credentials ---
+# --- Stage 2: log in with env credentials (email/password) ---
 - extendedWaitUntil:
     visible:
       id: "login-submit"
-    timeout: 15000
+    timeout: 20000
 - tapOn:
     id: "login-email"
 - inputText: ${MAESTRO_EMAIL}
@@ -42,9 +41,7 @@ appId: me.metocare.patient
 - tapOn:
     id: "login-submit"
 
-# --- Stage 3: dashboard -> open marketplace ---
-# Gate on the marketplace CTA (always present) — a seeded account is NOT empty,
-# so dashboard-empty would be absent.
+# --- Stage 3: dashboard -> open marketplace (gate on a CTA, NOT dashboard-empty) ---
 - extendedWaitUntil:
     visible:
       id: "dashboard-find-doctor"
@@ -61,7 +58,7 @@ appId: me.metocare.patient
 - extendedWaitUntil:
     visible:
       id: "marketplace-search"
-    timeout: 15000
+    timeout: 20000
 - assertVisible:
     text: "Tìm bác sĩ"   # marketplace.title
 
@@ -78,7 +75,7 @@ appId: me.metocare.patient
 - extendedWaitUntil:
     visible:
       id: "doctor-detail-name"
-    timeout: 15000
+    timeout: 20000
 - assertVisible:
     id: "doctor-book-cta"
 - tapOn:
@@ -88,7 +85,7 @@ appId: me.metocare.patient
 - extendedWaitUntil:
     visible:
       id: "book-submit"
-    timeout: 15000
+    timeout: 20000
 - assertVisible:
     text: "Đặt lịch tư vấn"   # consultations.bookTitle
 - tapOn:
@@ -101,11 +98,11 @@ appId: me.metocare.patient
 - tapOn:
     id: "book-submit"
 
-# --- Stage 8: consultation detail appears after booking ---
+# --- Stage 8: consultation detail appears after booking (mock pay) ---
 - extendedWaitUntil:
     visible:
       id: "detail-status"
-    timeout: 15000
+    timeout: 20000
 - assertVisible:
     text: "Chi tiết tư vấn"   # consultations.detailTitle
 # Freshly booked consultation is not COMPLETED, so the review form is absent
@@ -129,4 +126,4 @@ appId: me.metocare.patient
 # - extendedWaitUntil:
 #     visible:
 #       id: "review-thanks"
-#     timeout: 15000
+#     timeout: 20000

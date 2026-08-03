@@ -9,6 +9,7 @@ layer BOLA (does this User own this PatientProfile?) is enforced separately.
 from __future__ import annotations
 
 import hashlib
+import os
 import uuid
 from dataclasses import dataclass
 from datetime import UTC
@@ -287,17 +288,23 @@ def ingest_qa_fixture(
     """
     from app.services.ocr_engine import OcrTextResult
 
+    # Append a per-call nonce so each QA ingest is a DISTINCT accepted document
+    # (the accepted-doc uniqueness is keyed on patient_id + sha256; reusing the
+    # fixed fixture bytes would 409 on the second run). Trailing bytes after a
+    # PNG's IEND are ignored by decoders, and the deterministic OCR text is
+    # injected below regardless — so candidates stay reproducible.
+    image_bytes = fixture.image_bytes + os.urandom(16)
     session = create_upload_session(
         db,
         patient_id=patient_id,
         declared_mime=fixture.mime,
-        declared_sha256=hashlib.sha256(fixture.image_bytes).hexdigest(),
-        declared_size=len(fixture.image_bytes),
+        declared_sha256=hashlib.sha256(image_bytes).hexdigest(),
+        declared_size=len(image_bytes),
         doc_type_hint=fixture.doc_type_hint,
     )
     doc = session.document
     # Land the bytes in quarantine exactly as the authenticated blob PUT would.
-    get_storage().put_bytes(doc.quarantine_key, fixture.image_bytes)
+    get_storage().put_bytes(doc.quarantine_key, image_bytes)
     db.flush()
 
     def _qa_ocr(_image_bytes: bytes, _mime: str) -> OcrTextResult:
