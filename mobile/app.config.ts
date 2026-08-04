@@ -58,6 +58,15 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   android: {
     package:
       APP_ENV === 'staging' ? 'me.metocare.patient.staging' : 'me.metocare.patient',
+    // WS11-F3: strip permissions no feature uses. Document upload uses the photo
+    // picker/camera (CAMERA + storage, kept); the app records no audio and draws
+    // no overlays. blockedPermissions removes these from the merged/generated
+    // manifest on every prebuild, so a store/privacy review never sees an
+    // unjustified microphone or draw-over-other-apps request.
+    blockedPermissions: [
+      'android.permission.RECORD_AUDIO',
+      'android.permission.SYSTEM_ALERT_WINDOW',
+    ],
   },
   plugins: [
     'expo-router',
