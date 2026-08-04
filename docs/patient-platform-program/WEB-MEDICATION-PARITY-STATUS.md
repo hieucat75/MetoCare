@@ -3,7 +3,7 @@
 **Owner question:** *"`https://app.metocare.me/medications/<id>` still looks unchanged even though
 the medication journey was reported complete."*
 
-**Status:** IN PROGRESS — diagnosis complete and source-verified; implementation underway.
+**Status:** IMPLEMENTED, REVIEWED, GREEN — **NOT DEPLOYED.** Deployment is blocked on an owner decision, not a technical problem (see §10).
 
 **Working branch:** `feat/patient-platform-journey2`
 **Baseline HEAD at investigation start:** `bfd6735`
@@ -180,15 +180,76 @@ web scope and is genuinely missing in **both** clients.
 
 ## 5. Implementation summary
 
-_(updated as work lands — see §9 changelog)_
+Branch `feat/patient-platform-journey2`. Commits (all on top of `bfd6735`):
+
+| Commit | Scope |
+|---|---|
+| `dd53d54` | Prior-session launch-readiness batch recovered and verified before commit (not part of this work; committed first so the parity commits stand alone). |
+| `3d306fb` | Backend provenance endpoint + web Journey-3 binding, hook, cards, page wiring. |
+| `c5a0991` | 46 frontend tests for the new surface. |
+| `da8bd08` | Independent-review fixes: 2 clinical P0, 8 P1 across clinical / React / a11y. |
+
+### Backend (additive only — no contract change, mobile unaffected)
+
+| File | Change |
+|---|---|
+| `backend/app/services/medication_provenance.py` (new) | Reverse `PromotionLink` read: `Medication` → `ExtractionCandidate` → `MedicalDocument` → `DocumentExtraction`. Nothing read `PromotionLink` outside the promote path before. `fields_json` is allowlisted, never returned wholesale; `diagnosis` excluded (§1.9). |
+| `backend/app/api/v1/routes/medication_source.py` (new) | `GET /patients/{pid}/medications/{mid}/source`. Self-ownership 403, medication-scoped 404, fail-closed `documents` consent gate matching PRIV-F1. |
+| `backend/app/api/v1/router.py` | Router registration. |
+| `backend/tests/conftest.py` | Test-only: new module added to the existing default-consent monkeypatch list; `@pytest.mark.real_consent` still exercises the real gate. |
+
+### Web
+
+| File | Change |
+|---|---|
+| `frontend/src/lib/api/medication-schedule.ts` (new) | Bindings for the **existing** schedule / reminders-due / dose / adherence endpoints plus the new source endpoint. Types mirror the backend Pydantic models 1:1 — no parallel domain model. |
+| `frontend/src/components/patient/medications/use-medication-schedule.ts` (new) | Loads schedules + due doses, derives next-due by schedule-id intersection (same derivation as mobile `useMedicationDetail`), sums per-schedule adherence over resolved doses, monotonic request token against stale responses, re-entrant submit lock, status-specific error messages. |
+| `frontend/src/components/patient/medications/schedule-card.tsx` (new) | Structured schedule, timezone-aware next dose via server `local_render`, taken / skipped with a structured reason + separate note, missed counts, referral wording. |
+| `frontend/src/components/patient/medications/source-card.tsx` (new) | Document source, prescriber/facility/date, OCR origin. Consent 403 renders as an actionable state, not a page failure. |
+| `frontend/src/app/(patient)/medications/[id]/page.tsx` | Wires both cards; responsive two-column from `lg` (mobile layout unchanged); distinct 403/404/5xx/network states; legacy self-report block collapsed behind a disclosure once a schedule exists. |
+
+### Capabilities closed
+
+`structured schedule`, `next due dose`, `in-app reminder (read)`, `taken (dose-level)`, `skipped (dose-level)`, `skip reason`, `adherence summary (incl. missed)`, `timezone-aware timing`, `prescription/document source`, `OCR provenance`, `empty state`, `permission/BOLA state`, `responsive behavior`, `accessibility` — all `❌`/`⚠️` in §4 for Web, now implemented.
+
+Still `❌` and **out of scope** (not modelled anywhere in the backend): `route` as a canonical medication attribute, `monitoring`, `contraindications`. `interactions` / `side effects` remain structure-only by design — the mandated "no verified data" wording is untouched.
 
 ## 6. Tests
 
-_(pending)_
+| Suite | Result |
+|---|---|
+| Backend — `tests/api/test_medication_source_api.py` (new, 9) | manual-entry fallback, promoted happy path, allowlist, diagnosis-never-leaks, soft-delete exclusion, BOLA 403, 404, 401, consent fail-closed |
+| Backend — full suite | green, 0 failures |
+| Frontend — medication surface | 134 tests (was 26 before this work) |
+| Frontend — full suite | 56 suites / 644 tests, green |
+| Frontend typecheck (`tsconfig.build.json`) | exit 0 |
+| Frontend lint (`next lint`) | exit 0 (6 pre-existing warnings in untouched files) |
+| Frontend production build | exit 0 |
+
+Observed flake (pre-existing, not introduced here): `src/__tests__/AdminDoctorsPage.test.tsx` failed 2 tests on one full-suite run under worker contention and passed in isolation and on re-runs. It is a `userEvent` timeout, unrelated to this change.
 
 ## 7. Review findings
 
-_(pending)_
+Five fresh-context reviewers. Every finding was verified against source before acting.
+
+| Reviewer | P0 | P1 | Outcome |
+|---|---|---|---|
+| Security / privacy | 0 | 0 | Approved. BOLA, PRIV-F1 consent parity, PHI allowlist, ORM parameterisation all confirmed clean. |
+| Clinical safety | 2 | 11 | All P0 + P1 fixed in `da8bd08`. |
+| Frontend architecture | 0 | 1 | Fixed. 3 P2 noted. |
+| React / TypeScript | 0 | 3 | All fixed. Hook order, submit guard, type-safety confirmed clean. |
+| Accessibility (WCAG 2.2 AA) | 0 | 8 | All fixed. |
+
+Highest-value findings (each a real defect, verified before fixing):
+
+1. **Clinical P0 — the skip chip and the note shared one state.** Picking "Tác dụng phụ" then typing detail transmitted only the note, destroying the structured adverse-event classification.
+2. **Clinical P0 — "Tác dụng phụ" was a dead end.** `skip_reason` is read by nothing; the UI invited a disclosure it did not act on.
+3. **Clinical P1 — the source label maps used the wrong value sets.** Only 1 of 6 `source_type` and 1 of 4 `verification_status` keys matched `chk_source_type` / `chk_verification_status`. The OCR promoter writes `ocr_confirmed`, so it rendered as a raw English token under a green shield.
+4. **React P1 — stale-response races.** The App Router reuses this page across `[id]` changes; a slow response could put one medication's dose under another's name.
+5. **React P1 — legacy write buttons live during the schedule-loading window**, writing to the wrong model and producing a false MISSED.
+6. **A11y P1 — three contrast failures**, confirmed by computation (3.06 / 4.34 / 4.10 against a 4.5 requirement), including the dose-error text.
+
+Deferred P2s (recorded, not fixed): superseded schedule versions are all listed without timestamps; `MedicationSourceCard` owns its own fetch rather than using a hook; `useParams` generic is a compile-time-only assertion; boolean naming convention in the pre-existing page file.
 
 ## 8. Evidence
 
@@ -202,10 +263,46 @@ Staging / live URL: `https://app.metocare.me` (== `ca-metocare-frontend.wittyflo
 | Date | Change |
 |---|---|
 | 2026-08-04 | Initial diagnosis, deployment topology, gap matrix. |
+| 2026-08-04 | Backend provenance endpoint + web Journey-3 parity implemented, tested, independently reviewed; all P0/P1 fixed. Deployment **not** performed — see §10. |
 
-## 10. Production rollout checklist
+## 10. Deployment status and rollout checklist
 
-_(pending — production deployment is NOT authorized by the current instruction)_
+**Nothing has been deployed. Deployment is blocked pending an owner decision — this
+is an authorization question, not a technical one.**
+
+The instruction authorised a **staging** deploy and explicitly withheld production.
+But §1 establishes that `app.metocare.me` is a CNAME to the **staging** Container
+App. There is one live web environment, and deploying to "staging" publishes
+straight to the URL the owner calls production. Doing that under a
+staging-only authorisation would be a production deploy in everything but name, so
+it needs the owner's explicit call.
+
+### Option A — deploy (accepting it is owner-visible immediately)
+1. `gh workflow run azure-staging.yml --ref feat/patient-platform-journey2`
+2. Verify `GET /api/v1/health` and `/api/v1/info` on the backend FQDN.
+3. Confirm `FEATURE_OCR` is on (needed for the provenance path to have data).
+4. Seed or use a synthetic patient with a structured schedule + a promoted
+   prescription document.
+5. Walk the journey: list → detail → next-due dose → taken → skipped with reason →
+   adherence → source/provenance.
+6. Capture desktop + mobile-web screenshots and sanitized logs into
+   `docs/patient-platform-program/evidence/web-medication-parity/`.
+
+### Option B — separate the environments first (recommended)
+1. Point `app.metocare.me` at the `rg-metocare-prod` Container App (last deployed
+   2026-07-14 from `30a65eb`, currently receiving no traffic), **or** move the
+   owner's review URL to the staging FQDN.
+2. Then deploy to staging and verify there, leaving production untouched.
+
+### Production rollout (requires explicit owner approval either way)
+- [ ] Owner approves the parity change for production.
+- [ ] Merge `feat/patient-platform-journey2` → `main` (42 + 4 commits; **all**
+      Journey 2–5 backend and mobile work lands with it — this is not a
+      medication-only merge and needs its own review).
+- [ ] Alembic single-head check; the branch adds migrations not on `main`.
+- [ ] Run `azure-production.yml` with `confirm=PRODUCTION`.
+- [ ] Verify `/api/v1/info` reports the expected `migration_version`.
+- [ ] Re-walk the journey against production data.
 
 ## 11. Known limitations
 
@@ -216,3 +313,13 @@ _(pending — production deployment is NOT authorized by the current instruction
   "no verified data" wording rather than imply a check was performed.
 - **DNS finding (§1):** `app.metocare.me` resolves to the *staging* Container App. This is a
   material infrastructure observation, reported for owner decision — not changed by this work.
+- **The parity work is not independently shippable.** It lives on
+  `feat/patient-platform-journey2`, which is 46 commits ahead of `main` and carries all
+  of Journey 2–5. There is no medication-only path to production without either
+  merging that branch or cherry-picking.
+- **Adherence has no time window.** The backend computes over a schedule's whole
+  lifetime; the UI now states the period rather than implying a recent one, but a
+  windowed endpoint would be the real fix.
+- **`skip_reason` is still write-only.** The UI now tells the patient that plainly,
+  but no clinician surface reads it. A side-effect report reaches a text column.
+- **Superseded schedule versions are all listed** without timestamps (deferred P2).
