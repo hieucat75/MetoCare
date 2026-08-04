@@ -208,7 +208,10 @@ export default function MedicationDetailPage() {
   const [medication, setMedication] = React.useState<Medication | null>(null)
   const [history, setHistory] = React.useState<MedicationAdherence[]>([])
   const [todayStatus, setTodayStatus] = React.useState<TodayMedication | null>(null)
-  const [adherenceRate, setAdherenceRate] = React.useState<number>(0)
+  // Nullable on purpose: with no self-reported entry there is no rate, and a green
+  // 0% next to a schedule card saying "chưa đủ dữ liệu" is the false claim the
+  // schedule card exists to avoid.
+  const [adherenceRate, setAdherenceRate] = React.useState<number | null>(null)
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
   const [logging, setLogging] = React.useState(false)
@@ -249,8 +252,7 @@ export default function MedicationDetailPage() {
       setHistory(safeHistory)
 
       const takenCount = safeHistory.filter((r) => r.taken_at !== null).length
-      const rate = safeHistory.length > 0 ? takenCount / safeHistory.length : 0
-      setAdherenceRate(rate)
+      setAdherenceRate(safeHistory.length > 0 ? takenCount / safeHistory.length : null)
 
       const today = summaryRes.today_medications.find((m) => m.medication_id === id) ?? null
       setTodayStatus(today)
@@ -370,7 +372,15 @@ export default function MedicationDetailPage() {
   // record and the schedule card owns "Đã uống" / "Bỏ qua". Showing the legacy
   // free-floating adherence buttons alongside would give the patient two buttons
   // writing to two different models with no way to tell which one counted.
+  //
+  // `schedules` is [] until the schedule fetch resolves, and that fetch is slower
+  // than the record fetch above (two sequential rounds vs one). So this must gate
+  // on the load having COMPLETED, not merely on the array being empty — otherwise
+  // a scheduled medication shows the legacy buttons during the loading window and
+  // a tap writes to the wrong model.
+  const isScheduleResolved = schedule.phase === 'ready'
   const hasStructuredSchedule = schedule.schedules.length > 0
+  const showsLegacyAdherence = isScheduleResolved && !hasStructuredSchedule
 
   return (
     <div className="p-4 pb-28 mx-auto max-w-md lg:max-w-5xl">
@@ -382,7 +392,7 @@ export default function MedicationDetailPage() {
           onClick={() => router.back()}
           className="neu-icon-btn !h-11 !w-11 !rounded-full text-neu-text"
         >
-          <ArrowLeft className="size-5" />
+          <ArrowLeft className="size-5" aria-hidden="true" />
         </button>
         <h1 className="text-[20px] font-extrabold tracking-[-0.02em] text-neu-text">
           Chi tiết thuốc
@@ -413,7 +423,13 @@ export default function MedicationDetailPage() {
             {subtitle && <p className="mt-1 text-[13.5px] text-neu-secondary">{subtitle}</p>}
             <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
               <LifecycleBadges med={medication} />
-              {isActiveMed && (
+              {/* The badge reads the LEGACY medication_adherence rollup. Once a
+                  medication is schedule-tracked, its doses are recorded as
+                  DoseOccurrences and `last_taken_at` stays null forever, so
+                  computeAdherenceStatus would drift to the red "Chưa ghi nhận liều
+                  gần đây" tier and sit there contradicting the 100% adherence shown
+                  in the schedule card below. Same gate as the legacy buttons. */}
+              {isActiveMed && showsLegacyAdherence && (
                 <AdherenceStatusBadge med={medication} today={todayStatus ?? undefined} />
               )}
             </div>
@@ -427,7 +443,7 @@ export default function MedicationDetailPage() {
               onClick={() => setMenuOpen(true)}
               className="neu-icon-btn !h-11 !w-11 shrink-0 !rounded-full text-neu-muted"
             >
-              <MoreVertical className="size-5" />
+              <MoreVertical className="size-5" aria-hidden="true" />
             </button>
           )}
         </div>
@@ -457,7 +473,7 @@ export default function MedicationDetailPage() {
             (last-action-wins on today's most-recent record) — see the note
             on computeAdherenceStatus in today-status.tsx for the disclosed
             limitation this implies. */}
-        {isActiveMed && !hasStructuredSchedule && (
+        {isActiveMed && showsLegacyAdherence && (
           <div className="mt-4 border-t border-[#E8F0ED] pt-4">
             {takenToday ? (
               <div className="flex items-center gap-2">
@@ -520,10 +536,13 @@ export default function MedicationDetailPage() {
           dueDoses={schedule.dueDoses}
           nextDue={schedule.nextDue}
           adherence={schedule.adherence}
+          isAdherencePartial={schedule.isAdherencePartial}
+          adherenceSince={schedule.adherenceSince}
           isSubmitting={schedule.isSubmitting}
           actionError={schedule.actionError}
           onMarkTaken={(doseId) => void schedule.markTaken(doseId)}
-          onMarkSkipped={(doseId, reason) => void schedule.markSkipped(doseId, reason)}
+          onMarkSkipped={(doseId, reason) => schedule.markSkipped(doseId, reason)}
+          onRequestDiscontinue={canManage ? () => setDiscontinueOpen(true) : undefined}
         />
       )}
 
@@ -574,35 +593,52 @@ export default function MedicationDetailPage() {
       />
 
       {/* Legacy self-reported log. Kept because it is real history the patient
-          entered before schedules existed — but labelled so it is never confused
-          with the schedule-based figure above, which counts missed doses too. */}
-      <div>
-        <div className="mb-2 flex items-center gap-2">
+          entered before schedules existed — but once the medication is
+          schedule-tracked this figure is frozen (dose writes go to DoseOccurrence,
+          not here) and would sit on screen contradicting the live one. Two
+          different adherence percentages for one drug is exactly the kind of thing
+          a patient shows a clinician, so the stale one is collapsed away rather
+          than shown side by side. */}
+      <details open={!hasStructuredSchedule}>
+        <summary className="mb-2 flex cursor-pointer items-center gap-2">
           <Activity className="size-4 text-neu-green" aria-hidden="true" />
-          <p className="text-[13px] font-bold text-neu-text">Tự ghi nhận</p>
-        </div>
+          <span className="text-[13px] font-bold text-neu-text">
+            {hasStructuredSchedule ? 'Nhật ký tự ghi nhận (trước khi có lịch)' : 'Tự ghi nhận'}
+          </span>
+        </summary>
+        {hasStructuredSchedule && (
+          <p className="mb-2 text-[12.5px] text-neu-secondary">
+            Đây là nhật ký cũ do bạn tự ghi. Từ khi có lịch uống, các liều được tính ở mục
+            “Tuân thủ theo lịch” phía trên.
+          </p>
+        )}
         <div className="grid grid-cols-2 gap-2.5">
+          {/* "30 ngày" was wrong: getAdherenceHistory's third argument is a row
+              LIMIT, not a day window (lib/api/patient.ts). Thirty entries can span
+              months, so the label now states what is actually measured. */}
           <StatChip
-            label="Tuân thủ (30 ngày)"
-            value={`${Math.round(adherenceRate * 100)}%`}
+            label="Tuân thủ (30 lần ghi gần nhất)"
+            value={adherenceRate === null ? 'Chưa có' : `${Math.round(adherenceRate * 100)}%`}
             color="#0F9C6E"
           />
           <StatChip label="Hôm nay" value={todayChipValue} color={todayChipColor} />
           <StatChip label="Lần cuối uống" value={lastTakenStr} color="#2563EB" />
           <StatChip label="Số lần đã ghi" value={String(history.length)} color="#8B6400" />
         </div>
-      </div>
 
-      {/* Adherence history list */}
-      {history.length > 0 ? (
-        <AdherenceHistoryList records={history} />
-      ) : (
-        <NeuCard className="!p-4">
-          <p className="text-[13px] text-neu-secondary">
-            Bạn chưa tự ghi nhận lần uống nào cho thuốc này.
-          </p>
-        </NeuCard>
-      )}
+        {/* Adherence history list */}
+        <div className="mt-3">
+          {history.length > 0 ? (
+            <AdherenceHistoryList records={history} />
+          ) : (
+            <NeuCard className="!p-4">
+              <p className="text-[13px] text-neu-secondary">
+                Bạn chưa tự ghi nhận lần uống nào cho thuốc này.
+              </p>
+            </NeuCard>
+          )}
+        </div>
+      </details>
         </div>
       </div>
 

@@ -259,7 +259,25 @@ test('a re-entrant submit is refused — one dose is never recorded twice', asyn
   expect(mockTaken).toHaveBeenCalledTimes(1)
 })
 
-test('a 409 says the dose was already recorded, never "try again"', async () => {
+test('an already-recorded dose (backend 422) surfaces the backend wording, not "try again"', async () => {
+  // The backend maps InvalidSchedule("Liều đã được ghi nhận.") to 422 via
+  // medication_schedule.py::_map_err — NOT 409. This is the path that actually
+  // fires, so the message must come through the detail passthrough.
+  setupHappyPath()
+  mockTaken.mockRejectedValue(new ApiError(422, 'Liều đã được ghi nhận.'))
+
+  const { result } = render()
+  await waitFor(() => expect(result.current.phase).toBe('ready'))
+
+  await act(async () => {
+    await result.current.markTaken('dose-mine')
+  })
+
+  expect(result.current.actionError).toBe('Liều đã được ghi nhận.')
+  expect(result.current.actionError).not.toMatch(/thử lại/i)
+})
+
+test('a 409 is mapped too, for forward compatibility if the backend adopts it', async () => {
   setupHappyPath()
   mockTaken.mockRejectedValue(new ApiError(409, 'conflict'))
 
@@ -271,7 +289,57 @@ test('a 409 says the dose was already recorded, never "try again"', async () => 
   })
 
   expect(result.current.actionError).toBe('Liều này đã được ghi nhận trước đó.')
-  expect(result.current.actionError).not.toMatch(/thử lại/i)
+})
+
+test('a superseded load is discarded — a slow response never overwrites a newer one', async () => {
+  // The App Router reuses this page component across [id] changes, so the hook can
+  // have two loads in flight. A stale winner would put medication A's dose under
+  // medication B's name.
+  let releaseSlow: (value: unknown) => void = () => {}
+  mockSchedules
+    .mockReturnValueOnce(
+      new Promise((resolve) => {
+        releaseSlow = resolve
+      }) as never
+    )
+    .mockResolvedValue([{ ...SCHEDULE, id: 'sched-fresh' }])
+  mockDue.mockResolvedValue({ delivered: 0, items: [] })
+  mockAdherence.mockResolvedValue(NO_ADHERENCE)
+
+  const { result } = render()
+
+  await act(async () => {
+    const stale = result.current.reload() // supersedes the mount load
+    releaseSlow([{ ...SCHEDULE, id: 'sched-stale' }]) // mount load resolves late
+    await stale
+  })
+
+  await waitFor(() => expect(result.current.phase).toBe('ready'))
+  expect(result.current.schedules.map((s) => s.id)).toEqual(['sched-fresh'])
+})
+
+test('a superseded FAILING load does not push the hook into an error state', async () => {
+  let rejectSlow: (reason: unknown) => void = () => {}
+  mockSchedules
+    .mockReturnValueOnce(
+      new Promise((_resolve, reject) => {
+        rejectSlow = reject
+      }) as never
+    )
+    .mockResolvedValue([SCHEDULE])
+  mockDue.mockResolvedValue({ delivered: 0, items: [] })
+  mockAdherence.mockResolvedValue(NO_ADHERENCE)
+
+  const { result } = render()
+
+  await act(async () => {
+    const fresh = result.current.reload()
+    rejectSlow(new ApiError(500, 'stale failure'))
+    await fresh
+  })
+
+  await waitFor(() => expect(result.current.phase).toBe('ready'))
+  expect(result.current.errorMessage).toBeNull()
 })
 
 test.each([

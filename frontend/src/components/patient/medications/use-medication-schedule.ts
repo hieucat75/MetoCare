@@ -25,6 +25,15 @@ export interface MedicationScheduleState {
   nextDue: DoseOccurrence | null
   /** Counts summed across this medication's schedules; `null` while unavailable. */
   adherence: ScheduleAdherence | null
+  /**
+   * True when at least one per-schedule adherence read failed, so `adherence` is
+   * computed from an incomplete set. The figure must then be qualified in the UI:
+   * a missing part is usually a schedule carrying MISSED doses, so silently
+   * dropping it inflates the rate.
+   */
+  isAdherencePartial: boolean
+  /** Earliest start_date across this medication's schedules — the period the rate covers. */
+  adherenceSince: string | null
   /** True while a taken/skipped write is in flight — blocks re-entrant submits. */
   isSubmitting: boolean
   actionError: string | null
@@ -39,9 +48,16 @@ const GENERIC_ACTION_ERROR = 'Không ghi được liều. Vui lòng thử lại.
 /**
  * Resolve the message shown to the patient for a failed dose action.
  *
- * Distinguishing the statuses matters clinically: a 409 means the backend already
- * recorded this dose, so telling the patient "thử lại" would invite a double entry
- * they cannot see. A 403/404 means the dose is not actionable at all.
+ * Distinguishing the statuses matters clinically: telling a patient "thử lại" when
+ * the dose was in fact already recorded invites a double entry they cannot see.
+ *
+ * Note on the already-recorded case: `mark_dose` raises `InvalidSchedule("Liều đã
+ * được ghi nhận.")`, and `_map_err` maps every non-NotFound/non-AccessDenied
+ * ScheduleError to **422** — not 409 (backend/app/api/v1/routes/
+ * medication_schedule.py::_map_err). So that case arrives as a 422 and is surfaced
+ * through the backend's own Vietnamese `detail`, which already says exactly that.
+ * The 409 branch is kept as a forward-compatible mapping in case the backend later
+ * adopts the more conventional conflict status; it does not fire today.
  */
 function actionErrorMessage(err: unknown): string {
   if (err instanceof ApiError) {
@@ -50,6 +66,8 @@ function actionErrorMessage(err: unknown): string {
     if (err.status === 403) return 'Bạn không có quyền ghi nhận liều này.'
     if (err.status === 429) return 'Bạn thao tác quá nhanh. Vui lòng thử lại sau giây lát.'
     if (err.status >= 500) return 'Hệ thống đang bận. Vui lòng thử lại sau.'
+    // 422 lands here: the backend detail is the authoritative, already-localised
+    // explanation (e.g. "Liều đã được ghi nhận.").
     return err.detail || GENERIC_ACTION_ERROR
   }
   return GENERIC_ACTION_ERROR
@@ -96,6 +114,7 @@ export function useMedicationSchedule(
   const [schedules, setSchedules] = React.useState<MedicationSchedule[]>([])
   const [dueDoses, setDueDoses] = React.useState<DoseOccurrence[]>([])
   const [adherence, setAdherence] = React.useState<ScheduleAdherence | null>(null)
+  const [isAdherencePartial, setIsAdherencePartial] = React.useState(false)
   const [isSubmitting, setIsSubmitting] = React.useState(false)
   const [actionError, setActionError] = React.useState<string | null>(null)
 
@@ -103,12 +122,22 @@ export function useMedicationSchedule(
   // (double-click / Enter-repeat land in the same tick).
   const submitLock = React.useRef(false)
 
+  // Monotonic request token. The App Router REUSES this page component when only
+  // the [id] segment changes, so navigating medication A -> B keeps the same hook
+  // instance alive with two loads in flight. Without this guard a slow A response
+  // landing after a fast B response would leave B's name in the header above A's
+  // schedule, due dose and adherence — and "Đã uống" would then act on A's dose.
+  const requestToken = React.useRef(0)
+
   const reload = React.useCallback(async () => {
     if (!patientId || !medicationId) {
       setPhase('error')
       setErrorMessage(GENERIC_LOAD_ERROR)
       return
     }
+    const token = ++requestToken.current
+    const isStale = () => requestToken.current !== token
+
     setPhase('loading')
     setErrorMessage(null)
     try {
@@ -116,6 +145,7 @@ export function useMedicationSchedule(
         getMedicationSchedules(patientId, medicationId),
         getRemindersDue(patientId),
       ])
+      if (isStale()) return
 
       const scheduleIds = new Set(scheduleRows.map((s) => s.id))
       const mine = due.items
@@ -126,12 +156,16 @@ export function useMedicationSchedule(
       const parts = await Promise.all(
         scheduleRows.map((s) => getScheduleAdherence(patientId, s.id).catch(() => null))
       )
+      if (isStale()) return
 
+      const resolved = parts.filter((p): p is ScheduleAdherence => p !== null)
       setSchedules(scheduleRows)
       setDueDoses(mine)
-      setAdherence(combineAdherence(parts.filter((p): p is ScheduleAdherence => p !== null)))
+      setAdherence(combineAdherence(resolved))
+      setIsAdherencePartial(resolved.length < parts.length)
       setPhase('ready')
     } catch (err) {
+      if (isStale()) return
       setErrorMessage(err instanceof ApiError ? err.detail : GENERIC_LOAD_ERROR)
       setPhase('error')
     }
@@ -178,6 +212,14 @@ export function useMedicationSchedule(
     [patientId, submit]
   )
 
+  // Earliest schedule start — the real beginning of the window the summed rate
+  // covers. The backend computes adherence over a schedule's whole lifetime with
+  // no window, so stating a period is the only way the number is honest.
+  const adherenceSince = schedules
+    .map((s) => s.start_date)
+    .filter((d): d is string => Boolean(d))
+    .sort()[0] ?? null
+
   return {
     phase,
     errorMessage,
@@ -185,6 +227,8 @@ export function useMedicationSchedule(
     dueDoses,
     nextDue: dueDoses[0] ?? null,
     adherence,
+    isAdherencePartial,
+    adherenceSince,
     isSubmitting,
     actionError,
     markTaken,
