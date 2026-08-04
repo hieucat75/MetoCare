@@ -20,11 +20,29 @@ import { tokenStore as defaultTokenStore, type TokenStore } from '../storage/tok
 export class ApiError extends Error {
   constructor(
     public readonly status: number,
-    public readonly detail: string
+    public readonly detail: string,
+    /**
+     * Machine-readable code from the backend's `{code, message}` error envelope
+     * (e.g. `CONSENT_DENIED`, `PERMISSION_DENIED`). Absent for plain
+     * `{detail: ...}` errors and transport failures.
+     */
+    public readonly code?: string
   ) {
     super(detail)
     this.name = 'ApiError'
   }
+}
+
+/** Backend code for a fail-closed consent gate (backend `app/main.py`). */
+export const CONSENT_DENIED_CODE = 'CONSENT_DENIED'
+
+/**
+ * True when a request was refused because the patient has not granted (or has
+ * revoked) the consent category governing the feature. Callers must offer a
+ * route to the consent screen rather than showing a dead-end error.
+ */
+export function isConsentDenied(err: unknown): boolean {
+  return err instanceof ApiError && err.code === CONSENT_DENIED_CODE
 }
 
 export interface PageError {
@@ -131,12 +149,19 @@ export function createApiClient(config: ApiClientConfig = {}): ApiClient {
     return refreshingPromise
   }
 
-  async function parseErrorDetail(res: Response): Promise<string> {
+  async function parseError(res: Response): Promise<{ detail: string; code?: string }> {
     let detail = `Lỗi ${res.status}`
+    let code: string | undefined
     try {
       const body = await res.json()
+      if (typeof body?.code === 'string') code = body.code
       if (body?.code === 'VALIDATION_ERROR' || body?.code === 'DUPLICATE_CANDIDATE') {
+        // These callers parse the full envelope (field errors / duplicate ids).
         detail = JSON.stringify(body)
+      } else if (typeof body?.message === 'string') {
+        // `{code, message}` envelope (consent/permission/policy handlers) —
+        // without this the patient-facing text was dropped for a bare "Lỗi 403".
+        detail = body.message
       } else if (typeof body?.detail === 'string') {
         detail = body.detail
       } else if (Array.isArray(body?.detail)) {
@@ -145,7 +170,7 @@ export function createApiClient(config: ApiClientConfig = {}): ApiClient {
     } catch {
       // Non-JSON body — keep the status-code fallback.
     }
-    return detail
+    return { detail, code }
   }
 
   async function apiFetch<T>(path: string, options: FetchOptions = {}): Promise<T> {
@@ -177,7 +202,8 @@ export function createApiClient(config: ApiClientConfig = {}): ApiClient {
     }
 
     if (!res.ok) {
-      throw new ApiError(res.status, await parseErrorDetail(res))
+      const { detail, code } = await parseError(res)
+      throw new ApiError(res.status, detail, code)
     }
 
     if (res.status === 204) return undefined as T

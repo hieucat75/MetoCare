@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 
 import type { ApiClient } from '../../api/client'
-import { toPageError } from '../../api/client'
+import { isConsentDenied, toPageError } from '../../api/client'
 import {
   type CandidateOut,
   confirmCandidate,
@@ -15,6 +15,8 @@ export interface DocumentReviewState {
   phase: Phase
   candidates: CandidateOut[]
   errorMsg?: string
+  /** The failure was the fail-closed `documents` consent gate — offer the consent route. */
+  consentDenied: boolean
   pendingId: string | null
   reload: () => Promise<void>
   confirm: (candidateId: string) => Promise<void>
@@ -33,15 +35,18 @@ export function useDocumentReview(client: ApiClient, documentId: string): Docume
   const [candidates, setCandidates] = useState<CandidateOut[]>([])
   const [errorMsg, setErrorMsg] = useState<string | undefined>(undefined)
   const [pendingId, setPendingId] = useState<string | null>(null)
+  const [consentDenied, setConsentDenied] = useState(false)
 
   const reload = useCallback(async () => {
     setPhase('loading')
     setErrorMsg(undefined)
+    setConsentDenied(false)
     try {
       const res = await listCandidates(client, documentId)
       setCandidates(res.items)
       setPhase('ready')
     } catch (err) {
+      setConsentDenied(isConsentDenied(err))
       setErrorMsg(toPageError(err).message)
       setPhase('error')
     }
@@ -63,6 +68,7 @@ export function useDocumentReview(client: ApiClient, documentId: string): Docume
         const res = await confirmCandidate(client, candidateId)
         _patchStatus(candidateId, res.candidate.status)
       } catch (err) {
+        setConsentDenied(isConsentDenied(err))
         setErrorMsg(toPageError(err).message)
       } finally {
         setPendingId(null)
@@ -78,6 +84,7 @@ export function useDocumentReview(client: ApiClient, documentId: string): Docume
         const res = await rejectCandidate(client, candidateId)
         _patchStatus(candidateId, res.status)
       } catch (err) {
+        setConsentDenied(isConsentDenied(err))
         setErrorMsg(toPageError(err).message)
       } finally {
         setPendingId(null)
@@ -86,5 +93,5 @@ export function useDocumentReview(client: ApiClient, documentId: string): Docume
     [client, _patchStatus]
   )
 
-  return { phase, candidates, errorMsg, pendingId, reload, confirm, reject }
+  return { phase, candidates, errorMsg, consentDenied, pendingId, reload, confirm, reject }
 }

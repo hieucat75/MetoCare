@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react'
 
 import type { ApiClient, FetchLike } from '../../api/client'
-import { toPageError } from '../../api/client'
+import { isConsentDenied, toPageError } from '../../api/client'
 import {
   createUploadSession,
   type DocTypeHint,
@@ -19,6 +19,12 @@ export interface PickedAsset {
 export interface AddDocumentState {
   phase: Phase
   errorMsg?: string
+  /**
+   * The failure was a fail-closed `documents` consent gate, not a transport or
+   * server fault. The screen must offer a route to the consent settings — the
+   * patient cannot otherwise discover why uploading is refused.
+   */
+  consentDenied: boolean
   submit: (asset: PickedAsset, docType: DocTypeHint) => Promise<string | null>
 }
 
@@ -31,11 +37,13 @@ export interface AddDocumentState {
 export function useAddDocument(client: ApiClient, fetchImpl: FetchLike = fetch): AddDocumentState {
   const [phase, setPhase] = useState<Phase>('idle')
   const [errorMsg, setErrorMsg] = useState<string | undefined>(undefined)
+  const [consentDenied, setConsentDenied] = useState(false)
 
   const submit = useCallback(
     async (asset: PickedAsset, docType: DocTypeHint): Promise<string | null> => {
       setPhase('uploading')
       setErrorMsg(undefined)
+      setConsentDenied(false)
       try {
         const session = await createUploadSession(client, {
           declaredMime: asset.mimeType,
@@ -49,6 +57,7 @@ export function useAddDocument(client: ApiClient, fetchImpl: FetchLike = fetch):
         setPhase('idle')
         return doc.id
       } catch (err) {
+        setConsentDenied(isConsentDenied(err))
         setErrorMsg(toPageError(err).message)
         setPhase('error')
         return null
@@ -57,5 +66,5 @@ export function useAddDocument(client: ApiClient, fetchImpl: FetchLike = fetch):
     [client, fetchImpl]
   )
 
-  return { phase, errorMsg, submit }
+  return { phase, errorMsg, consentDenied, submit }
 }

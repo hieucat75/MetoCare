@@ -21,12 +21,30 @@ function fieldText(fields: Record<string, unknown>, key: string): string | null 
 export default function ReviewScreen() {
   const { client } = useAuth()
   const { documentId } = useLocalSearchParams<{ documentId: string }>()
-  const { phase, candidates, errorMsg, pendingId, reload, confirm, reject } = useDocumentReview(
-    client,
-    documentId
-  )
+  const { phase, candidates, errorMsg, consentDenied, pendingId, reload, confirm, reject } =
+    useDocumentReview(client, documentId)
 
   if (phase === 'loading') return <LoadingView />
+  if (phase === 'error' && consentDenied) {
+    // Fail-closed `documents` consent: a retry can never succeed, so route the
+    // patient to the toggle that governs it instead of offering "Thử lại".
+    return (
+      <SafeAreaView style={styles.safe}>
+        <ScrollView contentContainerStyle={styles.scroll}>
+          <GlassCard style={styles.card} testID="review-consent-blocked">
+            <Text style={styles.name}>{vi.documents.consentBlockedTitle}</Text>
+            <Text style={styles.body}>{vi.documents.consentBlockedBody}</Text>
+            <PrimaryButton
+              label={vi.documents.consentBlockedCta}
+              onPress={() => router.push('/consent')}
+              style={styles.consentCta}
+              testID="review-consent-cta"
+            />
+          </GlassCard>
+        </ScrollView>
+      </SafeAreaView>
+    )
+  }
   if (phase === 'error') {
     return <ErrorView title={vi.errors.generic} message={errorMsg} onRetry={() => void reload()} />
   }
@@ -126,6 +144,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xl,
   },
   card: { marginBottom: spacing.lg },
+  consentCta: { marginTop: spacing.md },
   name: { ...typography.heading, color: colors.ink, marginBottom: spacing.xs },
   meta: { ...typography.body, color: colors.inkMuted },
   body: { ...typography.body, color: colors.inkMuted },

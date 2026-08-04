@@ -31,7 +31,7 @@ function assetFrom(result: ImagePicker.ImagePickerResult) {
 export default function AddDocumentScreen() {
   const { client } = useAuth()
   const { isOffline } = useNetworkStatus()
-  const { phase, errorMsg, submit } = useAddDocument(client)
+  const { phase, errorMsg, consentDenied, submit } = useAddDocument(client)
   const [docType, setDocType] = useState<DocTypeHint>('prescription')
   const [qaBusy, setQaBusy] = useState(false)
   const [qaError, setQaError] = useState<string | undefined>(undefined)
@@ -116,7 +116,19 @@ export default function AddDocumentScreen() {
           )}
         </GlassCard>
 
-        {phase === 'error' && errorMsg && (
+        {phase === 'error' && consentDenied && (
+          <GlassCard style={styles.card} testID="add-consent-blocked">
+            <Text style={styles.consentTitle}>{vi.documents.consentBlockedTitle}</Text>
+            <Text style={styles.consentBody}>{vi.documents.consentBlockedBody}</Text>
+            <PrimaryButton
+              label={vi.documents.consentBlockedCta}
+              onPress={() => router.push('/consent')}
+              testID="add-consent-cta"
+            />
+          </GlassCard>
+        )}
+
+        {phase === 'error' && !consentDenied && errorMsg && (
           <Text style={styles.error} testID="add-error">
             {errorMsg}
           </Text>
@@ -155,5 +167,7 @@ const styles = StyleSheet.create({
   card: { marginBottom: spacing.lg },
   action: { marginBottom: spacing.md },
   error: { ...typography.body, color: colors.danger, marginBottom: spacing.lg },
+  consentTitle: { ...typography.body, fontWeight: '700', color: colors.ink, marginBottom: spacing.xs },
+  consentBody: { ...typography.body, color: colors.inkMuted, marginBottom: spacing.md },
   back: { marginTop: spacing.md },
 })

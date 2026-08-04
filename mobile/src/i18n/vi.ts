@@ -185,6 +185,12 @@ export const vi = {
     strength: 'Hàm lượng',
     frequency: 'Cách dùng',
     unnamed: 'Mục chưa rõ tên',
+    // Shown when the backend refuses the document pipeline because the patient
+    // has not granted (or has revoked) the "Tài liệu y tế" consent category.
+    consentBlockedTitle: 'Cần bật quyền “Tài liệu y tế”',
+    consentBlockedBody:
+      'Để tải lên và xử lý tài liệu y tế, bạn cần cho phép mục “Tài liệu y tế” trong phần Quyền riêng tư. Bạn có thể tắt lại bất cứ lúc nào.',
+    consentBlockedCta: 'Mở Quyền riêng tư',
   },
   medication: {
     // List screen
