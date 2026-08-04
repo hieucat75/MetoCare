@@ -58,6 +58,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.ai.consent_policy import (  # noqa: E402
     CATEGORY_AI_PROCESSING,
+    CATEGORY_DOCUMENTS,
     CATEGORY_HEALTH_RECORDS,
     CONSENT_POLICY_VERSION,
 )
@@ -640,7 +641,16 @@ def seed(db) -> dict:
     # --- Journey C: consent ---
     _grant_consent(db, patient.id, CATEGORY_AI_PROCESSING)
     _grant_consent(db, patient.id, CATEGORY_HEALTH_RECORDS)
-    summary["consent_granted"] = [CATEGORY_AI_PROCESSING, CATEGORY_HEALTH_RECORDS]
+    # PRIV-F1 made the whole medical-document pipeline fail-closed on the
+    # `documents` category, so without this grant the seeded patient cannot run
+    # Journey A at all (every upload/review call 403s). Granting it here keeps
+    # the QA journeys runnable; a real patient still grants it themselves.
+    _grant_consent(db, patient.id, CATEGORY_DOCUMENTS)
+    summary["consent_granted"] = [
+        CATEGORY_AI_PROCESSING,
+        CATEGORY_HEALTH_RECORDS,
+        CATEGORY_DOCUMENTS,
+    ]
 
     # --- Journey C: confirmed clinical data ---
     metrics, labs = _seed_confirmed_clinical(db, profile.id)
