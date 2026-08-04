@@ -146,6 +146,17 @@ def _default_meto_consent(request, monkeypatch):
             "app.api.v1.routes.documents.is_granted",
             lambda db, user_id, category: True,
         )
+        # PRIV-F4: /lab-uploads carries the same documents-consent gate.
+        monkeypatch.setattr(
+            "app.api.v1.routes.lab_upload.is_granted",
+            lambda db, user_id, category: True,
+        )
+        # BRD §F: medication→source provenance returns document data, so it
+        # carries the same documents-consent gate.
+        monkeypatch.setattr(
+            "app.api.v1.routes.medication_source.is_granted",
+            lambda db, user_id, category: True,
+        )
     yield
 
 

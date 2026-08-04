@@ -21,6 +21,10 @@ import { MedicationOverflowMenu } from '@/components/patient/medications/overflo
 import { UsageInstructionsCard } from '@/components/patient/medications/usage-instructions'
 import { InteractionsCard } from '@/components/patient/medications/interactions-card'
 import { SideEffectsCard } from '@/components/patient/medications/side-effects-card'
+import { MedicationScheduleCard } from '@/components/patient/medications/schedule-card'
+import { MedicationSourceCard } from '@/components/patient/medications/source-card'
+import { useMedicationSchedule } from '@/components/patient/medications/use-medication-schedule'
+import { ApiError } from '@/lib/api/client'
 import {
   getMedications,
   updateMedicationLifecycle,
@@ -250,8 +254,19 @@ export default function MedicationDetailPage() {
 
       const today = summaryRes.today_medications.find((m) => m.medication_id === id) ?? null
       setTodayStatus(today)
-    } catch {
-      setError('Không thể tải thông tin thuốc. Vui lòng thử lại.')
+    } catch (err: unknown) {
+      // Distinct states, not one generic failure: a 403 is an access decision the
+      // patient can act on, a 404 means the record is gone, and only the rest is a
+      // "try again" situation. Collapsing them told every patient to retry a
+      // request that could never succeed.
+      if (err instanceof ApiError) {
+        if (err.status === 403) setError('Bạn không có quyền xem thông tin thuốc này.')
+        else if (err.status === 404) setError('Không tìm thấy thông tin thuốc.')
+        else if (err.status >= 500) setError('Hệ thống đang bận. Vui lòng thử lại sau.')
+        else setError(err.detail || 'Không thể tải thông tin thuốc. Vui lòng thử lại.')
+      } else {
+        setError('Không thể tải thông tin thuốc. Vui lòng kiểm tra kết nối và thử lại.')
+      }
     } finally {
       setLoading(false)
     }
@@ -260,6 +275,11 @@ export default function MedicationDetailPage() {
   React.useEffect(() => {
     load()
   }, [load])
+
+  // Journey-3 structured schedule / due doses / dose-occurrence adherence. Loaded
+  // independently of the record above so a schedule failure never blanks the page,
+  // and vice versa.
+  const schedule = useMedicationSchedule(patientId, id)
 
   const handleTaken = React.useCallback(async () => {
     if (!patientId || logging) return
@@ -346,8 +366,14 @@ export default function MedicationDetailPage() {
   const isPausedMed = medication.lifecycle_status === 'paused'
   const canManage = isActiveMed || isPausedMed
 
+  // When a structured schedule exists, dose occurrences are the authoritative
+  // record and the schedule card owns "Đã uống" / "Bỏ qua". Showing the legacy
+  // free-floating adherence buttons alongside would give the patient two buttons
+  // writing to two different models with no way to tell which one counted.
+  const hasStructuredSchedule = schedule.schedules.length > 0
+
   return (
-    <div className="p-4 max-w-md mx-auto pb-28 space-y-4">
+    <div className="p-4 pb-28 mx-auto max-w-md lg:max-w-5xl">
       {/* Header: back + title */}
       <header className="flex items-center gap-3">
         <button
@@ -363,6 +389,11 @@ export default function MedicationDetailPage() {
         </h1>
       </header>
 
+      {/* Two columns from `lg` up: "what do I do now" on the left, reference and
+          provenance on the right. Below `lg` it collapses to the original single
+          mobile-web column, so the phone layout is unchanged. */}
+      <div className="mt-4 grid gap-4 lg:grid-cols-2 lg:items-start">
+        <div className="space-y-4">
       {/* Hero — consolidated identity + adherence status + today's dose + primary
           action + overflow (M2: answers "thuốc gì / đúng không / bấm gì" in one
           card, replacing the old 4-side-by-side-button layout). */}
@@ -426,7 +457,7 @@ export default function MedicationDetailPage() {
             (last-action-wins on today's most-recent record) — see the note
             on computeAdherenceStatus in today-status.tsx for the disclosed
             limitation this implies. */}
-        {isActiveMed && (
+        {isActiveMed && !hasStructuredSchedule && (
           <div className="mt-4 border-t border-[#E8F0ED] pt-4">
             {takenToday ? (
               <div className="flex items-center gap-2">
@@ -464,15 +495,37 @@ export default function MedicationDetailPage() {
         )}
       </NeuCard>
 
-      {/* Cách sử dụng — M3: user note vs professional guidance, kept apart */}
-      <UsageInstructionsCard note={medication.note} />
-
-      {/* Tương tác thuốc + Tác dụng phụ — M4: structure/empty-state only, no
-          interaction/side-effect engine exists yet. Always called with empty
-          arrays today — the data contract exists so Gate 2 can wire a real
-          source without touching these components. */}
-      <InteractionsCard medicationName={medication.name} interactions={[]} />
-      <SideEffectsCard groups={[]} />
+      {/* Journey 3 — structured schedule, next due dose, dose-level taken/skipped
+          (with a reason) and DoseOccurrence-based adherence. */}
+      {schedule.phase === 'loading' ? (
+        <NeuCard className="!p-4">
+          <p className="text-[13px] text-neu-secondary">Đang tải lịch uống thuốc…</p>
+        </NeuCard>
+      ) : schedule.phase === 'error' ? (
+        <NeuCard className="!p-4">
+          <p role="alert" className="text-[13px] text-neu-secondary">
+            {schedule.errorMessage}
+          </p>
+          <button
+            type="button"
+            onClick={() => void schedule.reload()}
+            className="mt-1 text-[13px] font-semibold text-neu-green underline underline-offset-2"
+          >
+            Thử lại
+          </button>
+        </NeuCard>
+      ) : (
+        <MedicationScheduleCard
+          schedules={schedule.schedules}
+          dueDoses={schedule.dueDoses}
+          nextDue={schedule.nextDue}
+          adherence={schedule.adherence}
+          isSubmitting={schedule.isSubmitting}
+          actionError={schedule.actionError}
+          onMarkTaken={(doseId) => void schedule.markTaken(doseId)}
+          onMarkSkipped={(doseId, reason) => void schedule.markSkipped(doseId, reason)}
+        />
+      )}
 
       {/* Dose / timing chips */}
       {(medication.dose || medication.frequency) && (
@@ -499,12 +552,34 @@ export default function MedicationDetailPage() {
           )}
         </div>
       )}
+        </div>
 
-      {/* Adherence stats — 2×2 grid */}
+        <div className="space-y-4">
+      {/* Cách sử dụng — M3: user note vs professional guidance, kept apart */}
+      <UsageInstructionsCard note={medication.note} />
+
+      {/* Tương tác thuốc + Tác dụng phụ — M4: structure/empty-state only, no
+          interaction/side-effect engine exists yet. Always called with empty
+          arrays today — the data contract exists so Gate 2 can wire a real
+          source without touching these components. */}
+      <InteractionsCard medicationName={medication.name} interactions={[]} />
+      <SideEffectsCard groups={[]} />
+
+      {/* Nguồn thông tin — BRD §F provenance (document + OCR origin). */}
+      <MedicationSourceCard
+        patientId={patientId}
+        medicationId={id}
+        fallbackSourceType={medication.source_type}
+        fallbackVerificationStatus={medication.verification_status}
+      />
+
+      {/* Legacy self-reported log. Kept because it is real history the patient
+          entered before schedules existed — but labelled so it is never confused
+          with the schedule-based figure above, which counts missed doses too. */}
       <div>
         <div className="mb-2 flex items-center gap-2">
           <Activity className="size-4 text-neu-green" aria-hidden="true" />
-          <p className="text-[13px] font-bold text-neu-text">Tuân thủ điều trị</p>
+          <p className="text-[13px] font-bold text-neu-text">Tự ghi nhận</p>
         </div>
         <div className="grid grid-cols-2 gap-2.5">
           <StatChip
@@ -519,13 +594,27 @@ export default function MedicationDetailPage() {
       </div>
 
       {/* Adherence history list */}
-      {history.length > 0 && <AdherenceHistoryList records={history} />}
+      {history.length > 0 ? (
+        <AdherenceHistoryList records={history} />
+      ) : (
+        <NeuCard className="!p-4">
+          <p className="text-[13px] text-neu-secondary">
+            Bạn chưa tự ghi nhận lần uống nào cho thuốc này.
+          </p>
+        </NeuCard>
+      )}
+        </div>
+      </div>
 
-      <p className="px-1 text-[12.5px] text-neu-subtle">
+      <p className="mt-4 px-1 text-[12.5px] text-neu-subtle">
         Thêm ngày {formatDate(medication.created_at)}
       </p>
 
-      <NeuButton variant="secondary" onClick={() => router.push('/medications')}>
+      <NeuButton
+        variant="secondary"
+        className="mt-3"
+        onClick={() => router.push('/medications')}
+      >
         Xem tất cả thuốc
       </NeuButton>
 

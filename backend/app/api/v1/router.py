@@ -40,6 +40,7 @@ from .routes import (
     marketplace,
     medication_knowledge,
     medication_schedule,
+    medication_source,
     medications,
     meto,
     narrative,
@@ -84,6 +85,9 @@ api_router.include_router(narrative.router)
 api_router.include_router(medications.router)
 # Journey 3 — medication schedule / reminder (deterministic + in-app) / adherence.
 api_router.include_router(medication_schedule.router)
+# BRD §F — reverse provenance: medication → source document + OCR origin.
+# Additive read; gated by the same fail-closed `documents` consent as /documents.
+api_router.include_router(medication_source.router)
 # Medication Knowledge K2 Slice 1 — read-only retrieval (gated by
 # FeatureFlag.MEDICATION_KNOWLEDGE_RETRIEVAL, fail-closed default; see
 # app/api/deps_medication_knowledge.py).
