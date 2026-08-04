@@ -15,7 +15,7 @@ import uuid
 from hashlib import sha256
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from sqlalchemy import select, update
+from sqlalchemy import or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
@@ -41,6 +41,9 @@ from app.models.medication_schedule import (
 from app.services import audit, notification_transport
 
 _DEFAULT_TZ = "Asia/Ho_Chi_Minh"
+# The ONLY medication lifecycle state that may drive reminders (CLIN PS-5) — a
+# deleted or retired drug must never be reminded, by name, to the patient.
+_MED_ACTIVE_STATUS = "active"
 _DEFAULT_HORIZON_DAYS = 7
 # A pending/notified dose this long past its time counts as MISSED (review P1 —
 # so adherence isn't inflated by ignored doses staying out of the denominator).
@@ -257,19 +260,27 @@ def deliver_due_reminders(
     """Deliver reminders for pending doses whose time has arrived; mark them
     notified. Returns the number of reminders delivered."""
     now = now or _now_utc()
+    # CLIN PS-5: self-heal any schedule whose medication was retired/deleted
+    # before the lifecycle cascade existed, so legacy rows stop reminding too.
+    reconcile_schedules_with_medication_state(db, patient_id=patient_id)
     # Only remind for doses whose schedule is still ACTIVE and not superseded — a
     # paused/stopped/superseded schedule must never remind (review P1: no reminder
-    # to take a discontinued medication).
+    # to take a discontinued medication) — AND whose MEDICATION is still an active,
+    # non-deleted canonical row (CLIN PS-5: the schedule is a separate row, so the
+    # schedule-level gate alone let a stopped drug keep reminding).
     due = list(
         db.execute(
             select(DoseOccurrence)
             .join(MedicationSchedule, MedicationSchedule.id == DoseOccurrence.schedule_id)
+            .join(Medication, Medication.id == MedicationSchedule.medication_id)
             .where(
                 DoseOccurrence.patient_id == patient_id,
                 DoseOccurrence.state == DOSE_PENDING,
                 DoseOccurrence.scheduled_utc <= now,
                 MedicationSchedule.status == SCHED_STATUS_ACTIVE,
                 MedicationSchedule.superseded_by.is_(None),
+                Medication.deleted_at.is_(None),
+                Medication.lifecycle_status == _MED_ACTIVE_STATUS,
             )
         ).scalars()
     )
@@ -351,6 +362,65 @@ def _cancel_open_doses(db: Session, schedule_id: str) -> None:
         )
     ).scalars():
         db.delete(dose)
+
+
+def stop_schedules_for_medication(db: Session, *, medication_id: str) -> int:
+    """Stop every non-stopped schedule of a medication — the lifecycle cascade
+    (CLIN PS-5).
+
+    Called from the medication service whenever a drug leaves ``active`` (stop /
+    pause / on_hold / discontinue / entered_in_error / soft-delete), inside the
+    SAME transaction, so a drug the patient or their doctor stopped can never be
+    reminded again. Reuses ``_cancel_open_doses``, so already-materialised doses
+    disappear from the reminder feed and the dashboard as well. Returns the number
+    of schedules stopped. No ownership check: the caller already authorised the
+    lifecycle transition on the owning medication.
+    """
+    schedules = list(
+        db.execute(
+            select(MedicationSchedule).where(
+                MedicationSchedule.medication_id == medication_id,
+                MedicationSchedule.status != SCHED_STATUS_STOPPED,
+            )
+        ).scalars()
+    )
+    for schedule in schedules:
+        schedule.status = SCHED_STATUS_STOPPED
+        _cancel_open_doses(db, schedule.id)
+    if schedules:
+        db.flush()
+    return len(schedules)
+
+
+def reconcile_schedules_with_medication_state(db: Session, *, patient_id: str) -> int:
+    """Stop schedules whose medication is no longer active (CLIN PS-5, read-path
+    guard).
+
+    The cascade above fixes every NEW lifecycle exit; this repairs rows that were
+    already broken when the cascade did not exist yet. Runs before each reminder
+    delivery / dashboard read, so no already-materialised dose of a discontinued
+    drug can survive as an action. Returns the number of schedules stopped.
+    """
+    stale = list(
+        db.execute(
+            select(MedicationSchedule)
+            .join(Medication, Medication.id == MedicationSchedule.medication_id)
+            .where(
+                MedicationSchedule.patient_id == patient_id,
+                MedicationSchedule.status != SCHED_STATUS_STOPPED,
+                or_(
+                    Medication.deleted_at.isnot(None),
+                    Medication.lifecycle_status != _MED_ACTIVE_STATUS,
+                ),
+            )
+        ).scalars()
+    )
+    for schedule in stale:
+        schedule.status = SCHED_STATUS_STOPPED
+        _cancel_open_doses(db, schedule.id)
+    if stale:
+        db.flush()
+    return len(stale)
 
 
 def _load_owned_schedule(db: Session, *, patient_id: str, schedule_id: str) -> MedicationSchedule:

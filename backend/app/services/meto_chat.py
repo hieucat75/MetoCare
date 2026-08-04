@@ -17,6 +17,7 @@ Does NOT directly call any AI provider — uses ProviderRegistry for routing/fal
 
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
 import logging
 import time
@@ -333,22 +334,29 @@ class MetoChatService:
             pname = provider.provider_name
             try:
                 chunks_received = 0
-                async for chunk in provider.chat_stream(
-                    messages=messages,
-                    system_prompt=system_prompt,
-                    max_tokens=settings.meto_max_tokens,
-                    temperature=settings.meto_temperature,
-                ):
-                    if chunk.is_final:
-                        output_tokens = chunk.total_tokens or 0
-                        break
-                    if chunk.delta:
-                        # Buffer, do NOT emit yet. Output safety must run on the
-                        # full response BEFORE any of it reaches the patient;
-                        # emitting per-chunk would deliver unsafe content that the
-                        # post-hoc check can no longer retract.
-                        full_content += chunk.delta
-                        chunks_received += 1
+                # PROD-F10: bound each provider attempt. Without this a hung
+                # provider holds the single gunicorn worker past its 120s
+                # timeout and takes the replica down for every user; the
+                # non-streaming path is bounded inside `call_with_fallback`.
+                # TimeoutError is an Exception, so the handler below simply
+                # treats a stall as a provider failure and falls through.
+                async with asyncio.timeout(settings.meto_timeout_seconds):
+                    async for chunk in provider.chat_stream(
+                        messages=messages,
+                        system_prompt=system_prompt,
+                        max_tokens=settings.meto_max_tokens,
+                        temperature=settings.meto_temperature,
+                    ):
+                        if chunk.is_final:
+                            output_tokens = chunk.total_tokens or 0
+                            break
+                        if chunk.delta:
+                            # Buffer, do NOT emit yet. Output safety must run on
+                            # the full response BEFORE any of it reaches the
+                            # patient; emitting per-chunk would deliver unsafe
+                            # content the post-hoc check can no longer retract.
+                            full_content += chunk.delta
+                            chunks_received += 1
 
                 # Success
                 self._registry.circuit_breaker().record_success(pname)

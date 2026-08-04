@@ -126,6 +126,23 @@ export default function DashboardScreen() {
           testID="dashboard-consent"
         />
 
+        {/* Operator/tester retrieval path for on-device diagnostics (WS4-F1/F2). */}
+        <PrimaryButton
+          label="Nhật ký kỹ thuật"
+          onPress={() => router.push('/diagnostics')}
+          variant="ghost"
+          style={styles.link}
+          testID="dashboard-diagnostics"
+        />
+
+        <PrimaryButton
+          label={vi.account.openSettings}
+          onPress={() => router.push('/settings')}
+          variant="ghost"
+          style={styles.link}
+          testID="dashboard-account"
+        />
+
         <PrimaryButton
           label={vi.auth.logout}
           onPress={() => void logout()}

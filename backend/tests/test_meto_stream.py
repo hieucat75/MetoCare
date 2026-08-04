@@ -113,6 +113,8 @@ async def test_stream_chat_normal_yields_chunks(db, patient):
         settings_mock = MagicMock()
         settings_mock.meto_max_tokens = 2048
         settings_mock.meto_temperature = 0.3
+        # PROD-F10: stream_chat bounds each provider attempt with this timeout.
+        settings_mock.meto_timeout_seconds = 30
         mock_settings.return_value = settings_mock
 
         collected = await _collect_chunks(
@@ -186,6 +188,8 @@ async def test_stream_chat_emergency_skips_provider(db, patient):
         settings_mock = MagicMock()
         settings_mock.meto_max_tokens = 2048
         settings_mock.meto_temperature = 0.3
+        # PROD-F10: stream_chat bounds each provider attempt with this timeout.
+        settings_mock.meto_timeout_seconds = 30
         mock_settings.return_value = settings_mock
 
         collected = await _collect_chunks(
@@ -250,6 +254,8 @@ async def test_stream_chat_provider_error_yields_error_chunk(db, patient):
         settings_mock = MagicMock()
         settings_mock.meto_max_tokens = 2048
         settings_mock.meto_temperature = 0.3
+        # PROD-F10: stream_chat bounds each provider attempt with this timeout.
+        settings_mock.meto_timeout_seconds = 30
         mock_settings.return_value = settings_mock
 
         collected = await _collect_chunks(
@@ -321,6 +327,8 @@ async def test_stream_chat_no_provider_name_in_chunks(db, patient):
         settings_mock = MagicMock()
         settings_mock.meto_max_tokens = 2048
         settings_mock.meto_temperature = 0.3
+        # PROD-F10: stream_chat bounds each provider attempt with this timeout.
+        settings_mock.meto_timeout_seconds = 30
         mock_settings.return_value = settings_mock
 
         collected = await _collect_chunks(
@@ -409,6 +417,8 @@ async def test_stream_chat_fallback_during_stream(db, patient):
         settings_mock = MagicMock()
         settings_mock.meto_max_tokens = 2048
         settings_mock.meto_temperature = 0.3
+        # PROD-F10: stream_chat bounds each provider attempt with this timeout.
+        settings_mock.meto_timeout_seconds = 30
         mock_settings.return_value = settings_mock
 
         collected = await _collect_chunks(

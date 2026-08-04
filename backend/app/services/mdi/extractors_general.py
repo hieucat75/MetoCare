@@ -22,11 +22,34 @@ from app.models.medical_document import (
 )
 
 from .extractors import CandidateDraft, make_dedupe_key
+from .extractors_prescription import _parse_medicine
 
 # A dose/strength signal → the line is a medication order, not a procedure/finding.
 # Such candidates are re-typed to `medication` so they route through the
 # MedicationPromoter (statement-first reconciliation), never RecordOnlyPromoter (§1.9).
 _MED_RE = re.compile(r"\d+\s?(mg|mcg|g|ml|viên|vien|iu|ui)\b", re.IGNORECASE)
+
+# CLIN PS-8: a medication NAME must be a drug name, never a whole report line.
+# A confirmed candidate's name becomes Medication.name, and from there the med
+# list, the Meto context block and the reminder body — so an unparseable segment
+# must keep its original (record-only) type rather than become a garbage drug.
+MAX_MEDICATION_NAME_LEN = 120
+# Fields lifted from the prescription parser onto a re-typed medication candidate.
+_MED_FIELDS = ("name", "strength", "form", "quantity", "frequency", "route", "instructions")
+
+
+def _medication_fields(content: str) -> dict | None:
+    """Parse a dose-bearing report segment into medication fields (CLIN PS-8).
+
+    Reuses the prescription parser (name / strength / form / frequency / …) instead
+    of dumping the entire segment into ``name``. Returns None when no plausible drug
+    name can be recovered — the caller then keeps the original candidate type.
+    """
+    parsed = _parse_medicine(content, None)
+    name = (parsed.get("name") or "").strip()
+    if not name or len(name) > MAX_MEDICATION_NAME_LEN:
+        return None
+    return {k: parsed.get(k) for k in _MED_FIELDS if parsed.get(k)}
 
 # Section-label → candidate type. First matching label on a line wins; the text
 # AFTER the label (or the following lines) is the candidate content.
@@ -110,16 +133,19 @@ class GeneralReportExtractor:
                     continue
                 # A dose/strength signal means this is a medication order — re-type
                 # so it routes through MedicationPromoter's reconciliation, never
-                # the record-only path (§1.9).
-                if _MED_RE.search(content):
+                # the record-only path (§1.9). CLIN PS-8: only re-type when a drug
+                # name can actually be parsed out; otherwise keep the original type.
+                med_fields = _medication_fields(content) if _MED_RE.search(content) else None
+                if med_fields:
                     ctype = CANDIDATE_MEDICATION
                 fields: dict = {
                     "text": content,
                     "report_date": report_date,
                     "summary": summary,
                 }
-                if ctype == CANDIDATE_MEDICATION:
-                    fields["name"] = content  # MedicationPromoter reads fields["name"]
+                if med_fields:
+                    # MedicationPromoter reads name/strength/form/frequency/…
+                    fields.update(med_fields)
                 drafts.append(
                     CandidateDraft(
                         candidate_type=ctype,

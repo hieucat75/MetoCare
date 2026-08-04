@@ -30,6 +30,7 @@ from app.services import lab_parser
 from app.services.ocr_engine import (
     AzureDocIntelEngine,
     OcrEngineError,
+    azure_ocr_permitted,
     run_cloud_ocr_if_permitted,
     run_ocr,
 )
@@ -157,7 +158,8 @@ def _extract_pdf_text(data: bytes) -> tuple[str, float, str, list[str]]:
         logger.info("pdf_text_layer_unavailable")
 
     # 1) Azure Document Intelligence — table-aware OCR for scanned printouts.
-    if AzureDocIntelEngine.configured():
+    #    PRIV-F3: opt-in flag + credentials, never credentials alone.
+    if azure_ocr_permitted():
         try:
             res = AzureDocIntelEngine().run(data, PDF)
             return res.text, res.confidence, res.provider, list(res.warnings)
@@ -226,7 +228,8 @@ def build_draft(data: bytes, mime: str) -> LabUploadDraft:
     # PDFs route through _extract_text (text layer first, then Azure) so that
     # digital lab reports use the free text-layer path and hospital parsers apply.
     # Azure table-first is for image uploads only.
-    if AzureDocIntelEngine.configured() and mime != PDF:
+    # PRIV-F3: cloud table-first path requires the opt-in flag, not just credentials.
+    if azure_ocr_permitted() and mime != PDF:
         try:
             engine = AzureDocIntelEngine()
             analyze_result = engine.analyze_raw(data, mime)

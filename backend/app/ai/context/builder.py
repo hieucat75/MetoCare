@@ -95,6 +95,61 @@ _MAX_MEDICATIONS = 10
 # Meto until explicitly vetted and added here. NULL source = legacy patient data.
 _TRUSTED_METRIC_SOURCES = ("manual", "self_report", "lab_result", "device", "vital")
 
+# ---------------------------------------------------------------------------
+# AI-F1 — free-text sanitisation before anything enters the system prompt.
+#
+# OCR'd document text reaches the context through the MDI promoters (medication
+# name / note, condition and allergy lists, care-plan and lab labels). That text
+# is attacker-controllable: whoever prints the document the patient photographs
+# writes it. Assembled context is embedded in the SYSTEM message, i.e. the
+# highest-trust position of the prompt, so any instruction it carries would be
+# read as an instruction. Defence in depth (layer 1 of 3; the other two are the
+# fenced block + the untrusted-data rule in prompt/assembler.py):
+#   - drop any field the platform's own injection detector flags, and
+#   - hard-cap every free-text field so a long payload cannot flood the prompt.
+# ---------------------------------------------------------------------------
+
+_MAX_FREE_TEXT_CHARS = 200
+_FILTERED_PLACEHOLDER = "[nội dung đã được lọc vì lý do an toàn]"
+
+
+def _sanitize_text(value: Any) -> str:
+    """Return `value` as prompt-safe text: injection-filtered and length-capped."""
+    if value is None:
+        return ""
+    text = str(value)
+    if not text.strip():
+        return ""
+
+    from app.domain.guardrails import is_injection
+
+    try:
+        flagged = is_injection(text)
+    except Exception as exc:  # pragma: no cover - detector must never break build
+        logger.warning("Injection detector failed; dropping field: %s", exc)
+        flagged = True
+    if flagged:
+        logger.warning("AI context: injection-flagged free text dropped from prompt")
+        return _FILTERED_PLACEHOLDER
+
+    if len(text) > _MAX_FREE_TEXT_CHARS:
+        return text[:_MAX_FREE_TEXT_CHARS] + "…"
+    return text
+
+
+def _sanitize_unit(unit: Any) -> str:
+    """Sanitize a measurement unit. A flagged/oversized unit becomes empty rather
+    than the placeholder text, so `display` stays a clean "<value>" token."""
+    safe = _sanitize_text(unit)
+    return "" if safe == _FILTERED_PLACEHOLDER else safe
+
+
+def _sanitize_list(values: Any) -> list[str]:
+    """Sanitize every entry of a free-text list, dropping empties."""
+    if not isinstance(values, list):
+        return []
+    return [s for s in (_sanitize_text(v) for v in values) if s]
+
 
 class ContextBuilder:
     """Assemble context blocks for a Meto chat request.
@@ -318,7 +373,9 @@ class ContextBuilder:
                     age = None
 
             return {
-                "display_name": display_name,
+                # AI-F1: user-supplied free text, sanitized like every other
+                # free-text field that lands in the system prompt.
+                "display_name": _sanitize_text(display_name) or "Người dùng",
                 "age": age,
                 "gender": (profile.gender if profile else None) or "unknown",
                 "preferred_address": "bạn",
@@ -370,8 +427,9 @@ class ContextBuilder:
                         return [val] if val.strip() else []
                 return []
 
-            conditions = _parse_list(profile.known_conditions)
-            allergies = _parse_list(profile.allergies)
+            # AI-F1: conditions/allergies can be promoted from OCR'd documents.
+            conditions = _sanitize_list(_parse_list(profile.known_conditions))
+            allergies = _sanitize_list(_parse_list(profile.allergies))
 
             # Only return block if there's actual data
             if not conditions and not allergies:
@@ -440,7 +498,9 @@ class ContextBuilder:
             task_list = []
             for t in tasks:
                 task_list.append({
-                    "title": t[0],
+                    # AI-F1: free-text task titles are sanitized like every other
+                    # free-text field that reaches the system prompt.
+                    "title": _sanitize_text(t[0]),
                     "due_date": str(t[1]) if t[1] else None,
                     "status": t[2] or "pending",
                     "priority": t[3] or "medium",
@@ -448,7 +508,7 @@ class ContextBuilder:
 
             completed = sum(1 for t in task_list if t["status"] == "completed")
             return {
-                "plan_name": plan[1],
+                "plan_name": _sanitize_text(plan[1]),
                 "active_tasks": task_list[:10],
                 "completed_today": completed,
                 "total_today": len(task_list),
@@ -482,12 +542,15 @@ class ContextBuilder:
             if not rows:
                 return None
 
+            # AI-F1: name/dose/frequency/note all originate from OCR promotion for
+            # documents-sourced rows — sanitize every one before it can reach the
+            # system prompt.
             return [
                 {
-                    "name": r[0],
-                    "dosage": r[1] or "",
-                    "frequency": r[2] or "",
-                    "note": r[3] or "",
+                    "name": _sanitize_text(r[0]),
+                    "dosage": _sanitize_text(r[1]),
+                    "frequency": _sanitize_text(r[2]),
+                    "note": _sanitize_text(r[3]),
                     "start_date": str(r[4])[:10] if r[4] else None,
                     # ADR-11: paused stays clinically relevant but must never
                     # read as "currently taking".
@@ -554,14 +617,18 @@ class ContextBuilder:
                 orig_value = r[7] if r[7] is not None else r[1]
                 orig_unit = r[8] if r[8] is not None else (r[2] or "")
                 orig_ref = r[9] if r[9] is not None else (r[3] or "")
+                # AI-F1: OCR-derived labels are sanitized. The unit is sanitized
+                # BEFORE `display` is formatted so the verbatim-quote token stays
+                # consistent with the unit field (real units are never altered).
+                orig_unit = _sanitize_unit(orig_unit)
                 return {
-                    "test_name": orig_test_name,
+                    "test_name": _sanitize_text(orig_test_name),
                     # Formatted original — no raw IEEE float, no unit conversion.
                     "value": format_lab_value(orig_value, orig_unit),
                     "unit": orig_unit,
                     # Verbatim token the LLM must quote as-is (never convert/round).
                     "display": format_lab_display(orig_value, orig_unit),
-                    "reference_range": orig_ref,
+                    "reference_range": _sanitize_text(orig_ref),
                     "status": r[4] or "unknown",
                     "collected_date": str(r[5])[:10] if r[5] else None,
                 }
@@ -619,9 +686,9 @@ class ContextBuilder:
                 # P0 clinical-integrity: surface the ORIGINAL value+unit — never the
                 # canonical/SI-converted number. Fall back to value/unit when NULL.
                 orig_value = r[5] if r[5] is not None else r[1]
-                orig_unit = r[6] if r[6] is not None else (r[2] or "")
+                orig_unit = _sanitize_unit(r[6] if r[6] is not None else (r[2] or ""))
                 result.append({
-                    "metric_type": metric_type,
+                    "metric_type": _sanitize_text(metric_type),
                     "latest_value": format_lab_value(orig_value, orig_unit),
                     "unit": orig_unit,
                     # Verbatim token the LLM must quote as-is (never convert/round).

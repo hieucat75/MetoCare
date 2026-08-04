@@ -6,15 +6,19 @@ Provider name is NEVER exposed in any response.
 
 from __future__ import annotations
 
+import datetime as dt
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.ai.context.schemas import ScreenContext
-from app.api.deps import get_session, require_roles
+from app.api.deps import enforce_rate_limit, get_session, require_roles
+from app.core.config import get_settings
 from app.core.feature_flags import FeatureFlag, is_enabled
+from app.models.meto import MetoConversation, MetoMessage
 from app.models.user import UserRole
 from app.schemas.meto import (
     ConsentStatus,
@@ -45,6 +49,38 @@ def _require_meto_enabled() -> None:
         )
 
 
+def _enforce_daily_message_cap(db: Session, user_id: str) -> None:
+    """Per-user daily cap on generative turns (PROD-F11, abuse + cost).
+
+    Counted from the persisted `meto_messages` rows (the same rows the chat
+    service writes), so the cap survives a process restart and is shared across
+    replicas — no new infrastructure, no new table. 0 disables the cap.
+    """
+    cap = get_settings().meto_daily_message_cap
+    if not cap or cap <= 0:
+        return
+
+    since = dt.datetime.now(dt.UTC) - dt.timedelta(days=1)
+    used = db.execute(
+        select(func.count(MetoMessage.id))
+        .join(MetoConversation, MetoConversation.id == MetoMessage.conversation_id)
+        .where(
+            MetoConversation.user_id == user_id,
+            MetoMessage.role == "user",
+            MetoMessage.created_at >= since,
+        )
+    ).scalar_one()
+
+    if used >= cap:
+        logger.warning("Meto daily cap reached for user %s (%s/%s)", user_id, used, cap)
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Bạn đã dùng hết lượt trò chuyện với Meto trong hôm nay. "
+                   "Vui lòng quay lại sau 24 giờ.",
+            headers={"Retry-After": "3600"},
+        )
+
+
 def _get_chat_service():  # type: ignore[return]  # MetoChatService imported locally
     from app.ai.registry import get_registry
     from app.services.meto_chat import MetoChatService
@@ -57,11 +93,15 @@ def _get_chat_service():  # type: ignore[return]  # MetoChatService imported loc
 
 @router.post("/meto/chat", response_model=MetaChatResponse)
 async def chat(
+    request: Request,
     req: MetoChatRequest,
     current_user=Depends(_patient_required),
     db: Session = Depends(get_session),
 ) -> MetaChatResponse:
     """Non-streaming Meto chat."""
+    # PROD-F11: abuse/cost control before any AI work is scheduled.
+    enforce_rate_limit(request, "meto_chat")
+    _enforce_daily_message_cap(db, current_user.id)
     _require_meto_enabled()
     from app.ai.readiness import check_provider_readiness
 
@@ -89,11 +129,16 @@ async def chat(
 
 @router.post("/meto/chat/stream")
 async def chat_stream(
+    request: Request,
     req: MetoChatRequest,
     current_user=Depends(_patient_required),
     db: Session = Depends(get_session),
 ) -> StreamingResponse:
     """SSE streaming Meto chat."""
+    # PROD-F11: the streaming path is the mobile default — it needs the same
+    # per-request limiter and daily cap as the non-streaming one.
+    enforce_rate_limit(request, "meto_chat")
+    _enforce_daily_message_cap(db, current_user.id)
     _require_meto_enabled()
     svc = _get_chat_service()
     screen = ScreenContext(

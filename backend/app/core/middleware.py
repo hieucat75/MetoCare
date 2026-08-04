@@ -16,6 +16,8 @@ from .security import decode_token
 
 _access_logger = logging.getLogger("mcp.access")
 REQUEST_ID_HEADER = "X-Request-ID"
+# Single bounded label for every request that matched no route (WS4-F6).
+UNMATCHED_ROUTE_LABEL = "<unmatched>"
 
 # Paths reachable while a doctor/admin still owes MFA enrollment.
 _ENROLL_ALLOW_SUFFIXES = (
@@ -74,9 +76,12 @@ class ObservabilityMiddleware(BaseHTTPMiddleware):
             return response
         finally:
             duration = perf_counter() - start
-            # Prefer the route template over the raw path to bound label cardinality.
+            # WS4-F6: use the matched route template only. When nothing matched
+            # (404s, and anything rejected pre-routing) the raw URL is
+            # attacker-controlled — as a metric label it grows the registry
+            # without bound, and in the access log it is a log-injection vector.
             route = request.scope.get("route")
-            path = getattr(route, "path", request.url.path)
+            path = getattr(route, "path", None) or UNMATCHED_ROUTE_LABEL
             # A downstream dependency may have recorded the authenticated user id.
             user_id = getattr(request.state, "user_id", None) or user_id_var.get()
             user_id_var.set(user_id or "-")  # ensure the access log line is correlated

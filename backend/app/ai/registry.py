@@ -9,6 +9,7 @@ Implements:
 
 from __future__ import annotations
 
+import asyncio
 import enum
 import logging
 import time
@@ -16,7 +17,11 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from app.ai.exceptions import CircuitBreakerOpenError, ProviderUnavailableError
+from app.ai.exceptions import (
+    CircuitBreakerOpenError,
+    ProviderTimeoutError,
+    ProviderUnavailableError,
+)
 from app.ai.providers.base import ConversationProvider
 
 logger = logging.getLogger(__name__)
@@ -178,6 +183,47 @@ class CircuitBreaker:
 # Provider Registry
 # ---------------------------------------------------------------------------
 
+_PERMISSIVE_ENVS = ("dev", "test", "local")
+
+
+def _get_allowed_providers() -> set[str] | None:
+    """Effective PHI provider allow-list (AI-F2).
+
+    Returns:
+        ``None``  — no restriction (dev/test with an unset allow-list only).
+        ``set``   — the exact provider names permitted to receive PHI. An empty
+                    set in staging/production means FAIL CLOSED: nothing may be
+                    called, which surfaces as the existing 503 readiness path.
+    """
+    from app.core.config import get_settings
+
+    settings = get_settings()
+    raw = (getattr(settings, "ai_allowed_providers", "") or "").strip()
+    if raw:
+        return {name.strip() for name in raw.split(",") if name.strip()}
+
+    if str(getattr(settings, "env", "dev")).lower() in _PERMISSIVE_ENVS:
+        # Local dev / test suite: no external PHI egress to control.
+        return None
+
+    logger.error(
+        "MCP_AI_ALLOWED_PROVIDERS is not set in env=%s — failing closed; "
+        "no AI provider may receive PHI until the allow-list is configured.",
+        settings.env,
+    )
+    return set()
+
+
+def _get_chain_timeout_seconds() -> float:
+    """Whole-chain budget for the provider retry loop (PROD-F10)."""
+    from app.core.config import get_settings
+
+    try:
+        return float(get_settings().meto_timeout_seconds or 0)
+    except Exception:  # pragma: no cover - defensive: never break the call path
+        return 0.0
+
+
 class ProviderRegistry:
     """Central registry that holds live provider instances and routes calls."""
 
@@ -196,10 +242,19 @@ class ProviderRegistry:
         return self._providers[provider_name]
 
     def get_available_providers(self, task_type: str = "chat_simple") -> list[ConversationProvider]:
-        """Return providers in priority order, skipping unavailable ones."""
+        """Return providers in priority order, skipping unavailable ones.
+
+        AI-F2: the chain is additionally intersected with the configured PHI
+        allow-list — a registered provider is NOT reachable unless it is also
+        explicitly allow-listed. Fail-closed outside dev/test.
+        """
         chain = self._routing.get_provider_chain(task_type)
+        allowed = _get_allowed_providers()
         result = []
         for name in chain:
+            if allowed is not None and name not in allowed:
+                logger.debug("Provider %s skipped: not in MCP_AI_ALLOWED_PROVIDERS", name)
+                continue
             if name in self._providers and self._circuit_breaker.is_available(name):
                 result.append(self._providers[name])
         return result
@@ -211,13 +266,39 @@ class ProviderRegistry:
     ) -> tuple[Any, str, bool]:
         """Call the first available provider, falling back on failure.
 
+        The whole chain is bounded by ``settings.meto_timeout_seconds``
+        (PROD-F10): providers × attempts × per-call timeout would otherwise
+        exceed the gunicorn worker timeout and take the replica down for every
+        user on a single slow AI call.
+
         Returns: (result, provider_name_used, fallback_used)
         """
         providers = self.get_available_providers(task_type)
         if not providers:
             raise ProviderUnavailableError("all", "no providers available")
 
-        providers[0].provider_name
+        timeout_seconds = _get_chain_timeout_seconds()
+        if timeout_seconds <= 0:
+            return await self._call_chain(task_type, providers, call_fn)
+
+        try:
+            async with asyncio.timeout(timeout_seconds):
+                return await self._call_chain(task_type, providers, call_fn)
+        except TimeoutError as exc:
+            logger.error(
+                "Provider chain for task %s exceeded the %.1fs budget — aborting",
+                task_type,
+                timeout_seconds,
+            )
+            raise ProviderTimeoutError("chain", timeout_seconds) from exc
+
+    async def _call_chain(
+        self,
+        task_type: str,
+        providers: list[ConversationProvider],
+        call_fn: Callable[[ConversationProvider], Any],
+    ) -> tuple[Any, str, bool]:
+        """Try each provider in order; used only via call_with_fallback."""
         fallback_used = False
 
         for i, provider in enumerate(providers):
@@ -388,5 +469,23 @@ def init_registry_from_settings() -> ProviderRegistry:
         from app.ai.providers.mock import MockConversationProvider
         registry.register(MockConversationProvider())
         logger.info("Mock provider registered (MCP_AI_MODE=mock, no real providers configured)")
+
+    # AI-F2: make the effective PHI egress surface auditable at boot.
+    allowed = _get_allowed_providers()
+    if allowed is None:
+        logger.warning(
+            "AI provider allow-list not enforced (env=%s) — every registered "
+            "provider may receive PHI: %s",
+            settings.env,
+            sorted(registry._providers),
+        )
+    else:
+        logger.info(
+            "AI provider allow-list (MCP_AI_ALLOWED_PROVIDERS)=%s; registered=%s; "
+            "effective=%s",
+            sorted(allowed),
+            sorted(registry._providers),
+            sorted(set(registry._providers) & allowed),
+        )
 
     return registry

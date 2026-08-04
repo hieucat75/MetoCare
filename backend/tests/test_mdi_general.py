@@ -64,3 +64,50 @@ def test_label_on_own_line_reads_content_below():
     cands = _extract("Chẩn đoán:\nTăng huyết áp vô căn\n")
     assert cands and cands[0].candidate_type == "diagnosis"
     assert cands[0].fields["text"] == "Tăng huyết áp vô căn"
+
+
+# ── CLIN PS-8: a whole OCR line must never become a medication name ──────────
+
+def test_general_report_med_line_parses_name_not_whole_sentence():
+    """CLIN PS-8: the re-typed medication candidate carries a PARSED drug name,
+    not the entire report line — otherwise a paragraph lands in Medication.name
+    and from there in the med list, the Meto context and the reminder copy."""
+    content = (
+        "Bệnh nhân đã dùng Metformin 500mg trước khi nhập viện, tiếp tục uống "
+        "ngày 2 lần sau ăn theo hướng dẫn của bác sĩ điều trị tại khoa nội tiết"
+    )
+    cands = _extract(f"Lời dặn: {content}\n")
+    med = next(c for c in cands if c.candidate_type == "medication")
+    name = med.fields["name"]
+    assert "Metformin" in name
+    assert len(name) <= 120
+    assert "hướng dẫn của bác sĩ" not in name
+    assert med.fields["strength"] == "500mg"
+    assert med.fields["text"] == content  # full line kept as provenance
+
+
+def test_general_report_unparseable_med_line_keeps_original_type():
+    """CLIN PS-8: if no drug name can be parsed out, keep the original candidate
+    type rather than forcing a garbage medication."""
+    cands = _extract("Kết luận: 500mg\n")
+    assert cands
+    assert cands[0].candidate_type == "finding"
+    assert "name" not in cands[0].fields
+
+
+def test_promoter_rejects_overlong_medication_name():
+    """CLIN PS-8 (defence in depth): the promoter refuses an implausible name."""
+    import pytest
+    from app.models.medical_document import ExtractionCandidate
+    from app.services.mdi.promoter import PromotionInvalid
+    from app.services.mdi.promoters import MedicationPromoter
+
+    cand = ExtractionCandidate(
+        patient_id="p1",
+        candidate_type="medication",
+        fields_json={"name": "Bệnh nhân đã dùng thuốc " * 20},
+        dedupe_key="k",
+        status="needs_review",
+    )
+    with pytest.raises(PromotionInvalid):
+        MedicationPromoter().promote(None, cand, actor_user_id="u1")

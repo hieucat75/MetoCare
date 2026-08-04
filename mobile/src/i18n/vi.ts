@@ -185,6 +185,55 @@ export const vi = {
     strength: 'Hàm lượng',
     frequency: 'Cách dùng',
     unnamed: 'Mục chưa rõ tên',
+    // ── per-candidate-type review (OCR-F5) ──────────────────────────────────
+    // A patient may only confirm what they can SEE: every candidate type must
+    // render its own extracted values, and an unhandled type degrades to an
+    // honest dump of the raw fields rather than a blank card.
+    candidateType: {
+      medication: 'Thuốc',
+      lab_result: 'Kết quả xét nghiệm',
+      diagnosis: 'Chẩn đoán',
+      procedure: 'Thủ thuật / chỉ định',
+      finding: 'Kết luận',
+      recommendation: 'Lời dặn của bác sĩ',
+      follow_up: 'Lịch tái khám',
+    } as Record<string, string>,
+    candidateTypeUnknown: 'Mục khác',
+    fieldLabel: {
+      // prescription
+      name: 'Tên thuốc',
+      strength: 'Hàm lượng',
+      form: 'Dạng bào chế',
+      quantity: 'Số lượng',
+      frequency: 'Cách dùng',
+      route: 'Đường dùng',
+      duration: 'Thời gian dùng',
+      instructions: 'Hướng dẫn',
+      facility: 'Cơ sở y tế',
+      prescriber: 'Bác sĩ kê đơn',
+      prescribed_date: 'Ngày kê đơn',
+      diagnosis: 'Chẩn đoán',
+      // lab
+      test_name: 'Tên xét nghiệm',
+      original_test_name: 'Tên ghi trên phiếu',
+      value: 'Giá trị',
+      unit: 'Đơn vị',
+      reference_range: 'Khoảng tham chiếu',
+      specimen_date: 'Ngày lấy mẫu',
+      // general report
+      text: 'Nội dung',
+      report_date: 'Ngày trên tài liệu',
+      summary: 'Tóm tắt tài liệu',
+    } as Record<string, string>,
+    lowConfidence: 'cần kiểm tra kỹ',
+    unreadableTitle: 'Không đọc được nội dung',
+    unreadableBody:
+      'Hệ thống không trích xuất được nội dung nào cho mục này. Hãy bỏ qua mục này và nhập tay nếu cần.',
+    editValues: 'Sửa giá trị',
+    cancelEdit: 'Huỷ sửa',
+    invalidNumber: 'Giá trị phải là số. Ví dụ: 5.6',
+    correctionHint:
+      'Nếu số hoặc đơn vị bị nhận sai, hãy sửa lại trước khi xác nhận. Sai số liệu có thể dẫn tới đánh giá sai.',
     // Shown when the backend refuses the document pipeline because the patient
     // has not granted (or has revoked) the "Tài liệu y tế" consent category.
     consentBlockedTitle: 'Cần bật quyền “Tài liệu y tế”',
@@ -281,6 +330,47 @@ export const vi = {
     } as Record<string, string>,
     empty: 'Chưa có mục quyền riêng tư nào.',
     manage: 'Quyền riêng tư & Meto',
+  },
+  account: {
+    // Settings / account screen (WS11-F5): in-app data export + account
+    // deletion — required by Google Play's data-deletion policy and Apple
+    // Guideline 5.1.1(v) for any app that lets users create an account.
+    title: 'Tài khoản & dữ liệu',
+    subtitle: 'Tải bản sao dữ liệu của bạn hoặc xoá vĩnh viễn tài khoản.',
+    openSettings: 'Tài khoản & dữ liệu',
+    signedInAs: 'Đang đăng nhập',
+    exportTitle: 'Tải dữ liệu của tôi',
+    exportBody:
+      'Tạo bản sao dữ liệu sức khoẻ của bạn (chỉ số, xét nghiệm, thuốc, tài liệu, tư vấn).',
+    exportCta: 'Tải dữ liệu của tôi',
+    exporting: 'Đang chuẩn bị dữ liệu…',
+    exportReady: 'Đã tạo bản sao dữ liệu của bạn.',
+    exportShare: 'Chia sẻ / lưu bản sao',
+    exportShareFailed: 'Không mở được trình chia sẻ. Bản tóm tắt vẫn hiển thị bên dưới.',
+    exportSection: {
+      profile: 'Hồ sơ cá nhân',
+      health_metrics: 'Chỉ số sức khoẻ',
+      lab_results: 'Kết quả xét nghiệm',
+      lab_batches: 'Phiếu xét nghiệm đã tải lên',
+      medications: 'Thuốc',
+      meto_consents: 'Thiết lập quyền riêng tư',
+      meto_conversations: 'Hội thoại với Meto',
+      consultations: 'Lượt tư vấn',
+      documents: 'Tài liệu y tế',
+    } as Record<string, string>,
+    deleteTitle: 'Xoá tài khoản',
+    deleteBody:
+      'Xoá vĩnh viễn tài khoản MetoCare của bạn và ẩn danh dữ liệu sức khoẻ liên quan.',
+    deleteCta: 'Xoá tài khoản',
+    deleteWarning:
+      'Hành động này KHÔNG THỂ hoàn tác. Sau khi xoá, bạn sẽ mất quyền truy cập vào chỉ số, kết quả xét nghiệm, thuốc, tài liệu và lịch tư vấn của mình. Hãy tải bản sao dữ liệu trước nếu bạn cần giữ lại.',
+    deleteConfirmWord: 'XOÁ',
+    deleteConfirmLabel: 'Để xác nhận, hãy nhập chữ XOÁ vào ô bên dưới.',
+    deleteConfirmPlaceholder: 'XOÁ',
+    deleteConfirmCta: 'Tôi hiểu — xoá vĩnh viễn tài khoản',
+    deleteConfirmMismatch: 'Vui lòng nhập đúng chữ XOÁ để xác nhận.',
+    deleteCancel: 'Giữ tài khoản của tôi',
+    deleting: 'Đang xoá tài khoản…',
   },
 } as const
 

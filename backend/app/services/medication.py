@@ -31,6 +31,8 @@ from app.models.clinical import (
 )
 
 DELETED_LIFECYCLE_STATUS = "entered_in_error"
+# The only lifecycle state in which a medication may still drive reminders.
+ACTIVE_LIFECYCLE_STATUS = "active"
 
 # Plan §6.1 — closed value set (mirrors the DB CHECK constraint) and the
 # subset a PATIENT may set via the API. on_hold is doctor-only in BOTH
@@ -79,6 +81,22 @@ REASON_REQUIRED_TRANSITIONS = {
     ("active", "on_hold"),
     ("on_hold", "active"),
 }
+
+
+def _cascade_stop_schedules(db: Session, record: Medication) -> None:
+    """CLIN PS-5 — a lifecycle exit must also end the drug's reminder schedules.
+
+    ``MedicationSchedule`` is a separate row from ``Medication``; without this
+    cascade a patient who stops or deletes a drug keeps being told, by name, to
+    take it. Runs inside the caller's transaction (before its commit), so the
+    canonical state change and the schedule stop land together. Imported lazily —
+    the schedule service is a higher-level consumer of this module's models.
+    """
+    if record.deleted_at is None and record.lifecycle_status == ACTIVE_LIFECYCLE_STATUS:
+        return
+    from app.services import medication_schedule as schedule_svc
+
+    schedule_svc.stop_schedules_for_medication(db, medication_id=record.id)
 
 
 def _validate_lifecycle_transition(
@@ -470,6 +488,9 @@ def update_medication(
             actor_role=actor_role,
         )
 
+    # CLIN PS-5: leaving `active` ends the drug's reminder schedules too.
+    _cascade_stop_schedules(db, record)
+
     db.commit()
     db.refresh(record)
     return record
@@ -627,6 +648,8 @@ def delete_medication(
             actor_user_id=actor_user_id,
             actor_role=actor_role,
         )
+        # CLIN PS-5: deleting the drug must also delete its pending reminders.
+        _cascade_stop_schedules(db, record)
         db.commit()
         return True
 

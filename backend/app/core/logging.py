@@ -10,6 +10,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import logging
+import re
 
 from .context import request_id_var, user_id_var
 
@@ -18,6 +19,21 @@ from .context import request_id_var, user_id_var
 _SAFE_EXTRA_FIELDS = frozenset(
     {"method", "path", "status_code", "duration_ms", "action", "resource_type", "event"}
 )
+
+# WS4-F8 — the log `message` is the one channel the `extra` allow-list cannot
+# protect: `record.getMessage()` interpolates `%s` args *before* any filter
+# runs, so a call site that logs an exception can smuggle DBAPI detail (and with
+# it bound parameters — i.e. PHI) into stdout. `hide_parameters=True` on the
+# engine (app/core/database.py) removes the values at the source; this is the
+# belt-and-braces second line: strip the whole `[SQL: …] [parameters: …]` tail
+# from every message, whatever produced it.
+_SQL_DETAIL_RE = re.compile(r"\[(?:SQL|parameters):.*", re.DOTALL)
+_SQL_DETAIL_PLACEHOLDER = "[sql-detail-redacted]"
+
+
+def redact_sql_detail(message: str) -> str:
+    """Remove any SQLAlchemy statement/bound-parameter tail from a log message."""
+    return _SQL_DETAIL_RE.sub(_SQL_DETAIL_PLACEHOLDER, message)
 
 
 class ContextFilter(logging.Filter):
@@ -35,7 +51,7 @@ class JsonFormatter(logging.Formatter):
             "ts": dt.datetime.now(dt.UTC).isoformat(),
             "level": record.levelname,
             "logger": record.name,
-            "message": record.getMessage(),
+            "message": redact_sql_detail(record.getMessage()),
             "request_id": getattr(record, "request_id", "-"),
             "user_id": getattr(record, "user_id", "-"),
         }

@@ -17,12 +17,14 @@ import logging
 import re
 import unicodedata
 from dataclasses import dataclass
+from functools import lru_cache
 
 from app.domain.hospital_profiles import HospitalProfile, detect_hospital
 from app.domain.lab_catalog import get_catalog as _get_catalog
 from app.domain.lab_interpreter import (
     _ALIAS_INDEX,
     BIOMARKERS,
+    OCR_CONFIDENCE_THRESHOLD,
     BiomarkerSpec,
     ConfidenceDetail,
     RawLabValue,
@@ -105,34 +107,102 @@ def _strip_accents(s: str) -> str:
     return "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn")
 
 
+# Aliases the parser must recognise that the shared ``_ALIAS_INDEX`` does not
+# carry. Their absence is the direct cause of OCR-F3: the index holds
+# "hdl-cholesterol" (hyphen) but not "hdl cholesterol" (space) nor the
+# VN-report word order "cholesterol hdl", so a printed "HDL Cholesterol" only
+# matched the generic "cholesterol" alias and was stored as total cholesterol.
+# Some hospital profiles already declare these, but only when a profile is
+# detected — these make the behaviour unconditional.
+_PARSER_EXTRA_ALIASES: dict[str, tuple[str, ...]] = {
+    "hdl": ("hdl cholesterol", "cholesterol hdl", "hdl chol", "chol hdl"),
+    "ldl": ("ldl cholesterol", "cholesterol ldl", "ldl chol", "chol ldl"),
+}
+
+# Labels that contain a known alias but denote an analyte this catalogue has NO
+# canonical biomarker for. Emitting the contained alias would silently file a
+# different analyte (e.g. non-HDL / VLDL cholesterol stored as HDL or total
+# cholesterol; a lipid *ratio* stored as a concentration). Matched against the
+# accent-stripped, lower-cased line — one lab row per line — and the whole row
+# is dropped rather than mis-mapped.
+_UNMAPPABLE_LABEL_RE = re.compile(
+    r"(?:"
+    r"non[\s\-_.]*hdl"  # non-HDL cholesterol — no canonical biomarker
+    r"|(?<![a-z0-9])vldl"  # VLDL cholesterol / VLDL-C — no canonical biomarker
+    r"|remnant\s+cholesterol"
+    r"|cholesterol\s+con\s+lai"
+    r"|(?:chol|cholesterol|tc|ldl|tg|triglycerid\w*)\s*/\s*hdl"  # lipid ratios
+    r"|hdl\s*/\s*(?:chol|cholesterol|tc|ldl)"
+    r")"
+)
+
+
+@lru_cache(maxsize=1024)
+def _alias_pattern(alias_noacc: str) -> re.Pattern[str]:
+    """Compile a word-boundary-aware pattern for an accent-stripped alias.
+
+    A bare substring search lets a generic alias match inside a more specific
+    name (``ldl`` inside ``vldl``, ``ldl-c`` inside ``vldl-c``). Boundaries are
+    expressed as alphanumeric lookarounds rather than ``\\b`` because aliases
+    legitimately end in punctuation (``na+``, ``k+``, ``cl-``).
+
+    Trailing digits are tolerated for aliases longer than 3 chars so glued OCR
+    output ("Cholesterol210") still parses, while short aliases keep the strict
+    digit-blocking boundary that stops ``hb`` matching inside ``hba1c``.
+    """
+    lead = r"(?<![a-z0-9])" if alias_noacc[0].isalnum() else ""
+    if not alias_noacc[-1].isalnum():
+        trail = ""
+    elif len(alias_noacc) <= 3:
+        trail = r"(?![a-z0-9])"
+    else:
+        trail = r"(?![a-z])"
+    return re.compile(lead + re.escape(alias_noacc) + trail)
+
+
 def _match_biomarker(
     line_noacc_lc: str,
     alias_index: dict | None = None,
 ) -> tuple[BiomarkerSpec, int] | None:
     """Find the biomarker whose alias appears in the accent-stripped, lower-cased
-    line. Returns ``(spec, end_index)`` of the longest matching alias (so
-    'ldl cholesterol' beats 'cholesterol'), or None. The end index lets the caller
-    read the value AFTER the label, never digits embedded in the name (e.g. the
-    '1' in 'HbA1c')."""
+    line. Returns ``(spec, end_index)`` of the most *specific* matching alias, or
+    None. The end index lets the caller read the value AFTER the label, never
+    digits embedded in the name (e.g. the '1' in 'HbA1c').
+
+    Specificity rules, in order:
+
+    1. Labels with no canonical biomarker (``_UNMAPPABLE_LABEL_RE``) match
+       nothing at all — a wrong analyte is worse than a dropped row.
+    2. A match wholly contained inside a longer match is discarded, so
+       ``cholesterol`` can never win inside ``hdl cholesterol`` /
+       ``cholesterol hdl`` / ``cholesterol toan phan``.
+    3. Of what remains, the longest alias wins; ties break on earliest position
+       so the result is deterministic regardless of alias-index ordering.
+    """
     idx = alias_index if alias_index is not None else _ALIAS_INDEX
-    best: tuple[int, BiomarkerSpec, int] | None = None  # (alias_len, spec, end_idx)
+    if _UNMAPPABLE_LABEL_RE.search(line_noacc_lc):
+        return None
+
+    spans: list[tuple[int, int, BiomarkerSpec]] = []
     for alias, spec in idx.items():
         a = _strip_accents(alias.lower())
         if not a:
             continue
-        if len(a) <= 3:
-            # Word-boundary match for very short aliases (hb, tg, hct …).
-            m = re.search(rf"(?<![a-z0-9]){re.escape(a)}(?![a-z0-9])", line_noacc_lc)
-        else:
-            pos = line_noacc_lc.find(a)
-            m = None if pos < 0 else re.compile(re.escape(a)).match(line_noacc_lc, pos)
-        if m is None:
-            continue
-        if best is None or len(a) > best[0]:
-            best = (len(a), spec, m.end())
-    if best is None:
+        for m in _alias_pattern(a).finditer(line_noacc_lc):
+            spans.append((m.start(), m.end(), spec))
+    if not spans:
         return None
-    return best[1], best[2]
+
+    def _is_shadowed(span: tuple[int, int, BiomarkerSpec]) -> bool:
+        start, end, _ = span
+        return any(
+            o_start <= start and end <= o_end and (o_end - o_start) > (end - start)
+            for o_start, o_end, _ in spans
+        )
+
+    survivors = [s for s in spans if not _is_shadowed(s)]
+    start, end, spec = min(survivors, key=lambda s: (-(s[1] - s[0]), s[0]))
+    return spec, end
 
 
 def _norm_unit(u: str) -> str:
@@ -195,6 +265,11 @@ def parse_lab_text(
         hospital_profile = detect_hospital(text)
 
     _combined = dict(_ALIAS_INDEX)
+    for _canonical, _extras in _PARSER_EXTRA_ALIASES.items():
+        _base = _ALIAS_INDEX.get(_canonical)
+        if _base:
+            for _a in _extras:
+                _combined.setdefault(_a, _base)
     if hospital_profile:
         corrected = text
         for bad, good in hospital_profile.ocr_corrections.items():
@@ -366,12 +441,19 @@ def parse_lab_text(
             },
         )
 
+        # A row the parser is not confident about must never present as settled:
+        # anything below the module-wide review threshold (and therefore every
+        # hard-gated 0.0 from an incompatible unit or an impossible value) is
+        # flagged so it cannot be persisted without explicit user confirmation.
+        requires_review = overall < OCR_CONFIDENCE_THRESHOLD
+
         seen[spec.canonical] = RawLabValue(
             test_name=spec.canonical,
             value=value,
             unit=unit or spec.unit,
             ocr_confidence=overall,
             confidence_detail=detail,
+            requires_review=requires_review,
             original_value=orig_value,
             original_unit=orig_unit,
             raw_test_name=raw_test_name,

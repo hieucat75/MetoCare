@@ -402,3 +402,85 @@ def test_data_span_days():
     # Jan 1 to Jun 1 = 151 days
     assert summary.data_span_days == 151
     assert summary.total_events == 2
+
+
+# ── CLIN PS-7: the timeline must show CONFIRMED lab data only ────────────────
+
+def test_timeline_excludes_unverified_lab_results(db, patient):
+    """CLIN PS-7: an OCR lab value the patient has NOT confirmed must never be
+    rendered as "N chỉ số cần chú ý" — every sibling consumer (Meto, insight,
+    narrative, lab-intelligence, longitudinal) already filters on verified."""
+    from app.main import app
+    from app.models.clinical import LabResult, LabUploadBatch
+    from fastapi.testclient import TestClient
+
+    pid = patient["patient_id"]
+    batch = LabUploadBatch(patient_id=pid, lab_name="Lab X", test_date=dt.date(2026, 6, 1))
+    db.add(batch)
+    db.flush()
+    row = LabResult(
+        patient_id=pid,
+        batch_id=batch.id,
+        test_name="Glucose",
+        canonical_name="glucose",
+        value=19.0,
+        unit="mmol/L",
+        status="critical",
+        test_date=dt.date(2026, 6, 1),
+        verified_by_user=False,
+        verified_by_doctor=False,
+    )
+    db.add(row)
+    db.commit()
+
+    client = TestClient(app)
+    r = client.get(
+        f"/api/v1/patients/{pid}/health-timeline", headers=patient["headers"]
+    )
+    assert r.status_code == 200, r.text
+    types = {e["event_type"] for e in r.json()["timeline_events"]}
+    assert "abnormal_lab" not in types, "unconfirmed OCR value presented as clinical fact"
+    assert "lab_result" not in types
+
+    # Once the patient confirms it, it IS clinical fact and must appear.
+    row.verified_by_user = True
+    db.commit()
+    r2 = client.get(
+        f"/api/v1/patients/{pid}/health-timeline", headers=patient["headers"]
+    )
+    assert r2.status_code == 200, r2.text
+    assert "abnormal_lab" in {e["event_type"] for e in r2.json()["timeline_events"]}
+
+
+def test_timeline_summary_ignores_unverified_lab_trend(db, patient):
+    """CLIN PS-7: unconfirmed values must not drive the 'what got worse' summary."""
+    from app.main import app
+    from app.models.clinical import LabResult, LabUploadBatch
+    from fastapi.testclient import TestClient
+
+    pid = patient["patient_id"]
+    for i, (day, st) in enumerate(
+        ((dt.date(2026, 5, 1), "normal"), (dt.date(2026, 6, 1), "critical"))
+    ):
+        b = LabUploadBatch(patient_id=pid, lab_name=f"Lab {i}", test_date=day)
+        db.add(b)
+        db.flush()
+        db.add(
+            LabResult(
+                patient_id=pid,
+                batch_id=b.id,
+                test_name="Creatinine",
+                canonical_name="creatinine",
+                value=100.0 + i,
+                unit="umol/L",
+                status=st,
+                test_date=day,
+                verified_by_user=False,
+            )
+        )
+    db.commit()
+
+    client = TestClient(app)
+    r = client.get(f"/api/v1/patients/{pid}/health-timeline", headers=patient["headers"])
+    assert r.status_code == 200, r.text
+    assert "creatinine" not in r.json()["timeline_summary"]["worsened_areas"]

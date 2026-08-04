@@ -19,9 +19,17 @@ export interface DocumentReviewState {
   consentDenied: boolean
   pendingId: string | null
   reload: () => Promise<void>
-  confirm: (candidateId: string) => Promise<void>
+  /**
+   * Confirm one candidate. `corrections` carries the patient's inline edits of
+   * the extracted values (e.g. a mis-read lab value/unit); the backend merges
+   * them into `fields_json` and keeps the pre-correction snapshot in the
+   * candidate's audit history before promoting.
+   */
+  confirm: (candidateId: string, corrections?: CandidateCorrections) => Promise<void>
   reject: (candidateId: string) => Promise<void>
 }
+
+export type CandidateCorrections = Record<string, string | number | null>
 
 /**
  * Drives the per-candidate review of one document (BRD §D review screen). Loads
@@ -57,16 +65,25 @@ export function useDocumentReview(client: ApiClient, documentId: string): Docume
     void reload()
   }, [reload])
 
-  const _patchStatus = useCallback((candidateId: string, status: string) => {
-    setCandidates((prev) => prev.map((c) => (c.id === candidateId ? { ...c, status } : c)))
-  }, [])
+  const _patchStatus = useCallback(
+    (candidateId: string, status: string, fields?: Record<string, unknown>) => {
+      setCandidates((prev) =>
+        prev.map((c) =>
+          c.id === candidateId ? { ...c, status, fields: fields ?? c.fields } : c
+        )
+      )
+    },
+    []
+  )
 
   const confirm = useCallback(
-    async (candidateId: string) => {
+    async (candidateId: string, corrections?: CandidateCorrections) => {
       setPendingId(candidateId)
       try {
-        const res = await confirmCandidate(client, candidateId)
-        _patchStatus(candidateId, res.candidate.status)
+        const res = await confirmCandidate(client, candidateId, corrections)
+        // The backend returns the post-correction candidate — reflect the values
+        // that were actually promoted, not the pre-correction ones.
+        _patchStatus(candidateId, res.candidate.status, res.candidate.fields)
       } catch (err) {
         setConsentDenied(isConsentDenied(err))
         setErrorMsg(toPageError(err).message)

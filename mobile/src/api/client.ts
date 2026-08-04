@@ -1,5 +1,37 @@
+import * as Crypto from 'expo-crypto'
+
 import { API_BASE_URL } from '../config/env'
+import { recordRequest } from '../lib/monitor'
 import { tokenStore as defaultTokenStore, type TokenStore } from '../storage/tokenStore'
+
+/**
+ * Correlation header. Must match the backend exactly
+ * (`REQUEST_ID_HEADER` in `backend/app/core/middleware.py`): the server adopts
+ * an inbound id, stamps every log line with it, and echoes it on the response.
+ */
+export const REQUEST_ID_HEADER = 'X-Request-ID'
+
+/** Status recorded when the request never produced a response. */
+const TRANSPORT_FAILURE_STATUS = 0
+
+function newRequestId(): string {
+  try {
+    return Crypto.randomUUID()
+  } catch {
+    // randomUUID is unavailable on some very old runtimes — correlation is
+    // best-effort telemetry, never a reason to fail the request.
+    return `rid-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+  }
+}
+
+/** The backend echoes the id it used; prefer it so both sides agree. */
+function echoedRequestId(res: Response, fallback: string): string {
+  try {
+    return res.headers?.get?.(REQUEST_ID_HEADER) || fallback
+  } catch {
+    return fallback
+  }
+}
 
 /**
  * Typed fetch client mirroring the web contract
@@ -173,6 +205,37 @@ export function createApiClient(config: ApiClientConfig = {}): ApiClient {
     return { detail, code }
   }
 
+  /**
+   * One network attempt: mints a correlation id, sends it, and records the
+   * outcome (id / verb / path / status / time only — never the body, headers,
+   * or query values) so a pilot bug report can cite an id that joins to the
+   * backend access log.
+   */
+  async function sendOnce(
+    path: string,
+    headers: Record<string, string>,
+    rest: Omit<RequestInit, 'headers'>
+  ): Promise<Response> {
+    const requestId = newRequestId()
+    const method = (rest.method ?? 'GET').toString()
+    try {
+      const res = await doFetch(`${baseUrl}${path}`, {
+        headers: { ...headers, [REQUEST_ID_HEADER]: requestId },
+        ...rest,
+      })
+      recordRequest({
+        requestId: echoedRequestId(res, requestId),
+        method,
+        path,
+        status: res.status,
+      })
+      return res
+    } catch (err) {
+      recordRequest({ requestId, method, path, status: TRANSPORT_FAILURE_STATUS })
+      throw err
+    }
+  }
+
   async function apiFetch<T>(path: string, options: FetchOptions = {}): Promise<T> {
     const { skipAuth = false, headers: extraHeaders = {}, ...rest } = options
     const headers: Record<string, string> = {
@@ -185,14 +248,14 @@ export function createApiClient(config: ApiClientConfig = {}): ApiClient {
       if (token) headers['Authorization'] = `Bearer ${token}`
     }
 
-    let res = await doFetch(`${baseUrl}${path}`, { headers, ...rest })
+    let res = await sendOnce(path, headers, rest)
 
     if (res.status === 401 && !skipAuth) {
       const refreshed = await tryRefresh()
       if (refreshed) {
         const newToken = await tokens.getAccess()
         if (newToken) headers['Authorization'] = `Bearer ${newToken}`
-        res = await doFetch(`${baseUrl}${path}`, { headers, ...rest })
+        res = await sendOnce(path, headers, rest)
       }
       if (!refreshed || res.status === 401) {
         await tokens.clear()

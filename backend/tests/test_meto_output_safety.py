@@ -78,6 +78,8 @@ async def test_nonstream_forbidden_output_is_replaced():
         si = MagicMock()
         si.meto_max_tokens = 512
         si.meto_temperature = 0.3
+        # PROD-F10: stream_chat bounds each provider attempt with this timeout.
+        si.meto_timeout_seconds = 30
         msettings.return_value = si
 
         result = await svc.chat(
@@ -107,6 +109,8 @@ async def test_stream_forbidden_output_is_replaced_before_emit():
         si = MagicMock()
         si.meto_max_tokens = 512
         si.meto_temperature = 0.3
+        # PROD-F10: stream_chat bounds each provider attempt with this timeout.
+        si.meto_timeout_seconds = 30
         msettings.return_value = si
 
         events = []

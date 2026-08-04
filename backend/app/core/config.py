@@ -70,9 +70,25 @@ class Settings(BaseSettings):
     deepseek_api_key: str = ""                               # MCP_DEEPSEEK_API_KEY
     deepseek_base_url: str = "https://api.deepseek.com"     # MCP_DEEPSEEK_BASE_URL
     deepseek_model: str = "deepseek-chat"                   # MCP_DEEPSEEK_MODEL
+    # ---- AI provider allow-list (AI-F2) — PHI egress control ----
+    # Comma-separated provider names that are permitted to receive patient PHI
+    # (e.g. "nine_router_claude,nine_router_gpt"). Enforced in
+    # ProviderRegistry.get_available_providers. A provider is reachable ONLY when
+    # it is BOTH registered (key present) AND named here — key presence alone must
+    # never be enough to route PHI to a vendor with no data-processing record.
+    # Empty outside dev/test = FAIL CLOSED (no provider available → the existing
+    # 503 readiness path), same posture as the secret checks below.
+    ai_allowed_providers: str = ""  # MCP_AI_ALLOWED_PROVIDERS
+
     # Generation settings
     meto_max_tokens: int = 2048
+    # Whole provider-chain budget (PROD-F10). MUST stay well inside the gunicorn
+    # worker timeout (120s) — the retry chain would otherwise outlive the worker
+    # and take the single-worker replica down for every user.
     meto_timeout_seconds: int = 30
+    # Per-user daily message cap (PROD-F11, abuse/cost). Counted from persisted
+    # meto_messages, so it survives a process restart. 0 = disabled.
+    meto_daily_message_cap: int = 100  # MCP_METO_DAILY_MESSAGE_CAP
     meto_enable_streaming: bool = True
     meto_temperature: float = 0.3
 

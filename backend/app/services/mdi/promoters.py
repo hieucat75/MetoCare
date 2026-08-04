@@ -18,6 +18,7 @@ from app.models.medical_document import ExtractionCandidate
 from app.services import lab as lab_svc
 from app.services import medication as medication_svc
 
+from .extractors_general import MAX_MEDICATION_NAME_LEN
 from .promoter import (
     ACTION_CREATED,
     ACTION_MERGED_INTO,
@@ -74,6 +75,14 @@ class MedicationPromoter:
         name = (fields.get("name") or "").strip()
         if not name:
             raise PromotionInvalid("Ứng viên thuốc thiếu tên — không thể xác nhận.")
+        # CLIN PS-8 (defence in depth, the extractor is the primary control): a
+        # medication name that long is a mis-parsed OCR line, not a drug. Letting
+        # it through would pollute the medication list, the Meto context block and
+        # the reminder body — and is the cleanest prompt-injection vehicle.
+        if len(name) > MAX_MEDICATION_NAME_LEN:
+            raise PromotionInvalid(
+                "Tên thuốc quá dài — vui lòng sửa lại tên thuốc rồi xác nhận."
+            )
 
         if merge_target_id:
             return self._merge(db, candidate, merge_target_id)

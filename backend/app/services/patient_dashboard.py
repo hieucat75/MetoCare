@@ -41,6 +41,9 @@ def build_dashboard(db: Session, *, patient_id: str, now: dt.datetime | None = N
     # like GET /reminders/due — otherwise a patient who only opens the dashboard
     # never sees today's dose and stale doses count as "due" forever (review P1).
     # Caller commits (this mutates).
+    # CLIN PS-5: first stop any schedule whose medication is no longer active —
+    # otherwise a drug the patient stopped keeps producing "take your dose" actions.
+    sched.reconcile_schedules_with_medication_state(db, patient_id=patient_id)
     sched.sweep_missed(db, patient_id=patient_id, now=now)
     for _s in db.execute(
         select(MedicationSchedule).where(
@@ -51,13 +54,21 @@ def build_dashboard(db: Session, *, patient_id: str, now: dt.datetime | None = N
         sched.materialize_due(db, _s, now=now)
 
     # 1. Today's medication doses due (pending/notified whose time has arrived).
+    # Joined to the schedule AND the medication so a paused/stopped schedule or a
+    # deleted/retired drug never surfaces as an action (CLIN PS-5).
     due_doses = list(
         db.execute(
             select(DoseOccurrence)
+            .join(MedicationSchedule, MedicationSchedule.id == DoseOccurrence.schedule_id)
+            .join(Medication, Medication.id == MedicationSchedule.medication_id)
             .where(
                 DoseOccurrence.patient_id == patient_id,
                 DoseOccurrence.state.in_(_DUE_STATES),
                 DoseOccurrence.scheduled_utc <= now,
+                MedicationSchedule.status == SCHED_STATUS_ACTIVE,
+                MedicationSchedule.superseded_by.is_(None),
+                Medication.deleted_at.is_(None),
+                Medication.lifecycle_status == "active",
             )
             .order_by(DoseOccurrence.scheduled_utc)
         ).scalars()

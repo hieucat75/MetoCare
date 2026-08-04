@@ -23,8 +23,8 @@ from sqlalchemy.orm import Session
 
 from app.models.clinical import HealthMetric, LabDocument, LabResult, LabUploadBatch, Medication
 from app.models.consultation import Consultation
-from app.models.medical_document import DocumentPage, MedicalDocument
-from app.models.meto import MetoConsent, MetoConversation
+from app.models.medical_document import DocumentPage, ExtractionCandidate, MedicalDocument
+from app.models.meto import MetoConsent, MetoConversation, MetoMessage
 from app.models.patient import PatientProfile
 from app.models.user import User
 
@@ -198,6 +198,9 @@ def delete_account(db: Session, *, user_id: str, patient_id: str) -> list[str]:
             doc.deleted_by = user_id
 
     # Per-page images (no soft-delete column; collect their blobs for erasure).
+    # PRIV-F5: the page also carries the OCR text itself — stamping only the
+    # parent MedicalDocument left that PHI readable in the DB forever. Blank the
+    # content but keep the row skeleton so provenance/audit joins still resolve.
     if doc_ids:
         for page in (
             db.execute(select(DocumentPage).where(DocumentPage.document_id.in_(doc_ids)))
@@ -206,6 +209,21 @@ def delete_account(db: Session, *, user_id: str, patient_id: str) -> list[str]:
         ):
             if page.storage_key:
                 orphaned_keys.append(page.storage_key)
+            page.ocr_raw = None
+            page.blocks_json = None
+
+    # PRIV-F5: extracted candidates hold drug names, doses and diagnoses.
+    # `fields_json` is NOT NULL, so it is emptied rather than nulled.
+    for candidate in (
+        db.execute(
+            select(ExtractionCandidate).where(ExtractionCandidate.patient_id == patient_id)
+        )
+        .scalars()
+        .all()
+    ):
+        candidate.fields_json = {}
+        candidate.field_confidence_json = None
+        candidate.corrections_json = None
 
     # Lab upload binaries (LabDocument holds the raw file object key).
     for lab_doc in (
@@ -214,17 +232,35 @@ def delete_account(db: Session, *, user_id: str, patient_id: str) -> list[str]:
         if lab_doc.storage_key:
             orphaned_keys.append(lab_doc.storage_key)
 
-    for conv in (
-        db.execute(
-            select(MetoConversation).where(
-                MetoConversation.user_id == user_id, MetoConversation.deleted_at.is_(None)
-            )
-        )
+    # Meto conversations: stamp the still-active parents, then blank the message
+    # bodies of *every* conversation the user owns (PRIV-F5). Message content is
+    # free-text PHI — symptoms the patient typed, AI answers quoting their labs
+    # and medications — and the export bundle deliberately omits it, so leaving
+    # it here made it neither exportable nor erasable. Conversation ids are
+    # collected across all conversations (not just newly stamped ones) so a
+    # re-run also erases anything an earlier partial run left behind.
+    conversations = (
+        db.execute(select(MetoConversation).where(MetoConversation.user_id == user_id))
         .scalars()
         .all()
-    ):
-        conv.deleted_at = now
-        conv.status = "deleted"
+    )
+    conversation_ids = [conv.id for conv in conversations]
+    for conv in conversations:
+        if conv.deleted_at is None:
+            conv.deleted_at = now
+            conv.status = "deleted"
+
+    if conversation_ids:
+        for msg in (
+            db.execute(
+                select(MetoMessage).where(MetoMessage.conversation_id.in_(conversation_ids))
+            )
+            .scalars()
+            .all()
+        ):
+            msg.content = ""  # NOT NULL column — blank, never null
+            msg.tool_calls = None
+            msg.tool_results = None
 
     # ---- Revoke refresh tokens (block existing sessions) ----
     for tok in (

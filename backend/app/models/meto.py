@@ -9,9 +9,10 @@ import datetime as dt
 import os as _os
 from typing import Any
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.core.crypto import EncryptedString
 from app.core.database import Base
 
 from ._mixins import TimestampMixin, UUIDPrimaryKey
@@ -71,8 +72,15 @@ class MetoMessage(UUIDPrimaryKey, TimestampMixin, Base):
     )
     # "user" | "assistant" | "system"
     role: Mapped[str] = mapped_column(String(16), nullable=False)
-    # Plain text content
-    content: Mapped[str] = mapped_column(Text, nullable=False)
+    # PHI: the message body is free text the patient typed (symptoms) or an AI
+    # answer quoting their labs/medications. Encrypted at rest like every other
+    # free-text PHI column (SEC-F11). `on_decrypt_failure="none"` matches the
+    # older AI transcript column (models/ai.py): a chat bubble that cannot be
+    # decrypted renders blank rather than breaking the whole conversation.
+    # Nothing queries or indexes this column by value.
+    content: Mapped[str] = mapped_column(
+        EncryptedString(on_decrypt_failure="none"), nullable=False
+    )
     # Screen context when message was sent
     screen_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # JSON list of tool calls (if any)

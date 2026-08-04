@@ -121,12 +121,19 @@ def get_health_timeline(
         )
     lab_batches = batch_q.all()
 
-    # LabResult — fetch all for the patient (engine groups by batch_id)
+    # LabResult — CONFIRMED rows only (engine groups by batch_id).
+    # CLIN PS-7: an OCR-extracted value the patient has not confirmed is NOT a
+    # clinical fact — rendering it as "N chỉ số cần chú ý" (importance=warning)
+    # and letting it drive the improved/worsened summary presents an unverified
+    # extraction as truth. Every sibling consumer already filters this way:
+    # lab_intelligence, narrative, patient_insight, longitudinal, ai/context.
+    # The same filtered list feeds engine.summarize() below.
     lab_results = (
         db.query(LabResult)
         .filter(
             LabResult.patient_id == patient_id,
             LabResult.deleted_at.is_(None),
+            (LabResult.verified_by_user.is_(True)) | (LabResult.verified_by_doctor.is_(True)),
         )
         .all()
     )

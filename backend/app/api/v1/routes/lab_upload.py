@@ -5,9 +5,10 @@ local OCR + parse pipeline, and return a **review-only draft** of canonical lab
 values. NOTHING is persisted; the patient reviews/edits then confirms via the
 existing manual-entry endpoint to write the canonical record.
 
-Gated by ``FeatureFlag.OCR`` (503 when off). Patient role only (+ platform
-admins); doctors/clinic-admins are excluded — they reach lab data through the
-consent-gated read paths, not the patient upload surface.
+Gated by ``FeatureFlag.OCR`` (503 when off) **and** by the patient's ``documents``
+consent (403 CONSENT_DENIED when absent/revoked — PRIV-F4). Patient role only (+
+platform admins); doctors/clinic-admins are excluded — they reach lab data through
+the consent-gated read paths, not the patient upload surface.
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from sqlalchemy import select as _select
 from sqlalchemy.orm import Session
 
+from app.ai.consent_policy import CATEGORY_DOCUMENTS, is_granted
 from app.api.deps import CurrentUser, enforce_rate_limit, get_session, require_roles
 from app.core.config import get_settings
 from app.core.feature_flags import FeatureFlag, is_enabled
@@ -27,10 +29,24 @@ from app.models.user import UserRole
 from app.schemas.lab_upload import LabUploadDraftItemOut, LabUploadDraftOut
 from app.services import audit, lab_upload
 from app.services import ocr_case as ocr_case_svc
+from app.services.consent_guard import ConsentDenied
 
 logger = logging.getLogger("mcp.lab_upload_route")
 
 router = APIRouter(tags=["lab"])
+
+
+def _require_documents_consent(db: Session, user_id: str) -> None:
+    """PRIV-F4: lab-document upload runs the same OCR pipeline as routes/documents.py,
+    so it must honour the same fail-closed ``documents`` consent gate. Without this,
+    revoking the patient-facing "Tài liệu y tế" toggle still allowed a medical
+    document to be uploaded and OCR'd. Mirrors ``documents._require_documents_consent``.
+    """
+    if not is_granted(db, user_id, CATEGORY_DOCUMENTS):
+        raise ConsentDenied(
+            "Bạn cần bật quyền 'Tài liệu y tế' trong phần Quyền riêng tư để "
+            "tải lên, xử lý hoặc xem tài liệu y tế."
+        )
 
 
 @router.post(
@@ -52,6 +68,8 @@ async def create_lab_upload_draft(
     enforce_rate_limit(request, "lab_upload")
     if not is_enabled(FeatureFlag.OCR):
         raise HTTPException(status_code=503, detail="Tính năng OCR đang tắt.")
+    # PRIV-F4: fail-closed documents-consent gate, checked before any bytes are read.
+    _require_documents_consent(db, user.id)
 
     has_file = file is not None and (file.filename or "").strip() != ""
     has_url = bool(url and url.strip())

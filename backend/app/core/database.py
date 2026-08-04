@@ -20,8 +20,24 @@ class Base(DeclarativeBase):
     """Declarative base for all ORM models."""
 
 
+# Connection-pool sizing (PROD-F12). The ASGI worker runs sync route handlers on
+# anyio's 40-thread pool, so a 5+10 default pool starves it under load. 20+10
+# covers the threadpool with headroom while staying well inside the Postgres
+# `max_connections` budget for the single replica we deploy.
+_POOL_SIZE = 20
+_MAX_OVERFLOW = 10
+# Azure Container Apps / Azure PG silently drop idle TCP; pre-ping turns a dead
+# pooled connection into a transparent reconnect instead of a 500.
+_POOL_RECYCLE_SECONDS = 1800
+
+
 def _make_engine(url: str):
     connect_args = {}
+    # WS4-F8: never let SQLAlchemy stringify bound parameters into exception
+    # text. `StatementError.__str__` otherwise appends `[parameters: (...)]`,
+    # and any call site that interpolates the exception into a log message
+    # would push raw PHI into the log stream, bypassing the `extra` allow-list.
+    kwargs: dict = {"future": True, "hide_parameters": True}
     if url.startswith("sqlite"):
         connect_args["check_same_thread"] = False
         # Ensure the parent dir for a file-based sqlite db exists.
@@ -29,7 +45,15 @@ def _make_engine(url: str):
             path = url.split(":///", 1)[1]
             if path and path not in (":memory:",):
                 os.makedirs(os.path.dirname(os.path.abspath(path)) or ".", exist_ok=True)
-    return create_engine(url, connect_args=connect_args, future=True)
+    else:
+        # SQLite uses SingletonThreadPool/StaticPool, which accepts none of these.
+        kwargs.update(
+            pool_size=_POOL_SIZE,
+            max_overflow=_MAX_OVERFLOW,
+            pool_pre_ping=True,
+            pool_recycle=_POOL_RECYCLE_SECONDS,
+        )
+    return create_engine(url, connect_args=connect_args, **kwargs)
 
 
 _settings = get_settings()

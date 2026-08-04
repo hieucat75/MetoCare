@@ -542,7 +542,17 @@ def reprocess_document(
     doc = _load_owned(db, patient_id=patient_id, document_id=document_id)
     if doc.object_state != OBJECT_STATE_ACCEPTED or not doc.accepted_key:
         raise InvalidDocumentState("Chỉ có thể xử lý lại tài liệu đã được chấp nhận.")
-    data = get_storage().get_bytes(doc.accepted_key)
+    # BR-F5: `ObjectNotFound` is a StorageError, not an MdiError, so without
+    # this it escapes the route's handler as an opaque HTTP 500 — and with
+    # ephemeral container storage a missing blob is an expected post-redeploy
+    # state, not an anomaly. Degrade honestly with a 4xx instead.
+    try:
+        data = get_storage().get_bytes(doc.accepted_key)
+    except ObjectNotFound as exc:
+        raise UploadValidationError(
+            "Tệp gốc của tài liệu này không còn tồn tại trên hệ thống lưu trữ. "
+            "Vui lòng tải lên lại tài liệu."
+        ) from exc
     return _run_extraction(db, doc=doc, data=data, doc_type_hint=doc.doc_type)
 
 

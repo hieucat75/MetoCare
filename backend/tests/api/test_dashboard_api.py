@@ -99,3 +99,38 @@ def test_dashboard_api_and_bola(db, patient, token_for):
         headers=token_for(other.id, role="patient"),
     )
     assert r2.status_code == 403
+
+
+def test_stopped_medication_removed_from_dashboard_actions(db, patient):
+    """CLIN PS-5: a discontinued drug must not appear as a "take your dose"
+    action — the dashboard is the action feed the patient acts on."""
+    pid = patient["patient_id"]
+    med = medication_svc.add_medication(db, patient_id=pid, data={"name": "Enalapril"}, commit=True)
+    s = sched.create_schedule(
+        db,
+        patient_id=pid,
+        medication_id=med.id,
+        schedule_type="fixed_daily",
+        local_dose_times=["08:00"],
+        patient_timezone="UTC",
+        start_date=dt.date(2026, 6, 1),
+        end_date=dt.date(2026, 6, 1),
+    )
+    db.commit()
+    sched.materialize_due(db, s, now=dt.datetime(2026, 6, 1, 8, 1, tzinfo=dt.UTC))
+    db.commit()
+    medication_svc.update_medication(
+        db,
+        patient_id=pid,
+        med_id=med.id,
+        data={"lifecycle_status": "discontinued", "status_reason": "ngừng theo chỉ định"},
+        actor_user_id=patient["user_id"],
+        actor_role="patient",
+    )
+
+    result = patient_dashboard.build_dashboard(
+        db, patient_id=pid, now=dt.datetime(2026, 6, 1, 8, 5, tzinfo=dt.UTC)
+    )
+    assert result["doses_due_count"] == 0
+    assert "medication_dose" not in {a["type"] for a in result["actions"]}
+    assert result["active_medications"] == 0

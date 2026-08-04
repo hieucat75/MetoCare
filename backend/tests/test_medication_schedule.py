@@ -240,3 +240,86 @@ def test_api_invalid_timezone_rejected(db, patient):
         },
     )
     assert r.status_code == 422
+
+
+# ── CLIN PS-5: medication lifecycle → schedule cascade ───────────────────────
+def _active_schedule_with_due_dose(db, patient, name: str):
+    """Seed an active medication + fixed-daily schedule with one materialized,
+    already-due dose. Returns (med, schedule, now)."""
+    med = _seed_med(db, patient["patient_id"], name)
+    s = sched.create_schedule(
+        db,
+        patient_id=patient["patient_id"],
+        medication_id=med.id,
+        schedule_type="fixed_daily",
+        local_dose_times=["08:00"],
+        patient_timezone="UTC",
+        start_date=dt.date(2026, 6, 1),
+        end_date=dt.date(2026, 6, 1),
+    )
+    db.commit()
+    now = dt.datetime(2026, 6, 1, 8, 3, tzinfo=dt.UTC)
+    sched.materialize_due(db, s, now=now)
+    db.commit()
+    return med, s, now
+
+
+def test_deleted_medication_does_not_generate_reminders(db, patient):
+    """CLIN PS-5: deleting the drug must stop its reminders — the app must never
+    tell a patient by name to take a medication they removed."""
+    med, s, now = _active_schedule_with_due_dose(db, patient, "Enalapril-del")
+    assert _first_dose(db, s.id) is not None
+    medication_svc.delete_medication(
+        db,
+        patient_id=patient["patient_id"],
+        med_id=med.id,
+        actor_user_id=patient["user_id"],
+        actor_role="patient",
+    )
+    notifications.reset()
+    delivered = sched.deliver_due_reminders(
+        db, patient_id=patient["patient_id"], user_id=patient["user_id"], now=now
+    )
+    db.commit()
+    assert delivered == 0
+    db.refresh(s)
+    assert s.status == "stopped"  # cascade stopped the schedule
+    assert _first_dose(db, s.id) is None  # open doses cancelled
+
+
+def test_stopped_medication_does_not_generate_reminders(db, patient):
+    """CLIN PS-5: a lifecycle exit (active → discontinued) cascades to the
+    schedule, so a drug the patient/doctor stopped never reminds again."""
+    med, s, now = _active_schedule_with_due_dose(db, patient, "Gliclazide-stop")
+    medication_svc.update_medication(
+        db,
+        patient_id=patient["patient_id"],
+        med_id=med.id,
+        data={"lifecycle_status": "discontinued", "status_reason": "bác sĩ cho ngừng"},
+        actor_user_id=patient["user_id"],
+        actor_role="patient",
+    )
+    notifications.reset()
+    delivered = sched.deliver_due_reminders(
+        db, patient_id=patient["patient_id"], user_id=patient["user_id"], now=now
+    )
+    db.commit()
+    assert delivered == 0
+    db.refresh(s)
+    assert s.status == "stopped"
+
+
+def test_legacy_inactive_medication_dose_is_never_reminded(db, patient):
+    """CLIN PS-5 (query-side guard): rows broken BEFORE the cascade existed —
+    an inactive medication whose schedule is still 'active' — must not remind."""
+    med, s, now = _active_schedule_with_due_dose(db, patient, "Legacy-med")
+    # Simulate the pre-fix state: medication retired without any cascade.
+    med.lifecycle_status = "discontinued"
+    db.commit()
+    assert s.status == "active"
+    notifications.reset()
+    delivered = sched.deliver_due_reminders(
+        db, patient_id=patient["patient_id"], user_id=patient["user_id"], now=now
+    )
+    db.commit()
+    assert delivered == 0
