@@ -22,7 +22,7 @@ from __future__ import annotations
 import re
 
 from app.models.medical_document import CANDIDATE_LAB_RESULT
-from app.services.lab_parser import _match_biomarker, _strip_accents
+from app.services.lab_parser import _match_biomarker, _strip_accents, build_alias_index
 
 from .extractors import CandidateDraft, make_dedupe_key
 
@@ -62,6 +62,11 @@ class LabExtractor:
     def extract(
         self, *, text: str, doc_type: str, ocr_confidence: float
     ) -> list[CandidateDraft]:
+        # ONE shared alias index — the same one /lab-uploads uses. Calling
+        # _match_biomarker with no index silently falls back to the bare
+        # _ALIAS_INDEX, under which "HDL Cholesterol" resolves to
+        # total_cholesterol. See lab_parser.build_alias_index.
+        alias_index = build_alias_index()
         lines = [ln.strip() for ln in (text or "").splitlines() if ln.strip()]
         report_date = _report_date(lines)
 
@@ -76,7 +81,7 @@ class LabExtractor:
                 continue
             # Match against the accent-stripped, lower-cased label, the form
             # `_match_biomarker` and `_UNMAPPABLE_LABEL_RE` are written against.
-            matched = _match_biomarker(_strip_accents(raw_name.lower()))
+            matched = _match_biomarker(_strip_accents(raw_name.lower()), alias_index)
             if matched is None:
                 # Not a recognized biomarker (headers, notes, ids) OR a label with
                 # no safe canonical (non-HDL, VLDL, lipid ratios). Dropping the row

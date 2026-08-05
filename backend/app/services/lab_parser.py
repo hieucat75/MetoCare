@@ -157,7 +157,72 @@ def _alias_pattern(alias_noacc: str) -> re.Pattern[str]:
         trail = r"(?![a-z0-9])"
     else:
         trail = r"(?![a-z])"
-    return re.compile(lead + re.escape(alias_noacc) + trail)
+    # Separators inside an alias are matched FLEXIBLY: a single space in the
+    # alias matches any run of space / hyphen / underscore / dot in the label.
+    # Printed VN reports write the same analyte as "HDL Cholesterol",
+    # "HDL-Cholesterol" and "HDL - Cholesterol", and enumerating a fixed alias per
+    # spelling is how "HDL - Cholesterol" kept resolving to total_cholesterol
+    # after the space form had been fixed. Note "/" is deliberately NOT a
+    # separator here: "Cholesterol/HDL" is a RATIO, a different quantity, and
+    # must stay unmappable rather than collapse onto "cholesterol hdl".
+    #
+    # Length is preserved by construction (the pattern matches the original
+    # string; nothing is rewritten), so the caller's end-index into the raw line
+    # stays exact.
+    body = r"[\s\-_.]+".join(re.escape(part) for part in alias_noacc.split(" ") if part)
+    return re.compile(lead + body + trail)
+
+
+
+def _profile_by_name(name: str):
+    """Resolve a profile by name for the memoised index (keeps the cache key hashable)."""
+    from app.domain.hospital_profiles import HOSPITAL_PROFILES
+
+    for profile in HOSPITAL_PROFILES:
+        if profile.name == name:
+            return profile
+    return None
+
+
+@lru_cache(maxsize=32)
+def _cached_alias_index(profile_name: str | None) -> dict:
+    """Memoised alias index. Keyed by profile NAME so the result is hashable."""
+    combined = dict(_ALIAS_INDEX)
+    for canonical, extras in _PARSER_EXTRA_ALIASES.items():
+        base = _ALIAS_INDEX.get(canonical)
+        if base:
+            for alias in extras:
+                combined.setdefault(alias, base)
+
+    profile = _profile_by_name(profile_name) if profile_name else None
+    if profile:
+        for canonical, extras in profile.additional_aliases.items():
+            base_spec = _ALIAS_INDEX.get(canonical)
+            if base_spec:
+                for alias in extras:
+                    combined[alias.lower()] = base_spec
+    return combined
+
+
+def build_alias_index(hospital_profile=None) -> dict:
+    """THE alias index. Every analyte-resolution call site must use this.
+
+    `_ALIAS_INDEX` alone is NOT safe to match against. It carries
+    "hdl-cholesterol" (hyphen) but neither "hdl cholesterol" (space) nor the VN
+    report order "cholesterol hdl", while `total_cholesterol` carries the bare
+    alias "cholesterol". Under longest-alias-wins the spans for "HDL Cholesterol"
+    are `hdl`(0-3) and `cholesterol`(4-15) — neither contains the other, so
+    nothing is shadowed and the LONGER `cholesterol` wins. The printed label says
+    HDL; the stored analyte is total cholesterol.
+
+    That is exactly what happened on the MDI path, which called
+    `_match_biomarker` with no index and so silently used the bare
+    `_ALIAS_INDEX`, while `/lab-uploads` built a combined index inline and was
+    safe. Two code paths, two different answers for the same printed label.
+    Routing every caller through this one function makes that class of drift
+    impossible rather than merely fixed once.
+    """
+    return _cached_alias_index(getattr(hospital_profile, "name", None))
 
 
 def _match_biomarker(
@@ -264,22 +329,14 @@ def parse_lab_text(
     if hospital_profile is None:
         hospital_profile = detect_hospital(text)
 
-    _combined = dict(_ALIAS_INDEX)
-    for _canonical, _extras in _PARSER_EXTRA_ALIASES.items():
-        _base = _ALIAS_INDEX.get(_canonical)
-        if _base:
-            for _a in _extras:
-                _combined.setdefault(_a, _base)
     if hospital_profile:
         corrected = text
         for bad, good in hospital_profile.ocr_corrections.items():
             corrected = corrected.replace(bad, good)
         text = corrected
-        for canonical, extras in hospital_profile.additional_aliases.items():
-            base_spec = _ALIAS_INDEX.get(canonical)
-            if base_spec:
-                for a in extras:
-                    _combined[a.lower()] = base_spec
+    # One shared builder — see build_alias_index for why matching against the
+    # bare _ALIAS_INDEX is unsafe.
+    _combined = build_alias_index(hospital_profile)
 
     seen: dict[str, RawLabValue] = {}
     for raw_line in text.splitlines():

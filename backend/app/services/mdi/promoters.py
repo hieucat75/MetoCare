@@ -157,9 +157,9 @@ def _canonical_for(test_name: str | None) -> str | None:
     """
     if not test_name:
         return None
-    from app.services.lab_parser import _match_biomarker, _strip_accents
+    from app.services.lab_parser import _match_biomarker, _strip_accents, build_alias_index
 
-    matched = _match_biomarker(_strip_accents(test_name.lower()))
+    matched = _match_biomarker(_strip_accents(test_name.lower()), build_alias_index())
     return matched[0].canonical if matched else None
 
 
@@ -226,8 +226,22 @@ class LabPromoter:
         # the guard validated the OLD analyte's units while `create_manual_entry`
         # stored and classified the row as the NEW one. Both routes reached the
         # silent false-normal this guard exists to prevent.
-        canonical = _canonical_for(test_name) or fields.get("canonical")
-        if canonical and not is_unit_convertible(canonical, unit):
+        # Resolve with the hardened matcher and NEVER fall back to the stored
+        # `canonical`. `_apply_corrections` merges an arbitrary flat dict into
+        # fields_json before promotion, so a correction of {"canonical": null}
+        # used to blank the field, make this guard vacuous, and let
+        # create_manual_entry re-derive with the unhardened matcher — the exact
+        # silent false-normal the guard exists to stop.
+        canonical = _canonical_for(test_name)
+        if canonical is None:
+            # No safe canonical for this label (non-HDL, VLDL, a lipid ratio, or
+            # simply unrecognised). Refuse rather than store an unclassifiable row
+            # that a later reader would try to interpret.
+            raise PromotionInvalid(
+                "Không nhận dạng được chỉ số xét nghiệm từ tên này — "
+                "vui lòng sửa tên xét nghiệm rồi xác nhận lại."
+            )
+        if not is_unit_convertible(canonical, unit):
             raise PromotionInvalid(
                 "Đơn vị xét nghiệm chưa rõ — vui lòng sửa đơn vị rồi xác nhận lại."
             )
@@ -243,6 +257,9 @@ class LabPromoter:
             results=[
                 {
                     "test_name": test_name,
+                    # Hand the hardened resolution down so the storage layer does
+                    # not re-derive it with a different (weaker) matcher.
+                    "canonical": canonical,
                     "value": fields.get("value"),
                     "unit": unit,
                     "reference_range": fields.get("reference_range"),

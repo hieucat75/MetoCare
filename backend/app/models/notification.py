@@ -18,6 +18,7 @@ import datetime as dt
 from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.core.crypto import EncryptedString
 from app.core.database import Base
 
 from ._mixins import UUIDPrimaryKey
@@ -62,8 +63,23 @@ class Notification(UUIDPrimaryKey, Base):
     )
     # One of NOTIFICATION_TYPES; String(64) allows future extension
     type: Mapped[str] = mapped_column(String(64), nullable=False)
-    title: Mapped[str] = mapped_column(String(256), nullable=False)
-    body: Mapped[str] = mapped_column(Text, nullable=False)
+    # Encrypted too. The reminder path uses a fixed template ("Đến giờ uống
+    # thuốc"), but POST /notifications lets an admin supply an arbitrary title,
+    # so "titles never contain patient data" is a convention, not an invariant —
+    # and an unenforced convention is not a basis for leaving a column readable.
+    # Neither title nor body is queried by value, so Fernet's non-determinism
+    # costs nothing here.
+    title: Mapped[str] = mapped_column(
+        EncryptedString(on_decrypt_failure="raise"), nullable=False
+    )
+    # Medication reminders put the drug name in the body BY DESIGN ("Đến giờ uống
+    # Metformin"), so this column accumulates a readable medication history for
+    # every patient.
+    # Both NOT NULL, so "raise" per EncryptedString's contract — a silent None
+    # would violate the column and crash serialization.
+    body: Mapped[str] = mapped_column(
+        EncryptedString(on_decrypt_failure="raise"), nullable=False
+    )
     is_read: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     read_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(

@@ -457,6 +457,23 @@ def interpret_document(
     return interpretation
 
 
+
+def _hardened_canonical(test_name: str | None) -> str | None:
+    """Resolve a printed lab label with the SAME matcher every other path uses.
+
+    Deliberately not `lab_interpreter.normalize_biomarker`: its final step is a
+    bare containment scan, which maps VLDL onto ldl and non-HDL onto hdl. Labels
+    with no safe canonical resolve to None here and are stored uncanonicalised
+    rather than filed under a neighbouring analyte.
+    """
+    if not test_name:
+        return None
+    from app.services.lab_parser import _match_biomarker, _strip_accents, build_alias_index
+
+    matched = _match_biomarker(_strip_accents(test_name.lower()), build_alias_index())
+    return matched[0].canonical if matched else None
+
+
 def create_manual_entry(
     db: Session,
     *,
@@ -518,7 +535,14 @@ def create_manual_entry(
     for item in results:
         # Resolve the canonical biomarker so the row is self-describing and can be
         # promoted into health_metrics (dashboard/trend sync).
-        canonical = lab_interpreter.normalize_biomarker(item["test_name"])
+        # Prefer an explicit canonical resolved by the CALLER with the hardened
+        # matcher. `normalize_biomarker`'s step 4 is a bare containment scan
+        # (`alias in key or key in alias`), so re-deriving here silently disagreed
+        # with whatever the caller had already validated units against — the
+        # promoter could accept a row as HDL while this stored it as total
+        # cholesterol. The fallback is the hardened matcher too, so no path in
+        # this function can reach the containment scan any more.
+        canonical = item.get("canonical") or _hardened_canonical(item["test_name"])
 
         # P0 safety: normalize value to canonical unit (e.g. mmol/L → mg/dL for glucose)
         # before storing. Clinical rules always run in canonical units (mg/dL, etc.).

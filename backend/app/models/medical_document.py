@@ -189,7 +189,17 @@ class ExtractionCandidate(UUIDPrimaryKey, TimestampMixin, Base):
     status: Mapped[str] = mapped_column(
         String(24), default=CAND_STATUS_EXTRACTED, server_default=CAND_STATUS_EXTRACTED, index=True
     )
-    corrections_json: Mapped[dict | None] = mapped_column(_JSON_VARIANT)
+    # The patient's CORRECTIONS to the extracted fields — the same clinical
+    # values as `fields_json`, often more accurate because a human fixed them.
+    # Encrypting the extraction while leaving the correction in plaintext
+    # protected the machine's guess and exposed the confirmed truth.
+    # `on_decrypt_failure="none"`, not "raise": corrections are an optional
+    # overlay on an already-readable candidate, so an unreadable one must not
+    # make the whole review row unopenable — unlike `fields_json`, which IS the
+    # row. Not queried by value anywhere (Fernet is non-deterministic).
+    corrections_json: Mapped[dict | None] = mapped_column(
+        EncryptedJSON(on_decrypt_failure="none")
+    )
     reviewed_by: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     reviewed_at: Mapped[dt.datetime | None] = mapped_column()
 

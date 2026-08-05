@@ -25,7 +25,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.core.crypto import EncryptedString
+from app.core.crypto import EncryptedJSON, EncryptedString
 from app.core.database import Base
 
 from ._mixins import SoftDeleteMixin, TimestampMixin, UUIDPrimaryKey
@@ -218,16 +218,36 @@ class MedicationStatement(UUIDPrimaryKey, Base):
         String(32), nullable=False, default="new_entry", server_default=text("'new_entry'")
     )
     related_medication_id: Mapped[str | None] = mapped_column(ForeignKey("medications.id"))
-    raw_drug_name: Mapped[str] = mapped_column(Text, nullable=False)
-    normalized_name: Mapped[str | None] = mapped_column(Text)
+    # A drug name IS PHI: it discloses the condition being treated (an
+    # antiretroviral, an antipsychotic, an oncology agent) more directly than most
+    # diagnosis fields. These are the verbatim OCR strings off a prescription,
+    # with the prescriber's name alongside. None is queried by value.
+    # NOT NULL, so "raise" per EncryptedString's contract: a silent None here
+    # would break the NOT NULL guarantee and crash response serialization, and a
+    # medication statement with no drug name is not a degraded row — it is a
+    # meaningless one.
+    raw_drug_name: Mapped[str] = mapped_column(
+        EncryptedString(on_decrypt_failure="raise"), nullable=False
+    )
+    normalized_name: Mapped[str | None] = mapped_column(
+        EncryptedString(on_decrypt_failure="none")
+    )
     drug_product_id: Mapped[str | None] = mapped_column(String(36))
     match_confidence: Mapped[float | None] = mapped_column(Float)
-    raw_dose: Mapped[str | None] = mapped_column(Text)
-    raw_frequency: Mapped[str | None] = mapped_column(Text)
-    raw_prescriber: Mapped[str | None] = mapped_column(Text)
+    raw_dose: Mapped[str | None] = mapped_column(EncryptedString(on_decrypt_failure="none"))
+    raw_frequency: Mapped[str | None] = mapped_column(
+        EncryptedString(on_decrypt_failure="none")
+    )
+    raw_prescriber: Mapped[str | None] = mapped_column(
+        EncryptedString(on_decrypt_failure="none")
+    )
     raw_date: Mapped[dt.date | None] = mapped_column(Date)
     effective_from: Mapped[dt.date | None] = mapped_column(Date)
-    payload_snapshot: Mapped[dict | None] = mapped_column(_JSON_VARIANT)
+    # The whole extracted prescription payload — a superset of the raw_* columns
+    # above, so encrypting those and not this would leave the same data readable.
+    payload_snapshot: Mapped[dict | None] = mapped_column(
+        EncryptedJSON(on_decrypt_failure="none")
+    )
     statement_status: Mapped[str] = mapped_column(
         String(32), nullable=False, default="pending", server_default=text("'pending'")
     )

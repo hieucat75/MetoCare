@@ -76,16 +76,28 @@ def test_alembic_has_exactly_one_head():
 
 
 def test_migration_upgrades_and_downgrades_cleanly(tmp_path):
+    """Upgrade to THIS revision by name, not to `head`.
+
+    Asserting `MIGRATION_REVISION in <current after upgrade head>` silently
+    encoded "this migration happens to be the newest one", so it broke on the
+    next migration added for any reason. Targeting the revision explicitly tests
+    what this file is about — that SEC-F11 applies and reverses cleanly — and is
+    stable as the chain grows.
+    """
     url = f"sqlite:///{tmp_path}/enc.sqlite3"
-    up = _alembic(["upgrade", "head"], url)
+    up = _alembic(["upgrade", MIGRATION_REVISION], url)
     assert up.returncode == 0, up.stderr
     current = _alembic(["current"], url)
     assert MIGRATION_REVISION in current.stdout, current.stdout
 
     down = _alembic(["downgrade", "-1"], url)
     assert down.returncode == 0, down.stderr
-    back_up = _alembic(["upgrade", "head"], url)
+    back_up = _alembic(["upgrade", MIGRATION_REVISION], url)
     assert back_up.returncode == 0, back_up.stderr
+
+    # And the whole chain on top of it still applies.
+    to_head = _alembic(["upgrade", "head"], url)
+    assert to_head.returncode == 0, to_head.stderr
 
 
 def test_content_fails_loud_on_undecryptable_ciphertext():
