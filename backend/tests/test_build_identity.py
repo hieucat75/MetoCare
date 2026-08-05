@@ -24,14 +24,10 @@ docstring was misleading:
     verifies that IF the documented env vars are set, the value reaches `/info`.
   - `azure-staging.yml` and `azure-production.yml` are `workflow_dispatch` —
     MANUAL deploys. The workflow that auto-deploys staging on merge to main is
-    `ci.yml`'s own `deploy-staging` job, and its env block does NOT set
-    MCP_BUILD_SHA / MCP_BUILD_TIME. So every auto-deployed staging build reports
-    an EMPTY build_sha today. That is a pre-existing gap, not introduced here, and
-    closing it means editing the deploy job — owner-gated, so it is reported
-    rather than changed.
-
-The tests below therefore cover the manual deploy path only. Do not read a green
-run as "build identity is verified end-to-end".
+    `ci.yml`'s own `deploy-staging` job, and it did NOT set MCP_BUILD_SHA /
+    MCP_BUILD_TIME, so every auto-deployed staging build reported an EMPTY
+    build_sha. That is now wired (backend env + frontend build-args and env), and
+    asserted below alongside the manual workflows.
 """
 
 from __future__ import annotations
@@ -100,11 +96,14 @@ def test_info_reports_the_migration_version():
 # ── 3. The deploy workflows must still set them ─────────────────────────────
 
 
-@pytest.mark.parametrize("workflow", ["azure-staging.yml", "azure-production.yml"])
+@pytest.mark.parametrize(
+    "workflow", ["azure-staging.yml", "azure-production.yml", "ci.yml"]
+)
 def test_deploy_workflow_still_sets_build_identity(workflow):
-    """Read-only guard on owner-gated infrastructure: asserts the wiring exists,
-    never modifies it. If the workflow is absent from this checkout, skip rather
-    than fail — a missing file is not evidence of a regression."""
+    """Every workflow that can deploy must set build identity — including
+    `ci.yml`, which is the one that actually auto-deploys on merge and was the
+    one missing it. If a workflow is absent from this checkout, skip rather than
+    fail: a missing file is not evidence of a regression."""
     path = WORKFLOWS / workflow
     if not path.exists():
         pytest.skip(f"{workflow} not present in this checkout")
@@ -112,3 +111,14 @@ def test_deploy_workflow_still_sets_build_identity(workflow):
     src = path.read_text()
     assert "MCP_BUILD_SHA=" in src, f"{workflow} no longer sets MCP_BUILD_SHA"
     assert "MCP_BUILD_TIME=" in src, f"{workflow} no longer sets MCP_BUILD_TIME"
+
+
+def test_the_auto_deploy_path_sets_frontend_build_identity():
+    """The environment banner needs its own vars: NEXT_PUBLIC_* are baked at
+    BUILD time for Next.js, so a runtime-only env var would not reach the page."""
+    path = WORKFLOWS / "ci.yml"
+    if not path.exists():
+        pytest.skip("ci.yml not present in this checkout")
+    src = path.read_text()
+    assert "NEXT_PUBLIC_BUILD_SHA=" in src
+    assert "NEXT_PUBLIC_APP_ENV=" in src
