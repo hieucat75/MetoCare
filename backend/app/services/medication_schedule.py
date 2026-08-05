@@ -88,6 +88,70 @@ def _parse_hhmm(raw: str) -> dt.time | None:
         return None
 
 
+
+def _validate_schedule_shape(
+    schedule_type: str,
+    local_dose_times: list[str] | None,
+    recurrence: dict | None,
+) -> None:
+    """Reject a schedule whose recurrence cannot be honoured.
+
+    Previously only `schedule_type` and "the times list is non-empty" were checked,
+    so two silent failures were possible and both are clinically wrong:
+
+    * a CYCLIC schedule missing/typo'd `on_days` fell through `cycle <= 0` to
+      "every day applies" — a steroid pulse or cyclical hormone regimen would
+      remind the patient by name to take the drug on every REST day;
+    * INTERVAL with a missing `interval_days` defaulted to n=1, i.e. daily;
+    * unparseable "HH:MM" strings were dropped in compute_occurrences, leaving an
+      ACTIVE schedule that can never remind while the patient believes it is set.
+
+    A malformed schedule must be refused at the boundary, never degraded.
+    """
+    if schedule_type == SCHEDULE_PRN:
+        return
+
+    times = local_dose_times or []
+    if not times:
+        raise InvalidSchedule("Lịch không phải PRN cần ít nhất một giờ uống.")
+    bad = [t for t in times if _parse_hhmm(t) is None]
+    if bad:
+        raise InvalidSchedule(
+            f"Giờ uống không hợp lệ: {', '.join(str(b) for b in bad)}. Dùng định dạng HH:MM."
+        )
+
+    rec = recurrence or {}
+    if schedule_type == SCHEDULE_INTERVAL:
+        try:
+            n = int(rec.get("interval_days"))
+        except (TypeError, ValueError):
+            raise InvalidSchedule(
+                "Lịch cách ngày cần `interval_days` là số nguyên >= 1."
+            ) from None
+        if n < 1:
+            raise InvalidSchedule("`interval_days` phải >= 1.")
+
+    elif schedule_type == SCHEDULE_DAYS_OF_WEEK:
+        days = rec.get("days")
+        if not isinstance(days, list) or not days:
+            raise InvalidSchedule("Lịch theo thứ cần `days` không rỗng (0=Thứ 2 … 6=Chủ nhật).")
+        if any(not isinstance(d, int) or d < 0 or d > 6 for d in days):
+            raise InvalidSchedule("`days` chỉ nhận số nguyên 0–6 (0=Thứ 2 … 6=Chủ nhật).")
+
+    elif schedule_type == SCHEDULE_CYCLIC:
+        try:
+            on = int(rec.get("on_days"))
+            off = int(rec.get("off_days", 0))
+        except (TypeError, ValueError):
+            raise InvalidSchedule(
+                "Lịch theo chu kỳ cần `on_days` (và `off_days`) là số nguyên."
+            ) from None
+        if on < 1:
+            raise InvalidSchedule("`on_days` phải >= 1.")
+        if off < 0:
+            raise InvalidSchedule("`off_days` không được âm.")
+
+
 def _idempotency_key(schedule_id: str, version: int, scheduled_utc: dt.datetime) -> str:
     raw = f"{schedule_id}|{version}|{scheduled_utc.astimezone(dt.UTC).isoformat()}"
     return sha256(raw.encode("utf-8")).hexdigest()
@@ -99,7 +163,12 @@ def _day_applies(schedule: MedicationSchedule, day: dt.date, start: dt.date) -> 
     if st == SCHEDULE_FIXED_DAILY:
         return True
     if st == SCHEDULE_INTERVAL:
-        n = int(rec.get("interval_days", 1)) or 1
+        try:
+            n = int(rec.get("interval_days", 0))
+        except (TypeError, ValueError):
+            return False
+        if n < 1:
+            return False  # malformed legacy row — never degrade to daily
         return (day - start).days % n == 0
     if st == SCHEDULE_DAYS_OF_WEEK:
         return day.weekday() in set(rec.get("days", []))  # 0=Mon
@@ -107,8 +176,12 @@ def _day_applies(schedule: MedicationSchedule, day: dt.date, start: dt.date) -> 
         on = int(rec.get("on_days", 0))
         off = int(rec.get("off_days", 0))
         cycle = on + off
-        if cycle <= 0:
-            return True
+        if cycle <= 0 or on < 1:
+            # Malformed legacy row. Reminding EVERY day (the old behaviour) would
+            # tell a patient on a cyclical regimen to dose on rest days; producing
+            # no dose is visibly wrong instead of silently wrong. New rows cannot
+            # reach here — _validate_schedule_shape refuses them at the boundary.
+            return False
         return (day - start).days % cycle < on
     return False
 
@@ -185,8 +258,7 @@ def create_schedule(
     if schedule_type not in _VALID_TYPES:
         raise InvalidSchedule(f"schedule_type không hợp lệ: {schedule_type}")
     _load_owned_medication(db, patient_id=patient_id, medication_id=medication_id)
-    if schedule_type != SCHEDULE_PRN and not local_dose_times:
-        raise InvalidSchedule("Lịch không phải PRN cần ít nhất một giờ uống.")
+    _validate_schedule_shape(schedule_type, local_dose_times, recurrence)
 
     schedule = MedicationSchedule(
         medication_id=medication_id,
@@ -350,17 +422,32 @@ def mark_dose(
     return dose
 
 
-def _cancel_open_doses(db: Session, schedule_id: str) -> None:
-    """Cancel every still-open (pending/notified, unacted) dose for a schedule —
-    used on pause/stop/supersede so no discontinued schedule can remind, including
-    a dose that is already due-but-unacted (review P1). Acted (taken/skipped) and
-    missed doses are historical and kept."""
-    for dose in db.execute(
-        select(DoseOccurrence).where(
-            DoseOccurrence.schedule_id == schedule_id,
-            DoseOccurrence.state.in_((DOSE_PENDING, DOSE_NOTIFIED)),
-        )
-    ).scalars():
+def _cancel_open_doses(
+    db: Session,
+    schedule_id: str,
+    *,
+    future_only: bool = False,
+    now: dt.datetime | None = None,
+) -> None:
+    """Cancel still-open (pending/notified, unacted) doses for a schedule.
+
+    Used on pause/stop/supersede so no discontinued schedule can remind. Acted
+    (taken/skipped) and missed doses are historical and always kept.
+
+    ``future_only`` exists for the EDIT path. Deleting a dose whose time has
+    already passed but which has not yet been swept to MISSED erases it from the
+    adherence denominator entirely — so a patient who missed three days and then
+    changed their reminder time saw their adherence jump instead of drop. On edit
+    we therefore keep everything already due (the sweep will resolve it to MISSED)
+    and only drop doses that have not yet come around.
+    """
+    conditions = [
+        DoseOccurrence.schedule_id == schedule_id,
+        DoseOccurrence.state.in_((DOSE_PENDING, DOSE_NOTIFIED)),
+    ]
+    if future_only:
+        conditions.append(DoseOccurrence.scheduled_utc > (now or _now_utc()))
+    for dose in db.execute(select(DoseOccurrence).where(*conditions)).scalars():
         db.delete(dose)
 
 
@@ -472,6 +559,14 @@ def edit_schedule(
     new_type = schedule_type or old.schedule_type
     if new_type not in _VALID_TYPES:
         raise InvalidSchedule(f"schedule_type không hợp lệ: {new_type}")
+    # Validate the RESOLVED shape (edit is a partial patch, so unspecified fields
+    # fall back to the old version's values). Editing must not be a way to reach a
+    # malformed schedule that create_schedule would have refused.
+    _validate_schedule_shape(
+        new_type,
+        local_dose_times if local_dose_times is not None else old.local_dose_times,
+        recurrence if recurrence is not None else old.recurrence,
+    )
     new = MedicationSchedule(
         medication_id=old.medication_id,
         patient_id=old.patient_id,
@@ -489,7 +584,12 @@ def edit_schedule(
     db.flush()
     old.superseded_by = new.id
     old.status = SCHED_STATUS_STOPPED
-    _cancel_open_doses(db, old.id)
+    # Resolve anything already overdue to MISSED *before* cancelling, so real
+    # non-adherence is recorded rather than deleted, then drop only the doses that
+    # had not yet come around. History on the superseded version stays immutable
+    # and keeps counting toward the medication's adherence.
+    sweep_missed(db, patient_id=old.patient_id)
+    _cancel_open_doses(db, old.id, future_only=True)
     db.flush()
     return new
 

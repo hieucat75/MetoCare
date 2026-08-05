@@ -21,10 +21,20 @@ import datetime as dt
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models.clinical import HealthMetric, LabDocument, LabResult, LabUploadBatch, Medication
+from app.models.clinical import (
+    HealthMetric,
+    LabDocument,
+    LabResult,
+    LabUploadBatch,
+    Medication,
+    MedicationStatement,
+    SymptomLog,
+)
 from app.models.consultation import Consultation
 from app.models.medical_document import DocumentPage, ExtractionCandidate, MedicalDocument
+from app.models.medication_schedule import DoseOccurrence, MedicationSchedule
 from app.models.meto import MetoConsent, MetoConversation, MetoMessage
+from app.models.notification import Notification
 from app.models.patient import PatientProfile
 from app.models.user import User
 
@@ -222,6 +232,82 @@ def delete_account(db: Session, *, user_id: str, patient_id: str) -> list[str]:
         .all()
     ):
         candidate.fields_json = {}
+        # `corrections_json` is the patient's own correction history (what they
+        # retyped over the OCR); `field_confidence_json` is keyed by the same PHI
+        # field names. Both go with it.
+        candidate.corrections_json = None
+        candidate.field_confidence_json = None
+
+    # ── Integration-review P1: four PHI-bearing tables the sweep missed ──────
+    #
+    # Erasure is asserted complete in the DIST-RC compliance doc, but these four
+    # still disclosed which drugs the patient took, at what dose, prescribed by
+    # whom, and on what schedule. All are blanked in place (not hard-deleted) so
+    # referential integrity and the PHI-free audit trail survive.
+
+    # 1. medication_statements — the raw source assertion behind every medication,
+    #    including the full OCR payload snapshot and the prescriber's name.
+    for stmt in (
+        db.execute(
+            select(MedicationStatement).where(MedicationStatement.patient_id == patient_id)
+        )
+        .scalars()
+        .all()
+    ):
+        stmt.raw_drug_name = ""  # NOT NULL
+        stmt.normalized_name = None
+        stmt.raw_dose = None
+        stmt.raw_frequency = None
+        stmt.raw_prescriber = None
+        stmt.payload_snapshot = None
+        stmt.source_ref = None
+
+    # 2. medication_schedules / dose_occurrences — dosing times, and skip_reason is
+    #    patient free text ("Tác dụng phụ — buồn nôn nhiều"). Schedules are stopped
+    #    so nothing can keep reminding a deleted account.
+    schedule_ids = [
+        row[0]
+        for row in db.execute(
+            select(MedicationSchedule.id).where(MedicationSchedule.patient_id == patient_id)
+        ).all()
+    ]
+    for schedule in (
+        db.execute(
+            select(MedicationSchedule).where(MedicationSchedule.patient_id == patient_id)
+        )
+        .scalars()
+        .all()
+    ):
+        schedule.status = "stopped"
+        schedule.local_dose_times = None
+        schedule.recurrence = None
+    if schedule_ids:
+        for dose in (
+            db.execute(
+                select(DoseOccurrence).where(DoseOccurrence.patient_id == patient_id)
+            )
+            .scalars()
+            .all()
+        ):
+            dose.skip_reason = None
+            dose.local_render = None
+
+    # 3. notifications — the reminder body carries the drug name in cleartext
+    #    ("Đã đến giờ uống Metformin (500mg)").
+    for note in (
+        db.execute(select(Notification).where(Notification.user_id == user_id)).scalars().all()
+    ):
+        note.title = ""
+        note.body = ""
+        note.metadata_ = None
+
+    # 4. symptom_logs — free-text symptom descriptions.
+    for log in (
+        db.execute(select(SymptomLog).where(SymptomLog.patient_id == patient_id))
+        .scalars()
+        .all()
+    ):
+        log.description = ""
         candidate.field_confidence_json = None
         candidate.corrections_json = None
 

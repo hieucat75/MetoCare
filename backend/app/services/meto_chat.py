@@ -69,6 +69,22 @@ _AI_CONSENT_REQUIRED_MSG = (
 )
 
 
+
+# Integration-review P1: when the context build fails we must NOT answer.
+#
+# ContextBuilder.build supplies the medications block, the labs block AND the
+# safety_flags block (the critical-value pre-read). Swallowing the failure and
+# passing an empty AssembledContext meant the model — instructed to rely only on
+# context — would state "mình không thấy kết quả xét nghiệm nào gần đây": a false
+# assertion about the patient's record, made while a critical value may exist, and
+# indistinguishable to the patient from a genuine "no data". Fail closed instead.
+_CONTEXT_UNAVAILABLE_MSG = (
+    "Xin lỗi, Meto tạm thời không truy cập được dữ liệu sức khoẻ của bạn nên chưa "
+    "thể trả lời chính xác. Vui lòng thử lại sau ít phút. Nếu bạn thấy dấu hiệu bất "
+    "thường hoặc cần gấp, hãy liên hệ bác sĩ hoặc cơ sở y tế gần nhất."
+)
+
+
 class MetoChatService:
     """Orchestrates Meto chat pipeline: context → safety → prompt → provider → audit."""
 
@@ -115,10 +131,30 @@ class MetoChatService:
         try:
             context = _CONTEXT_BUILDER.build(ctx_db, user_id, screen_context)
         except Exception as ctx_exc:
-            logger.warning("Context build failed for user %s: %s", user_id, ctx_exc)
-            context = AssembledContext()
+            # PHI-safe observability: user id + exception TYPE only, never the
+            # message, the context, or the exception's stringified SQL.
+            logger.error(
+                "meto.context_build_failed user=%s error_type=%s",
+                user_id,
+                type(ctx_exc).__name__,
+            )
+            context = None
         finally:
             ctx_db.close()
+
+        if context is None:
+            conversation = self._get_or_create_conversation(
+                db, user_id, screen_context, conversation_id
+            )
+            return MetaChatResponse(
+                conversation_id=conversation.id,
+                message_id="",
+                content=_CONTEXT_UNAVAILABLE_MSG,
+                safety_flags=[],
+                provider_used="meto",
+                fallback_used=False,
+                quick_follow_ups=[],
+            )
 
         # 2. Load or create conversation on the clean main session
         conversation = self._get_or_create_conversation(db, user_id, screen_context, conversation_id)
@@ -277,10 +313,39 @@ class MetoChatService:
         try:
             context = _CONTEXT_BUILDER.build(ctx_db, user_id, screen_context)
         except Exception as ctx_exc:
-            logger.warning("Stream context build failed for user %s: %s", user_id, ctx_exc)
-            context = AssembledContext()
+            logger.error(
+                "meto.context_build_failed stream user=%s error_type=%s",
+                user_id,
+                type(ctx_exc).__name__,
+            )
+            context = None
         finally:
             ctx_db.close()
+
+        if context is None:
+            conversation = self._get_or_create_conversation(
+                db, user_id, screen_context, conversation_id
+            )
+            yield (
+                "data: "
+                + json.dumps(
+                    {"type": "chunk", "delta": _CONTEXT_UNAVAILABLE_MSG},
+                    ensure_ascii=False,
+                )
+                + "\n\n"
+            )
+            yield (
+                "data: "
+                + json.dumps(
+                    {
+                        "type": "done",
+                        "conversation_id": str(conversation.id),
+                        "context_unavailable": True,
+                    }
+                )
+                + "\n\n"
+            )
+            return
 
         conversation = self._get_or_create_conversation(db, user_id, screen_context, conversation_id)
         input_safety = _SAFETY_GUARD.check_input(message)

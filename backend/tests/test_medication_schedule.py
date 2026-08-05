@@ -323,3 +323,170 @@ def test_legacy_inactive_medication_dose_is_never_reminded(db, patient):
     )
     db.commit()
     assert delivered == 0
+
+
+# ── P1-A (integration review): a malformed recurrence must be REJECTED, never
+# degraded. The old code fell through to "every day applies", so a cyclical
+# regimen reminded the patient to dose on rest days.
+
+import pytest as _pytest  # noqa: E402
+from app.services import medication_schedule as _sched  # noqa: E402
+
+
+def _mk(db, patient, **kw):
+    from app.services import medication as medication_svc
+
+    med = medication_svc.add_medication(
+        db, patient_id=patient["patient_id"], data={"name": "Prednisolone"}, commit=True
+    )
+    return _sched.create_schedule(
+        db, patient_id=patient["patient_id"], medication_id=med.id, **kw
+    )
+
+
+@_pytest.mark.parametrize(
+    "kind,rec",
+    [
+        ("cyclic", {}),
+        ("cyclic", {"off_days": 7}),
+        ("cyclic", {"on_days": 0, "off_days": 7}),
+        ("cyclic", {"on_days": "x", "off_days": 7}),
+        ("cyclic", {"on_days": 3, "off_days": -1}),
+        ("interval", {}),
+        ("interval", {"interval_days": 0}),
+        ("interval", {"interval_days": "weekly"}),
+        ("days_of_week", {}),
+        ("days_of_week", {"days": []}),
+        ("days_of_week", {"days": [7]}),
+        ("days_of_week", {"days": ["mon"]}),
+    ],
+)
+def test_malformed_recurrence_is_rejected(db, patient, kind, rec):
+    with _pytest.raises(_sched.InvalidSchedule):
+        _mk(db, patient, schedule_type=kind, local_dose_times=["08:00"], recurrence=rec)
+
+
+@_pytest.mark.parametrize("bad", [["8am"], ["25:00"], ["08:60"], [""], ["08:00", "nope"]])
+def test_unparseable_dose_times_are_rejected(db, patient, bad):
+    """An ACTIVE schedule that can never remind is worse than a refused one."""
+    with _pytest.raises(_sched.InvalidSchedule):
+        _mk(db, patient, schedule_type="fixed_daily", local_dose_times=bad)
+
+
+def test_valid_recurrences_still_accepted(db, patient):
+    for kind, rec in (
+        ("cyclic", {"on_days": 5, "off_days": 2}),
+        ("interval", {"interval_days": 3}),
+        ("days_of_week", {"days": [0, 2, 4]}),
+        ("fixed_daily", None),
+    ):
+        s = _mk(db, patient, schedule_type=kind, local_dose_times=["08:00"], recurrence=rec)
+        assert s.status == "active"
+
+
+def test_malformed_cyclic_never_degrades_to_daily():
+    """Defence in depth for legacy rows already stored malformed."""
+    import datetime as dt
+
+    from app.models.medication_schedule import MedicationSchedule
+
+    s = MedicationSchedule(
+        medication_id="m", patient_id="p", schedule_type="cyclic",
+        recurrence={"off_days": 7}, patient_timezone="UTC", status="active",
+    )
+    start = dt.date(2026, 8, 1)
+    assert not any(
+        _sched._day_applies(s, start + dt.timedelta(days=i), start) for i in range(14)
+    )
+
+
+def test_malformed_interval_never_degrades_to_daily():
+    import datetime as dt
+
+    from app.models.medication_schedule import MedicationSchedule
+
+    s = MedicationSchedule(
+        medication_id="m", patient_id="p", schedule_type="interval",
+        recurrence={}, patient_timezone="UTC", status="active",
+    )
+    start = dt.date(2026, 8, 1)
+    assert not any(
+        _sched._day_applies(s, start + dt.timedelta(days=i), start) for i in range(14)
+    )
+
+
+# ── P1-B (integration review): editing a schedule must NOT rewrite history.
+# _cancel_open_doses deleted every open dose, including ones already past due but
+# not yet swept to MISSED — so a patient who missed doses and then changed their
+# reminder time had that non-adherence ERASED and the denominator restarted.
+
+
+def test_editing_a_schedule_preserves_missed_history(db, patient):
+    import datetime as dt
+
+    from app.services import medication as medication_svc
+
+    pid = patient["patient_id"]
+    med = medication_svc.add_medication(
+        db, patient_id=pid, data={"name": "Metformin"}, commit=True
+    )
+    s = _sched.create_schedule(
+        db, patient_id=pid, medication_id=med.id, schedule_type="fixed_daily",
+        local_dose_times=["08:00"], patient_timezone="UTC",
+        start_date=dt.date(2026, 6, 1), end_date=dt.date(2026, 6, 3),
+    )
+    db.commit()
+
+    # Materialize from BEFORE the first dose time so all three days are created
+    # (compute_occurrences only materializes forward of `now`), then let them all
+    # go overdue — edit_schedule sweeps against the real clock.
+    _sched.materialize_due(db, s, now=dt.datetime(2026, 6, 1, 7, tzinfo=dt.UTC))
+    db.commit()
+    opened = db.query(_sched.DoseOccurrence).filter_by(schedule_id=s.id).count()
+    assert opened >= 3
+
+    # The patient now edits their reminder time.
+    new = _sched.edit_schedule(
+        db, patient_id=pid, schedule_id=s.id, local_dose_times=["09:00"]
+    )
+    db.commit()
+
+    adherence = _sched.adherence_summary(db, patient_id=pid, schedule_id=s.id)
+    # The overdue doses were swept to MISSED and KEPT, not deleted.
+    assert adherence["missed"] >= 3, adherence
+    assert adherence["adherence_rate"] == 0.0
+    assert new.id != s.id and new.version == s.version + 1
+
+
+def test_editing_a_schedule_still_drops_future_doses(db, patient):
+    """The superseded version must not keep reminding for doses that never came."""
+    import datetime as dt
+
+    from app.services import medication as medication_svc
+
+    pid = patient["patient_id"]
+    med = medication_svc.add_medication(
+        db, patient_id=pid, data={"name": "Metformin"}, commit=True
+    )
+    s = _sched.create_schedule(
+        db, patient_id=pid, medication_id=med.id, schedule_type="fixed_daily",
+        local_dose_times=["08:00"], patient_timezone="UTC",
+        start_date=dt.date(2026, 6, 1),
+    )
+    db.commit()
+    _sched.materialize_due(db, s, now=dt.datetime(2026, 6, 1, 7, tzinfo=dt.UTC))
+    db.commit()
+
+    _sched.edit_schedule(db, patient_id=pid, schedule_id=s.id, local_dose_times=["09:00"])
+    db.commit()
+
+    future_open = (
+        db.query(_sched.DoseOccurrence)
+        .filter(
+            _sched.DoseOccurrence.schedule_id == s.id,
+            _sched.DoseOccurrence.state.in_(("pending", "notified")),
+            _sched.DoseOccurrence.scheduled_utc > dt.datetime.now(dt.UTC),
+        )
+        .count()
+    )
+    assert future_open == 0
