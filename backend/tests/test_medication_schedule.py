@@ -380,7 +380,12 @@ def test_valid_recurrences_still_accepted(db, patient):
         ("days_of_week", {"days": [0, 2, 4]}),
         ("fixed_daily", None),
     ):
-        s = _mk(db, patient, schedule_type=kind, local_dose_times=["08:00"], recurrence=rec)
+        # interval/cyclic are phase-dependent and now REQUIRE a persisted anchor.
+        anchor = {"start_date": dt.date(2026, 8, 5)} if kind in ("interval", "cyclic") else {}
+        s = _mk(
+            db, patient, schedule_type=kind, local_dose_times=["08:00"],
+            recurrence=rec, **anchor,
+        )
         assert s.status == "active"
 
 

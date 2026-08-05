@@ -44,6 +44,10 @@ _DEFAULT_TZ = "Asia/Ho_Chi_Minh"
 # The ONLY medication lifecycle state that may drive reminders (CLIN PS-5) — a
 # deleted or retired drug must never be reminded, by name, to the patient.
 _MED_ACTIVE_STATUS = "active"
+# Mirrors medication.DELETED_LIFECYCLE_STATUS. Kept as a literal rather than an
+# import: app.services.medication imports THIS module (lazily) for the cascade,
+# so a module-level import back would be circular.
+_MED_DELETED_STATUS = "entered_in_error"
 _DEFAULT_HORIZON_DAYS = 7
 # A pending/notified dose this long past its time counts as MISSED (review P1 —
 # so adherence isn't inflated by ignored doses staying out of the denominator).
@@ -51,6 +55,27 @@ _MISSED_AFTER = dt.timedelta(hours=4)
 _VALID_TYPES = frozenset(
     {SCHEDULE_FIXED_DAILY, SCHEDULE_INTERVAL, SCHEDULE_DAYS_OF_WEEK, SCHEDULE_CYCLIC, SCHEDULE_PRN}
 )
+
+# Types whose recurrence is computed RELATIVE TO AN ANCHOR DAY. For these,
+# `start_date` is not decoration — it is the phase of the cycle, and without it
+# every recurrence test is evaluated against a moving "today", which makes
+# `(day - anchor) % n == 0` true on every single day. An alternate-day regimen
+# then reminds daily, and 21-on/7-off reminds through the rest week.
+#
+# fixed_daily needs no anchor (every day qualifies by definition) and
+# days_of_week is anchored to the weekday itself, not to a start day. PRN never
+# materialises timed doses at all.
+_ANCHOR_REQUIRED_TYPES = frozenset({SCHEDULE_INTERVAL, SCHEDULE_CYCLIC})
+
+
+def needs_anchor_repair(schedule) -> bool:
+    """True when a stored schedule is phase-dependent but has no anchor.
+
+    Such a row can never materialise a dose (compute_occurrences fails closed),
+    so the patient must be told to re-enter a start date rather than left with a
+    schedule that silently never reminds.
+    """
+    return schedule.schedule_type in _ANCHOR_REQUIRED_TYPES and schedule.start_date is None
 
 
 class ScheduleError(Exception):
@@ -93,6 +118,7 @@ def _validate_schedule_shape(
     schedule_type: str,
     local_dose_times: list[str] | None,
     recurrence: dict | None,
+    start_date: dt.date | None = None,
 ) -> None:
     """Reject a schedule whose recurrence cannot be honoured.
 
@@ -121,6 +147,11 @@ def _validate_schedule_shape(
         )
 
     rec = recurrence or {}
+    if schedule_type in _ANCHOR_REQUIRED_TYPES and start_date is None:
+        raise InvalidSchedule(
+            "Lịch theo chu kỳ hoặc cách ngày cần ngày bắt đầu (`start_date`) — "
+            "nếu không, hệ thống không biết chu kỳ bắt đầu từ ngày nào."
+        )
     if schedule_type == SCHEDULE_INTERVAL:
         try:
             n = int(rec.get("interval_days"))
@@ -210,6 +241,18 @@ def compute_occurrences(
     grace_start_utc = now - dt.timedelta(minutes=5)
 
     today_local = now.astimezone(tz).date()
+    if schedule.schedule_type in _ANCHOR_REQUIRED_TYPES and schedule.start_date is None:
+        # FAIL CLOSED. Defaulting to today makes the anchor move with the clock,
+        # so `(day - anchor) % n` is 0 for today on EVERY day and the schedule
+        # degrades to daily — the single most dangerous failure mode here, since
+        # it tells a patient on an alternate-day or cyclical regimen to dose on
+        # rest days. New rows cannot reach this (create/edit both refuse), but a
+        # legacy row can; producing no dose is visibly wrong, dosing every day is
+        # silently wrong. `needs_anchor_repair` surfaces it to the UI.
+        return []
+    # Non-anchor types (fixed_daily, days_of_week) are phase-INDEPENDENT: every
+    # day, or every matching weekday, qualifies regardless of when the schedule
+    # began, so falling back to today is safe for them and only for them.
     start = schedule.start_date or today_local
     last_local = horizon_end_utc.astimezone(tz).date()
     end = min(schedule.end_date, last_local) if schedule.end_date else last_local
@@ -258,7 +301,7 @@ def create_schedule(
     if schedule_type not in _VALID_TYPES:
         raise InvalidSchedule(f"schedule_type không hợp lệ: {schedule_type}")
     _load_owned_medication(db, patient_id=patient_id, medication_id=medication_id)
-    _validate_schedule_shape(schedule_type, local_dose_times, recurrence)
+    _validate_schedule_shape(schedule_type, local_dose_times, recurrence, start_date)
 
     schedule = MedicationSchedule(
         medication_id=medication_id,
@@ -426,32 +469,55 @@ def _cancel_open_doses(
     db: Session,
     schedule_id: str,
     *,
-    future_only: bool = False,
     now: dt.datetime | None = None,
+    purge_history: bool = False,
 ) -> None:
-    """Cancel still-open (pending/notified, unacted) doses for a schedule.
+    """Resolve or cancel still-open (pending/notified, unacted) doses for a schedule.
 
-    Used on pause/stop/supersede so no discontinued schedule can remind. Acted
-    (taken/skipped) and missed doses are historical and always kept.
+    Doses whose time has ALREADY PASSED are transitioned to MISSED and kept; only
+    doses that have not yet come around are deleted. Acted (taken/skipped) doses
+    are historical and never touched.
 
-    ``future_only`` exists for the EDIT path. Deleting a dose whose time has
-    already passed but which has not yet been swept to MISSED erases it from the
-    adherence denominator entirely — so a patient who missed three days and then
-    changed their reminder time saw their adherence jump instead of drop. On edit
-    we therefore keep everything already due (the sweep will resolve it to MISSED)
-    and only drop doses that have not yet come around.
+    This used to be opt-in via a `future_only` flag that exactly one caller set.
+    Every other caller — pause, stop, the lifecycle cascade, the read-path
+    reconcile — hard-deleted every open dose, including days-old ones the sweep
+    had not yet resolved (the sweep only runs when the patient opens the app). So
+    a patient who missed three days and then tapped "Tạm dừng" had that
+    non-adherence deleted, and pause -> edit -> resume made the reset repeatable.
+    A clinician reading adherence before escalating therapy would be acting on
+    fabricated data, so the safe behaviour is now the default.
+
+    ``purge_history=True`` is the ONE exception, and it is not a convenience
+    flag: it is for a medication record that has been REPUDIATED — soft-deleted
+    or marked ``entered_in_error``, i.e. "this record should never have existed".
+    There the past-due doses are not real non-adherence either; counting them
+    would invent missed doses for a drug the patient was never actually on. A
+    lifecycle EXIT (stop / pause / discontinue / on_hold) is the opposite case —
+    the therapy was real and so is the history — and never purges.
     """
-    conditions = [
-        DoseOccurrence.schedule_id == schedule_id,
-        DoseOccurrence.state.in_((DOSE_PENDING, DOSE_NOTIFIED)),
-    ]
-    if future_only:
-        conditions.append(DoseOccurrence.scheduled_utc > (now or _now_utc()))
-    for dose in db.execute(select(DoseOccurrence).where(*conditions)).scalars():
-        db.delete(dose)
+    cutoff = now or _now_utc()
+    for dose in db.execute(
+        select(DoseOccurrence).where(
+            DoseOccurrence.schedule_id == schedule_id,
+            DoseOccurrence.state.in_((DOSE_PENDING, DOSE_NOTIFIED)),
+        )
+    ).scalars():
+        scheduled = dose.scheduled_utc
+        if scheduled is not None and scheduled.tzinfo is None:
+            scheduled = scheduled.replace(tzinfo=dt.UTC)
+        if scheduled is not None and scheduled <= cutoff and not purge_history:
+            # Already due and unacted: resolve to MISSED and KEEP it. Deleting it
+            # would erase real non-adherence from the denominator — a patient who
+            # missed three days and then tapped "Tạm dừng" saw their adherence
+            # jump instead of drop, and pause -> edit made that repeatable.
+            dose.state = DOSE_MISSED
+        else:
+            db.delete(dose)
 
 
-def stop_schedules_for_medication(db: Session, *, medication_id: str) -> int:
+def stop_schedules_for_medication(
+    db: Session, *, medication_id: str, purge_history: bool = False
+) -> int:
     """Stop every non-stopped schedule of a medication — the lifecycle cascade
     (CLIN PS-5).
 
@@ -473,7 +539,7 @@ def stop_schedules_for_medication(db: Session, *, medication_id: str) -> int:
     )
     for schedule in schedules:
         schedule.status = SCHED_STATUS_STOPPED
-        _cancel_open_doses(db, schedule.id)
+        _cancel_open_doses(db, schedule.id, purge_history=purge_history)
     if schedules:
         db.flush()
     return len(schedules)
@@ -490,7 +556,7 @@ def reconcile_schedules_with_medication_state(db: Session, *, patient_id: str) -
     """
     stale = list(
         db.execute(
-            select(MedicationSchedule)
+            select(MedicationSchedule, Medication.deleted_at, Medication.lifecycle_status)
             .join(Medication, Medication.id == MedicationSchedule.medication_id)
             .where(
                 MedicationSchedule.patient_id == patient_id,
@@ -500,11 +566,18 @@ def reconcile_schedules_with_medication_state(db: Session, *, patient_id: str) -
                     Medication.lifecycle_status != _MED_ACTIVE_STATUS,
                 ),
             )
-        ).scalars()
+        ).all()
     )
-    for schedule in stale:
+    for schedule, deleted_at, lifecycle_status in stale:
         schedule.status = SCHED_STATUS_STOPPED
-        _cancel_open_doses(db, schedule.id)
+        # Same repudiated-vs-exit rule as the cascade (see _cancel_open_doses).
+        _cancel_open_doses(
+            db,
+            schedule.id,
+            purge_history=(
+                deleted_at is not None or lifecycle_status == _MED_DELETED_STATUS
+            ),
+        )
     if stale:
         db.flush()
     return len(stale)
@@ -566,6 +639,9 @@ def edit_schedule(
         new_type,
         local_dose_times if local_dose_times is not None else old.local_dose_times,
         recurrence if recurrence is not None else old.recurrence,
+        # An edit inherits the old anchor; a type change INTO interval/cyclic on a
+        # row that never had one must be refused, not silently anchored to today.
+        old.start_date,
     )
     new = MedicationSchedule(
         medication_id=old.medication_id,
@@ -589,7 +665,7 @@ def edit_schedule(
     # had not yet come around. History on the superseded version stays immutable
     # and keeps counting toward the medication's adherence.
     sweep_missed(db, patient_id=old.patient_id)
-    _cancel_open_doses(db, old.id, future_only=True)
+    _cancel_open_doses(db, old.id)
     db.flush()
     return new
 

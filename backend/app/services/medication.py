@@ -96,7 +96,18 @@ def _cascade_stop_schedules(db: Session, record: Medication) -> None:
         return
     from app.services import medication_schedule as schedule_svc
 
-    schedule_svc.stop_schedules_for_medication(db, medication_id=record.id)
+    # A REPUDIATED record (soft-deleted / entered_in_error) purges its open
+    # doses outright: "this should never have existed" means its unacted doses
+    # are not real non-adherence. A lifecycle EXIT keeps them — the therapy was
+    # real, so a dose already due and unacted resolves to MISSED and stays in the
+    # adherence denominator.
+    repudiated = (
+        record.deleted_at is not None
+        or record.lifecycle_status == DELETED_LIFECYCLE_STATUS
+    )
+    schedule_svc.stop_schedules_for_medication(
+        db, medication_id=record.id, purge_history=repudiated
+    )
 
 
 def _validate_lifecycle_transition(
