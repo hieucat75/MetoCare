@@ -288,6 +288,47 @@ class Settings(BaseSettings):
                     + ". Set real values via the deployment secret store."
                 )
 
+        # Every encryption key must be a WELL-FORMED Fernet key, checked at boot.
+        #
+        # Until now a malformed or truncated key passed every gate: the check
+        # above only tests non-empty and not-the-committed-default, and the key is
+        # otherwise first touched lazily inside `crypto._cipher()` on the first
+        # encrypt/decrypt. So `az containerapp update` succeeded, /health returned
+        # 200 (it only does SELECT 1 and never reads an encrypted column), and the
+        # unauthenticated smoke suite passed — the deploy was reported healthy and
+        # the first real failure was a patient request.
+        #
+        # PHI encryption now covers hot paths: Notification.title/body are written
+        # on every medication reminder and MedicationStatement.raw_drug_name is
+        # read on every medication timeline, all NOT NULL with
+        # on_decrypt_failure="raise". A bad key therefore takes down reminders and
+        # the timeline, not an edge feature. Failing at boot converts that into a
+        # container that will not start, which the existing deploy health gate
+        # does catch.
+        #
+        # Validated in EVERY environment, including dev/test: a malformed key is
+        # never intentional, and the committed dev default is well-formed.
+        from cryptography.fernet import Fernet
+
+        malformed: list[str] = []
+        for i, raw in enumerate(k.strip() for k in self.encryption_keys.split(",")):
+            if not raw:
+                malformed.append(f"entry #{i + 1} (empty)")
+                continue
+            try:
+                Fernet(raw.encode())
+            except Exception:
+                # Never echo the key material itself — position only.
+                malformed.append(f"entry #{i + 1}")
+        if malformed:
+            raise RuntimeError(
+                "MCP_ENCRYPTION_KEYS contains value(s) that are not valid Fernet "
+                "keys (32 url-safe base64-encoded bytes): "
+                + ", ".join(malformed)
+                + ". Refusing to start: PHI columns would fail to decrypt at "
+                "runtime, after the deploy had already been reported healthy."
+            )
+
         # Fail loud on relaxed AUTHENTICATION in real environments (BRD §C).
         # Production must never run with MFA off or a weak password policy.
         # Staging may during the build phase ONLY via an explicit, logged override.

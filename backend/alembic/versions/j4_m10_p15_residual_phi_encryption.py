@@ -223,7 +223,40 @@ def _alter_json(conn, table: str, column: str, *, to_text: bool) -> None:
             )
 
 
+def _assert_titles_fit_varchar256(conn) -> None:
+    """Refuse the downgrade with an ACTIONABLE error rather than a raw DataError.
+
+    `ALTER COLUMN title TYPE VARCHAR(256)` does not truncate — Postgres raises
+    `StringDataRightTruncation` — so a single notification longer than 256 chars
+    blocks the rollback path entirely. The transaction rolls back cleanly, so
+    there is no corruption, but an operator mid-incident gets a bare SQL error and
+    no indication of which rows are at fault.
+
+    `NotificationCreate.title` is now bounded at 256, so no NEW row can trip this;
+    this covers rows written while the bound did not exist. Same fail-loud,
+    say-what-to-do-about-it shape as the wrong-key guard in `_decrypt`.
+    """
+    if conn.dialect.name != "postgresql":
+        return
+    over = conn.execute(
+        sa.text(
+            "SELECT id, length(title) AS n FROM notifications "
+            "WHERE length(title) > 256 ORDER BY n DESC LIMIT 5"
+        )
+    ).fetchall()
+    if over:
+        ids = ", ".join(f"{r[0]} ({r[1]} chars)" for r in over)
+        raise RuntimeError(
+            "P1-5 downgrade: notifications.title cannot be narrowed back to "
+            f"VARCHAR(256) — {len(over)}+ row(s) exceed it, e.g. {ids}. Postgres "
+            "raises rather than truncating, so this would fail mid-ALTER. Shorten "
+            "or delete those rows, then re-run the downgrade."
+        )
+
+
 def _alter_title(conn, *, to_text: bool) -> None:
+    if not to_text:
+        _assert_titles_fit_varchar256(conn)
     if conn.dialect.name == "postgresql":
         _preflight_locks(conn, "notifications")
         _guard_lock_waits(conn)

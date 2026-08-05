@@ -17,10 +17,21 @@ These tests pin the contract the deploy workflows depend on, from the backend
 side. They deliberately do NOT modify the Azure workflows: those are owner-gated
 infrastructure and out of scope here.
 
-What is NOT claimed: this does not verify that a deployed environment reports the
-correct sha. It verifies that IF the documented env vars are set, the value
-reaches `/info` — so a backend-side change can no longer break the wiring
-silently.
+What is NOT claimed, stated precisely because the narrower version of this
+docstring was misleading:
+
+  - This does not verify that a deployed environment reports the correct sha. It
+    verifies that IF the documented env vars are set, the value reaches `/info`.
+  - `azure-staging.yml` and `azure-production.yml` are `workflow_dispatch` —
+    MANUAL deploys. The workflow that auto-deploys staging on merge to main is
+    `ci.yml`'s own `deploy-staging` job, and its env block does NOT set
+    MCP_BUILD_SHA / MCP_BUILD_TIME. So every auto-deployed staging build reports
+    an EMPTY build_sha today. That is a pre-existing gap, not introduced here, and
+    closing it means editing the deploy job — owner-gated, so it is reported
+    rather than changed.
+
+The tests below therefore cover the manual deploy path only. Do not read a green
+run as "build identity is verified end-to-end".
 """
 
 from __future__ import annotations

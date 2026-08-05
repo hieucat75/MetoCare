@@ -16,8 +16,10 @@ from __future__ import annotations
 import logging
 import re
 import unicodedata
+from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import lru_cache
+from types import MappingProxyType
 
 from app.domain.hospital_profiles import HospitalProfile, detect_hospital
 from app.domain.lab_catalog import get_catalog as _get_catalog
@@ -133,6 +135,35 @@ _UNMAPPABLE_LABEL_RE = re.compile(
     r"|cholesterol\s+con\s+lai"
     r"|(?:chol|cholesterol|tc|ldl|tg|triglycerid\w*)\s*/\s*hdl"  # lipid ratios
     r"|hdl\s*/\s*(?:chol|cholesterol|tc|ldl)"
+    #
+    # SPECIMEN qualifiers. Every canonical in the table is a SERUM/blood analyte,
+    # and nothing downstream carries a specimen, so a urine line resolved to the
+    # serum canonical and was stored, classified and trended as blood.
+    #
+    # This is the same "wrong analyte" class as the lipid neighbours above, and it
+    # is worse in one direction: the value ranges do not overlap, so it does not
+    # look like noise. Urine creatinine runs 50-200 mg/dL against a serum
+    # reference of 0.6-1.2 with critical around 4, so a routine urinalysis line
+    # told the patient their kidney function was catastrophically abnormal. In the
+    # other direction urine glucose 5.5 mmol/L became a fasting_glucose of ~99
+    # mg/dL and classified NORMAL — a fabricated normal blood sugar, with the
+    # glycosuria that was actually on the report silently dropped.
+    #
+    # Urinalysis is in nearly every VN check-up packet and the whole premise of
+    # the document path is "photograph whatever the hospital gave you", so this is
+    # a routine input, not an edge case. The review card shows the printed label,
+    # so confirming "Creatinin niệu" looks entirely correct to the patient.
+    #
+    # Dropping the row is the same trade as everywhere else here: a missing urine
+    # result is a gap the patient can see; a urine value stored as blood is not.
+    r"|(?<![a-z0-9])nieu(?![a-z0-9])"  # "niệu" accent-stripped — VN for urinary
+    r"|nuoc\s*tieu"  # "nước tiểu" — urine
+    r"|(?<![a-z0-9])urin\w*"  # urine / urinary / urinalysis
+    r"|24\s*h\s*urine|urine\s*24"
+    r"|(?<![a-z0-9])acr(?![a-z0-9])"  # albumin/creatinine ratio
+    r"|albumin\s*/\s*creatinin\w*"
+    r"|(?<![a-z0-9])upcr(?![a-z0-9])"
+    r"|(?<![a-z0-9])(?:dich\s*nao\s*tuy|csf)(?![a-z0-9])"  # CSF, same reasoning
     r")"
 )
 
@@ -204,7 +235,7 @@ def _cached_alias_index(profile_name: str | None) -> dict:
     return combined
 
 
-def build_alias_index(hospital_profile=None) -> dict:
+def build_alias_index(hospital_profile=None) -> Mapping[str, BiomarkerSpec]:
     """THE alias index. Every analyte-resolution call site must use this.
 
     `_ALIAS_INDEX` alone is NOT safe to match against. It carries
@@ -222,7 +253,13 @@ def build_alias_index(hospital_profile=None) -> dict:
     Routing every caller through this one function makes that class of drift
     impossible rather than merely fixed once.
     """
-    return _cached_alias_index(getattr(hospital_profile, "name", None))
+    # Read-only view over the MEMOIZED dict. Returning the dict itself handed
+    # every caller a shared, cached, mutable mapping keyed by profile name: one
+    # caller doing `idx["x"] = spec` would silently corrupt analyte resolution for
+    # every later request using that profile, and the corruption would persist for
+    # the process lifetime. No caller mutates it today; MappingProxyType is O(1)
+    # and makes that impossible to start doing by accident.
+    return MappingProxyType(_cached_alias_index(getattr(hospital_profile, "name", None)))
 
 
 def _match_biomarker(

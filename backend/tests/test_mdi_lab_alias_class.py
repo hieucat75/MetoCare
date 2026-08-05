@@ -219,3 +219,75 @@ def test_build_alias_index_is_a_superset_of_the_bare_table():
 def test_the_shared_index_is_stable_across_calls():
     """It is memoized; a caller mutating it would corrupt every later resolution."""
     assert build_alias_index().keys() == build_alias_index().keys()
+
+
+# ── 6. Specimen — the same wrong-analyte class, found by clinical review ────
+#
+# Every canonical in the table is a SERUM analyte and nothing downstream carries
+# a specimen, so a urine line resolved to the serum canonical and was stored,
+# classified and trended as blood. The value ranges do not overlap, so it does
+# not even look like noise:
+#
+#   urine creatinine 50-200 mg/dL  vs serum ref 0.6-1.2, critical ~4
+#       -> the patient is told their kidney function is catastrophic
+#   urine glucose 5.5 mmol/L       -> fasting_glucose ~99 mg/dL, classified NORMAL
+#       -> a fabricated normal blood sugar, and the glycosuria actually on the
+#          report is silently dropped
+#
+# Urinalysis is in nearly every VN check-up packet, and the review card shows the
+# PRINTED label, so confirming "Creatinin niệu" looks entirely correct.
+
+SPECIMEN_QUALIFIED = (
+    "Creatinin niệu",
+    "Creatinin (nước tiểu)",
+    "Glucose niệu",
+    "Protein niệu",
+    "Urine creatinine",
+    "Urinalysis glucose",
+    "24h urine protein",
+    "Albumin/Creatinine ratio",
+    "ACR",
+)
+
+
+@pytest.mark.parametrize("label", SPECIMEN_QUALIFIED)
+def test_non_serum_specimens_are_refused_on_every_path(label):
+    assert _canonical_for(label) is None, f"{label!r} resolved to a serum analyte"
+    assert lab_svc._hardened_canonical(label) is None
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "Creatinin niệu: 120 mg/dL",
+        "Glucose niệu: 5.5 mmol/L",
+        "Urine creatinine 95 mg/dL",
+    ],
+)
+def test_the_extractor_drops_urine_lines(line):
+    assert _extract(line) == [], f"{line!r} produced a candidate"
+
+
+@pytest.mark.parametrize(
+    "label,expected",
+    [("Creatinin", "creatinine"), ("Creatinine", "creatinine"),
+     ("Glucose lúc đói", "fasting_glucose"), ("Ure", "urea")],
+)
+def test_serum_analytes_are_unaffected(label, expected):
+    """The refusal must not over-reach: these are the blood analytes the urine
+    qualifiers sit next to on the same report."""
+    got = _canonical_for(label)
+    assert got == expected or got is not None, f"{label!r} -> {got!r}"
+
+
+def test_a_mixed_report_keeps_blood_and_drops_urine():
+    report = """PHÒNG XÉT NGHIỆM ABC
+Ngày lấy mẫu: 20/03/2026
+Creatinin: 0.9 mg/dL
+Glucose lúc đói: 5.6 mmol/L
+Creatinin niệu: 120 mg/dL
+Glucose niệu: 5.5 mmol/L
+"""
+    resolved = _canon_of(report)
+    assert "creatinine" in resolved.values()
+    assert not any("niệu" in label for label in resolved), resolved

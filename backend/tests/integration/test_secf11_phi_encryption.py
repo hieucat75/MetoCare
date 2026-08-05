@@ -45,6 +45,17 @@ DRUG_PHI = "Metformin"
 # for want of POSTGRES_TEST_URL, while CI-2 (`-m integration`) DESELECTED it for
 # want of the marker. A suite whose entire job is to prove patient data is
 # encrypted at rest executed in neither job, and reported green in both.
+# Every alembic call below targets REVISION / PARENT BY NAME, never `head` or
+# `-1`. Using `head` silently meant "whatever the newest migration happens to be",
+# and `-1` meant "whatever is directly below it" — so the moment
+# j4_m10_p15_residual_phi was stacked on top, `upgrade head` left fields_json as
+# TEXT (j4_m10 had converted corrections_json and left the chain past this
+# revision) and `downgrade -1` undid j4_m10 instead of this migration. Two tests
+# went red for reasons that had nothing to do with what they test.
+#
+# The same brittleness was already fixed once in tests/test_meto_message_encryption.py
+# and once in the k2 hardening test. A migration test must pin the revision it is
+# about, or it becomes a tripwire for unrelated work.
 pytestmark = [
     pytest.mark.integration,
     pytest.mark.skipif(
@@ -187,7 +198,7 @@ def test_upgrade_encrypts_both_columns_and_leaves_no_plaintext(scratch_db):
     engine, url, key = scratch_db
     assert _column_type(engine, "extraction_candidates", "fields_json") == "jsonb"
 
-    res = _alembic(["upgrade", "head"], url, key)
+    res = _alembic(["upgrade", REVISION], url, key)
     assert res.returncode == 0, res.stderr
 
     # The column type must have converted, or ciphertext could not be stored.
@@ -209,7 +220,7 @@ def test_orm_reads_plaintext_and_new_writes_are_encrypted(scratch_db):
     from sqlalchemy.orm import Session
 
     engine, url, key = scratch_db
-    assert _alembic(["upgrade", "head"], url, key).returncode == 0
+    assert _alembic(["upgrade", REVISION], url, key).returncode == 0
     _reload_crypto(key)
 
     from app.models.medical_document import ExtractionCandidate
@@ -246,7 +257,7 @@ def _load_migration(name: str):
 def test_backfill_is_idempotent_and_restart_safe(scratch_db):
     """An interrupted run must be safely re-runnable — no double-encryption."""
     engine, url, key = scratch_db
-    assert _alembic(["upgrade", "head"], url, key).returncode == 0
+    assert _alembic(["upgrade", REVISION], url, key).returncode == 0
     _reload_crypto(key)
     mig = _load_migration("secf11_mig")
 
@@ -261,9 +272,9 @@ def test_backfill_is_idempotent_and_restart_safe(scratch_db):
 
 def test_downgrade_restores_plaintext_byte_identically_then_re_upgrades(scratch_db):
     engine, url, key = scratch_db
-    assert _alembic(["upgrade", "head"], url, key).returncode == 0
+    assert _alembic(["upgrade", REVISION], url, key).returncode == 0
 
-    down = _alembic(["downgrade", "-1"], url, key)
+    down = _alembic(["downgrade", PARENT], url, key)
     assert down.returncode == 0, down.stderr
 
     assert _column_type(engine, "extraction_candidates", "fields_json") == "jsonb"
@@ -278,7 +289,7 @@ def test_downgrade_restores_plaintext_byte_identically_then_re_upgrades(scratch_
     assert restored == 1200
     assert cand["name"] == DRUG_PHI
 
-    assert _alembic(["upgrade", "head"], url, key).returncode == 0
+    assert _alembic(["upgrade", REVISION], url, key).returncode == 0
     cur = _alembic(["current"], url, key)
     assert REVISION in cur.stdout
 
@@ -288,9 +299,9 @@ def test_downgrade_with_the_wrong_key_refuses_rather_than_corrupting(scratch_db)
     from app.core.crypto import is_fernet_token
 
     engine, url, key = scratch_db
-    assert _alembic(["upgrade", "head"], url, key).returncode == 0
+    assert _alembic(["upgrade", REVISION], url, key).returncode == 0
 
-    bad = _alembic(["downgrade", "-1"], url, _fernet_key())
+    bad = _alembic(["downgrade", PARENT], url, _fernet_key())
     assert bad.returncode != 0
     assert "Refusing to overwrite" in bad.stderr
 
@@ -317,7 +328,7 @@ def test_partial_migration_is_never_reported_as_success(scratch_db):
 def test_migration_logs_contain_no_phi(scratch_db, caplog):
     engine, url, key = scratch_db
     with caplog.at_level(logging.DEBUG):
-        res = _alembic(["upgrade", "head"], url, key)
+        res = _alembic(["upgrade", REVISION], url, key)
     assert res.returncode == 0
     combined = res.stdout + res.stderr + caplog.text
     assert MSG_PHI not in combined

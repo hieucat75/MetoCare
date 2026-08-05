@@ -233,7 +233,7 @@ class ContextBuilder:
         raw_recent_metrics = self._build_recent_metrics(db, user_id, degraded) if health_ok else None
 
         # DB call #8: appointments (for today_context)
-        raw_today_context = self._build_today_context(db, user_id) if consult_ok else None
+        raw_today_context = self._build_today_context(db, user_id, degraded) if consult_ok else None
 
         # ---------------------------------------------------------------
         # Assemble: a block is included when its category was consented (the raw
@@ -761,7 +761,7 @@ class ContextBuilder:
             "view_context": screen_context.view_context or {},
         }
 
-    def _build_today_context(self, db: Session, user_id: str) -> dict:
+    def _build_today_context(self, db: Session, user_id: str, degraded: list[str] | None = None) -> dict:
         """Build today's context. Consumes DB execute #8."""
         today = dt.date.today().isoformat()
         # Midnight-today boundary as an ISO string — portable comparison against
@@ -801,7 +801,15 @@ class ContextBuilder:
                 for a in appts
             ]
         except Exception as exc:
-            logger.debug("today_context appointment query failed: %s", exc)
+            # Same class as the six builders above: returning an empty
+            # appointment list makes a failed query indistinguishable from "no
+            # appointments today". It was `logger.debug`, so it was silent in
+            # logs as well. today_context is not in SAFETY_CRITICAL_BLOCKS — a
+            # missing appointment is not a false reassurance about a lab value —
+            # but the model should still not assert the patient has nothing
+            # scheduled when we simply could not look.
+            logger.warning("today_context appointment query failed: %s", exc)
+            _record_degraded(degraded, "today_context")
 
         return {
             "date": today,

@@ -434,3 +434,153 @@ def test_interval_phase_is_stable_across_a_dst_transition(db, patient):
     # The local wall-clock time is 08:00 on both sides of the transition.
     local_times = {utc.astimezone(tz).strftime("%H:%M") for utc, _ in occ}
     assert local_times == {"08:00"}, local_times
+
+
+# ── 8. off_days — the SAME class, reached through a different hole ──────────
+#
+# Found by clinical review AFTER the anchor fix. `_validate_schedule_shape` read
+# `int(rec.get("off_days", 0))` and accepted 0, so `_day_applies` computed
+# cycle == on and `(day - start) % on < on` was true on EVERY day: a cyclic
+# schedule degraded to daily even with a perfectly good anchor. Closing only the
+# anchor left the class open, which is exactly what "fix the class, not the
+# instance" is meant to prevent.
+
+
+@pytest.mark.parametrize("recurrence", [{"on_days": 21}, {"on_days": 21, "off_days": 0}])
+def test_cyclic_without_a_rest_period_is_refused(db, patient, recurrence):
+    """A cycle with no rest period is not a cycle — it is `fixed_daily`. A client
+    that means daily must say so rather than describe a 21-on/0-off cycle and be
+    silently agreed with."""
+    med = _med(db, patient, f"NoRest-{sorted(recurrence.items())}")
+    with pytest.raises(sched.InvalidSchedule):
+        sched.create_schedule(
+            db,
+            patient_id=patient["patient_id"],
+            medication_id=med.id,
+            schedule_type="cyclic",
+            local_dose_times=["08:00"],
+            recurrence=recurrence,
+            start_date=dt.date(2026, 7, 20),
+        )
+
+
+def test_edit_cannot_remove_the_rest_period_either(db, patient):
+    s = _make(
+        db, patient, "RestRemoval",
+        schedule_type="cyclic", local_dose_times=["08:00"],
+        recurrence={"on_days": 21, "off_days": 7}, start_date=dt.date(2026, 7, 20),
+    )
+    with pytest.raises(sched.InvalidSchedule):
+        sched.edit_schedule(
+            db, patient_id=patient["patient_id"], schedule_id=s.id,
+            recurrence={"on_days": 21, "off_days": 0},
+        )
+
+
+def test_a_valid_cycle_still_rests(db, patient):
+    """Guard against over-correcting into refusing legitimate cycles."""
+    s = _make(
+        db, patient, "StillRests",
+        schedule_type="cyclic", local_dose_times=["08:00"],
+        recurrence={"on_days": 21, "off_days": 7}, start_date=dt.date(2026, 7, 20),
+    )
+    dates = set(_dose_dates(s, days=20))
+    assert dt.date(2026, 8, 5) in dates
+    for off in range(10, 17):
+        assert dt.date(2026, 8, off) not in dates
+
+
+# ── 9. P1-2 — pausing must not erase real non-adherence ────────────────────
+#
+# Flagged by test review: the P1-2 fix (unconditional MISSED-preservation, not
+# just on the edit path) shipped with NO test that discriminates it. The existing
+# suite could not: `test_stopped_schedule_does_not_remind` stops the schedule
+# while its dose is still within the 4h grace, so the dose is deleted either way.
+#
+# What was wrong: `_cancel_open_doses` hard-deleted every open dose, including
+# days-old ones the sweep had not yet resolved — and the sweep only runs when the
+# patient opens the app. So a patient who missed three days and then tapped
+# "Tạm dừng" had that non-adherence deleted, and pause -> edit -> resume made the
+# reset repeatable. A clinician reading adherence before escalating therapy would
+# be acting on fabricated data.
+
+
+def _overdue_dose(db, patient, name: str, hours_overdue: int = 30):
+    """An active schedule with one dose materialised well past the sweep grace."""
+    now = dt.datetime.now(dt.UTC)
+    due = now - dt.timedelta(hours=hours_overdue)
+    med = _med(db, patient, name)
+    s = sched.create_schedule(
+        db, patient_id=patient["patient_id"], medication_id=med.id,
+        schedule_type="fixed_daily", local_dose_times=[due.strftime("%H:%M")],
+        patient_timezone="UTC", start_date=due.date(), end_date=due.date(),
+    )
+    db.commit()
+    sched.materialize_due(db, s, now=due + dt.timedelta(minutes=1))
+    db.commit()
+    return med, s
+
+
+def _dose_states(db, schedule_id: str) -> list[str]:
+    return [
+        d.state
+        for d in db.execute(
+            select(DoseOccurrence).where(DoseOccurrence.schedule_id == schedule_id)
+        ).scalars()
+    ]
+
+
+def test_pausing_preserves_an_overdue_dose_as_missed(db, patient):
+    """The regression. Pre-fix this dose was DELETED, silently improving adherence."""
+    _med, s = _overdue_dose(db, patient, "Pause-adherence")
+    assert _dose_states(db, s.id), "fixture produced no dose"
+
+    sched.pause_schedule(db, patient_id=patient["patient_id"], schedule_id=s.id)
+    db.commit()
+
+    states = _dose_states(db, s.id)
+    assert states == ["missed"], f"overdue dose was not preserved as missed: {states}"
+
+
+def test_stopping_preserves_an_overdue_dose_as_missed(db, patient):
+    _med, s = _overdue_dose(db, patient, "Stop-adherence")
+    sched.stop_schedule(db, patient_id=patient["patient_id"], schedule_id=s.id)
+    db.commit()
+    assert _dose_states(db, s.id) == ["missed"]
+
+
+def test_a_lifecycle_exit_preserves_history_but_repudiation_purges_it(db, patient):
+    """The two cases must differ. A drug the patient really stopped taking has
+    real non-adherence behind it; a record marked entered_in_error does not."""
+    exit_med, exit_s = _overdue_dose(db, patient, "Exit-keeps")
+    medication_svc.update_medication(
+        db, patient_id=patient["patient_id"], med_id=exit_med.id,
+        data={"lifecycle_status": "discontinued", "status_reason": "finished course"},
+        actor_user_id=patient["user_id"], actor_role="patient",
+    )
+    db.commit()
+    assert _dose_states(db, exit_s.id) == ["missed"], "a lifecycle exit erased history"
+
+    rep_med, rep_s = _overdue_dose(db, patient, "Repudiated-purges")
+    medication_svc.update_medication(
+        db, patient_id=patient["patient_id"], med_id=rep_med.id,
+        data={"lifecycle_status": "entered_in_error", "status_reason": "wrong record"},
+        actor_user_id=patient["user_id"], actor_role="patient",
+    )
+    db.commit()
+    assert _dose_states(db, rep_s.id) == [], (
+        "a repudiated record kept missed doses — counting non-adherence for a drug "
+        "the patient was never on is as fabricated as deleting real misses"
+    )
+
+
+def test_a_dose_within_the_grace_window_is_not_flipped_to_missed(db, patient):
+    """The other half: cancelling used cutoff=now while the sweep allows 4h, so a
+    patient who took their 20:00 dose and completed the course at 20:10 had it
+    marked MISSED — and, the schedule now stopped, could not correct it."""
+    _med, s = _overdue_dose(db, patient, "Grace-window", hours_overdue=1)
+    sched.stop_schedule(db, patient_id=patient["patient_id"], schedule_id=s.id)
+    db.commit()
+    assert _dose_states(db, s.id) == [], (
+        "a dose still inside the 4h grace was recorded as missed"
+    )

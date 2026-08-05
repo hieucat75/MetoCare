@@ -155,15 +155,6 @@ jobs:
             sleep 2
           done
 
-      - name: Apply baseline Alembic migrations (pre-P0 head)
-        run: |
-          # Upgrade to the revision just before P0 so integration tests can
-          # exercise upgrade AND downgrade from a known baseline.
-          alembic upgrade c0_m9_audit_log_clinic_id
-        env:
-          MCP_DATABASE_URL: "postgresql+psycopg://mcp:mcp_test_ci@localhost:5432/mcp_test"
-          MCP_ENV: test
-
       # Every file under tests/integration, each in its OWN process against its
       # OWN freshly created database.
       #
@@ -190,12 +181,23 @@ jobs:
           for f in $files; do
             db="ci_$(basename "$f" .py | tr -c 'a-z0-9_' '_' | cut -c1-40)"
             echo "::group::$f  (database: $db)"
-            PGPASSWORD=mcp_test_ci psql -h localhost -U mcp -d postgres \
-              -c "DROP DATABASE IF EXISTS $db" -c "CREATE DATABASE $db" >/dev/null
-            # Same pre-P0 baseline the shared database gets, so upgrade AND
-            # downgrade run from a known revision.
-            MCP_DATABASE_URL="postgresql+psycopg://mcp:mcp_test_ci@localhost:5432/$db" \
-              alembic upgrade c0_m9_audit_log_clinic_id >/dev/null
+            # Check setup explicitly. `set -e` is deliberately NOT used (it would
+            # abort on the first failing file instead of accumulating `rc`), so
+            # without these a failed CREATE DATABASE or a failed migration fell
+            # through into pytest and surfaced as a confusing connection/schema
+            # error — turning a clear "the migration broke" signal into "the tests
+            # broke", which is the diagnostic loss this rewrite exists to remove.
+            if ! PGPASSWORD=mcp_test_ci psql -h localhost -U mcp -d postgres \
+              -c "DROP DATABASE IF EXISTS $db" -c "CREATE DATABASE $db" >/dev/null; then
+              echo "::error file=$f::could not create database $db"
+              rc=1; echo "::endgroup::"; continue
+            fi
+            # Same pre-P0 baseline, so upgrade AND downgrade run from a known revision.
+            if ! MCP_DATABASE_URL="postgresql+psycopg://mcp:mcp_test_ci@localhost:5432/$db" \
+              alembic upgrade c0_m9_audit_log_clinic_id >/dev/null; then
+              echo "::error file=$f::alembic baseline upgrade failed on $db"
+              rc=1; echo "::endgroup::"; continue
+            fi
             MCP_DATABASE_URL="postgresql+psycopg://mcp:mcp_test_ci@localhost:5432/$db" \
               POSTGRES_TEST_URL="postgresql+psycopg://mcp:mcp_test_ci@localhost:5432/$db" \
               python -m pytest "$f" -v --tb=short -m integration \

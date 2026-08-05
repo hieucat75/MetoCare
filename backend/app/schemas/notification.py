@@ -10,7 +10,7 @@ from __future__ import annotations
 import datetime as dt
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class NotificationCreate(BaseModel):
@@ -18,7 +18,13 @@ class NotificationCreate(BaseModel):
 
     user_id: str
     type: str
-    title: str
+    # 256 is not cosmetic. `notifications.title` was VARCHAR(256) until the PHI
+    # migration widened it to TEXT (ciphertext does not fit 256), and that
+    # migration's downgrade narrows it back. A single row longer than 256 makes
+    # `ALTER COLUMN title TYPE VARCHAR(256)` fail outright — Postgres raises
+    # rather than truncating — so one over-long admin notification would block the
+    # rollback path entirely. Bounding the input keeps downgrade always available.
+    title: str = Field(max_length=256)
     body: str
     metadata: dict[str, Any] | None = None
 

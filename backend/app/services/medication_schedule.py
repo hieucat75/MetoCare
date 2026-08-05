@@ -179,8 +179,21 @@ def _validate_schedule_shape(
             ) from None
         if on < 1:
             raise InvalidSchedule("`on_days` phải >= 1.")
-        if off < 0:
-            raise InvalidSchedule("`off_days` không được âm.")
+        if off < 1:
+            # off_days=0 (or omitted, which defaulted to 0) made `_day_applies`
+            # compute cycle == on, so `(day - start) % on < on` is true on EVERY
+            # day and the schedule silently became daily. That is the same failure
+            # the anchor validation above exists to prevent — a cyclical regimen
+            # reminding through its rest week — reached through a different hole,
+            # so closing only the anchor left the class open.
+            #
+            # A cycle with no rest period is not a cycle; it is `fixed_daily`, and
+            # a client that means daily should say so rather than describe a
+            # 21-on/0-off cycle and be silently agreed with.
+            raise InvalidSchedule(
+                "Lịch theo chu kỳ cần `off_days` >= 1 (số ngày nghỉ). "
+                "Nếu uống mỗi ngày, hãy dùng lịch hằng ngày (`fixed_daily`)."
+            )
 
 
 def _idempotency_key(schedule_id: str, version: int, scheduled_utc: dt.datetime) -> str:
@@ -531,11 +544,28 @@ def _cancel_open_doses(
     lifecycle EXIT (stop / pause / discontinue / on_hold) is the opposite case —
     the therapy was real and so is the history — and never purges.
     """
-    cutoff = now or _now_utc()
+    # Same grace the sweep uses. With cutoff=now, a patient who took their 20:00
+    # dose and then tapped "Hoàn thành" on the finished course at 20:10 had that
+    # dose flipped to MISSED — and, the schedule now being stopped, it dropped out
+    # of `due_doses_query` so they could not correct it. On a 14-dose course that
+    # is 93% instead of 100%, every time. The sweep's 4h window exists precisely
+    # because "due" and "missed" are not the same instant; this path must agree.
+    cutoff = (now or _now_utc()) - _MISSED_AFTER
+    # D. Include MISSED when purging a REPUDIATED record. Selecting only
+    #    pending/notified meant the sweep (which flips anything >4h overdue to
+    #    MISSED on every dashboard read) had already moved most doses out of
+    #    reach, so the purge deleted only the few still-recent ones and left the
+    #    older misses in adherence — the docstring's justification unmet, and
+    #    WHICH doses vanished depended on when the patient last opened the app.
+    states = (
+        (DOSE_PENDING, DOSE_NOTIFIED, DOSE_MISSED)
+        if purge_history
+        else (DOSE_PENDING, DOSE_NOTIFIED)
+    )
     for dose in db.execute(
         select(DoseOccurrence).where(
             DoseOccurrence.schedule_id == schedule_id,
-            DoseOccurrence.state.in_((DOSE_PENDING, DOSE_NOTIFIED)),
+            DoseOccurrence.state.in_(states),
         )
     ).scalars():
         scheduled = dose.scheduled_utc
