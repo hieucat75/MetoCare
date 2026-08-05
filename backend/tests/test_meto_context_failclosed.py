@@ -18,6 +18,41 @@ import logging
 import pytest
 from app.services import meto_chat as chat_mod
 
+
+class _LoggerCapture(logging.Handler):
+    """Capture records from a NAMED logger, independent of the root handlers.
+
+    `app.core.logging.setup_logging()` removes every root handler so the app can
+    own its JSON formatting. pytest's `caplog` installs its handler on the ROOT
+    logger, so any test running after app startup sees an empty caplog — which is
+    a test-harness artifact, not missing logging. Attaching directly to the target
+    logger makes the assertion independent of that ordering.
+    """
+
+    def __init__(self, logger_name: str):
+        super().__init__(level=logging.DEBUG)
+        self._logger = logging.getLogger(logger_name)
+        self.records: list[logging.LogRecord] = []
+
+    def emit(self, record):  # noqa: D102
+        self.records.append(record)
+
+    def __enter__(self):
+        self._prev_level = self._logger.level
+        self._logger.setLevel(logging.DEBUG)
+        self._logger.addHandler(self)
+        return self
+
+    def __exit__(self, *exc):
+        self._logger.removeHandler(self)
+        self._logger.setLevel(self._prev_level)
+        return False
+
+    @property
+    def text(self) -> str:
+        return "\n".join(r.getMessage() for r in self.records)
+
+
 PHI_MESSAGE = "Đường huyết của tôi hôm nay thế nào?"
 
 
@@ -66,18 +101,18 @@ def test_the_notice_never_claims_the_patient_has_no_data():
         assert forbidden not in msg
 
 
-def test_failure_is_logged_without_phi(client, patient, broken_context, caplog):
-    with caplog.at_level(logging.ERROR):
+def test_failure_is_logged_without_phi(client, patient, broken_context):
+    with _LoggerCapture("app.services.meto_chat") as cap:
         client.post(
             "/api/v1/meto/chat",
             json={"message": PHI_MESSAGE},
             headers=patient["headers"],
         )
 
-    assert any("context_build_failed" in r.message for r in caplog.records)
-    combined = caplog.text
+    assert any("context_build_failed" in r.getMessage() for r in cap.records)
+    combined = cap.text
     # The patient's message, and the exception's own text, must not be logged.
     assert PHI_MESSAGE not in combined
     assert "simulated context-build failure" not in combined
     # Escalated to error — a silently-degraded answer used to be a warning.
-    assert any(r.levelno >= logging.ERROR for r in caplog.records)
+    assert any(r.levelno >= logging.ERROR for r in cap.records)
