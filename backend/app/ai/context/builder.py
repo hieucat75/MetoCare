@@ -45,6 +45,16 @@ from app.utils.number_format import format_lab_display, format_lab_value
 
 logger = logging.getLogger(__name__)
 
+
+def _record_degraded(sink: list[str] | None, block: str) -> None:
+    """Note that `block`'s query RAISED, if the caller is collecting failures.
+
+    The sink is optional so a builder can still be called in isolation, but
+    `build()` always passes one — that is the path whose output reaches the model.
+    """
+    if sink is not None and block not in sink:
+        sink.append(block)
+
 # ---------------------------------------------------------------------------
 # Screen → blocks mapping (02_CONTEXT_ENGINE.md §2)
 # "always" = include if data + consent present (key blocks for this screen)
@@ -180,6 +190,9 @@ class ContextBuilder:
         consult_ok = CATEGORY_DOCTOR_CONSULTATION in granted_categories
 
         included_blocks: list[str] = []
+        # Blocks whose query RAISED. Distinct from a block that is absent because
+        # the patient consented but has no rows — see AssembledContext.
+        degraded: list[str] = []
         missing_consents = list(
             dict.fromkeys(
                 category
@@ -200,24 +213,24 @@ class ContextBuilder:
         # poison the conversation/message writes in the main session.
 
         # DB call #1: user profile (non-clinical identity — always allowed)
-        raw_user_profile = self._build_user_profile(db, user_id)
+        raw_user_profile = self._build_user_profile(db, user_id, degraded)
 
         # Clinical blocks are queried ONLY when their category is consented, so
         # non-consented PHI is never even loaded into memory (data-minimization).
         # DB call #2: health summary
-        raw_health_summary = self._build_health_summary(db, user_id) if health_ok else None
+        raw_health_summary = self._build_health_summary(db, user_id, degraded) if health_ok else None
 
         # DB calls #3+#4: care plan + tasks (always called together)
-        raw_care_plan = self._build_care_plan(db, user_id) if health_ok else None
+        raw_care_plan = self._build_care_plan(db, user_id, degraded) if health_ok else None
 
         # DB call #5: medications
-        raw_medications = self._build_medications(db, user_id) if meds_ok else None
+        raw_medications = self._build_medications(db, user_id, degraded) if meds_ok else None
 
         # DB call #6: recent labs
-        raw_recent_labs = self._build_recent_labs(db, user_id) if health_ok else None
+        raw_recent_labs = self._build_recent_labs(db, user_id, degraded) if health_ok else None
 
         # DB call #7: recent metrics
-        raw_recent_metrics = self._build_recent_metrics(db, user_id) if health_ok else None
+        raw_recent_metrics = self._build_recent_metrics(db, user_id, degraded) if health_ok else None
 
         # DB call #8: appointments (for today_context)
         raw_today_context = self._build_today_context(db, user_id) if consult_ok else None
@@ -312,6 +325,7 @@ class ContextBuilder:
             total_estimated_tokens=total_tokens,
             missing_consents=missing_consents,
             included_blocks=included_blocks,
+            degraded_blocks=degraded,
         )
 
     # -----------------------------------------------------------------------
@@ -319,7 +333,7 @@ class ContextBuilder:
     # (except care_plan which consumes TWO: plan + tasks)
     # -----------------------------------------------------------------------
 
-    def _build_user_profile(self, db: Session, user_id: str) -> dict | None:
+    def _build_user_profile(self, db: Session, user_id: str, degraded: list[str] | None = None) -> dict | None:
         """Build user profile block. Consumes DB execute #1.
 
         Uses ORM queries so EncryptedString TypeDecorator auto-decrypts
@@ -383,14 +397,19 @@ class ContextBuilder:
                 "account_type": "patient",
             }
         except Exception as exc:
+            # Record the FAILURE distinctly from an empty result — see
+            # AssembledContext.degraded_blocks. Returning None alone made a failed
+            # query indistinguishable from "the patient has no data", which for a
+            # clinical block reads to the model as reassurance.
             logger.warning("Error building user_profile for %s: %s", user_id, exc)
+            _record_degraded(degraded, "user_profile")
             try:
                 db.rollback()
             except Exception:
                 pass
             return None
 
-    def _build_health_summary(self, db: Session, user_id: str) -> dict | None:
+    def _build_health_summary(self, db: Session, user_id: str, degraded: list[str] | None = None) -> dict | None:
         """Build health summary block. Consumes DB execute #2.
 
         Uses ORM query so EncryptedString TypeDecorator auto-decrypts
@@ -443,14 +462,19 @@ class ContextBuilder:
                 "chronic_conditions": [],
             }
         except Exception as exc:
+            # Record the FAILURE distinctly from an empty result — see
+            # AssembledContext.degraded_blocks. Returning None alone made a failed
+            # query indistinguishable from "the patient has no data", which for a
+            # clinical block reads to the model as reassurance.
             logger.warning("Error building health_summary for %s: %s", user_id, exc)
+            _record_degraded(degraded, "health_summary")
             try:
                 db.rollback()
             except Exception:
                 pass
             return None
 
-    def _build_care_plan(self, db: Session, user_id: str) -> dict | None:
+    def _build_care_plan(self, db: Session, user_id: str, degraded: list[str] | None = None) -> dict | None:
         """Build care plan block. Consumes DB execute #3 (plan) + #4 (tasks).
 
         Always makes BOTH queries to maintain stable DB call order.
@@ -514,14 +538,19 @@ class ContextBuilder:
                 "total_today": len(task_list),
             }
         except Exception as exc:
+            # Record the FAILURE distinctly from an empty result — see
+            # AssembledContext.degraded_blocks. Returning None alone made a failed
+            # query indistinguishable from "the patient has no data", which for a
+            # clinical block reads to the model as reassurance.
             logger.warning("Error building care_plan for %s: %s", user_id, exc)
+            _record_degraded(degraded, "care_plan")
             try:
                 db.rollback()
             except Exception:
                 pass
             return None
 
-    def _build_medications(self, db: Session, user_id: str) -> list | None:
+    def _build_medications(self, db: Session, user_id: str, degraded: list[str] | None = None) -> list | None:
         """Build medications block. Consumes DB execute #5."""
         try:
             rows = db.execute(
@@ -559,14 +588,19 @@ class ContextBuilder:
                 for r in rows
             ]
         except Exception as exc:
+            # Record the FAILURE distinctly from an empty result — see
+            # AssembledContext.degraded_blocks. Returning None alone made a failed
+            # query indistinguishable from "the patient has no data", which for a
+            # clinical block reads to the model as reassurance.
             logger.warning("Error building medications for %s: %s", user_id, exc)
+            _record_degraded(degraded, "medications")
             try:
                 db.rollback()
             except Exception:
                 pass
             return None
 
-    def _build_recent_labs(self, db: Session, user_id: str) -> list | None:
+    def _build_recent_labs(self, db: Session, user_id: str, degraded: list[str] | None = None) -> list | None:
         """Build recent_labs block. Consumes DB execute #6."""
         try:
             cutoff_date = (
@@ -635,14 +669,19 @@ class ContextBuilder:
 
             return [_lab_row(r) for r in rows]
         except Exception as exc:
+            # Record the FAILURE distinctly from an empty result — see
+            # AssembledContext.degraded_blocks. Returning None alone made a failed
+            # query indistinguishable from "the patient has no data", which for a
+            # clinical block reads to the model as reassurance.
             logger.warning("Error building recent_labs for %s: %s", user_id, exc)
+            _record_degraded(degraded, "recent_labs")
             try:
                 db.rollback()
             except Exception:
                 pass
             return None
 
-    def _build_recent_metrics(self, db: Session, user_id: str) -> list | None:
+    def _build_recent_metrics(self, db: Session, user_id: str, degraded: list[str] | None = None) -> list | None:
         """Build recent_metrics block. Consumes DB execute #7."""
         try:
             cutoff = (
@@ -701,7 +740,12 @@ class ContextBuilder:
 
             return result if result else None
         except Exception as exc:
+            # Record the FAILURE distinctly from an empty result — see
+            # AssembledContext.degraded_blocks. Returning None alone made a failed
+            # query indistinguishable from "the patient has no data", which for a
+            # clinical block reads to the model as reassurance.
             logger.warning("Error building recent_metrics for %s: %s", user_id, exc)
+            _record_degraded(degraded, "recent_metrics")
             try:
                 db.rollback()
             except Exception:
