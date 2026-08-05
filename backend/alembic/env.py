@@ -50,16 +50,27 @@ if config.config_file_name is not None:
     # (detected by the handler setup_logging tags). Standalone Alembic — the
     # deploy job's one-shot container — has no such handler, so its configured
     # level is left exactly as alembic.ini asks.
+    # fileConfig also REPLACES the root handler list, which evicts the tagged
+    # handler. So both the level and the handlers must be restored together —
+    # restoring only the level worked for the first Alembic call in a process and
+    # silently stopped working for every one after it, because by then the tag was
+    # gone and this branch no longer recognised that the app owned logging.
     _root = logging.getLogger()
     _app_owns_logging = any(
         getattr(h, "_mcp_json_handler", False) for h in _root.handlers
     )
     _prior_root_level = _root.level
+    _prior_root_handlers = list(_root.handlers)
 
     fileConfig(config.config_file_name, disable_existing_loggers=False)
 
     if _app_owns_logging:
         _root.setLevel(_prior_root_level)
+        # Alembic's own records still surface: [logger_alembic] sets INFO on the
+        # `alembic` logger, which has no handler of its own and so propagates to
+        # root — i.e. straight into the application's JSON handler, which is the
+        # right destination for an in-process migration.
+        _root.handlers[:] = _prior_root_handlers
 
 # Inject the runtime database URL from app settings.
 config.set_main_option("sqlalchemy.url", get_settings().database_url)
