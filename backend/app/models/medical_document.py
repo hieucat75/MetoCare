@@ -28,7 +28,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.core.crypto import EncryptedString
+from app.core.crypto import EncryptedJSON, EncryptedString
 from app.core.database import Base
 
 from ._mixins import SoftDeleteMixin, TimestampMixin, UUIDPrimaryKey
@@ -172,7 +172,18 @@ class ExtractionCandidate(UUIDPrimaryKey, TimestampMixin, Base):
     )
     candidate_type: Mapped[str] = mapped_column(String(24), nullable=False, index=True)
     ordinal: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
-    fields_json: Mapped[dict] = mapped_column(_JSON_VARIANT, nullable=False)
+    # PHI (SEC-F11): the extracted drug names, strengths, doses and diagnosis text
+    # — the OCR page text this was derived from is already encrypted
+    # (DocumentPage.ocr_raw), so leaving the structured extraction in plaintext
+    # JSONB defeated that. Encrypted at rest; `raise` because the column is
+    # NOT NULL and a silent None would drop clinical data mid-review.
+    #
+    # Losing JSONB queryability is free here: nothing filters, indexes or joins on
+    # this column by value anywhere in the codebase — reads deserialize the whole
+    # dict in Python. Fernet is non-deterministic, so that must stay true.
+    fields_json: Mapped[dict] = mapped_column(
+        EncryptedJSON(on_decrypt_failure="raise"), nullable=False
+    )
     field_confidence_json: Mapped[dict | None] = mapped_column(_JSON_VARIANT)
     dedupe_key: Mapped[str] = mapped_column(String(128), nullable=False)
     status: Mapped[str] = mapped_column(

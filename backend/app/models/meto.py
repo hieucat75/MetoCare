@@ -74,12 +74,21 @@ class MetoMessage(UUIDPrimaryKey, TimestampMixin, Base):
     role: Mapped[str] = mapped_column(String(16), nullable=False)
     # PHI: the message body is free text the patient typed (symptoms) or an AI
     # answer quoting their labs/medications. Encrypted at rest like every other
-    # free-text PHI column (SEC-F11). `on_decrypt_failure="none"` matches the
-    # older AI transcript column (models/ai.py): a chat bubble that cannot be
-    # decrypted renders blank rather than breaking the whole conversation.
+    # free-text PHI column (SEC-F11).
+    #
+    # `on_decrypt_failure="raise"` — REQUIRED here, per the rule in core/crypto.py:
+    # this column is `nullable=False` and the response schema types it as a
+    # non-Optional `str`, so a silent `None` would violate the NOT NULL contract
+    # and crash response serialization anyway. A wrong or rotated key must surface
+    # as a controlled domain error, never as silently missing clinical data. The
+    # earlier "none" here was copied from the older AI transcript column
+    # (models/ai.py), whose column is nullable — the precedent did not transfer.
+    #
+    # Legacy plaintext rows still read fine (see EncryptedString.process_result_value):
+    # "raise" fires only for values that ARE ciphertext but cannot be decrypted.
     # Nothing queries or indexes this column by value.
     content: Mapped[str] = mapped_column(
-        EncryptedString(on_decrypt_failure="none"), nullable=False
+        EncryptedString(on_decrypt_failure="raise"), nullable=False
     )
     # Screen context when message was sent
     screen_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
