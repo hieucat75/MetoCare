@@ -193,18 +193,33 @@ def create_manual_lab_results(
                 },
             )
 
-    _, rows = lab.create_manual_entry(
-        db,
-        patient_id=patient_id,
-        requester_id=user.id,
-        lab_name=payload.lab_name,
-        test_date=payload.test_date,
-        results=[r.model_dump() for r in payload.results],
-        force_mode=payload.force_mode,
-        existing_batch_id=payload.existing_batch_id,
-        ocr_case_id=payload.ocr_case_id,
-        review_time_seconds=payload.review_time_seconds,
-    )
+    try:
+        _, rows = lab.create_manual_entry(
+            db,
+            patient_id=patient_id,
+            requester_id=user.id,
+            lab_name=payload.lab_name,
+            test_date=payload.test_date,
+            results=[r.model_dump() for r in payload.results],
+            force_mode=payload.force_mode,
+            existing_batch_id=payload.existing_batch_id,
+            ocr_case_id=payload.ocr_case_id,
+            review_time_seconds=payload.review_time_seconds,
+        )
+    except lab.LabValidationError as exc:
+        # 422, not 500: the submission is well-formed but its unit cannot be
+        # interpreted for that analyte. The accepted units are returned so the
+        # client can offer them — telling a patient only to "fix the unit" is how
+        # g/L gets retyped as g/dL with the number untouched.
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": str(exc),
+                "reason": exc.reason,
+                "test_name": exc.test_name,
+                "accepted_units": exc.accepted_units,
+            },
+        ) from exc
     return LabResultListResponse(
         patient_id=patient_id,
         total=len(rows),

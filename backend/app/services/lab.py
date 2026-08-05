@@ -19,6 +19,7 @@ from app.core.config import get_settings
 from app.domain import lab_interpreter
 from app.domain.lab_interpreter import classify_value
 from app.domain.lab_normalization import normalize_value_to_si
+from app.domain.unit_registry import convert_to_canonical
 from app.models.clinical import HealthMetric, LabDocument, LabResult, LabUploadBatch
 from app.services import audit, consent, lab_batch
 from app.services import ocr_case as ocr_case_svc
@@ -80,41 +81,98 @@ def get_clinical_message(canonical_name: str | None, status: str | None) -> str 
     return _CLINICAL_MESSAGE_DEFAULT.get(status)
 
 
-def normalize_and_classify(canonical_name: str | None, value, unit: str) -> dict:
-    """Normalize a raw lab value + unit to canonical unit and classify it.
+class LabValidationError(ValueError):
+    """A lab row cannot be stored because its unit cannot be interpreted.
 
-    Given a canonical biomarker name, a raw value, and a unit:
-    1. Normalize to canonical unit (e.g. mmol/L -> mg/dL for glucose).
-    2. Classify using lab_interpreter.classify_value().
-    3. Return dict with: normalized_value_si, normalized_unit_si, status, clinical_message.
+    Carries the accepted units so the API layer can tell the patient what IS
+    valid. A bare "sửa đơn vị" is how someone ends up retyping g/L as g/dL
+    without dividing by ten — the app asked for a unit edit, so they edited the
+    unit and the wrong number stayed.
+    """
 
-    Returns empty dict if canonical_name is None or value is None.
-    Returns dict with status=None if biomarker is unsupported.
+    def __init__(self, reason: str, *, accepted_units=None, test_name=None):
+        self.reason = reason
+        self.accepted_units = list(accepted_units or [])
+        self.test_name = test_name
+        detail = f"{test_name}: " if test_name else ""
+        accepted = (
+            f" Đơn vị hợp lệ: {', '.join(self.accepted_units)}."
+            if self.accepted_units
+            else ""
+        )
+        super().__init__(f"{detail}không xử lý được đơn vị ({reason}).{accepted}")
+
+
+def normalize_and_classify(
+    canonical_name: str | None,
+    value,
+    unit: str,
+    *,
+    label: str | None = None,
+    specimen: str | None = None,
+    assume_canonical_when_missing: bool = False,
+) -> dict:
+    """Normalize a printed lab value to its canonical unit and classify it.
+
+    Steps 8-9 of the normalization contract live here: a value is classified ONLY
+    after a successful conversion, and the classification is computed in the
+    canonical unit domain.
+
+    This used to call ``normalize_value_to_si``, which returns the value
+    UNCHANGED under its ORIGINAL unit when it knows no conversion — and
+    ``classify_value`` ignores the unit entirely. So a haemoglobin of 140 g/L was
+    classified against the 12.0-17.5 g/dL range and came back **critical**, a
+    fabricated critical on a completely normal result. Every path that writes a
+    canonical LabResult went through here, so every one of them did it.
+
+    On a failed conversion this now returns ``status=None`` plus the refusal
+    reason and the accepted units, and NEVER a normalized value. A caller must
+    surface the refusal; it must not store the unconverted number under a
+    canonical unit.
     """
     if not canonical_name or value is None:
         return {}
 
-    # Normalize to canonical ("SI") unit.
-    try:
-        norm_value, norm_unit = normalize_value_to_si(float(value), unit or "", canonical_name)
-    except (TypeError, ValueError):
-        return {}
-
-    # Classify.
-    status_enum = classify_value(canonical_name, norm_value)
-    if status_enum is None or status_enum.value == "unknown":
-        # Unsupported biomarker -- return normalized fields but no status.
+    conv = convert_to_canonical(
+        canonical_name,
+        value,
+        unit or "",
+        label=label,
+        specimen=specimen,
+        assume_canonical_when_missing=assume_canonical_when_missing,
+    )
+    if not conv.ok:
+        # Refusal, not a pass-through. No normalized value, no status, and no
+        # clinical message — there is nothing here that can be safely interpreted.
         return {
-            "normalized_value_si": norm_value,
-            "normalized_unit_si": norm_unit,
+            "normalized_value_si": None,
+            "normalized_unit_si": None,
             "status": None,
             "clinical_message": None,
+            "conversion_ok": False,
+            "conversion_reason": conv.reason,
+            "accepted_units": conv.detail.get("accepted", []),
+            "conversion_provenance": conv.provenance(),
         }
 
-    status = status_enum.value
-    return {
+    norm_value, norm_unit = conv.normalized_value, conv.canonical_unit
+
+    status_enum = classify_value(canonical_name, norm_value)
+    base = {
         "normalized_value_si": norm_value,
         "normalized_unit_si": norm_unit,
+        "conversion_ok": True,
+        "conversion_reason": conv.reason,
+        "conversion_factor": conv.factor,
+        "conversion_rule_version": conv.rule_version,
+        "conversion_provenance": conv.provenance(),
+    }
+    if status_enum is None or status_enum.value == "unknown":
+        # Unsupported biomarker — normalized fields stand, but no status.
+        return base | {"status": None, "clinical_message": None}
+
+    status = status_enum.value
+    return base | {
         "status": status,
         "clinical_message": get_clinical_message(canonical_name, status),
     }
@@ -198,6 +256,22 @@ def _promote_row(db: Session, row: LabResult, measured_at: dt.datetime) -> bool:
     canonical = row.canonical_name or lab_interpreter.normalize_biomarker(row.test_name)
     if not canonical or canonical not in _PROMOTABLE or row.value is None:
         return False
+
+    # A row whose unit cannot be converted must NOT reach the trend surface, and
+    # — critically — must not leave a PREVIOUS, reassuring metric standing.
+    #
+    # This is the stale-normal hazard. Correcting a value to something whose unit
+    # no longer converts (e.g. creatinine "88 mg/dL", far beyond any survivable
+    # concentration and almost certainly a mislabelled 88 µmol/L) used to leave
+    # the earlier `normal` metric untouched, so the dashboard kept telling the
+    # patient their kidney function was fine on the strength of a value the system
+    # had just refused to interpret. Refusing to classify and refusing to withdraw
+    # is worse than either alone.
+    #
+    # So the prior metric is deleted below FIRST, and we return without writing a
+    # replacement: no metric at all is an honest gap the UI can show, where a
+    # stale normal is a false reassurance.
+    conversion = convert_to_canonical(canonical, row.value, row.unit or "")
     # Idempotent: drop any prior promotion of this exact lab row first (ORM-level
     # delete so a freshly-added-but-uncommitted metric is removed too).
     for prior in db.execute(
@@ -205,6 +279,17 @@ def _promote_row(db: Session, row: LabResult, measured_at: dt.datetime) -> bool:
     ).scalars():
         db.delete(prior)
     db.flush()
+    if not conversion.ok:
+        import logging as _logging
+
+        _logging.getLogger("mcp.lab").warning(
+            "_promote_row_conversion_refused lab_result_id=%s canonical=%s reason=%s "
+            "— prior metric withdrawn, none written",
+            row.id,
+            canonical,
+            conversion.reason,
+        )
+        return False
     spec = lab_interpreter._ALIAS_INDEX.get(canonical)
     nmin = spec.ref_low if spec else None
     nmax = spec.ref_high if spec else None
@@ -544,21 +629,38 @@ def create_manual_entry(
         # this function can reach the containment scan any more.
         canonical = item.get("canonical") or _hardened_canonical(item["test_name"])
 
-        # P0 safety: normalize value to canonical unit (e.g. mmol/L → mg/dL for glucose)
-        # before storing. Clinical rules always run in canonical units (mg/dL, etc.).
-        # Keep original value/unit for display (already in original_value/original_unit).
+        # Normalize through the ONE registry. `normalize_value_to_si` used to run
+        # here and returns the value UNCHANGED under its ORIGINAL unit when it
+        # knows no conversion — so an unconvertible unit was stored in the
+        # canonical field and classified against canonical thresholds anyway. That
+        # is the false-critical path (haemoglobin 140 g/L judged against the
+        # 12.0-17.5 g/dL range).
+        #
+        # MANUAL entry: the UI labels the input with the canonical unit, so an
+        # absent unit is that form's stated contract, not an unread OCR field.
+        # The assumption is recorded in provenance either way.
         raw_value = item.get("value")
         raw_unit = item.get("unit") or ""
-        if canonical and raw_value is not None:
-            canonical_value, canonical_unit_str = normalize_value_to_si(
-                raw_value, raw_unit, canonical
+        classification = normalize_and_classify(
+            canonical,
+            raw_value,
+            raw_unit,
+            label=item.get("test_name"),
+            assume_canonical_when_missing=True,
+        )
+        if classification.get("conversion_ok") is False:
+            # Refuse the ROW rather than store an uninterpretable value in a
+            # canonical field. The caller surfaces the reason and the accepted
+            # units; nothing partial is written.
+            raise LabValidationError(
+                classification.get("conversion_reason", "unit_conversion_failed"),
+                accepted_units=classification.get("accepted_units", []),
+                test_name=item.get("test_name"),
             )
-        else:
-            canonical_value = raw_value
-            canonical_unit_str = raw_unit
-
-        # Auto-classify at creation time: use the already-normalized canonical_value.
-        classification = normalize_and_classify(canonical, canonical_value, canonical_unit_str)
+        canonical_value = classification.get("normalized_value_si")
+        canonical_unit_str = classification.get("normalized_unit_si")
+        if canonical_value is None:
+            canonical_value, canonical_unit_str = raw_value, raw_unit
 
         row = LabResult(
             patient_id=patient_id,
@@ -922,6 +1024,44 @@ def _sync_linked_health_metrics(
     db.flush()
     return len(metrics)
 
+
+def _withdraw_linked_health_metrics(
+    db: Session, *, result_id: str, requester_id: str | None = None
+) -> int:
+    """Soft-delete every live metric promoted from a LabResult whose value can no
+    longer be interpreted.
+
+    `_sync_linked_health_metrics` cannot express this: it returns early when
+    `canonical_value is None` and only overwrites `status` when the new one is
+    non-None. A refused conversion produces both — so the metric was left exactly
+    as it was, which for the case that motivated this is a `normal` creatinine
+    standing on a value the system had just declined to convert.
+
+    Soft delete rather than hard delete: the promotion happened, and the audit
+    trail should show it was withdrawn rather than that it never existed.
+    """
+    metrics = db.execute(
+        select(HealthMetric).where(
+            HealthMetric.source_ref == result_id,
+            HealthMetric.deleted_at.is_(None),
+        )
+    ).scalars().all()
+    for m in metrics:
+        m.deleted_at = utcnow()
+    db.flush()
+    if metrics:
+        import logging as _logging
+
+        _logging.getLogger("mcp.lab").warning(
+            "health_metric_withdrawn lab_result_id=%s count=%d actor=%s — "
+            "unit no longer convertible; a stale metric would misreport the trend",
+            result_id,
+            len(metrics),
+            requester_id or "-",
+        )
+    return len(metrics)
+
+
 def correct_lab_result(
     db: Session,
     *,
@@ -980,21 +1120,48 @@ def correct_lab_result(
     # For glucose: canonical = mg/dL, SI/display = mmol/L.
     # normalized_value_si is already in canonical unit (despite the name);
     # normalized_unit_si is the canonical unit string (e.g. 'mg/dL' for glucose).
-    # Using normalized_unit_si here is correct — it IS the canonical unit.
     canonical_value = classification.get("normalized_value_si")
     canonical_unit = classification.get("normalized_unit_si")
-    row.value = canonical_value if canonical_value is not None else new_value
-    row.unit = canonical_unit if canonical_unit is not None else new_unit
 
-    # Sync linked HealthMetric rows so dashboard/charts reflect the correction.
-    _sync_linked_health_metrics(
-        db,
-        result_id=row.id,
-        canonical_value=canonical_value if canonical_value is not None else new_value,
-        canonical_unit=canonical_unit if canonical_unit is not None else new_unit,
-        new_status=classification.get("status"),
-        requester_id=requester_id,
-    )
+    if classification.get("conversion_ok") is False:
+        # REFUSED. The old fallback (`canonical_value if not None else new_value`)
+        # wrote the patient's raw number into row.value under the unit they typed,
+        # producing exactly the state the whole registry exists to prevent: an
+        # unconverted value sitting in a canonical field, indistinguishable from a
+        # converted one and classified against canonical thresholds by anything
+        # downstream.
+        #
+        # Instead: the assertion is preserved verbatim in original_value/unit, the
+        # canonical fields are left EMPTY, and the linked metrics are withdrawn.
+        # A missing metric is an honest gap the UI can render as "unit unclear";
+        # the previous `normal` left standing is a false reassurance — here, about
+        # kidney function.
+        row.value = None
+        row.unit = new_unit
+        row.normalized_value_si = None
+        row.normalized_unit_si = None
+        row.status = None
+        _withdraw_linked_health_metrics(db, result_id=row.id, requester_id=requester_id)
+    else:
+        row.value = canonical_value if canonical_value is not None else new_value
+        row.unit = canonical_unit if canonical_unit is not None else new_unit
+
+        # Sync linked HealthMetric rows so dashboard/charts reflect the correction.
+        synced = _sync_linked_health_metrics(
+            db,
+            result_id=row.id,
+            canonical_value=canonical_value if canonical_value is not None else new_value,
+            canonical_unit=canonical_unit if canonical_unit is not None else new_unit,
+            new_status=classification.get("status"),
+            requester_id=requester_id,
+        )
+        if not synced:
+            # RECOVERY. `_sync_linked_health_metrics` only updates metrics that
+            # already exist, so once a row has been withdrawn (or was never
+            # promoted because its unit did not convert), fixing the unit left the
+            # trend permanently empty — the patient corrects the problem the app
+            # asked them to correct and nothing comes back. Re-promote instead.
+            _promote_row(db, row, _measured_at_for(row, row.test_date))
 
     audit.record(
         db,
@@ -1078,18 +1245,35 @@ def edit_lab_result(
 
         canonical_value = classification.get("normalized_value_si")
         canonical_unit = classification.get("normalized_unit_si")
-        row.value = canonical_value if canonical_value is not None else new_value
-        row.unit = canonical_unit if canonical_unit is not None else new_unit
 
-        # Sync linked HealthMetric rows so dashboard/charts reflect the edit.
-        _sync_linked_health_metrics(
-            db,
-            result_id=row.id,
-            canonical_value=canonical_value if canonical_value is not None else new_value,
-            canonical_unit=canonical_unit if canonical_unit is not None else new_unit,
-            new_status=classification.get("status"),
-            requester_id=requester_id,
-        )
+        if classification.get("conversion_ok") is False:
+            # Identical rule to the patient correction path. A DOCTOR editing to
+            # an uninterpretable unit must not leave a stale metric standing
+            # either — arguably less so, since a clinician's edit carries more
+            # weight downstream.
+            row.value = None
+            row.unit = new_unit
+            row.normalized_value_si = None
+            row.normalized_unit_si = None
+            row.status = None
+            _withdraw_linked_health_metrics(
+                db, result_id=row.id, requester_id=requester_id
+            )
+        else:
+            row.value = canonical_value if canonical_value is not None else new_value
+            row.unit = canonical_unit if canonical_unit is not None else new_unit
+
+            # Sync linked HealthMetric rows so dashboard/charts reflect the edit.
+            synced = _sync_linked_health_metrics(
+                db,
+                result_id=row.id,
+                canonical_value=canonical_value if canonical_value is not None else new_value,
+                canonical_unit=canonical_unit if canonical_unit is not None else new_unit,
+                new_status=classification.get("status"),
+                requester_id=requester_id,
+            )
+            if not synced:
+                _promote_row(db, row, _measured_at_for(row, row.test_date))
 
     audit.record(
         db,

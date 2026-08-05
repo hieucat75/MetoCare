@@ -12,7 +12,7 @@ import datetime as dt
 
 from sqlalchemy.orm import Session
 
-from app.domain.lab_normalization import is_unit_convertible
+from app.domain.unit_registry import convert_to_canonical
 from app.models.clinical import LabResult, Medication
 from app.models.medical_document import ExtractionCandidate
 from app.services import lab as lab_svc
@@ -163,6 +163,42 @@ def _canonical_for(test_name: str | None) -> str | None:
     return matched[0].canonical if matched else None
 
 
+def _unit_error_message(conversion) -> str:
+    """An actionable refusal. Names what is wrong AND what is accepted.
+
+    A message that only says "fix the unit" is how a patient ends up retyping
+    `g/L` as `g/dL` without dividing by ten — the app asked for a unit edit, so
+    they edited the unit. Every branch here either names the acceptable units or
+    tells them not to re-enter the value under a different unit.
+    """
+    accepted = conversion.detail.get("accepted") or []
+    accepted_str = ", ".join(accepted)
+    reason = conversion.reason
+    if reason == "specimen_mismatch":
+        return (
+            "Chỉ số này là mẫu không phải máu (ví dụ nước tiểu) — hệ thống chỉ "
+            "lưu được xét nghiệm máu. Vui lòng bỏ dòng này."
+        )
+    if reason == "dimension_mismatch":
+        return (
+            f"Đơn vị không phù hợp với chỉ số này. Đơn vị hợp lệ: {accepted_str}. "
+            "Vui lòng kiểm tra lại phiếu xét nghiệm — KHÔNG đổi đơn vị nếu giá trị "
+            "không đổi theo."
+        )
+    if reason == "impossible_converted_value":
+        return (
+            "Giá trị nằm ngoài khoảng có thể có của chỉ số này — nhiều khả năng "
+            "đơn vị bị đọc sai. Vui lòng kiểm tra lại cả giá trị và đơn vị."
+        )
+    if reason == "missing_unit":
+        return f"Thiếu đơn vị xét nghiệm. Đơn vị hợp lệ: {accepted_str}."
+    return (
+        f"Không nhận dạng được đơn vị xét nghiệm. Đơn vị hợp lệ: {accepted_str}."
+        if accepted_str
+        else "Không nhận dạng được đơn vị xét nghiệm."
+    )
+
+
 def _provenance_for(test_name: str | None) -> dict:
     """Provenance for the label AS CONFIRMED, re-derived at promotion time.
 
@@ -255,10 +291,17 @@ class LabPromoter:
                 "Không nhận dạng được chỉ số xét nghiệm từ tên này — "
                 "vui lòng sửa tên xét nghiệm rồi xác nhận lại."
             )
-        if not is_unit_convertible(canonical, unit):
-            raise PromotionInvalid(
-                "Đơn vị xét nghiệm chưa rõ — vui lòng sửa đơn vị rồi xác nhận lại."
-            )
+        # Route through the ONE registry rather than the old is_unit_convertible
+        # gate, which accepted only the canonical or SI unit and therefore refused
+        # every CBC line off a typical VN report (platelet 20 G/L, WBC 0.8 G/L,
+        # haemoglobin 70 g/L). The registry converts what it can prove and refuses
+        # the rest — and names the accepted units, because the old message
+        # ("vui lòng sửa đơn vị") invited the patient to retype g/L as g/dL
+        # WITHOUT converting the number, which lands on the same wrong value the
+        # refusal was meant to prevent.
+        conversion = convert_to_canonical(canonical, fields.get("value"), unit)
+        if not conversion.ok:
+            raise PromotionInvalid(_unit_error_message(conversion))
         # Preserve the ORIGINAL value/unit (§E — never lose what the patient saw);
         # create_manual_entry normalizes to canonical SI for internal trend/classify
         # while keeping original_* for display.
