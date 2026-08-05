@@ -260,15 +260,14 @@ def reminders_due(
     delivered = sched.deliver_due_reminders(db, patient_id=patient_id, user_id=user.id)
     db.commit()
     now = dt.datetime.now(dt.UTC)
+    # Use the SHARED predicate. This list previously had no schedule/medication
+    # join at all: `delivered` was gated but the rows returned to the client were
+    # not, so the reminder list still named medications the patient had stopped.
     due = list(
         db.execute(
-            select(DoseOccurrence)
-            .where(
-                DoseOccurrence.patient_id == patient_id,
-                DoseOccurrence.state.in_(("pending", "notified")),
-                DoseOccurrence.scheduled_utc <= now,
+            sched.due_doses_query(
+                patient_id=patient_id, now=now, states=("pending", "notified")
             )
-            .order_by(DoseOccurrence.scheduled_utc)
         ).scalars()
     )
     return DueOut(delivered=delivered, items=[_dose_out(d) for d in due])

@@ -24,7 +24,6 @@ from app.models.medical_document import (
 )
 from app.models.medication_schedule import (
     SCHED_STATUS_ACTIVE,
-    DoseOccurrence,
     MedicationSchedule,
 )
 from app.services import medication_schedule as sched
@@ -58,19 +57,9 @@ def build_dashboard(db: Session, *, patient_id: str, now: dt.datetime | None = N
     # deleted/retired drug never surfaces as an action (CLIN PS-5).
     due_doses = list(
         db.execute(
-            select(DoseOccurrence)
-            .join(MedicationSchedule, MedicationSchedule.id == DoseOccurrence.schedule_id)
-            .join(Medication, Medication.id == MedicationSchedule.medication_id)
-            .where(
-                DoseOccurrence.patient_id == patient_id,
-                DoseOccurrence.state.in_(_DUE_STATES),
-                DoseOccurrence.scheduled_utc <= now,
-                MedicationSchedule.status == SCHED_STATUS_ACTIVE,
-                MedicationSchedule.superseded_by.is_(None),
-                Medication.deleted_at.is_(None),
-                Medication.lifecycle_status == "active",
+            sched.due_doses_query(
+                patient_id=patient_id, now=now, states=_DUE_STATES
             )
-            .order_by(DoseOccurrence.scheduled_utc)
         ).scalars()
     )
     doses_due = [

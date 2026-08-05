@@ -365,6 +365,53 @@ def materialize_due(
     return created
 
 
+def due_doses_query(
+    *,
+    patient_id: str,
+    now: dt.datetime,
+    states: tuple[str, ...],
+):
+    """The ONE definition of "a dose that may be shown or acted on".
+
+    A DoseOccurrence is a materialised row; nothing about the row itself says
+    whether its schedule or its drug is still in force. Four separate conditions
+    have to hold, and each read path was re-stating them by hand:
+
+      - the schedule is ACTIVE (not paused, not stopped),
+      - the schedule is the CURRENT version (an edit supersedes the old one, and
+        its already-materialised doses outlive it),
+      - the medication is not soft-deleted,
+      - the medication is still lifecycle-active (not stopped / discontinued /
+        on_hold / entered_in_error).
+
+    They had already drifted. `deliver_due_reminders` and the dashboard carried
+    all four; `GET /reminders/due` carried NONE of them on the rows it returns —
+    it gated only the `delivered` counter, so the `items` payload still listed
+    doses for paused schedules and for drugs the patient or their doctor had
+    stopped. That is the CLIN PS-5 failure the other two sites exist to prevent,
+    reached through the endpoint whose entire job is to render the reminder list:
+    the patient is told by name to take a medication they discontinued.
+
+    Restating a four-part safety predicate at each call site guarantees the next
+    reader restates it incompletely too, so it lives here and every path calls it.
+    """
+    return (
+        select(DoseOccurrence)
+        .join(MedicationSchedule, MedicationSchedule.id == DoseOccurrence.schedule_id)
+        .join(Medication, Medication.id == MedicationSchedule.medication_id)
+        .where(
+            DoseOccurrence.patient_id == patient_id,
+            DoseOccurrence.state.in_(states),
+            DoseOccurrence.scheduled_utc <= now,
+            MedicationSchedule.status == SCHED_STATUS_ACTIVE,
+            MedicationSchedule.superseded_by.is_(None),
+            Medication.deleted_at.is_(None),
+            Medication.lifecycle_status == _MED_ACTIVE_STATUS,
+        )
+        .order_by(DoseOccurrence.scheduled_utc)
+    )
+
+
 def deliver_due_reminders(
     db: Session,
     *,
@@ -385,18 +432,7 @@ def deliver_due_reminders(
     # schedule-level gate alone let a stopped drug keep reminding).
     due = list(
         db.execute(
-            select(DoseOccurrence)
-            .join(MedicationSchedule, MedicationSchedule.id == DoseOccurrence.schedule_id)
-            .join(Medication, Medication.id == MedicationSchedule.medication_id)
-            .where(
-                DoseOccurrence.patient_id == patient_id,
-                DoseOccurrence.state == DOSE_PENDING,
-                DoseOccurrence.scheduled_utc <= now,
-                MedicationSchedule.status == SCHED_STATUS_ACTIVE,
-                MedicationSchedule.superseded_by.is_(None),
-                Medication.deleted_at.is_(None),
-                Medication.lifecycle_status == _MED_ACTIVE_STATUS,
-            )
+            due_doses_query(patient_id=patient_id, now=now, states=(DOSE_PENDING,))
         ).scalars()
     )
     delivered = 0
