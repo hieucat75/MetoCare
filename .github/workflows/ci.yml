@@ -711,17 +711,40 @@ jobs:
       # rolls them back, and prints no PHI and no key material.
       - name: Post-deploy PHI crypto smoke
         run: |
-          az containerapp job create -g "$RG" -n "$MIGRATE_JOB-crypto" \
-            --environment "$ACA_ENV" --trigger-type Manual --replica-timeout 300 \
+          # Rebuild every value locally. A `run:` step is a FRESH shell, so a
+          # variable assigned in an earlier step does not survive — an earlier
+          # draft of this step referenced $MIGRATE_JOB/$ACA_ENV/$IMG, all of
+          # which were empty here, so it would have failed on EVERY deploy
+          # without ever invoking the smoke. Worse, that failure is
+          # indistinguishable in the log from a genuine wrong-key failure, which
+          # is how a real gate gets muted as "the usual broken step".
+          JOB="caj-metocare-crypto-smoke"
+          IMG="${REGISTRY}/${{ github.repository_owner }}/metocare-backend:${{ steps.tag.outputs.tag }}"
+          # Delete-then-create, matching the Alembic job above. Without it a
+          # pre-existing job is reused with the PREVIOUS run's image and secrets,
+          # so the smoke would validate the OLD key — exactly the rotation
+          # failure it exists to catch.
+          az containerapp job delete -g "$RG" -n "$JOB" --yes -o none 2>/dev/null || true
+          az containerapp job create -g "$RG" -n "$JOB" \
+            --environment "$ENV_NAME" --trigger-type Manual --replica-timeout 600 \
             --image "$IMG" --cpu 0.5 --memory 1Gi \
+            --registry-server "$REGISTRY" \
             --secrets db-url="$DB_URL" enc-keys="$ENC_KEYS" \
             --env-vars MCP_DATABASE_URL=secretref:db-url \
               MCP_ENCRYPTION_KEYS=secretref:enc-keys MCP_ENV=staging \
               MCP_BUILD_SHA=${{ steps.tag.outputs.sha8 }} \
-            --command "python" --args "-m" "scripts.crypto_smoke" -o none 2>/dev/null || true
-          az containerapp job start -g "$RG" -n "$MIGRATE_JOB-crypto" -o none
-          for i in $(seq 1 30); do
-            ST=$(az containerapp job execution list -g "$RG" -n "$MIGRATE_JOB-crypto" \
+            --command "python" --args "-m" "scripts.crypto_smoke" -o none
+          az containerapp job start -g "$RG" -n "$JOB" -o none
+
+          # Poll budget (40x10s=400s) deliberately EXCEEDS --replica-timeout
+          # (600s is the container's own limit; Azure needs slack after it fires
+          # to mark the execution Failed). A loop that expires without a verdict
+          # must FAIL: falling out of the loop and exiting 0 would report a deploy
+          # healthy on the strength of a check that never returned — which is the
+          # same false green this whole step exists to remove.
+          ST=""
+          for i in $(seq 1 40); do
+            ST=$(az containerapp job execution list -g "$RG" -n "$JOB" \
               --query "[0].properties.status" -o tsv 2>/dev/null || echo Running)
             echo "  crypto-smoke $i: $ST"
             [ "$ST" = "Succeeded" ] && break
@@ -737,3 +760,10 @@ jobs:
             fi
             sleep 10
           done
+          if [ "$ST" != "Succeeded" ]; then
+            echo "::error::PHI crypto smoke did not report a verdict within 400s"
+            echo "::error::(last status: ${ST:-unknown}). Treating as FAILED: a"
+            echo "::error::deploy must not be called healthy on a check that never"
+            echo "::error::returned. Inspect: az containerapp job execution list -g $RG -n $JOB"
+            exit 1
+          fi

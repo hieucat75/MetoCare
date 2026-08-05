@@ -50,6 +50,9 @@ import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
 SENTINEL_PREFIX = "CRYPTO-SMOKE"
+
+# Environments this may write sentinels in without an explicit flag.
+NON_PRODUCTION_ENVS = frozenset({"staging", "dev", "development", "local", "test"})
 LEGACY_SAMPLE = 5
 
 # (entity, table, column) — read-only legacy checks. These are the columns whose
@@ -139,7 +142,10 @@ def check_legacy(session: Session, entity: str, table: str, column: str) -> int:
     rows = session.execute(
         sa.text(  # noqa: S608 - literals, not user input
             f"SELECT {column} FROM {table} "
-            f"WHERE {column} IS NOT NULL AND id NOT LIKE 'cs-%' LIMIT :n"
+            # ORDER BY id: without it the sampled rows are implementation-defined,
+            # so a rotation that DROPS an old-but-still-referenced key could be
+            # missed simply because the sample happened to avoid older rows.
+            f"WHERE {column} IS NOT NULL AND id NOT LIKE 'cs-%' ORDER BY id LIMIT :n"
         ),
         {"n": LEGACY_SAMPLE},
     ).scalars().all()
@@ -156,10 +162,16 @@ def check_legacy(session: Session, entity: str, table: str, column: str) -> int:
 
 
 def run(allow_production: bool = False) -> int:
+    # ALLOW-list, not a deny-list. Checking `env in ("prod","production")` fails
+    # OPEN: an unset, empty or differently-spelled MCP_ENV would let this write
+    # sentinels (including INSERTs into users/meto_conversations) against
+    # whatever database it is pointed at. The realistic path to that is the
+    # incident-response run the deploy's own remediation text instructs an
+    # engineer to perform, from a shell where MCP_ENV may be anything.
     env = (os.environ.get("MCP_ENV") or "").lower()
-    if env in ("prod", "production") and not allow_production:
+    if env not in NON_PRODUCTION_ENVS and not allow_production:
         _emit({"check": "crypto_smoke", "result": "skipped",
-               "reason": "production_requires_explicit_flag", "env": env})
+               "reason": "non_allowlisted_env_requires_explicit_flag", "env": env})
         return 2
     if not (os.environ.get("MCP_ENCRYPTION_KEYS") or "").strip():
         _emit({"check": "crypto_smoke", "result": "fail",
@@ -176,6 +188,8 @@ def run(allow_production: bool = False) -> int:
 
     failures: list[SmokeFailure] = []
     checked: list[str] = []
+    legacy_rows_seen = 0
+    legacy_detail: dict[str, int] = {}
 
     with Session(engine) as session:
         try:
@@ -226,7 +240,9 @@ def run(allow_production: bool = False) -> int:
             for entity, table, column in LEGACY_TARGETS:
                 try:
                     n = check_legacy(session, entity, table, column)
+                    legacy_rows_seen += n
                     checked.append(f"legacy:{entity}:{n}")
+                    legacy_detail[entity] = n
                 except SmokeFailure as exc:
                     failures.append(exc)
                 except Exception as exc:
@@ -237,6 +253,16 @@ def run(allow_production: bool = False) -> int:
             # Never leave a sentinel behind, even on an unexpected error.
             session.rollback()
 
+    # The legacy read is the ONLY check that can distinguish the right key from
+    # a merely well-formed one — the round-trip passes with any self-consistent
+    # key. If it inspected ZERO rows (empty tables, all-NULL columns, a freshly
+    # reseeded staging database) it silently degraded to a no-op and the run
+    # would report pass having proven nothing about the deployed key.
+    if not failures and legacy_rows_seen == 0:
+        failures.append(
+            SmokeFailure("legacy", "no_legacy_rows_to_verify")
+        )
+
     for f in failures:
         _emit({"check": "crypto_smoke", "result": "fail", "entity": f.entity,
                "reason": f.reason, "env": env, "build_sha": build_sha})
@@ -244,6 +270,11 @@ def run(allow_production: bool = False) -> int:
         "check": "crypto_smoke",
         "result": "fail" if failures else "pass",
         "entities_checked": len(checked),
+        # Per-entity legacy row counts, so an operator can tell "verified 5 real
+        # rows" from "verified 0 because the table was empty". The aggregate
+        # alone could not express that difference.
+        "legacy_rows_verified": legacy_detail,
+        "legacy_rows_total": legacy_rows_seen,
         "failures": len(failures),
         "env": env,
         "build_sha": build_sha,

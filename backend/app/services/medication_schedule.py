@@ -1132,7 +1132,21 @@ def adherence_summary(
             future += 1
 
     denominator = taken + skipped + missed
-    rate = round(taken / denominator, 3) if denominator else None
+    # RECONCILED means "the period was actually backfilled", nothing else.
+    #
+    # It was `backfilled or denominator > 0`, which reported True whenever ANY
+    # stale row happened to exist — precisely the unreconciled case the flag
+    # exists to mark. A schedule stopped after a single app visit reported
+    # taken=7 / missed=0 / rate=1.0 / reconciled=True for a month in which ~30
+    # doses were prescribed and 7 were taken: the engagement-inflated rate this
+    # whole change set out to remove, still live for every non-active schedule
+    # and now stamped as trustworthy. A clinician reading "100% adherent, still
+    # hyperglycaemic" escalates the dose, and the patient who then starts taking
+    # it properly is on too much drug.
+    reconciled = bool(stats["backfilled"])
+    # A rate from an unreconciled period is not a less precise number, it is a
+    # different quantity — app engagement. Withhold it rather than qualify it.
+    rate = round(taken / denominator, 3) if (reconciled and denominator) else None
     return {
         "expected_count": denominator + future,
         "taken_count": taken,
@@ -1145,7 +1159,7 @@ def adherence_summary(
         "period_end": period_end,
         "timezone": schedule.patient_timezone,
         "calculation_version": ADHERENCE_CALCULATION_VERSION,
-        "reconciled": bool(stats["backfilled"]) or denominator > 0,
+        "reconciled": reconciled,
         # Legacy keys, same numbers under the old names, so existing callers do
         # not silently start reading None while the frontend is updated.
         "total": denominator + future,

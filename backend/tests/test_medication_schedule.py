@@ -457,9 +457,17 @@ def test_editing_a_schedule_preserves_missed_history(db, patient):
     db.commit()
 
     adherence = _sched.adherence_summary(db, patient_id=pid, schedule_id=s.id)
-    # The overdue doses were swept to MISSED and KEPT, not deleted.
+    # The property this test protects: the overdue doses were swept to MISSED and
+    # KEPT, not deleted. That still holds.
     assert adherence["missed"] >= 3, adherence
-    assert adherence["adherence_rate"] == 0.0
+    # The RATE is now withheld, and that is deliberate. This schedule has been
+    # superseded, so `reconcile_period` declines it and the counts are whatever
+    # happened to be materialized before the edit — i.e. a function of when the
+    # patient last opened the app, not of their therapy. Publishing 0.0 from that
+    # set would be the engagement-derived number this work removes; a superseded
+    # version cannot answer "how adherent were you" and must say so.
+    assert adherence["reconciled"] is False
+    assert adherence["adherence_rate"] is None, adherence
     assert new.id != s.id and new.version == s.version + 1
 
 
