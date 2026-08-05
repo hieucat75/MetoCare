@@ -248,26 +248,118 @@ def _match_biomarker(
     if _UNMAPPABLE_LABEL_RE.search(line_noacc_lc):
         return None
 
-    spans: list[tuple[int, int, BiomarkerSpec]] = []
+    won = _winning_span(line_noacc_lc, idx)
+    if won is None:
+        return None
+    _start, end, spec, _alias = won
+    return spec, end
+
+
+def _winning_span(
+    line_noacc_lc: str, idx: dict
+) -> tuple[int, int, BiomarkerSpec, str] | None:
+    """The shared span-selection, returning the WINNING ALIAS as well.
+
+    `_match_biomarker` deliberately keeps its two-tuple return (many callers
+    unpack it), so the alias that actually won is carried here instead of widening
+    that signature. It is what `resolve_with_provenance` records: "resolved to
+    `ldl`" is not auditable on its own, because it does not say WHICH of the
+    dozens of aliases fired, and that is precisely the question asked when a row
+    turns out to name the wrong analyte.
+    """
+    spans: list[tuple[int, int, BiomarkerSpec, str]] = []
     for alias, spec in idx.items():
         a = _strip_accents(alias.lower())
         if not a:
             continue
         for m in _alias_pattern(a).finditer(line_noacc_lc):
-            spans.append((m.start(), m.end(), spec))
+            spans.append((m.start(), m.end(), spec, alias))
     if not spans:
         return None
 
-    def _is_shadowed(span: tuple[int, int, BiomarkerSpec]) -> bool:
-        start, end, _ = span
+    def _is_shadowed(span) -> bool:
+        start, end = span[0], span[1]
         return any(
-            o_start <= start and end <= o_end and (o_end - o_start) > (end - start)
-            for o_start, o_end, _ in spans
+            o[0] <= start and end <= o[1] and (o[1] - o[0]) > (end - start)
+            for o in spans
         )
 
     survivors = [s for s in spans if not _is_shadowed(s)]
-    start, end, spec = min(survivors, key=lambda s: (-(s[1] - s[0]), s[0]))
-    return spec, end
+    return min(survivors, key=lambda s: (-(s[1] - s[0]), s[0]))
+
+
+def resolve_with_provenance(label: str | None, hospital_profile=None) -> dict:
+    """Resolve a printed lab label AND record how the resolution was reached.
+
+    Storing only the canonical key makes a wrong-analyte incident un-investigable
+    after the fact: the row says `ldl`, the report said something else, and
+    nothing records which alias bridged them or whether a hospital-profile alias
+    was involved. That is the exact question P0-1 raised, and it could not be
+    answered from the data.
+
+    Returns a flat, JSON-serializable dict — never raises. `canonical` is None for
+    a label with no safe canonical (non-HDL, VLDL, a ratio), and `reason` says
+    which rule dropped it, so "we produced nothing" is distinguishable from "we
+    were never asked".
+    """
+    raw = (label or "").strip()
+    if not raw:
+        return {"original_label": label, "canonical": None, "reason": "empty_label"}
+
+    normalized = _strip_accents(raw.lower())
+    if _UNMAPPABLE_LABEL_RE.search(normalized):
+        # Deliberate refusal, not a lookup miss — the distinction matters when
+        # someone asks why a line on the report never became a row.
+        return {
+            "original_label": raw,
+            "canonical": None,
+            "reason": "unmappable_label",
+            "matcher": "hardened",
+        }
+
+    idx = build_alias_index(hospital_profile)
+    won = _winning_span(normalized, idx)
+    if won is None:
+        return {
+            "original_label": raw,
+            "canonical": None,
+            "reason": "no_alias_matched",
+            "matcher": "hardened",
+        }
+
+    _start, _end, spec, alias = won
+    profile_name = getattr(hospital_profile, "name", None)
+    return {
+        "original_label": raw,
+        "canonical": spec.canonical,
+        "matched_alias": alias,
+        "alias_source": _alias_source(alias, hospital_profile),
+        "hospital_profile": profile_name,
+        "matcher": "hardened",
+        "reason": "matched",
+    }
+
+
+def _alias_source(alias: str, hospital_profile=None) -> str:
+    """Which of the THREE alias layers contributed the winning alias.
+
+    `build_alias_index` merges the shared `_ALIAS_INDEX`, the parser's own
+    `_PARSER_EXTRA_ALIASES`, and any hospital-profile aliases. Collapsing that to
+    base-or-profile mislabels every parser-extra alias as profile-contributed —
+    which would send an investigator looking at the wrong lab's configuration.
+    A profile-scoped alias resolving a report from a DIFFERENT lab is a specific,
+    checkable failure, so the layer has to be reported accurately to be useful.
+    """
+    if alias in _ALIAS_INDEX:
+        return "base"
+    for extras in _PARSER_EXTRA_ALIASES.values():
+        if alias in extras:
+            return "parser_extra"
+    if hospital_profile is not None:
+        for extras in getattr(hospital_profile, "additional_aliases", {}).values():
+            if alias in extras or alias.lower() in {e.lower() for e in extras}:
+                return "profile"
+    return "unknown"
 
 
 def _norm_unit(u: str) -> str:

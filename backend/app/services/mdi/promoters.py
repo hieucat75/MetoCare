@@ -163,6 +163,20 @@ def _canonical_for(test_name: str | None) -> str | None:
     return matched[0].canonical if matched else None
 
 
+def _provenance_for(test_name: str | None) -> dict:
+    """Provenance for the label AS CONFIRMED, re-derived at promotion time.
+
+    Not the provenance the extractor recorded: `_apply_corrections` can change
+    `test_name` before promotion, so the extractor's entry describes the label the
+    OCR read, which may no longer be the label being promoted. Recording the stale
+    one would be worse than recording nothing — it would attribute the stored
+    analyte to an alias that never fired for it.
+    """
+    from app.services.lab_parser import resolve_with_provenance
+
+    return resolve_with_provenance(test_name)
+
+
 def _parse_date(raw: str | None) -> dt.date | None:
     """Parse a VN dd/mm/yyyy (or dd-mm-yyyy) report date.
 
@@ -270,4 +284,16 @@ class LabPromoter:
             ],
             commit=False,
         )
+        # Persist provenance for the label AS CONFIRMED onto the candidate, next
+        # to the promotion it produced. The candidate is the durable audit record
+        # linking "what the report said" to "what we stored", and fields_json is
+        # already encrypted, so this adds no new PHI surface. Without it, a
+        # wrong-analyte report cannot be reconstructed after the fact: the stored
+        # row names a canonical and nothing says which alias bridged them.
+        provenance = _provenance_for(test_name)
+        provenance["promoted_lab_result_id"] = rows[0].id
+        candidate.fields_json = {
+            **fields,
+            "promotion_provenance": provenance,
+        }
         return PromotionOutcome("lab_result", rows[0].id, ACTION_CREATED)

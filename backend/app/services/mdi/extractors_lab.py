@@ -22,7 +22,12 @@ from __future__ import annotations
 import re
 
 from app.models.medical_document import CANDIDATE_LAB_RESULT
-from app.services.lab_parser import _match_biomarker, _strip_accents, build_alias_index
+from app.services.lab_parser import (
+    _match_biomarker,
+    _strip_accents,
+    build_alias_index,
+    resolve_with_provenance,
+)
 
 from .extractors import CandidateDraft, make_dedupe_key
 
@@ -95,10 +100,20 @@ class LabExtractor:
             if m.group("low") and m.group("high"):
                 ref_range = f"{m.group('low')}-{m.group('high')}"
 
+            # Record HOW the label resolved, not just what it resolved to. Kept
+            # inside fields_json, which SEC-F11 already encrypts, so provenance
+            # travels with the candidate through review and promotion without a
+            # second PHI surface. Auditing a wrong-analyte row needs the winning
+            # alias and which alias layer supplied it; the canonical key alone
+            # cannot answer either question.
+            provenance = resolve_with_provenance(raw_name)
+            provenance["ocr_confidence"] = round(float(ocr_confidence), 3)
+
             fields = {
                 "test_name": raw_name,
                 "original_test_name": raw_name,
                 "canonical": canonical,
+                "resolution_provenance": provenance,
                 # ORIGINAL value/unit are preserved verbatim; normalization to SI
                 # happens only at promotion, keeping the original for display (§E).
                 "value": value,
