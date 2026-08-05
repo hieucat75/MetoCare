@@ -692,3 +692,48 @@ jobs:
             echo "::error::One or more smoke tests failed — see above"
             exit 1
           fi
+
+      # ── Post-deploy PHI crypto smoke ──────────────────────────────────────
+      #
+      # The checks above are UNAUTHENTICATED and assert 401s, and /health is a
+      # bare SELECT 1 — none of them touches an encrypted column. Boot-time
+      # validation proves the key is well-FORMED, not that it is the RIGHT key.
+      #
+      # Reproduced on a real database: with a wrong-but-well-formed key, boot
+      # passes, /health passes, the smoke suite passes, and every authenticated
+      # encrypted read raises. Reminders (Notification.title/body) and the
+      # medication timeline (MedicationStatement.raw_drug_name) are NOT NULL with
+      # on_decrypt_failure="raise", so a mis-rotated key takes both down for every
+      # patient while the deploy is reported healthy.
+      #
+      # Runs as a one-shot job, not an endpoint: an HTTP route that decrypts on
+      # demand is a crypto oracle. Writes synthetic CRYPTO-SMOKE sentinels only,
+      # rolls them back, and prints no PHI and no key material.
+      - name: Post-deploy PHI crypto smoke
+        run: |
+          az containerapp job create -g "$RG" -n "$MIGRATE_JOB-crypto" \
+            --environment "$ACA_ENV" --trigger-type Manual --replica-timeout 300 \
+            --image "$IMG" --cpu 0.5 --memory 1Gi \
+            --secrets db-url="$DB_URL" enc-keys="$ENC_KEYS" \
+            --env-vars MCP_DATABASE_URL=secretref:db-url \
+              MCP_ENCRYPTION_KEYS=secretref:enc-keys MCP_ENV=staging \
+              MCP_BUILD_SHA=${{ steps.tag.outputs.sha8 }} \
+            --command "python" --args "-m" "scripts.crypto_smoke" -o none 2>/dev/null || true
+          az containerapp job start -g "$RG" -n "$MIGRATE_JOB-crypto" -o none
+          for i in $(seq 1 30); do
+            ST=$(az containerapp job execution list -g "$RG" -n "$MIGRATE_JOB-crypto" \
+              --query "[0].properties.status" -o tsv 2>/dev/null || echo Running)
+            echo "  crypto-smoke $i: $ST"
+            [ "$ST" = "Succeeded" ] && break
+            if [ "$ST" = "Failed" ]; then
+              echo "::error::PHI crypto smoke FAILED — encrypted columns are not"
+              echo "::error::readable with the deployed MCP_ENCRYPTION_KEYS."
+              echo "::error::Remediation: restore the previous key in Key Vault"
+              echo "::error::(secret mcp-encryption-keys), redeploy, and re-run this"
+              echo "::error::job. Do NOT run a downgrade — the SEC-F11/P1-5"
+              echo "::error::migrations refuse to decrypt with a wrong key and will"
+              echo "::error::abort rather than destroy data."
+              exit 1
+            fi
+            sleep 10
+          done
