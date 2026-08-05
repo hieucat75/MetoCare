@@ -164,18 +164,65 @@ jobs:
           MCP_DATABASE_URL: "postgresql+psycopg://mcp:mcp_test_ci@localhost:5432/mcp_test"
           MCP_ENV: test
 
+      # Every file under tests/integration, each in its OWN process against its
+      # OWN freshly created database.
+      #
+      # This step used to name five files explicitly. Eleven of the sixteen on
+      # disk were therefore never run by CI at all — including the PHI-encryption
+      # suite, whose entire job is to prove patient data is encrypted at rest. A
+      # hand-maintained list of test files is a list that silently stops matching
+      # the directory, and nothing fails when it does. Globbing removes the
+      # failure mode rather than correcting one instance of it.
+      #
+      # Per-file databases are required, not tidiness: each of these modules runs
+      # `alembic upgrade`/`downgrade` against POSTGRES_TEST_URL, so pointing them
+      # all at one database makes one module's downgrade collide with another's
+      # expected revision. That interference is what made the whole-suite run
+      # unusable locally and is why the list existed. Isolating them fixes the
+      # cause; the list only hid it.
       - name: Run PostgreSQL integration tests
         run: |
-          python -m pytest tests/integration/test_medication_p0_migrations.py \
-            tests/integration/test_medication_k1_knowledge_migration.py \
-            tests/integration/test_medication_k1_s2_catalog_migration.py \
-            tests/integration/test_mdi_migration.py \
-            tests/integration/test_medication_schedule_migration.py \
-            -v --tb=short -m integration \
-            --junit-xml=test-results-postgres.xml
+          set -uo pipefail
+          files=$(ls tests/integration/test_*.py | sort)
+          echo "Discovered $(echo "$files" | wc -l) integration modules:"
+          echo "$files"
+          rc=0
+          for f in $files; do
+            db="ci_$(basename "$f" .py | tr -c 'a-z0-9_' '_' | cut -c1-40)"
+            echo "::group::$f  (database: $db)"
+            PGPASSWORD=mcp_test_ci psql -h localhost -U mcp -d postgres \
+              -c "DROP DATABASE IF EXISTS $db" -c "CREATE DATABASE $db" >/dev/null
+            # Same pre-P0 baseline the shared database gets, so upgrade AND
+            # downgrade run from a known revision.
+            MCP_DATABASE_URL="postgresql+psycopg://mcp:mcp_test_ci@localhost:5432/$db" \
+              alembic upgrade c0_m9_audit_log_clinic_id >/dev/null
+            MCP_DATABASE_URL="postgresql+psycopg://mcp:mcp_test_ci@localhost:5432/$db" \
+              POSTGRES_TEST_URL="postgresql+psycopg://mcp:mcp_test_ci@localhost:5432/$db" \
+              python -m pytest "$f" -v --tb=short -m integration \
+                --junit-xml="test-results-$(basename "$f" .py).xml"
+            code=$?
+            # pytest exits 5 for "no tests collected". That must FAIL here, not
+            # pass quietly — it is exactly how the PHI-encryption suite hid: it
+            # carried `skipif` but not `@pytest.mark.integration`, so CI-1 skipped
+            # it for want of a database and CI-2 deselected it for want of the
+            # marker. A suite whose job is to prove patient data is encrypted at
+            # rest ran in neither, and reported green in both.
+            if [ "$code" -eq 5 ]; then
+              echo "::error file=$f::collected 0 tests under -m integration — missing @pytest.mark.integration?"
+              rc=1
+            elif [ "$code" -ne 0 ]; then
+              rc=1
+            fi
+            PGPASSWORD=mcp_test_ci psql -h localhost -U mcp -d postgres \
+              -c "DROP DATABASE IF EXISTS $db" >/dev/null
+            echo "::endgroup::"
+          done
+          exit $rc
         env:
-          MCP_DATABASE_URL: "postgresql+psycopg://mcp:mcp_test_ci@localhost:5432/mcp_test"
-          POSTGRES_TEST_URL: "postgresql+psycopg://mcp:mcp_test_ci@localhost:5432/mcp_test"
+          # MCP_DATABASE_URL / POSTGRES_TEST_URL are set PER FILE in the loop above,
+          # to that file's own database. Setting them here too would be a trap: a
+          # module that reads them at import time would silently reach the shared
+          # database and reintroduce the cross-module interference.
           ANTHROPIC_API_KEY: test-key-mock
           ENVIRONMENT: test
           MCP_ENV: test
@@ -185,7 +232,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: pytest-results-postgres
-          path: backend/test-results-postgres.xml
+          path: backend/test-results-*.xml  # one per integration module
         continue-on-error: true
 
   # ── 2. Frontend Tests ───────────────────────────────────────────────────────

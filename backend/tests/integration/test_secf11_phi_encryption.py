@@ -40,10 +40,18 @@ PARENT = "j4_m8_consent_versioning"
 MSG_PHI = "Tôi bị đau ngực khi leo cầu thang, HbA1c 8.9"
 DRUG_PHI = "Metformin"
 
-pytestmark = pytest.mark.skipif(
-    not POSTGRES_TEST_URL,
-    reason="POSTGRES_TEST_URL not set — skipping PostgreSQL integration tests.",
-)
+# BOTH marks are required, and the missing one is why this suite never ran.
+# `skipif` alone meant: CI-1 (`-m "not integration"`) collected it and SKIPPED it
+# for want of POSTGRES_TEST_URL, while CI-2 (`-m integration`) DESELECTED it for
+# want of the marker. A suite whose entire job is to prove patient data is
+# encrypted at rest executed in neither job, and reported green in both.
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.skipif(
+        not POSTGRES_TEST_URL,
+        reason="POSTGRES_TEST_URL not set — skipping PostgreSQL integration tests.",
+    ),
+]
 
 
 def _fernet_key() -> str:
