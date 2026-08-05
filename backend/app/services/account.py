@@ -308,8 +308,6 @@ def delete_account(db: Session, *, user_id: str, patient_id: str) -> list[str]:
         .all()
     ):
         log.description = ""
-        candidate.field_confidence_json = None
-        candidate.corrections_json = None
 
     # Lab upload binaries (LabDocument holds the raw file object key).
     for lab_doc in (

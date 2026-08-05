@@ -195,3 +195,37 @@ def test_no_phi_column_on_a_child_table_survives_erasure(db, seeded_phi):
         "PHI survived GDPR erasure in "
         f"{leaked} — extend app/services/account.delete_account to blank it"
     )
+
+
+def test_erasure_succeeds_for_a_patient_with_symptom_logs_and_no_ocr_candidates(db, patient):
+    """Regression: two candidate-blanking lines were pasted into the symptom_logs
+    loop, referencing the loop variable of an EARLIER loop. A patient who had
+    logged a symptom but never uploaded a document has zero ExtractionCandidate
+    rows, so that name was never bound and the whole GDPR deletion raised
+    UnboundLocalError -> unhandled 500 -> nothing committed. Erasure failed
+    entirely for a very ordinary account, while the compliance docs asserted it
+    was complete."""
+    from app.models.clinical import SymptomLog
+    from app.models.medical_document import ExtractionCandidate
+    from app.services import account as account_svc
+
+    pid = patient["patient_id"]
+    import datetime as _dt
+
+    db.add(
+        SymptomLog(
+            patient_id=pid,
+            description="Chóng mặt buổi sáng",
+            reported_at=_dt.datetime.now(_dt.UTC),
+        )
+    )
+    db.commit()
+
+    assert (
+        db.query(ExtractionCandidate).filter_by(patient_id=pid).count() == 0
+    ), "fixture precondition: no OCR candidates"
+
+    account_svc.delete_account(db, user_id=patient["user_id"], patient_id=pid)
+    db.commit()
+
+    assert db.query(SymptomLog).filter_by(patient_id=pid).one().description == ""
