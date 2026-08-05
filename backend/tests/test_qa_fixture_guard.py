@@ -24,6 +24,10 @@ def _settings(**overrides) -> Settings:
         skip_mfa_in_dev=False,
         password_min_length=8,
         password_require_complexity=True,
+        # Likewise a real scan posture: production also refuses to boot with
+        # document_scan_mode="skip" (see test_document_scan_guard.py), and that
+        # guard would otherwise fire here and mask what this suite is asserting.
+        document_scan_mode="hold",
     )
     base.update(overrides)
     return Settings(**base)

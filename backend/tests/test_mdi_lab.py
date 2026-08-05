@@ -85,3 +85,40 @@ def test_parse_date_never_fabricates_today():
     assert _parse_date("2024-03-15") is None  # ISO order not misread as dd-mm-yyyy
     assert _parse_date("garbage") is None
     assert _parse_date(None) is None
+
+
+# ── CLIN P0 (integration review): OCR lab labels must never resolve to a
+# different analyte. `lab_interpreter.normalize_biomarker` step 4 is a bare
+# containment scan, so "VLDL" resolved to `ldl` and "Non-HDL cholesterol" to
+# `hdl`. Confirming such a row overwrote the real analyte with a much lower
+# number and classified it optimal — a false negative on cardiovascular risk,
+# invisible at review time because the card shows the printed label. The
+# extractor now uses lab_parser._match_biomarker, which drops these outright.
+
+
+def test_vldl_is_never_mapped_to_ldl():
+    assert _extract("VLDL: 0.9 mmol/L") == []
+
+
+def test_non_hdl_is_never_mapped_to_hdl():
+    assert _extract("Non-HDL cholesterol: 3.9 mmol/L") == []
+    assert _extract("non HDL: 3.9 mmol/L") == []
+
+
+def test_lipid_ratio_is_never_mapped_to_a_concentration():
+    assert _extract("Cholesterol/HDL: 4.1") == []
+
+
+def test_real_lipid_analytes_still_resolve_correctly():
+    by_name = {c.fields["test_name"]: c.fields["canonical"] for c in _extract(
+        "LDL: 4.9 mmol/L\nHDL: 1.2 mmol/L\nTriglyceride: 2.1 mmol/L"
+    )}
+    assert by_name == {"LDL": "ldl", "HDL": "hdl", "Triglyceride": "triglyceride"}
+
+
+def test_unmappable_label_does_not_suppress_its_neighbours():
+    """A dropped VLDL row must not take the surrounding real rows with it."""
+    got = {c.fields["canonical"] for c in _extract(
+        "LDL: 4.9 mmol/L\nVLDL: 0.9 mmol/L\nHDL: 1.2 mmol/L"
+    )}
+    assert got == {"ldl", "hdl"}

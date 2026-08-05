@@ -320,6 +320,32 @@ class Settings(BaseSettings):
                 "aid only and must never be reachable in production."
             )
 
+        # Fail loud on an unscanned document pipeline in production.
+        #
+        # `document_scan_mode="skip"` accepts an upload and promotes the object
+        # straight to the servable `accepted` container with `scan_status=skipped`
+        # (services/mdi/service.py). That is a deliberate ENG-RC default, but the
+        # bytes are then parsed SERVER-SIDE before any human sees them — Pillow and
+        # pytesseract in services/ocr_engine.py, pypdf for page counting — so a
+        # crafted file that still passes the magic-byte check reaches those parsers
+        # unscanned. Every other risk factor of this shape (default secrets, relaxed
+        # auth, the QA fixture path) already refuses to boot in prod; this one did
+        # not, so production could ship with no AV and nothing would say so.
+        #
+        # Scoped to prod only: staging deliberately runs "skip" today, and turning
+        # this into a staging boot failure would break the existing deploy.
+        if (
+            env in ("prod", "production")
+            and (self.document_scan_mode or "skip").lower() == "skip"
+        ):
+            raise RuntimeError(
+                f"Refusing to start in env={self.env!r} with "
+                "MCP_DOCUMENT_SCAN_MODE='skip'. Uploaded documents would be accepted "
+                "and parsed server-side (Pillow/Tesseract/pypdf) with no malware "
+                "scan. Set 'clamav' once real scanning is wired, or 'hold' to "
+                "quarantine uploads pending review."
+            )
+
     def warn_if_insecure(self) -> list[str]:
         """Return a list of insecure-config warnings (used at startup)."""
         warnings: list[str] = []

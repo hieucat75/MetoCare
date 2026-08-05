@@ -3,16 +3,26 @@
 Deterministic parser over OCR text of a printed VN lab report. One report yields
 MANY independent lab-result candidates (finding 1); each carries the ORIGINAL
 value/unit/label (never a silently-normalized value — §E) plus a stable
-dedupe_key. Reuses ``lab_interpreter.normalize_biomarker`` to recognize which
-lines are real biomarkers, so free-text/header lines are ignored. No LLM/network.
+dedupe_key. No LLM/network.
+
+Analyte recognition uses ``lab_parser._match_biomarker`` — the SAME hardened
+matcher the /lab-uploads path uses — not ``lab_interpreter.normalize_biomarker``.
+That matters clinically: ``normalize_biomarker``'s step 4 is a bare containment
+scan (``alias in key or key in alias``), so it resolves "VLDL" to ``ldl`` and
+"Non-HDL cholesterol" to ``hdl``. A patient confirming the VLDL line off their own
+report would overwrite their LDL with a much lower number and see it classified
+optimal — a false negative on cardiovascular risk, and invisible at review time
+because the card shows the printed label, not the resolved canonical.
+``_match_biomarker`` drops those labels outright (``_UNMAPPABLE_LABEL_RE``) and
+applies longest-alias/shadowing rules, so a wrong analyte becomes a dropped row.
 """
 
 from __future__ import annotations
 
 import re
 
-from app.domain import lab_interpreter
 from app.models.medical_document import CANDIDATE_LAB_RESULT
+from app.services.lab_parser import _match_biomarker, _strip_accents
 
 from .extractors import CandidateDraft, make_dedupe_key
 
@@ -64,9 +74,15 @@ class LabExtractor:
             raw_name = m.group("name").strip(" :=.-")
             if not raw_name:
                 continue
-            canonical = lab_interpreter.normalize_biomarker(raw_name)
-            if canonical is None:
-                continue  # not a recognized biomarker → skip (headers, notes, ids)
+            # Match against the accent-stripped, lower-cased label, the form
+            # `_match_biomarker` and `_UNMAPPABLE_LABEL_RE` are written against.
+            matched = _match_biomarker(_strip_accents(raw_name.lower()))
+            if matched is None:
+                # Not a recognized biomarker (headers, notes, ids) OR a label with
+                # no safe canonical (non-HDL, VLDL, lipid ratios). Dropping the row
+                # is deliberate: a wrong analyte is worse than a missing one.
+                continue
+            canonical = matched[0].canonical
 
             value = _num(m.group("value"))
             unit = (m.group("unit") or "").strip() or None

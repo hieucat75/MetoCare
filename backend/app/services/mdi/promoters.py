@@ -80,9 +80,7 @@ class MedicationPromoter:
         # it through would pollute the medication list, the Meto context block and
         # the reminder body — and is the cleanest prompt-injection vehicle.
         if len(name) > MAX_MEDICATION_NAME_LEN:
-            raise PromotionInvalid(
-                "Tên thuốc quá dài — vui lòng sửa lại tên thuốc rồi xác nhận."
-            )
+            raise PromotionInvalid("Tên thuốc quá dài — vui lòng sửa lại tên thuốc rồi xác nhận.")
 
         if merge_target_id:
             return self._merge(db, candidate, merge_target_id)
@@ -150,6 +148,21 @@ class RecordOnlyPromoter:
         return PromotionOutcome(candidate.candidate_type, candidate.id, ACTION_CREATED)
 
 
+def _canonical_for(test_name: str | None) -> str | None:
+    """Resolve a lab label to its canonical analyte using the HARDENED matcher.
+
+    Same matcher as the /lab-uploads path and the OCR lab extractor, so all three
+    agree. Labels with no safe canonical (non-HDL, VLDL, lipid ratios) resolve to
+    None rather than to a neighbouring analyte.
+    """
+    if not test_name:
+        return None
+    from app.services.lab_parser import _match_biomarker, _strip_accents
+
+    matched = _match_biomarker(_strip_accents(test_name.lower()))
+    return matched[0].canonical if matched else None
+
+
 def _parse_date(raw: str | None) -> dt.date | None:
     """Parse a VN dd/mm/yyyy (or dd-mm-yyyy) report date.
 
@@ -205,7 +218,15 @@ class LabPromoter:
         # canonical/SI unit, refuse to promote — otherwise the value would be
         # classified against the wrong-unit thresholds (silent false-normal /
         # inverted message). The patient corrects the unit and re-confirms.
-        canonical = fields.get("canonical")
+        # Re-derive the canonical from the (possibly corrected) test_name rather
+        # than trusting the stored field. `_apply_corrections` merges an arbitrary
+        # flat dict into fields_json before promotion, so the stored `canonical`
+        # is patient-influenced: blanking it skipped this guard entirely, and
+        # correcting `test_name` to another analyte left a stale `canonical` so
+        # the guard validated the OLD analyte's units while `create_manual_entry`
+        # stored and classified the row as the NEW one. Both routes reached the
+        # silent false-normal this guard exists to prevent.
+        canonical = _canonical_for(test_name) or fields.get("canonical")
         if canonical and not is_unit_convertible(canonical, unit):
             raise PromotionInvalid(
                 "Đơn vị xét nghiệm chưa rõ — vui lòng sửa đơn vị rồi xác nhận lại."
