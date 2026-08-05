@@ -3,7 +3,7 @@
 **Owner question:** *"`https://app.metocare.me/medications/<id>` still looks unchanged even though
 the medication journey was reported complete."*
 
-**Status:** IMPLEMENTED, REVIEWED, GREEN — **NOT DEPLOYED.** Deployment is blocked on an owner decision, not a technical problem (see §10).
+**Status:** **WEB MEDICATION PARITY — STAGING READY AND VERIFIED LIVE.** Deployed to the staging Container App (= `app.metocare.me`) with the owner's explicit go-ahead, and walked end-to-end against real seeded data. Production rollout still requires separate approval (see §10).
 
 **Working branch:** `feat/patient-platform-journey2`
 **Baseline HEAD at investigation start:** `bfd6735`
@@ -253,48 +253,52 @@ Deferred P2s (recorded, not fixed): superseded schedule versions are all listed 
 
 ## 8. Evidence
 
-Screenshots and sanitized runtime logs:
 `docs/patient-platform-program/evidence/web-medication-parity/`
 
-Staging / live URL: `https://app.metocare.me` (== `ca-metocare-frontend.wittyflower-55a3afa4.southeastasia.azurecontainerapps.io`)
+| File | Contents |
+|---|---|
+| `00-before-live-bundle.md` | The exact artifact the owner was looking at: chunk hash, build SHA, DNS target, decoded marker list, and the endpoint list showing the real gap. |
+| `09-after-staging-verification.md` | Post-deploy verification: environment, bundle diff, journey walk, action results, consent probes, access-control probes, state changed. |
+| `01`–`08` `.png` | Desktop and mobile-web screenshots of every new surface and both dose actions. |
+
+Live URL: `https://app.metocare.me` (== `ca-metocare-frontend.wittyflower-55a3afa4.southeastasia.azurecontainerapps.io`)
+
+Deploy: run `30964961627`, success **2026-08-05T01:03:35Z**, from `c9bd98a`.
 
 ## 9. Changelog
 
 | Date | Change |
 |---|---|
 | 2026-08-04 | Initial diagnosis, deployment topology, gap matrix. |
-| 2026-08-04 | Backend provenance endpoint + web Journey-3 parity implemented, tested, independently reviewed; all P0/P1 fixed. Deployment **not** performed — see §10. |
+| 2026-08-04 | Backend provenance endpoint + web Journey-3 parity implemented, tested, independently reviewed; all P0/P1 fixed. |
+| 2026-08-05 | Owner authorised the deploy knowing `app.metocare.me` is the staging app. Deployed (`30964961627`, from `c9bd98a`) and verified end-to-end live — see `evidence/.../09-after-staging-verification.md`. |
 
 ## 10. Deployment status and rollout checklist
 
-**Nothing has been deployed. Deployment is blocked pending an owner decision — this
-is an authorization question, not a technical one.**
+### Done
 
-The instruction authorised a **staging** deploy and explicitly withheld production.
-But §1 establishes that `app.metocare.me` is a CNAME to the **staging** Container
-App. There is one live web environment, and deploying to "staging" publishes
-straight to the URL the owner calls production. Doing that under a
-staging-only authorisation would be a production deploy in everything but name, so
-it needs the owner's explicit call.
+The owner was shown the DNS finding (`app.metocare.me` is the staging Container App,
+so a "staging" deploy publishes to the URL they were viewing) and explicitly chose to
+deploy anyway, accepting that URL as their review environment.
 
-### Option A — deploy (accepting it is owner-visible immediately)
-1. `gh workflow run azure-staging.yml --ref feat/patient-platform-journey2`
-2. Verify `GET /api/v1/health` and `/api/v1/info` on the backend FQDN.
-3. Confirm `FEATURE_OCR` is on (needed for the provenance path to have data).
-4. Seed or use a synthetic patient with a structured schedule + a promoted
-   prescription document.
-5. Walk the journey: list → detail → next-due dose → taken → skipped with reason →
-   adherence → source/provenance.
-6. Capture desktop + mobile-web screenshots and sanitized logs into
-   `docs/patient-platform-program/evidence/web-medication-parity/`.
+- [x] Deployed run `30964961627` from `c9bd98a` — success 2026-08-05T01:03:35Z.
+- [x] Backend healthy; `ocr=true`; migration head unchanged (`j4_m8_consent_versioning`).
+- [x] New provenance route live (401 unauthenticated; was 404 before).
+- [x] Journey walked end-to-end on real seeded data: schedule → next due dose → taken →
+      duplicate-action → skipped with a structured reason → adherence → provenance.
+- [x] Consent gate verified live in both directions (grant → 200, revoke → 403).
+- [x] BOLA (403) and unauthenticated (401) probes.
+- [x] Desktop + mobile-web screenshots; zero console errors.
 
-### Option B — separate the environments first (recommended)
-1. Point `app.metocare.me` at the `rg-metocare-prod` Container App (last deployed
-   2026-07-14 from `30a65eb`, currently receiving no traffic), **or** move the
-   owner's review URL to the staging FQDN.
-2. Then deploy to staging and verify there, leaving production untouched.
+### Still open — infrastructure (owner decision, not blocking this change)
 
-### Production rollout (requires explicit owner approval either way)
+`app.metocare.me` points at **staging**. The `rg-metocare-prod` Container App exists,
+was last deployed 2026-07-14 from `30a65eb`, and receives no traffic. Until DNS is
+separated there is one live web environment, and any staging deploy is owner-visible
+immediately. Options: repoint `app.metocare.me` at `rg-metocare-prod`, or move the
+review URL to the staging FQDN.
+
+### Production rollout (requires explicit owner approval)
 - [ ] Owner approves the parity change for production.
 - [ ] Merge `feat/patient-platform-journey2` → `main` (42 + 4 commits; **all**
       Journey 2–5 backend and mobile work lands with it — this is not a
