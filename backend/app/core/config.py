@@ -116,6 +116,17 @@ class Settings(BaseSettings):
     # quarantined, flagged, never handed to a worker. "clamav" = real scan (DIST-RC).
     document_scan_mode: str = "skip"  # skip | hold | clamav
 
+    # ---- Build / environment identity (environment-separation plan §4.1) ----
+    # `/api/v1/info` previously reported `env` but NOT which commit was running,
+    # so identifying the live build meant reconstructing it from workflow logs and
+    # bundle hashes. Baked by both deploy workflows from the resolved image tag.
+    build_sha: str = ""
+    build_time: str = ""  # ISO-8601 UTC
+    # The hostname this build is meant to be served from. A mismatch between this
+    # and the Host header is the signal that staging is answering on the
+    # production domain (or vice versa).
+    expected_host: str = ""
+
     # ---- LLM Gateway (P2 #1) — provider abstraction, never calls real LLM in mock ----
     llm_provider: str = "mock"  # mock | openai | anthropic (openai/anthropic = skeleton)
     llm_model: str = "mock-vi-1"

@@ -45,6 +45,16 @@ jobs:
           fi
 
 
+      # ── Guard: production may only ever deploy from `main` ────────────────
+      # workflow_dispatch accepts any ref, so without this a production deploy
+      # could be run from an unreviewed feature branch.
+      - name: Guard - production deploys only from main
+        run: |
+          if [ "${{ github.ref }}" != "refs/heads/main" ]; then
+            echo "::error::Production deploys only from main (got ${{ github.ref }})."
+            exit 1
+          fi
+
       # ── Resolve image tag (SHA8 + epoch for uniqueness) ──────────────────
       - name: Resolve image tag
         id: tag
@@ -115,6 +125,8 @@ jobs:
           push: true
           build-args: |
             NEXT_PUBLIC_API_URL=https://${{ env.BACKEND_FQDN }}/api/v1
+            NEXT_PUBLIC_APP_ENV=production
+            NEXT_PUBLIC_BUILD_SHA=${{ steps.tag.outputs.sha8 }}
           tags: ${{ env.REGISTRY }}/${{ github.repository_owner }}/metocare-frontend:${{ steps.tag.outputs.tag }}
 
       # ── Resume Postgres if stopped ────────────────────────────────────────
@@ -216,6 +228,9 @@ jobs:
             MCP_DATABASE_URL=secretref:db-url MCP_SECRET_KEY=secretref:secret-key \
             MCP_ENCRYPTION_KEYS=secretref:enc-keys \
             APPLICATIONINSIGHTS_CONNECTION_STRING=secretref:appi \
+            MCP_BUILD_SHA=${{ steps.tag.outputs.sha8 }} \
+            MCP_BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
+            MCP_EXPECTED_HOST=app.metocare.me \
             MCP_CORS_ALLOWED_ORIGINS=https://${FRONTEND_FQDN},https://app.metocare.me \
             MCP_AI_MODE=production MCP_LLM_PROVIDER=deepseek MCP_OCR_MODE=mock \
             MCP_OCR_WORKER_ENABLED=false MCP_RAG_ENABLED=false \

@@ -75,3 +75,4 @@ docs/patient-platform-program/evidence/native-j2j5/maestro/
 
 # Native journey screen recordings (large binaries kept as local artifacts; see VIDEO-MANIFEST.md)
 docs/patient-platform-program/evidence/**/*.mp4
+.gstack/

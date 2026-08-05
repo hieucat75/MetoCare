@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next'
 import { Inter } from 'next/font/google'
 import './globals.css'
 import { Providers } from './providers'
+import { EnvironmentBanner } from '@/components/EnvironmentBanner'
 
 const inter = Inter({
   subsets: ['latin'],
@@ -29,6 +30,7 @@ export default function RootLayout({
   return (
     <html lang="vi" className={inter.variable}>
       <body className={`${inter.className} bg-background min-h-screen`}>
+        <EnvironmentBanner />
         <Providers>{children}</Providers>
       </body>
     </html>
