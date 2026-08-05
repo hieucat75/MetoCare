@@ -283,6 +283,172 @@ def compute_occurrences(
     return out
 
 
+# ── deterministic period reconciliation (P1-3) ──────────────────────────────
+
+# The evaluation window is bounded so a request cannot walk an unbounded calendar.
+# 400 days covers "the last year" with room for a leap year and a timezone edge.
+MAX_ADHERENCE_PERIOD_DAYS = 400
+
+# Bumped when the denominator SEMANTICS change, not when the code moves. Stored on
+# every response so a rate can be traced to the rules that produced it — a
+# denominator that changes meaning without a version is indistinguishable from a
+# patient whose behaviour changed.
+ADHERENCE_CALCULATION_VERSION = "adherence-2.0.0"
+
+
+def expected_occurrences_in_window(
+    schedule: MedicationSchedule,
+    *,
+    window_start: dt.date,
+    window_end: dt.date,
+) -> list[tuple[dt.datetime, str]]:
+    """Every occurrence the schedule PRESCRIBES in an explicit local-date window.
+
+    This is `compute_occurrences` without the two clamps that make it a
+    forward-materializer: no `max(start, today_local)` and no
+    `grace_start <= utc <= horizon_end` filter. Those clamps are correct for
+    deciding what to remind about; they are exactly wrong for deciding what was
+    prescribed, because they make the answer depend on WHEN you ask.
+
+    That dependency was the defect: materialization only ever ran from a request
+    handler, so a patient dormant for 30 days had rows for the 7 days after their
+    last visit and nothing else. A twice-daily schedule running 35 days has 70
+    prescribed doses; such a patient had 14 rows, and adherence was computed over
+    those 14. The denominator measured app engagement, not therapy.
+
+    Phase rules are shared with `compute_occurrences` via `_day_applies`, so the
+    anchor, DST and cyclic/interval semantics cannot drift between "what we
+    remind" and "what we count".
+    """
+    if schedule.schedule_type == SCHEDULE_PRN:
+        # PRN has no prescribed schedule — there is nothing to be adherent TO.
+        return []
+    times = [t for t in (_parse_hhmm(x) for x in (schedule.local_dose_times or [])) if t]
+    if not times:
+        return []
+    if needs_anchor_repair(schedule):
+        # Same fail-closed rule as compute_occurrences: without a stable anchor a
+        # phase-dependent schedule would degrade to daily, which here would invent
+        # missed doses on rest days.
+        return []
+
+    anchor = schedule.start_date
+    if anchor is None:
+        # Phase-INDEPENDENT types only (fixed_daily / days_of_week). Anchor the
+        # phase calculation at the window start; every day qualifies regardless.
+        anchor = window_start
+
+    tz = _tz(schedule.patient_timezone)
+    start = max(window_start, schedule.start_date or window_start)
+    end = min(window_end, schedule.end_date) if schedule.end_date else window_end
+
+    out: list[tuple[dt.datetime, str]] = []
+    day = start
+    while day <= end:
+        if _day_applies(schedule, day, anchor):
+            for t in times:
+                local_dt = dt.datetime.combine(day, t, tzinfo=tz)
+                out.append(
+                    (local_dt.astimezone(dt.UTC), f"{day.isoformat()} {t.strftime('%H:%M')}")
+                )
+        day += dt.timedelta(days=1)
+    return out
+
+
+def reconcile_period(
+    db: Session,
+    schedule: MedicationSchedule,
+    *,
+    period_start: dt.date,
+    period_end: dt.date,
+    now: dt.datetime | None = None,
+) -> dict:
+    """Materialize every expected occurrence in the window, then resolve overdue.
+
+    Idempotent and concurrency-safe by construction: rows are inserted with
+    `ON CONFLICT DO NOTHING` on `idempotency_key`, which is
+    `sha256(schedule_id|version|scheduled_utc)`. Two concurrent reconciliations
+    of the same period converge on the same row set, and repeating one creates
+    nothing.
+
+    Backfill applies ONLY to a schedule that is currently active and not
+    superseded. A paused or stopped schedule deliberately accrues nothing for the
+    period it was not running: pausing means the patient is legitimately not
+    taking the drug, so inventing missed doses there is the same fabrication as
+    deleting real ones, in reverse. Rows materialized while it WAS live are
+    untouched and still counted, so genuine history survives a later pause.
+
+    Returns PHI-free counters for observability.
+    """
+    now = now or _now_utc()
+    stats = {
+        "created": 0,
+        "resolved_missed": 0,
+        "conflicts": 0,
+        "backfilled": False,
+    }
+    if schedule.status != SCHED_STATUS_ACTIVE or schedule.superseded_by is not None:
+        return stats
+
+    expected = expected_occurrences_in_window(
+        schedule, window_start=period_start, window_end=period_end
+    )
+    if not expected:
+        return stats
+    stats["backfilled"] = True
+
+    existing = {
+        k
+        for (k,) in db.execute(
+            select(DoseOccurrence.idempotency_key).where(
+                DoseOccurrence.schedule_id == schedule.id
+            )
+        )
+    }
+    for utc_dt, local_render in expected:
+        key = _idempotency_key(schedule.id, schedule.version, utc_dt)
+        if key in existing:
+            stats["conflicts"] += 1
+            continue
+        ins = pg_insert if db.bind.dialect.name == "postgresql" else sqlite_insert
+        result = db.execute(
+            ins(DoseOccurrence)
+            .values(
+                schedule_id=schedule.id,
+                patient_id=schedule.patient_id,
+                scheduled_utc=utc_dt,
+                local_render=local_render,
+                state=DOSE_PENDING,
+                idempotency_key=key,
+                source_schedule_version=schedule.version,
+            )
+            .on_conflict_do_nothing(index_elements=["idempotency_key"])
+        )
+        created = result.rowcount or 0
+        stats["created"] += created
+        if not created:
+            # Another transaction inserted it between the read and the write.
+            stats["conflicts"] += 1
+
+    # Resolve anything now past its grace window. Backfilled history is due by
+    # definition, so without this every reconciled row would count as `future`.
+    cutoff = now - _MISSED_AFTER
+    for dose in db.execute(
+        select(DoseOccurrence).where(
+            DoseOccurrence.schedule_id == schedule.id,
+            DoseOccurrence.state.in_((DOSE_PENDING, DOSE_NOTIFIED)),
+        )
+    ).scalars():
+        scheduled = dose.scheduled_utc
+        if scheduled is not None and scheduled.tzinfo is None:
+            scheduled = scheduled.replace(tzinfo=dt.UTC)
+        if scheduled is not None and scheduled <= cutoff:
+            dose.state = DOSE_MISSED
+            stats["resolved_missed"] += 1
+    db.flush()
+    return stats
+
+
 # ── schedule lifecycle ───────────────────────────────────────────────────────
 def _load_owned_medication(db: Session, *, patient_id: str, medication_id: str) -> Medication:
     med = db.get(Medication, medication_id)
@@ -839,44 +1005,151 @@ def sweep_missed(
     return len(overdue)
 
 
-def adherence_summary(db: Session, *, patient_id: str, schedule_id: str) -> dict:
-    """Adherence over materialized doses for a schedule.
+def adherence_summary(
+    db: Session,
+    *,
+    patient_id: str,
+    schedule_id: str,
+    period_start: dt.date | None = None,
+    period_end: dt.date | None = None,
+    now: dt.datetime | None = None,
+) -> dict:
+    """Adherence over an explicitly RECONCILED period.
 
-    The denominator is every RESOLVED-or-should-be-resolved dose: taken + skipped +
-    missed, where "missed" includes doses already swept to MISSED plus pending/
-    notified doses now overdue past the grace window (review P1 — a rate must never
-    be inflated by ignored doses sitting outside the denominator). Not-yet-due
-    pending doses are excluded from the rate but counted in ``total``.
+    The denominator used to be "rows that happen to exist", and rows only ever
+    came into existence when a request handler ran `materialize_due` — so the
+    rate measured how often the patient opened the app, not how much of their
+    therapy they took. A twice-daily schedule running 35 days prescribes 70
+    doses; a patient dormant since day 6 had 14 rows and the rate was computed
+    over those 14. Someone who disengaged entirely could show a BETTER rate than
+    someone who engaged and missed a few — the exact inversion a clinician would
+    act on before escalating therapy.
+
+    Now every expected occurrence in the window is reconciled into existence
+    first (idempotently), then counted. The result depends only on the schedule
+    and the clock.
+
+    Semantics, stated because they are a clinical contract, not an implementation
+    detail:
+
+      expected  — occurrences the schedule prescribes in the window
+      taken     — expected occurrences recorded TAKEN
+      skipped   — expected occurrences recorded SKIPPED (a deliberate decision,
+                  which is NOT a missed dose, and is counted separately)
+      missed    — expected occurrences whose grace window expired unacted
+      future    — prescribed but not yet due; excluded from the rate, since a
+                  dose that has not come around cannot have been missed
+      excluded_cancelled — occurrences from superseded schedule versions:
+                  preserved historically, outside the active denominator
+
+      adherence_rate = taken / (taken + skipped + missed)
+
+    Skipped sits in the denominator deliberately: a patient who skips half their
+    doses is not adherent, however intentional each skip was.
+
+    `reconciled=False` means the period could not be reconciled (PRN, missing
+    anchor, paused or stopped) and the caller MUST NOT render a confident
+    percentage.
     """
-    now = _now_utc()
-    cutoff = now - _MISSED_AFTER
+    now = now or _now_utc()
+    schedule = db.get(MedicationSchedule, schedule_id)
+    if schedule is None or schedule.patient_id != patient_id:
+        raise ScheduleNotFound("Không tìm thấy lịch.")
+
+    tz = _tz(schedule.patient_timezone)
+    today_local = now.astimezone(tz).date()
+    if period_end is None:
+        # Default to the schedule's OWN span, not a window anchored on today. A
+        # course that finished in June has its adherence answered by June; a
+        # today-anchored default would report zeros for every completed course
+        # and read as "no data" rather than "here is how the course went".
+        period_end = min(today_local, schedule.end_date or today_local)
+    if period_start is None:
+        default_start = period_end - dt.timedelta(days=29)
+        period_start = (
+            max(schedule.start_date, default_start)
+            if schedule.start_date
+            else default_start
+        )
+    if period_start > period_end:
+        raise InvalidSchedule("Khoảng thời gian không hợp lệ (bắt đầu sau kết thúc).")
+    if (period_end - period_start).days + 1 > MAX_ADHERENCE_PERIOD_DAYS:
+        # Bounded: an unbounded window would let one request walk an arbitrary
+        # calendar and materialize an arbitrary number of rows.
+        raise InvalidSchedule(
+            f"Khoảng thời gian tối đa là {MAX_ADHERENCE_PERIOD_DAYS} ngày."
+        )
+
+    stats = reconcile_period(
+        db, schedule, period_start=period_start, period_end=period_end, now=now
+    )
+
+    window_start_utc = dt.datetime.combine(
+        period_start, dt.time.min, tzinfo=tz
+    ).astimezone(dt.UTC)
+    window_end_utc = dt.datetime.combine(
+        period_end + dt.timedelta(days=1), dt.time.min, tzinfo=tz
+    ).astimezone(dt.UTC)
+
     rows = list(
         db.execute(
-            select(DoseOccurrence.state, DoseOccurrence.scheduled_utc).where(
+            select(
+                DoseOccurrence.state,
+                DoseOccurrence.scheduled_utc,
+                DoseOccurrence.source_schedule_version,
+            ).where(
                 DoseOccurrence.schedule_id == schedule_id,
                 DoseOccurrence.patient_id == patient_id,
             )
         )
     )
+
     def _aware(x: dt.datetime) -> dt.datetime:
         # SQLite returns naive datetimes; treat a naive stored instant as UTC so
         # the comparison with the aware cutoff never raises.
         return x if x.tzinfo is not None else x.replace(tzinfo=dt.UTC)
 
-    taken = sum(1 for st, _ in rows if st == DOSE_TAKEN)
-    skipped = sum(1 for st, _ in rows if st == DOSE_SKIPPED)
-    missed = sum(
-        1
-        for st, when in rows
-        if st == DOSE_MISSED
-        or (st in (DOSE_PENDING, DOSE_NOTIFIED) and when is not None and _aware(when) < cutoff)
-    )
-    resolved = taken + skipped + missed
-    rate = round(taken / resolved, 3) if resolved else None
+    cutoff = now - _MISSED_AFTER
+    taken = skipped = missed = future = excluded = 0
+    for state, when, version in rows:
+        if when is None:
+            continue
+        when = _aware(when)
+        if not (window_start_utc <= when < window_end_utc):
+            continue
+        if version is not None and version != schedule.version:
+            # A superseded version's occurrence: real history, but not part of
+            # the CURRENT prescription's denominator.
+            excluded += 1
+            continue
+        if state == DOSE_TAKEN:
+            taken += 1
+        elif state == DOSE_SKIPPED:
+            skipped += 1
+        elif state == DOSE_MISSED or when <= cutoff:
+            missed += 1
+        else:
+            future += 1
+
+    denominator = taken + skipped + missed
+    rate = round(taken / denominator, 3) if denominator else None
     return {
-        "total": len(rows),
+        "expected_count": denominator + future,
+        "taken_count": taken,
+        "skipped_count": skipped,
+        "missed_count": missed,
+        "future_count": future,
+        "excluded_cancelled_count": excluded,
+        "adherence_rate": rate,
+        "period_start": period_start,
+        "period_end": period_end,
+        "timezone": schedule.patient_timezone,
+        "calculation_version": ADHERENCE_CALCULATION_VERSION,
+        "reconciled": bool(stats["backfilled"]) or denominator > 0,
+        # Legacy keys, same numbers under the old names, so existing callers do
+        # not silently start reading None while the frontend is updated.
+        "total": denominator + future,
         "taken": taken,
         "skipped": skipped,
         "missed": missed,
-        "adherence_rate": rate,
     }

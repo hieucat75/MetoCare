@@ -95,11 +95,46 @@ class MarkDoseIn(BaseModel):
 
 
 class AdherenceOut(BaseModel):
+    """Adherence over an explicitly reconciled period.
+
+    `expected_count` is what the SCHEDULE prescribes in the window, not what
+    happens to be persisted. Before reconciliation the denominator was "rows that
+    exist", and rows only appeared when a request handler ran materialization —
+    so the rate measured app engagement rather than therapy, and a patient who
+    disengaged entirely could outscore one who engaged and missed a few doses.
+
+    `adherence_rate = taken / (taken + skipped + missed)`. `future_count` is
+    excluded from the rate: a dose that has not come around cannot have been
+    missed.
+
+    `reconciled=False` means the period could NOT be reconciled (PRN, missing
+    anchor, paused or stopped). The UI must render an unavailable state, never a
+    confident percentage — a number derived from a failed reconciliation is
+    exactly the misleading figure this work removes.
+
+    `calculation_version` changes when the SEMANTICS change, so a rate can always
+    be traced to the rules that produced it.
+    """
+
+    expected_count: int
+    taken_count: int
+    skipped_count: int
+    missed_count: int
+    future_count: int
+    excluded_cancelled_count: int
+    adherence_rate: float | None
+    period_start: dt.date
+    period_end: dt.date
+    timezone: str
+    calculation_version: str
+    reconciled: bool
+
+    # Legacy field names, same numbers. Kept so an un-updated client keeps working
+    # instead of silently reading nulls; remove once the frontend has migrated.
     total: int
     taken: int
     skipped: int
     missed: int
-    adherence_rate: float | None
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -359,10 +394,26 @@ def mark_skipped(
 def schedule_adherence(
     patient_id: str,
     schedule_id: str,
+    period_start: dt.date | None = None,
+    period_end: dt.date | None = None,
     user: CurrentUser = Depends(_PatientOnly),
     db: Session = Depends(get_session),
 ) -> AdherenceOut:
+    """Adherence for a period. Reconciles the window before counting, so the
+    answer does not depend on how often the patient opened the app."""
     _require_self(db, user, patient_id)
-    return AdherenceOut(
-        **sched.adherence_summary(db, patient_id=patient_id, schedule_id=schedule_id)
-    )
+    try:
+        summary = sched.adherence_summary(
+            db,
+            patient_id=patient_id,
+            schedule_id=schedule_id,
+            period_start=period_start,
+            period_end=period_end,
+        )
+    except sched.ScheduleError as exc:
+        db.rollback()
+        raise _map_err(exc) from exc
+    # Reconciliation WRITES (it materializes the period), so the request must
+    # commit or the backfill is discarded and the next call redoes it.
+    db.commit()
+    return AdherenceOut(**summary)
