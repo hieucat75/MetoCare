@@ -95,17 +95,10 @@ def test_unmatched_path_is_never_reflected_into_metrics_or_access_log(client):
     handler.addFilter(ContextFilter())
     access_logger = logging.getLogger("mcp.access")
     access_logger.addHandler(handler)
-    # Pin the level for the duration. setup_logging() configures the ROOT logger,
-    # so `mcp.access` has no level of its own and inherits whatever the last test
-    # to touch the root left behind — which silently produced an empty buffer and
-    # an IndexError below when the whole suite ran in one process.
-    prev_level = access_logger.level
-    access_logger.setLevel(logging.INFO)
     try:
         r = client.get(hostile)
     finally:
         access_logger.removeHandler(handler)
-        access_logger.setLevel(prev_level)
 
     assert r.status_code == 404
     rendered = registry.render()

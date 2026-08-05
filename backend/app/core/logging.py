@@ -63,14 +63,33 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(payload, ensure_ascii=False)
 
 
+#: Marks the root handler this module owns, so repeated setup can replace exactly
+#: that one and nothing else.
+_OWNED_HANDLER_FLAG = "_mcp_json_handler"
+
+
 def setup_logging(level: str = "INFO") -> None:
-    """Configure root logging to emit JSON with context. Idempotent."""
+    """Configure root logging to emit JSON with context. Idempotent.
+
+    Removes only the handler THIS function installed. It previously cleared every
+    root handler, which made it idempotent for its own purposes but destructive to
+    anyone else's: `create_app()` calls it, so importing the app inside a test
+    silently detached pytest's `caplog` handler, and any embedding process (an
+    ASGI host, a worker, a notebook) lost its own logging the moment the app was
+    constructed. Owning one tagged handler keeps double-logging impossible while
+    leaving foreign handlers — which we did not add and cannot reason about —
+    alone.
+    """
     root = logging.getLogger()
     root.setLevel(level)
-    # Remove pre-existing handlers so we don't double-log.
+
     for h in list(root.handlers):
-        root.removeHandler(h)
+        if getattr(h, _OWNED_HANDLER_FLAG, False):
+            root.removeHandler(h)
+            h.close()
+
     handler = logging.StreamHandler()
     handler.setFormatter(JsonFormatter())
     handler.addFilter(ContextFilter())
+    setattr(handler, _OWNED_HANDLER_FLAG, True)
     root.addHandler(handler)

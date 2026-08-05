@@ -101,18 +101,22 @@ def test_the_notice_never_claims_the_patient_has_no_data():
         assert forbidden not in msg
 
 
-def test_failure_is_logged_without_phi(client, patient, broken_context):
-    with _LoggerCapture("app.services.meto_chat") as cap:
+def test_failure_is_logged_without_phi(client, patient, broken_context, caplog):
+    # Plain caplog on purpose. It used to come back empty because alembic/env.py
+    # ran fileConfig() with disable_existing_loggers defaulting to True, which
+    # permanently disabled every app logger for the rest of the process. That is
+    # fixed at the source, so this needs no special handling.
+    with caplog.at_level(logging.ERROR):
         client.post(
             "/api/v1/meto/chat",
             json={"message": PHI_MESSAGE},
             headers=patient["headers"],
         )
 
-    assert any("context_build_failed" in r.getMessage() for r in cap.records)
-    combined = cap.text
+    assert any("context_build_failed" in r.getMessage() for r in caplog.records)
+    combined = caplog.text
     # The patient's message, and the exception's own text, must not be logged.
     assert PHI_MESSAGE not in combined
     assert "simulated context-build failure" not in combined
     # Escalated to error — a silently-degraded answer used to be a warning.
-    assert any(r.levelno >= logging.ERROR for r in cap.records)
+    assert any(r.levelno >= logging.ERROR for r in caplog.records)
