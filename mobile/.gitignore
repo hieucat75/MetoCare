@@ -29,3 +29,6 @@ coverage/
 npm-debug.*
 yarn-debug.*
 yarn-error.*
+
+# CI production-bundle export artifact (test-mobile job)
+.expo-export-ci/

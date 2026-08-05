@@ -7,7 +7,8 @@
 #   deploy-staging — ONLY when BOTH tests pass AND push is to main
 #
 # Auto-deploy trigger: merge to main (push event). PRs run tests but never deploy.
-# Gate: needs: [test-backend, test-frontend] + if: push to main.
+# Gate: needs: [test-backend, test-backend-postgres, test-frontend, test-mobile,
+#              meto-gate] + if: push to main.
 #
 # Deploy approach: GHCR (matches azure-staging.yml / existing infra pattern).
 # Secrets already configured (azure-staging.yml uses the same set):
@@ -208,13 +209,63 @@ jobs:
       - name: Run frontend tests
         run: cd frontend && npm test -- --watchAll=false --passWithNoTests
 
+
+  # ── 2b. Mobile verification (required integration gate) ────────────────────
+  # Mobile was 108 of the changed paths in the Journey 2-5 candidate and was NOT
+  # run by CI at all, which is why a cold-cache failure (6 of 28 suites) survived
+  # undetected: jest's 5s default timeout is measured INSIDE the test body while
+  # the first test pays for transforming the whole React Native + Expo Router
+  # graph. CI always runs cold, so the cache is cleared here deliberately — this
+  # job must exercise the cold path, not a warmed one.
+  test-mobile:
+    name: Mobile Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: mobile/package-lock.json
+
+      # Clean, reproducible install from the lockfile — never `npm install`.
+      - name: Install dependencies (clean)
+        run: cd mobile && npm ci
+
+      - name: TypeScript
+        run: cd mobile && npm run typecheck
+
+      - name: Lint
+        run: cd mobile && npm run lint
+
+      # Cold cache on purpose: the failure this gate exists to catch only
+      # reproduces on a cold transform.
+      - name: Jest (cold cache)
+        run: cd mobile && npx jest --clearCache && npm test -- --watchAll=false
+
+      # Proves the app still bundles for release, not just that tests pass.
+      # `--no-bytecode` keeps it dependency-free (no Hermes toolchain needed).
+      - name: Production bundle export
+        run: cd mobile && npx expo export --platform android --output-dir .expo-export-ci --no-bytecode
+
+      - name: Verify the bundle was produced
+        run: |
+          cd mobile
+          test -d .expo-export-ci || { echo "::error::expo export produced no output"; exit 1; }
+          find .expo-export-ci -name '*.hbc' -o -name '*.js' | head -1 | grep -q . \
+            || { echo "::error::no JS bundle in the export"; exit 1; }
+          echo "bundle OK: $(du -sh .expo-export-ci | cut -f1)"
+
   # ── 3. Meto AI Deployment Gate ─────────────────────────────────────────────
   # Runs after unit tests pass but BEFORE deploy.
   # Gates 1-5 use mock/local only. Gates 6-7 use real keys (skipped if absent).
   meto-gate:
     name: Meto AI Deployment Gate
     runs-on: ubuntu-latest
-    needs: [test-backend, test-backend-postgres, test-frontend]
+    needs: [test-backend, test-backend-postgres, test-frontend, test-mobile]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     outputs:
       gate_passed: ${{ steps.gate.outputs.gate_passed }}
@@ -286,7 +337,7 @@ jobs:
   # PRs never trigger this job (event_name == 'push' guard).
   deploy-staging:
     name: Deploy to Staging
-    needs: [test-backend, test-backend-postgres, test-frontend, meto-gate]
+    needs: [test-backend, test-backend-postgres, test-frontend, test-mobile, meto-gate]
     if: >
       github.ref == 'refs/heads/main' &&
       github.event_name == 'push' &&
