@@ -584,3 +584,142 @@ def test_a_dose_within_the_grace_window_is_not_flipped_to_missed(db, patient):
     assert _dose_states(db, s.id) == [], (
         "a dose still inside the 4h grace was recorded as missed"
     )
+
+
+# ── 10. P1s from the clinical review ───────────────────────────────────────
+
+
+def test_pause_then_resume_restores_reminders(db, patient):
+    """There was no way back. `active -> paused` stops every schedule and cancels
+    its future doses; `paused -> active` was an allowed medication transition but
+    nothing ever un-stopped a schedule, edit refuses a stopped row, and no route
+    existed. A patient who paused around a procedure and resumed got a medication
+    that read `active` and never reminded again."""
+    s = _make(
+        db, patient, "PauseResumeReal",
+        schedule_type="interval", local_dose_times=["08:00"],
+        recurrence={"interval_days": 2}, start_date=dt.date(2026, 8, 3),
+    )
+    before = _dose_dates(s, days=8)
+
+    sched.pause_schedule(db, patient_id=patient["patient_id"], schedule_id=s.id)
+    db.commit()
+    assert _dose_dates(s) == []
+
+    resumed = sched.resume_schedule(
+        db, patient_id=patient["patient_id"], schedule_id=s.id
+    )
+    db.commit()
+    assert resumed.status == "active"
+    assert resumed.start_date == dt.date(2026, 8, 3), "the anchor moved on resume"
+    assert _dose_dates(resumed, days=8) == before, "phase shifted across pause/resume"
+
+
+def test_resume_is_idempotent_and_does_not_duplicate_doses(db, patient):
+    s = _make(
+        db, patient, "ResumeTwice",
+        schedule_type="fixed_daily", local_dose_times=["08:00"],
+    )
+    sched.pause_schedule(db, patient_id=patient["patient_id"], schedule_id=s.id)
+    db.commit()
+    for _ in range(3):
+        sched.resume_schedule(db, patient_id=patient["patient_id"], schedule_id=s.id)
+        db.commit()
+
+    rows = db.execute(
+        select(DoseOccurrence).where(DoseOccurrence.schedule_id == s.id)
+    ).scalars().all()
+    assert len({r.idempotency_key for r in rows}) == len(rows), "resume duplicated doses"
+
+
+def test_a_stopped_schedule_cannot_be_resumed(db, patient):
+    """Stop is how a discontinued drug is guaranteed never to remind again;
+    reviving it would defeat that."""
+    s = _make(db, patient, "NoRevive", schedule_type="fixed_daily",
+              local_dose_times=["08:00"])
+    sched.stop_schedule(db, patient_id=patient["patient_id"], schedule_id=s.id)
+    db.commit()
+    with pytest.raises(sched.InvalidSchedule):
+        sched.resume_schedule(db, patient_id=patient["patient_id"], schedule_id=s.id)
+
+
+def test_resume_preserves_dose_history(db, patient):
+    """Only FUTURE occurrences are re-materialized; past ones are immutable."""
+    med, s = None, None
+    med_s = _overdue_dose(db, patient, "ResumeKeepsHistory")
+    med, s = med_s
+    sched.pause_schedule(db, patient_id=patient["patient_id"], schedule_id=s.id)
+    db.commit()
+    assert _dose_states(db, s.id) == ["missed"]
+
+    sched.resume_schedule(db, patient_id=patient["patient_id"], schedule_id=s.id)
+    db.commit()
+    assert "missed" in _dose_states(db, s.id), "resume erased real non-adherence"
+    assert med is not None
+
+
+def test_cancelling_doses_is_audited(db, patient):
+    """Dose rows are adherence evidence and this is the only place they are
+    destroyed, yet mark_dose audited every patient action and this audited none —
+    so a purge was unfalsifiable. PHI-minimised: counts only."""
+    from app.models.governance import AuditLog
+
+    _med, s = _overdue_dose(db, patient, "AuditedCancel")
+    sched.pause_schedule(db, patient_id=patient["patient_id"], schedule_id=s.id)
+    db.commit()
+
+    entries = db.execute(
+        select(AuditLog).where(AuditLog.action == "cancel_open_doses")
+    ).scalars().all()
+    assert entries, "cancelling open doses was not audited"
+    details = entries[-1].details or {}
+    assert "resolved_missed_count" in details or "deleted_count" in details
+    # No PHI: no drug name, no dose time.
+    blob = str(details).lower()
+    assert "auditedcancel" not in blob
+
+
+def test_needs_anchor_repair_is_surfaced_by_the_api(db, patient, client):
+    """It was dead code: not on ScheduleOut and called by no route, so a legacy
+    NULL-anchor row reported status=active and silently produced no doses."""
+    med = _med(db, patient, "SurfacedRepair")
+    s = sched.create_schedule(
+        db, patient_id=patient["patient_id"], medication_id=med.id,
+        schedule_type="interval", local_dose_times=["08:00"],
+        recurrence={"interval_days": 2}, start_date=dt.date(2026, 8, 3),
+        patient_timezone="UTC",
+    )
+    db.commit()
+    s.start_date = None
+    db.commit()
+
+    r = client.get(
+        f"/api/v1/patients/{patient['patient_id']}/medications/{med.id}/schedule",
+        headers=patient["headers"],
+    )
+    assert r.status_code == 200, r.text
+    entry = next(x for x in r.json() if x["id"] == s.id)
+    assert entry["needs_anchor_repair"] is True
+    assert entry["status"] == "active"  # which is exactly why it must be surfaced
+
+
+def test_a_null_anchor_row_can_be_repaired_by_supplying_start_date(db, patient):
+    """Previously unfixable: edit inherited the NULL anchor, validation raised,
+    and every PATCH 422'd — the only escape left TWO active schedules."""
+    s = _make(
+        db, patient, "RepairFlow",
+        schedule_type="interval", local_dose_times=["08:00"],
+        recurrence={"interval_days": 2}, start_date=dt.date(2026, 8, 3),
+    )
+    s.start_date = None
+    db.commit()
+    assert sched.needs_anchor_repair(s) is True
+
+    repaired = sched.edit_schedule(
+        db, patient_id=patient["patient_id"], schedule_id=s.id,
+        start_date=dt.date(2026, 8, 4),
+    )
+    db.commit()
+    assert repaired.start_date == dt.date(2026, 8, 4)
+    assert sched.needs_anchor_repair(repaired) is False
+    assert _dose_dates(repaired, days=8), "repaired schedule still produces no doses"

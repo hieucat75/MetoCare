@@ -520,6 +520,8 @@ def _cancel_open_doses(
     *,
     now: dt.datetime | None = None,
     purge_history: bool = False,
+    actor_user_id: str | None = None,
+    reason: str | None = None,
 ) -> None:
     """Resolve or cancel still-open (pending/notified, unacted) doses for a schedule.
 
@@ -562,6 +564,8 @@ def _cancel_open_doses(
         if purge_history
         else (DOSE_PENDING, DOSE_NOTIFIED)
     )
+    deleted_ids: list[str] = []
+    missed_ids: list[str] = []
     for dose in db.execute(
         select(DoseOccurrence).where(
             DoseOccurrence.schedule_id == schedule_id,
@@ -576,9 +580,37 @@ def _cancel_open_doses(
             # would erase real non-adherence from the denominator — a patient who
             # missed three days and then tapped "Tạm dừng" saw their adherence
             # jump instead of drop, and pause -> edit made that repeatable.
+            missed_ids.append(dose.id)
             dose.state = DOSE_MISSED
         else:
+            deleted_ids.append(dose.id)
             db.delete(dose)
+
+    # AUDIT. Dose rows are clinical evidence of adherence and these two branches
+    # are the only places they are destroyed or reclassified — yet `mark_dose`
+    # audited every patient action and this audited none, so a purge was
+    # unfalsifiable after the fact. `entered_in_error` is patient-settable on
+    # their own record, so the destructive path is patient-reachable.
+    #
+    # PHI-MINIMISED: counts and row ids only. No drug name, no dose time, no
+    # value — an audit trail that leaks what it records is its own problem.
+    if deleted_ids or missed_ids:
+        audit.record(
+            db,
+            actor_type="user" if actor_user_id else "system",
+            actor_id=actor_user_id,
+            action="cancel_open_doses",
+            resource_type="medication_schedule",
+            resource_id=schedule_id,
+            outcome="success",
+            severity="warning" if purge_history else "info",
+            details={
+                "deleted_count": len(deleted_ids),
+                "resolved_missed_count": len(missed_ids),
+                "purge_history": purge_history,
+                "reason": reason or ("repudiated_record" if purge_history else "lifecycle"),
+            },
+        )
 
 
 def stop_schedules_for_medication(
@@ -666,6 +698,51 @@ def pause_schedule(db: Session, *, patient_id: str, schedule_id: str) -> Medicat
     return schedule
 
 
+def resume_schedule(db: Session, *, patient_id: str, schedule_id: str) -> MedicationSchedule:
+    """Return a PAUSED schedule to active. The missing half of pause.
+
+    There was no way back. `active -> paused` cascades through
+    `_cascade_stop_schedules`, which STOPS every schedule and cancels its future
+    doses; `paused -> active` is an allowed medication transition but nothing ever
+    un-stopped a schedule, `edit_schedule` refuses a stopped row ("Lịch đã kết
+    thúc"), and no route existed. So a patient who paused metformin for a week
+    around a procedure and resumed it saw a medication that read `active` and was
+    never reminded again — silently, with no error and no way to fix it in the UI.
+
+    Safety properties:
+      - only a paused schedule resumes; a STOPPED one is terminal, because stop
+        is how a discontinued drug is guaranteed never to remind again and
+        reviving it would defeat that;
+      - the underlying medication must be active again, or resuming would restart
+        reminders for a drug that is still discontinued;
+      - HISTORY is untouched. Past taken/skipped/missed doses stay exactly as they
+        are; only future occurrences are re-materialized;
+      - `materialize_due` is idempotent on `idempotency_key`, so resuming twice
+        cannot produce duplicate reminders.
+    """
+    schedule = _load_owned_schedule(db, patient_id=patient_id, schedule_id=schedule_id)
+    if schedule.status == SCHED_STATUS_ACTIVE:
+        return schedule  # already running; resuming twice is not an error
+    if schedule.status != SCHED_STATUS_PAUSED:
+        raise InvalidSchedule(
+            "Chỉ có thể tiếp tục lịch đang tạm dừng. Lịch đã kết thúc thì tạo lịch mới."
+        )
+    if schedule.superseded_by is not None:
+        raise InvalidSchedule("Lịch này đã được thay thế bằng phiên bản mới.")
+    # Re-run the confirmed-only gate: the drug must be active again.
+    _load_owned_medication(db, patient_id=patient_id, medication_id=schedule.medication_id)
+    if needs_anchor_repair(schedule):
+        raise InvalidSchedule(
+            "Lịch thiếu ngày bắt đầu — vui lòng cập nhật ngày bắt đầu trước khi tiếp tục."
+        )
+
+    schedule.status = SCHED_STATUS_ACTIVE
+    db.flush()
+    materialize_due(db, schedule)
+    db.flush()
+    return schedule
+
+
 def stop_schedule(db: Session, *, patient_id: str, schedule_id: str) -> MedicationSchedule:
     schedule = _load_owned_schedule(db, patient_id=patient_id, schedule_id=schedule_id)
     schedule.status = SCHED_STATUS_STOPPED
@@ -683,6 +760,7 @@ def edit_schedule(
     recurrence: dict | None = None,
     schedule_type: str | None = None,
     end_date: dt.date | None = None,
+    start_date: dt.date | None = None,
     actor_user_id: str | None = None,
 ) -> MedicationSchedule:
     """Edit = create a NEW version (supersession). Past occurrences are immutable;
@@ -705,9 +783,12 @@ def edit_schedule(
         new_type,
         local_dose_times if local_dose_times is not None else old.local_dose_times,
         recurrence if recurrence is not None else old.recurrence,
-        # An edit inherits the old anchor; a type change INTO interval/cyclic on a
-        # row that never had one must be refused, not silently anchored to today.
-        old.start_date,
+        # An edit inherits the old anchor unless one is supplied. Supplying it is
+        # the REPAIR path for a legacy NULL-anchor row: without it such a row was
+        # permanently unfixable, because validation raised on the inherited NULL
+        # and every PATCH 422'd. It still cannot be silently anchored to today —
+        # the caller has to state the date.
+        start_date if start_date is not None else old.start_date,
     )
     new = MedicationSchedule(
         medication_id=old.medication_id,
@@ -716,7 +797,7 @@ def edit_schedule(
         schedule_type=new_type,
         local_dose_times=local_dose_times if local_dose_times is not None else old.local_dose_times,
         recurrence=recurrence if recurrence is not None else old.recurrence,
-        start_date=old.start_date,
+        start_date=start_date if start_date is not None else old.start_date,
         end_date=end_date if end_date is not None else old.end_date,
         status=SCHED_STATUS_ACTIVE,
         source=old.source,

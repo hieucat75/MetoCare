@@ -54,6 +54,11 @@ class ScheduleEditIn(BaseModel):
     local_dose_times: list[str] | None = None
     recurrence: dict | None = None
     end_date: dt.date | None = None
+    # The sanctioned repair for a legacy interval/cyclic row with a NULL anchor.
+    # Without it such a row was unfixable: edit inherits `old.start_date`, which
+    # is NULL, so validation raised and every PATCH returned 422 — and the only
+    # escape (POST a second schedule) left TWO active schedules for one drug.
+    start_date: dt.date | None = None
 
 
 class ScheduleOut(BaseModel):
@@ -66,6 +71,10 @@ class ScheduleOut(BaseModel):
     patient_timezone: str
     start_date: dt.date | None
     end_date: dt.date | None
+    # A legacy interval/cyclic row with no anchor produces NO doses and still
+    # reports status="active". Without surfacing it the schedule looks healthy and
+    # is silently dead — the same shape as the pause/resume defect.
+    needs_anchor_repair: bool = False
 
 
 class DoseOut(BaseModel):
@@ -114,6 +123,7 @@ def _sched_out(s: MedicationSchedule) -> ScheduleOut:
         patient_timezone=s.patient_timezone,
         start_date=s.start_date,
         end_date=s.end_date,
+        needs_anchor_repair=sched.needs_anchor_repair(s),
     )
 
 
@@ -213,6 +223,7 @@ def edit_schedule(
             local_dose_times=body.local_dose_times,
             recurrence=body.recurrence,
             end_date=body.end_date,
+            start_date=body.start_date,
             actor_user_id=user.id,
         )
         sched.materialize_due(db, new)
@@ -233,6 +244,27 @@ def pause_schedule(
     _require_self(db, user, patient_id)
     try:
         s = sched.pause_schedule(db, patient_id=patient_id, schedule_id=schedule_id)
+    except sched.ScheduleError as exc:
+        db.rollback()
+        raise _map_err(exc) from exc
+    db.commit()
+    return _sched_out(s)
+
+
+@router.post(
+    "/patients/{patient_id}/schedules/{schedule_id}/resume", response_model=ScheduleOut
+)
+def resume_schedule(
+    patient_id: str,
+    schedule_id: str,
+    user: CurrentUser = Depends(_PatientOnly),
+    db: Session = Depends(get_session),
+) -> ScheduleOut:
+    """The missing half of pause. Without it a paused medication never reminded
+    again — it read `active` in the list and was silently dead."""
+    _require_self(db, user, patient_id)
+    try:
+        s = sched.resume_schedule(db, patient_id=patient_id, schedule_id=schedule_id)
     except sched.ScheduleError as exc:
         db.rollback()
         raise _map_err(exc) from exc

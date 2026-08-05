@@ -34,7 +34,7 @@ from app.models.medical_document import (
     ExtractionCandidate,
     MedicalDocument,
 )
-from app.models.medication_schedule import DoseOccurrence
+from app.models.medication_schedule import DoseOccurrence, MedicationSchedule
 
 router = APIRouter(tags=["health_timeline"])
 
@@ -170,7 +170,28 @@ def get_health_timeline(
     symptom_logs = symptom_q.all()
 
     # Medication dose occurrences (Journey 3) — acted/missed doses are history.
-    dose_q = db.query(DoseOccurrence).filter(DoseOccurrence.patient_id == patient_id)
+    #
+    # Filtered by MEDICATION lifecycle, which this query did not do. Every other
+    # read path excludes `entered_in_error` (a record the patient asserts should
+    # never have existed) and soft-deleted rows, but the timeline still rendered
+    # their doses as "Đã uống thuốc" / "Quên liều". Combined with the repudiation
+    # purge — which removes open and missed doses but never TAKEN ones — the
+    # surviving picture was skewed positive: the takens stayed, the misses went.
+    #
+    # Legitimate history is preserved: a drug the patient genuinely STOPPED
+    # (discontinued / completed / on_hold) keeps its doses, because that therapy
+    # was real and so is its adherence record. Only repudiation and soft-delete
+    # remove it.
+    dose_q = (
+        db.query(DoseOccurrence)
+        .join(MedicationSchedule, MedicationSchedule.id == DoseOccurrence.schedule_id)
+        .join(Medication, Medication.id == MedicationSchedule.medication_id)
+        .filter(
+            DoseOccurrence.patient_id == patient_id,
+            Medication.deleted_at.is_(None),
+            Medication.lifecycle_status != "entered_in_error",
+        )
+    )
     dose_occurrences = dose_q.all()
 
     # Medical documents + confirmed MDI candidates (Journey 2).
