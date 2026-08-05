@@ -189,6 +189,71 @@ def _decrypt_candidate_fields(conn) -> None:
         _write(conn, "extraction_candidates", "fields_json", updates)
 
 
+# Postgres takes an ACCESS EXCLUSIVE lock for the column-type rewrite below. Two
+# separate hazards, and the dangerous one is not the obvious one:
+#
+#  1. If any transaction already holds a conflicting lock on the table — even an
+#     idle-in-transaction session that did a single SELECT — the ALTER waits.
+#  2. While it waits, it sits at the HEAD of the lock queue, and every subsequent
+#     query on `extraction_candidates` queues behind IT. So an ALTER blocked by
+#     one idle session takes the table offline for the whole application, for as
+#     long as that session stays open. The migration looks merely slow; the
+#     symptom is a total stall of document review.
+#
+# `lock_timeout` bounds (1): we would rather abort the migration in seconds and
+# retry in a quieter window than hold the queue open. DDL here is transactional,
+# so the abort rolls back cleanly and re-running is safe.
+#
+# `statement_timeout = 0` covers the other side: once the lock IS held the
+# rewrite must be allowed to finish, or a server-configured statement_timeout
+# would kill it mid-rewrite on a large table.
+_LOCK_TIMEOUT = "5s"
+
+
+def _preflight_locks(conn, table: str) -> None:
+    """Report what would block the rewrite, BEFORE attempting to take the lock.
+
+    A bare "canceling statement due to lock timeout" tells an operator nothing
+    actionable at 02:00. This names the blocking PIDs and how long they have been
+    idle, so the decision (wait, or terminate that session) can actually be made.
+    Advisory only — never raises, never terminates anything itself.
+    """
+    if conn.dialect.name != "postgresql":
+        return
+    try:
+        rows = conn.execute(
+            sa.text(
+                """
+                SELECT a.pid,
+                       a.state,
+                       COALESCE(EXTRACT(EPOCH FROM (now() - a.xact_start)), 0)::int AS xact_age_s
+                  FROM pg_locks l
+                  JOIN pg_stat_activity a ON a.pid = l.pid
+                 WHERE l.relation = to_regclass(:t)
+                   AND a.pid <> pg_backend_pid()
+                """
+            ),
+            {"t": table},
+        ).fetchall()
+    except Exception as exc:  # pragma: no cover - diagnostics must never break DDL
+        print(f"[secf11] lock preflight unavailable ({exc}); continuing")
+        return
+    if rows:
+        detail = ", ".join(f"pid={r[0]} state={r[1]} xact_age={r[2]}s" for r in rows)
+        print(
+            f"[secf11] WARNING: {len(rows)} session(s) hold locks on {table}: {detail}. "
+            f"The rewrite will abort after {_LOCK_TIMEOUT} rather than queue behind them."
+        )
+
+
+def _guard_lock_waits(conn) -> None:
+    """Bound the lock WAIT; leave the rewrite itself unbounded once acquired."""
+    if conn.dialect.name != "postgresql":
+        return
+    conn.execute(sa.text(f"SET LOCAL lock_timeout = '{_LOCK_TIMEOUT}'"))
+    conn.execute(sa.text("SET LOCAL statement_timeout = 0"))
+
+
 def upgrade() -> None:
     conn = op.get_bind()
 
@@ -202,6 +267,8 @@ def upgrade() -> None:
     # ciphertext must wrap. SQLite goes through batch_alter_table — its JSON is
     # TEXT underneath already.
     if conn.dialect.name == "postgresql":
+        _preflight_locks(conn, "extraction_candidates")
+        _guard_lock_waits(conn)
         op.execute(
             sa.text(
                 "ALTER TABLE extraction_candidates "
@@ -222,6 +289,9 @@ def downgrade() -> None:
     _decrypt_candidate_fields(conn)
 
     if conn.dialect.name == "postgresql":
+        # Same ACCESS EXCLUSIVE rewrite, same lock-queue hazard, in reverse.
+        _preflight_locks(conn, "extraction_candidates")
+        _guard_lock_waits(conn)
         op.execute(
             sa.text(
                 "ALTER TABLE extraction_candidates "
