@@ -173,6 +173,56 @@ jobs:
       # MEDICATION_SOFT_DELETE_MAPPINGS: per-record review approvals
       # ("<id>:<status>,..."), a SECRET so ids never reach the public log.
       # Remove the secret once the P0 migration has run.
+      # ── Record the rollback target BEFORE anything changes ────────────────
+      #
+      # The only rollback statement in this workflow was a comment claiming ACA
+      # "keeps previous healthy revision (auto-rollback)" — which PROD-F13
+      # already records as unfounded without a configured readiness probe. Even
+      # where it holds, it does not tell an on-call at 3am WHICH revision to go
+      # back to; they would be reading `az containerapp revision list` on a
+      # system that has already changed underneath them.
+      #
+      # Captured before the migration, so the name in this log is the revision
+      # that was serving traffic when the deploy began. Never fatal: a first
+      # deploy legitimately has no predecessor, and refusing to deploy over that
+      # would be a gate on nothing.
+      - name: Record rollback target
+        run: |
+          PREV=$(az containerapp revision list -g "$RG" -n "$BACKEND_APP" \
+            --query "[?properties.active]|[0].name" -o tsv 2>/dev/null || echo "")
+          PREV_IMG=$(az containerapp revision list -g "$RG" -n "$BACKEND_APP" \
+            --query "[?properties.active]|[0].properties.template.containers[0].image" \
+            -o tsv 2>/dev/null || echo "")
+          if [ -z "$PREV" ]; then
+            echo "::warning::No active revision on $BACKEND_APP — treating this as a"
+            echo "::warning::first deploy. There is no rollback target."
+            exit 0
+          fi
+          echo "ROLLBACK TARGET revision : $PREV"
+          echo "ROLLBACK TARGET image    : $PREV_IMG"
+          if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+            {
+              echo "## Rollback target (captured before migration)"
+              echo ""
+              echo "| | |"
+              echo "|---|---|"
+              echo "| Revision | \`$PREV\` |"
+              echo "| Image | \`$PREV_IMG\` |"
+              echo ""
+              echo "To roll the backend back to it:"
+              echo ""
+              echo '```bash'
+              echo "az containerapp ingress traffic set -g $RG -n $BACKEND_APP \\"
+              echo "  --revision-weight $PREV=100"
+              echo '```'
+              echo ""
+              echo "> A **data** rollback is a separate decision. Do NOT run an"
+              echo "> Alembic downgrade to undo a PHI-encryption migration: the"
+              echo "> SEC-F11/j4_m10 migrations refuse to decrypt with a wrong key"
+              echo "> and abort rather than destroy data. Restore via PITR instead."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Pre-migration soft-delete audit
         run: bash scripts/pre_migration_audit.sh
         env:

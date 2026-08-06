@@ -211,6 +211,114 @@ jobs:
             fi
           fi
 
+      # ── Post-migration PHI crypto smoke (BLOCKS the rollout) ─────────────
+      #
+      # This workflow had NO crypto smoke at all, so a manual staging dispatch
+      # bypassed entirely the gate that caught the 2026-08-06 wrong-key
+      # incident. The auto-deploy path (ci.yml) gated correctly, which is
+      # exactly how a bypass survives: the path people use every day is safe,
+      # and the one they reach for during an incident is not.
+      #
+      # Ordering is the gate: after `alembic upgrade head` has touched
+      # encrypted columns, and before any traffic-carrying revision exists, so
+      # a failure leaves the currently-serving revision untouched.
+      #
+      # Writes only synthetic CRYPTO-SMOKE-<uuid4> sentinels inside a
+      # transaction rolled back in a `finally`; prints no PHI and no key.
+      - name: Post-migration PHI crypto smoke
+        run: |
+          # Every value rebuilt HERE — a `run:` step is a fresh shell.
+          JOB="caj-metocare-crypto-smoke"
+          IMG="${REGISTRY}/${{ github.repository_owner }}/metocare-backend:${{ steps.tag.outputs.tag }}"
+          # Delete-then-create, and the delete may NOT fail silently: a reused
+          # job runs the PREVIOUS image and secrets, so it would verify the OLD
+          # key and report pass.
+          if az containerapp job show -g "$RG" -n "$JOB" -o none 2>/dev/null; then
+            if ! az containerapp job delete -g "$RG" -n "$JOB" --yes -o none; then
+              echo "::error::Could not delete the previous crypto-smoke job."
+              echo "::error::Refusing to reuse it: it would verify the OLD key"
+              echo "::error::and report pass. Remove it manually and re-run:"
+              echo "::error::  az containerapp job delete -g $RG -n $JOB --yes"
+              exit 1
+            fi
+          fi
+          az containerapp job create -g "$RG" -n "$JOB" \
+            --environment "$ENV_NAME" --trigger-type Manual --replica-timeout 600 \
+            --replica-retry-limit 0 --parallelism 1 --replica-completion-count 1 \
+            --image "$IMG" --cpu 0.5 --memory 1Gi \
+            --secrets db-url="$DB_URL" enc-keys="$ENC_KEYS" \
+            --env-vars MCP_DATABASE_URL=secretref:db-url \
+              MCP_ENCRYPTION_KEYS=secretref:enc-keys MCP_ENV=staging \
+              MCP_BUILD_SHA=${{ steps.tag.outputs.sha8 }} \
+            --command "python" --args "run_crypto_smoke.py" -o none
+          az containerapp job start -g "$RG" -n "$JOB" -o none
+
+          # Poll THIS execution by name: `[0]` has no ordering guarantee, so a
+          # stale Succeeded from an earlier deploy would be read as this run's
+          # verdict and the rollout proceed having verified nothing.
+          EXEC=$(az containerapp job execution list -g "$RG" -n "$JOB" \
+            --query "[0].name" -o tsv 2>/dev/null || echo "")
+          if [ -z "$EXEC" ]; then
+            echo "::error::The crypto-smoke job reported no execution to poll."
+            echo "::error::Treating as FAILED — a deploy must not proceed on a"
+            echo "::error::check that never started."
+            exit 1
+          fi
+          echo "  crypto-smoke execution: $EXEC"
+
+          # 40x10s=400s against a 600s --replica-timeout. A loop that expires
+          # WITHOUT a verdict must FAIL: exiting 0 would report a deploy healthy
+          # on a check that never returned.
+          ST=""
+          for i in $(seq 1 40); do
+            ST=$(az containerapp job execution show -g "$RG" -n "$JOB" \
+              --job-execution-name "$EXEC" \
+              --query "properties.status" -o tsv 2>/dev/null || echo Running)
+            echo "  crypto-smoke $i: $ST"
+            [ "$ST" = "Succeeded" ] && break
+            if [ "$ST" = "Failed" ]; then
+              echo "::error::PHI crypto smoke FAILED — encrypted columns are not"
+              echo "::error::readable with the deployed MCP_ENCRYPTION_KEYS. NO new"
+              echo "::error::revision has been created."
+              echo "::error::The verdict names WHICH key each row needs:"
+              echo "::error::  ciphertext_source_key_rows → repository default;"
+              echo "::error::    run docs/runbooks/staging-phi-reencryption.md"
+              echo "::error::  ciphertext_unreadable_rows → no known key; restore"
+              echo "::error::  plaintext_legacy_rows      → never encrypted"
+              echo "::error::Remediation for a mis-rotation: restore the previous"
+              echo "::error::key in Key Vault (mcp-encryption-keys) and re-run."
+              echo "::error::Do NOT run an Alembic downgrade — the SEC-F11/P1-5"
+              echo "::error::migrations abort rather than destroy data."
+              exit 1
+            fi
+            sleep 10
+          done
+          if [ "$ST" != "Succeeded" ]; then
+            echo "::error::PHI crypto smoke did not report a verdict within 400s"
+            echo "::error::(last status: ${ST:-unknown}). Treating as FAILED."
+            echo "::error::No new revision has been created."
+            exit 1
+          fi
+
+      # ── Remove the smoke job (it holds the staging PHI key) ───────────────
+      #
+      # `if: always()` — it must run whether the smoke passed, failed or timed
+      # out. The job is created with `--secrets enc-keys=...`, so leaving it
+      # parks the staging database URL and MCP_ENCRYPTION_KEYS in a resource
+      # nobody watches, readable by anything with Microsoft.App/jobs/listSecrets.
+      - name: Remove crypto-smoke job
+        if: always()
+        run: |
+          JOB="caj-metocare-crypto-smoke"
+          if az containerapp job show -g "$RG" -n "$JOB" -o none 2>/dev/null; then
+            if ! az containerapp job delete -g "$RG" -n "$JOB" --yes -o none; then
+              echo "::warning::Could not delete $JOB. It holds the staging"
+              echo "::warning::database URL and MCP_ENCRYPTION_KEYS as job secrets."
+              echo "::warning::Delete it manually:"
+              echo "::warning::  az containerapp job delete -g $RG -n $JOB --yes"
+            fi
+          fi
+
       - name: Deploy backend Container App
         run: |
           IMG="${REGISTRY}/${{ github.repository_owner }}/metocare-backend:${{ steps.tag.outputs.tag }}"

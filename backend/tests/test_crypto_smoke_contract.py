@@ -206,6 +206,143 @@ def test_a_failing_or_hanging_staging_smoke_blocks_the_rollout():
     assert 'if [ "$ST" != "Succeeded" ]' in block
 
 
+def _deploying_workflows() -> list[tuple[str, str]]:
+    """Every workflow that migrates a database AND then rolls out the backend.
+
+    Derived from the workflows' own content, not from a list. `azure-staging.yml`
+    is why: it ran a migration and a rollout with NO crypto smoke at all, so a
+    manual staging dispatch bypassed the gate entirely — while `ci.yml`, the path
+    used every day, gated correctly. That is how a bypass survives review, and a
+    hardcoded list of "the workflows we remembered" reproduces it exactly.
+    """
+    import pathlib
+
+    root = pathlib.Path(__file__).resolve().parents[2] / ".github" / "workflows"
+    if not root.exists():
+        return []
+    out = []
+    for path in sorted(root.glob("*.yml")):
+        src = path.read_text()
+        migrates = '--command "alembic"' in src
+        rolls_out = "az containerapp update" in src or "az containerapp create" in src
+        if migrates and rolls_out:
+            out.append((path.name, src))
+    return out
+
+
+@pytest.mark.parametrize("name,src", _deploying_workflows())
+def test_no_deploy_path_can_bypass_the_crypto_smoke(name, src):
+    """THE bypass test. Any workflow that migrates and then deploys must gate."""
+    assert "run_crypto_smoke.py" in src, (
+        f"{name} runs a migration and rolls out the backend with NO crypto smoke: "
+        "a deploy through this path ships whatever the migration did to the "
+        "encrypted columns, unverified"
+    )
+
+
+@pytest.mark.parametrize("name,src", _deploying_workflows())
+def test_every_deploy_path_gates_in_the_right_order(name, src):
+    """Ordering IS the gate.
+
+    migration → smoke → rollout. After the migration has touched encrypted
+    columns, and BEFORE a traffic-carrying revision exists, so a failure leaves
+    the currently-serving revision untouched. Placed after the rollout it is a
+    report: on 2026-08-06 staging served the broken build for fourteen minutes
+    before its correctly-failing smoke spoke.
+    """
+    migrate = src.index('--command "alembic"')
+    smoke = src.index("run_crypto_smoke.py")
+    rollout = min(
+        (src.index(m) for m in ("az containerapp update", "az containerapp create")
+         if m in src),
+        default=len(src),
+    )
+    assert migrate < smoke, f"{name}: the smoke runs BEFORE the migration it must verify"
+    assert smoke < rollout, (
+        f"{name}: the smoke runs AFTER the rollout — a wrong key ships, and the "
+        "gate reports on a revision that is already serving traffic"
+    )
+
+
+@pytest.mark.parametrize("name,src", _deploying_workflows())
+def test_every_deploy_path_fails_closed_on_the_smoke(name, src):
+    """A gate that cannot fail the build is a log line."""
+    block = src.split("run_crypto_smoke.py", 1)[1].split("\n      - name:", 1)[0]
+    # The two exits: the explicit Failed verdict, and the no-verdict timeout.
+    assert block.count("exit 1") >= 2, (
+        f"{name}: a failing or timed-out smoke does not abort the deploy"
+    )
+    assert 'if [ "$ST" != "Succeeded" ]' in block, (
+        f"{name}: falling out of the poll loop without a verdict is treated as healthy"
+    )
+
+
+@pytest.mark.parametrize("name,src", _deploying_workflows())
+def test_every_deploy_path_verifies_this_runs_execution(name, src):
+    """`[0]` has no ordering guarantee: a stale `Succeeded` from an earlier
+    deploy reads as this run's verdict and the rollout proceeds having verified
+    nothing."""
+    step = src.split("- name: Post-migration PHI crypto smoke", 1)
+    assert len(step) == 2, f"{name}: no step named 'Post-migration PHI crypto smoke'"
+    block = step[1].split("\n      - name:", 1)[0]
+    assert "--job-execution-name" in block, f"{name}: polls an unordered [0]"
+
+
+def test_production_records_a_concrete_rollback_target_before_it_changes_anything():
+    """"ACA auto-rollback" is not a rollback target.
+
+    PROD-F13 already records that the claim is unfounded without a readiness
+    probe; even where it holds it does not tell an on-call WHICH revision to
+    return to, and by the time they ask, the system has already changed. The
+    name has to be captured before the migration, in the run's own log.
+    """
+    src = _prod_workflow()
+    assert "- name: Record rollback target" in src, (
+        "no rollback target is recorded anywhere in the production deploy"
+    )
+    assert src.index("- name: Record rollback target") < src.index(
+        "- name: Run Alembic migration"
+    ), "the rollback target is captured after the migration has already run"
+    block = src.split("- name: Record rollback target", 1)[1].split("\n      - name:", 1)[0]
+    assert "az containerapp ingress traffic set" in block, (
+        "the recorded target has no command an on-call can actually run"
+    )
+    # A first deploy has no predecessor; refusing to proceed would gate nothing.
+    assert "exit 0" in block, "a missing predecessor must not fail the deploy"
+    assert "downgrade" in block, (
+        "no warning that an Alembic downgrade is NOT the data rollback — the "
+        "SEC-F11/j4_m10 migrations abort rather than decrypt with a wrong key"
+    )
+
+
+@pytest.mark.parametrize(
+    "migration",
+    ["j4_m9_secf11_phi_encryption", "j4_m10_p15_residual_phi_encryption"],
+)
+def test_phi_migrations_bound_how_long_they_wait_for_a_lock(migration):
+    """`lock_timeout` bounds the WAIT; `statement_timeout = 0` protects the work.
+
+    A column rewrite takes ACCESS EXCLUSIVE. Without a lock_timeout the
+    migration queues behind any open transaction and blocks every reader behind
+    it — a deploy that takes the site down while appearing to hang. Without
+    `statement_timeout = 0` the opposite: a server-configured timeout kills the
+    rewrite half-way. Both are needed, and they pull in opposite directions.
+    """
+    import pathlib
+
+    path = (
+        pathlib.Path(__file__).resolve().parents[1]
+        / "alembic" / "versions" / f"{migration}.py"
+    )
+    if not path.exists():
+        pytest.skip(f"{migration} not present in this checkout")
+    src = path.read_text()
+    assert "SET LOCAL lock_timeout" in src, f"{migration}: unbounded lock wait"
+    assert "SET LOCAL statement_timeout = 0" in src, (
+        f"{migration}: a server statement_timeout can kill the rewrite mid-flight"
+    )
+
+
 def test_no_workflow_leaves_a_job_holding_the_phi_key():
     """Generalised over EVERY workflow, not a list someone has to remember.
 
