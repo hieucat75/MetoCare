@@ -7,11 +7,10 @@ import { useAuth } from '../../../src/auth/AuthContext'
 import { GlassCard } from '../../../src/components/GlassCard'
 import { PrimaryButton } from '../../../src/components/PrimaryButton'
 import { ErrorView, LoadingView, OfflineBanner } from '../../../src/components/StateViews'
-import { useAdherence } from '../../../src/features/medication/useAdherence'
+import { ScheduleAdherence } from '../../../src/features/medication/ScheduleAdherenceCard'
 import { useMedicationDetail } from '../../../src/features/medication/useMedicationDetail'
 import { useNetworkStatus } from '../../../src/hooks/useNetworkStatus'
 import {
-  adherencePercent,
   doseStateLabel,
   medicationSourceLabel,
   medicationVerificationLabel,
@@ -21,81 +20,6 @@ import {
 import { firstParam } from '../../../src/lib/params'
 import { vi } from '../../../src/i18n/vi'
 import { colors, radius, spacing, typography } from '../../../src/theme/tokens'
-
-/** Per-schedule adherence card — one hook call per schedule instance. */
-function ScheduleAdherence({
-  patientId,
-  scheduleId,
-}: {
-  patientId: string | null
-  scheduleId: string
-}) {
-  const { client } = useAuth()
-  const { phase, adherence } = useAdherence(client, patientId, scheduleId)
-
-  if (phase === 'loading') {
-    return <ActivityIndicator color={colors.mint} testID={`adherence-loading-${scheduleId}`} />
-  }
-  if (phase === 'error' || !adherence) {
-    return <Text style={styles.meta}>{vi.medication.adherenceNoData}</Text>
-  }
-
-  // P0-1 / P1-3. `reconciled=false` means the denominator could not be
-  // established. A percentage here would be app-engagement wearing the clothes
-  // of adherence — and a clinician reading "50% adherent" on a patient who
-  // followed a doctor-instructed hold blames compliance instead of escalating
-  // therapy that needs escalating.
-  if (!adherence.reconciled) {
-    return (
-      <View testID={`schedule-adherence-${scheduleId}`}>
-        <Text style={styles.meta}>{unavailableMessage(adherence.reconciliation_reason)}</Text>
-      </View>
-    )
-  }
-
-  return (
-    <View testID={`schedule-adherence-${scheduleId}`}>
-      <View style={styles.adherenceRow}>
-        <Text style={styles.meta}>{vi.medication.adherenceRate}</Text>
-        <Text style={styles.rate}>{adherencePercent(adherence.adherence_rate)}</Text>
-      </View>
-      <Text style={styles.meta}>
-        {vi.medication.adherenceTaken}: {adherence.taken_count} ·{' '}
-        {vi.medication.adherenceSkipped}: {adherence.skipped_count} ·{' '}
-        {vi.medication.adherenceMissed}: {adherence.missed_count}
-      </Text>
-      <Text style={styles.meta}>
-        {vi.medication.adherenceTotal}: {adherence.expected_count}
-      </Text>
-      {/* The period the figure ACTUALLY covers. Without it the number floats
-          free of any window and reads as "since forever". */}
-      <Text style={styles.meta} testID={`adherence-period-${scheduleId}`}>
-        {vi.medication.adherencePeriod}: {adherence.period_start} – {adherence.period_end}
-      </Text>
-      {adherence.excluded_paused_count > 0 && (
-        <Text style={styles.meta} testID={`adherence-paused-${scheduleId}`}>
-          {vi.medication.adherenceExcludedPaused(adherence.excluded_paused_count)}
-        </Text>
-      )}
-      {adherence.excluded_cancelled_count > 0 && (
-        <Text style={styles.meta} testID={`adherence-cancelled-${scheduleId}`}>
-          {vi.medication.adherenceExcludedCancelled(adherence.excluded_cancelled_count)}
-        </Text>
-      )}
-    </View>
-  )
-}
-
-/** Why a period could not be reconciled, in the patient's language. */
-function unavailableMessage(reason: string): string {
-  if (reason === 'no_expected_occurrences_in_window') {
-    return vi.medication.adherenceUnavailablePaused
-  }
-  if (reason === 'schedule_prescribes_nothing_in_window') {
-    return vi.medication.adherenceUnavailableEmpty
-  }
-  return vi.medication.adherenceUnavailable
-}
 
 export default function MedicationDetailScreen() {
   const { client, user } = useAuth()
@@ -171,8 +95,16 @@ export default function MedicationDetailScreen() {
                 </Text>
                 <Text style={styles.badge}>{scheduleStatusLabel(s.status)}</Text>
               </View>
-              <Text style={styles.adherenceHeading}>{vi.medication.adherenceTitle}</Text>
-              <ScheduleAdherence patientId={patientId} scheduleId={s.id} />
+              {/* Adherence is LINEAGE-wide, so rendering it per version showed the
+                  IDENTICAL figure once per edit, each labelled as that schedule's
+                  own — reading as two separate schedules and double the therapy.
+                  Only the version in force reports it. */}
+              {!s.is_superseded && (
+                <>
+                  <Text style={styles.adherenceHeading}>{vi.medication.adherenceTitle}</Text>
+                  <ScheduleAdherence patientId={patientId} scheduleId={s.id} />
+                </>
+              )}
             </GlassCard>
           ))
         )}

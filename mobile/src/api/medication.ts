@@ -50,6 +50,9 @@ export interface ScheduleOut {
   patient_timezone: string
   start_date: string | null
   end_date: string | null
+  /** True for every version except the one in force. Adherence is lineage-wide,
+   * so rendering one block per version shows the same figure N times. */
+  is_superseded?: boolean
 }
 
 /** DoseOut — a single materialized dose occurrence. */
@@ -95,6 +98,8 @@ export interface AdherenceOut {
   excluded_paused_count: number
   /** Doses excluded because the prescription was withdrawn or superseded. */
   excluded_cancelled_count: number
+  /** Prescribed before MetoCare began observing — neither held nor withdrawn. */
+  excluded_untracked_count: number
   adherence_rate: number | null
   period_start: string
   period_end: string

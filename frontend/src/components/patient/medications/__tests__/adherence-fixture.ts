@@ -29,6 +29,7 @@ export function adherenceFixture(
     future_count: 0,
     excluded_paused_count: 0,
     excluded_cancelled_count: 0,
+    excluded_untracked_count: 0,
     adherence_rate: null,
     period_start: '2026-07-06',
     period_end: '2026-08-04',

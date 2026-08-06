@@ -749,12 +749,11 @@ jobs:
           az containerapp job create -g "$RG" -n "$JOB" \
             --environment "$ENV_NAME" --trigger-type Manual --replica-timeout 600 \
             --image "$IMG" --cpu 0.5 --memory 1Gi \
-            --registry-server "$REGISTRY" \
             --secrets db-url="$DB_URL" enc-keys="$ENC_KEYS" \
             --env-vars MCP_DATABASE_URL=secretref:db-url \
               MCP_ENCRYPTION_KEYS=secretref:enc-keys MCP_ENV=staging \
               MCP_BUILD_SHA=${{ steps.tag.outputs.sha8 }} \
-            --command "python" --args "-m" "scripts.crypto_smoke" -o none
+            --command "python" --args "run_crypto_smoke.py" -o none
           az containerapp job start -g "$RG" -n "$JOB" -o none
 
           # Poll budget (40x10s=400s) deliberately EXCEEDS --replica-timeout

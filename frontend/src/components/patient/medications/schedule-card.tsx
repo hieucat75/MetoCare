@@ -294,6 +294,8 @@ export interface MedicationScheduleCardProps {
   onRequestDiscontinue?: () => void
   /** Opens the missed-dose history so the patient can record what happened. */
   onOpenMissedDoses?: () => void
+  /** Drives `aria-expanded` — without it the toggle announces no state change. */
+  isMissedDosesOpen?: boolean
 }
 
 /**
@@ -345,6 +347,7 @@ export function MedicationScheduleCard({
   onMarkSkipped,
   onRequestDiscontinue,
   onOpenMissedDoses,
+  isMissedDosesOpen = false,
 }: MedicationScheduleCardProps) {
   const [skipTargetId, setSkipTargetId] = React.useState<string | null>(null)
   const skipTriggerRef = React.useRef<HTMLButtonElement>(null)
@@ -499,6 +502,34 @@ export function MedicationScheduleCard({
           Đây là số liệu theo dõi, không phải đánh giá y khoa.
         </p>
 
+        {adherence !== null && (
+          <>
+            {adherence.excluded_paused_count > 0 && (
+              // OUTSIDE the percentage branch, deliberately. A reconciled period
+              // with nothing yet resolved renders no rate, and this used to sit
+              // inside that branch — so a patient in the middle of a hold saw
+              // "chưa đủ dữ liệu" and no acknowledgement that 20 doses were
+              // excluded because they had been told to pause.
+              <p className="mt-2 text-[11.5px] text-neu-secondary">
+                Đã loại trừ {adherence.excluded_paused_count} liều trong thời gian tạm
+                dừng theo chỉ định. Những liều này không tính là bỏ lỡ.
+              </p>
+            )}
+            {adherence.excluded_cancelled_count > 0 && (
+              <p className="mt-1.5 text-[11.5px] text-neu-subtle">
+                Đã loại trừ {adherence.excluded_cancelled_count} liều thuộc lịch đã
+                ngừng hoặc đã thay đổi.
+              </p>
+            )}
+            {adherence.excluded_untracked_count > 0 && (
+              <p className="mt-1.5 text-[11.5px] text-neu-subtle">
+                {adherence.excluded_untracked_count} liều được kê trước khi MetoCare bắt
+                đầu theo dõi nên không được tính. Đây không phải là liều bỏ lỡ.
+              </p>
+            )}
+          </>
+        )}
+
         {adherence !== null && !adherence.reconciled ? (
           // NOT "no data". The period could not be RECONCILED, and those are
           // different things the patient deserves to tell apart. A percentage
@@ -544,22 +575,6 @@ export function MedicationScheduleCard({
               Tính trên {resolvedDoses} liều đã đến hạn
               {since && until ? ` từ ${since} đến ${until}` : since ? ` kể từ ${since}` : ''}.
             </p>
-            {adherence.excluded_paused_count > 0 && (
-              // A hold the patient was told to observe is not non-adherence.
-              // Subtracting those doses silently would leave the patient reading
-              // a smaller denominator with no explanation, and the obvious
-              // inference from a shrinking total is that something went wrong.
-              <p className="mt-1.5 text-[11.5px] text-neu-secondary">
-                Đã loại trừ {adherence.excluded_paused_count} liều trong thời gian tạm
-                dừng theo chỉ định. Những liều này không tính là bỏ lỡ.
-              </p>
-            )}
-            {adherence.excluded_cancelled_count > 0 && (
-              <p className="mt-1.5 text-[11.5px] text-neu-subtle">
-                Đã loại trừ {adherence.excluded_cancelled_count} liều thuộc lịch đã
-                ngừng hoặc đã thay đổi.
-              </p>
-            )}
             {adherence.missed > 0 && (
               <>
                 <p className="mt-2 text-[12.5px] text-neu-secondary">{MISSED_DOSE_GUIDANCE}</p>
@@ -570,9 +585,13 @@ export function MedicationScheduleCard({
                   <button
                     type="button"
                     onClick={onOpenMissedDoses}
+                    aria-expanded={isMissedDosesOpen}
+                    aria-controls="missed-doses-panel"
                     className="mt-2 text-[12.5px] font-semibold text-neu-green underline underline-offset-2"
                   >
-                    Xem và ghi nhận lại các liều đã lỡ
+                    {isMissedDosesOpen
+                      ? 'Ẩn danh sách liều đã lỡ'
+                      : 'Xem và ghi nhận lại các liều đã lỡ'}
                   </button>
                 )}
               </>

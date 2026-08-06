@@ -348,3 +348,60 @@ def test_the_correction_vocabulary_carries_no_clinical_advice(db, patient):
         assert " " not in code
         for advice in ("should", "double", "skip_next", "dose_now", "take_now"):
             assert advice not in code
+
+
+def test_no_two_doses_of_one_schedule_are_open_at_the_same_instant(db, patient):
+    """The grace window must never touch the next dose.
+
+    Two cadences make `window == minimum gap`: a 4x/day schedule (tightest gap
+    4h, window 4h) and `days_of_week` on adjacent days (24h/24h). At exactly that
+    instant both doses were open — and two open doses of one schedule cannot be
+    told apart when the patient taps "Đã uống", so the action lands on the older
+    one and the wrong dose is recorded as taken.
+    """
+    _m, s = _make(
+        db, patient, "AdjacentDays", schedule_type="days_of_week",
+        local_dose_times=["08:00"], recurrence={"days": [0, 1]},
+        start_date=dt.date(2026, 8, 3),
+    )
+    # 2026-08-03 is a Monday. Doses at Mon 08:00 and Tue 08:00 UTC.
+    mon = dt.datetime(2026, 8, 3, 8, tzinfo=dt.UTC)
+    tue = mon + dt.timedelta(days=1)
+    sched.reconcile_period(
+        db, s, period_start=dt.date(2026, 8, 3), period_end=dt.date(2026, 8, 4), now=tue
+    )
+    db.commit()
+    sched.sweep_missed(db, patient_id=patient["patient_id"], now=tue)
+    db.commit()
+
+    open_states = [st for st in _states(db, s.id) if st in ("pending", "notified")]
+    assert len(open_states) <= 1, (
+        f"two doses of one schedule are open simultaneously: {_states(db, s.id)}"
+    )
+
+
+def test_the_sweep_and_the_adherence_figure_agree_at_the_boundary(db, patient):
+    """The same dose must not read MISSED in one place and pending in another."""
+    _m, s = _make(
+        db, patient, "BoundaryAgreement", schedule_type="fixed_daily",
+        local_dose_times=["08:00"], start_date=dt.date(2026, 8, 1),
+        end_date=dt.date(2026, 8, 1),
+    )
+    due = dt.datetime(2026, 8, 1, 8, tzinfo=dt.UTC)
+    boundary = due + sched.missed_after(s)   # exactly `scheduled + window`
+    sched.reconcile_period(
+        db, s, period_start=dt.date(2026, 8, 1), period_end=dt.date(2026, 8, 1),
+        now=boundary,
+    )
+    db.commit()
+    sched.sweep_missed(db, patient_id=patient["patient_id"], now=boundary)
+    db.commit()
+
+    summary = sched.adherence_summary(
+        db, patient_id=patient["patient_id"], schedule_id=s.id,
+        period_start=dt.date(2026, 8, 1), period_end=dt.date(2026, 8, 1), now=boundary,
+    )
+    db.commit()
+    assert _states(db, s.id) == ["missed"]
+    assert summary["missed_count"] == 1
+    assert summary["future_count"] == 0

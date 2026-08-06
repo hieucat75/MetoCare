@@ -114,6 +114,7 @@ function combineAdherence(parts: ScheduleAdherence[]): ScheduleAdherence | null 
     future_count: sum((p) => p.future_count),
     excluded_paused_count: sum((p) => p.excluded_paused_count),
     excluded_cancelled_count: sum((p) => p.excluded_cancelled_count),
+    excluded_untracked_count: sum((p) => p.excluded_untracked_count),
     adherence_rate:
       reconciled && resolved > 0 ? Math.round((taken / resolved) * 1000) / 1000 : null,
     // The union of the parts' windows — the period the summed figure describes.
@@ -188,17 +189,40 @@ export function useMedicationSchedule(
         .filter((d) => scheduleIds.has(d.schedule_id))
         .sort((a, b) => a.scheduled_utc.localeCompare(b.scheduled_utc))
 
-      // Adherence is per-schedule; one failed part must not blank the whole figure.
+      // CURRENT VERSIONS ONLY.
+      //
+      // The backend answer is LINEAGE-wide: asking about any version returns the
+      // figure for the whole prescription. This endpoint returns every version,
+      // so requesting one per row and summing multiplied every count by the
+      // number of edits — 90 taken doses rendered as 180 after one edit, and 270
+      // after two. The percentage survived (the ratio is unchanged), so nothing
+      // looked wrong; only the absolute dose counts a patient or clinician reads
+      // were fabricated.
+      const current = scheduleRows.filter((s) => !s.is_superseded)
       const parts = await Promise.all(
-        scheduleRows.map((s) => getScheduleAdherence(patientId, s.id).catch(() => null))
+        current.map((s) => getScheduleAdherence(patientId, s.id).catch(() => null))
       )
       if (isStale()) return
 
       const resolved = parts.filter((p): p is ScheduleAdherence => p !== null)
+      const isPartial = resolved.length < parts.length
       setSchedules(scheduleRows)
       setDueDoses(mine)
-      setAdherence(combineAdherence(resolved))
-      setIsAdherencePartial(resolved.length < parts.length)
+      // A dropped part means the denominator is INCOMPLETE, and a missing part is
+      // usually a schedule carrying missed doses — so dividing by what remains
+      // inflates the rate. `reconciled` is the flag that suppresses the
+      // percentage; computing it only over the parts that happened to load left
+      // it `true` and rendered a confident 28px figure with a small amber caveat
+      // underneath. That is precisely the incomplete denominator the flag exists
+      // to hide.
+      const combined = combineAdherence(resolved)
+      setAdherence(
+        combined && isPartial
+          ? { ...combined, reconciled: false, adherence_rate: null,
+              reconciliation_reason: 'partial_adherence_read' }
+          : combined
+      )
+      setIsAdherencePartial(isPartial)
       setPhase('ready')
     } catch (err) {
       if (isStale()) return

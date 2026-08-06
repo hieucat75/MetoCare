@@ -46,16 +46,27 @@ type Phase = 'loading' | 'ready' | 'error'
 export function MissedDosesPanel({ patientId, scheduleId, onCorrected }: Props) {
   const [phase, setPhase] = React.useState<Phase>('loading')
   const [doses, setDoses] = React.useState<DoseOccurrence[]>([])
-  const [busyId, setBusyId] = React.useState<string | null>(null)
+  const [busyIds, setBusyIds] = React.useState<string[]>([])
+  const headingRef = React.useRef<HTMLHeadingElement>(null)
   const [actionError, setActionError] = React.useState<string | null>(null)
   const [reasonByDose, setReasonByDose] = React.useState<Record<string, DoseCorrectionReason>>({})
 
+  // Monotonic request token. Two "Thử lại" taps race, and a slow first response
+  // landing after a fast second would overwrite the newer list (and set state on
+  // an unmounted panel if it was closed meanwhile). The sibling hook
+  // `use-medication-schedule` solves this the same way; this panel did not.
+  const requestToken = React.useRef(0)
+
   const load = React.useCallback(async () => {
+    const token = ++requestToken.current
     setPhase('loading')
     try {
-      setDoses(await getMissedDoses(patientId, scheduleId))
+      const rows = await getMissedDoses(patientId, scheduleId)
+      if (requestToken.current !== token) return
+      setDoses(rows)
       setPhase('ready')
     } catch {
+      if (requestToken.current !== token) return
       setPhase('error')
     }
   }, [patientId, scheduleId])
@@ -66,11 +77,15 @@ export function MissedDosesPanel({ patientId, scheduleId, onCorrected }: Props) 
 
   const submit = React.useCallback(
     async (doseId: string, state: 'taken' | 'skipped') => {
-      // One correction at a time. Two in flight would race the local removal,
-      // and the backend refuses a second correction of the same dose anyway —
-      // so the loser would surface as an error the patient did not cause.
-      if (busyId) return
-      setBusyId(doseId)
+      // Re-entrancy is guarded PER DOSE, not globally.
+      //
+      // A single `if (busyId) return` swallowed a click on a SECOND dose while
+      // the first was in flight: no request, no spinner, no error. The patient
+      // believed dose B was recorded; it was not, and it kept counting as missed.
+      // Corrections target distinct rows and the backend refuses a repeat of the
+      // same one, so concurrent corrections of different doses are safe.
+      if (busyIds.includes(doseId)) return
+      setBusyIds((prev) => [...prev, doseId])
       setActionError(null)
       try {
         await correctDose(patientId, doseId, state, reasonByDose[doseId] ?? 'other')
@@ -79,15 +94,30 @@ export function MissedDosesPanel({ patientId, scheduleId, onCorrected }: Props) 
       } catch {
         setActionError(CORRECTION_ERROR)
       } finally {
-        setBusyId(null)
+        setBusyIds((prev) => prev.filter((id) => id !== doseId))
+        // Focus would otherwise land on <body>: the <li> holding the focused
+        // button unmounts when the row leaves the list, and a keyboard user then
+        // restarts navigation from the top of the document. The skip prompt in
+        // `schedule-card.tsx` restores focus for exactly this reason.
+        headingRef.current?.focus()
       }
     },
-    [busyId, patientId, reasonByDose, onCorrected]
+    [busyIds, patientId, reasonByDose, onCorrected]
   )
 
   return (
-    <NeuCard className="!p-4" role="region" aria-labelledby="missed-doses-heading">
-      <h3 id="missed-doses-heading" className="text-[15px] font-bold text-neu-text">
+    <NeuCard
+      id="missed-doses-panel"
+      className="!p-4"
+      role="region"
+      aria-labelledby="missed-doses-heading"
+    >
+      <h3
+        id="missed-doses-heading"
+        ref={headingRef}
+        tabIndex={-1}
+        className="text-[15px] font-bold text-neu-text"
+      >
         {MISSED_PANEL_TITLE}
       </h3>
       <p className="mt-1 text-[12.5px] text-neu-secondary">{MISSED_PANEL_INTRO}</p>
@@ -121,17 +151,20 @@ export function MissedDosesPanel({ patientId, scheduleId, onCorrected }: Props) 
       {phase === 'ready' && doses.length > 0 && (
         <ul className="mt-3 space-y-3">
           {doses.map((dose) => {
-            const busy = busyId === dose.id
+            const busy = busyIds.includes(dose.id)
             const reasonName = `missed-reason-${dose.id}`
+            const when = dose.local_render ?? dose.scheduled_utc
             return (
-              <li key={dose.id} className="rounded-[12px] bg-[#F7FAF9] p-3">
-                <p className="text-[13.5px] font-semibold text-neu-text">
-                  {dose.local_render ?? dose.scheduled_utc}
-                </p>
+              <li
+                key={dose.id}
+                className="rounded-[12px] bg-[#F7FAF9] p-3"
+                aria-label={`Liều ${when}`}
+              >
+                <p className="text-[13.5px] font-semibold text-neu-text">{when}</p>
 
                 <fieldset className="mt-2">
                   <legend className="text-[12px] text-neu-secondary">
-                    Điều gì đã thực sự xảy ra?
+                    Điều gì đã thực sự xảy ra với liều {when}?
                   </legend>
                   <div className="mt-1.5 flex flex-wrap gap-1.5">
                     {DOSE_CORRECTION_REASONS.map((reason) => (
@@ -159,6 +192,7 @@ export function MissedDosesPanel({ patientId, scheduleId, onCorrected }: Props) 
                   <button
                     type="button"
                     disabled={busy}
+                    aria-label={`Tôi đã uống liều ${when}`}
                     onClick={() => void submit(dose.id, 'taken')}
                     className="flex flex-1 items-center justify-center gap-1.5 rounded-[10px] bg-neu-green py-2 text-[13px] font-semibold text-white disabled:opacity-50"
                   >
@@ -168,6 +202,7 @@ export function MissedDosesPanel({ patientId, scheduleId, onCorrected }: Props) 
                   <button
                     type="button"
                     disabled={busy}
+                    aria-label={`Tôi đã bỏ liều ${when}`}
                     onClick={() => void submit(dose.id, 'skipped')}
                     className="flex-1 rounded-[10px] border border-[#D6E3DD] py-2 text-[13px] font-semibold text-neu-secondary disabled:opacity-50"
                   >

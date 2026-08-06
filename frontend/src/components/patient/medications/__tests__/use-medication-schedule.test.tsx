@@ -371,3 +371,68 @@ test('a failed action leaves the submit lock released so the patient can retry',
   expect(mockTaken).toHaveBeenCalledTimes(2)
   expect(result.current.actionError).toBeNull()
 })
+
+// ── P0-1: the aggregate is only as trustworthy as its least trustworthy part ──
+
+test('one unreconciled schedule poisons the whole figure', async () => {
+  // Grep the file before this: `reconciled` was asserted nowhere, and every
+  // fixture defaulted to true — so replacing `parts.every(p => p.reconciled)`
+  // with the literal `true` left every test passing while the client published
+  // an engagement-derived rate under an aggregate that looked complete.
+  mockSchedules.mockResolvedValue([SCHEDULE, { ...SCHEDULE, id: 'sched-2' }])
+  mockDue.mockResolvedValue({ delivered: 0, items: [] })
+  mockAdherence
+    .mockResolvedValueOnce(adherenceFixture({ taken: 9, missed: 1, adherence_rate: 0.9 }))
+    .mockResolvedValueOnce(
+      adherenceFixture({
+        reconciled: false,
+        adherence_rate: null,
+        reconciliation_reason: 'no_expected_occurrences_in_window',
+      })
+    )
+
+  const { result } = render()
+  await waitFor(() => expect(result.current.phase).toBe('ready'))
+  expect(result.current.adherence?.reconciled).toBe(false)
+  expect(result.current.adherence?.adherence_rate).toBeNull()
+})
+
+test('a dropped part makes the figure unreconciled, not merely "partial"', async () => {
+  // A missing part is usually a schedule carrying MISSED doses, so dividing by
+  // what remains INFLATES the rate. Computing `reconciled` only over the parts
+  // that happened to load left it true and rendered a confident 28px percentage
+  // with a small amber caveat underneath — the incomplete denominator the flag
+  // exists to suppress.
+  mockSchedules.mockResolvedValue([SCHEDULE, { ...SCHEDULE, id: 'sched-2' }])
+  mockDue.mockResolvedValue({ delivered: 0, items: [] })
+  mockAdherence
+    .mockResolvedValueOnce(adherenceFixture({ taken: 10, adherence_rate: 1 }))
+    .mockRejectedValueOnce(new ApiError(500, 'Lỗi 500'))
+
+  const { result } = render()
+  await waitFor(() => expect(result.current.phase).toBe('ready'))
+  expect(result.current.isAdherencePartial).toBe(true)
+  expect(result.current.adherence?.reconciled).toBe(false)
+  expect(result.current.adherence?.adherence_rate).toBeNull()
+})
+
+test('adherence is requested once per prescription, not once per version', async () => {
+  // `adherence_summary` is LINEAGE-wide: asking about any version returns the
+  // figure for the whole prescription. Requesting one per row and summing
+  // multiplied every count by the number of edits — 90 taken doses rendered as
+  // 180 after one edit. The percentage survived, so nothing looked wrong.
+  mockSchedules.mockResolvedValue([
+    { ...SCHEDULE, id: 'sched-v2', version: 2 },
+    { ...SCHEDULE, id: 'sched-v1', version: 1, status: 'stopped', is_superseded: true },
+  ])
+  mockDue.mockResolvedValue({ delivered: 0, items: [] })
+  mockAdherence.mockResolvedValue(
+    adherenceFixture({ taken: 90, missed: 10, adherence_rate: 0.9 })
+  )
+
+  const { result } = render()
+  await waitFor(() => expect(result.current.phase).toBe('ready'))
+  expect(mockAdherence).toHaveBeenCalledTimes(1)
+  expect(mockAdherence).toHaveBeenCalledWith('patient-1', 'sched-v2')
+  expect(result.current.adherence?.taken_count).toBe(90)
+})

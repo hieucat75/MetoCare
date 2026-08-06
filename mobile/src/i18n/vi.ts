@@ -279,6 +279,9 @@ export const vi = {
       'khoảng thời gian này. Không có liều nào được coi là bỏ lỡ.',
     adherenceUnavailableEmpty: 'Lịch này không có liều nào trong khoảng thời gian đang xem.',
     adherencePeriod: 'Khoảng thời gian',
+    adherenceUnavailableUntracked:
+      'Khoảng thời gian này nằm trước khi MetoCare bắt đầu theo dõi thuốc của bạn, ' +
+      'nên chưa thể tính tỷ lệ tuân thủ. Đây không phải là liều bỏ lỡ.',
     // A hold the patient was told to observe is not non-adherence. Subtracting
     // it silently leaves a smaller denominator with no explanation, and the
     // obvious inference from a shrinking total is that something went wrong.
@@ -287,6 +290,9 @@ export const vi = {
       'Những liều này không tính là bỏ lỡ.',
     adherenceExcludedCancelled: (n: number) =>
       `Đã loại trừ ${n} liều thuộc lịch đã ngừng hoặc đã thay đổi.`,
+    adherenceExcludedUntracked: (n: number) =>
+      `${n} liều được kê trước khi MetoCare bắt đầu theo dõi nên không được tính. ` +
+      'Đây không phải là liều bỏ lỡ.',
     // Missed-dose correction. Records what happened; never advises whether to
     // take a late dose — that is a clinical decision this app does not make.
     missedDosesTitle: 'Các liều đã lỡ',

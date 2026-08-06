@@ -90,15 +90,18 @@ def _daily(db, patient, name, times=("08:00",)):
 
 
 def _hold(db, patient, s, pause_at, resume_at=None):
+    # `now` is threaded so the backdate limit is measured against the SAME fixed
+    # clock every expectation here is computed from. Judging a July timeline
+    # against the wall clock would make these tests pass or fail by calendar.
     sched.pause_schedule(
         db, patient_id=patient["patient_id"], schedule_id=s.id,
-        effective_at=pause_at, reason_code="doctor_instructed",
+        effective_at=pause_at, reason_code="doctor_instructed", now=pause_at,
     )
     db.commit()
     if resume_at is not None:
         sched.resume_schedule(
             db, patient_id=patient["patient_id"], schedule_id=s.id,
-            effective_at=resume_at,
+            effective_at=resume_at, now=resume_at,
         )
         db.commit()
 
@@ -293,7 +296,7 @@ def test_pausing_an_already_paused_schedule_is_refused(db, patient):
     with pytest.raises(sched.LifecycleConflict):
         sched.pause_schedule(
             db, patient_id=patient["patient_id"], schedule_id=s.id,
-            effective_at=_utc(2026, 7, 15),
+            effective_at=_utc(2026, 7, 15), now=_utc(2026, 7, 15),
         )
     db.rollback()
 
@@ -309,7 +312,8 @@ def test_an_identical_repeated_pause_is_idempotent_not_an_error(db, patient):
     when = _utc(2026, 7, 10)
     _hold(db, patient, s, when)
     sched.pause_schedule(
-        db, patient_id=patient["patient_id"], schedule_id=s.id, effective_at=when
+        db, patient_id=patient["patient_id"], schedule_id=s.id, effective_at=when,
+        now=when,
     )
     db.commit()
     events = sched.lifecycle_events(db, s.id)
@@ -327,7 +331,7 @@ def test_nothing_may_follow_a_stop(db, patient):
     _m, s = _daily(db, patient, "StopTerminal")
     sched.stop_schedule(
         db, patient_id=patient["patient_id"], schedule_id=s.id,
-        effective_at=_utc(2026, 7, 10),
+        effective_at=_utc(2026, 7, 10), now=_utc(2026, 7, 10),
     )
     db.commit()
     with pytest.raises(sched.ScheduleError):
@@ -342,7 +346,7 @@ def test_stopping_while_paused_closes_the_timeline_once(db, patient):
     _hold(db, patient, s, _utc(2026, 7, 10))
     sched.stop_schedule(
         db, patient_id=patient["patient_id"], schedule_id=s.id,
-        effective_at=_utc(2026, 7, 15),
+        effective_at=_utc(2026, 7, 15), now=_utc(2026, 7, 15),
     )
     db.commit()
     intervals = sched.fold_intervals(sched.lifecycle_events(db, s.id))
@@ -350,19 +354,50 @@ def test_stopping_while_paused_closes_the_timeline_once(db, patient):
     assert intervals[0][1] == _utc(2026, 7, 10)
 
 
-def test_editing_while_paused_does_not_resurrect_the_held_days(db, patient):
-    """Edit supersedes the old version and activates the new one; the hold in
-    between belongs to neither and must stay out of the denominator."""
+def test_editing_a_paused_schedule_is_refused_rather_than_silently_resuming(db, patient):
+    """Editing must not be a back door out of a doctor-instructed hold.
+
+    `edit_schedule` hard-codes `status=active` on the new version and
+    materializes immediately, and `_validate_timeline` does not object because
+    `superseded` is terminal and short-circuits before the active-state check.
+    So changing the dose time of a drug on a hold silently lifted the hold:
+    reminders restarted, by name, for a medication the patient had been told to
+    stop — CLIN PS-5's failure reached through the edit path — with no `resumed`
+    event anywhere in the timeline to show it had happened.
+
+    Resuming is an explicit clinical decision and has to be recorded as one.
+    """
     _m, s = _daily(db, patient, "EditWhilePaused")
-    _hold(db, patient, s, _utc(2026, 7, 9, 17))
+    _hold(db, patient, s, _utc(2026, 8, 4, 17))
+    with pytest.raises(sched.InvalidSchedule):
+        sched.edit_schedule(
+            db, patient_id=patient["patient_id"], schedule_id=s.id,
+            local_dose_times=["09:00"],
+        )
+    db.rollback()
+    # The hold is intact and no `resumed` event was invented.
+    types = [e.event_type for e in sched.lifecycle_events(db, s.id)]
+    assert types == [LIFECYCLE_ACTIVATED, LIFECYCLE_PAUSED]
+
+
+def test_resume_then_edit_keeps_the_held_days_out_of_the_denominator(db, patient):
+    """The sanctioned route: resume (recorded), then edit. The hold still counts
+    for nothing, and the lineage covers the window with no gap."""
+    _m, s = _daily(db, patient, "ResumeThenEdit")
+    _hold(db, patient, s, _utc(2026, 7, 9, 17), _utc(2026, 7, 19, 17))
     new = sched.edit_schedule(
         db, patient_id=patient["patient_id"], schedule_id=s.id,
         local_dose_times=["09:00"],
     )
     db.commit()
     summary = _summary(db, patient, new)
-    assert summary["excluded_paused_count"] > 0
-    assert summary["expected_count"] < 35
+    assert summary["excluded_paused_count"] == 10
+    assert (
+        summary["expected_count"]
+        + summary["excluded_paused_count"]
+        + summary["excluded_cancelled_count"]
+        + summary["excluded_untracked_count"]
+    ) == 35
 
 
 def test_the_timeline_is_append_only(db, patient):
@@ -381,3 +416,110 @@ def test_lifecycle_events_carry_no_clinical_free_text(db, patient):
         assert len(event.reason_code) <= 48
         assert " " not in event.reason_code, "reason_code must be a closed vocabulary"
         assert event.note_ref is None or len(event.note_ref) <= 64
+
+
+# ── 4. Findings from the fresh reviews ──────────────────────────────────────
+
+
+def test_a_prn_schedule_can_be_paused_without_overflowing(db, patient):
+    """`missed_after` returns `timedelta.max` for PRN, and `now - timedelta.max`
+    raises OverflowError. `_cancel_open_doses` did the subtraction unguarded, so
+    pausing a rescue medication returned 500 and rolled the whole transaction
+    back — leaving the drug `active` in the medication list, the doctor-facing
+    record and the AI context, and killing the CLIN PS-5 cascade mid-flight."""
+    med = medication_svc.add_medication(
+        db, patient_id=patient["patient_id"], data={"name": "Salbutamol"}, commit=True
+    )
+    s = sched.create_schedule(
+        db, patient_id=patient["patient_id"], medication_id=med.id,
+        schedule_type="prn", patient_timezone=TZ,
+    )
+    db.commit()
+    sched.pause_schedule(db, patient_id=patient["patient_id"], schedule_id=s.id)
+    db.commit()
+    assert s.status == "paused"
+    sched.stop_schedule(db, patient_id=patient["patient_id"], schedule_id=s.id)
+    db.commit()
+    assert s.status == "stopped"
+
+
+def test_a_future_dated_hold_does_not_wedge_the_schedule(db, patient):
+    """`status` is a cache written when the command is issued, and a future-dated
+    hold cannot update it. Nothing recomputed it when the instant passed, so the
+    row read `active` while its interval was already closed: reminders stopped,
+    and `resume_schedule`'s `if status == active: return` early-exit answered 200
+    having recorded nothing. Silently dead, and unfixable from the UI."""
+    _m, s = _daily(db, patient, "FutureWedge")
+    hold_at = _utc(2026, 8, 3)
+    sched.pause_schedule(
+        db, patient_id=patient["patient_id"], schedule_id=s.id,
+        effective_at=hold_at, reason_code="pre_procedure_hold", now=_utc(2026, 8, 1),
+    )
+    db.commit()
+    assert s.status == "active"          # the hold has not begun yet
+    # Once it has, the timeline is authoritative and the cache follows.
+    assert sched.effective_status(db, s, now=_utc(2026, 8, 4)) == "paused"
+    resumed = sched.resume_schedule(
+        db, patient_id=patient["patient_id"], schedule_id=s.id, now=_utc(2026, 8, 4)
+    )
+    db.commit()
+    assert resumed.status == "active"
+    assert LIFECYCLE_RESUMED in [e.event_type for e in sched.lifecycle_events(db, s.id)]
+
+
+def test_a_patient_cannot_backdate_a_hold_far_enough_to_erase_history(db, patient):
+    """Two calls — pause backdated to creation, resume now — removed every
+    historical missed dose from BOTH numerator and denominator. The figure this
+    work exists to make trustworthy was retroactively editable by its subject."""
+    _m, s = _daily(db, patient, "BackdateGuard")
+    with pytest.raises(sched.LifecycleConflict):
+        sched.pause_schedule(
+            db, patient_id=patient["patient_id"], schedule_id=s.id,
+            effective_at=_utc(2026, 7, 1), now=_utc(2026, 8, 5),
+        )
+    db.rollback()
+    # A few days back is legitimate ("the doctor stopped it on Friday").
+    sched.pause_schedule(
+        db, patient_id=patient["patient_id"], schedule_id=s.id,
+        effective_at=_utc(2026, 8, 4), now=_utc(2026, 8, 5),
+    )
+    db.commit()
+
+
+def test_a_reason_code_outside_the_vocabulary_is_refused(db, patient):
+    """`reason_code` lands in the lifecycle table AND the audit trail, both
+    plaintext, and the audit trail has broader access and longer retention than
+    clinical tables. A regex allowing `[a-z0-9_]{1,48}` admits
+    `paused_for_hiv_arv_side_effects`."""
+    _m, s = _daily(db, patient, "ReasonVocab")
+    with pytest.raises(sched.LifecycleConflict):
+        sched.pause_schedule(
+            db, patient_id=patient["patient_id"], schedule_id=s.id,
+            reason_code="paused_for_hiv_arv_side_effects",
+        )
+    db.rollback()
+
+
+def test_a_window_before_tracking_started_is_not_reported_as_a_pause(db, patient):
+    """Both clients map `no_expected_occurrences_in_window` to "lịch đang tạm
+    dừng hoặc đã ngừng". Saying that about a period the patient was taking the
+    drug is a false clinical statement — and the doses were counted by no bucket
+    at all."""
+    med = medication_svc.add_medication(
+        db, patient_id=patient["patient_id"], data={"name": "BeforeTracking"}, commit=True
+    )
+    s = sched.create_schedule(
+        db, patient_id=patient["patient_id"], medication_id=med.id,
+        schedule_type="fixed_daily", local_dose_times=["08:00"],
+        patient_timezone=TZ, start_date=dt.date(2026, 3, 1),
+        now=_utc(2026, 8, 1), tracking_start_at=_utc(2026, 8, 1),
+    )
+    db.commit()
+    summary = _summary(
+        db, patient, s, period_start=dt.date(2026, 3, 1), period_end=dt.date(2026, 3, 20)
+    )
+    assert summary["reconciled"] is False
+    assert summary["reconciliation_reason"] == "before_tracking_started"
+    assert summary["excluded_paused_count"] == 0
+    assert summary["excluded_untracked_count"] == 20, "the doses were in no bucket"
+    assert summary["adherence_rate"] is None

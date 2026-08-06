@@ -137,7 +137,7 @@ def test_the_deploy_gate_runs_it_and_fails_on_it():
     if not ci.exists():
         pytest.skip("ci.yml not present in this checkout")
     src = ci.read_text()
-    assert "scripts.crypto_smoke" in src
+    assert "run_crypto_smoke.py" in src
     # rsplit: the phrase appears in both the comment header and the step name,
     # and it is the STEP's body that has to abort the deploy.
     block = src.rsplit("Post-deploy PHI crypto smoke", 1)[1]
@@ -166,20 +166,166 @@ def _prod_workflow() -> str:
 
 
 def _prod_smoke_block() -> str:
+    """JUST the crypto-smoke step — bounded at the next step, not at EOF.
+
+    Splitting to end-of-file made every assertion over this block satisfiable by
+    UNRELATED later steps: `block.count("exit 1") >= 2` passed on the health
+    gates' exits even with both of the smoke's own removed, and
+    `"MCP_ENV=production" in block` passed on the deploy step's env. A test that
+    can be satisfied by code it is not testing is not a gate.
+    """
     src = _prod_workflow()
     assert "Post-migration PHI crypto smoke" in src, (
         "production deploys with NO crypto smoke — a mis-rotated key ships silently"
     )
-    return src.rsplit("- name: Post-migration PHI crypto smoke", 1)[1]
+    after = src.split("- name: Post-migration PHI crypto smoke", 1)[1]
+    return after.split("\n      - name:", 1)[0]
 
 
-def test_production_invokes_the_smoke_with_the_production_flag():
-    """`run()` refuses a production database without the explicit flag, so a
-    production step that omits it exits 2 and gates nothing."""
+def _all_smoke_invocations() -> list[tuple[str, str]]:
+    """(workflow name, the `az containerapp job create` command) for each caller."""
+    import pathlib
+
+    root = pathlib.Path(__file__).resolve().parents[2] / ".github" / "workflows"
+    out: list[tuple[str, str]] = []
+    for wf in ("ci.yml", "azure-production.yml"):
+        path = root / wf
+        if not path.exists():
+            continue
+        lines = path.read_text().splitlines()
+        for i, line in enumerate(lines):
+            if "az containerapp job create" not in line:
+                continue
+            # Join backslash continuations: the command spans many YAML lines and
+            # the `--args` list is always on one of the later ones.
+            parts = [line]
+            j = i
+            while lines[j].rstrip().endswith("\\") and j + 1 < len(lines):
+                j += 1
+                parts.append(lines[j])
+            command = "\n".join(parts)
+            if "crypto" in command or "run_crypto_smoke" in command:
+                out.append((wf, command))
+    return out
+
+
+def test_production_invokes_the_smoke_and_permits_production():
+    """`run()` refuses a production database unless explicitly permitted, so a
+    step that omits the opt-in exits 2 and gates nothing."""
     block = _prod_smoke_block()
-    assert "scripts.crypto_smoke" in block
-    assert "--allow-production" in block
+    assert "run_crypto_smoke.py" in block
+    assert "MCP_CRYPTO_SMOKE_ALLOW_PRODUCTION=1" in block
     assert "MCP_ENV=production" in block
+
+
+@pytest.mark.parametrize("workflow,command", _all_smoke_invocations())
+def test_the_az_args_list_contains_no_dash_prefixed_token(workflow, command):
+    """THE bug that made the gate unrunnable, pinned.
+
+    `az containerapp job create --args` declares `nargs='*'`, and argparse stops
+    collecting at the first token starting with `-`. So
+
+        --command "python" --args "-m" "scripts.crypto_smoke" "--allow-production"
+
+    parses to `args=[]`, all three tokens land in `extras`, and the CLI exits 2
+    with UnrecognizedArgumentError — the job is never created and the smoke never
+    runs. The step still fails, so it fails closed, but it fails on EVERY deploy
+    in a way indistinguishable from a real wrong-key failure, which is exactly
+    how a gate gets muted as "the usual broken step". Neither the staging nor the
+    production invocation had ever executed.
+
+    Verified directly against the Azure CLI's own argparse behaviour;
+    `--args "upgrade" "head"` parses fine, which is why the Alembic job works.
+    """
+    args_part = command.split("--args", 1)[1] if "--args" in command else ""
+    args_part = args_part.split("-o none", 1)[0]
+    tokens = [t.strip().strip('"').strip("\\").strip() for t in args_part.split()]
+    offenders = [t for t in tokens if t.startswith("-") and t]
+    assert not offenders, (
+        f"{workflow}: --args contains dash-prefixed token(s) {offenders}; "
+        "argparse will drop the whole list and the job will never be created"
+    )
+
+
+@pytest.mark.parametrize("workflow,command", _all_smoke_invocations())
+def test_the_smoke_job_does_not_ask_for_registry_credentials_it_lacks(workflow, command):
+    """`--registry-server` on a NON-ACR registry is a hard usage error unless
+    credentials accompany it: the CLI raises RequiredArgumentMissingError
+    ("Registry username and password are required if not using Azure Container
+    Registry"). The Alembic job pulls the same GHCR image with no
+    `--registry-server` at all, which is the working precedent."""
+    if "--registry-server" in command:
+        assert (
+            "--registry-username" in command
+            or "--registry-password" in command
+            or "--registry-identity" in command
+        ), f"{workflow}: --registry-server without credentials is a hard CLI error"
+
+
+def test_the_entrypoint_needs_no_dash_prefixed_arguments():
+    """The workflow-side fix is only sound if the entrypoint really takes none."""
+    import run_crypto_smoke
+
+    assert hasattr(run_crypto_smoke, "main")
+    # Strip comments and the module docstring: the prose EXPLAINS the argparse
+    # rule by quoting it, and a naive substring check would fail on its own
+    # documentation.
+    code = "\n".join(
+        line for line in inspect.getsource(run_crypto_smoke).splitlines()
+        if not line.strip().startswith(("#", '"""', "*", "--command"))
+    )
+    for banned in ("add_argument", "ArgumentParser", "sys.argv"):
+        assert banned not in code, f"{banned} reintroduces dash-prefixed arguments"
+    assert "MCP_CRYPTO_SMOKE_ALLOW_PRODUCTION" in code
+
+
+def test_the_entrypoint_defaults_to_refusing_production(monkeypatch):
+    """Absent or unset env var must NOT permit production."""
+    import run_crypto_smoke
+
+    for value in ("", "0", "false", "no", None):
+        monkeypatch.delenv("MCP_CRYPTO_SMOKE_ALLOW_PRODUCTION", raising=False)
+        if value is not None:
+            monkeypatch.setenv("MCP_CRYPTO_SMOKE_ALLOW_PRODUCTION", value)
+        monkeypatch.setenv("MCP_ENV", "production")
+        monkeypatch.setenv("MCP_ENCRYPTION_KEYS", "x")
+        assert run_crypto_smoke.main() == 2, f"value {value!r} permitted production"
+
+
+def test_the_smoke_job_is_removed_after_the_run():
+    """It is created with `--secrets enc-keys=…`, so leaving it in place parks the
+    production PHI master key in a second, unwatched resource between deploys."""
+    src = _prod_workflow()
+    assert "Remove crypto-smoke job" in src, (
+        "the smoke job is never deleted after the run — it retains the production "
+        "database URL and MCP_ENCRYPTION_KEYS as job secrets"
+    )
+    cleanup = src.split("- name: Remove crypto-smoke job", 1)[1].split("\n      - name:", 1)[0]
+    assert "if: always()" in cleanup, "cleanup must run even when the smoke fails"
+    assert "az containerapp job delete" in cleanup
+
+
+def test_a_failed_delete_before_create_is_fatal():
+    """A reused job runs the PREVIOUS image and secrets and would verify the OLD
+    key, so the step's own load-bearing precondition may not be `|| true`."""
+    block = _prod_smoke_block()
+    create_at = block.index("az containerapp job create")
+    before_create = block[:create_at]
+    assert "az containerapp job delete" in before_create
+    assert "exit 1" in before_create, (
+        "a failed delete-before-create is swallowed; the create then upserts onto "
+        "the stale job"
+    )
+
+
+def test_the_verdict_is_read_from_this_runs_execution():
+    """`[0]` has no ordering guarantee, so a stale `Succeeded` from an earlier
+    deploy could be read as this run's verdict and the deploy proceed having
+    verified nothing."""
+    block = _prod_smoke_block()
+    assert "--job-execution-name" in block, (
+        "the poll reads an unordered [0] rather than this run's execution"
+    )
 
 
 def test_production_runs_the_smoke_after_migration_and_before_any_revision():
@@ -243,3 +389,38 @@ def test_production_deploys_only_from_main_with_explicit_confirmation():
     src = _prod_workflow()
     assert 'if [ "${{ inputs.confirm }}" != "PRODUCTION" ]' in src
     assert '"${{ github.ref }}" != "refs/heads/main"' in src
+
+
+def test_no_shell_continuation_is_followed_by_a_blank_line():
+    """A `\\` at end of line continues onto the NEXT line — and if that line is
+    empty, the command ends there and everything after it becomes a separate
+    command. Introduced accidentally while editing the env-var list, it silently
+    dropped `MCP_BUILD_SHA` out of the `az containerapp job create` invocation
+    and turned it into a standalone assignment. YAML does not care and neither
+    does a substring assertion; only reading the line pairs catches it.
+    """
+    import pathlib
+
+    root = pathlib.Path(__file__).resolve().parents[2] / ".github" / "workflows"
+    offenders = []
+    for wf in ("ci.yml", "azure-production.yml"):
+        path = root / wf
+        if not path.exists():
+            continue
+        lines = path.read_text().splitlines()
+        for i, line in enumerate(lines[:-1]):
+            if line.rstrip().endswith("\\") and not lines[i + 1].strip():
+                offenders.append(f"{wf}:{i + 1}")
+    assert not offenders, f"shell continuation followed by a blank line at {offenders}"
+
+
+def test_both_workflows_invoke_the_smoke_the_same_way():
+    """Staging and production must not drift: the staging invocation carried the
+    identical unparseable `--args` list and had therefore never run either."""
+    invocations = _all_smoke_invocations()
+    workflows = {wf for wf, _ in invocations}
+    assert workflows == {"ci.yml", "azure-production.yml"}, (
+        f"expected both workflows to invoke the smoke, found {workflows}"
+    )
+    for _wf, command in invocations:
+        assert 'run_crypto_smoke.py' in command

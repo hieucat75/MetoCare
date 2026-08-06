@@ -308,6 +308,7 @@ def test_a_paused_schedule_does_not_accrue_new_missed_doses(db, patient):
     sched.pause_schedule(
         db, patient_id=patient["patient_id"], schedule_id=s.id,
         effective_at=dt.datetime(2026, 7, 11, 1, 0, tzinfo=dt.UTC),
+        now=dt.datetime(2026, 7, 11, 1, 0, tzinfo=dt.UTC),
     )
     db.commit()
 
@@ -349,11 +350,13 @@ def test_resuming_restores_reconciliation_without_backfilling_the_hold(db, patie
         db, patient_id=patient["patient_id"], schedule_id=s.id,
         effective_at=dt.datetime(2026, 7, 10, 1, 0, tzinfo=dt.UTC),
         reason_code="doctor_instructed",
+        now=dt.datetime(2026, 7, 10, 1, 0, tzinfo=dt.UTC),
     )
     db.commit()
     sched.resume_schedule(
         db, patient_id=patient["patient_id"], schedule_id=s.id,
         effective_at=dt.datetime(2026, 7, 15, 1, 0, tzinfo=dt.UTC),
+        now=dt.datetime(2026, 7, 15, 1, 0, tzinfo=dt.UTC),
     )
     db.commit()
 
@@ -381,6 +384,7 @@ def test_a_pause_is_visible_in_the_response_not_merely_subtracted(db, patient):
     sched.pause_schedule(
         db, patient_id=patient["patient_id"], schedule_id=s.id,
         effective_at=dt.datetime(2026, 7, 10, 1, 0, tzinfo=dt.UTC),
+        now=dt.datetime(2026, 7, 10, 1, 0, tzinfo=dt.UTC),
     )
     db.commit()
     summary = _summary(
@@ -453,6 +457,7 @@ def test_a_stopped_schedule_accrues_nothing_after_the_stop(db, patient):
     sched.stop_schedule(
         db, patient_id=patient["patient_id"], schedule_id=s.id,
         effective_at=dt.datetime(2026, 7, 21, 1, 0, tzinfo=dt.UTC),
+        now=dt.datetime(2026, 7, 21, 1, 0, tzinfo=dt.UTC),
     )
     db.commit()
     summary = _summary(

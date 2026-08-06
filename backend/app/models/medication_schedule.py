@@ -210,8 +210,13 @@ class MedicationScheduleLifecycleEvent(UUIDPrimaryKey, TimestampMixin, Base):
     # The instant the transition TAKES EFFECT, which is not the instant it was
     # recorded: a backdated hold ("the doctor stopped it on Friday") is legitimate
     # and must move the interval boundary, not the row's creation time.
+    # No standalone index: the composite `(schedule_id, effective_at)` created in
+    # the migration covers every read, and declaring `index=True` here made the
+    # ORM metadata (which `create_all` builds the SQLite test schema from)
+    # disagree with the migrated Postgres schema — so `alembic autogenerate`
+    # would emit spurious drop/create for it forever.
     effective_at: Mapped[dt.datetime] = mapped_column(
-        DateTime(timezone=True), index=True, nullable=False
+        DateTime(timezone=True), nullable=False
     )
     actor_id: Mapped[str | None] = mapped_column(String(36))
     actor_role: Mapped[str] = mapped_column(String(24), default="patient", server_default="patient")

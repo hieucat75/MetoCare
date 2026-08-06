@@ -57,7 +57,7 @@ test('records a late dose as taken, with the reason the patient chose', async ()
   await screen.findByText('08:00 01/08')
 
   await user.click(screen.getByRole('radio', { name: 'Tôi đã uống muộn hơn giờ nhắc' }))
-  await user.click(screen.getByRole('button', { name: /Tôi đã uống liều này/ }))
+  await user.click(screen.getByRole('button', { name: /Tôi đã uống liều 08:00 01\/08/ }))
 
   await waitFor(() =>
     expect(mockCorrect).toHaveBeenCalledWith('p-1', 'dose-1', 'taken', 'taken_late')
@@ -74,7 +74,7 @@ test('records a deliberate skip as skipped, not as taken', async () => {
   await screen.findByText('08:00 01/08')
 
   await user.click(screen.getByRole('radio', { name: 'Tôi chủ động bỏ liều này' }))
-  await user.click(screen.getByRole('button', { name: /Tôi đã bỏ liều này/ }))
+  await user.click(screen.getByRole('button', { name: /Tôi đã bỏ liều 08:00 01\/08/ }))
 
   await waitFor(() =>
     expect(mockCorrect).toHaveBeenCalledWith('p-1', 'dose-1', 'skipped', 'deliberately_skipped')
@@ -88,7 +88,7 @@ test('a corrected dose leaves the list', async () => {
 
   render(<MissedDosesPanel patientId="p-1" />)
   await screen.findByText('08:00 01/08')
-  await user.click(screen.getByRole('button', { name: /Tôi đã uống liều này/ }))
+  await user.click(screen.getByRole('button', { name: /Tôi đã uống liều 08:00 01\/08/ }))
 
   await waitFor(() => expect(screen.queryByText('08:00 01/08')).not.toBeInTheDocument())
   expect(screen.getByText(MISSED_PANEL_EMPTY)).toBeInTheDocument()
@@ -101,7 +101,7 @@ test('a failed correction is surfaced and the dose stays listed', async () => {
 
   render(<MissedDosesPanel patientId="p-1" />)
   await screen.findByText('08:00 01/08')
-  await user.click(screen.getByRole('button', { name: /Tôi đã uống liều này/ }))
+  await user.click(screen.getByRole('button', { name: /Tôi đã uống liều 08:00 01\/08/ }))
 
   expect(await screen.findByRole('alert')).toHaveTextContent(CORRECTION_ERROR)
   // Removing it optimistically would tell the patient their correction landed
@@ -131,4 +131,44 @@ test('the wording records what happened and gives no dosing advice', async () =>
   for (const advice of ['uống bù', 'uống ngay', 'gấp đôi', 'nên uống', 'bỏ liều tiếp theo']) {
     expect(body).not.toContain(advice)
   }
+})
+
+
+test('each dose\'s controls are individually identifiable', async () => {
+  // Every control used to read identically ("Tôi đã uống liều này"), so a
+  // screen-reader user listing the buttons could not tell which missed dose they
+  // were about to account for.
+  mockGet.mockResolvedValue([
+    DOSE,
+    { ...DOSE, id: 'dose-2', local_render: '20:00 01/08' },
+  ])
+  render(<MissedDosesPanel patientId="p-1" />)
+  await screen.findByText('08:00 01/08')
+
+  expect(screen.getByRole('button', { name: /Tôi đã uống liều 08:00 01\/08/ })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: /Tôi đã uống liều 20:00 01\/08/ })).toBeInTheDocument()
+})
+
+test('a correction on a second dose is not swallowed while the first is in flight', async () => {
+  // A single global `busyId` guard dropped the click entirely: no request, no
+  // spinner, no error. The patient believed dose B was recorded; it was not, and
+  // it kept counting as missed.
+  const user = userEvent.setup()
+  mockGet.mockResolvedValue([
+    DOSE,
+    { ...DOSE, id: 'dose-2', local_render: '20:00 01/08' },
+  ])
+  let releaseFirst: (v: unknown) => void = () => {}
+  mockCorrect
+    .mockImplementationOnce(() => new Promise((res) => { releaseFirst = res }) as never)
+    .mockResolvedValueOnce({ ...DOSE, id: 'dose-2', state: 'taken' })
+
+  render(<MissedDosesPanel patientId="p-1" />)
+  await screen.findByText('08:00 01/08')
+
+  await user.click(screen.getByRole('button', { name: /Tôi đã uống liều 08:00 01\/08/ }))
+  await user.click(screen.getByRole('button', { name: /Tôi đã uống liều 20:00 01\/08/ }))
+
+  await waitFor(() => expect(mockCorrect).toHaveBeenCalledTimes(2))
+  releaseFirst({ ...DOSE, state: 'taken' })
 })

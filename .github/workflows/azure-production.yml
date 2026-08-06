@@ -260,18 +260,32 @@ jobs:
           # Delete-then-create. A REUSED job runs the PREVIOUS execution's image
           # and secrets, so it would validate the OLD key — precisely the
           # rotation failure this exists to catch — and report pass.
-          az containerapp job delete -g "$RG" -n "$JOB" --yes -o none 2>/dev/null || true
+          #
+          # The delete is NOT allowed to fail silently. `|| true` on a step whose
+          # own comment calls delete-before-create load-bearing means a failed
+          # delete leaves the old job (and its old executions) in place, and the
+          # create below upserts onto it. "Absent" is success; anything else is
+          # a hard stop.
+          if az containerapp job show -g "$RG" -n "$JOB" -o none 2>/dev/null; then
+            if ! az containerapp job delete -g "$RG" -n "$JOB" --yes -o none; then
+              echo "::error::Could not delete the previous crypto-smoke job."
+              echo "::error::Refusing to reuse it: a reused job runs the PREVIOUS"
+              echo "::error::image and secrets, so it would verify the OLD key and"
+              echo "::error::report pass. Remove it manually and re-run:"
+              echo "::error::  az containerapp job delete -g $RG -n $JOB --yes"
+              exit 1
+            fi
+          fi
           az containerapp job create -g "$RG" -n "$JOB" \
             --environment "$ENV_NAME" --trigger-type Manual --replica-timeout 600 \
             --replica-retry-limit 0 --parallelism 1 --replica-completion-count 1 \
             --image "$IMG" --cpu 0.5 --memory 1Gi \
-            --registry-server "$REGISTRY" \
             --secrets db-url="$DB_URL" enc-keys="$ENC_KEYS" \
             --env-vars MCP_DATABASE_URL=secretref:db-url \
               MCP_ENCRYPTION_KEYS=secretref:enc-keys MCP_ENV=production \
+              MCP_CRYPTO_SMOKE_ALLOW_PRODUCTION=1 \
               MCP_BUILD_SHA=${{ steps.tag.outputs.sha8 }} \
-            --command "python" --args "-m" "scripts.crypto_smoke" "--allow-production" \
-            -o none
+            --command "python" --args "run_crypto_smoke.py" -o none
           az containerapp job start -g "$RG" -n "$JOB" -o none
 
           # 40x10s = 400s of polling against a 600s --replica-timeout: Azure
@@ -280,10 +294,26 @@ jobs:
           # Falling out of it and exiting 0 would report a deploy healthy on the
           # strength of a check that never returned — the same false green this
           # step exists to remove.
+          # Poll THIS execution by name. `[0]` has no ordering guarantee, so a
+          # stale `Succeeded` from an earlier deploy could be read as this run's
+          # verdict — the loop would break immediately and the deploy proceed
+          # having verified nothing. The job is newly created above, so it has
+          # exactly one execution; resolving its name makes that explicit rather
+          # than assumed.
+          EXEC=$(az containerapp job execution list -g "$RG" -n "$JOB" \
+            --query "[0].name" -o tsv 2>/dev/null || echo "")
+          if [ -z "$EXEC" ]; then
+            echo "::error::The crypto-smoke job reported no execution to poll."
+            echo "::error::Treating as FAILED — a deploy must not proceed on a"
+            echo "::error::check that never started."
+            exit 1
+          fi
+          echo "  crypto-smoke execution: $EXEC"
           ST=""
           for i in $(seq 1 40); do
-            ST=$(az containerapp job execution list -g "$RG" -n "$JOB" \
-              --query "[0].properties.status" -o tsv 2>/dev/null || echo Running)
+            ST=$(az containerapp job execution show -g "$RG" -n "$JOB" \
+              --job-execution-name "$EXEC" \
+              --query "properties.status" -o tsv 2>/dev/null || echo Running)
             echo "  crypto-smoke $i: $ST"
             [ "$ST" = "Succeeded" ] && break
             if [ "$ST" = "Failed" ]; then
@@ -310,6 +340,34 @@ jobs:
             echo "::error::once it reports a verdict."
             echo "::error::Inspect: az containerapp job execution list -g $RG -n $JOB"
             exit 1
+          fi
+
+      # ── Remove the smoke job (it holds the production PHI key) ────────────
+      #
+      # `if: always()` — this must run whether the smoke passed, failed, or the
+      # step timed out, because the reason to remove it is not tidiness. The job
+      # was created with `--secrets enc-keys=...`, so between deploys it retains
+      # the production database URL and MCP_ENCRYPTION_KEYS in a resource nobody
+      # watches. Deleting it only at the START of the next deploy meant the
+      # master PHI key sat in a second, unmonitored location indefinitely —
+      # readable by any principal with Microsoft.App/jobs/listSecrets on the
+      # resource group. That is a new expansion of the key's blast radius, added
+      # by the gate itself.
+      #
+      # Failure here does not fail the deploy: the gate has already given its
+      # verdict, and blocking a healthy rollout on a cleanup error would be the
+      # wrong trade. It is loud so the residue gets removed by hand.
+      - name: Remove crypto-smoke job
+        if: always()
+        run: |
+          JOB="caj-metocare-crypto-smoke"
+          if az containerapp job show -g "$RG" -n "$JOB" -o none 2>/dev/null; then
+            if ! az containerapp job delete -g "$RG" -n "$JOB" --yes -o none; then
+              echo "::warning::Could not delete $JOB. It holds the production"
+              echo "::warning::database URL and MCP_ENCRYPTION_KEYS as job secrets."
+              echo "::warning::Delete it manually:"
+              echo "::warning::  az containerapp job delete -g $RG -n $JOB --yes"
+            fi
           fi
 
       # ── Deploy backend Container App ──────────────────────────────────────

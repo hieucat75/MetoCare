@@ -18,6 +18,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from sqlalchemy import or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.clinical import Medication
@@ -83,9 +84,11 @@ _GRACE_MULTI_DAILY = dt.timedelta(hours=4)
 _GRACE_ONCE_DAILY = dt.timedelta(hours=12)
 _GRACE_ALTERNATE_DAY = dt.timedelta(hours=24)
 _GRACE_WEEKLY = dt.timedelta(hours=48)
-# Fallback for a shape not otherwise classified. The most conservative of the
-# set: a window that is too SHORT invents non-adherence, which is the direction
-# that causes a clinician to act on a patient who did nothing wrong.
+# Fallback for a shape not otherwise classified — an unrecognised or malformed
+# `schedule_type`, which in practice means a legacy row. Not the longest of the
+# set: an unclassifiable shape gives no basis for claiming a 48h window, and the
+# real cap on every window is the minimum inter-dose gap (`_minimum_dose_gap`),
+# which is what actually keeps a window from swallowing the next dose.
 _GRACE_DEFAULT = _GRACE_ONCE_DAILY
 
 # Bumped when a WINDOW changes, so a stored classification can always be traced
@@ -111,14 +114,19 @@ def missed_after(schedule: MedicationSchedule | None) -> dt.timedelta:
     if st == SCHEDULE_PRN:
         # PRN has no scheduled time, so nothing about it can be late. Callers
         # never materialise PRN doses; this exists so a stray legacy row cannot
-        # be swept into MISSED.
+        # be swept into MISSED. Every arithmetic site MUST guard this sentinel —
+        # `now - timedelta.max` raises OverflowError.
         return dt.timedelta.max
+    return min(_cadence_window(schedule), _minimum_dose_gap(schedule))
+
+
+def _cadence_window(schedule: MedicationSchedule) -> dt.timedelta:
+    """The policy window for the schedule's cadence, before the gap cap."""
+    st = schedule.schedule_type
     times = [t for t in (_parse_hhmm(x) for x in (schedule.local_dose_times or [])) if t]
     if len(times) > 1:
         return _GRACE_MULTI_DAILY
     rec = schedule.recurrence or {}
-    if st == SCHEDULE_FIXED_DAILY:
-        return _GRACE_ONCE_DAILY
     if st == SCHEDULE_INTERVAL:
         try:
             n = int(rec.get("interval_days", 0))
@@ -135,11 +143,65 @@ def missed_after(schedule: MedicationSchedule | None) -> dt.timedelta:
         if n_days in (2, 3):
             return _GRACE_ALTERNATE_DAY
         return _GRACE_ONCE_DAILY
-    if st == SCHEDULE_CYCLIC:
-        # Daily while ON; the rest period is handled by `_day_applies`, not by
-        # widening the window, so a dose on an ON day is judged like a daily one.
+    if st in (SCHEDULE_FIXED_DAILY, SCHEDULE_CYCLIC):
+        # Cyclic is daily while ON; the rest period comes from `_day_applies`,
+        # not from widening the window.
         return _GRACE_ONCE_DAILY
     return _GRACE_DEFAULT
+
+
+def _minimum_dose_gap(schedule: MedicationSchedule) -> dt.timedelta:
+    """The shortest interval between two consecutive doses of this schedule.
+
+    The policy invariant — "a window may never run into the next scheduled dose
+    of the same schedule" — was stated but not enforced: the cadence bucket was
+    returned directly, so `fixed_daily` at 08:00 + 09:00 (a legal split dose) got
+    the 4h multi-daily window and the 08:00 dose stayed open until noon, three
+    hours past the 09:00 dose. Two open doses of one schedule cannot be told
+    apart when the patient taps "Đã uống", so the action lands on the wrong
+    occurrence and a dose they actually took is later swept to MISSED.
+
+    Computing the real gap enforces the invariant for every shape rather than for
+    the shapes someone thought to bucket.
+    """
+    times = sorted(
+        t for t in (_parse_hhmm(x) for x in (schedule.local_dose_times or [])) if t
+    )
+    if not times:
+        return _GRACE_DEFAULT
+
+    # Days between consecutive DOSING days — the wrap-around gap from the last
+    # dose of one dosing day to the first of the next.
+    rec = schedule.recurrence or {}
+    st = schedule.schedule_type
+    period_days = 1
+    if st == SCHEDULE_INTERVAL:
+        try:
+            period_days = max(1, int(rec.get("interval_days", 1)))
+        except (TypeError, ValueError):
+            period_days = 1
+    elif st == SCHEDULE_DAYS_OF_WEEK:
+        days = sorted(set(rec.get("days") or []))
+        if not days:
+            period_days = 7
+        elif len(days) == 1:
+            period_days = 7
+        else:
+            period_days = min(
+                min(b - a for a, b in zip(days, days[1:], strict=False)),
+                7 - days[-1] + days[0],
+            )
+    # Cyclic runs daily while ON, so consecutive ON days are one apart.
+
+    def _mins(t: dt.time) -> int:
+        return t.hour * 60 + t.minute
+
+    gaps = [
+        _mins(b) - _mins(a) for a, b in zip(times, times[1:], strict=False)
+    ]
+    # Wrap: last dose of this dosing day → first dose of the next dosing day.
+    gaps.append(period_days * 24 * 60 - _mins(times[-1]) + _mins(times[0]))
+    return dt.timedelta(minutes=max(1, min(gaps)))
 
 
 def grace_policy_metadata(schedule: MedicationSchedule | None) -> dict:
@@ -326,6 +388,22 @@ def _idempotency_key(schedule_id: str, version: int, scheduled_utc: dt.datetime)
 _LIFECYCLE_ACTOR_SYSTEM = "system"
 
 
+def _lock_schedule_row(db: Session, schedule_id: str) -> None:
+    """Take a row lock on the schedule, where the backend supports one.
+
+    SQLite has no `SELECT … FOR UPDATE` and serializes writers anyway, so the
+    no-op there is correct rather than a gap. On PostgreSQL this is what makes
+    the read-validate-insert below atomic against a concurrent lifecycle write.
+    """
+    if db.bind is None or db.bind.dialect.name != "postgresql":
+        return
+    db.execute(
+        select(MedicationSchedule.id)
+        .where(MedicationSchedule.id == schedule_id)
+        .with_for_update()
+    ).first()
+
+
 def _lifecycle_key(schedule_id: str, event_type: str, effective_at: dt.datetime) -> str:
     raw = f"{schedule_id}|{event_type}|{effective_at.astimezone(dt.UTC).isoformat()}"
     return sha256(raw.encode("utf-8")).hexdigest()
@@ -450,6 +528,47 @@ def _materialization_blocked(
     return when >= intervals[0][0]
 
 
+def _version_envelope(
+    events: list[MedicationScheduleLifecycleEvent],
+    intervals: list[tuple[dt.datetime, dt.datetime | None]],
+) -> tuple[dt.datetime, dt.datetime | None] | None:
+    """The span this schedule VERSION governed the prescription.
+
+    Distinct from its active intervals in both directions:
+
+    * a PAUSE or STOP is a gap inside the governance, not the end of it — the
+      version is still the thing that describes this therapy, and the doses it
+      would have prescribed are exactly what `excluded_paused`/`excluded_cancelled`
+      have to report. Ending the envelope at the last closing event made those
+      doses fall outside it and vanish from every bucket;
+    * SUPERSESSION genuinely does end it, because another version takes over the
+      same instants. Without that bound, v2's recurrence generated occurrences
+      for every day before v2 existed — at v2's new dose time, so not even
+      coinciding with v1's — and each read as excluded, turning a 10-day hold
+      into 20 excluded doses on a once-daily schedule.
+    """
+    if not intervals:
+        return None
+    superseded_at = next(
+        (
+            _aware_utc(e.effective_at)
+            for e in events
+            if e.event_type == LIFECYCLE_SUPERSEDED
+        ),
+        None,
+    )
+    return (intervals[0][0], superseded_at)
+
+
+def _within_envelope(
+    when: dt.datetime, envelope: tuple[dt.datetime, dt.datetime | None] | None
+) -> bool:
+    if envelope is None:
+        return False
+    start, end = envelope
+    return start <= when and (end is None or when < end)
+
+
 def _suppression_reason(
     when: dt.datetime, events: list[MedicationScheduleLifecycleEvent]
 ) -> str:
@@ -469,6 +588,54 @@ def _suppression_reason(
     if last is None:
         return LIFECYCLE_STOPPED  # before the schedule ever activated
     return last.event_type if last.event_type in LIFECYCLE_CLOSING else LIFECYCLE_ACTIVATED
+
+
+def effective_status(
+    db: Session, schedule: MedicationSchedule, *, now: dt.datetime | None = None
+) -> str:
+    """The schedule's state AS OF `now`, derived from the timeline.
+
+    `schedule.status` is a cache written at the moment a command is issued, and a
+    FUTURE-DATED hold cannot update it — the hold has not happened yet. Nothing
+    then recomputed it when the instant passed, so the row stayed `active` while
+    `fold_intervals` had already closed its last interval: materialization
+    stopped, reminders stopped, and `resume_schedule`'s `if status == active:
+    return` early-exit returned 200 having recorded nothing. A schedule that
+    reads active, never reminds, and cannot be resumed is the exact silent-dead
+    failure the resume path was written to close, reached from the other side.
+    """
+    now = now or _now_utc()
+    events = lifecycle_events(db, schedule.id)
+    if not events:
+        return schedule.status
+    state = schedule.status
+    for event in events:
+        effective = _aware_utc(event.effective_at)
+        if effective is None or effective > now:
+            break  # not in force yet
+        if event.event_type in LIFECYCLE_OPENING:
+            state = SCHED_STATUS_ACTIVE
+        elif event.event_type == LIFECYCLE_PAUSED:
+            state = SCHED_STATUS_PAUSED
+        else:
+            state = SCHED_STATUS_STOPPED
+    return state
+
+
+def sync_status_from_timeline(
+    db: Session, schedule: MedicationSchedule, *, now: dt.datetime | None = None
+) -> bool:
+    """Bring the cached `status` in line with the timeline. Returns True if changed.
+
+    Called on the read paths, because there is no scheduler in this app: a
+    future-dated hold takes effect the next time anyone looks, not on a timer.
+    """
+    derived = effective_status(db, schedule, now=now)
+    if derived == schedule.status:
+        return False
+    schedule.status = derived
+    db.flush()
+    return True
 
 
 def tracking_floor(schedule: MedicationSchedule) -> dt.datetime:
@@ -500,6 +667,57 @@ class LifecycleConflict(ScheduleError):
     """An event that would produce an impossible or overlapping timeline."""
 
 
+# The reason a schedule was held is CLINICAL INFORMATION. The lifecycle table and
+# the audit trail are both plaintext, and the audit trail has broader access,
+# longer retention and separate export paths than clinical tables — so a free-text
+# reason there discloses, to a wider audience, exactly what the encrypted columns
+# exist to protect. `reason_code` was documented as a closed vocabulary and
+# enforced only by `pattern=^[a-z0-9_]+$`, which admits
+# `paused_for_hiv_arv_side_effects`. This is the vocabulary.
+LIFECYCLE_REASON_CODES = frozenset(
+    {
+        "unspecified",
+        # patient-initiated
+        "patient_paused",
+        "patient_resumed",
+        "patient_stopped",
+        "doctor_instructed",
+        "pre_procedure_hold",
+        "side_effect_hold",
+        "out_of_stock",
+        "course_completed",
+        # system-initiated
+        "schedule_created",
+        "schedule_edited",
+        "superseded_by_edit",
+        "medication_lifecycle_cascade",
+        "medication_state_repair",
+        "backfill_created",
+        "backfill_status",
+    }
+)
+
+# How far a PATIENT may backdate a lifecycle event.
+#
+# `effective_at` was unbounded in both directions, and a pause interval removes
+# its doses from BOTH the numerator and the denominator. So two calls — pause
+# backdated to the schedule's creation, then resume at now — silently erased every
+# historical missed dose from the clinician-facing rate. The adherence figure this
+# work exists to make trustworthy was retroactively editable by its own subject.
+#
+# `correct_dose` was hardened against precisely this (MISSED-only, original
+# preserved, closed reasons, audited, rate-limited); the pause path reached the
+# same outcome unguarded. A patient recording "the doctor stopped it on Friday"
+# needs a couple of days, not a couple of months.
+PATIENT_BACKDATE_LIMIT = dt.timedelta(days=3)
+# A hold may be scheduled ahead (before a procedure), but not indefinitely — an
+# event years out is far more likely a client sending a bad timestamp than a plan.
+PATIENT_FUTUREDATE_LIMIT = dt.timedelta(days=90)
+# Roles trusted to set an arbitrary `effective_at`. `system` covers the internal
+# cascades; no HTTP route currently passes anything else.
+_UNBOUNDED_EFFECTIVE_AT_ROLES = frozenset({"system"})
+
+
 def record_lifecycle_event(
     db: Session,
     schedule: MedicationSchedule,
@@ -510,6 +728,7 @@ def record_lifecycle_event(
     actor_role: str = "patient",
     reason_code: str = "unspecified",
     note_ref: str | None = None,
+    now: dt.datetime | None = None,
 ) -> MedicationScheduleLifecycleEvent | None:
     """Append a lifecycle event, refusing one that breaks the timeline.
 
@@ -521,8 +740,35 @@ def record_lifecycle_event(
     """
     if event_type not in LIFECYCLE_EVENT_TYPES:
         raise LifecycleConflict(f"Sự kiện vòng đời không hợp lệ: {event_type}")
-    when = _aware_utc(effective_at) or _now_utc()
+    if reason_code not in LIFECYCLE_REASON_CODES:
+        # Enforced HERE, not only in the route schema, because the docstring's
+        # promise ("PHI: none") has to hold for every caller, not for the one
+        # that happens to validate.
+        raise LifecycleConflict(f"Lý do không hợp lệ: {reason_code}")
+    # The backdate window must be measured against the SAME clock the rest of the
+    # call uses, or a caller with an explicit `now` (the reminder sweep, a test,
+    # any future catch-up job) has its own timeline judged against the wall clock.
+    now = _aware_utc(now) or _now_utc()
+    when = _aware_utc(effective_at) or now
+    if actor_role not in _UNBOUNDED_EFFECTIVE_AT_ROLES:
+        if when < now - PATIENT_BACKDATE_LIMIT:
+            raise LifecycleConflict(
+                "Chỉ có thể ghi nhận thay đổi trong vòng 3 ngày gần đây. "
+                "Nếu cần điều chỉnh xa hơn, vui lòng liên hệ bác sĩ."
+            )
+        if when > now + PATIENT_FUTUREDATE_LIMIT:
+            raise LifecycleConflict("Thời điểm áp dụng quá xa trong tương lai.")
     key = _lifecycle_key(schedule.id, event_type, when)
+
+    # Serialize concurrent lifecycle writes for THIS schedule.
+    #
+    # The sequence below is read → validate → insert. Without a lock, two
+    # concurrent resumes carrying different `effective_at` each read the
+    # pre-race event list, each validate against it, and both commit — and the
+    # folded interval then opens at the EARLIER instant, which is the
+    # fabricated-miss direction. The unique key does not help: it only catches
+    # events at the SAME instant.
+    _lock_schedule_row(db, schedule.id)
 
     existing = lifecycle_events(db, schedule.id)
     if any(e.idempotency_key == key for e in existing):
@@ -542,7 +788,16 @@ def record_lifecycle_event(
     _validate_timeline(existing, candidate)
 
     db.add(candidate)
-    db.flush()
+    try:
+        with db.begin_nested():
+            db.flush()
+    except IntegrityError:
+        # Lost a race on the unique key despite the lock (a database that does
+        # not honour row locks — SQLite — or a second connection that got there
+        # first). The other transaction wrote the identical event, so the
+        # intended outcome already holds: idempotent, not a 500. Without the
+        # savepoint the whole request's transaction would be poisoned.
+        return None
     # AUDIT LINKAGE. The event row is the clinical record of what the patient was
     # told to do; the audit row is the security record of who asked. PHI-free:
     # ids and a closed-vocabulary reason code, never the clinical reason itself.
@@ -861,6 +1116,9 @@ def reconcile_period(
         # find it.
         "excluded_paused_times": set(),
         "excluded_cancelled_times": set(),
+        # Prescribed, but before the tracking floor — neither held nor withdrawn,
+        # simply not observed. Kept apart so the response can say which it was.
+        "excluded_untracked_times": set(),
         "reason": "ok",
     }
 
@@ -889,7 +1147,17 @@ def reconcile_period(
     kept_times = {utc for utc, _ in expected}
     for utc in prescribed_times - kept_times:
         if utc < floor:
-            continue  # before observation: not a pause, and not a cancellation
+            # Before MetoCare was observing. A THIRD category, not a pause and
+            # not a cancellation: these doses were prescribed and may well have
+            # been taken — we simply were not there. Counting them nowhere left
+            # them unaccounted for (a 20-dose window reported expected=0 with
+            # both exclusions 0), and reporting the window as
+            # `no_expected_occurrences_in_window` made both clients tell the
+            # patient their schedule "đang tạm dừng hoặc đã ngừng" for a period
+            # they were taking the drug — a false clinical statement, and the
+            # mirror image of the defect this work exists to fix.
+            stats["excluded_untracked_times"].add(utc)
+            continue
         if _in_any_interval(utc, intervals):
             continue
         # Suppressed by the timeline. Which counter depends on WHY: a hold the
@@ -905,13 +1173,19 @@ def reconcile_period(
         # Nothing was prescribed-and-observable in this window. That is a real
         # answer, not a failure — but it is NOT a reconciled denominator, and a
         # caller must not render a percentage from it.
-        stats["reason"] = (
-            "no_expected_occurrences_in_window"
-            if prescribed
-            else "schedule_prescribes_nothing_in_window"
-        )
+        if not prescribed:
+            stats["reason"] = "schedule_prescribes_nothing_in_window"
+        elif stats["excluded_untracked_times"] and not (
+            stats["excluded_paused_times"] or stats["excluded_cancelled_times"]
+        ):
+            # Everything the schedule prescribed here predates observation. Say
+            # THAT, rather than blaming a pause that never happened.
+            stats["reason"] = "before_tracking_started"
+        else:
+            stats["reason"] = "no_expected_occurrences_in_window"
         stats["excluded_paused"] = len(stats["excluded_paused_times"])
         stats["excluded_cancelled"] = len(stats["excluded_cancelled_times"])
+        stats["excluded_untracked"] = len(stats["excluded_untracked_times"])
         return stats
     stats["backfilled"] = True
 
@@ -969,6 +1243,7 @@ def reconcile_period(
     # Convenience scalars for callers that reconcile a single schedule directly.
     stats["excluded_paused"] = len(stats["excluded_paused_times"])
     stats["excluded_cancelled"] = len(stats["excluded_cancelled_times"])
+    stats["excluded_untracked"] = len(stats["excluded_untracked_times"])
     return stats
 
 
@@ -1029,13 +1304,23 @@ def create_schedule(
     db.flush()
     # The timeline opens here. Without this first event a brand-new schedule
     # would fall through to the legacy reconstruction on every read.
+    # The opening event is anchored at the FLOOR, not at "now".
+    #
+    # Anchoring it at creation made the documented retrospective-tracking opt-in
+    # inert: an earlier `tracking_start_at` was overridden by an interval that
+    # began at creation anyway, and every pre-app instant then fell before the
+    # first event, where `_suppression_reason` reports a terminal state — so the
+    # patient's whole real history surfaced as `excluded_cancelled_count` and
+    # rendered as "liều thuộc lịch đã ngừng hoặc đã thay đổi" on a schedule that
+    # was never stopped. The floor and the timeline have to agree about when
+    # observation began, because they are the same statement.
     record_lifecycle_event(
         db,
         schedule,
         event_type=LIFECYCLE_ACTIVATED,
-        effective_at=now or _now_utc(),
+        effective_at=min(tracking_floor(schedule), now or _now_utc()),
         actor_id=actor_user_id,
-        actor_role="patient",
+        actor_role=_LIFECYCLE_ACTOR_SYSTEM,
         reason_code="schedule_created",
     )
     audit.record(
@@ -1273,7 +1558,17 @@ def _cancel_open_doses(
     # of `due_doses_query` so they could not correct it. On a 14-dose course that
     # is 93% instead of 100%, every time. The sweep's 4h window exists precisely
     # because "due" and "missed" are not the same instant; this path must agree.
-    cutoff = (now or _now_utc()) - missed_after(db.get(MedicationSchedule, schedule_id))
+    now = now or _now_utc()
+    window = missed_after(db.get(MedicationSchedule, schedule_id))
+    # GUARD THE PRN SENTINEL. `missed_after` returns `timedelta.max` for PRN, and
+    # `now - timedelta.max` raises OverflowError — which here means a patient
+    # cannot record that they stopped a rescue medication at all: pause, edit and
+    # the whole `update_medication` lifecycle transaction roll back with a 500,
+    # leaving the drug `active` in the medication list, the doctor-facing record
+    # and the AI context, and killing the CLIN PS-5 cascade mid-flight. A PRN
+    # schedule has no scheduled time, so nothing of it can be overdue: the cutoff
+    # is simply "never", which the sentinel below expresses without arithmetic.
+    cutoff = dt.datetime.min.replace(tzinfo=dt.UTC) if window == dt.timedelta.max else now - window
     cancel_from = _aware_utc(cancel_from)
     # D. Include MISSED when purging a REPUDIATED record. Selecting only
     #    pending/notified meant the sweep (which flips anything >4h overdue to
@@ -1295,24 +1590,49 @@ def _cancel_open_doses(
         )
     ).scalars():
         scheduled = _aware_utc(dose.scheduled_utc)
-        if scheduled is not None and scheduled <= cutoff and not purge_history:
+        inside_hold = (
+            cancel_from is not None and scheduled is not None and scheduled >= cancel_from
+        )
+        before_hold = (
+            cancel_from is not None and scheduled is not None and scheduled < cancel_from
+        )
+        if inside_hold and not purge_history:
+            # INSIDE a BACKDATED hold. This branch has to come FIRST.
+            #
+            # It used to fall through to the MISSED branch below, because that
+            # branch tested only "older than the grace window" — which every dose
+            # inside a backdated hold is. So a doctor-instructed hold entered
+            # three days late flipped its own doses to MISSED, and
+            # `missed_doses_query` (which filters on state alone) then listed
+            # them to the patient under "Các liều đã lỡ", directly beneath the
+            # card saying "Đã loại trừ 10 liều trong thời gian tạm dừng theo chỉ
+            # định. Những liều này không tính là bỏ lỡ." The counts were right and
+            # the list contradicted them: a patient who obeyed a hold was shown
+            # ten doses they had "missed" and invited to account for them.
+            #
+            # They were not prescribed, so they are deleted rather than resolved —
+            # unacted doses inside a hold are not evidence of anything. Acted
+            # (taken/skipped) doses are not in `states` and are never touched.
+            deleted_ids.append(dose.id)
+            db.delete(dose)
+        elif scheduled is not None and scheduled <= cutoff and not purge_history:
             # Already due and unacted: resolve to MISSED and KEEP it. Deleting it
             # would erase real non-adherence from the denominator — a patient who
             # missed three days and then tapped "Tạm dừng" saw their adherence
             # jump instead of drop, and pause -> edit made that repeatable.
             missed_ids.append(dose.id)
             dose.state = DOSE_MISSED
-        elif (
-            cancel_from is not None
-            and scheduled is not None
-            and scheduled < cancel_from
-        ):
+        elif before_hold and scheduled is not None and scheduled > now:
             # A FUTURE-DATED hold must not reach back across its own boundary:
             # doses between now and the moment the hold begins are still
-            # prescribed, and the patient is still reminded about them. Only the
-            # DELETE branch is gated — an already-overdue dose above is resolved
-            # to MISSED regardless, or a pause would go on quietly erasing the
-            # non-adherence it was introduced to stop erasing.
+            # prescribed, and the patient is still reminded about them.
+            #
+            # `scheduled > now` is what keeps this from swallowing history. Without
+            # it, a stop effective NOW skipped every already-due dose, so a dose
+            # still inside its grace window when the course was completed was left
+            # pending forever — the schedule is stopped, so `due_doses_query`
+            # excludes it and the sweep cannot reach it either. Neither actionable
+            # nor counted, just stuck.
             continue
         else:
             deleted_ids.append(dose.id)
@@ -1446,6 +1766,7 @@ def pause_schedule(
     actor_user_id: str | None = None,
     actor_role: str = "patient",
     note_ref: str | None = None,
+    now: dt.datetime | None = None,
 ) -> MedicationSchedule:
     """Hold a schedule, and RECORD WHEN — the whole point of the lifecycle table.
 
@@ -1456,7 +1777,8 @@ def pause_schedule(
     a denominator nobody can reconstruct.
     """
     schedule = _load_owned_schedule(db, patient_id=patient_id, schedule_id=schedule_id)
-    when = _aware_utc(effective_at) or _now_utc()
+    now = _aware_utc(now) or _now_utc()
+    when = _aware_utc(effective_at) or now
     record_lifecycle_event(
         db,
         schedule,
@@ -1466,16 +1788,17 @@ def pause_schedule(
         actor_role=actor_role,
         reason_code=reason_code,
         note_ref=note_ref,
+        now=now,
     )
     # `status` is a cache of the state as of NOW. A future-dated hold leaves the
     # schedule running until it takes effect — reminders continue, which is
     # correct, and materialization is interval-filtered so nothing is created on
     # the far side of the boundary.
-    if when <= _now_utc():
+    if when <= now:
         schedule.status = SCHED_STATUS_PAUSED
     _cancel_open_doses(
-        db, schedule_id, actor_user_id=actor_user_id, reason="lifecycle_paused",
-        cancel_from=when,
+        db, schedule_id, now=now, actor_user_id=actor_user_id,
+        reason="lifecycle_paused", cancel_from=when,
     )
     db.flush()
     return schedule
@@ -1490,6 +1813,7 @@ def resume_schedule(
     reason_code: str = "patient_resumed",
     actor_user_id: str | None = None,
     actor_role: str = "patient",
+    now: dt.datetime | None = None,
 ) -> MedicationSchedule:
     """Return a PAUSED schedule to active. The missing half of pause.
 
@@ -1513,6 +1837,12 @@ def resume_schedule(
         cannot produce duplicate reminders.
     """
     schedule = _load_owned_schedule(db, patient_id=patient_id, schedule_id=schedule_id)
+    # Derive from the TIMELINE, not the cached column. A future-dated hold left
+    # `status` reading `active` while the interval was already closed, so this
+    # early-exit returned 200 having recorded nothing and the schedule stayed
+    # silently dead.
+    now = _aware_utc(now) or _now_utc()
+    sync_status_from_timeline(db, schedule, now=now)
     if schedule.status == SCHED_STATUS_ACTIVE:
         return schedule  # already running; resuming twice is not an error
     if schedule.status != SCHED_STATUS_PAUSED:
@@ -1528,7 +1858,7 @@ def resume_schedule(
             "Lịch thiếu ngày bắt đầu — vui lòng cập nhật ngày bắt đầu trước khi tiếp tục."
         )
 
-    when = _aware_utc(effective_at) or _now_utc()
+    when = _aware_utc(effective_at) or now
     record_lifecycle_event(
         db,
         schedule,
@@ -1537,6 +1867,7 @@ def resume_schedule(
         actor_id=actor_user_id,
         actor_role=actor_role,
         reason_code=reason_code,
+        now=now,
     )
     schedule.status = SCHED_STATUS_ACTIVE
     db.flush()
@@ -1546,7 +1877,10 @@ def resume_schedule(
     # doctor-instructed 10-day hold on a twice-daily drug lost ~29 points of
     # adherence for obeying it, and the clinician facing an uncontrolled result
     # and "50% adherent" blames compliance instead of escalating therapy.
-    materialize_due(db, schedule, intervals=fold_intervals(lifecycle_events(db, schedule.id)))
+    materialize_due(
+        db, schedule, now=now,
+        intervals=fold_intervals(lifecycle_events(db, schedule.id)),
+    )
     db.flush()
     return schedule
 
@@ -1560,10 +1894,17 @@ def stop_schedule(
     reason_code: str = "patient_stopped",
     actor_user_id: str | None = None,
     actor_role: str = "patient",
+    now: dt.datetime | None = None,
 ) -> MedicationSchedule:
     schedule = _load_owned_schedule(db, patient_id=patient_id, schedule_id=schedule_id)
-    when = _aware_utc(effective_at) or _now_utc()
-    _record_lifecycle_best_effort(
+    now = _aware_utc(now) or _now_utc()
+    when = _aware_utc(effective_at) or now
+    # NOT best-effort. This is a patient action carrying a supplied
+    # `effective_at`, so a refusal (out-of-range backdate, unknown reason,
+    # already-terminal timeline) has to reach the caller. Swallowing it silently
+    # dropped the closing event and left the schedule accruing expected — and
+    # then MISSED — doses for a therapy the patient had stopped.
+    record_lifecycle_event(
         db,
         schedule,
         event_type=LIFECYCLE_STOPPED,
@@ -1571,10 +1912,12 @@ def stop_schedule(
         actor_id=actor_user_id,
         actor_role=actor_role,
         reason_code=reason_code,
+        now=now,
     )
     schedule.status = SCHED_STATUS_STOPPED
     _cancel_open_doses(
-        db, schedule_id, actor_user_id=actor_user_id, reason="lifecycle_stopped"
+        db, schedule_id, now=now, actor_user_id=actor_user_id,
+        reason="lifecycle_stopped", cancel_from=when,
     )
     db.flush()
     return schedule
@@ -1619,6 +1962,23 @@ def edit_schedule(
     # active/confirmed (re-run the confirmed-only gate).
     if old.status == SCHED_STATUS_STOPPED or old.superseded_by is not None:
         raise InvalidSchedule("Lịch đã kết thúc — không thể sửa.")
+    # A PAUSED schedule may not be edited into an active one.
+    #
+    # `edit_schedule` hard-codes `status=SCHED_STATUS_ACTIVE` on the new version
+    # and immediately materializes, and `_validate_timeline` does not object
+    # because `superseded` is terminal and short-circuits before the active-state
+    # check. So editing the dose time of a drug on a doctor-instructed hold
+    # silently lifted the hold: reminders restarted, by name, for a medication
+    # the patient had been told to stop — CLIN PS-5's failure reached through the
+    # edit path, with no `resumed` event anywhere in the timeline to show it.
+    #
+    # Resuming is an explicit, recorded clinical decision. It must be made as one.
+    sync_status_from_timeline(db, old)
+    if old.status == SCHED_STATUS_PAUSED:
+        raise InvalidSchedule(
+            "Lịch đang tạm dừng. Hãy tiếp tục lịch trước khi sửa, "
+            "để việc dùng thuốc trở lại được ghi nhận rõ ràng."
+        )
     _load_owned_medication(db, patient_id=patient_id, medication_id=old.medication_id)
     new_type = schedule_type or old.schedule_type
     if new_type not in _VALID_TYPES:
@@ -1722,7 +2082,19 @@ def sweep_missed(
         if window == dt.timedelta.max:
             continue  # PRN: nothing scheduled, so nothing can be late
         scheduled = _aware_utc(dose.scheduled_utc)
-        if scheduled is not None and scheduled < now - window:
+        # `<=`, not `<`. Three sibling sites (`reconcile_period`,
+        # `_cancel_open_doses`, `adherence_summary`) already use `<=`, so at
+        # exactly `scheduled + window` this one alone disagreed with them: the
+        # same dose read MISSED in the adherence figure and `pending` in the
+        # reminder feed.
+        #
+        # It also closes the only case where a window can touch the next dose.
+        # Two cadences make `window == minimum gap` — a 4x/day schedule whose
+        # tightest gap is 4h, and `days_of_week` on adjacent days (24h) — and at
+        # that instant BOTH doses were open. Two open doses of one schedule
+        # cannot be told apart when the patient finally taps "Đã uống", so the
+        # action lands on the older one and the wrong dose is recorded as taken.
+        if scheduled is not None and scheduled <= now - window:
             dose.state = DOSE_MISSED
             swept += 1
     db.flush()
@@ -1780,13 +2152,34 @@ def list_missed_doses(
     schedule_id: str | None = None,
     limit: int = 100,
 ) -> list[DoseOccurrence]:
-    return list(
+    rows = list(
         db.execute(
             missed_doses_query(patient_id=patient_id, schedule_id=schedule_id).limit(
                 max(1, min(limit, 500))
             )
         ).scalars()
     )
+    # DEFENCE IN DEPTH: never list a dose that falls inside a hold.
+    #
+    # `_cancel_open_doses` deletes those at the moment the pause is recorded, so
+    # in the normal path none exist. But this list is what the patient READS as
+    # "doses you missed", and the cost of one leaking through is that someone who
+    # obeyed a doctor-instructed hold is shown doses they "missed" — directly
+    # under a card stating those doses do not count as missed. A state filter
+    # alone cannot express that; the timeline can.
+    intervals_by_schedule: dict[str, list[tuple[dt.datetime, dt.datetime | None]]] = {}
+    kept: list[DoseOccurrence] = []
+    for dose in rows:
+        intervals = intervals_by_schedule.get(dose.schedule_id)
+        if intervals is None:
+            schedule = db.get(MedicationSchedule, dose.schedule_id)
+            intervals = active_intervals(db, schedule) if schedule else []
+            intervals_by_schedule[dose.schedule_id] = intervals
+        when = _aware_utc(dose.scheduled_utc)
+        if when is not None and intervals and not _in_any_interval(when, intervals):
+            continue
+        kept.append(dose)
+    return kept
 
 
 def correct_dose(
@@ -1946,6 +2339,7 @@ def adherence_summary(
              "reason": "ok"}
     paused_times: set[dt.datetime] = set()
     cancelled_times: set[dt.datetime] = set()
+    untracked_times: set[dt.datetime] = set()
     reasons: list[str] = []
     for version in lineage:
         part = reconcile_period(
@@ -1953,13 +2347,78 @@ def adherence_summary(
         )
         for key in ("created", "resolved_missed", "conflicts"):
             stats[key] += part[key]
-        paused_times |= part["excluded_paused_times"]
-        cancelled_times |= part["excluded_cancelled_times"]
         stats["backfilled"] = stats["backfilled"] or part["backfilled"]
         if part["reason"] != "ok":
             reasons.append(part["reason"])
     if not stats["backfilled"]:
         stats["reason"] = reasons[0] if reasons else "no_expected_occurrences_in_window"
+
+    # EXCLUSIONS ARE A LINEAGE-LEVEL FACT, not a per-version one.
+    #
+    # Summing each version's own exclusion sets double-counted the window: after
+    # an edit, the NEW version's recurrence still generates instants for the days
+    # before it existed, and every one of those fell outside its interval and was
+    # reported as `cancelled` — even though the OLD version covered them and they
+    # are already in `expected`. A 35-day window came back as 25 expected + 10
+    # paused + 35 cancelled, i.e. 70 doses accounted for in a 35-dose window.
+    #
+    # A dose is excluded only if NO version of the prescription covers it.
+    prescribed_all: set[dt.datetime] = set()
+    kept_all: set[dt.datetime] = set()
+    for version in lineage:
+        # A version's recurrence describes what it prescribes WHILE IN FORCE. Run
+        # unbounded, v2's new dose times generate occurrences for every day before
+        # v2 existed — at the new time, so they do not even coincide with v1's —
+        # and each one then reads as excluded. A 10-day hold came back as 20
+        # excluded doses on a once-daily schedule. The envelope (first interval
+        # start → last interval end) is that version's lifetime; pause gaps
+        # INSIDE it are what `kept_all` removes, and the difference is what was
+        # genuinely held or withdrawn.
+        version_events = lifecycle_events(db, version.id)
+        envelope = _version_envelope(version_events, active_intervals(db, version))
+        prescribed_all |= {
+            utc
+            for utc, _ in expected_occurrences_in_window(
+                version, window_start=period_start, window_end=period_end
+            )
+            if _within_envelope(utc, envelope)
+        }
+        kept_all |= {
+            utc
+            for utc, _ in expected_occurrences_in_window(
+                version,
+                window_start=period_start,
+                window_end=period_end,
+                intervals=active_intervals(db, version),
+                floor=tracking_floor(version),
+            )
+        }
+    earliest_floor = min(
+        (tracking_floor(v) for v in lineage), default=_now_utc()
+    )
+    # Pre-floor occurrences come from the ORIGINAL prescription and fall outside
+    # every version's envelope (an envelope opens at the floor at the earliest),
+    # so the loop below would never see them — and they were counted by no bucket
+    # at all: a 20-dose window reported expected=0 with both exclusions 0, and the
+    # only trace of the 20 was `tracking_start_at` in the envelope.
+    root = lineage[0]
+    untracked_times |= {
+        utc
+        for utc, _ in expected_occurrences_in_window(
+            root, window_start=period_start, window_end=period_end
+        )
+        if utc < earliest_floor
+    }
+    for utc in prescribed_all - kept_all:
+        if utc < earliest_floor:
+            untracked_times.add(utc)
+        elif any(
+            _suppression_reason(utc, lifecycle_events(db, v.id)) == LIFECYCLE_PAUSED
+            for v in lineage
+        ):
+            paused_times.add(utc)
+        else:
+            cancelled_times.add(utc)
 
     window_start_utc = dt.datetime.combine(
         period_start, dt.time.min, tzinfo=tz
@@ -1989,6 +2448,11 @@ def adherence_summary(
     filters = {
         v.id: (active_intervals(db, v), tracking_floor(v), missed_after(v)) for v in lineage
     }
+    # Cached ONCE per version. `_suppression_reason` was called with a fresh
+    # `lifecycle_events(db, source_id)` inside the row loop below, so a 400-day
+    # window with a long backdated hold issued up to ~800 identical SELECTs in a
+    # single patient-facing adherence request.
+    events_by_version = {v.id: lifecycle_events(db, v.id) for v in lineage}
 
     taken = skipped = missed = future = 0
     for state, when, source_id in rows:
@@ -1999,9 +2463,10 @@ def adherence_summary(
             continue
         intervals, floor, window = filters.get(source_id, ([], now, _GRACE_DEFAULT))
         if when < floor:
-            # Materialised before the floor existed (a legacy row). Real history,
-            # but outside the period this app can honestly account for.
-            cancelled_times.add(when)
+            # Materialised before the floor (a legacy row). Real history, but
+            # outside the period this app can honestly account for — and NOT a
+            # cancellation, which is what it used to be reported as.
+            untracked_times.add(when)
             continue
         if not _in_any_interval(when, intervals):
             # A persisted row inside a hold: either materialised before the pause
@@ -2010,7 +2475,7 @@ def adherence_summary(
             # excluded from both numerator and denominator, because a dose that
             # was not prescribed cannot be adherence to a prescription.
             if _suppression_reason(
-                when, lifecycle_events(db, source_id)
+                when, events_by_version.get(source_id, [])
             ) == LIFECYCLE_PAUSED:
                 paused_times.add(when)
             else:
@@ -2029,8 +2494,10 @@ def adherence_summary(
     # lineage versions. The hold is the more specific fact and wins, so the two
     # counters partition the excluded set instead of overlapping it.
     cancelled_times -= paused_times
+    untracked_times -= paused_times | cancelled_times
     excluded_paused = len(paused_times)
     excluded_cancelled = len(cancelled_times)
+    excluded_untracked = len(untracked_times)
 
     denominator = taken + skipped + missed
     # RECONCILED means "the period was actually backfilled", nothing else.
@@ -2057,6 +2524,10 @@ def adherence_summary(
         "future_count": future,
         "excluded_paused_count": excluded_paused,
         "excluded_cancelled_count": excluded_cancelled,
+        # Prescribed before MetoCare began observing: neither held nor withdrawn.
+        # Without this the doses were accounted for by NO counter, and the window
+        # was reported as a pause that never happened.
+        "excluded_untracked_count": excluded_untracked,
         "adherence_rate": rate,
         "period_start": period_start,
         "period_end": period_end,

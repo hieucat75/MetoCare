@@ -547,6 +547,7 @@ export default function MedicationDetailPage() {
           onMarkSkipped={(doseId, reason) => schedule.markSkipped(doseId, reason)}
           onRequestDiscontinue={canManage ? () => setDiscontinueOpen(true) : undefined}
           onOpenMissedDoses={() => setMissedDosesOpen((open) => !open)}
+          isMissedDosesOpen={missedDosesOpen}
         />
       )}
 

@@ -75,6 +75,16 @@ class ScheduleOut(BaseModel):
     # reports status="active". Without surfacing it the schedule looks healthy and
     # is silently dead — the same shape as the pause/resume defect.
     needs_anchor_repair: bool = False
+    # True for every version except the one currently in force.
+    #
+    # `adherence_summary` is LINEAGE-wide: asking it about any version returns the
+    # figure for the whole prescription. This endpoint returns every version, so a
+    # client that requested adherence per row and summed the results multiplied
+    # every count by the number of edits — 90 taken doses rendered as 180 after
+    # one edit, with the percentage unchanged so nothing looked wrong. Clients
+    # must request adherence for the current version only, and they cannot do
+    # that without being told which one it is.
+    is_superseded: bool = False
 
 
 class DoseOut(BaseModel):
@@ -151,6 +161,11 @@ class AdherenceOut(BaseModel):
     # compliant patient they were non-adherent.
     excluded_paused_count: int
     excluded_cancelled_count: int
+    # Prescribed before MetoCare began observing — neither held nor withdrawn.
+    # A third category, because reporting these as either says something false:
+    # telling a patient their schedule "đang tạm dừng hoặc đã ngừng" for a period
+    # they were taking the drug is a wrong clinical statement.
+    excluded_untracked_count: int
     adherence_rate: float | None
     period_start: dt.date
     period_end: dt.date
@@ -197,6 +212,7 @@ def _sched_out(s: MedicationSchedule) -> ScheduleOut:
         start_date=s.start_date,
         end_date=s.end_date,
         needs_anchor_repair=sched.needs_anchor_repair(s),
+        is_superseded=s.superseded_by is not None,
     )
 
 

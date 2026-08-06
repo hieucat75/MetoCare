@@ -168,3 +168,74 @@ describe('adherence wording', () => {
     expect(vi.medication.missedDosesIntro).toContain('ghi lại đúng điều đã xảy ra')
   })
 })
+
+// ── The gate itself, rendered ────────────────────────────────────────────────
+//
+// Everything above exercises the API client and the string table. None of it
+// would fail if the `if (!adherence.reconciled)` branch were deleted from the
+// screen — so the mobile half of this commit's headline safety property had no
+// regression guard at all. These render the component.
+
+import { render, screen, waitFor } from '@testing-library/react-native'
+import React from 'react'
+
+import { ScheduleAdherence } from '../src/features/medication/ScheduleAdherenceCard'
+import * as medicationApi from '../src/api/medication'
+import * as authContext from '../src/auth/AuthContext'
+
+function stubAuth() {
+  jest
+    .spyOn(authContext, 'useAuth')
+    .mockReturnValue({ client: {} as never } as never)
+}
+
+describe('the mobile reconciled gate', () => {
+  afterEach(() => jest.restoreAllMocks())
+
+  it('renders no percentage when the period could not be reconciled', async () => {
+    stubAuth()
+    jest.spyOn(medicationApi, 'getScheduleAdherence').mockResolvedValue({
+      ...RECONCILED,
+      adherence_rate: 0.9, // deliberately non-null: the FLAG must win, not the payload
+      reconciled: false,
+      reconciliation_reason: 'no_expected_occurrences_in_window',
+    } as never)
+
+    render(<ScheduleAdherence patientId="pat-1" scheduleId="sch-1" />)
+    await waitFor(() => expect(screen.getByTestId('schedule-adherence-sch-1')).toBeTruthy())
+    expect(screen.queryByText('90%')).toBeNull()
+    expect(screen.queryByText(vi.medication.adherenceRate)).toBeNull()
+  })
+
+  it('a below-floor window is not described as a pause', async () => {
+    stubAuth()
+    jest.spyOn(medicationApi, 'getScheduleAdherence').mockResolvedValue({
+      ...RECONCILED,
+      adherence_rate: null,
+      reconciled: false,
+      reconciliation_reason: 'before_tracking_started',
+    } as never)
+
+    render(<ScheduleAdherence patientId="pat-1" scheduleId="sch-1" />)
+    await waitFor(() => expect(screen.getByTestId('schedule-adherence-sch-1')).toBeTruthy())
+    // Telling a patient the schedule was paused during a period they were taking
+    // the drug is a false clinical statement.
+    expect(screen.queryByText(vi.medication.adherenceUnavailablePaused)).toBeNull()
+    expect(screen.getByText(vi.medication.adherenceUnavailableUntracked)).toBeTruthy()
+  })
+
+  it('shows the period and the pause exclusion when it IS reconciled', async () => {
+    stubAuth()
+    jest
+      .spyOn(medicationApi, 'getScheduleAdherence')
+      .mockResolvedValue(RECONCILED as never)
+    jest.spyOn(medicationApi, 'listMissedDoses').mockResolvedValue([])
+
+    render(<ScheduleAdherence patientId="pat-1" scheduleId="sch-1" />)
+    await waitFor(() => expect(screen.getByTestId('adherence-period-sch-1')).toBeTruthy())
+    expect(screen.getByTestId('adherence-paused-sch-1')).toBeTruthy()
+    expect(
+      screen.getByText(vi.medication.adherenceExcludedPaused(20))
+    ).toBeTruthy()
+  })
+})
