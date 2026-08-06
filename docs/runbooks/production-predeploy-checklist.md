@@ -1,5 +1,29 @@
 # Production pre-deploy checklist
 
+> **CURRENT VERDICT: HOLD.** Every technical control passes. One item does not,
+> and it is not a technical one — see **§0**. Re-read §0 before dispatching;
+> the rest of this page is ready.
+
+## 0. Owner gate — PASS/FAIL as of 2026-08-06
+
+| Item | Verdict | Evidence |
+|---|---|---|
+| Data incident disposition | **FAIL — open** | Provenance: **CONFIRMED REAL DATA PRESENT**. 160 of 205 rows in the affected columns belong to non-synthetic accounts; 90 accounts self-registered through the public API; the repository holding the key is **PUBLIC**. Breach assessment not done. |
+| Principal trust | **PASS with finding** | 2 principals, not 3. SP has **no stored secret**, OIDC subject-scoped. But it spans staging *and* production, and **neither GitHub environment has protection rules** — "owner approval" is convention, not control. |
+| Stale job cleanup | **PASS** | **Zero** Container Apps Jobs in any resource group. Production `caj-metocare-migrate`, staging `caj-metocare-pilot-seed` (+ credentials rotated), `caj-metocare-seed-demo`, `caj-seed-doctor` all deleted. |
+| Production PITR | **PASS** | `psql-metocare-prod`, GeneralPurpose `Standard_D2s_v3`, PG16, Ready. Earliest restorable `2026-07-31T02:13:21Z`, 7-day retention. **GeneralPurpose ⇒ on-demand backup works**, unlike staging. |
+| Rollback target | **PASS** | `Record rollback target` captures revision + image before the migration and writes the `ingress traffic set` command to the step summary. Current target: `ca-metocare-backend--be-30a65ebc-1783997179`, image `…:30a65ebc-1783996432`. |
+| Maintenance window | **FAIL — not set** | 18 migrations will run, including both PHI-encryption migrations, for the first time in production. Window and owner not yet named. See §B2. |
+| Crypto smoke gate | **PASS** | Present on all three deploy paths, ordered `migrate < smoke < rollout`, fails closed on failure *and* timeout, polls its own execution. Proven live on staging in both directions. |
+| Migration key secret reference | **PASS** | `MCP_ENCRYPTION_KEYS=secretref:enc-keys`; `_cipher()` refuses the committed default at `MCP_ENV=production`; production KV secret verified **not** the repo default. |
+| Production-only main provenance | **PASS (workflow)** | `github.ref == refs/heads/main` → exit 1 otherwise. **Note:** `main` itself has no branch protection. |
+| `confirm=PRODUCTION` requirement | **PASS** | Exact-case match → exit 1 otherwise. |
+
+**Blocking: the data incident disposition, and the unset maintenance window.**
+Neither is a defect in the deploy path.
+
+---
+
 For dispatching `azure-production.yml`. Written after the 2026-08-06 staging
 incident, in which a migration job encrypted PHI with the repository's default
 key because nobody had checked that it received the real one.
@@ -64,17 +88,21 @@ which is exactly what happened.
       (`CustomerOnDemandBackupCannotBePerformedOnBurstableServer`) and PITR is
       the only restore path. Know that before you need it, not after.
 
-- [ ] **B4. Delete the stale production migration job.** `caj-metocare-migrate`
-      has sat in `rg-metocare-prod` since 2026-07-14 holding the production
-      database URL as a job secret, from before A11 existed. A11 removes it
-      during this deploy, but there is no reason to carry it in:
-      ```bash
-      az containerapp job delete -g rg-metocare-prod -n caj-metocare-migrate --yes
-      ```
+- [x] **B4. Stale production migration job — DONE 2026-08-06.**
+      `caj-metocare-migrate` deleted from `rg-metocare-prod` (created 2026-07-14,
+      1 execution, held `db-url`). Zero Container Apps Jobs now exist in any
+      resource group in the subscription. The production revision was untouched.
 
-- [ ] **B5. Answer the two open questions in the incident record**
-      (`2026-08-06-staging-encryption-incident-record.md` §12): is staging pilot
-      data real, and were all listed principals appropriately trusted. Neither
+- [ ] **B5. BREACH ASSESSMENT — the one genuinely blocking item.**
+      Provenance is no longer an open question: **CONFIRMED REAL DATA PRESENT**.
+      160 of 205 rows in the affected columns belong to accounts with deliverable
+      addresses; 90 accounts self-registered through the public staging ingress;
+      and the repository holding the key is **PUBLIC**. Real users\' Meto
+      conversation contents and names were readable-in-principle for 5 h 05 m to
+      anyone who also obtained the database contents.
+      Decide notification, and decide separately whether staging should hold real
+      user data at all — 90 people registered because nothing stopped them.
+      Neither
       blocks *this* deploy; both get harder to answer the longer they wait.
 
 - [ ] **B6. Know your rollback before you start.** After dispatch, the run's step

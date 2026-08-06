@@ -1,7 +1,9 @@
 # Incident record — staging PHI encrypted with the repository's default key
 
-**Status: CLOSED — remediated and verified. Production never affected.**
-**Severity: HIGH (confidentiality, staging).** Not a production breach.
+**Status: TECHNICALLY REMEDIATED — DISPOSITION OPEN.** The data is repaired and
+verified; the breach assessment is not done. Production never affected.
+**Severity: HIGH (confidentiality, staging).** Not a production breach, but
+**a confirmed disclosure of real users' PHI** — see §4.
 
 Written to be read by someone who was not here. No PHI, no secrets and no key
 material appear below; rows are referenced elsewhere only as
@@ -73,26 +75,40 @@ confidentiality purposes, unencrypted — for 5 h 05 m.
 
 ## 4. Was the data synthetic or real?
 
-**Not established. Treat as potentially real pending owner confirmation.**
+**CONFIRMED REAL DATA PRESENT.** Determined 2026-08-06 by
+`backend/scripts/provenance_report.py`, read-only, emitting only counts — no
+address, name or identifier was read out of the database.
 
-What is known:
+| Signal | Finding |
+|---|---|
+| Address markers | 95 users: **77 non-synthetic**, 18 synthetic (reserved-domain or seed-prefix) |
+| Self-registration audit | **90 accounts have a `register` event** — created through the public API, not seeded. 75 of those have deliverable addresses |
+| Creation clustering | 93 distinct creation seconds spread over `2026-06-20` → `2026-08-06`. Organic arrival, not a seeding burst |
+| **Ownership of affected columns** | **160 of 205 rows examined belong to non-synthetic accounts** |
 
-* Two accounts are certainly synthetic — `pilot.patient@…`, `pilot.doctor@…`,
-  seeded by `backend/scripts/seed_pilot_journeys.py` — plus the `demo.*` set.
-* The volumes exceed that seeded set: 90 `users.full_name` and 82
-  `patient_profiles.full_name` values exist in total. Staging is a **pilot**
-  environment, and the operating instruction during this incident was explicitly
-  "do not write new pilot data to staging", which implies pilot data real enough
-  to protect.
-* Provenance could not be determined from the artefacts produced here without
-  adding a new query path into the image, which was deliberately not done:
-  separating real from synthetic means reading identifiers, and that is the
-  thing this record must not do.
+Per column, rows owned by a non-synthetic account:
+`meto_messages.content` **68 of 70** · `users.full_name` **77 of 91** ·
+`medication_statements.raw_dose` 4 of 6 · `raw_frequency` 4 of 6 ·
+`raw_drug_name` 4 of 13 · `payload_snapshot` 3 of 3 ·
+`extraction_candidates.fields_json` 0 of 10 · `notifications.title`/`body` 0 of 3.
 
-**Owner determination required** (§11, item 1). If staging holds real pilot
-participants' data, the 103 values must be treated as disclosed for the window
-and handled under the applicable notification policy. If it is entirely
-synthetic, this is an engineering defect with no data-subject impact.
+(205 > 103 because the scan ran after remediation and after verification traffic.
+The overlap is nonetheless decisive: all 70 `meto_messages.content` rows were
+affected, and 68 of them belong to real accounts.)
+
+**And the repository is PUBLIC** — `hieucat75/MetoCare`, visibility `PUBLIC`,
+0 forks. The key in `backend/app/core/config.py` was therefore genuinely public
+for the whole window, not merely known to collaborators.
+
+**Disposition: a confirmed disclosure of real users' PHI**, not an engineering
+defect with synthetic data. What limits it is reachability, not encryption: the
+database was never internet-facing (§5), so reading these rows still required
+database access. The correct characterisation is *anyone who obtained the
+database contents during the window could read the PHI without needing the real
+key* — the encryption provided no confidentiality for 5 h 05 m.
+
+**Owner obligation:** perform the breach assessment and decide on notification.
+See §12.
 
 ## 5. Access review
 
@@ -111,14 +127,22 @@ database password.
 **Azure control-plane principals** holding `Microsoft.App/jobs/listSecrets` and
 Key Vault access over the staging resource group:
 
-| Principal type | Role | Scope |
-|---|---|---|
-| User | Owner | subscription |
-| User | Owner | subscription |
-| ServicePrincipal | Contributor | `rg-metocare-staging` |
+| Principal type | Role | Scope | Notes |
+|---|---|---|---|
+| User | Owner ×2 | subscription | **one identity, two assignments** — not two people |
+| ServicePrincipal | Contributor | `rg-metocare-staging` + `rg-metocare-prod` | `MetoCare-GitHub-Staging`, created 2026-06-20 |
 
-Two human owners and the GitHub OIDC deploy identity. All three are already
-trusted with staging PHI — an Owner can read Key Vault directly regardless.
+**Two distinct principals, not three** — an earlier draft of this record
+miscounted duplicate role assignments as separate owners.
+
+The service principal holds **no stored client secret** (`passwordCredentials: 0`)
+and authenticates by OIDC federated credential, subject-scoped to
+`repo:hieucat75/MetoCare:environment:azure-staging`,
+`:environment:azure-production` and `:ref:refs/heads/main`. It also holds
+`Key Vault Secrets User` on **both** vaults and Contributor on **both** resource
+groups, despite its name — so one identity spans both environments, and the
+separation between them rests entirely on GitHub environment protection, which
+is currently **not configured** (see §12).
 
 **No indication of access by anyone else and no indication of exfiltration.**
 Staging access logs were not reviewed line by line, so this is "no indication
@@ -230,18 +254,43 @@ have been trusted with staging PHI. In that case rotate `mcp-encryption-keys`
 *and* `mcp-secret-key` (the JWT signing key sat in the same job), then re-run
 the re-encryption job with the old key as `REENCRYPT_SOURCE_KEYS`.
 
-Required regardless: treating the 103 values as disclosed for the window,
-subject to §4.
+This verdict is unchanged by §4 turning out to be real data. Rotation addresses
+key compromise; this was not one. The disclosure is addressed by the breach
+assessment, not by a new key.
 
-## 12. Owner determinations
+Required regardless: the 103 values **are** disclosed for the window. §4 is no
+longer conditional.
 
-1. **Is staging pilot data real?** (§4) — decides whether this is an engineering
-   defect or a reportable disclosure. Nothing else here depends on it.
-2. **Were all §5 principals appropriately trusted?** — decides §11.
-3. **`caj-metocare-seed-demo` and `caj-seed-doctor`** still exist in staging
-   holding `db-url` (the database connection string, not the PHI key). Same
-   ad-hoc class as the job deleted here, lower severity. Remove when convenient:
-   `az containerapp job delete -g rg-metocare-staging -n <name> --yes`.
+## 12. Owner actions
+
+**Resolved during the precheck — no longer open:**
+
+* Provenance (§4): **CONFIRMED REAL DATA PRESENT.**
+* Principal count (§5): two principals, not three.
+* All ad-hoc secret-bearing jobs: **deleted.** `caj-metocare-pilot-seed`
+  (`enc-keys`, `sec-key`, two passwords — both rotated),
+  `caj-metocare-seed-demo` and `caj-seed-doctor` (`db-url`, 0 executions each),
+  and the stale production `caj-metocare-migrate`. **Zero Container Apps Jobs
+  now exist in any resource group in the subscription.**
+
+**Open, and requiring the owner:**
+
+1. **Breach assessment for the 103 values.** Real users' PHI — Meto
+   conversation contents and names — was encrypted with a key public on GitHub
+   for 5 h 05 m. Decide notification under the applicable regime. This is the
+   one genuinely unresolved item.
+2. **Should staging hold real user data at all?** 90 accounts self-registered
+   through a publicly reachable staging ingress with open registration. Whatever
+   the answer, it is a decision that has not been made — the data arrived
+   because nothing stopped it.
+3. **Environment separation.** One service principal
+   (`MetoCare-GitHub-Staging`) holds Contributor and Key Vault Secrets User on
+   **both** resource groups, and neither the `azure-production` nor the
+   `azure-staging` GitHub environment has protection rules or a branch policy.
+   Production dispatch is gated only by the in-workflow `main`-only and
+   `confirm=PRODUCTION` checks — real, tested, but not a second pair of eyes.
+4. **`rehearsal-tmp` firewall rule** on the staging server — a single-IP
+   temporary rule that outlived its purpose.
 
 ---
 
