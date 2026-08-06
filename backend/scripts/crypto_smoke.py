@@ -65,6 +65,27 @@ LEGACY_TARGETS = (
 )
 
 
+def legacy_targets() -> tuple[tuple[str, str, str], ...]:
+    """The four hot paths first, then EVERY other encrypted column.
+
+    The hot paths stay hardcoded and first because they are the ones a
+    mis-rotation takes down for every patient, and they must be checked even if
+    model introspection ever fails. The rest are enumerated off the ORM metadata
+    rather than listed, so a PHI column added next quarter is scanned without
+    anyone remembering to add it here — which is exactly the maintenance a
+    hand-written list does not survive.
+    """
+    from app.core.phi_keyscan import encrypted_columns
+
+    seen = {(table, column) for _entity, table, column in LEGACY_TARGETS}
+    rest = tuple(
+        (col.entity, col.table, col.column)
+        for col in encrypted_columns()
+        if (col.table, col.column) not in seen
+    )
+    return LEGACY_TARGETS + rest
+
+
 def _sentinel() -> str:
     """A synthetic payload. Deliberately not PHI-shaped: a leaked line is inert."""
     return f"{SENTINEL_PREFIX}-{uuid.uuid4()}"
@@ -130,14 +151,56 @@ def check_roundtrip(session: Session, entity: str, model, field: str, **extra) -
     session.flush()
 
 
-def check_legacy(session: Session, entity: str, table: str, column: str) -> int:
-    """Decrypt a bounded sample of PRE-EXISTING rows — the mis-rotation detector.
+def _source_cipher():
+    """A cipher over the repository's committed default key, for diagnosis only.
+
+    Not a secret and not a runtime key: it is never added to
+    `MCP_ENCRYPTION_KEYS`, so nothing in the application can read PHI with it.
+    It exists so this command can answer the question that actually matters
+    during an incident — "is this row encrypted with the key from the repo, or
+    is it corrupt?" — which `try_decrypt() is None` cannot distinguish, and
+    which decides whether the response is a re-encryption or a restore.
+    """
+    from app.core.crypto import repo_default_key
+    from cryptography.fernet import Fernet, MultiFernet
+
+    try:
+        return MultiFernet([Fernet(repo_default_key().encode())])
+    except (ValueError, TypeError):
+        # The default is no longer a valid Fernet key. Diagnosis degrades to
+        # "unreadable"; the verdict does not change.
+        return None
+
+
+def check_legacy(session: Session, entity: str, table: str, column: str) -> dict[str, int]:
+    """Classify a bounded sample of PRE-EXISTING rows — the mis-rotation detector.
 
     The round-trip proves the key is self-consistent; it would pass with ANY
     valid key. Only reading rows written by an EARLIER deploy proves the key
     matches what is already at rest. Read-only, capped, values never printed.
+
+    Returns COUNTS, and does not raise on a bad row.
+    -----------------------------------------------
+    It used to raise on the first bad row, which is why the 2026-08-06 incident
+    reported::
+
+        {"entity":"meto_message.content","reason":"legacy_row_undecryptable",…}
+        …
+        {"entities_checked":2,"failures":4,"legacy_rows_total":0}
+
+    Every sampled row in four columns was unreadable, and the row counter read
+    ZERO — because it only ever incremented on success and the raise jumped past
+    it. "legacy_rows_total: 0" is a sentence an on-call reads as "no stored rows
+    were affected", which was the exact opposite of the truth, in the incident's
+    own evidence.
+
+    Classifying every row instead means the affected count RISES with the
+    damage, and each row lands in a bucket naming which key it needs: a
+    wrong-key row and a corrupt row demand different responses, and neither of
+    them is "plaintext".
     """
-    from app.core.crypto import is_fernet_token, try_decrypt
+    from app.core.crypto import active_cipher
+    from app.core.phi_keyscan import add_counts, empty_counts, resolve
 
     rows = session.execute(
         sa.text(  # noqa: S608 - literals, not user input
@@ -150,15 +213,14 @@ def check_legacy(session: Session, entity: str, table: str, column: str) -> int:
         {"n": LEGACY_SAMPLE},
     ).scalars().all()
 
-    checked = 0
+    target = active_cipher()
+    source = _source_cipher()
+    counts = empty_counts()
     for raw in rows:
         stored = raw if isinstance(raw, str) else json.dumps(raw)
-        if not is_fernet_token(stored):
-            raise SmokeFailure(entity, "legacy_row_is_plaintext")
-        if try_decrypt(stored) is None:
-            raise SmokeFailure(entity, "legacy_row_undecryptable")
-        checked += 1
-    return checked
+        res = resolve(stored, target=target, source=source)
+        counts = add_counts(counts, {res.classification: 1})
+    return counts
 
 
 def run(allow_production: bool = False) -> int:
@@ -186,10 +248,13 @@ def run(allow_production: bool = False) -> int:
     build_sha = getattr(settings, "build_sha", "") or "unknown"
     engine = sa.create_engine(settings.database_url, poolclass=sa.pool.NullPool)
 
+    from app.core.phi_keyscan import FAILING_CLASSES, add_counts, empty_counts
+
     failures: list[SmokeFailure] = []
     checked: list[str] = []
     legacy_rows_seen = 0
-    legacy_detail: dict[str, int] = {}
+    legacy_detail: dict[str, dict[str, int]] = {}
+    legacy_totals = empty_counts()
 
     with Session(engine) as session:
         try:
@@ -237,18 +302,32 @@ def run(allow_production: bool = False) -> int:
                         SmokeFailure(entity, f"unavailable:{type(exc).__name__}")
                     )
 
-            for entity, table, column in LEGACY_TARGETS:
+            for entity, table, column in legacy_targets():
+                # A SAVEPOINT per column. Without one, a single missing table
+                # aborts the transaction and EVERY later column then fails with
+                # InFailedSqlTransaction — one absent table would be reported as
+                # four broken ones, in the middle of an incident.
                 try:
-                    n = check_legacy(session, entity, table, column)
-                    legacy_rows_seen += n
-                    checked.append(f"legacy:{entity}:{n}")
-                    legacy_detail[entity] = n
-                except SmokeFailure as exc:
-                    failures.append(exc)
+                    with session.begin_nested():
+                        counts = check_legacy(session, entity, table, column)
                 except Exception as exc:
                     failures.append(
                         SmokeFailure(entity, f"unavailable:{type(exc).__name__}")
                     )
+                    continue
+
+                scanned = sum(counts.values())
+                legacy_rows_seen += scanned
+                legacy_totals = add_counts(legacy_totals, counts)
+                legacy_detail[entity] = counts
+                checked.append(f"legacy:{entity}:{scanned}")
+                # One failure per class present, each naming the class and the
+                # count. The reason code IS the remediation: a source-key row is
+                # re-encrypted, an unreadable row is restored, and a plaintext
+                # row was never encrypted at all.
+                for name in FAILING_CLASSES:
+                    if counts[name]:
+                        failures.append(SmokeFailure(entity, f"{name}={counts[name]}"))
         finally:
             # Never leave a sentinel behind, even on an unexpected error.
             session.rollback()
@@ -270,10 +349,19 @@ def run(allow_production: bool = False) -> int:
         "check": "crypto_smoke",
         "result": "fail" if failures else "pass",
         "entities_checked": len(checked),
-        # Per-entity legacy row counts, so an operator can tell "verified 5 real
-        # rows" from "verified 0 because the table was empty". The aggregate
-        # alone could not express that difference.
-        "legacy_rows_verified": legacy_detail,
+        # Per-entity bucket counts, so an operator can tell "verified 5 real
+        # rows" from "verified 0 because the table was empty" — and, since
+        # 2026-08-06, "5 rows readable" from "5 rows encrypted with the key from
+        # the repository". The aggregate alone expressed neither.
+        "legacy_rows_by_class": legacy_detail,
+        # Flattened totals under the same four names, so a grep for
+        # `ciphertext_source_key_rows` finds the blast radius without parsing
+        # the nested object.
+        **legacy_totals,
+        "legacy_rows_scanned": legacy_rows_seen,
+        # Retained under its original name for the dashboards and the earlier
+        # evidence files that quote it — but it is now the number of rows
+        # SCANNED, which rises with the damage instead of collapsing to zero.
         "legacy_rows_total": legacy_rows_seen,
         "failures": len(failures),
         "env": env,

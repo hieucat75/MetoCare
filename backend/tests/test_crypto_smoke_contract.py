@@ -128,21 +128,105 @@ def test_no_http_route_exposes_the_smoke():
         assert "decrypt" not in path
 
 
-def test_the_deploy_gate_runs_it_and_fails_on_it():
-    """Wired into the deploy, and its failure must ABORT the deploy — otherwise
-    it is a report nobody acts on."""
+def _staging_workflow() -> str:
     import pathlib
 
     ci = pathlib.Path(__file__).resolve().parents[2] / ".github" / "workflows" / "ci.yml"
     if not ci.exists():
         pytest.skip("ci.yml not present in this checkout")
-    src = ci.read_text()
-    assert "run_crypto_smoke.py" in src
-    # rsplit: the phrase appears in both the comment header and the step name,
-    # and it is the STEP's body that has to abort the deploy.
-    block = src.rsplit("Post-deploy PHI crypto smoke", 1)[1]
+    return ci.read_text()
+
+
+def _staging_smoke_block() -> str:
+    """JUST the staging crypto-smoke step, bounded at the next step.
+
+    Bounded for the same reason as the production one: splitting to end-of-file
+    made every assertion satisfiable by unrelated later steps.
+    """
+    src = _staging_workflow()
+    assert "Post-migration PHI crypto smoke" in src
+    after = src.split("- name: Post-migration PHI crypto smoke", 1)[1]
+    return after.split("\n      - name:", 1)[0]
+
+
+def test_the_deploy_gate_runs_it_and_fails_on_it():
+    """Wired into the deploy, and its failure must ABORT the deploy — otherwise
+    it is a report nobody acts on."""
+    assert "run_crypto_smoke.py" in _staging_workflow()
+    block = _staging_smoke_block()
     assert "exit 1" in block, "a failing crypto smoke does not fail the deploy"
     assert "Remediation" in block, "no rollback instructions for the on-call"
+
+
+# ── 4b. Staging must not be weaker than production ──────────────────────────
+#
+# On 2026-08-06 the staging gate fired correctly and staging had ALREADY been
+# serving the broken build for fourteen minutes, because the staging step ran
+# last while the production step ran between the migration and the first
+# revision. Every property production's own tests treat as load-bearing was
+# absent from staging: the ordering, this-execution polling, a fatal
+# delete-before-create, and deleting a job that holds the PHI key. Drift in a
+# safety gate is only ever discovered by the environment that lacks it.
+
+
+def test_staging_runs_the_smoke_after_migration_and_before_any_revision():
+    """Ordering IS the gate. Placed after the deploy it is a report."""
+    src = _staging_workflow()
+    migrate = src.index("- name: Run Alembic migration")
+    smoke = src.index("- name: Post-migration PHI crypto smoke")
+    deploy = src.index("- name: Deploy backend to ACA")
+    assert migrate < smoke < deploy, (
+        "the staging crypto smoke must sit between the migration and the first "
+        "revision, as the production one does"
+    )
+
+
+def test_staging_reads_the_verdict_from_this_runs_execution():
+    """`[0]` has no ordering guarantee: a stale `Succeeded` from an earlier
+    deploy would break the poll immediately and the deploy proceed having
+    verified nothing."""
+    assert "--job-execution-name" in _staging_smoke_block()
+
+
+def test_a_failed_delete_before_create_is_fatal_in_staging():
+    block = _staging_smoke_block()
+    before_create = block[: block.index("az containerapp job create")]
+    assert "az containerapp job delete" in before_create
+    assert "exit 1" in before_create, (
+        "a failed delete-before-create is swallowed; the create then upserts "
+        "onto the stale job and verifies the OLD key"
+    )
+
+
+def test_a_failing_or_hanging_staging_smoke_blocks_the_rollout():
+    block = _staging_smoke_block()
+    assert block.count("exit 1") >= 2, (
+        "a timed-out smoke must FAIL, not fall through as healthy"
+    )
+    assert 'if [ "$ST" != "Succeeded" ]' in block
+
+
+@pytest.mark.parametrize("name", ["ci.yml", "azure-production.yml"])
+def test_every_job_holding_the_phi_key_is_deleted_after_it_runs(name):
+    """Both one-off jobs are created with `--secrets enc-keys=...`. Left in
+    place they park the environment's PHI master key in a resource nobody
+    watches, readable by anything with Microsoft.App/jobs/listSecrets. The
+    migration job only started holding the key when PR #137 gave it one — so
+    the fix for the key bug would otherwise have widened the key's exposure."""
+    import pathlib
+
+    path = pathlib.Path(__file__).resolve().parents[2] / ".github" / "workflows" / name
+    if not path.exists():
+        pytest.skip(f"{name} not present in this checkout")
+    src = path.read_text()
+    for step in ("Remove Alembic migration job", "Remove crypto-smoke job"):
+        assert step in src, f"{name}: no cleanup step '{step}'"
+        cleanup = src.split(f"- name: {step}", 1)[1].split("\n      - name:", 1)[0]
+        assert "if: always()" in cleanup, (
+            f"{name}: '{step}' is skipped when the deploy fails — which is "
+            "exactly when the residue is left behind"
+        )
+        assert "az containerapp job delete" in cleanup
 
 
 # ── 5. Production wiring ────────────────────────────────────────────────────

@@ -55,17 +55,80 @@ class UndecryptablePHIError(RuntimeError):
     """
 
 
+def repo_default_key() -> str:
+    """The committed development default of `Settings.encryption_keys`.
+
+    Read off the FIELD, not off an instance: an instance in staging carries the
+    real Key Vault key, and a hardcoded copy here would silently stop matching
+    the day someone edits the default in `config.py` — the one edit that must
+    never quietly disable the guard below.
+
+    Not a secret. It is in this repository, which is exactly the problem.
+    """
+    from .config import Settings
+
+    return str(Settings.model_fields["encryption_keys"].default)
+
+
+# The development default in `Settings.encryption_keys`. It is committed to this
+# repository, so anything encrypted with it is, for confidentiality purposes,
+# plaintext. Trailing "=" padding is stripped so the guard matches whether or
+# not a caller carried it through.
+_DEV_DEFAULT_KEY_PREFIX = repo_default_key().rstrip("=")
+# Environments where the committed default is an acceptable convenience.
+_DEV_ENVS = frozenset({"dev", "development", "local", "test", "ci"})
+
+
 @lru_cache
 def _cipher() -> MultiFernet:
     settings = get_settings()
     raw = (settings.encryption_keys or "").strip()
     if not raw:
         raise EncryptionConfigError("MCP_ENCRYPTION_KEYS is not set; cannot encrypt PHI fields.")
+
+    # FAIL LOUD RATHER THAN ENCRYPT WITH THE PUBLIC DEFAULT.
+    #
+    # `Settings.encryption_keys` has a hardcoded default, so a process that never
+    # receives `MCP_ENCRYPTION_KEYS` does not fail — it silently encrypts with a
+    # key published in this repository. That is not hypothetical: the staging
+    # Alembic migration job was created with only `MCP_DATABASE_URL` and
+    # `MCP_ENV`, and the SEC-F11/P1-5 data migrations duly encrypted every Meto
+    # message, OCR candidate field, medication statement and notification body in
+    # staging with the committed key. The application then started with the real
+    # Key Vault key and could not read any of it. The identical job definition
+    # existed in the production workflow, where those rows would have been real
+    # patients'.
+    #
+    # `warn_if_insecure` already knew about this key — but it only WARNS, only
+    # when `is_prod`, and only at application startup, so it could not see a
+    # migration job in staging. The check belongs here, at the one point every
+    # encrypt and decrypt must pass through, so no future job can reintroduce the
+    # failure by forgetting an environment variable.
+    env = (getattr(settings, "env", "") or "").lower()
+    if env not in _DEV_ENVS and _DEV_DEFAULT_KEY_PREFIX in raw:
+        raise EncryptionConfigError(
+            "MCP_ENCRYPTION_KEYS is the built-in development default in "
+            f"env={env!r}. Refusing to encrypt or decrypt PHI with a key that is "
+            "committed to the repository. Supply the real key (Key Vault secret "
+            "`mcp-encryption-keys`) to this process."
+        )
+
     keys = [k.strip() for k in raw.split(",") if k.strip()]
     try:
         return MultiFernet([Fernet(k.encode()) for k in keys])
     except (ValueError, TypeError) as exc:  # malformed key
         raise EncryptionConfigError(f"Invalid MCP_ENCRYPTION_KEYS: {exc}") from exc
+
+
+def active_cipher() -> MultiFernet:
+    """The cipher the application itself uses, guard and all.
+
+    Operational tooling (the crypto smoke, the staging re-encryption job) must
+    verify against exactly what the app has — reconstructing a cipher from the
+    same environment variable would also reconstruct the chance of getting it
+    wrong, and would route around the committed-default refusal in `_cipher()`.
+    """
+    return _cipher()
 
 
 def encrypt(plaintext: str) -> str:
