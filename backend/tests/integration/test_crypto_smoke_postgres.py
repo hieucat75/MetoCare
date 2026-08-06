@@ -198,7 +198,7 @@ def test_the_repository_default_key_is_named_rather_than_called_corrupt(deployed
     summary = _summary(_smoke(url, key))
     assert summary["result"] == "fail"
     assert summary["ciphertext_source_key_rows"] >= 1, summary
-    assert summary["legacy_rows_by_class"]["notification.body"][
+    assert summary["legacy_rows_by_class"]["notifications.body"][
         "ciphertext_source_key_rows"
     ] >= 1
 

@@ -176,7 +176,21 @@ describe('adherence wording', () => {
 // screen — so the mobile half of this commit's headline safety property had no
 // regression guard at all. These render the component.
 
-import { render, screen, waitFor } from '@testing-library/react-native'
+// `render` is ASYNC in RNTL v14 (React 19 concurrent), and these three tests
+// never awaited it. The module-global `screen` is therefore not yet bound when
+// `waitFor` first polls, and the error is the misleading "`render` function has
+// not been called" — pointing at line 205 while the actual defect is line 204.
+//
+// It passed for months because the un-awaited render's microtask usually
+// resolves before waitFor's first tick. Under the parallel cold-cache run it
+// does not: reproduced locally 2026-08-06, and it is what failed Mobile Tests
+// and skipped Deploy to Staging on run 31081306152 during a P0 remediation.
+//
+// Awaiting it fixes the race. Binding the queries off the returned view rather
+// than the module-global `screen` removes the shared mutable state from the
+// assertions as well, so a future suite in the same worker cannot reintroduce
+// this by resetting it mid-test.
+import { render, waitFor } from '@testing-library/react-native'
 import React from 'react'
 
 import { ScheduleAdherence } from '../src/features/medication/ScheduleAdherenceCard'
@@ -201,10 +215,10 @@ describe('the mobile reconciled gate', () => {
       reconciliation_reason: 'no_expected_occurrences_in_window',
     } as never)
 
-    render(<ScheduleAdherence patientId="pat-1" scheduleId="sch-1" />)
-    await waitFor(() => expect(screen.getByTestId('schedule-adherence-sch-1')).toBeTruthy())
-    expect(screen.queryByText('90%')).toBeNull()
-    expect(screen.queryByText(vi.medication.adherenceRate)).toBeNull()
+    const view = await render(<ScheduleAdherence patientId="pat-1" scheduleId="sch-1" />)
+    await waitFor(() => expect(view.getByTestId('schedule-adherence-sch-1')).toBeTruthy())
+    expect(view.queryByText('90%')).toBeNull()
+    expect(view.queryByText(vi.medication.adherenceRate)).toBeNull()
   })
 
   it('a below-floor window is not described as a pause', async () => {
@@ -216,12 +230,12 @@ describe('the mobile reconciled gate', () => {
       reconciliation_reason: 'before_tracking_started',
     } as never)
 
-    render(<ScheduleAdherence patientId="pat-1" scheduleId="sch-1" />)
-    await waitFor(() => expect(screen.getByTestId('schedule-adherence-sch-1')).toBeTruthy())
+    const view = await render(<ScheduleAdherence patientId="pat-1" scheduleId="sch-1" />)
+    await waitFor(() => expect(view.getByTestId('schedule-adherence-sch-1')).toBeTruthy())
     // Telling a patient the schedule was paused during a period they were taking
     // the drug is a false clinical statement.
-    expect(screen.queryByText(vi.medication.adherenceUnavailablePaused)).toBeNull()
-    expect(screen.getByText(vi.medication.adherenceUnavailableUntracked)).toBeTruthy()
+    expect(view.queryByText(vi.medication.adherenceUnavailablePaused)).toBeNull()
+    expect(view.getByText(vi.medication.adherenceUnavailableUntracked)).toBeTruthy()
   })
 
   it('shows the period and the pause exclusion when it IS reconciled', async () => {
@@ -231,11 +245,11 @@ describe('the mobile reconciled gate', () => {
       .mockResolvedValue(RECONCILED as never)
     jest.spyOn(medicationApi, 'listMissedDoses').mockResolvedValue([])
 
-    render(<ScheduleAdherence patientId="pat-1" scheduleId="sch-1" />)
-    await waitFor(() => expect(screen.getByTestId('adherence-period-sch-1')).toBeTruthy())
-    expect(screen.getByTestId('adherence-paused-sch-1')).toBeTruthy()
+    const view = await render(<ScheduleAdherence patientId="pat-1" scheduleId="sch-1" />)
+    await waitFor(() => expect(view.getByTestId('adherence-period-sch-1')).toBeTruthy())
+    expect(view.getByTestId('adherence-paused-sch-1')).toBeTruthy()
     expect(
-      screen.getByText(vi.medication.adherenceExcludedPaused(20))
+      view.getByText(vi.medication.adherenceExcludedPaused(20))
     ).toBeTruthy()
   })
 })

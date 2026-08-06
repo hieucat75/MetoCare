@@ -83,7 +83,13 @@ def legacy_targets() -> tuple[tuple[str, str, str], ...]:
         for col in encrypted_columns()
         if (col.table, col.column) not in seen
     )
-    return LEGACY_TARGETS + rest
+    # Canonical `table.column` labels throughout, including the hot paths. The
+    # four historical labels are singular (`meto_message.content`) while the
+    # discovered ones are the real table name (`medication_statements.raw_dose`),
+    # and side by side in one report that reads as two different tables — during
+    # an incident, while someone is deciding what to restore.
+    hot = tuple((f"{table}.{column}", table, column) for _e, table, column in LEGACY_TARGETS)
+    return hot + rest
 
 
 def _sentinel() -> str:
