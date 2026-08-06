@@ -9,6 +9,7 @@ credential stuffing were visible only as anonymous status-code counts.
 from __future__ import annotations
 
 import hashlib
+import uuid
 
 import pytest
 from app.core.config import get_settings
@@ -31,7 +32,13 @@ def _login_denials(db) -> list[AuditLog]:
 
 @pytest.fixture
 def login_user(db):
-    email = f"ws4f3-{hashlib.sha256(str(id(db)).encode()).hexdigest()[:10]}@example.com"
+    # uuid4, not id(db): CPython RECYCLES object addresses, so two sessions in
+    # one run can share an `id()` and generate the same email —
+    # `UNIQUE constraint failed: users.email`, at whatever rate the allocator
+    # happens to hand back that slot. Hit once in ~5 full-suite runs on
+    # 2026-08-06, where it blocked a commit mid-P0-remediation. A uniqueness
+    # source that is only usually unique is a flake generator.
+    email = f"ws4f3-{uuid.uuid4().hex[:10]}@example.com"
     user = User(
         email=email,
         password_hash=hash_password("CorrectHorse1"),
