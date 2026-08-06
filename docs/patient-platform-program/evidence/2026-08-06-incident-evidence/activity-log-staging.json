@@ -1,0 +1,352 @@
+[
+ {
+  "caller": "principal:aa50b5523b51",
+  "op": "Microsoft.App/jobs/delete",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourcegroups/rg-metocare-staging/providers/Microsoft.App/jobs/caj-mc-provenance",
+  "status": "Succeeded",
+  "t": "2026-08-06T11:16:28.9104155Z"
+ },
+ {
+  "caller": "principal:aa50b5523b51",
+  "op": "Microsoft.App/jobs/delete",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-staging/providers/Microsoft.App/jobs/caj-mc-provenance",
+  "status": "Accepted",
+  "t": "2026-08-06T11:16:12.9574936Z"
+ },
+ {
+  "caller": "principal:aa50b5523b51",
+  "op": "Microsoft.App/jobs/delete",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-staging/providers/Microsoft.App/jobs/caj-mc-provenance",
+  "status": "Started",
+  "t": "2026-08-06T11:16:12.8168672Z"
+ },
+ {
+  "caller": "principal:aa50b5523b51",
+  "op": "Microsoft.App/jobs/write",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourcegroups/rg-metocare-staging/providers/Microsoft.App/jobs/caj-mc-provenance",
+  "status": "Succeeded",
+  "t": "2026-08-06T11:15:49.7228825Z"
+ },
+ {
+  "caller": "principal:aa50b5523b51",
+  "op": "Microsoft.App/jobs/start/action",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-staging/providers/Microsoft.App/jobs/caj-mc-provenance",
+  "status": "Succeeded",
+  "t": "2026-08-06T11:15:41.3385777Z"
+ },
+ {
+  "caller": "principal:aa50b5523b51",
+  "op": "Microsoft.App/jobs/start/action",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-staging/providers/Microsoft.App/jobs/caj-mc-provenance",
+  "status": "Started",
+  "t": "2026-08-06T11:15:41.1042007Z"
+ },
+ {
+  "caller": "principal:aa50b5523b51",
+  "op": "Microsoft.App/jobs/write",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-staging/providers/Microsoft.App/jobs/caj-mc-provenance",
+  "status": "Accepted",
+  "t": "2026-08-06T11:15:33.9646767Z"
+ },
+ {
+  "caller": "principal:aa50b5523b51",
+  "op": "Microsoft.App/jobs/write",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-staging/providers/Microsoft.App/jobs/caj-mc-provenance",
+  "status": "Started",
+  "t": "2026-08-06T11:15:31.4178459Z"
+ },
+ {
+  "caller": "principal:aa50b5523b51",
+  "op": "Microsoft.App/jobs/delete",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-staging/providers/Microsoft.App/jobs/caj-mc-provenance",
+  "status": "Succeeded",
+  "t": "2026-08-06T11:15:28.2936791Z"
+ },
+ {
+  "caller": "principal:aa50b5523b51",
+  "op": "Microsoft.App/jobs/delete",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-staging/providers/Microsoft.App/jobs/caj-mc-provenance",
+  "status": "Started",
+  "t": "2026-08-06T11:15:28.215641Z"
+ },
+ {
+  "caller": "principal:52d88cc04ff3",
+  "op": "Microsoft.App/containerApps/write",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-staging/providers/Microsoft.App/containerApps/ca-metocare-frontend",
+  "status": "Accepted",
+  "t": "2026-08-06T11:13:44.4175643Z"
+ },
+ {
+  "caller": "principal:52d88cc04ff3",
+  "op": "Microsoft.App/containerApps/write",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-staging/providers/Microsoft.App/containerApps/ca-metocare-frontend",
+  "status": "Started",
+  "t": "2026-08-06T11:13:44.2456915Z"
+ },
+ {
+  "caller": "principal:52d88cc04ff3",
+  "op": "Microsoft.App/containerApps/write",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourcegroups/rg-metocare-staging/providers/Microsoft.App/containerApps/ca-metocare-backend",
+  "status": "Succeeded",
+  "t": "2026-08-06T11:13:28.1660011Z"
+ },
+ {
+  "caller": "principal:52d88cc04ff3",
+  "op": "Microsoft.App/containerApps/write",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-staging/providers/Microsoft.App/containerApps/ca-metocare-backend",
+  "status": "Accepted",
+  "t": "2026-08-06T11:13:26.9060219Z"
+ },
+ {
+  "caller": "principal:52d88cc04ff3",
+  "op": "Microsoft.App/containerApps/write",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-staging/providers/Microsoft.App/containerApps/ca-metocare-backend",
+  "status": "Started",
+  "t": "2026-08-06T11:13:26.7185243Z"
+ },
+ {
+  "caller": "principal:52d88cc04ff3",
+  "op": "Microsoft.App/containerApps/write",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-staging/providers/Microsoft.App/containerApps/ca-metocare-backend",
+  "status": "Accepted",
+  "t": "2026-08-06T11:13:10.7326875Z"
+ },
+ {
+  "caller": "principal:52d88cc04ff3",
+  "op": "Microsoft.App/containerApps/write",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-staging/providers/Microsoft.App/containerApps/ca-metocare-backend",
+  "status": "Started",
+  "t": "2026-08-06T11:13:10.498264Z"
+ },
+ {
+  "caller": "principal:52d88cc04ff3",
+  "op": "Microsoft.App/containerApps/listSecrets/action",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-staging/providers/Microsoft.App/containerApps/ca-metocare-backend",
+  "status": "Succeeded",
+  "t": "2026-08-06T11:13:10.0365481Z"
+ },
+ {
+  "caller": "principal:52d88cc04ff3",
+  "op": "Microsoft.App/containerApps/listSecrets/action",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-staging/providers/Microsoft.App/containerApps/ca-metocare-backend",
+  "status": "Started",
+  "t": "2026-08-06T11:13:09.7865511Z"
+ },
+ {
+  "caller": "principal:52d88cc04ff3",
+  "op": "Microsoft.App/jobs/delete",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourcegroups/rg-metocare-staging/providers/Microsoft.App/jobs/caj-metocare-crypto-smoke",
+  "status": "Succeeded",
+  "t": "2026-08-06T11:13:04.2986778Z"
+ },
+ {
+  "caller": "principal:52d88cc04ff3",
+  "op": "Microsoft.App/jobs/delete",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-staging/providers/Microsoft.App/jobs/caj-metocare-crypto-smoke",
+  "status": "Accepted",
+  "t": "2026-08-06T11:12:48.6567406Z"
+ },
+ {
+  "caller": "principal:52d88cc04ff3",
+  "op": "Microsoft.App/jobs/delete",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-staging/providers/Microsoft.App/jobs/caj-metocare-crypto-smoke",
+  "status": "Started",
+  "t": "2026-08-06T11:12:48.4536108Z"
+ },
+ {
+  "caller": "principal:52d88cc04ff3",
+  "op": "Microsoft.App/jobs/write",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourcegroups/rg-metocare-staging/providers/Microsoft.App/jobs/caj-metocare-crypto-smoke",
+  "status": "Succeeded",
+  "t": "2026-08-06T11:12:16.6253785Z"
+ },
+ {
+  "caller": "principal:52d88cc04ff3",
+  "op": "Microsoft.App/jobs/start/action",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-staging/providers/Microsoft.App/jobs/caj-metocare-crypto-smoke",
+  "status": "Succeeded",
+  "t": "2026-08-06T11:12:09.5573653Z"
+ },
+ {
+  "caller": "principal:52d88cc04ff3",
+  "op": "Microsoft.App/jobs/start/action",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-staging/providers/Microsoft.App/jobs/caj-metocare-crypto-smoke",
+  "status": "Started",
+  "t": "2026-08-06T11:12:09.4479961Z"
+ },
+ {
+  "caller": "principal:52d88cc04ff3",
+  "op": "Microsoft.App/jobs/write",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-staging/providers/Microsoft.App/jobs/caj-metocare-crypto-smoke",
+  "status": "Accepted",
+  "t": "2026-08-06T11:12:01.0394317Z"
+ },
+ {
+  "caller": "principal:52d88cc04ff3",
+  "op": "Microsoft.App/jobs/write",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-staging/providers/Microsoft.App/jobs/caj-metocare-crypto-smoke",
+  "status": "Started",
+  "t": "2026-08-06T11:11:59.3988283Z"
+ },
+ {
+  "caller": "principal:52d88cc04ff3",
+  "op": "Microsoft.App/jobs/delete",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourcegroups/rg-metocare-staging/providers/Microsoft.App/jobs/caj-metocare-migrate",
+  "status": "Succeeded",
+  "t": "2026-08-06T11:11:54.067687Z"
+ },
+ {
+  "caller": "principal:52d88cc04ff3",
+  "op": "Microsoft.App/jobs/delete",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-staging/providers/Microsoft.App/jobs/caj-metocare-migrate",
+  "status": "Accepted",
+  "t": "2026-08-06T11:11:37.9987862Z"
+ },
+ {
+  "caller": "principal:52d88cc04ff3",
+  "op": "Microsoft.App/jobs/delete",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-staging/providers/Microsoft.App/jobs/caj-metocare-migrate",
+  "status": "Started",
+  "t": "2026-08-06T11:11:37.8737834Z"
+ },
+ {
+  "caller": "principal:52d88cc04ff3",
+  "op": "Microsoft.App/jobs/write",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourcegroups/rg-metocare-staging/providers/Microsoft.App/jobs/caj-metocare-migrate",
+  "status": "Succeeded",
+  "t": "2026-08-06T11:11:07.3802198Z"
+ },
+ {
+  "caller": "principal:52d88cc04ff3",
+  "op": "Microsoft.App/jobs/start/action",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-staging/providers/Microsoft.App/jobs/caj-metocare-migrate",
+  "status": "Succeeded",
+  "t": "2026-08-06T11:10:59.9452324Z"
+ },
+ {
+  "caller": "principal:52d88cc04ff3",
+  "op": "Microsoft.App/jobs/start/action",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-staging/providers/Microsoft.App/jobs/caj-metocare-migrate",
+  "status": "Started",
+  "t": "2026-08-06T11:10:59.7108416Z"
+ },
+ {
+  "caller": "principal:52d88cc04ff3",
+  "op": "Microsoft.App/jobs/write",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-staging/providers/Microsoft.App/jobs/caj-metocare-migrate",
+  "status": "Accepted",
+  "t": "2026-08-06T11:10:51.6744022Z"
+ },
+ {
+  "caller": "principal:52d88cc04ff3",
+  "op": "Microsoft.App/jobs/write",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-staging/providers/Microsoft.App/jobs/caj-metocare-migrate",
+  "status": "Started",
+  "t": "2026-08-06T11:10:48.9868592Z"
+ },
+ {
+  "caller": "principal:52d88cc04ff3",
+  "op": "Microsoft.App/jobs/delete",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-staging/providers/Microsoft.App/jobs/caj-metocare-migrate",
+  "status": "Succeeded",
+  "t": "2026-08-06T11:10:46.6495157Z"
+ },
+ {
+  "caller": "principal:52d88cc04ff3",
+  "op": "Microsoft.App/jobs/delete",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-staging/providers/Microsoft.App/jobs/caj-metocare-migrate",
+  "status": "Started",
+  "t": "2026-08-06T11:10:46.6026404Z"
+ },
+ {
+  "caller": "principal:aa50b5523b51",
+  "op": "Microsoft.App/jobs/delete",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourcegroups/rg-metocare-staging/providers/Microsoft.App/jobs/caj-seed-doctor",
+  "status": "Succeeded",
+  "t": "2026-08-06T10:59:46.4898073Z"
+ },
+ {
+  "caller": "principal:aa50b5523b51",
+  "op": "Microsoft.App/jobs/delete",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-staging/providers/Microsoft.App/jobs/caj-seed-doctor",
+  "status": "Accepted",
+  "t": "2026-08-06T10:59:31.0789578Z"
+ },
+ {
+  "caller": "principal:aa50b5523b51",
+  "op": "Microsoft.App/jobs/delete",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-staging/providers/Microsoft.App/jobs/caj-seed-doctor",
+  "status": "Started",
+  "t": "2026-08-06T10:59:30.8914584Z"
+ },
+ {
+  "caller": "principal:aa50b5523b51",
+  "op": "Microsoft.App/jobs/delete",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourcegroups/rg-metocare-staging/providers/Microsoft.App/jobs/caj-metocare-seed-demo",
+  "status": "Succeeded",
+  "t": "2026-08-06T10:59:27.1729033Z"
+ },
+ {
+  "caller": "principal:aa50b5523b51",
+  "op": "Microsoft.App/jobs/delete",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-staging/providers/Microsoft.App/jobs/caj-metocare-seed-demo",
+  "status": "Accepted",
+  "t": "2026-08-06T10:59:11.9034257Z"
+ },
+ {
+  "caller": "principal:aa50b5523b51",
+  "op": "Microsoft.App/jobs/delete",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-staging/providers/Microsoft.App/jobs/caj-metocare-seed-demo",
+  "status": "Started",
+  "t": "2026-08-06T10:59:11.778428Z"
+ },
+ {
+  "caller": "principal:52d88cc04ff3",
+  "op": "Microsoft.App/containerApps/write",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-staging/providers/Microsoft.App/containerApps/ca-metocare-frontend",
+  "status": "Accepted",
+  "t": "2026-08-06T10:35:44.2449453Z"
+ },
+ {
+  "caller": "principal:52d88cc04ff3",
+  "op": "Microsoft.App/containerApps/write",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-staging/providers/Microsoft.App/containerApps/ca-metocare-frontend",
+  "status": "Started",
+  "t": "2026-08-06T10:35:44.0261992Z"
+ },
+ {
+  "caller": "principal:52d88cc04ff3",
+  "op": "Microsoft.App/containerApps/write",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-staging/providers/Microsoft.App/containerApps/ca-metocare-backend",
+  "status": "Accepted",
+  "t": "2026-08-06T10:35:24.8279378Z"
+ },
+ {
+  "caller": "principal:52d88cc04ff3",
+  "op": "Microsoft.App/containerApps/write",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-staging/providers/Microsoft.App/containerApps/ca-metocare-backend",
+  "status": "Started",
+  "t": "2026-08-06T10:35:24.6248181Z"
+ },
+ {
+  "caller": "principal:52d88cc04ff3",
+  "op": "Microsoft.App/containerApps/write",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourcegroups/rg-metocare-staging/providers/Microsoft.App/containerApps/ca-metocare-backend",
+  "status": "Succeeded",
+  "t": "2026-08-06T10:35:24.2637751Z"
+ },
+ {
+  "caller": "principal:52d88cc04ff3",
+  "op": "Microsoft.App/containerApps/write",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-staging/providers/Microsoft.App/containerApps/ca-metocare-backend",
+  "status": "Accepted",
+  "t": "2026-08-06T10:35:07.5780863Z"
+ },
+ {
+  "caller": "principal:52d88cc04ff3",
+  "op": "Microsoft.App/containerApps/write",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-staging/providers/Microsoft.App/containerApps/ca-metocare-backend",
+  "status": "Started",
+  "t": "2026-08-06T10:35:07.3124714Z"
+ }
+]

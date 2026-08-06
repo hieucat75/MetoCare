@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.core import environment_lock as env_lock
 from app.core.config import get_settings
 from app.core.database import get_session
 from app.core.feature_flags import FeatureFlag, is_enabled
@@ -57,6 +58,10 @@ def info(db: Session = Depends(get_session)) -> dict:
 
     return {
         "app": s.app_name,
+        # Containment state, so an operator (and the UI banner) can see at a
+        # glance whether this environment still accepts real identities.
+        "synthetic_only_mode": env_lock.is_locked(),
+        "environment_banner": env_lock.banner(),
         "env": s.env,
         "ai_mode": s.ai_mode,
         "ocr_mode": s.ocr_mode,

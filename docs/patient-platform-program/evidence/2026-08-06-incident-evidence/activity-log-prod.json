@@ -1,0 +1,352 @@
+[
+ {
+  "caller": "principal:aa50b5523b51",
+  "op": "Microsoft.App/jobs/delete",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourcegroups/rg-metocare-prod/providers/Microsoft.App/jobs/caj-metocare-migrate",
+  "status": "Succeeded",
+  "t": "2026-08-06T10:58:03.9528004Z"
+ },
+ {
+  "caller": "principal:aa50b5523b51",
+  "op": "Microsoft.App/jobs/delete",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-prod/providers/Microsoft.App/jobs/caj-metocare-migrate",
+  "status": "Accepted",
+  "t": "2026-08-06T10:57:47.7289003Z"
+ },
+ {
+  "caller": "principal:aa50b5523b51",
+  "op": "Microsoft.App/jobs/delete",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-prod/providers/Microsoft.App/jobs/caj-metocare-migrate",
+  "status": "Started",
+  "t": "2026-08-06T10:57:47.5569277Z"
+ },
+ {
+  "caller": "principal:903b163dda7d",
+  "op": "Microsoft.Advisor/recommendations/available/action",
+  "resource": "/SUBSCRIPTIONS/9B6730CA-CA5E-44CD-A17F-CE10A5E14A04/RESOURCEGROUPS/RG-METOCARE-PROD/PROVIDERS/MICROSOFT.DBFORPOSTGRESQL/FLEXIBLESERVERS/PSQL-METOCARE-PROD",
+  "status": "Active",
+  "t": "2026-07-20T02:45:10.0510773Z"
+ },
+ {
+  "caller": "principal:903b163dda7d",
+  "op": "Microsoft.Advisor/recommendations/available/action",
+  "resource": "/SUBSCRIPTIONS/9B6730CA-CA5E-44CD-A17F-CE10A5E14A04/RESOURCEGROUPS/RG-METOCARE-PROD/PROVIDERS/MICROSOFT.DBFORPOSTGRESQL/FLEXIBLESERVERS/PSQL-METOCARE-PROD",
+  "status": "Active",
+  "t": "2026-07-20T02:15:41.6143821Z"
+ },
+ {
+  "caller": "principal:903b163dda7d",
+  "op": "Microsoft.Advisor/recommendations/available/action",
+  "resource": "/SUBSCRIPTIONS/9B6730CA-CA5E-44CD-A17F-CE10A5E14A04/RESOURCEGROUPS/RG-METOCARE-PROD/PROVIDERS/MICROSOFT.DBFORPOSTGRESQL/FLEXIBLESERVERS/PSQL-METOCARE-PROD",
+  "status": "Active",
+  "t": "2026-07-20T02:15:10.0253588Z"
+ },
+ {
+  "caller": "principal:903b163dda7d",
+  "op": "Microsoft.Advisor/recommendations/available/action",
+  "resource": "/SUBSCRIPTIONS/9B6730CA-CA5E-44CD-A17F-CE10A5E14A04/RESOURCEGROUPS/RG-METOCARE-PROD/PROVIDERS/MICROSOFT.DBFORPOSTGRESQL/FLEXIBLESERVERS/PSQL-METOCARE-PROD",
+  "status": "Active",
+  "t": "2026-07-14T08:25:23.28419Z"
+ },
+ {
+  "caller": "principal:52d88cc04ff3",
+  "op": "Microsoft.App/containerApps/write",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourcegroups/rg-metocare-prod/providers/Microsoft.App/containerApps/ca-metocare-frontend",
+  "status": "Succeeded",
+  "t": "2026-07-14T02:46:57.8757457Z"
+ },
+ {
+  "caller": "principal:52d88cc04ff3",
+  "op": "Microsoft.App/containerApps/write",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-prod/providers/Microsoft.App/containerApps/ca-metocare-frontend",
+  "status": "Accepted",
+  "t": "2026-07-14T02:46:42.5893469Z"
+ },
+ {
+  "caller": "principal:52d88cc04ff3",
+  "op": "Microsoft.App/containerApps/write",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-prod/providers/Microsoft.App/containerApps/ca-metocare-frontend",
+  "status": "Started",
+  "t": "2026-07-14T02:46:42.2768249Z"
+ },
+ {
+  "caller": "principal:52d88cc04ff3",
+  "op": "Microsoft.App/containerApps/write",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourcegroups/rg-metocare-prod/providers/Microsoft.App/containerApps/ca-metocare-backend",
+  "status": "Succeeded",
+  "t": "2026-07-14T02:46:39.4532947Z"
+ },
+ {
+  "caller": "principal:52d88cc04ff3",
+  "op": "Microsoft.App/containerApps/write",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-prod/providers/Microsoft.App/containerApps/ca-metocare-backend",
+  "status": "Accepted",
+  "t": "2026-07-14T02:46:23.8817631Z"
+ },
+ {
+  "caller": "principal:52d88cc04ff3",
+  "op": "Microsoft.App/containerApps/write",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-prod/providers/Microsoft.App/containerApps/ca-metocare-backend",
+  "status": "Started",
+  "t": "2026-07-14T02:46:23.6317685Z"
+ },
+ {
+  "caller": "principal:52d88cc04ff3",
+  "op": "Microsoft.App/jobs/write",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourcegroups/rg-metocare-prod/providers/Microsoft.App/jobs/caj-metocare-migrate",
+  "status": "Succeeded",
+  "t": "2026-07-14T02:45:50.6460094Z"
+ },
+ {
+  "caller": "principal:52d88cc04ff3",
+  "op": "Microsoft.App/jobs/start/action",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-prod/providers/Microsoft.App/jobs/caj-metocare-migrate",
+  "status": "Succeeded",
+  "t": "2026-07-14T02:45:44.5979838Z"
+ },
+ {
+  "caller": "principal:52d88cc04ff3",
+  "op": "Microsoft.App/jobs/start/action",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-prod/providers/Microsoft.App/jobs/caj-metocare-migrate",
+  "status": "Started",
+  "t": "2026-07-14T02:45:43.6917301Z"
+ },
+ {
+  "caller": "principal:52d88cc04ff3",
+  "op": "Microsoft.App/jobs/write",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-prod/providers/Microsoft.App/jobs/caj-metocare-migrate",
+  "status": "Accepted",
+  "t": "2026-07-14T02:45:35.1269384Z"
+ },
+ {
+  "caller": "principal:52d88cc04ff3",
+  "op": "Microsoft.App/jobs/write",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-prod/providers/Microsoft.App/jobs/caj-metocare-migrate",
+  "status": "Started",
+  "t": "2026-07-14T02:45:32.0332897Z"
+ },
+ {
+  "caller": "principal:52d88cc04ff3",
+  "op": "Microsoft.App/jobs/delete",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-prod/providers/Microsoft.App/jobs/caj-metocare-migrate",
+  "status": "Succeeded",
+  "t": "2026-07-14T02:45:29.4472855Z"
+ },
+ {
+  "caller": "principal:52d88cc04ff3",
+  "op": "Microsoft.App/jobs/delete",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-prod/providers/Microsoft.App/jobs/caj-metocare-migrate",
+  "status": "Started",
+  "t": "2026-07-14T02:45:29.3847882Z"
+ },
+ {
+  "caller": "principal:52d88cc04ff3",
+  "op": "Microsoft.DBforPostgreSQL/flexibleServers/backups/write",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-prod/providers/Microsoft.DBforPostgreSQL/flexibleServers/psql-metocare-prod/backups/pre-migration-production-20260714T023908-30a65ebc",
+  "status": "Succeeded",
+  "t": "2026-07-14T02:45:15.6900724Z"
+ },
+ {
+  "caller": "principal:52d88cc04ff3",
+  "op": "Microsoft.DBforPostgreSQL/flexibleServers/backups/write",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-prod/providers/Microsoft.DBforPostgreSQL/flexibleServers/psql-metocare-prod/backups/pre-migration-production-20260714T023908-30a65ebc",
+  "status": "Accepted",
+  "t": "2026-07-14T02:39:14.5016216Z"
+ },
+ {
+  "caller": "principal:52d88cc04ff3",
+  "op": "Microsoft.DBforPostgreSQL/flexibleServers/backups/write",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-prod/providers/Microsoft.DBforPostgreSQL/flexibleServers/psql-metocare-prod/backups/pre-migration-production-20260714T023908-30a65ebc",
+  "status": "Started",
+  "t": "2026-07-14T02:39:14.2360019Z"
+ },
+ {
+  "caller": "principal:52d88cc04ff3",
+  "op": "Microsoft.DBforPostgreSQL/flexibleServers/backups/write",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-prod/providers/Microsoft.DBforPostgreSQL/flexibleServers/psql-metocare-prod/backups/pre-migration-staging-20260714T021052-a345edbb",
+  "status": "Succeeded",
+  "t": "2026-07-14T02:12:00.8696964Z"
+ },
+ {
+  "caller": "principal:52d88cc04ff3",
+  "op": "Microsoft.DBforPostgreSQL/flexibleServers/backups/write",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-prod/providers/Microsoft.DBforPostgreSQL/flexibleServers/psql-metocare-prod/backups/pre-migration-staging-20260714T021052-a345edbb",
+  "status": "Accepted",
+  "t": "2026-07-14T02:10:56.8630355Z"
+ },
+ {
+  "caller": "principal:52d88cc04ff3",
+  "op": "Microsoft.DBforPostgreSQL/flexibleServers/backups/write",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-prod/providers/Microsoft.DBforPostgreSQL/flexibleServers/psql-metocare-prod/backups/pre-migration-staging-20260714T021052-a345edbb",
+  "status": "Started",
+  "t": "2026-07-14T02:10:56.6599251Z"
+ },
+ {
+  "caller": null,
+  "op": "Smart Detection - Failure Anomalies Alert Rule Creation",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-prod/providers/microsoft.insights/components/appi-metocare-prod",
+  "status": "Failed",
+  "t": "2026-07-14T02:10:55.8068028Z"
+ },
+ {
+  "caller": "principal:aa50b5523b51",
+  "op": "Microsoft.App/managedEnvironments/write",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourcegroups/rg-metocare-prod/providers/Microsoft.App/managedEnvironments/cae-metocare-prod",
+  "status": "Succeeded",
+  "t": "2026-07-14T02:06:12.1883413Z"
+ },
+ {
+  "caller": "principal:1d9707c20cd6",
+  "op": "Microsoft.Resources/deployments/write",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-prod/providers/Microsoft.Resources/deployments/Failure-Anomalies-Alert-Rule-Deployment-fe88d863",
+  "status": "Failed",
+  "t": "2026-07-14T02:05:56.8668563Z"
+ },
+ {
+  "caller": "principal:aa50b5523b51",
+  "op": "Microsoft.App/managedEnvironments/read",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourcegroups/rg-metocare-prod/providers/Microsoft.App/managedEnvironments/cae-metocare-prod",
+  "status": "Running",
+  "t": "2026-07-14T02:05:56.6712526Z"
+ },
+ {
+  "caller": "principal:1d9707c20cd6",
+  "op": "microsoft.alertsmanagement/smartdetectoralertrules/write",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourcegroups/rg-metocare-prod/providers/microsoft.alertsmanagement/smartdetectoralertrules/Failure Anomalies - appi-metocare-prod",
+  "status": "Failed",
+  "t": "2026-07-14T02:05:56.6168546Z"
+ },
+ {
+  "caller": "principal:1d9707c20cd6",
+  "op": "microsoft.alertsmanagement/smartdetectoralertrules/write",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourcegroups/rg-metocare-prod/providers/microsoft.alertsmanagement/smartdetectoralertrules/Failure Anomalies - appi-metocare-prod",
+  "status": "Started",
+  "t": "2026-07-14T02:05:56.2731023Z"
+ },
+ {
+  "caller": "principal:1d9707c20cd6",
+  "op": "Microsoft.Resources/deployments/write",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-prod/providers/Microsoft.Resources/deployments/Failure-Anomalies-Alert-Rule-Deployment-fe88d863",
+  "status": "Accepted",
+  "t": "2026-07-14T02:05:54.6624241Z"
+ },
+ {
+  "caller": "principal:1d9707c20cd6",
+  "op": "Microsoft.Resources/deployments/write",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-prod/providers/Microsoft.Resources/deployments/Failure-Anomalies-Alert-Rule-Deployment-fe88d863",
+  "status": "Succeeded",
+  "t": "2026-07-14T02:05:54.6468061Z"
+ },
+ {
+  "caller": "principal:aa50b5523b51",
+  "op": "Microsoft.KeyVault/vaults/write",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourcegroups/rg-metocare-prod/providers/Microsoft.KeyVault/vaults/kv-metocare-prdcfbb",
+  "status": "Succeeded",
+  "t": "2026-07-14T02:05:52.8175047Z"
+ },
+ {
+  "caller": "principal:1d9707c20cd6",
+  "op": "Microsoft.Resources/deployments/write",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-prod/providers/Microsoft.Resources/deployments/Failure-Anomalies-Alert-Rule-Deployment-fe88d863",
+  "status": "Started",
+  "t": "2026-07-14T02:05:45.349929Z"
+ },
+ {
+  "caller": "principal:aa50b5523b51",
+  "op": "Microsoft.Insights/components/write",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourcegroups/rg-metocare-prod/providers/Microsoft.Insights/components/appi-metocare-prod",
+  "status": "Succeeded",
+  "t": "2026-07-14T02:05:43.7747935Z"
+ },
+ {
+  "caller": "principal:aa50b5523b51",
+  "op": "Microsoft.App/managedEnvironments/read",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourcegroups/rg-metocare-prod/providers/Microsoft.App/managedEnvironments/cae-metocare-prod",
+  "status": "Running",
+  "t": "2026-07-14T02:05:40.8804439Z"
+ },
+ {
+  "caller": "principal:aa50b5523b51",
+  "op": "Microsoft.App/managedEnvironments/read",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourcegroups/rg-metocare-prod/providers/Microsoft.App/managedEnvironments/cae-metocare-prod",
+  "status": "Running",
+  "t": "2026-07-14T02:05:24.600742Z"
+ },
+ {
+  "caller": "principal:aa50b5523b51",
+  "op": "Microsoft.App/managedEnvironments/read",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourcegroups/rg-metocare-prod/providers/Microsoft.App/managedEnvironments/cae-metocare-prod",
+  "status": "Running",
+  "t": "2026-07-14T02:05:08.8474028Z"
+ },
+ {
+  "caller": "principal:aa50b5523b51",
+  "op": "Microsoft.App/managedEnvironments/read",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourcegroups/rg-metocare-prod/providers/Microsoft.App/managedEnvironments/cae-metocare-prod",
+  "status": "Running",
+  "t": "2026-07-14T02:04:53.3236166Z"
+ },
+ {
+  "caller": "principal:aa50b5523b51",
+  "op": "Microsoft.App/managedEnvironments/read",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourcegroups/rg-metocare-prod/providers/Microsoft.App/managedEnvironments/cae-metocare-prod",
+  "status": "Running",
+  "t": "2026-07-14T02:04:37.6707852Z"
+ },
+ {
+  "caller": "principal:aa50b5523b51",
+  "op": "Microsoft.App/managedEnvironments/read",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourcegroups/rg-metocare-prod/providers/Microsoft.App/managedEnvironments/cae-metocare-prod",
+  "status": "Running",
+  "t": "2026-07-14T02:04:22.4140308Z"
+ },
+ {
+  "caller": "principal:aa50b5523b51",
+  "op": "Microsoft.App/managedEnvironments/write",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-prod/providers/Microsoft.App/managedEnvironments/cae-metocare-prod",
+  "status": "Accepted",
+  "t": "2026-07-14T02:04:06.8923415Z"
+ },
+ {
+  "caller": "principal:aa50b5523b51",
+  "op": "Microsoft.App/managedEnvironments/write",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-prod/providers/Microsoft.App/managedEnvironments/cae-metocare-prod",
+  "status": "Started",
+  "t": "2026-07-14T02:04:05.4860797Z"
+ },
+ {
+  "caller": "principal:aa50b5523b51",
+  "op": "Microsoft.OperationalInsights/workspaces/sharedKeys/action",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourcegroups/rg-metocare-prod/providers/Microsoft.OperationalInsights/workspaces/log-metocare-prod",
+  "status": "Succeeded",
+  "t": "2026-07-14T02:04:00.8778124Z"
+ },
+ {
+  "caller": "principal:aa50b5523b51",
+  "op": "Microsoft.OperationalInsights/workspaces/sharedKeys/action",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourcegroups/rg-metocare-prod/providers/Microsoft.OperationalInsights/workspaces/log-metocare-prod",
+  "status": "Started",
+  "t": "2026-07-14T02:04:00.8309385Z"
+ },
+ {
+  "caller": "principal:aa50b5523b51",
+  "op": "Microsoft.DBforPostgreSQL/flexibleServers/databases/write",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-prod/providers/Microsoft.DBforPostgreSQL/flexibleServers/psql-metocare-prod/databases/metocare",
+  "status": "Succeeded",
+  "t": "2026-07-14T02:03:54.8651797Z"
+ },
+ {
+  "caller": "principal:aa50b5523b51",
+  "op": "Microsoft.DBforPostgreSQL/flexibleServers/databases/write",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-prod/providers/Microsoft.DBforPostgreSQL/flexibleServers/psql-metocare-prod/databases/metocare",
+  "status": "Accepted",
+  "t": "2026-07-14T02:03:44.0079422Z"
+ },
+ {
+  "caller": "principal:aa50b5523b51",
+  "op": "Microsoft.DBforPostgreSQL/flexibleServers/databases/write",
+  "resource": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-prod/providers/Microsoft.DBforPostgreSQL/flexibleServers/psql-metocare-prod/databases/metocare",
+  "status": "Started",
+  "t": "2026-07-14T02:03:43.9141946Z"
+ }
+]

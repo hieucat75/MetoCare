@@ -210,6 +210,19 @@ class Settings(BaseSettings):
     # MCP_QA_FIXTURE_ENABLED=true only on dev/staging QA builds.
     qa_fixture_enabled: bool = False
 
+    # ---- Synthetic-only environment lock (2026-08-06 privacy incident) ----
+    # Staging accumulated 90 self-registered REAL accounts because open
+    # registration on a public ingress was never gated. When true, only
+    # recognisably synthetic identifiers may register or authenticate, and no
+    # outbound transport may reach a real device or inbox. Default False so
+    # production is unaffected by construction — see app/core/environment_lock.py.
+    synthetic_only_mode: bool = False
+    # Exact identifiers or `@domain` suffixes additionally permitted while
+    # locked. Phone numbers have no reserved range to pattern-match on.
+    synthetic_extra_allowlist: str = ""
+    # Overrides the default banner text. Empty + locked = the built-in warning.
+    environment_banner: str = ""
+
     # ---- Observability ----
     log_level: str = "INFO"
     metrics_enabled: bool = True  # exposes /metrics; disable on untrusted edges

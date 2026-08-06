@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import CurrentUser, current_user, enforce_rate_limit, get_session
+from app.core import environment_lock as env_lock
 from app.core.config import get_settings
 from app.core.metrics import registry
 from app.core.phone import normalize_vn_phone
@@ -99,6 +100,16 @@ def register(
     request: Request, payload: RegisterRequest, db: Session = Depends(get_session)
 ) -> TokenResponse:
     enforce_rate_limit(request, "register")
+    # CONTAINMENT (2026-08-06): a locked environment accepts synthetic
+    # identities only. Staging acquired 90 real self-registered accounts
+    # because nothing here ever asked whether it should. Checked BEFORE the
+    # phone is normalized, so a malformed real number is refused for the right
+    # reason rather than leaking that the environment would otherwise have
+    # taken it.
+    if not env_lock.permits(str(payload.email) if payload.email else payload.phone):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail=env_lock.LOCKED_MESSAGE
+        )
     # Public self-registration is always patient-only.
     role = UserRole.PATIENT
     normalized_phone: str | None = None
@@ -166,6 +177,19 @@ def login(
                 detail="Số điện thoại di động Việt Nam không hợp lệ.",
             )
     lkey = phone_id or str(payload.email).lower()
+    # CONTAINMENT (2026-08-06): locking registration is not enough — the 90 real
+    # accounts already exist and can still sign in and upload. Refuse them too,
+    # so the environment stops accumulating real data. Their rows are NOT
+    # deleted; the incident's evidence-retention plan owns that decision.
+    #
+    # Placed AFTER the lockout key is computed but BEFORE any credential check,
+    # so it never becomes an oracle: the response is identical whether or not
+    # the account exists.
+    if not env_lock.permits(lkey):
+        _record_auth_failure(db, request, login_key=lkey, reason="environment_locked")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail=env_lock.LOCKED_MESSAGE
+        )
     if lockout.is_locked(
         lkey,
         max_failures=settings.lockout_max_failures,

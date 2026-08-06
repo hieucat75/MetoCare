@@ -20,6 +20,7 @@ import json
 
 from sqlalchemy.orm import Session
 
+from app.core import environment_lock as env_lock
 from app.core.config import get_settings
 from app.models.notification import Notification
 from app.services import notifications as deterministic_sink
@@ -73,7 +74,14 @@ def deliver(
     db.flush()
     delivered.append("in_app")
 
-    # 3/4. push / email — only when their credentials are configured (DIST-RC).
+    # 3/4. push / email — only when their credentials are configured (DIST-RC)
+    # AND this environment is allowed to reach the outside world. A locked
+    # (synthetic-only) environment must not be able to send a real person a
+    # notification about data that should never have been there: the transports
+    # are inert today only because no credentials are configured, and "inert by
+    # accident" stops being true the moment someone adds them.
+    if not env_lock.outbound_transports_permitted():
+        return delivered
     if _push_configured(settings):  # pragma: no cover - no creds at ENG-RC
         delivered.append("push")
     if _email_configured(settings):  # pragma: no cover - no provider at ENG-RC

@@ -1,0 +1,242 @@
+[
+ {
+  "conclusion": "",
+  "createdAt": "2026-08-06T11:24:25Z",
+  "databaseId": 31097128605,
+  "headSha": "f0249e48c58da19cda29d123404c96f117036555",
+  "status": "in_progress",
+  "workflowName": "CI + Staging Auto-Deploy"
+ },
+ {
+  "conclusion": "success",
+  "createdAt": "2026-08-06T11:00:19Z",
+  "databaseId": 31095502396,
+  "headSha": "96c4a1613689d88e1f8a94e45b85a5e0d819d2a1",
+  "status": "completed",
+  "workflowName": "CI + Staging Auto-Deploy"
+ },
+ {
+  "conclusion": "success",
+  "createdAt": "2026-08-06T10:22:34Z",
+  "databaseId": 31092995810,
+  "headSha": "814c33b17f8e22d96331f0353ddaebe7c24f0905",
+  "status": "completed",
+  "workflowName": "CI + Staging Auto-Deploy"
+ },
+ {
+  "conclusion": "success",
+  "createdAt": "2026-08-06T09:23:33Z",
+  "databaseId": 31088898130,
+  "headSha": "e328939386e9fd1d87a2bb150cc1aa90ba6f66b1",
+  "status": "completed",
+  "workflowName": "CI + Staging Auto-Deploy"
+ },
+ {
+  "conclusion": "success",
+  "createdAt": "2026-08-06T08:29:31Z",
+  "databaseId": 31085106849,
+  "headSha": "38301e814c97aacda97665f085273031b911b281",
+  "status": "completed",
+  "workflowName": "CI + Staging Auto-Deploy"
+ },
+ {
+  "conclusion": "failure",
+  "createdAt": "2026-08-06T07:32:18Z",
+  "databaseId": 31081306152,
+  "headSha": "7b619e079c78f6503d0dfddf2cc53149e06ecb55",
+  "status": "completed",
+  "workflowName": "CI + Staging Auto-Deploy"
+ },
+ {
+  "conclusion": "failure",
+  "createdAt": "2026-08-06T03:35:59Z",
+  "databaseId": 31068881187,
+  "headSha": "3fd813a33873188790a30e1347c8ee2a7c398e41",
+  "status": "completed",
+  "workflowName": "CI + Staging Auto-Deploy"
+ },
+ {
+  "conclusion": "success",
+  "createdAt": "2026-07-29T03:46:35Z",
+  "databaseId": 30420471904,
+  "headSha": "99a36168a8bf345826c4833d08da8a07cc71d39e",
+  "status": "completed",
+  "workflowName": "CI + Staging Auto-Deploy"
+ },
+ {
+  "conclusion": "success",
+  "createdAt": "2026-07-24T00:48:13Z",
+  "databaseId": 30057214105,
+  "headSha": "e8ae3d86dc4f2cccdbbe048ab7bee9e1505255fa",
+  "status": "completed",
+  "workflowName": "CI + Staging Auto-Deploy"
+ },
+ {
+  "conclusion": "success",
+  "createdAt": "2026-07-22T09:46:58Z",
+  "databaseId": 29909332766,
+  "headSha": "9348753693d5d680fee1e6672feef9dd762a21ea",
+  "status": "completed",
+  "workflowName": "CI + Staging Auto-Deploy"
+ },
+ {
+  "conclusion": "success",
+  "createdAt": "2026-07-21T08:03:20Z",
+  "databaseId": 29812778323,
+  "headSha": "ed99dfca898c527f22d7b7f66d6d996c48824681",
+  "status": "completed",
+  "workflowName": "CI + Staging Auto-Deploy"
+ },
+ {
+  "conclusion": "success",
+  "createdAt": "2026-07-17T09:02:53Z",
+  "databaseId": 29568560562,
+  "headSha": "988e8f85cfd8a93819165fdc0f42fb44c8dfc683",
+  "status": "completed",
+  "workflowName": "CI + Staging Auto-Deploy"
+ },
+ {
+  "conclusion": "success",
+  "createdAt": "2026-07-17T06:31:22Z",
+  "databaseId": 29560273476,
+  "headSha": "4d4a38381c642bfc78bb6c2005dce79f9bbe23ea",
+  "status": "completed",
+  "workflowName": "CI + Staging Auto-Deploy"
+ },
+ {
+  "conclusion": "success",
+  "createdAt": "2026-07-17T03:42:50Z",
+  "databaseId": 29553053845,
+  "headSha": "659e542572b1cacce53520dc536b84597298f69a",
+  "status": "completed",
+  "workflowName": "CI + Staging Auto-Deploy"
+ },
+ {
+  "conclusion": "success",
+  "createdAt": "2026-07-17T03:27:25Z",
+  "databaseId": 29552425888,
+  "headSha": "b2c4f2622ec81a874e343046ba0cc5648cf34337",
+  "status": "completed",
+  "workflowName": "CI + Staging Auto-Deploy"
+ },
+ {
+  "conclusion": "success",
+  "createdAt": "2026-07-17T03:18:59Z",
+  "databaseId": 29552085858,
+  "headSha": "cc4d6c19d333f4a431f6760d1e18b27afacd5aab",
+  "status": "completed",
+  "workflowName": "CI + Staging Auto-Deploy"
+ },
+ {
+  "conclusion": "success",
+  "createdAt": "2026-07-16T04:09:33Z",
+  "databaseId": 29470674444,
+  "headSha": "87efddd0058501710e49bdcb98ee86c68e63bc8d",
+  "status": "completed",
+  "workflowName": "CI + Staging Auto-Deploy"
+ },
+ {
+  "conclusion": "success",
+  "createdAt": "2026-07-16T01:07:39Z",
+  "databaseId": 29463327231,
+  "headSha": "002e90aacbe92f1780b3cd6dc5bd2348fc8560fe",
+  "status": "completed",
+  "workflowName": "Azure Staging Deploy"
+ },
+ {
+  "conclusion": "success",
+  "createdAt": "2026-07-15T12:02:59Z",
+  "databaseId": 29413782409,
+  "headSha": "002e90aacbe92f1780b3cd6dc5bd2348fc8560fe",
+  "status": "completed",
+  "workflowName": "CI + Staging Auto-Deploy"
+ },
+ {
+  "conclusion": "success",
+  "createdAt": "2026-07-15T11:07:16Z",
+  "databaseId": 29410523369,
+  "headSha": "3fa0de529819274428d2858c9140720ad5c92c7a",
+  "status": "completed",
+  "workflowName": "CI + Staging Auto-Deploy"
+ },
+ {
+  "conclusion": "success",
+  "createdAt": "2026-07-15T10:07:46Z",
+  "databaseId": 29407028435,
+  "headSha": "1f839f21d68a9569bae8927d9ea1a4a4f0e813f7",
+  "status": "completed",
+  "workflowName": "CI + Staging Auto-Deploy"
+ },
+ {
+  "conclusion": "success",
+  "createdAt": "2026-07-15T09:54:44Z",
+  "databaseId": 29406238083,
+  "headSha": "21e817a3b64f294d59ccb6cddcd9d1cbce9522aa",
+  "status": "completed",
+  "workflowName": "CI + Staging Auto-Deploy"
+ },
+ {
+  "conclusion": "success",
+  "createdAt": "2026-07-14T12:23:51Z",
+  "databaseId": 29332329383,
+  "headSha": "39f14f5964205941ca2fb5350f84cedd4eb4101c",
+  "status": "completed",
+  "workflowName": "CI + Staging Auto-Deploy"
+ },
+ {
+  "conclusion": "success",
+  "createdAt": "2026-07-14T11:41:19Z",
+  "databaseId": 29329767893,
+  "headSha": "1e27c2d557b644f493c69a1d8a64599e88f37938",
+  "status": "completed",
+  "workflowName": "CI + Staging Auto-Deploy"
+ },
+ {
+  "conclusion": "success",
+  "createdAt": "2026-07-14T11:22:27Z",
+  "databaseId": 29328663625,
+  "headSha": "85226c64e27eebb0ad61dcd68c97ef182bd36a0f",
+  "status": "completed",
+  "workflowName": "CI + Staging Auto-Deploy"
+ },
+ {
+  "conclusion": "success",
+  "createdAt": "2026-07-14T09:51:37Z",
+  "databaseId": 29323250723,
+  "headSha": "fedd1f19f0e831a3d0b8985c8ef2ac3a0c5c61d4",
+  "status": "completed",
+  "workflowName": "CI + Staging Auto-Deploy"
+ },
+ {
+  "conclusion": "success",
+  "createdAt": "2026-07-14T02:33:44Z",
+  "databaseId": 29301373847,
+  "headSha": "30a65ebcffcd0c20d53679e6a94d338f4c5e8f65",
+  "status": "completed",
+  "workflowName": "Azure Production Deploy"
+ },
+ {
+  "conclusion": "success",
+  "createdAt": "2026-07-14T02:33:26Z",
+  "databaseId": 29301360938,
+  "headSha": "30a65ebcffcd0c20d53679e6a94d338f4c5e8f65",
+  "status": "completed",
+  "workflowName": "CI + Staging Auto-Deploy"
+ },
+ {
+  "conclusion": "failure",
+  "createdAt": "2026-07-14T02:06:47Z",
+  "databaseId": 29300259992,
+  "headSha": "a345edbb586b065a304bd0afeb0951da30e22880",
+  "status": "completed",
+  "workflowName": "Azure Production Deploy"
+ },
+ {
+  "conclusion": "success",
+  "createdAt": "2026-07-14T01:38:19Z",
+  "databaseId": 29299052852,
+  "headSha": "a345edbb586b065a304bd0afeb0951da30e22880",
+  "status": "completed",
+  "workflowName": "CI + Staging Auto-Deploy"
+ }
+]

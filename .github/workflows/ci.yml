@@ -759,6 +759,7 @@ jobs:
             MCP_OCR_WORKER_ENABLED=false MCP_RAG_ENABLED=false \
             MCP_STORAGE_MODE=local MCP_RATELIMIT_BACKEND=memory \
             MCP_METRICS_ENABLED=true MCP_ENABLE_DOCS=false \
+            MCP_SYNTHETIC_ONLY_MODE=true \
             MCP_FEATURE_OCR=true MCP_FEATURE_OCR_CLOUD_FALLBACK=true \
             MCP_OCR_CLOUD_PROVIDER=azure \
             AZURE_DOC_INTEL_ENDPOINT=${DOC_INTEL_ENDPOINT} \

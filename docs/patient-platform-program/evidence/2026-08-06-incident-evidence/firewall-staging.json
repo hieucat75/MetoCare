@@ -1,0 +1,29 @@
+[
+ {
+  "endIpAddress": "183.91.4.178",
+  "id": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-staging/providers/Microsoft.DBforPostgreSQL/flexibleServers/psql-metocare-staging/firewallRules/rehearsal-tmp",
+  "name": "rehearsal-tmp",
+  "resourceGroup": "rg-metocare-staging",
+  "startIpAddress": "183.91.4.178",
+  "systemData": null,
+  "type": "Microsoft.DBforPostgreSQL/flexibleServers/firewallRules"
+ },
+ {
+  "endIpAddress": "0.0.0.0",
+  "id": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-staging/providers/Microsoft.DBforPostgreSQL/flexibleServers/psql-metocare-staging/firewallRules/AllowAzureServices",
+  "name": "AllowAzureServices",
+  "resourceGroup": "rg-metocare-staging",
+  "startIpAddress": "0.0.0.0",
+  "systemData": null,
+  "type": "Microsoft.DBforPostgreSQL/flexibleServers/firewallRules"
+ },
+ {
+  "endIpAddress": "14.226.21.165",
+  "id": "/subscriptions/9b6730ca-ca5e-44cd-a17f-ce10a5e14a04/resourceGroups/rg-metocare-staging/providers/Microsoft.DBforPostgreSQL/flexibleServers/psql-metocare-staging/firewallRules/FirewallIPAddress_2026-6-20_7-51-3",
+  "name": "FirewallIPAddress_2026-6-20_7-51-3",
+  "resourceGroup": "rg-metocare-staging",
+  "startIpAddress": "14.226.21.165",
+  "systemData": null,
+  "type": "Microsoft.DBforPostgreSQL/flexibleServers/firewallRules"
+ }
+]

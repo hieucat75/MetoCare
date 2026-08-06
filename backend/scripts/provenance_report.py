@@ -49,21 +49,14 @@ import re
 import sys
 
 import sqlalchemy as sa
+
+#: Imported, not redefined. `app/core/environment_lock.py` uses the same list to
+#: decide who may register or authenticate in a locked environment. Two copies
+#: would let the tool that MEASURES the incident and the lock that PREVENTS the
+#: next one disagree about the same account.
+from app.core.environment_lock import SYNTHETIC_PATTERNS
 from sqlalchemy.orm import Session
 
-#: RFC 2606 reserved domains plus this project's fixed seed local-parts. A
-#: reserved domain cannot be delivered to, so an address using one cannot belong
-#: to a real person who could be notified about a disclosure.
-SYNTHETIC_PATTERNS = (
-    r"@example\.(com|org|net)$",
-    r"@.*\.test$",
-    r"@.*\.invalid$",
-    r"@.*\.localhost$",
-    r"^demo\.",
-    r"^pilot\.",
-    r"^cs-",            # crypto-smoke sentinel parents
-    r"^ws4f3-",         # auth-audit test fixture
-)
 _SYNTHETIC = re.compile("|".join(SYNTHETIC_PATTERNS), re.IGNORECASE)
 
 #: The columns the 2026-08-06 migration encrypted with the wrong key, and the

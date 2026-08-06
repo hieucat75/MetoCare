@@ -1,0 +1,11 @@
+f0249e48c58da19cda29d123404c96f117036555|2026-08-06 18:19:52 +0700|PhamGia|docs(incident): provenance answered — the affected staging data is REAL
+96c4a1613689d88e1f8a94e45b85a5e0d819d2a1|2026-08-06 17:55:35 +0700|PhamGia|feat(forensics): answer the one incident question that was left open
+814c33b17f8e22d96331f0353ddaebe7c24f0905|2026-08-06 17:15:54 +0700|PhamGia|fix(ci): close the staging crypto-gate bypass, and make the rollback target real
+e328939386e9fd1d87a2bb150cc1aa90ba6f66b1|2026-08-06 16:16:27 +0700|PhamGia|docs(evidence): staging PHI remediated — 103 rows off the repo default key, verified
+38301e814c97aacda97665f085273031b911b281|2026-08-06 15:29:27 +0700|hieucat75|Unblock the staging PHI remediation: mobile render race + PHI-key job cleanup on the third deploy path (#138)
+7b619e079c78f6503d0dfddf2cc53149e06ecb55|2026-08-06 14:32:15 +0700|hieucat75|P0: the Alembic migration job encrypted PHI with the repository's default key (#137)
+3fd813a33873188790a30e1347c8ee2a7c398e41|2026-08-06 10:35:35 +0700|PhamGia|Merge branch 'feat/patient-platform-journey2' into main
+3aa5595963b6cc6838e84afb6eb77768fce18d32|2026-08-06 10:18:01 +0700|PhamGia|docs: final blockers status — the crypto gate had never run, and what closed it
+3f761c96759ee70314d4f2b154a54ad14e4d2da8|2026-08-06 10:05:23 +0700|PhamGia|fix: close five fresh reviews — the crypto gate could never have run
+de8a308a66022d124bb33496ae7e556934067676|2026-08-06 09:12:17 +0700|PhamGia|fix(clinical): P0 — persist schedule lifecycle so a pause stops becoming missed doses
+4c4b28b9bb76c50221afc6fb83ba9c20cd9375f4|2026-08-05 18:55:13 +0700|PhamGia|fix: close review findings on P1-3/P1-7 — deploy gate never ran, adherence flag lied
