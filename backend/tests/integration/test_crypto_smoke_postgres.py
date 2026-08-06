@@ -10,6 +10,7 @@ All PHI-shaped strings are invented. No real patient data appears here.
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -51,6 +52,18 @@ def _smoke(url: str, key: str) -> subprocess.CompletedProcess:
         [sys.executable, "-m", "scripts.crypto_smoke"],
         cwd=BACKEND_ROOT, env=env, capture_output=True, text=True,
     )
+
+
+def _summary(run: subprocess.CompletedProcess) -> dict:
+    """The LAST JSON line — the aggregate verdict.
+
+    The per-entity failure lines come first and carry the same keys, so picking
+    the first match would assert against one column while claiming to describe
+    the run.
+    """
+    lines = [line for line in run.stdout.strip().splitlines() if line.startswith("{")]
+    assert lines, f"the smoke emitted no JSON:\n{run.stdout}\n{run.stderr}"
+    return json.loads(lines[-1])
 
 
 @pytest.fixture
@@ -133,7 +146,72 @@ def test_a_wrong_but_well_formed_key_fails_the_deploy(deployed_db):
     r = _smoke(url, wrong)
     assert r.returncode == 1, "a wrong key produced a healthy verdict"
     assert '"result": "fail"' in r.stdout
-    assert "legacy_row_undecryptable" in r.stdout
+    assert "ciphertext_unreadable_rows" in r.stdout
+
+
+def test_a_wrong_key_is_never_reported_as_zero_legacy_impact(deployed_db):
+    """The 2026-08-06 misreport, against a real database.
+
+    The old scan raised on the first bad row, so the counter it only incremented
+    on success stayed at zero and the summary read::
+
+        {"entities_checked":2,"failures":4,"legacy_rows_total":0}
+
+    beside four unreadable columns. The number an on-call reads as blast radius
+    fell to zero exactly when every row was broken. Both rows the fixture wrote
+    must now be COUNTED.
+    """
+    url, _key = deployed_db
+    summary = _summary(_smoke(url, _fernet_key()))
+
+    assert summary["result"] == "fail"
+    assert summary["legacy_rows_total"] > 0, (
+        "the affected-row count collapsed to zero while rows were unreadable"
+    )
+    assert summary["ciphertext_unreadable_rows"] >= 2, summary
+    assert summary["ciphertext_target_key_rows"] == 0
+    # Unreadable is not plaintext, and not a wrong-but-known key. Each sends the
+    # responder somewhere different.
+    assert summary["plaintext_legacy_rows"] == 0
+
+
+def test_the_repository_default_key_is_named_rather_than_called_corrupt(deployed_db):
+    """The incident's actual state: rows encrypted with the key committed to
+    this repository. "undecryptable" would send the responder to a restore; the
+    correct response is re-encryption, and only naming the key tells them
+    apart."""
+    url, key = deployed_db
+    engine = sa.create_engine(url, poolclass=sa.pool.NullPool)
+    try:
+        from app.core.crypto import repo_default_key
+        from cryptography.fernet import Fernet
+
+        default = Fernet(repo_default_key().encode())
+        with engine.begin() as c:
+            c.execute(
+                sa.text("UPDATE notifications SET body = :b WHERE id NOT LIKE 'cs-%'"),
+                {"b": default.encrypt(LEGACY_BODY.encode()).decode()},
+            )
+    finally:
+        engine.dispose()
+
+    summary = _summary(_smoke(url, key))
+    assert summary["result"] == "fail"
+    assert summary["ciphertext_source_key_rows"] >= 1, summary
+    assert summary["legacy_rows_by_class"]["notification.body"][
+        "ciphertext_source_key_rows"
+    ] >= 1
+
+
+def test_a_passing_run_proves_it_actually_read_something(deployed_db):
+    """A pass with every counter at zero means the scan verified nothing — which
+    is why `no_legacy_rows_to_verify` is itself a failure."""
+    url, key = deployed_db
+    summary = _summary(_smoke(url, key))
+    assert summary["result"] == "pass"
+    assert summary["ciphertext_target_key_rows"] > 0, summary
+    assert summary["ciphertext_source_key_rows"] == 0
+    assert summary["ciphertext_unreadable_rows"] == 0
 
 
 def test_restoring_the_correct_key_passes_again(deployed_db):
