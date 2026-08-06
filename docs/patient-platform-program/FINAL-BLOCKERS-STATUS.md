@@ -2,7 +2,7 @@
 
 **Branch:** `feat/patient-platform-journey2`
 **Date:** 2026-08-06
-**Candidate:** `de8a308` (supersedes `4c4b28b`)
+**Candidate:** `3f761c9` (supersedes `4c4b28b`; `de8a308` + five fresh reviews)
 
 ## The P0, and why the previous fix could not close it
 
@@ -157,6 +157,29 @@ expected_count + excluded_paused_count + excluded_cancelled_count
     == doses the recurrence prescribes in the window at or after the floor
 ```
 
+### P0 · The crypto smoke could never have run — in EITHER environment
+
+Found by the CI review and confirmed against the Azure CLI's own interpreter.
+`az containerapp job create --args` declares `nargs='*'`, and argparse stops
+collecting at the first token beginning with `-`. So
+
+```
+--command "python" --args "-m" "scripts.crypto_smoke" "--allow-production"
+```
+
+parses to `args=[]`, all three tokens land in `extras`, and the CLI exits 2 with
+UnrecognizedArgumentError. The job is never created and the gate never runs. The
+step still fails, so it fails *closed* — but it fails on EVERY deploy in a way
+indistinguishable from a real wrong-key failure, which is exactly how a gate gets
+muted as "the usual broken step". `--args "upgrade" "head"` parses fine, which is
+why the Alembic job has always worked and why nobody noticed.
+
+The staging invocation shipped in `d4e30a4` carried the identical list, so the
+gate P1-7 recorded as closed had never executed once. Fixed with a dash-free
+entrypoint (`backend/run_crypto_smoke.py`; production enabled by env var rather
+than a flag). Two new static tests fail on any dash-prefixed token in an `--args`
+list, in either workflow.
+
 ### P0 · Crypto smoke now runs in production
 
 `azure-production.yml` had no crypto step, so the mis-rotation scenario was
@@ -202,14 +225,27 @@ No baseline exceptions are claimed. Nothing was suppressed, excluded or
 
 | gate | result |
 |---|---|
-| CI-1 (`pytest -m "not integration"`) | 4168 passed, 0 failed, 11 skipped, exit 0 |
+| CI-1 (`pytest -m "not integration"`) | 4216 passed, 0 failed, 11 skipped, exit 0 |
 | CI-2 (17 integration modules, one database each, real Postgres) | 226 tests, rc=0, no module collected 0 |
 | Migration round-trip | upgrade → downgrade → re-upgrade on real Postgres; backfill verified against seeded active/paused/stopped rows |
 | Alembic heads | single head `j3_m7_sched_lifecycle` |
 | ruff | clean |
-| Frontend | 658 jest / 57 suites; `tsc` 0 on both configs; lint 0 errors; production build succeeds |
-| Mobile | clean `npm ci` (1077 packages); `tsc` 0; lint 0 errors; 145 jest / 29 suites; Expo production export web + iOS + Android |
-| Merge | `--no-ff` onto `origin/main` clean, 0 conflicts |
+| Frontend | 663 jest / 57 suites; `tsc` 0 on both configs; lint 0 errors; production build succeeds |
+| Mobile | clean `npm ci` (1077 packages); `tsc` 0; lint 0 errors; 148 jest / 29 suites; Expo production export web + iOS + Android |
+| Merge rehearsal | `--no-ff` onto `origin/main` in an isolated worktree: 0 conflicts; merged tree **byte-identical** to the candidate (`git diff` empty), so every gate above applies unchanged; CI-1, ruff, single-head and both clients re-run on the merged tree; worktree removed |
+
+## Honest caveats
+
+* One mobile jest run on the merged tree reported `1 failed / 147 passed` while a
+  frontend jest run was executing concurrently against the same symlinked
+  `node_modules`. It did not reproduce in ten subsequent runs (four in the
+  rehearsal worktree, six in the primary tree, all 148/148), and the failing test
+  name was not captured before the process exited. Recorded rather than omitted:
+  most likely resource contention, but it was observed and never explained.
+* The production crypto smoke has still never executed against real Azure. Its
+  wiring is repo-controlled and now covered by static tests that would have
+  caught the defect which made it unrunnable, but the first genuine execution is
+  the next production deploy the owner runs.
 
 ## Not in scope / owner decisions
 
