@@ -31,6 +31,8 @@ from app.models.clinical import (
 )
 
 DELETED_LIFECYCLE_STATUS = "entered_in_error"
+# The only lifecycle state in which a medication may still drive reminders.
+ACTIVE_LIFECYCLE_STATUS = "active"
 
 # Plan §6.1 — closed value set (mirrors the DB CHECK constraint) and the
 # subset a PATIENT may set via the API. on_hold is doctor-only in BOTH
@@ -79,6 +81,33 @@ REASON_REQUIRED_TRANSITIONS = {
     ("active", "on_hold"),
     ("on_hold", "active"),
 }
+
+
+def _cascade_stop_schedules(db: Session, record: Medication) -> None:
+    """CLIN PS-5 — a lifecycle exit must also end the drug's reminder schedules.
+
+    ``MedicationSchedule`` is a separate row from ``Medication``; without this
+    cascade a patient who stops or deletes a drug keeps being told, by name, to
+    take it. Runs inside the caller's transaction (before its commit), so the
+    canonical state change and the schedule stop land together. Imported lazily —
+    the schedule service is a higher-level consumer of this module's models.
+    """
+    if record.deleted_at is None and record.lifecycle_status == ACTIVE_LIFECYCLE_STATUS:
+        return
+    from app.services import medication_schedule as schedule_svc
+
+    # A REPUDIATED record (soft-deleted / entered_in_error) purges its open
+    # doses outright: "this should never have existed" means its unacted doses
+    # are not real non-adherence. A lifecycle EXIT keeps them — the therapy was
+    # real, so a dose already due and unacted resolves to MISSED and stays in the
+    # adherence denominator.
+    repudiated = (
+        record.deleted_at is not None
+        or record.lifecycle_status == DELETED_LIFECYCLE_STATUS
+    )
+    schedule_svc.stop_schedules_for_medication(
+        db, medication_id=record.id, purge_history=repudiated
+    )
 
 
 def _validate_lifecycle_transition(
@@ -220,12 +249,18 @@ def add_medication(
     data: dict,
     actor_user_id: str | None = None,
     actor_role: str | None = None,
+    source_type: str = "patient_manual",
     commit: bool = True,
 ) -> Medication:
     """Persist a new Medication record for *patient_id* (statement-first).
 
     ``data`` must contain at least ``name``.  Optional keys:
     ``dose``, ``frequency`` and ``note``.
+
+    ``source_type`` provenance stamps both the statement and the canonical row
+    (must be a value allowed by the ``chk_source_type`` CHECK on ``medications``,
+    e.g. ``patient_manual`` (default) or ``ocr_confirmed`` for a confirmed
+    prescription-OCR promotion). Used by the MDI medication promoter (§1.5).
 
     Flow (Implementation Plan §5.2, single transaction):
       statement(pending) → canonical row → statement accepted+merged → audit.
@@ -234,7 +269,7 @@ def add_medication(
     """
     statement = MedicationStatement(
         patient_id=patient_id,
-        source_type="patient_manual",
+        source_type=source_type,
         assertion_type="new_entry",
         raw_drug_name=data["name"],
         raw_dose=data.get("dose"),
@@ -253,6 +288,7 @@ def add_medication(
         dose=data.get("dose"),
         frequency=data.get("frequency"),
         note=data.get("note"),
+        source_type=source_type,
     )
     db.add(record)
     db.flush()
@@ -463,6 +499,9 @@ def update_medication(
             actor_role=actor_role,
         )
 
+    # CLIN PS-5: leaving `active` ends the drug's reminder schedules too.
+    _cascade_stop_schedules(db, record)
+
     db.commit()
     db.refresh(record)
     return record
@@ -620,6 +659,8 @@ def delete_medication(
             actor_user_id=actor_user_id,
             actor_role=actor_role,
         )
+        # CLIN PS-5: deleting the drug must also delete its pending reminders.
+        _cascade_stop_schedules(db, record)
         db.commit()
         return True
 

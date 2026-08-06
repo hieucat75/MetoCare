@@ -783,13 +783,28 @@ class TestHashFormatValidationOnPostgres:
         finally:
             db.close()
 
+        # Capture the revision BEFORE the refused downgrade. This used to assert
+        # the literal "k2_s0_round3_hardening", which silently encoded "whatever
+        # the repository head happened to be when this test was written" — so the
+        # test broke the moment ANY migration was added after it, regardless of
+        # what that migration did. The property under test is that a REFUSED
+        # downgrade leaves the revision exactly where it was, so compare against
+        # the observed starting revision instead of a hardcoded id.
+        pre_db = Session()
+        try:
+            rev_before = pre_db.execute(
+                sa.text("SELECT version_num FROM alembic_version")
+            ).scalar()
+        finally:
+            pre_db.close()
+
         with pytest.raises(RuntimeError, match="Refusing to downgrade"):
             command.downgrade(cfg, "k2_s0_integrity_guards")
 
         verify_db = Session()
         try:
             current_rev = verify_db.execute(sa.text("SELECT version_num FROM alembic_version")).scalar()
-            assert current_rev == "k2_s0_round3_hardening"
+            assert current_rev == rev_before
             stored = verify_db.execute(
                 sa.text("SELECT input_hash FROM knowledge_ai_generations WHERE id = :id"), {"id": row_id}
             ).scalar()

@@ -202,8 +202,30 @@ def test_data_quality_flag_in_schema():
 # HealthMetric promotion severity tests — fix(metrics): preserve critical severity
 # ---------------------------------------------------------------------------
 
-def test_promoted_health_metric_from_creatinine_88_mgdl_is_critical(db, patient):
-    """HealthMetric promoted from creatinine 88 mg/dL must have status=critical."""
+
+# ── Behaviour change, 2026-08-05 (unit-normalization registry) ─────────────
+#
+# Creatinine 88 mg/dL is beyond `physiological_max` (30 mg/dL) — no survivable
+# concentration reaches it, and it is almost certainly a mislabelled 88 µmol/L.
+# The unit registry therefore REFUSES the conversion ("reject impossible
+# converted values") instead of classifying it.
+#
+# The tests below previously asserted the older model: "classify whatever unit
+# the patient asserts", i.e. 88 mg/dL -> critical. They are updated, not deleted,
+# because the property they actually protect is still essential and is now
+# asserted in its stronger form: a refused conversion must NOT leave a stale,
+# reassuring metric standing. Refusing to classify AND refusing to withdraw would
+# be worse than either alone — the dashboard would keep telling the patient their
+# kidney function is fine on the strength of a value the system just declined to
+# interpret.
+#
+# So: no metric at all (an honest gap the UI can surface as "unit unclear"),
+# never a normal one. The clinically dangerous direction — a real critical being
+# shown as normal — remains covered by the µmol/L cases in this file, which
+# convert successfully and still classify.
+
+def test_promoted_health_metric_from_creatinine_88_mgdl_is_refused(db, patient):
+    """88 mg/dL is physiologically impossible: refuse, and write NO metric."""
     import datetime as _dt
 
     from app.services.lab import _promote_row
@@ -236,9 +258,10 @@ def test_promoted_health_metric_from_creatinine_88_mgdl_is_critical(db, patient)
     from app.models.clinical import HealthMetric as HM
     metric = db.execute(
         select(HM).where(HM.source_ref == row.id, HM.deleted_at.is_(None))
-    ).scalar_one()
-    assert metric.status == "critical", (
-        f"Promoted HealthMetric from creatinine 88 mg/dL must be critical, got {metric.status}"
+    ).scalar_one_or_none()
+    assert metric is None, (
+        "an impossible value must not be promoted to the trend surface at all; "
+        f"got a metric with status={getattr(metric, 'status', None)!r}"
     )
 
 
@@ -317,24 +340,28 @@ def test_correcting_creatinine_88mgdl_to_88umol_changes_metric_to_normal(db, pat
     db.flush()
 
     from app.models.clinical import HealthMetric as HM
-    metric = db.execute(
+    # 88 mg/dL is impossible, so it is refused and never promoted.
+    assert db.execute(
         select(HM).where(HM.source_ref == row.id, HM.deleted_at.is_(None))
-    ).scalar_one()
-    assert metric.status == "critical"
+    ).scalar_one_or_none() is None
 
-    # Correct to 88 µmol/L
+    # Correct to 88 µmol/L — now convertible. The RECOVERY property: fixing the
+    # unit the app complained about must bring the trend back, otherwise the
+    # patient does what they were asked and nothing happens.
     correct_lab_result(db, result_id=row.id, patient_id=patient["patient_id"],
                        requester_id=patient["user_id"], new_value=88.0, new_unit="µmol/L")
 
-    db.expire(metric)
-    db.refresh(metric)
+    metric = db.execute(
+        select(HM).where(HM.source_ref == row.id, HM.deleted_at.is_(None))
+    ).scalar_one_or_none()
+    assert metric is not None, "correcting to a valid unit did not restore the metric"
     assert metric.status == "normal", (
         f"After correcting to 88 µmol/L, HealthMetric must be normal, got {metric.status}"
     )
 
 
-def test_correcting_creatinine_88umol_to_88mgdl_changes_metric_to_critical(db, patient):
-    """Correcting creatinine 88 µmol/L → 88 mg/dL must change HealthMetric normal→critical."""
+def test_correcting_creatinine_88umol_to_88mgdl_withdraws_the_metric(db, patient):
+    """Correcting 88 µmol/L → 88 mg/dL must WITHDRAW the metric, not leave it normal."""
     import datetime as _dt
 
     from app.services.lab import _promote_row, correct_lab_result
@@ -371,12 +398,16 @@ def test_correcting_creatinine_88umol_to_88mgdl_changes_metric_to_critical(db, p
     ).scalar_one()
     assert metric.status == "normal"
 
-    # Correct to 88 mg/dL (wrong unit entered)
+    # Correct to 88 mg/dL — physiologically impossible, so the conversion is
+    # refused. The metric must be WITHDRAWN, never left at its previous `normal`:
+    # a stale normal is a false reassurance about kidney function.
     correct_lab_result(db, result_id=row.id, patient_id=patient["patient_id"],
                        requester_id=patient["user_id"], new_value=88.0, new_unit="mg/dL")
 
-    db.expire(metric)
-    db.refresh(metric)
-    assert metric.status == "critical", (
-        f"After correcting to 88 mg/dL, HealthMetric must be critical, got {metric.status}"
+    remaining = db.execute(
+        select(HM).where(HM.source_ref == row.id, HM.deleted_at.is_(None))
+    ).scalar_one_or_none()
+    assert remaining is None, (
+        "the earlier `normal` metric survived a refused conversion — the dashboard "
+        f"would keep reassuring the patient; got status={getattr(remaining, 'status', None)!r}"
     )

@@ -28,16 +28,32 @@ import json
 import logging
 from typing import Any
 
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 from sqlalchemy.orm import Session
 
+from app.ai.consent_policy import (
+    BLOCK_CONSENT_CATEGORY,
+    CATEGORY_DOCTOR_CONSULTATION,
+    CATEGORY_HEALTH_RECORDS,
+    CATEGORY_MEDICATIONS,
+    load_granted_categories,
+)
 from app.ai.context.schemas import AssembledContext, ScreenContext
-from app.models.meto import MetoConsent
 from app.models.patient import PatientProfile
 from app.models.user import User
 from app.utils.number_format import format_lab_display, format_lab_value
 
 logger = logging.getLogger(__name__)
+
+
+def _record_degraded(sink: list[str] | None, block: str) -> None:
+    """Note that `block`'s query RAISED, if the caller is collecting failures.
+
+    The sink is optional so a builder can still be called in isolation, but
+    `build()` always passes one — that is the path whose output reaches the model.
+    """
+    if sink is not None and block not in sink:
+        sink.append(block)
 
 # ---------------------------------------------------------------------------
 # Screen → blocks mapping (02_CONTEXT_ENGINE.md §2)
@@ -60,17 +76,7 @@ _DEFAULT_SCREEN_BLOCKS: set[str] = {
     "recent_labs", "recent_metrics", "today_context",
 }
 
-# Consent keys required per block — kept for reference but NO LONGER used as gate.
-# Per product design: T&C covers consent at registration. Meto reads health profile
-# by default. Consent management is only in Settings > Quyền riêng tư.
-_BLOCK_CONSENT: dict[str, str] = {
-    "health_summary": "health_data",
-    "care_plan": "care_plan",
-    "medications": "medications",
-    "recent_labs": "labs",
-    "recent_metrics": "metrics",
-    "today_context": "care_plan",
-}
+# Per-block consent categories now live in app/ai/consent_policy.BLOCK_CONSENT_CATEGORY.
 
 # Approximate token budget per block
 _TOKEN_BUDGET: dict[str, int] = {
@@ -91,6 +97,69 @@ _MAX_LABS = 10
 _MAX_METRICS_TYPES = 5
 _MAX_MEDICATIONS = 10
 
+# Defense-in-depth (AI2): health_metrics has no per-row verified flag, so the AI
+# context only trusts metrics from known-confirmed sources — patient-authored
+# entries and the lab->metric promotion, which is itself gated on verified lab
+# rows upstream (lab.py). Any FUTURE automated writer (e.g. an OCR metric
+# extractor) would carry an out-of-list source and is fail-closed excluded from
+# Meto until explicitly vetted and added here. NULL source = legacy patient data.
+_TRUSTED_METRIC_SOURCES = ("manual", "self_report", "lab_result", "device", "vital")
+
+# ---------------------------------------------------------------------------
+# AI-F1 — free-text sanitisation before anything enters the system prompt.
+#
+# OCR'd document text reaches the context through the MDI promoters (medication
+# name / note, condition and allergy lists, care-plan and lab labels). That text
+# is attacker-controllable: whoever prints the document the patient photographs
+# writes it. Assembled context is embedded in the SYSTEM message, i.e. the
+# highest-trust position of the prompt, so any instruction it carries would be
+# read as an instruction. Defence in depth (layer 1 of 3; the other two are the
+# fenced block + the untrusted-data rule in prompt/assembler.py):
+#   - drop any field the platform's own injection detector flags, and
+#   - hard-cap every free-text field so a long payload cannot flood the prompt.
+# ---------------------------------------------------------------------------
+
+_MAX_FREE_TEXT_CHARS = 200
+_FILTERED_PLACEHOLDER = "[nội dung đã được lọc vì lý do an toàn]"
+
+
+def _sanitize_text(value: Any) -> str:
+    """Return `value` as prompt-safe text: injection-filtered and length-capped."""
+    if value is None:
+        return ""
+    text = str(value)
+    if not text.strip():
+        return ""
+
+    from app.domain.guardrails import is_injection
+
+    try:
+        flagged = is_injection(text)
+    except Exception as exc:  # pragma: no cover - detector must never break build
+        logger.warning("Injection detector failed; dropping field: %s", exc)
+        flagged = True
+    if flagged:
+        logger.warning("AI context: injection-flagged free text dropped from prompt")
+        return _FILTERED_PLACEHOLDER
+
+    if len(text) > _MAX_FREE_TEXT_CHARS:
+        return text[:_MAX_FREE_TEXT_CHARS] + "…"
+    return text
+
+
+def _sanitize_unit(unit: Any) -> str:
+    """Sanitize a measurement unit. A flagged/oversized unit becomes empty rather
+    than the placeholder text, so `display` stays a clean "<value>" token."""
+    safe = _sanitize_text(unit)
+    return "" if safe == _FILTERED_PLACEHOLDER else safe
+
+
+def _sanitize_list(values: Any) -> list[str]:
+    """Sanitize every entry of a free-text list, dropping empties."""
+    if not isinstance(values, list):
+        return []
+    return [s for s in (_sanitize_text(v) for v in values) if s]
+
 
 class ContextBuilder:
     """Assemble context blocks for a Meto chat request.
@@ -109,13 +178,28 @@ class ContextBuilder:
         screen_id = screen_context.screen_id or "dashboard"
         screen_blocks = _SCREEN_BLOCKS.get(screen_id, _DEFAULT_SCREEN_BLOCKS)
 
-        # Per product design: T&C covers consent at registration.
-        # Meto reads health profile by default — no consent gate in chat.
-        # Consent management is only in Settings > Quyền riêng tư.
-        # _load_consents is retained for Settings endpoints but NOT used here.
+        # Per-category consent gate (BRD §J) — fail-closed AND data-minimizing:
+        # PHI for a category is neither queried nor included unless that category
+        # is actively granted at the current policy version. Categories the screen
+        # would use but that are not granted are surfaced in missing_consents so
+        # the client can prompt for consent. The master ai_processing gate is
+        # enforced upstream in the chat service (no build without it).
+        granted_categories = load_granted_categories(db, user_id)
+        health_ok = CATEGORY_HEALTH_RECORDS in granted_categories
+        meds_ok = CATEGORY_MEDICATIONS in granted_categories
+        consult_ok = CATEGORY_DOCTOR_CONSULTATION in granted_categories
 
         included_blocks: list[str] = []
-        missing_consents: list[str] = []  # Always empty — no consent gate in chat
+        # Blocks whose query RAISED. Distinct from a block that is absent because
+        # the patient consented but has no rows — see AssembledContext.
+        degraded: list[str] = []
+        missing_consents = list(
+            dict.fromkeys(
+                category
+                for block, category in BLOCK_CONSENT_CATEGORY.items()
+                if block in screen_blocks and category not in granted_categories
+            )
+        )
         total_tokens = 0
 
         # ---------------------------------------------------------------
@@ -128,31 +212,33 @@ class ContextBuilder:
         # separate from the main request session, so SQL errors here cannot
         # poison the conversation/message writes in the main session.
 
-        # DB call #1: user profile
-        raw_user_profile = self._build_user_profile(db, user_id)
+        # DB call #1: user profile (non-clinical identity — always allowed)
+        raw_user_profile = self._build_user_profile(db, user_id, degraded)
 
+        # Clinical blocks are queried ONLY when their category is consented, so
+        # non-consented PHI is never even loaded into memory (data-minimization).
         # DB call #2: health summary
-        raw_health_summary = self._build_health_summary(db, user_id)
+        raw_health_summary = self._build_health_summary(db, user_id, degraded) if health_ok else None
 
         # DB calls #3+#4: care plan + tasks (always called together)
-        raw_care_plan = self._build_care_plan(db, user_id)
+        raw_care_plan = self._build_care_plan(db, user_id, degraded) if health_ok else None
 
         # DB call #5: medications
-        raw_medications = self._build_medications(db, user_id)
+        raw_medications = self._build_medications(db, user_id, degraded) if meds_ok else None
 
         # DB call #6: recent labs
-        raw_recent_labs = self._build_recent_labs(db, user_id)
+        raw_recent_labs = self._build_recent_labs(db, user_id, degraded) if health_ok else None
 
         # DB call #7: recent metrics
-        raw_recent_metrics = self._build_recent_metrics(db, user_id)
+        raw_recent_metrics = self._build_recent_metrics(db, user_id, degraded) if health_ok else None
 
         # DB call #8: appointments (for today_context)
-        raw_today_context = self._build_today_context(db, user_id)
+        raw_today_context = self._build_today_context(db, user_id, degraded) if consult_ok else None
 
         # ---------------------------------------------------------------
-        # Apply screen filtering only — NO consent gating.
-        # Per product design: T&C covers consent at registration.
-        # All blocks are included if they have data and are relevant to this screen.
+        # Assemble: a block is included when its category was consented (the raw
+        # value is None otherwise, per the gated queries above), the screen uses
+        # it, and it has data.
         # ---------------------------------------------------------------
 
         # user_profile — always included (no consent required, always was)
@@ -215,8 +301,13 @@ class ContextBuilder:
                 included_blocks.append("today_context")
                 total_tokens += _TOKEN_BUDGET["today_context"]
 
-        # safety_flags — always computed from already-fetched data
-        safety_flags = self._build_safety_flags(db, user_id, recent_labs, recent_metrics)
+        # safety_flags — derived from labs/metrics, so gated on health_records
+        # consent. Without it there are no labs/metrics to derive from anyway.
+        safety_flags = (
+            self._build_safety_flags(db, user_id, recent_labs, recent_metrics)
+            if health_ok
+            else []
+        )
         if safety_flags:
             included_blocks.append("safety_flags")
         total_tokens += _TOKEN_BUDGET["safety_flags"]
@@ -234,44 +325,15 @@ class ContextBuilder:
             total_estimated_tokens=total_tokens,
             missing_consents=missing_consents,
             included_blocks=included_blocks,
+            degraded_blocks=degraded,
         )
-
-    # -----------------------------------------------------------------------
-    # Consent loading
-    # -----------------------------------------------------------------------
-
-    def _load_consents(self, db: Session, user_id: str) -> dict[str, bool]:
-        """Load all consent records for user. Returns {context_type: True}."""
-        rows = (
-            db.query(MetoConsent)
-            .filter(
-                MetoConsent.user_id == user_id,
-                MetoConsent.granted.is_(True),
-                MetoConsent.revoked_at.is_(None),
-            )
-            .all()
-        )
-        return {row.context_type: True for row in rows}
-
-    def _check_consent(self, db: Session, user_id: str, context_type: str) -> bool:
-        row = (
-            db.query(MetoConsent)
-            .filter(
-                MetoConsent.user_id == user_id,
-                MetoConsent.context_type == context_type,
-                MetoConsent.granted.is_(True),
-                MetoConsent.revoked_at.is_(None),
-            )
-            .first()
-        )
-        return row is not None
 
     # -----------------------------------------------------------------------
     # Block builders — each consumes exactly ONE db.execute() call
     # (except care_plan which consumes TWO: plan + tasks)
     # -----------------------------------------------------------------------
 
-    def _build_user_profile(self, db: Session, user_id: str) -> dict | None:
+    def _build_user_profile(self, db: Session, user_id: str, degraded: list[str] | None = None) -> dict | None:
         """Build user profile block. Consumes DB execute #1.
 
         Uses ORM queries so EncryptedString TypeDecorator auto-decrypts
@@ -325,7 +387,9 @@ class ContextBuilder:
                     age = None
 
             return {
-                "display_name": display_name,
+                # AI-F1: user-supplied free text, sanitized like every other
+                # free-text field that lands in the system prompt.
+                "display_name": _sanitize_text(display_name) or "Người dùng",
                 "age": age,
                 "gender": (profile.gender if profile else None) or "unknown",
                 "preferred_address": "bạn",
@@ -333,14 +397,19 @@ class ContextBuilder:
                 "account_type": "patient",
             }
         except Exception as exc:
+            # Record the FAILURE distinctly from an empty result — see
+            # AssembledContext.degraded_blocks. Returning None alone made a failed
+            # query indistinguishable from "the patient has no data", which for a
+            # clinical block reads to the model as reassurance.
             logger.warning("Error building user_profile for %s: %s", user_id, exc)
+            _record_degraded(degraded, "user_profile")
             try:
                 db.rollback()
             except Exception:
                 pass
             return None
 
-    def _build_health_summary(self, db: Session, user_id: str) -> dict | None:
+    def _build_health_summary(self, db: Session, user_id: str, degraded: list[str] | None = None) -> dict | None:
         """Build health summary block. Consumes DB execute #2.
 
         Uses ORM query so EncryptedString TypeDecorator auto-decrypts
@@ -377,8 +446,9 @@ class ContextBuilder:
                         return [val] if val.strip() else []
                 return []
 
-            conditions = _parse_list(profile.known_conditions)
-            allergies = _parse_list(profile.allergies)
+            # AI-F1: conditions/allergies can be promoted from OCR'd documents.
+            conditions = _sanitize_list(_parse_list(profile.known_conditions))
+            allergies = _sanitize_list(_parse_list(profile.allergies))
 
             # Only return block if there's actual data
             if not conditions and not allergies:
@@ -392,14 +462,19 @@ class ContextBuilder:
                 "chronic_conditions": [],
             }
         except Exception as exc:
+            # Record the FAILURE distinctly from an empty result — see
+            # AssembledContext.degraded_blocks. Returning None alone made a failed
+            # query indistinguishable from "the patient has no data", which for a
+            # clinical block reads to the model as reassurance.
             logger.warning("Error building health_summary for %s: %s", user_id, exc)
+            _record_degraded(degraded, "health_summary")
             try:
                 db.rollback()
             except Exception:
                 pass
             return None
 
-    def _build_care_plan(self, db: Session, user_id: str) -> dict | None:
+    def _build_care_plan(self, db: Session, user_id: str, degraded: list[str] | None = None) -> dict | None:
         """Build care plan block. Consumes DB execute #3 (plan) + #4 (tasks).
 
         Always makes BOTH queries to maintain stable DB call order.
@@ -447,7 +522,9 @@ class ContextBuilder:
             task_list = []
             for t in tasks:
                 task_list.append({
-                    "title": t[0],
+                    # AI-F1: free-text task titles are sanitized like every other
+                    # free-text field that reaches the system prompt.
+                    "title": _sanitize_text(t[0]),
                     "due_date": str(t[1]) if t[1] else None,
                     "status": t[2] or "pending",
                     "priority": t[3] or "medium",
@@ -455,20 +532,25 @@ class ContextBuilder:
 
             completed = sum(1 for t in task_list if t["status"] == "completed")
             return {
-                "plan_name": plan[1],
+                "plan_name": _sanitize_text(plan[1]),
                 "active_tasks": task_list[:10],
                 "completed_today": completed,
                 "total_today": len(task_list),
             }
         except Exception as exc:
+            # Record the FAILURE distinctly from an empty result — see
+            # AssembledContext.degraded_blocks. Returning None alone made a failed
+            # query indistinguishable from "the patient has no data", which for a
+            # clinical block reads to the model as reassurance.
             logger.warning("Error building care_plan for %s: %s", user_id, exc)
+            _record_degraded(degraded, "care_plan")
             try:
                 db.rollback()
             except Exception:
                 pass
             return None
 
-    def _build_medications(self, db: Session, user_id: str) -> list | None:
+    def _build_medications(self, db: Session, user_id: str, degraded: list[str] | None = None) -> list | None:
         """Build medications block. Consumes DB execute #5."""
         try:
             rows = db.execute(
@@ -489,12 +571,15 @@ class ContextBuilder:
             if not rows:
                 return None
 
+            # AI-F1: name/dose/frequency/note all originate from OCR promotion for
+            # documents-sourced rows — sanitize every one before it can reach the
+            # system prompt.
             return [
                 {
-                    "name": r[0],
-                    "dosage": r[1] or "",
-                    "frequency": r[2] or "",
-                    "note": r[3] or "",
+                    "name": _sanitize_text(r[0]),
+                    "dosage": _sanitize_text(r[1]),
+                    "frequency": _sanitize_text(r[2]),
+                    "note": _sanitize_text(r[3]),
                     "start_date": str(r[4])[:10] if r[4] else None,
                     # ADR-11: paused stays clinically relevant but must never
                     # read as "currently taking".
@@ -503,14 +588,19 @@ class ContextBuilder:
                 for r in rows
             ]
         except Exception as exc:
+            # Record the FAILURE distinctly from an empty result — see
+            # AssembledContext.degraded_blocks. Returning None alone made a failed
+            # query indistinguishable from "the patient has no data", which for a
+            # clinical block reads to the model as reassurance.
             logger.warning("Error building medications for %s: %s", user_id, exc)
+            _record_degraded(degraded, "medications")
             try:
                 db.rollback()
             except Exception:
                 pass
             return None
 
-    def _build_recent_labs(self, db: Session, user_id: str) -> list | None:
+    def _build_recent_labs(self, db: Session, user_id: str, degraded: list[str] | None = None) -> list | None:
         """Build recent_labs block. Consumes DB execute #6."""
         try:
             cutoff_date = (
@@ -530,11 +620,24 @@ class ContextBuilder:
                           )
                       AND lr.deleted_at IS NULL
                       AND lub.deleted_at IS NULL
+                      -- AI2 fix (§J): Meto may only see CONFIRMED lab data. Unverified
+                      -- OCR rows persist in lab_results with verified_by_user=False and
+                      -- must never enter the AI context. "Confirmed" matches the platform
+                      -- definition used everywhere else (lab_provenance / longitudinal /
+                      -- insight / narrative): patient- OR doctor-verified. Bound param
+                      -- stays dialect-safe.
+                      AND (lr.verified_by_user = :verified
+                           OR lr.verified_by_doctor = :verified)
                       AND (lub.test_date IS NULL OR lub.test_date >= :cutoff_date)
                     ORDER BY lub.test_date DESC, lr.created_at DESC
                     LIMIT :limit
                 """),
-                {"uid": user_id, "cutoff_date": cutoff_date, "limit": _MAX_LABS},
+                {
+                    "uid": user_id,
+                    "cutoff_date": cutoff_date,
+                    "limit": _MAX_LABS,
+                    "verified": True,
+                },
             ).fetchall()
 
             if not rows:
@@ -548,28 +651,37 @@ class ContextBuilder:
                 orig_value = r[7] if r[7] is not None else r[1]
                 orig_unit = r[8] if r[8] is not None else (r[2] or "")
                 orig_ref = r[9] if r[9] is not None else (r[3] or "")
+                # AI-F1: OCR-derived labels are sanitized. The unit is sanitized
+                # BEFORE `display` is formatted so the verbatim-quote token stays
+                # consistent with the unit field (real units are never altered).
+                orig_unit = _sanitize_unit(orig_unit)
                 return {
-                    "test_name": orig_test_name,
+                    "test_name": _sanitize_text(orig_test_name),
                     # Formatted original — no raw IEEE float, no unit conversion.
                     "value": format_lab_value(orig_value, orig_unit),
                     "unit": orig_unit,
                     # Verbatim token the LLM must quote as-is (never convert/round).
                     "display": format_lab_display(orig_value, orig_unit),
-                    "reference_range": orig_ref,
+                    "reference_range": _sanitize_text(orig_ref),
                     "status": r[4] or "unknown",
                     "collected_date": str(r[5])[:10] if r[5] else None,
                 }
 
             return [_lab_row(r) for r in rows]
         except Exception as exc:
+            # Record the FAILURE distinctly from an empty result — see
+            # AssembledContext.degraded_blocks. Returning None alone made a failed
+            # query indistinguishable from "the patient has no data", which for a
+            # clinical block reads to the model as reassurance.
             logger.warning("Error building recent_labs for %s: %s", user_id, exc)
+            _record_degraded(degraded, "recent_labs")
             try:
                 db.rollback()
             except Exception:
                 pass
             return None
 
-    def _build_recent_metrics(self, db: Session, user_id: str) -> list | None:
+    def _build_recent_metrics(self, db: Session, user_id: str, degraded: list[str] | None = None) -> list | None:
         """Build recent_metrics block. Consumes DB execute #7."""
         try:
             cutoff = (
@@ -586,10 +698,17 @@ class ContextBuilder:
                           )
                       AND measured_at >= :cutoff
                       AND deleted_at IS NULL
+                      -- AI2 defense-in-depth: only confirmed-source metrics reach
+                      -- the AI. NULL = legacy patient data (trusted).
+                      AND (source IS NULL OR source IN :sources)
                     ORDER BY measured_at DESC
                     LIMIT 50
-                """),
-                {"uid": user_id, "cutoff": cutoff},
+                """).bindparams(bindparam("sources", expanding=True)),
+                {
+                    "uid": user_id,
+                    "cutoff": cutoff,
+                    "sources": list(_TRUSTED_METRIC_SOURCES),
+                },
             ).fetchall()
 
             if not rows:
@@ -606,9 +725,9 @@ class ContextBuilder:
                 # P0 clinical-integrity: surface the ORIGINAL value+unit — never the
                 # canonical/SI-converted number. Fall back to value/unit when NULL.
                 orig_value = r[5] if r[5] is not None else r[1]
-                orig_unit = r[6] if r[6] is not None else (r[2] or "")
+                orig_unit = _sanitize_unit(r[6] if r[6] is not None else (r[2] or ""))
                 result.append({
-                    "metric_type": metric_type,
+                    "metric_type": _sanitize_text(metric_type),
                     "latest_value": format_lab_value(orig_value, orig_unit),
                     "unit": orig_unit,
                     # Verbatim token the LLM must quote as-is (never convert/round).
@@ -621,7 +740,12 @@ class ContextBuilder:
 
             return result if result else None
         except Exception as exc:
+            # Record the FAILURE distinctly from an empty result — see
+            # AssembledContext.degraded_blocks. Returning None alone made a failed
+            # query indistinguishable from "the patient has no data", which for a
+            # clinical block reads to the model as reassurance.
             logger.warning("Error building recent_metrics for %s: %s", user_id, exc)
+            _record_degraded(degraded, "recent_metrics")
             try:
                 db.rollback()
             except Exception:
@@ -637,7 +761,7 @@ class ContextBuilder:
             "view_context": screen_context.view_context or {},
         }
 
-    def _build_today_context(self, db: Session, user_id: str) -> dict:
+    def _build_today_context(self, db: Session, user_id: str, degraded: list[str] | None = None) -> dict:
         """Build today's context. Consumes DB execute #8."""
         today = dt.date.today().isoformat()
         # Midnight-today boundary as an ISO string — portable comparison against
@@ -677,7 +801,15 @@ class ContextBuilder:
                 for a in appts
             ]
         except Exception as exc:
-            logger.debug("today_context appointment query failed: %s", exc)
+            # Same class as the six builders above: returning an empty
+            # appointment list makes a failed query indistinguishable from "no
+            # appointments today". It was `logger.debug`, so it was silent in
+            # logs as well. today_context is not in SAFETY_CRITICAL_BLOCKS — a
+            # missing appointment is not a false reassurance about a lab value —
+            # but the model should still not assert the patient has nothing
+            # scheduled when we simply could not look.
+            logger.warning("today_context appointment query failed: %s", exc)
+            _record_degraded(degraded, "today_context")
 
         return {
             "date": today,

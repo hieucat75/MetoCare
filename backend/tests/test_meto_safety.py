@@ -210,3 +210,148 @@ class TestSafetyResult:
         assert result.safe is False
         assert "đau ngực" in result.flags
         assert result.escalation_tier == "emergency"
+
+
+# ---------------------------------------------------------------------------
+# CLIN PS-1: broadened output-safety detector — must catch unsafe phrasings the
+# original literal list missed, WITHOUT flagging safe advice that defers to a
+# doctor.
+# ---------------------------------------------------------------------------
+
+class TestCheckOutputBroadened:
+    @pytest.mark.parametrize(
+        "response",
+        [
+            # Diagnosis claims (phrasings beyond "tôi chẩn đoán")
+            "Chẩn đoán của bạn là đái tháo đường type 2.",
+            "Bạn chắc chắn bị tiểu đường rồi.",
+            "This is a diagnosis of diabetes.",
+            # Medication change — imperative, no 'mg' present (the PS-1 example)
+            "Bạn nên tăng liều insulin gấp đôi.",
+            "Hãy tăng liều lên nhé.",
+            "Bạn cần ngừng thuốc metformin.",
+            "Bạn có thể tự ý giảm liều nếu thấy mệt.",
+            "Uống gấp đôi liều buổi sáng.",
+            # Dose instruction
+            "Hãy giảm liều xuống một nửa.",
+            # Provider / model impersonation (VN + English)
+            "Thực ra tôi là một mô hình ngôn ngữ lớn.",
+            "As an AI, I cannot feel emotions.",
+            "Tôi là trợ lý AI được huấn luyện bởi Anthropic.",
+            "I am an AI language model.",
+        ],
+    )
+    def test_unsafe_phrasings_are_blocked(self, guard: SafetyGuard, response: str):
+        result = guard.check_output(response)
+        assert result.safe is False, f"should have blocked: {response!r}"
+        assert result.flags
+
+    @pytest.mark.parametrize(
+        "response",
+        [
+            # Safe: defers the dose decision to the doctor (must NOT be flagged)
+            "Bạn nên hỏi bác sĩ về việc có cần tăng liều hay không.",
+            "Việc điều chỉnh liều nên do bác sĩ quyết định.",
+            "Nếu thấy mệt, bạn không nên tự tăng liều mà hãy báo bác sĩ.",
+            # Safe: explains without diagnosing or impersonating
+            "Chỉ số HbA1c 6.5% nằm ở ngưỡng tiền tiểu đường; hãy trao đổi với bác sĩ.",
+            "Meto là trợ lý sức khỏe của bạn, luôn sẵn sàng nhắc lịch uống thuốc.",
+        ],
+    )
+    def test_safe_deferrals_are_not_flagged(self, guard: SafetyGuard, response: str):
+        result = guard.check_output(response)
+        assert result.safe is True, f"false positive on safe advice: {response!r}"
+
+    def test_streaming_and_nonstreaming_use_the_same_detector(self, guard: SafetyGuard):
+        """Parity is structural: both meto_chat paths call this same
+        SafetyGuard.check_output, so a phrase blocked here is blocked in both."""
+        unsafe = "Hãy tăng liều gấp đôi ngay hôm nay."
+        assert guard.check_output(unsafe).safe is False
+        # deterministic across repeated (stream-chunk-buffered) calls
+        assert guard.check_output(unsafe).safe is guard.check_output(unsafe).safe
+
+
+# ---------------------------------------------------------------------------
+# CLIN PS-6 — numeric red flags (patients type numbers, not ">" thresholds)
+# ---------------------------------------------------------------------------
+
+class TestNumericRedFlags:
+    """A real patient writes "đường huyết 450", never "đường huyết > 400".
+    Literal-substring matching never fires on those, so the message went to the
+    LLM instead of the hardcoded "gọi 115" bypass."""
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            # severe hyperglycaemia
+            "đường huyết 450",
+            "Đường huyết của tôi hôm nay là 450 mg/dL",
+            "duong huyet 450 khong ha duoc",  # no diacritics
+            "ĐH 500 sau ăn",  # common abbreviation
+            "glucose 480",
+            "đường huyết 25 mmol/L",
+            # severe hypoglycaemia
+            "đường huyết 40",
+            "duong huyet 2.5 mmol/l, nguoi run",
+            # hypertensive crisis
+            "HA 190/110",
+            "huyết áp 190/110 đo lúc sáng",
+            "huyet ap 200/120",
+            "huyết áp 220",
+            # high fever
+            "sốt 40 độ",
+            "sot 40 do tu toi qua",
+            "nhiệt độ 39.8",
+        ],
+    )
+    def test_numeric_vital_message_escalates(self, guard: SafetyGuard, message: str):
+        result = guard.check_input(message)
+        assert result.escalation_required is True, f"MISSED red flag: {message!r}"
+        assert result.escalation_tier in ("emergency", "recommend_urgent")
+        assert result.suggested_response
+
+    def test_glucose_450_triggers_emergency(self, guard: SafetyGuard):
+        result = guard.check_input("đường huyết 450 sau khi ăn, tôi thấy mệt")
+        assert result.escalation_tier == "emergency"
+
+    def test_glucose_25_mmol_triggers_emergency(self, guard: SafetyGuard):
+        """25 mmol/L ≈ 450 mg/dL — unit-aware, not a bare number comparison."""
+        result = guard.check_input("đường huyết 25 mmol/L")
+        assert result.escalation_tier == "emergency"
+
+    def test_bp_190_110_triggers_emergency(self, guard: SafetyGuard):
+        result = guard.check_input("HA 190/110")
+        assert result.escalation_tier == "emergency"
+
+    def test_fever_40_triggers_escalation(self, guard: SafetyGuard):
+        result = guard.check_input("sốt 40 độ hai ngày nay")
+        assert result.escalation_required is True
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "đường huyết 110 lúc đói có ổn không?",
+            "đường huyết 5.6 mmol/L sáng nay",
+            "huyết áp 120/80 có tốt không?",
+            "huyết áp 12/8 của tôi thế nào?",  # VN cmHg shorthand for 120/80
+            "nhiệt độ 36.8 độ",
+            "tôi bị sốt 3 ngày nay rồi",  # a duration, not a temperature
+            "HbA1c của tôi là 6.5%, mức này ổn chưa?",
+            "tôi uống thuốc huyết áp 10 năm nay",
+        ],
+    )
+    def test_normal_numbers_do_not_escalate(self, guard: SafetyGuard, message: str):
+        result = guard.check_input(message)
+        assert result.safe is True, f"FALSE escalation for: {message!r}"
+
+    def test_normal_glucose_does_not_escalate(self, guard: SafetyGuard):
+        assert guard.check_input("đường huyết 110 sáng nay").safe is True
+
+    def test_existing_literal_thresholds_still_match(self, guard: SafetyGuard):
+        """The literal phrase list is kept as a fallback — no regression."""
+        assert guard.check_input("đường huyết > 300 hôm nay").escalation_tier == (
+            "recommend_urgent"
+        )
+        assert guard.check_input("huyết áp > 180 mmHg bất thường không?").escalation_tier == (
+            "recommend_urgent"
+        )

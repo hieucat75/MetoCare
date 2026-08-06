@@ -1,0 +1,139 @@
+# Journey C — Meto AI chat (send + reply) + consent controls (grant/revoke)
+#
+# App: MetoCare patient (Expo React Native) — appId me.metocare.patient
+# Credentials come ONLY from env vars: ${MAESTRO_EMAIL} / ${MAESTRO_PASSWORD}
+#   Run with:  maestro test -e MAESTRO_EMAIL=... -e MAESTRO_PASSWORD=... .maestro/03-meto.yaml
+#
+# Flow: login -> Meto (ai_processing consent is granted in the seed, so the chat
+#       loads) -> send a message -> assert a Meto reply bubble renders -> back to
+#       dashboard -> consent -> grant `medications` then revoke it (assert state
+#       flips) -> assert the AI-processing note path (consent-ai-note) exists.
+#
+# NOTE:
+#   * If the seed's ai_processing consent is NOT granted, Meto shows the consent
+#     gate (meto-consent-gate). Stage 4 handles that branch by tapping the
+#     "recheck" control; if the gate persists it is a genuine seed/consent gap.
+#   * Chat bubbles use meto-message-<index> (0 = the user turn, 1 = Meto's reply).
+#   * consent-ai-note is STATIC copy always rendered on the consent screen — it is
+#     the "AI-processing off disables Meto" note path, not a conditional element.
+appId: me.metocare.patient
+---
+# --- Stage 1: cold launch (independent run) ---
+- launchApp:
+    clearState: true
+
+# Dismiss first-run onboarding if present (clearState shows it)
+- extendedWaitUntil:
+    visible:
+      id: "onboarding-skip"
+    timeout: 60000
+- tapOn:
+    id: "onboarding-skip"
+
+# --- Stage 2: log in with env credentials (email/password) ---
+- extendedWaitUntil:
+    visible:
+      id: "login-submit"
+    timeout: 20000
+- tapOn:
+    id: "login-email"
+- inputText: ${MAESTRO_EMAIL}
+- tapOn:
+    id: "login-password"
+- inputText: ${MAESTRO_PASSWORD}
+- hideKeyboard
+- tapOn:
+    id: "login-submit"
+
+# --- Stage 3: dashboard -> open Meto (gate on a CTA) ---
+- extendedWaitUntil:
+    visible:
+      id: "dashboard-meto"
+    timeout: 20000
+- scrollUntilVisible:
+    element:
+      id: "dashboard-meto"
+    direction: DOWN
+    timeout: 15000
+- tapOn:
+    id: "dashboard-meto"
+
+# --- Stage 4: Meto screen loads. Handle the consent-gate branch if shown. ---
+- extendedWaitUntil:
+    visible:
+      text: "Meto — Trợ lý sức khoẻ"   # meto.title
+    timeout: 20000
+- runFlow:
+    when:
+      visible:
+        id: "meto-consent-gate"
+    commands:
+      # Consent may not have propagated; re-check to load the chat.
+      - tapOn:
+          id: "meto-consent-recheck"
+
+# --- Stage 5: send a message and assert a Meto reply bubble renders ---
+- extendedWaitUntil:
+    visible:
+      id: "meto-input"
+    timeout: 20000
+- tapOn:
+    id: "meto-input"
+- inputText: "Chỉ số đường huyết của tôi thế nào?"
+- hideKeyboard
+- tapOn:
+    id: "meto-send"
+# Index 0 is the user turn; index 1 is Meto's reply.
+- extendedWaitUntil:
+    visible:
+      id: "meto-message-1"
+    timeout: 20000
+
+# --- Stage 6: return to dashboard and open the consent screen ---
+- back
+- extendedWaitUntil:
+    visible:
+      id: "dashboard-consent"
+    timeout: 20000
+- scrollUntilVisible:
+    element:
+      id: "dashboard-consent"
+    direction: DOWN
+    timeout: 15000
+- tapOn:
+    id: "dashboard-consent"
+
+# --- Stage 7: consent screen loads (network: GET /meto/consent) ---
+- extendedWaitUntil:
+    visible:
+      id: "consent-toggle-medications"
+    timeout: 20000
+- assertVisible:
+    text: "Quyền riêng tư — Meto"   # consent.title
+# The AI-processing note (disabling AI turns off Meto) is always rendered.
+- assertVisible:
+    id: "consent-ai-note"
+
+# --- Stage 8: GRANT `medications` (seeded ungranted) ---
+- assertVisible:
+    id: "consent-state-medications"
+- tapOn:
+    id: "consent-toggle-medications"
+- extendedWaitUntil:
+    visible:
+      id: "consent-state-medications"
+      text: "Đang cho phép"   # consent.granted
+    timeout: 15000
+
+# --- Stage 9: REVOKE `medications` again (assert state flips back) ---
+- tapOn:
+    id: "consent-toggle-medications"
+- extendedWaitUntil:
+    visible:
+      id: "consent-state-medications"
+      text: "Đang tắt"        # consent.revoked
+    timeout: 15000
+
+# --- Stage 10: re-assert the AI-processing note path exists ---
+- assertVisible:
+    id: "consent-ai-note"

@@ -74,6 +74,14 @@ from .drug_knowledge_governance import ClinicalSpecialty, KnowledgeReviewSpecial
 from .drug_knowledge_lifecycle_transition import KnowledgeLifecycleTransition
 from .drug_knowledge_references import DrugReference, KnowledgeReferenceLink
 from .governance import AuditLog, Consent
+from .medical_document import (
+    DocumentExtraction,
+    DocumentPage,
+    ExtractionCandidate,
+    MedicalDocument,
+    PromotionLink,
+)
+from .medication_schedule import DoseOccurrence, MedicationSchedule
 from .meto import MetoAuditLog, MetoConsent, MetoConversation, MetoMessage
 from .notification import Notification
 from .nutrition import NutritionLog
@@ -130,6 +138,13 @@ __all__ = [
     "HealthMetric",
     "LabDocument",
     "LabResult",
+    "MedicalDocument",
+    "DocumentPage",
+    "DocumentExtraction",
+    "ExtractionCandidate",
+    "PromotionLink",
+    "MedicationSchedule",
+    "DoseOccurrence",
     "Medication",
     "MfaBackupCode",
     "PatientProfile",

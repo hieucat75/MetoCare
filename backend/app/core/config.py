@@ -70,9 +70,25 @@ class Settings(BaseSettings):
     deepseek_api_key: str = ""                               # MCP_DEEPSEEK_API_KEY
     deepseek_base_url: str = "https://api.deepseek.com"     # MCP_DEEPSEEK_BASE_URL
     deepseek_model: str = "deepseek-chat"                   # MCP_DEEPSEEK_MODEL
+    # ---- AI provider allow-list (AI-F2) — PHI egress control ----
+    # Comma-separated provider names that are permitted to receive patient PHI
+    # (e.g. "nine_router_claude,nine_router_gpt"). Enforced in
+    # ProviderRegistry.get_available_providers. A provider is reachable ONLY when
+    # it is BOTH registered (key present) AND named here — key presence alone must
+    # never be enough to route PHI to a vendor with no data-processing record.
+    # Empty outside dev/test = FAIL CLOSED (no provider available → the existing
+    # 503 readiness path), same posture as the secret checks below.
+    ai_allowed_providers: str = ""  # MCP_AI_ALLOWED_PROVIDERS
+
     # Generation settings
     meto_max_tokens: int = 2048
+    # Whole provider-chain budget (PROD-F10). MUST stay well inside the gunicorn
+    # worker timeout (120s) — the retry chain would otherwise outlive the worker
+    # and take the single-worker replica down for every user.
     meto_timeout_seconds: int = 30
+    # Per-user daily message cap (PROD-F11, abuse/cost). Counted from persisted
+    # meto_messages, so it survives a process restart. 0 = disabled.
+    meto_daily_message_cap: int = 100  # MCP_METO_DAILY_MESSAGE_CAP
     meto_enable_streaming: bool = True
     meto_temperature: float = 0.3
 
@@ -83,8 +99,33 @@ class Settings(BaseSettings):
     ocr_mode: str = "mock"  # mock | provider
     ocr_provider_url: str = ""
     ocr_api_key: str = ""
-    storage_mode: str = "local"  # local | s3 | minio
+    storage_mode: str = "local"  # local | azure (azure = DIST-RC, deferred)
     storage_local_dir: str = "./storage"
+    # Signed-URL time-to-live (seconds). PUT is short (client uploads immediately);
+    # GET a little longer for the mobile viewer to load an image.
+    storage_upload_url_ttl_seconds: int = 600
+    storage_download_url_ttl_seconds: int = 900
+    # Azure Blob adapter (DIST-RC) — inert until a credential is provided (§1.7/§12).
+    storage_azure_connection_string: str = ""  # MCP_STORAGE_AZURE_CONNECTION_STRING
+    storage_azure_container: str = "documents"
+    # Medical Document Intelligence upload limits (§1.7 finalize validation).
+    document_max_pages: int = 20  # PDF page cap for general medical documents
+    # Malware-scan posture at finalize (§1.7.3). An EXPLICIT decision — never a
+    # silent accept. "skip" = no AV configured, accept + record scan_status=skipped
+    # (ENG-RC default; loud + audited). "hold" = quarantine posture: object stays
+    # quarantined, flagged, never handed to a worker. "clamav" = real scan (DIST-RC).
+    document_scan_mode: str = "skip"  # skip | hold | clamav
+
+    # ---- Build / environment identity (environment-separation plan §4.1) ----
+    # `/api/v1/info` previously reported `env` but NOT which commit was running,
+    # so identifying the live build meant reconstructing it from workflow logs and
+    # bundle hashes. Baked by both deploy workflows from the resolved image tag.
+    build_sha: str = ""
+    build_time: str = ""  # ISO-8601 UTC
+    # The hostname this build is meant to be served from. A mismatch between this
+    # and the Host header is the signal that staging is answering on the
+    # production domain (or vice versa).
+    expected_host: str = ""
 
     # ---- LLM Gateway (P2 #1) — provider abstraction, never calls real LLM in mock ----
     llm_provider: str = "mock"  # mock | openai | anthropic (openai/anthropic = skeleton)
@@ -150,6 +191,25 @@ class Settings(BaseSettings):
     # stay fully functional either way (voluntary MFA keeps working).
     mfa_enforcement_enabled: bool = False
 
+    # ---- Password policy ----
+    # Secure by default; dev/test relax via env. Enforced at every password entry
+    # point (register / change / reset / admin-create) via core.password.
+    password_min_length: int = 8
+    password_require_complexity: bool = True
+
+    # Escape hatch that lets STAGING (never production) boot with relaxed auth
+    # (MFA off or weak password policy) during the build phase — logged loudly.
+    # Production always fails loud on relaxed auth regardless of this flag.
+    allow_relaxed_auth: bool = False
+
+    # ---- QA fixture ingestion (dev/staging automation ONLY) ----
+    # Enables POST /documents/qa-fixture, which ingests a BUNDLED synthetic
+    # document through the real ingestion pipeline so Journey A (document OCR)
+    # can be automated without the native camera. NEVER for production: the
+    # startup guard below refuses to boot prod when this is true. Set
+    # MCP_QA_FIXTURE_ENABLED=true only on dev/staging QA builds.
+    qa_fixture_enabled: bool = False
+
     # ---- Observability ----
     log_level: str = "INFO"
     metrics_enabled: bool = True  # exposes /metrics; disable on untrusted edges
@@ -201,6 +261,141 @@ class Settings(BaseSettings):
             raise RuntimeError(
                 "Required environment variables are not set or empty. "
                 "The server cannot start safely. Missing: " + ", ".join(missing)
+            )
+
+        # Fail loud on committed insecure default secrets in any real environment.
+        # The defaults are non-empty, so the missing-check above never trips on
+        # them; without this a staging/prod boot where secret injection silently
+        # failed would run with a publicly-known JWT secret (token forgery) and a
+        # committed Fernet key (all PHI decryptable). Local dev/test keep them.
+        if self.env.lower() not in ("dev", "test", "local"):
+            insecure: list[str] = []
+            if self.secret_key.startswith("dev-insecure-secret"):
+                insecure.append("MCP_SECRET_KEY (JWT signing secret)")
+            # Scan every entry in the comma-separated rotation list, not just the
+            # first — the committed default must never appear even as a secondary
+            # decrypt-only key.
+            enc_entries = [k.strip() for k in self.encryption_keys.split(",")]
+            if any(
+                k.startswith("CSuRdJSn8APsbQJ3u91m71ZoHvdpn0IzMj6i7H9kMFg")
+                for k in enc_entries
+            ):
+                insecure.append("MCP_ENCRYPTION_KEYS (PHI field-encryption key)")
+            if insecure:
+                raise RuntimeError(
+                    f"Refusing to start in env={self.env!r} with committed insecure "
+                    "default secret(s): " + ", ".join(insecure)
+                    + ". Set real values via the deployment secret store."
+                )
+
+        # Every encryption key must be a WELL-FORMED Fernet key, checked at boot.
+        #
+        # Until now a malformed or truncated key passed every gate: the check
+        # above only tests non-empty and not-the-committed-default, and the key is
+        # otherwise first touched lazily inside `crypto._cipher()` on the first
+        # encrypt/decrypt. So `az containerapp update` succeeded, /health returned
+        # 200 (it only does SELECT 1 and never reads an encrypted column), and the
+        # unauthenticated smoke suite passed — the deploy was reported healthy and
+        # the first real failure was a patient request.
+        #
+        # PHI encryption now covers hot paths: Notification.title/body are written
+        # on every medication reminder and MedicationStatement.raw_drug_name is
+        # read on every medication timeline, all NOT NULL with
+        # on_decrypt_failure="raise". A bad key therefore takes down reminders and
+        # the timeline, not an edge feature. Failing at boot converts that into a
+        # container that will not start, which the existing deploy health gate
+        # does catch.
+        #
+        # Validated in EVERY environment, including dev/test: a malformed key is
+        # never intentional, and the committed dev default is well-formed.
+        from cryptography.fernet import Fernet
+
+        malformed: list[str] = []
+        for i, raw in enumerate(k.strip() for k in self.encryption_keys.split(",")):
+            if not raw:
+                malformed.append(f"entry #{i + 1} (empty)")
+                continue
+            try:
+                Fernet(raw.encode())
+            except Exception:
+                # Never echo the key material itself — position only.
+                malformed.append(f"entry #{i + 1}")
+        if malformed:
+            raise RuntimeError(
+                "MCP_ENCRYPTION_KEYS contains value(s) that are not valid Fernet "
+                "keys (32 url-safe base64-encoded bytes): "
+                + ", ".join(malformed)
+                + ". Refusing to start: PHI columns would fail to decrypt at "
+                "runtime, after the deploy had already been reported healthy."
+            )
+
+        # Fail loud on relaxed AUTHENTICATION in real environments (BRD §C).
+        # Production must never run with MFA off or a weak password policy.
+        # Staging may during the build phase ONLY via an explicit, logged override.
+        env = self.env.lower()
+        if env in ("staging", "prod", "production"):
+            relaxed: list[str] = []
+            if not self.mfa_enforcement_enabled:
+                relaxed.append("MFA enforcement off (MCP_MFA_ENFORCEMENT_ENABLED)")
+            if self.skip_mfa_in_dev:
+                relaxed.append("MFA dev-skip on (MCP_SKIP_MFA_IN_DEV)")
+            if self.password_min_length < 8:
+                relaxed.append("password_min_length < 8 (MCP_PASSWORD_MIN_LENGTH)")
+            if not self.password_require_complexity:
+                relaxed.append("password complexity off (MCP_PASSWORD_REQUIRE_COMPLEXITY)")
+            if relaxed:
+                is_production = env in ("prod", "production")
+                if is_production or not self.allow_relaxed_auth:
+                    hint = (
+                        ". Production never permits relaxed auth."
+                        if is_production
+                        else ". Set MCP_ALLOW_RELAXED_AUTH=true to override on staging."
+                    )
+                    raise RuntimeError(
+                        f"Refusing to start in env={self.env!r} with relaxed "
+                        "authentication: " + "; ".join(relaxed) + hint
+                    )
+                import logging
+
+                logging.getLogger(__name__).warning(
+                    "STAGING booting with RELAXED AUTH (build-phase override): %s",
+                    "; ".join(relaxed),
+                )
+
+        # Fail loud on the QA fixture path in production. The bundled-fixture
+        # ingestion endpoint is a dev/staging automation aid and must be
+        # unreachable in prod; refuse to boot rather than expose it there.
+        if env in ("prod", "production") and self.qa_fixture_enabled:
+            raise RuntimeError(
+                f"Refusing to start in env={self.env!r} with the QA fixture path "
+                "enabled (MCP_QA_FIXTURE_ENABLED). It is a dev/staging automation "
+                "aid only and must never be reachable in production."
+            )
+
+        # Fail loud on an unscanned document pipeline in production.
+        #
+        # `document_scan_mode="skip"` accepts an upload and promotes the object
+        # straight to the servable `accepted` container with `scan_status=skipped`
+        # (services/mdi/service.py). That is a deliberate ENG-RC default, but the
+        # bytes are then parsed SERVER-SIDE before any human sees them — Pillow and
+        # pytesseract in services/ocr_engine.py, pypdf for page counting — so a
+        # crafted file that still passes the magic-byte check reaches those parsers
+        # unscanned. Every other risk factor of this shape (default secrets, relaxed
+        # auth, the QA fixture path) already refuses to boot in prod; this one did
+        # not, so production could ship with no AV and nothing would say so.
+        #
+        # Scoped to prod only: staging deliberately runs "skip" today, and turning
+        # this into a staging boot failure would break the existing deploy.
+        if (
+            env in ("prod", "production")
+            and (self.document_scan_mode or "skip").lower() == "skip"
+        ):
+            raise RuntimeError(
+                f"Refusing to start in env={self.env!r} with "
+                "MCP_DOCUMENT_SCAN_MODE='skip'. Uploaded documents would be accepted "
+                "and parsed server-side (Pillow/Tesseract/pypdf) with no malware "
+                "scan. Set 'clamav' once real scanning is wired, or 'hold' to "
+                "quarantine uploads pending review."
             )
 
     def warn_if_insecure(self) -> list[str]:

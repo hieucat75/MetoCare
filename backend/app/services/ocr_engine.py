@@ -5,10 +5,13 @@ module turns raw image bytes into text + a confidence score.
 
 Policy (OCR Lab Upload track §1–§2):
   * **Primary = Tesseract**, running locally in-container. Cost $0. No network.
-  * **Cloud = opt-in fallback only.** A cloud provider is constructed and called
-    ONLY when ``FeatureFlag.OCR_CLOUD_FALLBACK`` is on AND a provider key is present
-    AND the local confidence is below threshold. Medical images are never sent out
-    silently.
+  * **Cloud = opt-in only.** A cloud provider is constructed and called ONLY when
+    ``FeatureFlag.OCR_CLOUD_FALLBACK`` is on AND a provider key is present.
+    Medical images are never sent out silently.
+  * PRIV-F3/PROD-F7: credential presence alone must NEVER route PHI to a cloud
+    provider. Deploy environments inject ``AZURE_DOC_INTEL_*`` unconditionally,
+    so every cloud selection site goes through :func:`cloud_ocr_permitted` /
+    :func:`azure_ocr_permitted` — the flag is the single authority, fail-closed.
 
 All heavy/native imports (pytesseract, PIL) are lazy so the module imports cleanly
 on a host without the Tesseract binary; ``TesseractEngine.available()`` reports it.
@@ -414,6 +417,24 @@ class AzureDocIntelEngine:
         return round(sum(confs) / len(confs), 4)
 
 
+def cloud_ocr_permitted() -> bool:
+    """Single fail-closed authority for sending document bytes to ANY cloud OCR.
+
+    PRIV-F3/PROD-F7: ``AzureDocIntelEngine.configured()`` only reports that
+    credentials exist — and both deploy workflows inject ``AZURE_DOC_INTEL_*``
+    unconditionally. Selecting a cloud engine on credential presence alone made
+    cloud OCR the *primary* engine on staging/production, contradicting the
+    "no PHI leaves for OCR" commitment. Every selection site must therefore ask
+    here first: no ``FeatureFlag.OCR_CLOUD_FALLBACK``, no cloud, ever.
+    """
+    return is_enabled(FeatureFlag.OCR_CLOUD_FALLBACK)
+
+
+def azure_ocr_permitted() -> bool:
+    """True only when cloud OCR is opted in AND Azure DI credentials are present."""
+    return cloud_ocr_permitted() and AzureDocIntelEngine.configured()
+
+
 def _cloud_engine() -> AnthropicVisionEngine | AzureDocIntelEngine | None:
     """Construct the configured cloud engine, or None when not usable.
 
@@ -421,12 +442,12 @@ def _cloud_engine() -> AnthropicVisionEngine | AzureDocIntelEngine | None:
     is present — so a misconfiguration falls through to the local result instead
     of crashing.
     """
-    if not is_enabled(FeatureFlag.OCR_CLOUD_FALLBACK):
+    if not cloud_ocr_permitted():
         return None
     provider = (get_settings().ocr_cloud_provider or "").lower()
     if provider == "anthropic" and AnthropicVisionEngine.configured():
         return AnthropicVisionEngine()
-    if provider == "azure" and AzureDocIntelEngine.configured():
+    if provider == "azure" and azure_ocr_permitted():
         return AzureDocIntelEngine()
     return None
 
@@ -477,18 +498,21 @@ def _assert_mock_not_in_prod() -> None:
 
 
 def run_ocr(image_bytes: bytes, mime: str) -> OcrTextResult:
-    """Engine selection: explicit-mock-only → Azure → Tesseract → error.
+    """Engine selection: explicit-mock-only → Azure (flag-gated) → Tesseract → error.
 
     Mock runs ONLY when MCP_OCR_PROVIDER=mock or MCP_ENABLE_MOCK_OCR=true is set,
     and is hard-blocked in staging/production environments. There is NO implicit
     mock fallback: if no real provider is configured, OcrEngineError is raised so
     the upload route returns a patient-friendly "try again or enter manually" 503.
+
+    Azure is reached only via :func:`azure_ocr_permitted` — credentials without
+    ``FeatureFlag.OCR_CLOUD_FALLBACK`` fall through to local Tesseract (PRIV-F3).
     """
     if _is_mock_explicitly_allowed():
         _assert_mock_not_in_prod()
         return MockOcrEngine().run(image_bytes, mime)
 
-    if AzureDocIntelEngine.configured():
+    if azure_ocr_permitted():
         return AzureDocIntelEngine().run(image_bytes, mime)
 
     if TesseractEngine.available():

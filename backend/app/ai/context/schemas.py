@@ -6,7 +6,7 @@ assembler. Follows 02_CONTEXT_ENGINE.md specification.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, ClassVar
 
 from pydantic import BaseModel, Field
 
@@ -65,6 +65,35 @@ class AssembledContext(BaseModel):
     total_estimated_tokens: int = 0
     missing_consents: list[str] = Field(default_factory=list)
     included_blocks: list[str] = Field(default_factory=list)
+
+    degraded_blocks: list[str] = Field(default_factory=list)
+    """Blocks whose query RAISED and were dropped — not blocks that were empty.
+
+    Absence of data and failure to retrieve data are clinically different and were
+    indistinguishable: every block builder caught Exception, logged, and returned
+    None, which is the same value the block has when the patient genuinely has no
+    rows. `safety_flags` is derived from `recent_labs`/`recent_metrics`, so a
+    transient failure of the labs query produced an empty flag list and Meto
+    answered as though nothing was abnormal — a false reassurance to a patient who
+    may have had a CRITICAL value on file.
+
+    Reachability is not hypothetical: SEC-F11 sets `on_decrypt_failure="raise"`,
+    so a single unreadable ciphertext now RAISES inside these builders instead of
+    yielding None. Hardening the crypto made this path easier to reach, which is
+    correct — the wrong response to unreadable PHI is to silently proceed.
+
+    The assembler turns a non-empty list into an explicit instruction telling the
+    model that data is missing due to an error and that it must not assert the
+    absence of abnormal findings.
+    """
+
+    SAFETY_CRITICAL_BLOCKS: ClassVar[frozenset[str]] = frozenset(
+        {"recent_labs", "recent_metrics", "medications", "health_summary"}
+    )
+    """Blocks whose silent loss can turn into a false reassurance."""
+
+    def has_safety_critical_degradation(self) -> bool:
+        return bool(set(self.degraded_blocks) & self.SAFETY_CRITICAL_BLOCKS)
 
     # -----------------------------------------------------------------------
     # Helper methods

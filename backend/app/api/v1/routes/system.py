@@ -62,5 +62,10 @@ def info(db: Session = Depends(get_session)) -> dict:
         "ocr_mode": s.ocr_mode,
         "storage_mode": s.storage_mode,
         "migration_version": migration_version,
+        # Build identity — additive. Empty when not baked (local/dev), never null,
+        # so a consumer can always read the key.
+        "build_sha": s.build_sha,
+        "build_time": s.build_time,
+        "expected_host": s.expected_host,
         "feature_flags": feature_flags,
     }

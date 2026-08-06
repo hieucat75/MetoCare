@@ -1,0 +1,302 @@
+import * as Crypto from 'expo-crypto'
+
+import { API_BASE_URL } from '../config/env'
+import { recordRequest } from '../lib/monitor'
+import { tokenStore as defaultTokenStore, type TokenStore } from '../storage/tokenStore'
+
+/**
+ * Correlation header. Must match the backend exactly
+ * (`REQUEST_ID_HEADER` in `backend/app/core/middleware.py`): the server adopts
+ * an inbound id, stamps every log line with it, and echoes it on the response.
+ */
+export const REQUEST_ID_HEADER = 'X-Request-ID'
+
+/** Status recorded when the request never produced a response. */
+const TRANSPORT_FAILURE_STATUS = 0
+
+function newRequestId(): string {
+  try {
+    return Crypto.randomUUID()
+  } catch {
+    // randomUUID is unavailable on some very old runtimes — correlation is
+    // best-effort telemetry, never a reason to fail the request.
+    return `rid-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+  }
+}
+
+/** The backend echoes the id it used; prefer it so both sides agree. */
+function echoedRequestId(res: Response, fallback: string): string {
+  try {
+    return res.headers?.get?.(REQUEST_ID_HEADER) || fallback
+  } catch {
+    return fallback
+  }
+}
+
+/**
+ * Typed fetch client mirroring the web contract
+ * (frontend/src/lib/api/client.ts), adapted for React Native:
+ *
+ *  - tokens come from injectable async SecureStore-backed TokenStore
+ *    (no synchronous localStorage),
+ *  - forced logout is a callback (no window.location),
+ *  - single-flight refresh prevents concurrent 401s from each rotating the
+ *    refresh token and tripping the backend's reuse-detection (which revokes
+ *    the whole token family),
+ *  - one retry-after-refresh, then clear + forced logout on continued 401.
+ *
+ * Everything is injectable (tokens, fetch, callbacks) so the rotation flow is
+ * unit-testable with a mocked fetch.
+ */
+
+export class ApiError extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly detail: string,
+    /**
+     * Machine-readable code from the backend's `{code, message}` error envelope
+     * (e.g. `CONSENT_DENIED`, `PERMISSION_DENIED`). Absent for plain
+     * `{detail: ...}` errors and transport failures.
+     */
+    public readonly code?: string
+  ) {
+    super(detail)
+    this.name = 'ApiError'
+  }
+}
+
+/** Backend code for a fail-closed consent gate (backend `app/main.py`). */
+export const CONSENT_DENIED_CODE = 'CONSENT_DENIED'
+
+/**
+ * True when a request was refused because the patient has not granted (or has
+ * revoked) the consent category governing the feature. Callers must offer a
+ * route to the consent screen rather than showing a dead-end error.
+ */
+export function isConsentDenied(err: unknown): boolean {
+  return err instanceof ApiError && err.code === CONSENT_DENIED_CODE
+}
+
+export interface PageError {
+  code?: number
+  title?: string
+  message?: string
+}
+
+/** Map a caught error to page-level error props (Vietnamese copy). */
+export function toPageError(err: unknown): PageError {
+  if (err instanceof ApiError) {
+    return { code: err.status, message: err.detail }
+  }
+  return {
+    title: 'Không thể kết nối máy chủ',
+    message: 'Vui lòng kiểm tra mạng và thử lại.',
+  }
+}
+
+export type FetchOptions = Omit<RequestInit, 'headers'> & {
+  headers?: Record<string, string>
+  skipAuth?: boolean
+}
+
+/**
+ * Narrowed fetch signature — the client only ever calls fetch with a string
+ * URL, so tests can supply a simple `(url, init) => Promise<Response>` mock.
+ * The global `fetch` (wider input) is assignable to this.
+ */
+export type FetchLike = (url: string, init?: RequestInit) => Promise<Response>
+
+export interface ApiClientConfig {
+  baseUrl?: string
+  tokens?: TokenStore
+  fetchImpl?: FetchLike
+  /**
+   * Invoked when refresh fails / reuse is detected. May fire more than once if
+   * several requests are in flight at the moment of failure, so the handler
+   * must be idempotent (the AuthContext handler only sets state — safe).
+   */
+  onForcedLogout?: () => void
+}
+
+export interface ApiClient {
+  apiFetch<T>(path: string, options?: FetchOptions): Promise<T>
+  get<T>(path: string, opts?: FetchOptions): Promise<T>
+  post<T>(path: string, body?: unknown, opts?: FetchOptions): Promise<T>
+  patch<T>(path: string, body?: unknown, opts?: FetchOptions): Promise<T>
+  put<T>(path: string, body?: unknown, opts?: FetchOptions): Promise<T>
+  del<T>(path: string, opts?: FetchOptions): Promise<T>
+  tokens: TokenStore
+}
+
+export function createApiClient(config: ApiClientConfig = {}): ApiClient {
+  const baseUrl = config.baseUrl ?? API_BASE_URL
+  const tokens = config.tokens ?? defaultTokenStore
+  const doFetch = config.fetchImpl ?? fetch
+  const onForcedLogout = config.onForcedLogout
+
+  // Single in-flight refresh shared across concurrent 401s.
+  let refreshingPromise: Promise<boolean> | null = null
+
+  async function doRefresh(): Promise<boolean> {
+    const refresh = await tokens.getRefresh()
+    if (!refresh) return false
+    try {
+      const res = await doFetch(`${baseUrl}/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: refresh }),
+      })
+      if (!res.ok) {
+        await tokens.clear()
+        return false
+      }
+      const data = (await res.json()) as {
+        access_token?: unknown
+        refresh_token?: unknown
+      }
+      // Guard against a 200 with a malformed/empty body: persisting undefined
+      // would store the literal "undefined" and 401 every subsequent request.
+      if (
+        typeof data?.access_token !== 'string' ||
+        data.access_token.length === 0 ||
+        typeof data?.refresh_token !== 'string' ||
+        data.refresh_token.length === 0
+      ) {
+        await tokens.clear()
+        return false
+      }
+      await tokens.setTokens(data.access_token, data.refresh_token)
+      return true
+    } catch {
+      await tokens.clear()
+      return false
+    }
+  }
+
+  async function tryRefresh(): Promise<boolean> {
+    if (refreshingPromise) return refreshingPromise
+    refreshingPromise = doRefresh().finally(() => {
+      refreshingPromise = null
+    })
+    return refreshingPromise
+  }
+
+  async function parseError(res: Response): Promise<{ detail: string; code?: string }> {
+    let detail = `Lỗi ${res.status}`
+    let code: string | undefined
+    try {
+      const body = await res.json()
+      if (typeof body?.code === 'string') code = body.code
+      if (body?.code === 'VALIDATION_ERROR' || body?.code === 'DUPLICATE_CANDIDATE') {
+        // These callers parse the full envelope (field errors / duplicate ids).
+        detail = JSON.stringify(body)
+      } else if (typeof body?.message === 'string') {
+        // `{code, message}` envelope (consent/permission/policy handlers) —
+        // without this the patient-facing text was dropped for a bare "Lỗi 403".
+        detail = body.message
+      } else if (typeof body?.detail === 'string') {
+        detail = body.detail
+      } else if (Array.isArray(body?.detail)) {
+        detail = body.detail.map((e: { msg?: string }) => e.msg).join('; ')
+      }
+    } catch {
+      // Non-JSON body — keep the status-code fallback.
+    }
+    return { detail, code }
+  }
+
+  /**
+   * One network attempt: mints a correlation id, sends it, and records the
+   * outcome (id / verb / path / status / time only — never the body, headers,
+   * or query values) so a pilot bug report can cite an id that joins to the
+   * backend access log.
+   */
+  async function sendOnce(
+    path: string,
+    headers: Record<string, string>,
+    rest: Omit<RequestInit, 'headers'>
+  ): Promise<Response> {
+    const requestId = newRequestId()
+    const method = (rest.method ?? 'GET').toString()
+    try {
+      const res = await doFetch(`${baseUrl}${path}`, {
+        headers: { ...headers, [REQUEST_ID_HEADER]: requestId },
+        ...rest,
+      })
+      recordRequest({
+        requestId: echoedRequestId(res, requestId),
+        method,
+        path,
+        status: res.status,
+      })
+      return res
+    } catch (err) {
+      recordRequest({ requestId, method, path, status: TRANSPORT_FAILURE_STATUS })
+      throw err
+    }
+  }
+
+  async function apiFetch<T>(path: string, options: FetchOptions = {}): Promise<T> {
+    const { skipAuth = false, headers: extraHeaders = {}, ...rest } = options
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...extraHeaders,
+    }
+
+    if (!skipAuth) {
+      const token = await tokens.getAccess()
+      if (token) headers['Authorization'] = `Bearer ${token}`
+    }
+
+    let res = await sendOnce(path, headers, rest)
+
+    if (res.status === 401 && !skipAuth) {
+      const refreshed = await tryRefresh()
+      if (refreshed) {
+        const newToken = await tokens.getAccess()
+        if (newToken) headers['Authorization'] = `Bearer ${newToken}`
+        res = await sendOnce(path, headers, rest)
+      }
+      if (!refreshed || res.status === 401) {
+        await tokens.clear()
+        onForcedLogout?.()
+        throw new ApiError(401, 'Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.')
+      }
+    }
+
+    if (!res.ok) {
+      const { detail, code } = await parseError(res)
+      throw new ApiError(res.status, detail, code)
+    }
+
+    if (res.status === 204) return undefined as T
+    return res.json() as Promise<T>
+  }
+
+  return {
+    apiFetch,
+    tokens,
+    get: <T>(path: string, opts?: FetchOptions) =>
+      apiFetch<T>(path, { method: 'GET', ...opts }),
+    post: <T>(path: string, body?: unknown, opts?: FetchOptions) =>
+      apiFetch<T>(path, {
+        method: 'POST',
+        body: body != null ? JSON.stringify(body) : undefined,
+        ...opts,
+      }),
+    patch: <T>(path: string, body?: unknown, opts?: FetchOptions) =>
+      apiFetch<T>(path, {
+        method: 'PATCH',
+        body: body != null ? JSON.stringify(body) : undefined,
+        ...opts,
+      }),
+    put: <T>(path: string, body?: unknown, opts?: FetchOptions) =>
+      apiFetch<T>(path, {
+        method: 'PUT',
+        body: body != null ? JSON.stringify(body) : undefined,
+        ...opts,
+      }),
+    del: <T>(path: string, opts?: FetchOptions) =>
+      apiFetch<T>(path, { method: 'DELETE', ...opts }),
+  }
+}

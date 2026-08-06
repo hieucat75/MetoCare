@@ -72,6 +72,30 @@ def normalize_value_to_si(
     return value, unit
 
 
+def is_unit_convertible(canonical: str, unit: str) -> bool:
+    """True if ``unit`` can be confidently mapped to the canonical unit for
+    ``canonical`` (i.e. it IS the canonical unit or the known SI unit).
+
+    Guards the OCR path (CRITICAL patient-safety): an analyte with a spec but an
+    unrecognized/empty/garbled unit must NOT be classified against canonical
+    thresholds — ``normalize_value_to_si`` would pass the value through unchanged
+    and ``classify_value`` (which ignores the unit) would apply the wrong
+    thresholds, producing silent false-normals / inverted messages. When there is
+    no spec, no canonical thresholds are applied, so any unit is acceptable.
+    """
+    spec = _get_spec(canonical)
+    if spec is None:
+        return True  # no thresholds → no misclassification risk; original preserved
+
+    def _norm(u: str) -> str:
+        return u.replace("µ", "u").replace("μ", "u").replace("mc", "u").strip().lower()
+
+    u = _norm(unit or "")
+    if not u:
+        return False
+    return u == _norm(spec.unit) or bool(spec.si_unit and u == _norm(spec.si_unit))
+
+
 def get_reference_range(
     canonical: str,
     age_years: int | None = None,

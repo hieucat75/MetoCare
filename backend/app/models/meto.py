@@ -9,9 +9,10 @@ import datetime as dt
 import os as _os
 from typing import Any
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.core.crypto import EncryptedString
 from app.core.database import Base
 
 from ._mixins import TimestampMixin, UUIDPrimaryKey
@@ -71,8 +72,24 @@ class MetoMessage(UUIDPrimaryKey, TimestampMixin, Base):
     )
     # "user" | "assistant" | "system"
     role: Mapped[str] = mapped_column(String(16), nullable=False)
-    # Plain text content
-    content: Mapped[str] = mapped_column(Text, nullable=False)
+    # PHI: the message body is free text the patient typed (symptoms) or an AI
+    # answer quoting their labs/medications. Encrypted at rest like every other
+    # free-text PHI column (SEC-F11).
+    #
+    # `on_decrypt_failure="raise"` — REQUIRED here, per the rule in core/crypto.py:
+    # this column is `nullable=False` and the response schema types it as a
+    # non-Optional `str`, so a silent `None` would violate the NOT NULL contract
+    # and crash response serialization anyway. A wrong or rotated key must surface
+    # as a controlled domain error, never as silently missing clinical data. The
+    # earlier "none" here was copied from the older AI transcript column
+    # (models/ai.py), whose column is nullable — the precedent did not transfer.
+    #
+    # Legacy plaintext rows still read fine (see EncryptedString.process_result_value):
+    # "raise" fires only for values that ARE ciphertext but cannot be decrypted.
+    # Nothing queries or indexes this column by value.
+    content: Mapped[str] = mapped_column(
+        EncryptedString(on_decrypt_failure="raise"), nullable=False
+    )
     # Screen context when message was sent
     screen_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # JSON list of tool calls (if any)
@@ -134,3 +151,12 @@ class MetoConsent(UUIDPrimaryKey, TimestampMixin, Base):
     granted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     granted_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     revoked_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Consent-policy version the patient agreed to. A grant is honored only while
+    # it matches the current CONSENT_POLICY_VERSION, so a policy bump forces
+    # re-consent (versioned consent, BRD §J).
+    policy_version: Mapped[str | None] = mapped_column(String(16), nullable=True)
+
+    # One consent row per (user, category); grant/revoke upserts it.
+    __table_args__ = (
+        UniqueConstraint("user_id", "context_type", name="uq_meto_consent_user_category"),
+    )

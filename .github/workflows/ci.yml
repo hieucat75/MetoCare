@@ -7,7 +7,8 @@
 #   deploy-staging — ONLY when BOTH tests pass AND push is to main
 #
 # Auto-deploy trigger: merge to main (push event). PRs run tests but never deploy.
-# Gate: needs: [test-backend, test-frontend] + if: push to main.
+# Gate: needs: [test-backend, test-backend-postgres, test-frontend, test-mobile,
+#              meto-gate] + if: push to main.
 #
 # Deploy approach: GHCR (matches azure-staging.yml / existing infra pattern).
 # Secrets already configured (azure-staging.yml uses the same set):
@@ -71,6 +72,24 @@ jobs:
 
       - name: Ruff lint
         run: ruff check .
+
+      # ── Alembic single-head gate (M0, program §3/§7) ────────────────────────
+      # Divergent migration heads are the top program risk once parallel
+      # workstreams add migrations. Fail the build unless exactly one head exists.
+      - name: Alembic single-head gate
+        run: |
+          HEADS=$(alembic heads 2>/dev/null | grep -c '(head)' || true)
+          echo "Alembic heads detected: $HEADS"
+          if [ "$HEADS" -ne 1 ]; then
+            echo "::error::Expected exactly 1 Alembic head, found $HEADS. Merge divergent migration heads before landing."
+            alembic heads || true
+            exit 1
+          fi
+        env:
+          MCP_DATABASE_URL: ""
+          ANTHROPIC_API_KEY: test-key-mock
+          ENVIRONMENT: test
+          MCP_ENV: test
 
       - name: Run backend tests
         run: python -m pytest tests/ -v --tb=short --junit-xml=test-results.xml -m "not integration"
@@ -136,25 +155,76 @@ jobs:
             sleep 2
           done
 
-      - name: Apply baseline Alembic migrations (pre-P0 head)
-        run: |
-          # Upgrade to the revision just before P0 so integration tests can
-          # exercise upgrade AND downgrade from a known baseline.
-          alembic upgrade c0_m9_audit_log_clinic_id
-        env:
-          MCP_DATABASE_URL: "postgresql+psycopg://mcp:mcp_test_ci@localhost:5432/mcp_test"
-          MCP_ENV: test
-
+      # Every file under tests/integration, each in its OWN process against its
+      # OWN freshly created database.
+      #
+      # This step used to name five files explicitly. Eleven of the sixteen on
+      # disk were therefore never run by CI at all — including the PHI-encryption
+      # suite, whose entire job is to prove patient data is encrypted at rest. A
+      # hand-maintained list of test files is a list that silently stops matching
+      # the directory, and nothing fails when it does. Globbing removes the
+      # failure mode rather than correcting one instance of it.
+      #
+      # Per-file databases are required, not tidiness: each of these modules runs
+      # `alembic upgrade`/`downgrade` against POSTGRES_TEST_URL, so pointing them
+      # all at one database makes one module's downgrade collide with another's
+      # expected revision. That interference is what made the whole-suite run
+      # unusable locally and is why the list existed. Isolating them fixes the
+      # cause; the list only hid it.
       - name: Run PostgreSQL integration tests
         run: |
-          python -m pytest tests/integration/test_medication_p0_migrations.py \
-            tests/integration/test_medication_k1_knowledge_migration.py \
-            tests/integration/test_medication_k1_s2_catalog_migration.py \
-            -v --tb=short -m integration \
-            --junit-xml=test-results-postgres.xml
+          set -uo pipefail
+          files=$(ls tests/integration/test_*.py | sort)
+          echo "Discovered $(echo "$files" | wc -l) integration modules:"
+          echo "$files"
+          rc=0
+          for f in $files; do
+            db="ci_$(basename "$f" .py | tr -c 'a-z0-9_' '_' | cut -c1-40)"
+            echo "::group::$f  (database: $db)"
+            # Check setup explicitly. `set -e` is deliberately NOT used (it would
+            # abort on the first failing file instead of accumulating `rc`), so
+            # without these a failed CREATE DATABASE or a failed migration fell
+            # through into pytest and surfaced as a confusing connection/schema
+            # error — turning a clear "the migration broke" signal into "the tests
+            # broke", which is the diagnostic loss this rewrite exists to remove.
+            if ! PGPASSWORD=mcp_test_ci psql -h localhost -U mcp -d postgres \
+              -c "DROP DATABASE IF EXISTS $db" -c "CREATE DATABASE $db" >/dev/null; then
+              echo "::error file=$f::could not create database $db"
+              rc=1; echo "::endgroup::"; continue
+            fi
+            # Same pre-P0 baseline, so upgrade AND downgrade run from a known revision.
+            if ! MCP_DATABASE_URL="postgresql+psycopg://mcp:mcp_test_ci@localhost:5432/$db" \
+              alembic upgrade c0_m9_audit_log_clinic_id >/dev/null; then
+              echo "::error file=$f::alembic baseline upgrade failed on $db"
+              rc=1; echo "::endgroup::"; continue
+            fi
+            MCP_DATABASE_URL="postgresql+psycopg://mcp:mcp_test_ci@localhost:5432/$db" \
+              POSTGRES_TEST_URL="postgresql+psycopg://mcp:mcp_test_ci@localhost:5432/$db" \
+              python -m pytest "$f" -v --tb=short -m integration \
+                --junit-xml="test-results-$(basename "$f" .py).xml"
+            code=$?
+            # pytest exits 5 for "no tests collected". That must FAIL here, not
+            # pass quietly — it is exactly how the PHI-encryption suite hid: it
+            # carried `skipif` but not `@pytest.mark.integration`, so CI-1 skipped
+            # it for want of a database and CI-2 deselected it for want of the
+            # marker. A suite whose job is to prove patient data is encrypted at
+            # rest ran in neither, and reported green in both.
+            if [ "$code" -eq 5 ]; then
+              echo "::error file=$f::collected 0 tests under -m integration — missing @pytest.mark.integration?"
+              rc=1
+            elif [ "$code" -ne 0 ]; then
+              rc=1
+            fi
+            PGPASSWORD=mcp_test_ci psql -h localhost -U mcp -d postgres \
+              -c "DROP DATABASE IF EXISTS $db" >/dev/null
+            echo "::endgroup::"
+          done
+          exit $rc
         env:
-          MCP_DATABASE_URL: "postgresql+psycopg://mcp:mcp_test_ci@localhost:5432/mcp_test"
-          POSTGRES_TEST_URL: "postgresql+psycopg://mcp:mcp_test_ci@localhost:5432/mcp_test"
+          # MCP_DATABASE_URL / POSTGRES_TEST_URL are set PER FILE in the loop above,
+          # to that file's own database. Setting them here too would be a trap: a
+          # module that reads them at import time would silently reach the shared
+          # database and reintroduce the cross-module interference.
           ANTHROPIC_API_KEY: test-key-mock
           ENVIRONMENT: test
           MCP_ENV: test
@@ -164,7 +234,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: pytest-results-postgres
-          path: backend/test-results-postgres.xml
+          path: backend/test-results-*.xml  # one per integration module
         continue-on-error: true
 
   # ── 2. Frontend Tests ───────────────────────────────────────────────────────
@@ -185,8 +255,79 @@ jobs:
       - name: Install dependencies
         run: cd frontend && npm ci
 
+      # ── TypeScript gate ───────────────────────────────────────────────────
+      #
+      # The frontend had 1761 `tsc` errors on `main` and no gate at all, so type
+      # regressions were invisible: an API contract could change under a client
+      # that never compiled, and the failure surfaced at runtime in a patient's
+      # browser. Almost the entire backlog was ONE missing package — `@types/jest`
+      # was absent, so every `describe`/`test`/`expect` in every test file was an
+      # unresolved name (TS2582/TS2304) and the real errors sat buried under
+      # 1600+ of them. Installing the types and fixing the genuine remainder
+      # brings the full project to zero, which is what makes a gate possible.
+      #
+      # BOTH configs are checked, deliberately. `tsconfig.build.json` is what
+      # ships; `tsconfig.json` includes the tests, and a test that no longer
+      # typechecks against the client it exercises is exactly how a stale fixture
+      # keeps asserting a contract the server has stopped sending.
+      - name: TypeScript (production source)
+        run: cd frontend && npx tsc --noEmit -p tsconfig.build.json
+
+      - name: TypeScript (including tests)
+        run: cd frontend && npx tsc --noEmit -p tsconfig.json
+
       - name: Run frontend tests
         run: cd frontend && npm test -- --watchAll=false --passWithNoTests
+
+
+  # ── 2b. Mobile verification (required integration gate) ────────────────────
+  # Mobile was 108 of the changed paths in the Journey 2-5 candidate and was NOT
+  # run by CI at all, which is why a cold-cache failure (6 of 28 suites) survived
+  # undetected: jest's 5s default timeout is measured INSIDE the test body while
+  # the first test pays for transforming the whole React Native + Expo Router
+  # graph. CI always runs cold, so the cache is cleared here deliberately — this
+  # job must exercise the cold path, not a warmed one.
+  test-mobile:
+    name: Mobile Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: mobile/package-lock.json
+
+      # Clean, reproducible install from the lockfile — never `npm install`.
+      - name: Install dependencies (clean)
+        run: cd mobile && npm ci
+
+      - name: TypeScript
+        run: cd mobile && npm run typecheck
+
+      - name: Lint
+        run: cd mobile && npm run lint
+
+      # Cold cache on purpose: the failure this gate exists to catch only
+      # reproduces on a cold transform.
+      - name: Jest (cold cache)
+        run: cd mobile && npx jest --clearCache && npm test -- --watchAll=false
+
+      # Proves the app still bundles for release, not just that tests pass.
+      # `--no-bytecode` keeps it dependency-free (no Hermes toolchain needed).
+      - name: Production bundle export
+        run: cd mobile && npx expo export --platform android --output-dir .expo-export-ci --no-bytecode
+
+      - name: Verify the bundle was produced
+        run: |
+          cd mobile
+          test -d .expo-export-ci || { echo "::error::expo export produced no output"; exit 1; }
+          find .expo-export-ci -name '*.hbc' -o -name '*.js' | head -1 | grep -q . \
+            || { echo "::error::no JS bundle in the export"; exit 1; }
+          echo "bundle OK: $(du -sh .expo-export-ci | cut -f1)"
 
   # ── 3. Meto AI Deployment Gate ─────────────────────────────────────────────
   # Runs after unit tests pass but BEFORE deploy.
@@ -194,7 +335,7 @@ jobs:
   meto-gate:
     name: Meto AI Deployment Gate
     runs-on: ubuntu-latest
-    needs: [test-backend, test-backend-postgres, test-frontend]
+    needs: [test-backend, test-backend-postgres, test-frontend, test-mobile]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     outputs:
       gate_passed: ${{ steps.gate.outputs.gate_passed }}
@@ -266,7 +407,7 @@ jobs:
   # PRs never trigger this job (event_name == 'push' guard).
   deploy-staging:
     name: Deploy to Staging
-    needs: [test-backend, test-backend-postgres, test-frontend, meto-gate]
+    needs: [test-backend, test-backend-postgres, test-frontend, test-mobile, meto-gate]
     if: >
       github.ref == 'refs/heads/main' &&
       github.event_name == 'push' &&
@@ -337,6 +478,8 @@ jobs:
           push: true
           build-args: |
             NEXT_PUBLIC_API_URL=https://${{ env.BACKEND_FQDN }}/api/v1
+            NEXT_PUBLIC_BUILD_SHA=${{ steps.tag.outputs.sha8 }}
+            NEXT_PUBLIC_APP_ENV=staging
           tags: ${{ env.REGISTRY }}/${{ github.repository_owner }}/metocare-frontend:${{ steps.tag.outputs.tag }}
 
       # ── Resume Postgres if stopped ────────────────────────────────────────
@@ -450,7 +593,16 @@ jobs:
             MCP_DEEPSEEK_API_KEY=secretref:deepseek-api-key \
             MCP_OPENROUTER_API_KEY=secretref:openrouter-api-key \
             MCP_OPENROUTER_PRIMARY_MODEL=anthropic/claude-sonnet-4.5 \
-            MCP_OPENROUTER_FALLBACK_MODEL=openai/gpt-4o-mini"
+            MCP_OPENROUTER_FALLBACK_MODEL=openai/gpt-4o-mini \
+            MCP_BUILD_SHA=${{ steps.tag.outputs.sha8 }} \
+            MCP_BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
+            MCP_EXPECTED_HOST=${BACKEND_FQDN:-}"
+          # Build identity on the AUTO-deploy path. azure-staging.yml and
+          # azure-production.yml are workflow_dispatch — MANUAL — and set these;
+          # this job is the one that actually deploys on merge to main and did
+          # not, so every auto-deployed staging build reported an EMPTY build_sha.
+          # "What is running right now?" is asked during an incident, which is
+          # the worst time to discover the answer is unavailable.
           SUFFIX="be-${{ steps.tag.outputs.sha8 }}-$(date +%s)"
           if az containerapp show -g "$RG" -n "$BACKEND_APP" -o none 2>/dev/null; then
             az containerapp secret set -g "$RG" -n "$BACKEND_APP" --secrets $COMMON_SECRETS -o none
@@ -474,13 +626,17 @@ jobs:
           if az containerapp show -g "$RG" -n "$FRONTEND_APP" -o none 2>/dev/null; then
             az containerapp update -g "$RG" -n "$FRONTEND_APP" --image "$IMG" \
               --revision-suffix "$SUFFIX" \
-              --min-replicas 1 --set-env-vars "NEXT_PUBLIC_API_URL=$API_URL" -o none
+              --min-replicas 1 --set-env-vars "NEXT_PUBLIC_API_URL=$API_URL" \
+                "NEXT_PUBLIC_BUILD_SHA=${{ steps.tag.outputs.sha8 }}" \
+                "NEXT_PUBLIC_APP_ENV=staging" -o none
           else
             az containerapp create -g "$RG" -n "$FRONTEND_APP" --environment "$ENV_NAME" \
               --image "$IMG" --target-port 3000 --ingress external \
               --min-replicas 1 --max-replicas 1 --cpu 0.25 --memory 0.5Gi \
               --revision-suffix "$SUFFIX" \
-              --env-vars "NEXT_PUBLIC_API_URL=$API_URL" -o none
+              --env-vars "NEXT_PUBLIC_API_URL=$API_URL" \
+                "NEXT_PUBLIC_BUILD_SHA=${{ steps.tag.outputs.sha8 }}" \
+                "NEXT_PUBLIC_APP_ENV=staging" -o none
           fi
 
       # ── CORS guard — ensure app.metocare.me survives every deploy ─────────
@@ -555,5 +711,79 @@ jobs:
             echo "✅ All smoke checks passed"
           else
             echo "::error::One or more smoke tests failed — see above"
+            exit 1
+          fi
+
+      # ── Post-deploy PHI crypto smoke ──────────────────────────────────────
+      #
+      # The checks above are UNAUTHENTICATED and assert 401s, and /health is a
+      # bare SELECT 1 — none of them touches an encrypted column. Boot-time
+      # validation proves the key is well-FORMED, not that it is the RIGHT key.
+      #
+      # Reproduced on a real database: with a wrong-but-well-formed key, boot
+      # passes, /health passes, the smoke suite passes, and every authenticated
+      # encrypted read raises. Reminders (Notification.title/body) and the
+      # medication timeline (MedicationStatement.raw_drug_name) are NOT NULL with
+      # on_decrypt_failure="raise", so a mis-rotated key takes both down for every
+      # patient while the deploy is reported healthy.
+      #
+      # Runs as a one-shot job, not an endpoint: an HTTP route that decrypts on
+      # demand is a crypto oracle. Writes synthetic CRYPTO-SMOKE sentinels only,
+      # rolls them back, and prints no PHI and no key material.
+      - name: Post-deploy PHI crypto smoke
+        run: |
+          # Rebuild every value locally. A `run:` step is a FRESH shell, so a
+          # variable assigned in an earlier step does not survive — an earlier
+          # draft of this step referenced $MIGRATE_JOB/$ACA_ENV/$IMG, all of
+          # which were empty here, so it would have failed on EVERY deploy
+          # without ever invoking the smoke. Worse, that failure is
+          # indistinguishable in the log from a genuine wrong-key failure, which
+          # is how a real gate gets muted as "the usual broken step".
+          JOB="caj-metocare-crypto-smoke"
+          IMG="${REGISTRY}/${{ github.repository_owner }}/metocare-backend:${{ steps.tag.outputs.tag }}"
+          # Delete-then-create, matching the Alembic job above. Without it a
+          # pre-existing job is reused with the PREVIOUS run's image and secrets,
+          # so the smoke would validate the OLD key — exactly the rotation
+          # failure it exists to catch.
+          az containerapp job delete -g "$RG" -n "$JOB" --yes -o none 2>/dev/null || true
+          az containerapp job create -g "$RG" -n "$JOB" \
+            --environment "$ENV_NAME" --trigger-type Manual --replica-timeout 600 \
+            --image "$IMG" --cpu 0.5 --memory 1Gi \
+            --secrets db-url="$DB_URL" enc-keys="$ENC_KEYS" \
+            --env-vars MCP_DATABASE_URL=secretref:db-url \
+              MCP_ENCRYPTION_KEYS=secretref:enc-keys MCP_ENV=staging \
+              MCP_BUILD_SHA=${{ steps.tag.outputs.sha8 }} \
+            --command "python" --args "run_crypto_smoke.py" -o none
+          az containerapp job start -g "$RG" -n "$JOB" -o none
+
+          # Poll budget (40x10s=400s) deliberately EXCEEDS --replica-timeout
+          # (600s is the container's own limit; Azure needs slack after it fires
+          # to mark the execution Failed). A loop that expires without a verdict
+          # must FAIL: falling out of the loop and exiting 0 would report a deploy
+          # healthy on the strength of a check that never returned — which is the
+          # same false green this whole step exists to remove.
+          ST=""
+          for i in $(seq 1 40); do
+            ST=$(az containerapp job execution list -g "$RG" -n "$JOB" \
+              --query "[0].properties.status" -o tsv 2>/dev/null || echo Running)
+            echo "  crypto-smoke $i: $ST"
+            [ "$ST" = "Succeeded" ] && break
+            if [ "$ST" = "Failed" ]; then
+              echo "::error::PHI crypto smoke FAILED — encrypted columns are not"
+              echo "::error::readable with the deployed MCP_ENCRYPTION_KEYS."
+              echo "::error::Remediation: restore the previous key in Key Vault"
+              echo "::error::(secret mcp-encryption-keys), redeploy, and re-run this"
+              echo "::error::job. Do NOT run a downgrade — the SEC-F11/P1-5"
+              echo "::error::migrations refuse to decrypt with a wrong key and will"
+              echo "::error::abort rather than destroy data."
+              exit 1
+            fi
+            sleep 10
+          done
+          if [ "$ST" != "Succeeded" ]; then
+            echo "::error::PHI crypto smoke did not report a verdict within 400s"
+            echo "::error::(last status: ${ST:-unknown}). Treating as FAILED: a"
+            echo "::error::deploy must not be called healthy on a check that never"
+            echo "::error::returned. Inspect: az containerapp job execution list -g $RG -n $JOB"
             exit 1
           fi

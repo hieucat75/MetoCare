@@ -219,6 +219,26 @@ def test_migration_chain_order():
     )
 
 
+def test_single_alembic_head():
+    """Batch-0 guardrail (Journey 1): the Alembic graph must have exactly ONE head.
+
+    Parallel autonomous workstreams each branching a migration off the same
+    down_revision would silently create divergent heads that only surface at
+    `alembic upgrade` on staging / the ACA migration job. Because CI runs pytest,
+    asserting single-head here blocks the merge before divergence can bite.
+    """
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    cfg = Config(str(BACKEND_ROOT / "alembic.ini"))
+    cfg.set_main_option("script_location", str(BACKEND_ROOT / "alembic"))
+    heads = ScriptDirectory.from_config(cfg).get_heads()
+    assert len(heads) == 1, (
+        f"Divergent Alembic heads detected ({len(heads)}): {heads}. "
+        "Rebase your migration onto the current single head before merging."
+    )
+
+
 _PG_URL = os.environ.get("MCP_TEST_POSTGRES_URL")
 
 

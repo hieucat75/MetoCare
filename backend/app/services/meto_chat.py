@@ -17,6 +17,7 @@ Does NOT directly call any AI provider — uses ProviderRegistry for routing/fal
 
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
 import logging
 import time
@@ -24,6 +25,13 @@ from collections.abc import AsyncGenerator
 
 from sqlalchemy.orm import Session
 
+from app.ai.consent_policy import (
+    CATEGORY_AI_PROCESSING,
+    CATEGORY_PURPOSE,
+    CONSENT_CATEGORIES,
+    CONSENT_POLICY_VERSION,
+    is_granted,
+)
 from app.ai.context.builder import ContextBuilder
 from app.ai.context.schemas import AssembledContext, ScreenContext
 from app.ai.exceptions import MetoAIError
@@ -43,6 +51,38 @@ logger = logging.getLogger(__name__)
 _SAFETY_GUARD = SafetyGuard()
 _CONTEXT_BUILDER = ContextBuilder()
 _PROMPT_ASSEMBLER = PromptAssembler()
+
+# Shown to the patient in place of a model response that fails the output safety
+# check (provider self-disclosure / diagnosis / dose-change). Detection alone is
+# not enough — the offending content must never be delivered.
+_UNSAFE_OUTPUT_FALLBACK = (
+    "Mình xin lỗi, Meto chưa thể trả lời câu hỏi này một cách an toàn. "
+    "Với các vấn đề về chẩn đoán hay thay đổi thuốc, bạn hãy trao đổi trực tiếp "
+    "với bác sĩ của mình nhé."
+)
+
+# Shown when the patient has not granted the master AI-processing consent. The
+# chat is refused fail-closed: no PHI context is built and no provider is called.
+_AI_CONSENT_REQUIRED_MSG = (
+    "Để Meto có thể hỗ trợ bạn, vui lòng bật quyền cho phép Meto xử lý dữ liệu "
+    "bằng AI trong phần Cài đặt > Quyền riêng tư."
+)
+
+
+
+# Integration-review P1: when the context build fails we must NOT answer.
+#
+# ContextBuilder.build supplies the medications block, the labs block AND the
+# safety_flags block (the critical-value pre-read). Swallowing the failure and
+# passing an empty AssembledContext meant the model — instructed to rely only on
+# context — would state "mình không thấy kết quả xét nghiệm nào gần đây": a false
+# assertion about the patient's record, made while a critical value may exist, and
+# indistinguishable to the patient from a genuine "no data". Fail closed instead.
+_CONTEXT_UNAVAILABLE_MSG = (
+    "Xin lỗi, Meto tạm thời không truy cập được dữ liệu sức khoẻ của bạn nên chưa "
+    "thể trả lời chính xác. Vui lòng thử lại sau ít phút. Nếu bạn thấy dấu hiệu bất "
+    "thường hoặc cần gấp, hãy liên hệ bác sĩ hoặc cơ sở y tế gần nhất."
+)
 
 
 class MetoChatService:
@@ -66,6 +106,24 @@ class MetoChatService:
         """Non-streaming chat. Runs full pipeline and returns complete response."""
         request_start = time.monotonic()
 
+        # 0. Master consent gate (§J) — fail-closed. Without ai_processing consent
+        #    we build no PHI context and call no provider.
+        if not is_granted(db, user_id, CATEGORY_AI_PROCESSING):
+            conversation = self._get_or_create_conversation(
+                db, user_id, screen_context, conversation_id
+            )
+            return MetaChatResponse(
+                conversation_id=conversation.id,
+                message_id="",
+                content=_AI_CONSENT_REQUIRED_MSG,
+                safety_flags=[],
+                provider_used="meto",
+                fallback_used=False,
+                quick_follow_ups=[],
+                consent_required=True,
+                missing_consents=[CATEGORY_AI_PROCESSING],
+            )
+
         # 1. Build context using a DEDICATED session so that any SQL errors
         #    inside the context builder do not poison the main `db` session
         #    used for conversation create, message write, and audit log.
@@ -73,10 +131,30 @@ class MetoChatService:
         try:
             context = _CONTEXT_BUILDER.build(ctx_db, user_id, screen_context)
         except Exception as ctx_exc:
-            logger.warning("Context build failed for user %s: %s", user_id, ctx_exc)
-            context = AssembledContext()
+            # PHI-safe observability: user id + exception TYPE only, never the
+            # message, the context, or the exception's stringified SQL.
+            logger.error(
+                "meto.context_build_failed user=%s error_type=%s",
+                user_id,
+                type(ctx_exc).__name__,
+            )
+            context = None
         finally:
             ctx_db.close()
+
+        if context is None:
+            conversation = self._get_or_create_conversation(
+                db, user_id, screen_context, conversation_id
+            )
+            return MetaChatResponse(
+                conversation_id=conversation.id,
+                message_id="",
+                content=_CONTEXT_UNAVAILABLE_MSG,
+                safety_flags=[],
+                provider_used="meto",
+                fallback_used=False,
+                quick_follow_ups=[],
+            )
 
         # 2. Load or create conversation on the clean main session
         conversation = self._get_or_create_conversation(db, user_id, screen_context, conversation_id)
@@ -156,8 +234,17 @@ class MetoChatService:
 
         ai_content = ai_response.content if ai_response else ""
 
-        # 7. Safety check output
+        # 7. Safety check output — ENFORCING. A response that self-discloses the
+        # provider or contains a forbidden diagnosis/dose-change instruction must
+        # be replaced with a safe fallback, never delivered to the patient.
         output_safety = _SAFETY_GUARD.check_output(ai_content)
+        if not output_safety.safe:
+            logger.warning(
+                "Meto output failed safety check for user %s; replacing. flags=%s",
+                user_id,
+                output_safety.flags,
+            )
+            ai_content = _UNSAFE_OUTPUT_FALLBACK
         all_flags = list(set(input_safety.flags + (output_safety.flags if not output_safety.safe else [])))
 
         # Build escalation info if needed
@@ -200,15 +287,65 @@ class MetoChatService:
 
         request_start = time.monotonic()
 
+        # Master consent gate (§J) — fail-closed. Without ai_processing consent we
+        # build no PHI context and call no provider; prompt the client to grant it.
+        if not is_granted(db, user_id, CATEGORY_AI_PROCESSING):
+            conversation = self._get_or_create_conversation(
+                db, user_id, screen_context, conversation_id
+            )
+            yield f"data: {json.dumps({'type': 'chunk', 'delta': _AI_CONSENT_REQUIRED_MSG})}\n\n"
+            yield (
+                "data: "
+                + json.dumps(
+                    {
+                        "type": "done",
+                        "conversation_id": str(conversation.id),
+                        "consent_required": True,
+                        "missing_consents": [CATEGORY_AI_PROCESSING],
+                    }
+                )
+                + "\n\n"
+            )
+            return
+
         # Build context in a dedicated session to isolate SQL errors from main db session
         ctx_db = SessionLocal()
         try:
             context = _CONTEXT_BUILDER.build(ctx_db, user_id, screen_context)
         except Exception as ctx_exc:
-            logger.warning("Stream context build failed for user %s: %s", user_id, ctx_exc)
-            context = AssembledContext()
+            logger.error(
+                "meto.context_build_failed stream user=%s error_type=%s",
+                user_id,
+                type(ctx_exc).__name__,
+            )
+            context = None
         finally:
             ctx_db.close()
+
+        if context is None:
+            conversation = self._get_or_create_conversation(
+                db, user_id, screen_context, conversation_id
+            )
+            yield (
+                "data: "
+                + json.dumps(
+                    {"type": "chunk", "delta": _CONTEXT_UNAVAILABLE_MSG},
+                    ensure_ascii=False,
+                )
+                + "\n\n"
+            )
+            yield (
+                "data: "
+                + json.dumps(
+                    {
+                        "type": "done",
+                        "conversation_id": str(conversation.id),
+                        "context_unavailable": True,
+                    }
+                )
+                + "\n\n"
+            )
+            return
 
         conversation = self._get_or_create_conversation(db, user_id, screen_context, conversation_id)
         input_safety = _SAFETY_GUARD.check_input(message)
@@ -249,6 +386,7 @@ class MetoChatService:
         fallback_used = False
         input_tokens = 0
         output_tokens = 0
+        stream_failed = False
 
         providers = self._registry.get_available_providers("chat_simple")
         if not providers:
@@ -261,19 +399,29 @@ class MetoChatService:
             pname = provider.provider_name
             try:
                 chunks_received = 0
-                async for chunk in provider.chat_stream(
-                    messages=messages,
-                    system_prompt=system_prompt,
-                    max_tokens=settings.meto_max_tokens,
-                    temperature=settings.meto_temperature,
-                ):
-                    if chunk.is_final:
-                        output_tokens = chunk.total_tokens or 0
-                        break
-                    if chunk.delta:
-                        full_content += chunk.delta
-                        chunks_received += 1
-                        yield f"data: {json.dumps({'type': 'chunk', 'delta': chunk.delta})}\n\n"
+                # PROD-F10: bound each provider attempt. Without this a hung
+                # provider holds the single gunicorn worker past its 120s
+                # timeout and takes the replica down for every user; the
+                # non-streaming path is bounded inside `call_with_fallback`.
+                # TimeoutError is an Exception, so the handler below simply
+                # treats a stall as a provider failure and falls through.
+                async with asyncio.timeout(settings.meto_timeout_seconds):
+                    async for chunk in provider.chat_stream(
+                        messages=messages,
+                        system_prompt=system_prompt,
+                        max_tokens=settings.meto_max_tokens,
+                        temperature=settings.meto_temperature,
+                    ):
+                        if chunk.is_final:
+                            output_tokens = chunk.total_tokens or 0
+                            break
+                        if chunk.delta:
+                            # Buffer, do NOT emit yet. Output safety must run on
+                            # the full response BEFORE any of it reaches the
+                            # patient; emitting per-chunk would deliver unsafe
+                            # content the post-hoc check can no longer retract.
+                            full_content += chunk.delta
+                            chunks_received += 1
 
                 # Success
                 self._registry.circuit_breaker().record_success(pname)
@@ -296,11 +444,25 @@ class MetoChatService:
                     error_msg = "Meto gặp lỗi kỹ thuật. Vui lòng thử lại."
                     yield f"data: {json.dumps({'type': 'error', 'message': error_msg})}\n\n"
                     full_content = error_msg
+                    stream_failed = True
+
+        # Enforce output safety on the buffered response BEFORE emitting it, then
+        # deliver the (safe or replaced) content as a single chunk. On the failure
+        # path the error event was already sent and full_content holds the error
+        # copy — don't re-emit it as a chunk.
+        latency_ms = int((time.monotonic() - request_start) * 1000)
+        if not stream_failed:
+            output_safety = _SAFETY_GUARD.check_output(full_content)
+            if not output_safety.safe:
+                logger.warning(
+                    "Meto stream output failed safety check for user %s; replacing. flags=%s",
+                    user_id,
+                    output_safety.flags,
+                )
+                full_content = _UNSAFE_OUTPUT_FALLBACK
+            yield f"data: {json.dumps({'type': 'chunk', 'delta': full_content})}\n\n"
 
         # Save assistant message
-        latency_ms = int((time.monotonic() - request_start) * 1000)
-        _SAFETY_GUARD.check_output(full_content)
-
         assistant_msg_id = self._save_message(
             db, conversation.id, "assistant", full_content,
             screen_context.screen_id,
@@ -382,26 +544,40 @@ class MetoChatService:
             db.commit()
 
     def get_consent(self, db: Session, user_id: str) -> list[ConsentStatus]:
-        CONSENT_TYPES = ["health_data", "medications", "labs", "metrics", "care_plan", "chat_history"]
-        rows = (
-            db.query(MetoConsent)
-            .filter(MetoConsent.user_id == user_id)
-            .all()
-        )
+        """Return the status of every consent category (BRD §J).
+
+        `granted` is EFFECTIVE — true only when the row is granted, not revoked,
+        and recorded against the current policy version (a stale version reads as
+        not-granted, prompting re-consent).
+        """
+        rows = db.query(MetoConsent).filter(MetoConsent.user_id == user_id).all()
         existing = {r.context_type: r for r in rows}
         result = []
-        for ct in CONSENT_TYPES:
+        for ct in CONSENT_CATEGORIES:
             row = existing.get(ct)
+            effective = bool(
+                row
+                and row.granted
+                and row.revoked_at is None
+                and row.policy_version == CONSENT_POLICY_VERSION
+            )
             result.append(ConsentStatus(
                 context_type=ct,
-                granted=row.granted if row else False,
+                granted=effective,
                 granted_at=row.granted_at if row else None,
+                policy_version=CONSENT_POLICY_VERSION,
+                purpose=CATEGORY_PURPOSE.get(ct, ""),
             ))
         return result
 
     def update_consent(
         self, db: Session, user_id: str, context_type: str, granted: bool
     ) -> None:
+        """Grant or revoke one category. Records the policy version on grant and
+        writes a PHI-free audit entry. Revocation blocks future use immediately."""
+        if context_type not in CONSENT_CATEGORIES:
+            raise ValueError(f"Unknown consent category: {context_type}")
+
         row = (
             db.query(MetoConsent)
             .filter(
@@ -416,6 +592,7 @@ class MetoChatService:
             if granted:
                 row.granted_at = now
                 row.revoked_at = None
+                row.policy_version = CONSENT_POLICY_VERSION
             else:
                 row.revoked_at = now
         else:
@@ -424,8 +601,18 @@ class MetoChatService:
                 context_type=context_type,
                 granted=granted,
                 granted_at=now if granted else None,
+                revoked_at=None if granted else now,
+                policy_version=CONSENT_POLICY_VERSION if granted else None,
             )
             db.add(row)
+
+        # Audit — category key + policy version only, never PHI.
+        db.add(MetoAuditLog(
+            user_id=user_id,
+            action="consent_granted" if granted else "consent_revoked",
+            context_types=[context_type],
+            details={"policy_version": CONSENT_POLICY_VERSION},
+        ))
         db.commit()
 
     # -----------------------------------------------------------------------
@@ -660,8 +847,9 @@ class MetoChatService:
         screen_id = screen_context.screen_id or "dashboard"
         quick_follow_ups = _PROMPT_ASSEMBLER._get_quick_prompts(screen_id)[:3]
 
-        # Per product design: consent_required is always False.
-        # T&C covers consent at registration; Meto reads profile by default.
+        # Surface categories the screen would use but the patient hasn't granted,
+        # so the client can prompt for them. consent_required is reserved for the
+        # master ai_processing gate, which is enforced before we ever reach here.
         return MetaChatResponse(
             conversation_id=conversation.id,
             message_id=msg_id,
@@ -672,7 +860,7 @@ class MetoChatService:
             fallback_used=fallback_used,
             quick_follow_ups=quick_follow_ups,
             consent_required=False,
-            missing_consents=[],
+            missing_consents=list(context.missing_consents or []),
         )
 
 

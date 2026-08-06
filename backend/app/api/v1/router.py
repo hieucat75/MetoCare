@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from .routes import (
+    account,
     admin,
     admin_ai_sessions,
     admin_patients,
@@ -24,9 +25,11 @@ from .routes import (
     clinics,
     consent,
     consultations,
+    dashboard,
     doctor,
     doctor_portal,
     doctor_review,
+    documents,
     encounters,
     health,
     health_timeline,
@@ -36,6 +39,8 @@ from .routes import (
     lab_upload,
     marketplace,
     medication_knowledge,
+    medication_schedule,
+    medication_source,
     medications,
     meto,
     narrative,
@@ -47,6 +52,8 @@ from .routes import (
 
 api_router = APIRouter()
 api_router.include_router(system.router)
+# Patient self-service GDPR data-subject rights — export + account deletion.
+api_router.include_router(account.router)
 api_router.include_router(auth.router)
 api_router.include_router(health.router)
 api_router.include_router(lab.router)
@@ -65,12 +72,22 @@ api_router.include_router(doctor_review.router, prefix="/doctor", tags=["doctor_
 api_router.include_router(doctor_portal.router)
 api_router.include_router(clinical_copilot.router)
 api_router.include_router(patients.router)
+# Medical Document Intelligence (Journey 2) — secure upload → OCR → per-candidate
+# confirm → promote. Gated by FeatureFlag.OCR (fail-closed default).
+api_router.include_router(documents.router)
+# Journey 3 — action-first patient dashboard (BRD §I).
+api_router.include_router(dashboard.router)
 api_router.include_router(health_timeline.router, prefix="/patients")
 api_router.include_router(booking.router)
 api_router.include_router(notifications.router)
 api_router.include_router(patient_insight.router)
 api_router.include_router(narrative.router)
 api_router.include_router(medications.router)
+# Journey 3 — medication schedule / reminder (deterministic + in-app) / adherence.
+api_router.include_router(medication_schedule.router)
+# BRD §F — reverse provenance: medication → source document + OCR origin.
+# Additive read; gated by the same fail-closed `documents` consent as /documents.
+api_router.include_router(medication_source.router)
 # Medication Knowledge K2 Slice 1 — read-only retrieval (gated by
 # FeatureFlag.MEDICATION_KNOWLEDGE_RETRIEVAL, fail-closed default; see
 # app/api/deps_medication_knowledge.py).

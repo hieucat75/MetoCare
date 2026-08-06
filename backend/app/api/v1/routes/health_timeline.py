@@ -28,6 +28,13 @@ from app.api.deps import CurrentUser, current_user, get_session
 from app.api.v1.routes.patients import _check_read_access
 from app.domain.health_timeline import HealthTimelineEngine
 from app.models.clinical import HealthMetric, LabResult, LabUploadBatch, Medication, SymptomLog
+from app.models.medical_document import (
+    CAND_STATUS_CONFIRMED,
+    CAND_STATUS_MERGED,
+    ExtractionCandidate,
+    MedicalDocument,
+)
+from app.models.medication_schedule import DoseOccurrence, MedicationSchedule
 
 router = APIRouter(tags=["health_timeline"])
 
@@ -114,12 +121,19 @@ def get_health_timeline(
         )
     lab_batches = batch_q.all()
 
-    # LabResult — fetch all for the patient (engine groups by batch_id)
+    # LabResult — CONFIRMED rows only (engine groups by batch_id).
+    # CLIN PS-7: an OCR-extracted value the patient has not confirmed is NOT a
+    # clinical fact — rendering it as "N chỉ số cần chú ý" (importance=warning)
+    # and letting it drive the improved/worsened summary presents an unverified
+    # extraction as truth. Every sibling consumer already filters this way:
+    # lab_intelligence, narrative, patient_insight, longitudinal, ai/context.
+    # The same filtered list feeds engine.summarize() below.
     lab_results = (
         db.query(LabResult)
         .filter(
             LabResult.patient_id == patient_id,
             LabResult.deleted_at.is_(None),
+            (LabResult.verified_by_user.is_(True)) | (LabResult.verified_by_doctor.is_(True)),
         )
         .all()
     )
@@ -155,6 +169,46 @@ def get_health_timeline(
         symptom_q = symptom_q.filter(SymptomLog.reported_at <= dt.datetime.combine(to_date, dt.time.max))
     symptom_logs = symptom_q.all()
 
+    # Medication dose occurrences (Journey 3) — acted/missed doses are history.
+    #
+    # Filtered by MEDICATION lifecycle, which this query did not do. Every other
+    # read path excludes `entered_in_error` (a record the patient asserts should
+    # never have existed) and soft-deleted rows, but the timeline still rendered
+    # their doses as "Đã uống thuốc" / "Quên liều". Combined with the repudiation
+    # purge — which removes open and missed doses but never TAKEN ones — the
+    # surviving picture was skewed positive: the takens stayed, the misses went.
+    #
+    # Legitimate history is preserved: a drug the patient genuinely STOPPED
+    # (discontinued / completed / on_hold) keeps its doses, because that therapy
+    # was real and so is its adherence record. Only repudiation and soft-delete
+    # remove it.
+    dose_q = (
+        db.query(DoseOccurrence)
+        .join(MedicationSchedule, MedicationSchedule.id == DoseOccurrence.schedule_id)
+        .join(Medication, Medication.id == MedicationSchedule.medication_id)
+        .filter(
+            DoseOccurrence.patient_id == patient_id,
+            Medication.deleted_at.is_(None),
+            Medication.lifecycle_status != "entered_in_error",
+        )
+    )
+    dose_occurrences = dose_q.all()
+
+    # Medical documents + confirmed MDI candidates (Journey 2).
+    documents = (
+        db.query(MedicalDocument)
+        .filter(MedicalDocument.patient_id == patient_id, MedicalDocument.deleted_at.is_(None))
+        .all()
+    )
+    confirmed_candidates = (
+        db.query(ExtractionCandidate)
+        .filter(
+            ExtractionCandidate.patient_id == patient_id,
+            ExtractionCandidate.status.in_((CAND_STATUS_CONFIRMED, CAND_STATUS_MERGED)),
+        )
+        .all()
+    )
+
     # ── Missing sources detection ─────────────────────────────────────────────
     missing_sources: list[str] = []
     if not lab_batches:
@@ -174,6 +228,9 @@ def get_health_timeline(
         health_metrics=health_metrics,
         medications=medications,
         symptom_logs=symptom_logs,
+        dose_occurrences=dose_occurrences,
+        documents=documents,
+        confirmed_candidates=confirmed_candidates,
         from_date=from_date,
         to_date=to_date,
         event_type_filter=event_type,

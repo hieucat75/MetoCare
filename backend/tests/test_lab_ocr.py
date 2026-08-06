@@ -491,7 +491,9 @@ def test_azure_ssrf_invalid_operation_location(monkeypatch):
 
 
 def test_run_ocr_uses_azure_primary_ignoring_local_confidence(monkeypatch):
-    """Azure runs first regardless of what Tesseract would have returned."""
+    """Azure runs first regardless of what Tesseract would have returned —
+    but only with the cloud-OCR opt-in flag ON (PRIV-F3)."""
+    monkeypatch.setenv("MCP_FEATURE_OCR_CLOUD_FALLBACK", "true")
     monkeypatch.setenv("AZURE_DOC_INTEL_KEY", "k")
     monkeypatch.setenv("AZURE_DOC_INTEL_ENDPOINT", "https://docintel.example.com")
     ocr_engine = _force_local(monkeypatch, confidence=0.3)
@@ -720,7 +722,9 @@ def test_manual_entry_requires_test_date(client, patient):
 
 
 def test_run_ocr_azure_primary_bypasses_tesseract(monkeypatch):
-    """When Azure credentials are present, run_ocr goes to Azure without touching Tesseract."""
+    """With the cloud opt-in flag ON and Azure credentials present, run_ocr goes to
+    Azure without touching Tesseract."""
+    monkeypatch.setenv("MCP_FEATURE_OCR_CLOUD_FALLBACK", "true")
     monkeypatch.setenv("AZURE_DOC_INTEL_KEY", "k")
     monkeypatch.setenv("AZURE_DOC_INTEL_ENDPOINT", "https://docintel.example.com")
     from app.services import ocr_engine
@@ -744,6 +748,7 @@ def test_run_ocr_azure_primary_bypasses_tesseract(monkeypatch):
 
 def test_pdf_routes_directly_to_azure_when_configured(monkeypatch):
     """PDF bytes go to Azure DI natively — no rasterization, no pypdf text-layer first."""
+    monkeypatch.setenv("MCP_FEATURE_OCR_CLOUD_FALLBACK", "true")
     monkeypatch.setenv("AZURE_DOC_INTEL_KEY", "k")
     monkeypatch.setenv("AZURE_DOC_INTEL_ENDPOINT", "https://docintel.example.com")
     from app.services import ocr_engine as _ocr
@@ -1314,7 +1319,8 @@ class TestCodexP1Fixes:
 
 
 def test_mock_not_used_when_azure_configured_no_explicit_flag(monkeypatch):
-    """Azure configured + no explicit mock flag → Azure used, MockOcrEngine never called."""
+    """Azure permitted + no explicit mock flag → Azure used, MockOcrEngine never called."""
+    monkeypatch.setenv("MCP_FEATURE_OCR_CLOUD_FALLBACK", "true")
     monkeypatch.setenv("AZURE_DOC_INTEL_KEY", "k")
     monkeypatch.setenv("AZURE_DOC_INTEL_ENDPOINT", "https://docintel.example.com")
     monkeypatch.delenv("MCP_OCR_PROVIDER", raising=False)
@@ -1341,7 +1347,8 @@ def test_mock_not_used_when_azure_configured_no_explicit_flag(monkeypatch):
 
 
 def test_azure_failure_raises_no_mock_fallback(monkeypatch):
-    """When Azure is configured but fails, OcrEngineError propagates — no mock fallback."""
+    """When Azure is permitted but fails, OcrEngineError propagates — no mock fallback."""
+    monkeypatch.setenv("MCP_FEATURE_OCR_CLOUD_FALLBACK", "true")
     monkeypatch.setenv("AZURE_DOC_INTEL_KEY", "k")
     monkeypatch.setenv("AZURE_DOC_INTEL_ENDPOINT", "https://docintel.example.com")
     monkeypatch.delenv("MCP_OCR_PROVIDER", raising=False)
@@ -1400,3 +1407,171 @@ def test_mock_forbidden_in_production(monkeypatch):
 
     with pytest.raises(ocr_engine.OcrEngineError, match="production"):
         ocr_engine.run_ocr(b"x", "image/png")
+
+
+# --------------------------------------------------------------------------- #
+# PRIV-F3 / PROD-F7 — cloud OCR is fail-closed on FeatureFlag.OCR_CLOUD_FALLBACK
+# (credentials alone must NEVER send PHI to Azure; deploy envs always inject them)
+# --------------------------------------------------------------------------- #
+
+
+def _azure_must_not_be_called(monkeypatch):
+    """Spy: any attempt to reach Azure DI fails the test loudly."""
+    from app.services import ocr_engine
+
+    calls: list[str] = []
+
+    def _boom_run(self, data, mime):
+        calls.append("run")
+        raise AssertionError("Azure OCR must NOT be called when the cloud flag is off")
+
+    def _boom_raw(self, data, mime):
+        calls.append("analyze_raw")
+        raise AssertionError("Azure OCR must NOT be called when the cloud flag is off")
+
+    monkeypatch.setattr(ocr_engine.AzureDocIntelEngine, "run", _boom_run)
+    monkeypatch.setattr(ocr_engine.AzureDocIntelEngine, "analyze_raw", _boom_raw)
+    return calls
+
+
+def _azure_credentials_present(monkeypatch):
+    monkeypatch.setenv("AZURE_DOC_INTEL_KEY", "k")
+    monkeypatch.setenv("AZURE_DOC_INTEL_ENDPOINT", "https://docintel.example.com")
+    monkeypatch.delenv("MCP_OCR_PROVIDER", raising=False)
+    monkeypatch.delenv("MCP_ENABLE_MOCK_OCR", raising=False)
+
+
+def test_run_ocr_uses_local_engine_when_cloud_flag_off_despite_credentials(monkeypatch):
+    """PRIV-F3: AZURE_DOC_INTEL_* present + OCR_CLOUD_FALLBACK off → Tesseract runs
+    and Azure is never called (no PHI egress)."""
+    _azure_credentials_present(monkeypatch)
+    monkeypatch.delenv("MCP_FEATURE_OCR_CLOUD_FALLBACK", raising=False)
+    monkeypatch.delenv("FEATURE_OCR_CLOUD_FALLBACK", raising=False)
+    ocr_engine = _force_local(monkeypatch, confidence=0.95)
+    calls = _azure_must_not_be_called(monkeypatch)
+
+    res = ocr_engine.run_ocr(b"x", "image/png")
+
+    assert res.provider == "tesseract"
+    assert calls == []
+    assert ocr_engine.azure_ocr_permitted() is False
+
+
+def test_run_ocr_uses_azure_when_cloud_flag_on_and_credentials_present(monkeypatch):
+    """Counterpart: flag ON + credentials → Azure is the engine (opt-in still works)."""
+    _azure_credentials_present(monkeypatch)
+    monkeypatch.setenv("MCP_FEATURE_OCR_CLOUD_FALLBACK", "true")
+    ocr_engine = _force_local(monkeypatch, confidence=0.95)
+    monkeypatch.setattr(
+        ocr_engine.AzureDocIntelEngine,
+        "run",
+        lambda self, data, mime: OcrTextResult(
+            text="Glucose 99 mg/dL", confidence=0.96, provider="azure"
+        ),
+    )
+
+    res = ocr_engine.run_ocr(b"x", "image/png")
+
+    assert res.provider == "azure"
+    assert ocr_engine.azure_ocr_permitted() is True
+
+
+def test_build_draft_image_skips_azure_table_path_when_cloud_flag_off(monkeypatch):
+    """PRIV-F3: the table-first Azure path in build_draft() is flag-gated too."""
+    _azure_credentials_present(monkeypatch)
+    monkeypatch.delenv("MCP_FEATURE_OCR_CLOUD_FALLBACK", raising=False)
+    monkeypatch.delenv("FEATURE_OCR_CLOUD_FALLBACK", raising=False)
+    calls = _azure_must_not_be_called(monkeypatch)
+    _patch_ocr(monkeypatch)
+
+    draft = lab_upload.process_bytes(_png())
+
+    assert draft.provider_used == "tesseract"
+    assert calls == []
+    assert any(v.canonical == "fasting_glucose" for v in draft.parsed_values)
+
+
+def test_pdf_extraction_skips_azure_when_cloud_flag_off(monkeypatch):
+    """PRIV-F3: the PDF branch must not reach Azure DI on credentials alone."""
+    _azure_credentials_present(monkeypatch)
+    monkeypatch.delenv("MCP_FEATURE_OCR_CLOUD_FALLBACK", raising=False)
+    monkeypatch.delenv("FEATURE_OCR_CLOUD_FALLBACK", raising=False)
+    calls = _azure_must_not_be_called(monkeypatch)
+
+    pdf_bytes = b"%PDF-1.7 " + b"x" * 32
+    draft = lab_upload.process_bytes(pdf_bytes)
+
+    assert draft.provider_used != "azure"
+    assert calls == []
+
+
+# --------------------------------------------------------------------------- #
+# PRIV-F4 — /lab-uploads is fail-closed on the patient's `documents` consent
+# --------------------------------------------------------------------------- #
+
+
+def _set_documents_consent(db, user_id, *, granted, version=None):
+    """Upsert the caller's `documents` MetoConsent grant (test helper)."""
+    import datetime as _dt
+
+    from app.ai.consent_policy import CATEGORY_DOCUMENTS, CONSENT_POLICY_VERSION
+    from app.models.meto import MetoConsent
+
+    row = (
+        db.query(MetoConsent)
+        .filter(
+            MetoConsent.user_id == user_id,
+            MetoConsent.context_type == CATEGORY_DOCUMENTS,
+        )
+        .first()
+    )
+    now = _dt.datetime.now(_dt.UTC)
+    if row is None:
+        row = MetoConsent(user_id=user_id, context_type=CATEGORY_DOCUMENTS, granted_at=now)
+        db.add(row)
+    row.granted = granted
+    row.policy_version = version or CONSENT_POLICY_VERSION
+    if granted:
+        row.granted_at = now
+        row.revoked_at = None
+    else:
+        row.revoked_at = now
+    db.commit()
+
+
+@pytest.mark.real_consent
+def test_lab_upload_fail_closed_without_documents_consent(
+    client, patient, db, monkeypatch, ocr_on
+):
+    """PRIV-F4: /lab-uploads runs document OCR, so it honours the same fail-closed
+    `documents` consent gate as routes/documents.py — no grant → 403 CONSENT_DENIED,
+    grant → works, revoke → blocked again on the very next request."""
+    _patch_ocr(monkeypatch)
+    h = patient["headers"]
+    uid = patient["user_id"]
+
+    def _post():
+        return client.post(
+            "/api/v1/lab-uploads",
+            files={"file": ("lab.png", _png(), "image/png")},
+            headers=h,
+        )
+
+    # (1) No grant → fail-closed.
+    r = _post()
+    assert r.status_code == 403, r.text
+    assert r.json()["code"] == "CONSENT_DENIED"
+
+    # (2) Grant → the upload/OCR draft works exactly as before.
+    _set_documents_consent(db, uid, granted=True)
+    r = _post()
+    assert r.status_code == 200, r.text
+    assert any(v["canonical"] == "fasting_glucose" for v in r.json()["parsed_values"])
+
+    # (3) Revoke → blocked again immediately.
+    _set_documents_consent(db, uid, granted=False)
+    assert _post().status_code == 403
+
+    # (4) Stale policy version → treated as NOT granted (fail-closed on a bump).
+    _set_documents_consent(db, uid, granted=True, version="0.0-stale")
+    assert _post().status_code == 403

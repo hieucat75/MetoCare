@@ -16,13 +16,17 @@ from __future__ import annotations
 import logging
 import re
 import unicodedata
+from collections.abc import Mapping
 from dataclasses import dataclass
+from functools import lru_cache
+from types import MappingProxyType
 
 from app.domain.hospital_profiles import HospitalProfile, detect_hospital
 from app.domain.lab_catalog import get_catalog as _get_catalog
 from app.domain.lab_interpreter import (
     _ALIAS_INDEX,
     BIOMARKERS,
+    OCR_CONFIDENCE_THRESHOLD,
     BiomarkerSpec,
     ConfidenceDetail,
     RawLabValue,
@@ -105,34 +109,294 @@ def _strip_accents(s: str) -> str:
     return "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn")
 
 
+# Aliases the parser must recognise that the shared ``_ALIAS_INDEX`` does not
+# carry. Their absence is the direct cause of OCR-F3: the index holds
+# "hdl-cholesterol" (hyphen) but not "hdl cholesterol" (space) nor the
+# VN-report word order "cholesterol hdl", so a printed "HDL Cholesterol" only
+# matched the generic "cholesterol" alias and was stored as total cholesterol.
+# Some hospital profiles already declare these, but only when a profile is
+# detected — these make the behaviour unconditional.
+_PARSER_EXTRA_ALIASES: dict[str, tuple[str, ...]] = {
+    "hdl": ("hdl cholesterol", "cholesterol hdl", "hdl chol", "chol hdl"),
+    "ldl": ("ldl cholesterol", "cholesterol ldl", "ldl chol", "chol ldl"),
+}
+
+# Labels that contain a known alias but denote an analyte this catalogue has NO
+# canonical biomarker for. Emitting the contained alias would silently file a
+# different analyte (e.g. non-HDL / VLDL cholesterol stored as HDL or total
+# cholesterol; a lipid *ratio* stored as a concentration). Matched against the
+# accent-stripped, lower-cased line — one lab row per line — and the whole row
+# is dropped rather than mis-mapped.
+_UNMAPPABLE_LABEL_RE = re.compile(
+    r"(?:"
+    r"non[\s\-_.]*hdl"  # non-HDL cholesterol — no canonical biomarker
+    r"|(?<![a-z0-9])vldl"  # VLDL cholesterol / VLDL-C — no canonical biomarker
+    r"|remnant\s+cholesterol"
+    r"|cholesterol\s+con\s+lai"
+    r"|(?:chol|cholesterol|tc|ldl|tg|triglycerid\w*)\s*/\s*hdl"  # lipid ratios
+    r"|hdl\s*/\s*(?:chol|cholesterol|tc|ldl)"
+    #
+    # SPECIMEN qualifiers. Every canonical in the table is a SERUM/blood analyte,
+    # and nothing downstream carries a specimen, so a urine line resolved to the
+    # serum canonical and was stored, classified and trended as blood.
+    #
+    # This is the same "wrong analyte" class as the lipid neighbours above, and it
+    # is worse in one direction: the value ranges do not overlap, so it does not
+    # look like noise. Urine creatinine runs 50-200 mg/dL against a serum
+    # reference of 0.6-1.2 with critical around 4, so a routine urinalysis line
+    # told the patient their kidney function was catastrophically abnormal. In the
+    # other direction urine glucose 5.5 mmol/L became a fasting_glucose of ~99
+    # mg/dL and classified NORMAL — a fabricated normal blood sugar, with the
+    # glycosuria that was actually on the report silently dropped.
+    #
+    # Urinalysis is in nearly every VN check-up packet and the whole premise of
+    # the document path is "photograph whatever the hospital gave you", so this is
+    # a routine input, not an edge case. The review card shows the printed label,
+    # so confirming "Creatinin niệu" looks entirely correct to the patient.
+    #
+    # Dropping the row is the same trade as everywhere else here: a missing urine
+    # result is a gap the patient can see; a urine value stored as blood is not.
+    r"|(?<![a-z0-9])nieu(?![a-z0-9])"  # "niệu" accent-stripped — VN for urinary
+    r"|nuoc\s*tieu"  # "nước tiểu" — urine
+    r"|(?<![a-z0-9])urin\w*"  # urine / urinary / urinalysis
+    r"|24\s*h\s*urine|urine\s*24"
+    r"|(?<![a-z0-9])acr(?![a-z0-9])"  # albumin/creatinine ratio
+    r"|albumin\s*/\s*creatinin\w*"
+    r"|(?<![a-z0-9])upcr(?![a-z0-9])"
+    r"|(?<![a-z0-9])(?:dich\s*nao\s*tuy|csf)(?![a-z0-9])"  # CSF, same reasoning
+    r")"
+)
+
+
+@lru_cache(maxsize=1024)
+def _alias_pattern(alias_noacc: str) -> re.Pattern[str]:
+    """Compile a word-boundary-aware pattern for an accent-stripped alias.
+
+    A bare substring search lets a generic alias match inside a more specific
+    name (``ldl`` inside ``vldl``, ``ldl-c`` inside ``vldl-c``). Boundaries are
+    expressed as alphanumeric lookarounds rather than ``\\b`` because aliases
+    legitimately end in punctuation (``na+``, ``k+``, ``cl-``).
+
+    Trailing digits are tolerated for aliases longer than 3 chars so glued OCR
+    output ("Cholesterol210") still parses, while short aliases keep the strict
+    digit-blocking boundary that stops ``hb`` matching inside ``hba1c``.
+    """
+    lead = r"(?<![a-z0-9])" if alias_noacc[0].isalnum() else ""
+    if not alias_noacc[-1].isalnum():
+        trail = ""
+    elif len(alias_noacc) <= 3:
+        trail = r"(?![a-z0-9])"
+    else:
+        trail = r"(?![a-z])"
+    # Separators inside an alias are matched FLEXIBLY: a single space in the
+    # alias matches any run of space / hyphen / underscore / dot in the label.
+    # Printed VN reports write the same analyte as "HDL Cholesterol",
+    # "HDL-Cholesterol" and "HDL - Cholesterol", and enumerating a fixed alias per
+    # spelling is how "HDL - Cholesterol" kept resolving to total_cholesterol
+    # after the space form had been fixed. Note "/" is deliberately NOT a
+    # separator here: "Cholesterol/HDL" is a RATIO, a different quantity, and
+    # must stay unmappable rather than collapse onto "cholesterol hdl".
+    #
+    # Length is preserved by construction (the pattern matches the original
+    # string; nothing is rewritten), so the caller's end-index into the raw line
+    # stays exact.
+    body = r"[\s\-_.]+".join(re.escape(part) for part in alias_noacc.split(" ") if part)
+    return re.compile(lead + body + trail)
+
+
+
+def _profile_by_name(name: str):
+    """Resolve a profile by name for the memoised index (keeps the cache key hashable)."""
+    from app.domain.hospital_profiles import HOSPITAL_PROFILES
+
+    for profile in HOSPITAL_PROFILES:
+        if profile.name == name:
+            return profile
+    return None
+
+
+@lru_cache(maxsize=32)
+def _cached_alias_index(profile_name: str | None) -> dict:
+    """Memoised alias index. Keyed by profile NAME so the result is hashable."""
+    combined = dict(_ALIAS_INDEX)
+    for canonical, extras in _PARSER_EXTRA_ALIASES.items():
+        base = _ALIAS_INDEX.get(canonical)
+        if base:
+            for alias in extras:
+                combined.setdefault(alias, base)
+
+    profile = _profile_by_name(profile_name) if profile_name else None
+    if profile:
+        for canonical, extras in profile.additional_aliases.items():
+            base_spec = _ALIAS_INDEX.get(canonical)
+            if base_spec:
+                for alias in extras:
+                    combined[alias.lower()] = base_spec
+    return combined
+
+
+def build_alias_index(hospital_profile=None) -> Mapping[str, BiomarkerSpec]:
+    """THE alias index. Every analyte-resolution call site must use this.
+
+    `_ALIAS_INDEX` alone is NOT safe to match against. It carries
+    "hdl-cholesterol" (hyphen) but neither "hdl cholesterol" (space) nor the VN
+    report order "cholesterol hdl", while `total_cholesterol` carries the bare
+    alias "cholesterol". Under longest-alias-wins the spans for "HDL Cholesterol"
+    are `hdl`(0-3) and `cholesterol`(4-15) — neither contains the other, so
+    nothing is shadowed and the LONGER `cholesterol` wins. The printed label says
+    HDL; the stored analyte is total cholesterol.
+
+    That is exactly what happened on the MDI path, which called
+    `_match_biomarker` with no index and so silently used the bare
+    `_ALIAS_INDEX`, while `/lab-uploads` built a combined index inline and was
+    safe. Two code paths, two different answers for the same printed label.
+    Routing every caller through this one function makes that class of drift
+    impossible rather than merely fixed once.
+    """
+    # Read-only view over the MEMOIZED dict. Returning the dict itself handed
+    # every caller a shared, cached, mutable mapping keyed by profile name: one
+    # caller doing `idx["x"] = spec` would silently corrupt analyte resolution for
+    # every later request using that profile, and the corruption would persist for
+    # the process lifetime. No caller mutates it today; MappingProxyType is O(1)
+    # and makes that impossible to start doing by accident.
+    return MappingProxyType(_cached_alias_index(getattr(hospital_profile, "name", None)))
+
+
 def _match_biomarker(
     line_noacc_lc: str,
     alias_index: dict | None = None,
 ) -> tuple[BiomarkerSpec, int] | None:
     """Find the biomarker whose alias appears in the accent-stripped, lower-cased
-    line. Returns ``(spec, end_index)`` of the longest matching alias (so
-    'ldl cholesterol' beats 'cholesterol'), or None. The end index lets the caller
-    read the value AFTER the label, never digits embedded in the name (e.g. the
-    '1' in 'HbA1c')."""
+    line. Returns ``(spec, end_index)`` of the most *specific* matching alias, or
+    None. The end index lets the caller read the value AFTER the label, never
+    digits embedded in the name (e.g. the '1' in 'HbA1c').
+
+    Specificity rules, in order:
+
+    1. Labels with no canonical biomarker (``_UNMAPPABLE_LABEL_RE``) match
+       nothing at all — a wrong analyte is worse than a dropped row.
+    2. A match wholly contained inside a longer match is discarded, so
+       ``cholesterol`` can never win inside ``hdl cholesterol`` /
+       ``cholesterol hdl`` / ``cholesterol toan phan``.
+    3. Of what remains, the longest alias wins; ties break on earliest position
+       so the result is deterministic regardless of alias-index ordering.
+    """
     idx = alias_index if alias_index is not None else _ALIAS_INDEX
-    best: tuple[int, BiomarkerSpec, int] | None = None  # (alias_len, spec, end_idx)
+    if _UNMAPPABLE_LABEL_RE.search(line_noacc_lc):
+        return None
+
+    won = _winning_span(line_noacc_lc, idx)
+    if won is None:
+        return None
+    _start, end, spec, _alias = won
+    return spec, end
+
+
+def _winning_span(
+    line_noacc_lc: str, idx: dict
+) -> tuple[int, int, BiomarkerSpec, str] | None:
+    """The shared span-selection, returning the WINNING ALIAS as well.
+
+    `_match_biomarker` deliberately keeps its two-tuple return (many callers
+    unpack it), so the alias that actually won is carried here instead of widening
+    that signature. It is what `resolve_with_provenance` records: "resolved to
+    `ldl`" is not auditable on its own, because it does not say WHICH of the
+    dozens of aliases fired, and that is precisely the question asked when a row
+    turns out to name the wrong analyte.
+    """
+    spans: list[tuple[int, int, BiomarkerSpec, str]] = []
     for alias, spec in idx.items():
         a = _strip_accents(alias.lower())
         if not a:
             continue
-        if len(a) <= 3:
-            # Word-boundary match for very short aliases (hb, tg, hct …).
-            m = re.search(rf"(?<![a-z0-9]){re.escape(a)}(?![a-z0-9])", line_noacc_lc)
-        else:
-            pos = line_noacc_lc.find(a)
-            m = None if pos < 0 else re.compile(re.escape(a)).match(line_noacc_lc, pos)
-        if m is None:
-            continue
-        if best is None or len(a) > best[0]:
-            best = (len(a), spec, m.end())
-    if best is None:
+        for m in _alias_pattern(a).finditer(line_noacc_lc):
+            spans.append((m.start(), m.end(), spec, alias))
+    if not spans:
         return None
-    return best[1], best[2]
+
+    def _is_shadowed(span) -> bool:
+        start, end = span[0], span[1]
+        return any(
+            o[0] <= start and end <= o[1] and (o[1] - o[0]) > (end - start)
+            for o in spans
+        )
+
+    survivors = [s for s in spans if not _is_shadowed(s)]
+    return min(survivors, key=lambda s: (-(s[1] - s[0]), s[0]))
+
+
+def resolve_with_provenance(label: str | None, hospital_profile=None) -> dict:
+    """Resolve a printed lab label AND record how the resolution was reached.
+
+    Storing only the canonical key makes a wrong-analyte incident un-investigable
+    after the fact: the row says `ldl`, the report said something else, and
+    nothing records which alias bridged them or whether a hospital-profile alias
+    was involved. That is the exact question P0-1 raised, and it could not be
+    answered from the data.
+
+    Returns a flat, JSON-serializable dict — never raises. `canonical` is None for
+    a label with no safe canonical (non-HDL, VLDL, a ratio), and `reason` says
+    which rule dropped it, so "we produced nothing" is distinguishable from "we
+    were never asked".
+    """
+    raw = (label or "").strip()
+    if not raw:
+        return {"original_label": label, "canonical": None, "reason": "empty_label"}
+
+    normalized = _strip_accents(raw.lower())
+    if _UNMAPPABLE_LABEL_RE.search(normalized):
+        # Deliberate refusal, not a lookup miss — the distinction matters when
+        # someone asks why a line on the report never became a row.
+        return {
+            "original_label": raw,
+            "canonical": None,
+            "reason": "unmappable_label",
+            "matcher": "hardened",
+        }
+
+    idx = build_alias_index(hospital_profile)
+    won = _winning_span(normalized, idx)
+    if won is None:
+        return {
+            "original_label": raw,
+            "canonical": None,
+            "reason": "no_alias_matched",
+            "matcher": "hardened",
+        }
+
+    _start, _end, spec, alias = won
+    profile_name = getattr(hospital_profile, "name", None)
+    return {
+        "original_label": raw,
+        "canonical": spec.canonical,
+        "matched_alias": alias,
+        "alias_source": _alias_source(alias, hospital_profile),
+        "hospital_profile": profile_name,
+        "matcher": "hardened",
+        "reason": "matched",
+    }
+
+
+def _alias_source(alias: str, hospital_profile=None) -> str:
+    """Which of the THREE alias layers contributed the winning alias.
+
+    `build_alias_index` merges the shared `_ALIAS_INDEX`, the parser's own
+    `_PARSER_EXTRA_ALIASES`, and any hospital-profile aliases. Collapsing that to
+    base-or-profile mislabels every parser-extra alias as profile-contributed —
+    which would send an investigator looking at the wrong lab's configuration.
+    A profile-scoped alias resolving a report from a DIFFERENT lab is a specific,
+    checkable failure, so the layer has to be reported accurately to be useful.
+    """
+    if alias in _ALIAS_INDEX:
+        return "base"
+    for extras in _PARSER_EXTRA_ALIASES.values():
+        if alias in extras:
+            return "parser_extra"
+    if hospital_profile is not None:
+        for extras in getattr(hospital_profile, "additional_aliases", {}).values():
+            if alias in extras or alias.lower() in {e.lower() for e in extras}:
+                return "profile"
+    return "unknown"
 
 
 def _norm_unit(u: str) -> str:
@@ -194,17 +458,14 @@ def parse_lab_text(
     if hospital_profile is None:
         hospital_profile = detect_hospital(text)
 
-    _combined = dict(_ALIAS_INDEX)
     if hospital_profile:
         corrected = text
         for bad, good in hospital_profile.ocr_corrections.items():
             corrected = corrected.replace(bad, good)
         text = corrected
-        for canonical, extras in hospital_profile.additional_aliases.items():
-            base_spec = _ALIAS_INDEX.get(canonical)
-            if base_spec:
-                for a in extras:
-                    _combined[a.lower()] = base_spec
+    # One shared builder — see build_alias_index for why matching against the
+    # bare _ALIAS_INDEX is unsafe.
+    _combined = build_alias_index(hospital_profile)
 
     seen: dict[str, RawLabValue] = {}
     for raw_line in text.splitlines():
@@ -366,12 +627,19 @@ def parse_lab_text(
             },
         )
 
+        # A row the parser is not confident about must never present as settled:
+        # anything below the module-wide review threshold (and therefore every
+        # hard-gated 0.0 from an incompatible unit or an impossible value) is
+        # flagged so it cannot be persisted without explicit user confirmation.
+        requires_review = overall < OCR_CONFIDENCE_THRESHOLD
+
         seen[spec.canonical] = RawLabValue(
             test_name=spec.canonical,
             value=value,
             unit=unit or spec.unit,
             ocr_confidence=overall,
             confidence_detail=detail,
+            requires_review=requires_review,
             original_value=orig_value,
             original_unit=orig_unit,
             raw_test_name=raw_test_name,

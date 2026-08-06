@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 import logging
 import re
 from functools import lru_cache
@@ -172,9 +173,83 @@ class EncryptedString(TypeDecorator):
                 self.on_decrypt_failure,
             )
             if self.on_decrypt_failure == "raise":
-                raise UndecryptablePHIError(
-                    "A required encrypted field could not be decrypted."
-                )
+                raise UndecryptablePHIError("A required encrypted field could not be decrypted.")
             return None
         # Tolerate legacy plaintext rows (pre-encryption) by returning as-is.
         return current
+
+
+class EncryptedJSON(TypeDecorator):
+    """JSON-valued column whose Python value is a dict but storage is ciphertext.
+
+    SEC-F11 covers ``ExtractionCandidate.fields_json`` — extracted drug names,
+    doses and diagnoses — which was plaintext JSON while the OCR page text it was
+    derived from was already encrypted. The value is serialized with sorted keys
+    (stable output, no dict-ordering churn), encrypted, and stored as TEXT.
+
+    Nothing filters, indexes or joins on this column by value (verified across
+    the codebase), so losing JSONB queryability costs nothing. That property must
+    hold for any future column adopting this type — Fernet is non-deterministic,
+    so a value-based query is impossible by construction.
+
+    Reads tolerate three shapes so a backfill can run without downtime:
+
+    1. ciphertext          — the post-migration steady state;
+    2. a plaintext JSON str — a legacy row not yet backfilled;
+    3. a ``dict``           — a legacy row read while the column is still JSON/JSONB,
+                              which the driver has already deserialized.
+
+    ``on_decrypt_failure`` matches ``EncryptedString``: ``"raise"`` is REQUIRED for
+    non-nullable columns, so a wrong/rotated key surfaces as a controlled error
+    rather than silently becoming missing clinical data.
+    """
+
+    impl = Text
+    cache_ok = True
+
+    def __init__(self, *args, on_decrypt_failure: str = "raise", **kwargs):
+        super().__init__(*args, **kwargs)
+        if on_decrypt_failure not in ("none", "raise"):
+            raise ValueError(
+                f"on_decrypt_failure must be 'none' or 'raise', got {on_decrypt_failure!r}"
+            )
+        self.on_decrypt_failure = on_decrypt_failure
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return None
+        return encrypt(json.dumps(value, ensure_ascii=False, sort_keys=True))
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return None
+        # (3) driver already deserialized a legacy JSON/JSONB row.
+        if isinstance(value, dict | list):
+            return value
+
+        plaintext = try_decrypt(value)
+        if plaintext is None:
+            if is_fernet_token(value):
+                # Real ciphertext we cannot decrypt (unknown/rotated key) — never
+                # silently drop clinical data. Message omits the value itself.
+                logger.warning(
+                    "EncryptedJSON: undecryptable ciphertext (on_decrypt_failure=%s)",
+                    self.on_decrypt_failure,
+                )
+                if self.on_decrypt_failure == "raise":
+                    raise UndecryptablePHIError(
+                        "A required encrypted field could not be decrypted."
+                    )
+                return None
+            # (2) legacy plaintext JSON row, pre-backfill.
+            plaintext = value
+
+        try:
+            return json.loads(plaintext)
+        except (TypeError, ValueError) as exc:
+            logger.warning("EncryptedJSON: value is not valid JSON after decrypt")
+            if self.on_decrypt_failure == "raise":
+                raise UndecryptablePHIError(
+                    "A required encrypted field could not be decoded."
+                ) from exc
+            return None

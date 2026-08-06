@@ -13,6 +13,10 @@ import tempfile
 _DB_DIR = tempfile.mkdtemp(prefix="mcp_test_")
 os.environ["MCP_DATABASE_URL"] = f"sqlite:///{_DB_DIR}/test.sqlite3"
 os.environ["MCP_ENV"] = "test"
+# Environment-scoped auth relaxation for the test suite (dev/test only; the
+# startup guard forbids relaxed auth in staging/production).
+os.environ["MCP_PASSWORD_MIN_LENGTH"] = "6"
+os.environ["MCP_PASSWORD_REQUIRE_COMPLEXITY"] = "false"
 os.environ["MCP_AI_MODE"] = "mock"
 os.environ["MCP_OCR_MODE"] = "mock"
 # PR-B: the patient-facing AI/OCR feature flags default OFF (no real AI for MVP).
@@ -116,6 +120,47 @@ def _seed_subscription_plans() -> None:
 
 
 @pytest.fixture(autouse=True)
+def _default_meto_consent(request, monkeypatch):
+    """Grant all Meto consent categories by default so existing pipeline tests run
+    without every test having to seed consent. Tests that exercise the real
+    fail-closed consent gate opt out with @pytest.mark.real_consent.
+
+    Patches the names as bound in the consuming modules (import-time binding),
+    not the definition site.
+    """
+    if not request.node.get_closest_marker("real_consent"):
+        from app.ai.consent_policy import CONSENT_CATEGORIES
+
+        monkeypatch.setattr(
+            "app.ai.context.builder.load_granted_categories",
+            lambda db, user_id: set(CONSENT_CATEGORIES),
+        )
+        monkeypatch.setattr(
+            "app.services.meto_chat.is_granted",
+            lambda db, user_id, category: True,
+        )
+        # PRIV-F1: the documents pipeline is now gated on `documents` consent.
+        # Grant it by default so existing pipeline tests run without seeding
+        # consent; real fail-closed behavior is exercised under @real_consent.
+        monkeypatch.setattr(
+            "app.api.v1.routes.documents.is_granted",
+            lambda db, user_id, category: True,
+        )
+        # PRIV-F4: /lab-uploads carries the same documents-consent gate.
+        monkeypatch.setattr(
+            "app.api.v1.routes.lab_upload.is_granted",
+            lambda db, user_id, category: True,
+        )
+        # BRD §F: medication→source provenance returns document data, so it
+        # carries the same documents-consent gate.
+        monkeypatch.setattr(
+            "app.api.v1.routes.medication_source.is_granted",
+            lambda db, user_id, category: True,
+        )
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _reset_ratelimit():
     """Clear rate-limit + lockout state before each test so it never leaks."""
     from app.core.ratelimit import reset_all
@@ -139,6 +184,20 @@ def _reset_llm():
     get_worker().reset()
     notifications.reset()
     yield
+
+
+@pytest.fixture(autouse=True)
+def _mdi_registry_defaults():
+    """Guarantee the concrete MDI extractors/promoters are registered before every
+    test. Individual MDI tests reset the global registries in their own teardown;
+    without this, a wiped registry would leak into any later test that exercises a
+    real prescription confirm — an order-dependent flake. Restores defaults after
+    each test too, so state is deterministic regardless of collection order."""
+    from app.services.mdi.bootstrap import register_defaults
+
+    register_defaults()
+    yield
+    register_defaults()
 
 
 @pytest.fixture

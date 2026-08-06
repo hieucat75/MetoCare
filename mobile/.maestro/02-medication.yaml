@@ -1,0 +1,141 @@
+# Journey B — Medication: list -> detail (schedule / next-due) -> reminders
+#                          (mark a due dose TAKEN, mark another SKIPPED w/ reason)
+#
+# App: MetoCare patient (Expo React Native) — appId me.metocare.patient
+# Credentials come ONLY from env vars: ${MAESTRO_EMAIL} / ${MAESTRO_PASSWORD}
+#   Run with:  maestro test -e MAESTRO_EMAIL=... -e MAESTRO_PASSWORD=... .maestro/02-medication.yaml
+#
+# NOTE: medication/schedule/dose ids are dynamic (med-<id>, dose-taken-<id>,
+#       skip-confirm-<id>, ...), so this flow taps the FIRST match via regex.
+#       Per-dose state labels ("Đã uống"/"Đã bỏ qua") are shared with the
+#       adherence-summary counters, so after each mutation we assert the summary
+#       is present and reminders-error is absent (a real, non-shared signal that
+#       the TAKEN/SKIPPED write succeeded). The SKIPPED leg is guarded by runFlow
+#       because it needs a SECOND actionable dose in the seed.
+appId: me.metocare.patient
+---
+# --- Stage 1: cold launch (independent run) ---
+- launchApp:
+    clearState: true
+
+# Dismiss first-run onboarding if present (clearState shows it)
+- extendedWaitUntil:
+    visible:
+      id: "onboarding-skip"
+    timeout: 60000
+- tapOn:
+    id: "onboarding-skip"
+
+# --- Stage 2: log in with env credentials (email/password) ---
+- extendedWaitUntil:
+    visible:
+      id: "login-submit"
+    timeout: 20000
+- tapOn:
+    id: "login-email"
+- inputText: ${MAESTRO_EMAIL}
+- tapOn:
+    id: "login-password"
+- inputText: ${MAESTRO_PASSWORD}
+- hideKeyboard
+- tapOn:
+    id: "login-submit"
+
+# --- Stage 3: dashboard -> open the medications list (gate on a CTA) ---
+- extendedWaitUntil:
+    visible:
+      id: "dashboard-my-medications"
+    timeout: 20000
+- scrollUntilVisible:
+    element:
+      id: "dashboard-my-medications"
+    direction: DOWN
+    timeout: 15000
+- tapOn:
+    id: "dashboard-my-medications"
+
+# --- Stage 4: medications list loads (network: GET meds) ---
+- extendedWaitUntil:
+    visible:
+      text: "Thuốc của tôi"   # medication.listTitle
+    timeout: 20000
+# Open the first seeded medication (cards: med-<id>)
+- scrollUntilVisible:
+    element:
+      id: "med-.*"
+    direction: DOWN
+    timeout: 15000
+- tapOn:
+    id: "med-.*"
+
+# --- Stage 5: medication detail — assert schedule + next-due ---
+- extendedWaitUntil:
+    visible:
+      id: "medication-detail"
+    timeout: 20000
+- assertVisible:
+    text: "Chi tiết thuốc"   # medication.detailTitle
+- assertVisible:
+    id: "next-due"          # "Liều sắp tới" card
+# The active schedule renders as schedule-<id>; wait for the first one.
+- scrollUntilVisible:
+    element:
+      id: "schedule-.*"
+    direction: DOWN
+    timeout: 15000
+- assertVisible:
+    id: "schedule-.*"
+
+# --- Stage 6: jump to today's reminders from the detail screen ---
+- scrollUntilVisible:
+    element:
+      id: "detail-reminders-cta"
+    direction: DOWN
+    timeout: 15000
+- tapOn:
+    id: "detail-reminders-cta"
+
+# --- Stage 7: reminders load (network: GET reminders-due) ---
+- extendedWaitUntil:
+    visible:
+      id: "adherence-summary"
+    timeout: 20000
+- assertVisible:
+    text: "Nhắc dùng thuốc"   # medication.remindersTitle
+
+# --- Stage 8: mark the first due dose TAKEN (dose-taken-<id>) ---
+- scrollUntilVisible:
+    element:
+      id: "dose-taken-.*"
+    direction: DOWN
+    timeout: 15000
+- tapOn:
+    id: "dose-taken-.*"
+# reminders-error absent == the mark-taken write succeeded.
+- assertNotVisible:
+    id: "reminders-error"
+
+# --- Stage 9: mark ANOTHER due dose SKIPPED with a reason (needs a 2nd dose) ---
+- runFlow:
+    when:
+      visible:
+        id: "dose-skipped-.*"
+    commands:
+      - tapOn:
+          id: "dose-skipped-.*"
+      - extendedWaitUntil:
+          visible:
+            id: "skip-reason-input"
+          timeout: 15000
+      - tapOn:
+          id: "skip-reason-input"
+      - inputText: "Quên uống thuốc"
+      - hideKeyboard
+      - tapOn:
+          id: "skip-confirm-.*"
+      - assertNotVisible:
+          id: "reminders-error"
+
+# --- Stage 10: adherence summary still present after the mutations ---
+- assertVisible:
+    id: "adherence-summary"

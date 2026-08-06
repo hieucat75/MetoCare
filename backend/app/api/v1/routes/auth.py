@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import hashlib
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import CurrentUser, current_user, enforce_rate_limit, get_session
 from app.core.config import get_settings
+from app.core.metrics import registry
 from app.core.phone import normalize_vn_phone
 from app.core.ratelimit import get_lockout
 from app.core.security import decode_token
@@ -30,6 +34,64 @@ from app.schemas.common import Message
 from app.services import audit, auth, mfa
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+_security_logger = logging.getLogger("mcp.security")
+
+# WS4-F3 — every failed-authentication branch (bad credentials, bad second
+# factor, lockout, rate limit) must leave an attributable but PHI-free trace.
+# The login identifier is a phone number or an email, i.e. PHI, so it is only
+# ever recorded as a truncated SHA-256 digest: enough to correlate repeated
+# attempts against one account, useless as an identifier on its own.
+_KEY_HASH_LENGTH = 16
+
+AUTH_FAILURE_COUNTER = "auth_failures_total"
+
+
+def _hash_login_key(key: str) -> str:
+    return hashlib.sha256(key.encode()).hexdigest()[:_KEY_HASH_LENGTH]
+
+
+def _record_auth_failure(
+    db: Session, request: Request, *, login_key: str | None, reason: str
+) -> None:
+    """Audit + count one failed-authentication event. Never raises."""
+    registry.inc_counter(AUTH_FAILURE_COUNTER, {"reason": reason})
+    details: dict[str, str] = {"reason": reason}
+    if login_key:
+        details["key_hash"] = _hash_login_key(login_key)
+    try:
+        audit.record(
+            db,
+            actor_type="user",
+            actor_id=None,
+            action="login",
+            resource_type="user",
+            outcome="deny",
+            severity="warning",
+            ip_address=request.client.host if request.client else None,
+            details=details,
+        )
+        db.commit()
+    except Exception:  # auditing must never mask the auth failure itself
+        db.rollback()
+        _security_logger.warning(
+            "auth_failure_audit_write_failed", extra={"event": "auth_failure_audit_write_failed"}
+        )
+    _security_logger.warning(
+        "auth_failure", extra={"event": "auth_failure", "action": "login"}
+    )
+
+
+def _enforce_login_rate_limit(
+    db: Session, request: Request, action: str, *, login_key: str | None = None
+) -> None:
+    """`enforce_rate_limit` with a WS4-F3 audit trail on the 429 branch."""
+    try:
+        enforce_rate_limit(request, action)
+    except HTTPException as exc:
+        if exc.status_code == status.HTTP_429_TOO_MANY_REQUESTS:
+            _record_auth_failure(db, request, login_key=login_key, reason="rate_limited")
+        raise
 
 
 @router.post("/register", response_model=TokenResponse, status_code=201)
@@ -87,7 +149,10 @@ def register(
 def login(
     request: Request, payload: LoginRequest, db: Session = Depends(get_session)
 ) -> TokenResponse:
-    enforce_rate_limit(request, "login")
+    # Rate limiting runs before the payload is normalized, so the login key is
+    # not yet known here — the 429 branch is keyed on the client, not the
+    # account, and the audit entry records only the reason.
+    _enforce_login_rate_limit(db, request, "login")
     settings = get_settings()
     lockout = get_lockout()
     # Patients log in by phone, admin/doctor by email. Normalize phone for a
@@ -106,6 +171,7 @@ def login(
         max_failures=settings.lockout_max_failures,
         cooldown_seconds=settings.lockout_cooldown_minutes * 60,
     ):
+        _record_auth_failure(db, request, login_key=lkey, reason="locked")
         raise HTTPException(
             status_code=status.HTTP_423_LOCKED,
             detail="Account temporarily locked due to repeated failed logins.",
@@ -120,6 +186,7 @@ def login(
         )
     except auth.AuthError as exc:
         lockout.record_failure(lkey)
+        _record_auth_failure(db, request, login_key=lkey, reason="bad_credentials")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
 
     mfa_ok = False
@@ -129,6 +196,7 @@ def login(
         )
         if not mfa_ok:
             lockout.record_failure(lkey)
+            _record_auth_failure(db, request, login_key=lkey, reason="bad_second_factor")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="MFA code required or invalid.",

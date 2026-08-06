@@ -106,6 +106,9 @@ class HealthTimelineEngine:
         health_metrics: list[Any],        # HealthMetric rows
         medications: list[Any],           # Medication rows
         symptom_logs: list[Any],          # SymptomLog rows
+        dose_occurrences: list[Any] | None = None,   # DoseOccurrence rows (J3)
+        documents: list[Any] | None = None,          # MedicalDocument rows (J2)
+        confirmed_candidates: list[Any] | None = None,  # ExtractionCandidate confirmed/merged (J2)
         from_date: dt.date | None = None,
         to_date: dt.date | None = None,
         event_type_filter: str | None = None,
@@ -118,6 +121,8 @@ class HealthTimelineEngine:
         events.extend(self._weight_events(health_metrics))
         events.extend(self._medication_events(medications))
         events.extend(self._symptom_events(symptom_logs))
+        events.extend(self._dose_events(dose_occurrences or []))
+        events.extend(self._document_events(documents or [], confirmed_candidates or []))
 
         # Filter by date range
         if from_date:
@@ -280,6 +285,103 @@ class HealthTimelineEngine:
                 importance="info",
                 metadata={"medication_id": str(med.id), "name": med.name, "dose": getattr(med, "dose", None), "frequency": getattr(med, "frequency", None)},
             ))
+        return events
+
+    # ── Medication dose events (Journey 3) ────────────────────────────────────
+
+    def _dose_events(self, doses: list[Any]) -> list[TimelineEvent]:
+        events = []
+        label = {
+            "taken": ("Đã uống thuốc", "info"),
+            "skipped": ("Bỏ liều", "watch"),
+            "missed": ("Quên liều", "warning"),
+        }
+        for d in doses:
+            st = getattr(d, "state", None)
+            if st not in label:
+                continue  # pending/notified are not timeline history
+            when = getattr(d, "acted_at", None) or getattr(d, "scheduled_utc", None)
+            if not when:
+                continue
+            date = when.date() if hasattr(when, "date") else when
+            title, importance = label[st]
+            render = getattr(d, "local_render", None) or ""
+            events.append(
+                TimelineEvent(
+                    event_id=f"dose_{d.id}",
+                    event_type=f"medication_dose_{st}",
+                    date=date,
+                    title_vi=title,
+                    summary_vi=f"{title} ({render}).".strip() if render else f"{title}.",
+                    source="medication_dose",
+                    importance=importance,
+                    metadata={
+                        "dose_id": str(d.id),
+                        "schedule_id": str(getattr(d, "schedule_id", "")),
+                        "state": st,
+                    },
+                )
+            )
+        return events
+
+    # ── Medical document events (Journey 2) ───────────────────────────────────
+
+    def _document_events(
+        self, documents: list[Any], confirmed_candidates: list[Any]
+    ) -> list[TimelineEvent]:
+        events = []
+        _doc_label = {
+            "prescription": "đơn thuốc",
+            "lab_report": "phiếu xét nghiệm",
+            "general": "tài liệu y tế",
+        }
+        for doc in documents:
+            created = getattr(doc, "created_at", None)
+            if not created:
+                continue
+            date = created.date() if hasattr(created, "date") else created
+            lbl = _doc_label.get(getattr(doc, "doc_type", None), "tài liệu")
+            events.append(
+                TimelineEvent(
+                    event_id=f"doc_{doc.id}",
+                    event_type="document_uploaded",
+                    date=date,
+                    title_vi=f"Đã tải lên {lbl}",
+                    summary_vi=f"{lbl.capitalize()} được thêm vào hồ sơ.",
+                    source="medical_document",
+                    importance="info",
+                    metadata={
+                        "document_id": str(doc.id),
+                        "doc_type": getattr(doc, "doc_type", None),
+                        "status": getattr(doc, "status", None),
+                    },
+                )
+            )
+        for c in confirmed_candidates:
+            when = getattr(c, "reviewed_at", None) or getattr(c, "created_at", None)
+            if not when:
+                continue
+            date = when.date() if hasattr(when, "date") else when
+            fields = getattr(c, "fields_json", None) or {}
+            text = fields.get("text") or fields.get("name") or fields.get("test_name") or "Mục"
+            ctype = getattr(c, "candidate_type", "")
+            events.append(
+                TimelineEvent(
+                    event_id=f"cand_{c.id}",
+                    event_type=f"confirmed_{ctype}",
+                    date=date,
+                    title_vi=f"Đã xác nhận: {text}"[:120],
+                    summary_vi=f"{ctype}: {text}"[:200],
+                    source="medical_document",
+                    importance="info",
+                    # backlink to the source document for provenance (§B/§H)
+                    metadata={
+                        "candidate_id": str(c.id),
+                        "document_id": str(getattr(c, "document_id", "")),
+                        "candidate_type": ctype,
+                    },
+                )
+            )
         return events
 
     # ── Symptom Events ────────────────────────────────────────────────────────

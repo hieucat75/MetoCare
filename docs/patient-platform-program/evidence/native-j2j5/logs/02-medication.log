@@ -1,0 +1,33 @@
+Running on metocare_pilot_api34
+ > Flow 02-medication
+Launch app "me.metocare.patient" with clear state... COMPLETED
+Assert that id: onboarding-skip is visible... COMPLETED
+Tap on id: onboarding-skip... COMPLETED
+Assert that id: login-submit is visible... COMPLETED
+Tap on id: login-email... COMPLETED
+Input text ${MAESTRO_EMAIL}... COMPLETED
+Tap on id: login-password... COMPLETED
+Input text ${MAESTRO_PASSWORD}... COMPLETED
+Hide Keyboard... COMPLETED
+Tap on id: login-submit... COMPLETED
+Assert that id: dashboard-my-medications is visible... COMPLETED
+Scrolling DOWN until id: dashboard-my-medications is visible with speed 40, visibility percentage 100%, timeout 15000 ms, with centering disabled... COMPLETED
+Tap on id: dashboard-my-medications... COMPLETED
+Assert that "Thuốc của tôi" is visible... COMPLETED
+Scrolling DOWN until id: med-.* is visible with speed 40, visibility percentage 100%, timeout 15000 ms, with centering disabled... COMPLETED
+Tap on id: med-.*... COMPLETED
+Assert that id: medication-detail is visible... COMPLETED
+Assert that "Chi tiết thuốc" is visible... COMPLETED
+Assert that id: next-due is visible... COMPLETED
+Scrolling DOWN until id: schedule-.* is visible with speed 40, visibility percentage 100%, timeout 15000 ms, with centering disabled... COMPLETED
+Assert that id: schedule-.* is visible... COMPLETED
+Scrolling DOWN until id: detail-reminders-cta is visible with speed 40, visibility percentage 100%, timeout 15000 ms, with centering disabled... COMPLETED
+Tap on id: detail-reminders-cta... COMPLETED
+Assert that id: adherence-summary is visible... COMPLETED
+Assert that "Nhắc dùng thuốc" is visible... COMPLETED
+Scrolling DOWN until id: dose-taken-.* is visible with speed 40, visibility percentage 100%, timeout 15000 ms, with centering disabled... COMPLETED
+Tap on id: dose-taken-.*... COMPLETED
+Assert that id: reminders-error is not visible... COMPLETED
+Run flow when id: dose-skipped-.* is visible...
+Run flow when id: dose-skipped-.* is visible... SKIPPED
+Assert that id: adherence-summary is visible... COMPLETED

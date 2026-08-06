@@ -11,6 +11,7 @@ addopts = "-q"
 asyncio_mode = "auto"
 markers = [
     "integration: marks tests as PostgreSQL integration tests (deselect with '-m not integration')",
+    "real_consent: exercise the real Meto consent gate (skip the default grant-all fixture)",
 ]
 
 [tool.ruff]

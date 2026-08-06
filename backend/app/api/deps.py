@@ -12,12 +12,14 @@ from dataclasses import dataclass
 
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.database import get_session  # re-exported for routes
 from app.core.ratelimit import get_rate_limiter
 from app.core.security import decode_token
-from app.models.user import UserRole
+from app.models.user import User, UserRole
 
 __all__ = [
     "get_session",
@@ -65,6 +67,7 @@ class CurrentUser:
 def current_user(
     request: Request,
     creds: HTTPAuthorizationCredentials | None = Depends(_bearer),
+    db: Session = Depends(get_session),
 ) -> CurrentUser:
     if creds is None or not creds.credentials:
         raise HTTPException(
@@ -79,10 +82,31 @@ def current_user(
             detail="Invalid or expired token.",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    # SEC-F2: re-check the account is still active on every request. A JWT is a
+    # bearer credential valid until its (short) expiry; without this an admin
+    # "block"/"suspend" or the patient's own account deletion would not take
+    # effect against an already-issued access token until it expired. Both of
+    # those set User.is_active=False on the (still-present) row, so we reject
+    # when the row exists AND is explicitly deactivated. We select only the
+    # boolean column (indexed PK lookup, no PHI loaded) and return the SAME
+    # generic 401 as an invalid token, so a disabled/deleted account is
+    # indistinguishable from a bad token (no account-state enumeration).
+    # A missing row is left to the RBAC layer (tokens are only ever minted for a
+    # persisted user; there is no hard-delete path in the system).
+    user_id = payload["sub"]
+    is_active = db.execute(
+        select(User.is_active).where(User.id == user_id)
+    ).scalar_one_or_none()
+    if is_active is False:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     # Record the opaque user id for access-log correlation (not PHI).
-    request.state.user_id = payload["sub"]
+    request.state.user_id = user_id
     return CurrentUser(
-        id=payload["sub"],
+        id=user_id,
         role=payload.get("role", ""),
         mfa=bool(payload.get("mfa", False)),
         mfa_enrollment_required=bool(payload.get("mfa_enrollment_required", False)),
