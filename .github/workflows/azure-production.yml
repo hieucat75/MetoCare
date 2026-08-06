@@ -205,8 +205,9 @@ jobs:
             --replica-timeout 600 --replica-retry-limit 1 \
             --parallelism 1 --replica-completion-count 1 \
             --cpu 0.5 --memory 1.0Gi \
-            --secrets "db-url=$DB_URL" \
+            --secrets "db-url=$DB_URL" "enc-keys=$ENC_KEYS" \
             --env-vars "MCP_DATABASE_URL=secretref:db-url" "MCP_ENV=production" \
+              "MCP_ENCRYPTION_KEYS=secretref:enc-keys" \
             --command "alembic" --args "upgrade" "head" \
             -o none
           az containerapp job start -g "$RG" -n "$JOB" -o none
