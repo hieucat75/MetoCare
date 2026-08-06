@@ -219,6 +219,99 @@ jobs:
             sleep 10
           done
 
+      # ── Post-migration PHI crypto smoke (BLOCKS the rollout) ──────────────
+      #
+      # Runs AFTER `alembic upgrade head` and BEFORE any traffic-carrying
+      # revision exists. That ordering is the point: the migration has already
+      # touched encrypted columns, and the next step would put a new revision in
+      # front of patients. If the deployed MCP_ENCRYPTION_KEYS cannot read what
+      # is at rest, this fails here — no revision is created, and the
+      # currently-serving production revision keeps running untouched.
+      #
+      # Why production needs it more than staging: boot validation proves each
+      # key is well-FORMED, not that it is the RIGHT key. On a real database
+      # with a wrong-but-valid key, boot PASSES, /health PASSES (it is
+      # `SELECT 1`), the unauthenticated smoke suite PASSES (it asserts 401s),
+      # and every authenticated encrypted read raises. Notification.title/body
+      # and MedicationStatement.raw_drug_name are NOT NULL with
+      # on_decrypt_failure="raise", so medication reminders and the medication
+      # timeline are down for every patient while the deploy is reported green.
+      # A mis-rotation is the realistic way to get there and it is completely
+      # silent — which is why the gate belongs in the environment where it
+      # matters, not only in the one where it is cheap.
+      #
+      # It writes only synthetic `CRYPTO-SMOKE-<uuid4>` sentinels, inside a
+      # transaction rolled back in a `finally`, and prints no PHI, no key and no
+      # key fragment — only an entity name and a reason code.
+      # `--allow-production` is REQUIRED: the script refuses a production
+      # database without it, via an allow-list, so an unset or misspelled
+      # MCP_ENV fails closed rather than writing sentinels wherever it points.
+      - name: Post-migration PHI crypto smoke
+        run: |
+          # Every value is rebuilt HERE. A `run:` step is a fresh shell, so a
+          # variable assigned in an earlier step does not survive; an earlier
+          # draft of the staging step referenced $MIGRATE_JOB/$ACA_ENV/$IMG, all
+          # empty here, so it would have failed on EVERY deploy without ever
+          # invoking the smoke — and that failure is indistinguishable in the log
+          # from a real wrong-key failure, which is how a gate gets muted as
+          # "the usual broken step".
+          JOB="caj-metocare-crypto-smoke"
+          IMG="${REGISTRY}/${{ github.repository_owner }}/metocare-backend:${{ steps.tag.outputs.tag }}"
+          # Delete-then-create. A REUSED job runs the PREVIOUS execution's image
+          # and secrets, so it would validate the OLD key — precisely the
+          # rotation failure this exists to catch — and report pass.
+          az containerapp job delete -g "$RG" -n "$JOB" --yes -o none 2>/dev/null || true
+          az containerapp job create -g "$RG" -n "$JOB" \
+            --environment "$ENV_NAME" --trigger-type Manual --replica-timeout 600 \
+            --replica-retry-limit 0 --parallelism 1 --replica-completion-count 1 \
+            --image "$IMG" --cpu 0.5 --memory 1Gi \
+            --registry-server "$REGISTRY" \
+            --secrets db-url="$DB_URL" enc-keys="$ENC_KEYS" \
+            --env-vars MCP_DATABASE_URL=secretref:db-url \
+              MCP_ENCRYPTION_KEYS=secretref:enc-keys MCP_ENV=production \
+              MCP_BUILD_SHA=${{ steps.tag.outputs.sha8 }} \
+            --command "python" --args "-m" "scripts.crypto_smoke" "--allow-production" \
+            -o none
+          az containerapp job start -g "$RG" -n "$JOB" -o none
+
+          # 40x10s = 400s of polling against a 600s --replica-timeout: Azure
+          # needs slack after the container's own limit fires to mark the
+          # execution Failed. A loop that expires WITHOUT a verdict must FAIL.
+          # Falling out of it and exiting 0 would report a deploy healthy on the
+          # strength of a check that never returned — the same false green this
+          # step exists to remove.
+          ST=""
+          for i in $(seq 1 40); do
+            ST=$(az containerapp job execution list -g "$RG" -n "$JOB" \
+              --query "[0].properties.status" -o tsv 2>/dev/null || echo Running)
+            echo "  crypto-smoke $i: $ST"
+            [ "$ST" = "Succeeded" ] && break
+            if [ "$ST" = "Failed" ]; then
+              echo "::error::PRODUCTION PHI crypto smoke FAILED — encrypted"
+              echo "::error::columns are not readable with the MCP_ENCRYPTION_KEYS"
+              echo "::error::this deploy would ship. NO revision has been created,"
+              echo "::error::so the currently-serving revision is unaffected."
+              echo "::error::Remediation: restore the previous key in Key Vault"
+              echo "::error::(secret mcp-encryption-keys) and re-run this workflow."
+              echo "::error::Do NOT run an Alembic downgrade — the SEC-F11/P1-5"
+              echo "::error::migrations refuse to decrypt with a wrong key and"
+              echo "::error::abort rather than destroy data."
+              echo "::error::Inspect: az containerapp job execution list -g $RG -n $JOB"
+              exit 1
+            fi
+            sleep 10
+          done
+          if [ "$ST" != "Succeeded" ]; then
+            echo "::error::PRODUCTION PHI crypto smoke did not report a verdict"
+            echo "::error::within 400s (last status: ${ST:-unknown}). Treating as"
+            echo "::error::FAILED: a deploy must not be called healthy on a check"
+            echo "::error::that never returned. No revision has been created."
+            echo "::error::Remediation: inspect the job, then re-run this workflow"
+            echo "::error::once it reports a verdict."
+            echo "::error::Inspect: az containerapp job execution list -g $RG -n $JOB"
+            exit 1
+          fi
+
       # ── Deploy backend Container App ──────────────────────────────────────
       - name: Deploy backend to ACA
         run: |

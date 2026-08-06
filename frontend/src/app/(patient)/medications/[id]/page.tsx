@@ -22,6 +22,7 @@ import { UsageInstructionsCard } from '@/components/patient/medications/usage-in
 import { InteractionsCard } from '@/components/patient/medications/interactions-card'
 import { SideEffectsCard } from '@/components/patient/medications/side-effects-card'
 import { MedicationScheduleCard } from '@/components/patient/medications/schedule-card'
+import { MissedDosesPanel } from '@/components/patient/medications/missed-doses-panel'
 import { MedicationSourceCard } from '@/components/patient/medications/source-card'
 import { useMedicationSchedule } from '@/components/patient/medications/use-medication-schedule'
 import { ApiError } from '@/lib/api/client'
@@ -282,6 +283,7 @@ export default function MedicationDetailPage() {
   // independently of the record above so a schedule failure never blanks the page,
   // and vice versa.
   const schedule = useMedicationSchedule(patientId, id)
+  const [missedDosesOpen, setMissedDosesOpen] = React.useState(false)
 
   const handleTaken = React.useCallback(async () => {
     if (!patientId || logging) return
@@ -538,12 +540,21 @@ export default function MedicationDetailPage() {
           adherence={schedule.adherence}
           isAdherencePartial={schedule.isAdherencePartial}
           adherenceSince={schedule.adherenceSince}
+          adherenceUntil={schedule.adherenceUntil}
           isSubmitting={schedule.isSubmitting}
           actionError={schedule.actionError}
           onMarkTaken={(doseId) => void schedule.markTaken(doseId)}
           onMarkSkipped={(doseId, reason) => schedule.markSkipped(doseId, reason)}
           onRequestDiscontinue={canManage ? () => setDiscontinueOpen(true) : undefined}
+          onOpenMissedDoses={() => setMissedDosesOpen((open) => !open)}
         />
+      )}
+
+      {/* Opt-in, not always-on. A permanent list of everything the patient has
+          missed is a running reproach on a screen they open to manage their
+          treatment; it appears when they ask for it. */}
+      {missedDosesOpen && patientId && (
+        <MissedDosesPanel patientId={patientId} onCorrected={() => void schedule.reload()} />
       )}
 
       {/* Dose / timing chips */}

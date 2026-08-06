@@ -59,6 +59,11 @@ export interface DoseOut {
   scheduled_utc: string
   local_render: string | null
   state: string
+  /** Present only on a dose the patient corrected — the system's original
+   * classification is kept beside the human's. */
+  corrected_from_state?: string | null
+  corrected_at?: string | null
+  correction_reason?: string | null
 }
 
 /** DueOut — the reminder sweep result: delivered count + due dose items. */
@@ -67,14 +72,62 @@ export interface DueOut {
   items: DoseOut[]
 }
 
-/** AdherenceOut — dose-occurrence-based adherence for one schedule. */
+/**
+ * AdherenceOut — dose-occurrence-based adherence for one schedule.
+ *
+ * The legacy `total/taken/skipped/missed` quartet is still sent, but it cannot
+ * describe the period it was computed over and cannot say whether that period
+ * was reconcilable at all. NEVER render `adherence_rate` when `reconciled` is
+ * false: an unreconciled rate is not a rougher version of the same number, it is
+ * a different quantity — how often the patient opened the app.
+ */
 export interface AdherenceOut {
+  expected_count: number
+  taken_count: number
+  skipped_count: number
+  missed_count: number
+  future_count: number
+  /**
+   * Doses excluded because the schedule was PAUSED — a hold the patient was
+   * instructed to observe. Must never be shown as non-adherence: a patient who
+   * followed a doctor's instruction did not miss anything.
+   */
+  excluded_paused_count: number
+  /** Doses excluded because the prescription was withdrawn or superseded. */
+  excluded_cancelled_count: number
+  adherence_rate: number | null
+  period_start: string
+  period_end: string
+  timezone: string
+  calculation_version: string
+  reconciled: boolean
+  reconciliation_reason: string
+  /** The backfill floor applied — adherence starts here, not at `start_date`. */
+  tracking_start_at: string | null
+  grace_policy: { version: string; missed_after_hours: number | null }
+
+  /** Legacy aliases, same numbers. */
   total: number
   taken: number
   skipped: number
   missed: number
-  adherence_rate: number | null
 }
+
+/**
+ * Reasons a patient may give for correcting a missed dose. Closed vocabulary:
+ * free text would put their account of their own symptoms into an audit trail
+ * built to avoid PHI. Every label records what happened; none advises whether to
+ * take a late dose.
+ */
+export const DOSE_CORRECTION_REASONS = [
+  { code: 'taken_late', label: 'Tôi đã uống muộn hơn giờ nhắc' },
+  { code: 'taken_not_recorded', label: 'Tôi đã uống nhưng quên ghi nhận' },
+  { code: 'deliberately_skipped', label: 'Tôi chủ động bỏ liều này' },
+  { code: 'recorded_in_error', label: 'Ghi nhận này không đúng' },
+  { code: 'other', label: 'Lý do khác' },
+] as const
+
+export type DoseCorrectionReason = (typeof DOSE_CORRECTION_REASONS)[number]['code']
 
 /** List the patient's active medication records. */
 export function listMedications(
@@ -135,4 +188,44 @@ export function getScheduleAdherence(
   return client.get<AdherenceOut>(
     `/patients/${patientId}/schedules/${scheduleId}/adherence`
   )
+}
+
+/**
+ * Doses the system classified as MISSED, newest first.
+ *
+ * MISSED is assigned by a clock — nobody asserted it. Until this existed the row
+ * appeared in no list, so the client could not obtain its id and the patient had
+ * no way to say "I took that". An adherence figure a patient cannot correct is
+ * not a measurement of the patient.
+ */
+export function listMissedDoses(
+  client: ApiClient,
+  patientId: string,
+  scheduleId?: string,
+  limit = 100
+): Promise<DoseOut[]> {
+  const query = scheduleId
+    ? `?schedule_id=${encodeURIComponent(scheduleId)}&limit=${limit}`
+    : `?limit=${limit}`
+  return client.get<DoseOut[]>(`/patients/${patientId}/doses/missed${query}`)
+}
+
+/**
+ * Record what actually happened to a dose the system marked missed.
+ *
+ * Records; does not advise. Whether to take a late dose is a clinical decision
+ * this app does not make. Only a MISSED dose is correctable and a correction
+ * cannot be corrected — the backend answers 422 rather than silently overwriting.
+ */
+export function correctDose(
+  client: ApiClient,
+  patientId: string,
+  doseId: string,
+  state: 'taken' | 'skipped',
+  reasonCode: DoseCorrectionReason = 'other'
+): Promise<DoseOut> {
+  return client.post<DoseOut>(`/patients/${patientId}/doses/${doseId}/correct`, {
+    state,
+    reason_code: reasonCode,
+  })
 }

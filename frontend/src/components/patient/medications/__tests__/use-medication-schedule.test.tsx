@@ -12,6 +12,7 @@
  */
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { ApiError } from '@/lib/api/client'
+import { adherenceFixture } from './adherence-fixture'
 import {
   getMedicationSchedules,
   getRemindersDue,
@@ -57,24 +58,14 @@ const DOSE_MINE = {
 
 const DOSE_OTHER_MEDICATION = { ...DOSE_MINE, id: 'dose-other', schedule_id: 'sched-999' }
 
-const NO_ADHERENCE = {
-  total: 0,
-  taken: 0,
-  skipped: 0,
-  missed: 0,
-  adherence_rate: null,
-}
+const NO_ADHERENCE = adherenceFixture()
 
 function setupHappyPath() {
   mockSchedules.mockResolvedValue([SCHEDULE])
   mockDue.mockResolvedValue({ delivered: 1, items: [DOSE_OTHER_MEDICATION, DOSE_MINE] })
-  mockAdherence.mockResolvedValue({
-    total: 4,
-    taken: 2,
-    skipped: 1,
-    missed: 1,
-    adherence_rate: 0.5,
-  })
+  mockAdherence.mockResolvedValue(
+    adherenceFixture({ total: 4, taken: 2, skipped: 1, missed: 1, adherence_rate: 0.5 })
+  )
 }
 
 function render() {
@@ -131,14 +122,14 @@ test('sums per-schedule adherence over resolved doses rather than averaging rate
   mockDue.mockResolvedValue({ delivered: 0, items: [] })
   mockAdherence
     // 90 resolved, 90% — a long-running schedule.
-    .mockResolvedValueOnce({ total: 90, taken: 81, skipped: 9, missed: 0, adherence_rate: 0.9 })
+    .mockResolvedValueOnce(adherenceFixture({ total: 90, taken: 81, skipped: 9, missed: 0, adherence_rate: 0.9 }))
     // 1 resolved, 0% — a brand-new one. Averaging the rates would give 45%.
-    .mockResolvedValueOnce({ total: 1, taken: 0, skipped: 0, missed: 1, adherence_rate: 0 })
+    .mockResolvedValueOnce(adherenceFixture({ total: 1, taken: 0, skipped: 0, missed: 1, adherence_rate: 0 }))
 
   const { result } = render()
   await waitFor(() => expect(result.current.phase).toBe('ready'))
 
-  expect(result.current.adherence).toEqual({
+  expect(result.current.adherence).toMatchObject({
     total: 91,
     taken: 81,
     skipped: 9,
@@ -151,7 +142,7 @@ test('a failing adherence part does not blank the whole figure', async () => {
   mockSchedules.mockResolvedValue([SCHEDULE, { ...SCHEDULE, id: 'sched-2' }])
   mockDue.mockResolvedValue({ delivered: 0, items: [] })
   mockAdherence
-    .mockResolvedValueOnce({ total: 2, taken: 2, skipped: 0, missed: 0, adherence_rate: 1 })
+    .mockResolvedValueOnce(adherenceFixture({ total: 2, taken: 2, skipped: 0, missed: 0, adherence_rate: 1 }))
     .mockRejectedValueOnce(new ApiError(500, 'Lỗi 500'))
 
   const { result } = render()

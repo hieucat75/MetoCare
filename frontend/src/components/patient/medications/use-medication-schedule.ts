@@ -32,8 +32,10 @@ export interface MedicationScheduleState {
    * dropping it inflates the rate.
    */
   isAdherencePartial: boolean
-  /** Earliest start_date across this medication's schedules — the period the rate covers. */
+  /** First day of the period the figure actually covers (`period_start`). */
   adherenceSince: string | null
+  /** Last day of that period (`period_end`). */
+  adherenceUntil: string | null
   /** True while a taken/skipped write is in flight — blocks re-entrant submits. */
   isSubmitting: boolean
   actionError: string | null
@@ -83,17 +85,51 @@ function actionErrorMessage(err: unknown): string {
  */
 function combineAdherence(parts: ScheduleAdherence[]): ScheduleAdherence | null {
   if (parts.length === 0) return null
-  const total = parts.reduce((n, p) => n + p.total, 0)
-  const taken = parts.reduce((n, p) => n + p.taken, 0)
-  const skipped = parts.reduce((n, p) => n + p.skipped, 0)
-  const missed = parts.reduce((n, p) => n + p.missed, 0)
+  const sum = (pick: (p: ScheduleAdherence) => number) => parts.reduce((n, p) => n + pick(p), 0)
+
+  const taken = sum((p) => p.taken_count)
+  const skipped = sum((p) => p.skipped_count)
+  const missed = sum((p) => p.missed_count)
   const resolved = taken + skipped + missed
+
+  // A combined figure is only as trustworthy as its LEAST trustworthy part. If
+  // any schedule could not be reconciled its doses are missing from the sum, and
+  // dividing by what remains publishes exactly the engagement-derived number the
+  // backend now withholds — under an aggregate that looks complete.
+  const reconciled = parts.every((p) => p.reconciled)
+  const unreconciled = parts.find((p) => !p.reconciled)
+
+  const sorted = (pick: (p: ScheduleAdherence) => string) =>
+    parts.map(pick).filter(Boolean).sort()
+  const floors = parts
+    .map((p) => p.tracking_start_at)
+    .filter((v): v is string => Boolean(v))
+    .sort()
+
   return {
-    total,
+    expected_count: sum((p) => p.expected_count),
+    taken_count: taken,
+    skipped_count: skipped,
+    missed_count: missed,
+    future_count: sum((p) => p.future_count),
+    excluded_paused_count: sum((p) => p.excluded_paused_count),
+    excluded_cancelled_count: sum((p) => p.excluded_cancelled_count),
+    adherence_rate:
+      reconciled && resolved > 0 ? Math.round((taken / resolved) * 1000) / 1000 : null,
+    // The union of the parts' windows — the period the summed figure describes.
+    period_start: sorted((p) => p.period_start)[0] ?? '',
+    period_end: sorted((p) => p.period_end).slice(-1)[0] ?? '',
+    timezone: parts[0].timezone,
+    calculation_version: parts[0].calculation_version,
+    reconciled,
+    reconciliation_reason: unreconciled?.reconciliation_reason ?? 'reconciled',
+    tracking_start_at: floors[0] ?? null,
+    grace_policy: parts[0].grace_policy,
+
+    total: sum((p) => p.expected_count),
     taken,
     skipped,
     missed,
-    adherence_rate: resolved > 0 ? Math.round((taken / resolved) * 1000) / 1000 : null,
   }
 }
 
@@ -212,13 +248,16 @@ export function useMedicationSchedule(
     [patientId, submit]
   )
 
-  // Earliest schedule start — the real beginning of the window the summed rate
-  // covers. The backend computes adherence over a schedule's whole lifetime with
-  // no window, so stating a period is the only way the number is honest.
-  const adherenceSince = schedules
-    .map((s) => s.start_date)
-    .filter((d): d is string => Boolean(d))
-    .sort()[0] ?? null
+  // The period the figure ACTUALLY covers, taken from the response.
+  //
+  // This used to be the earliest `start_date` across the schedules, and the card
+  // rendered "kể từ {that date}". The backend computes over a bounded window
+  // floored at `tracking_start_at`, so the label claimed a span the number never
+  // described — a patient whose prescription began in March read "kể từ 01/03"
+  // over a 30-day figure. `start_date` is when the PRESCRIPTION began; it is not
+  // when this app started counting, and only the response knows the difference.
+  const adherenceSince = adherence?.period_start ?? null
+  const adherenceUntil = adherence?.period_end ?? null
 
   return {
     phase,
@@ -229,6 +268,7 @@ export function useMedicationSchedule(
     adherence,
     isAdherencePartial,
     adherenceSince,
+    adherenceUntil,
     isSubmitting,
     actionError,
     markTaken,

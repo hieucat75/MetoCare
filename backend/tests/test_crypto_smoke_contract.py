@@ -143,3 +143,103 @@ def test_the_deploy_gate_runs_it_and_fails_on_it():
     block = src.rsplit("Post-deploy PHI crypto smoke", 1)[1]
     assert "exit 1" in block, "a failing crypto smoke does not fail the deploy"
     assert "Remediation" in block, "no rollback instructions for the on-call"
+
+
+# ── 5. Production wiring ────────────────────────────────────────────────────
+#
+# The staging gate existed and production had none — i.e. the mis-rotation
+# scenario was undetected in the one environment where it takes down real
+# patients' reminders. These pin the production path STATICALLY, because the
+# only other way to learn it is wrong is to deploy production.
+
+
+def _prod_workflow() -> str:
+    import pathlib
+
+    wf = (
+        pathlib.Path(__file__).resolve().parents[2]
+        / ".github" / "workflows" / "azure-production.yml"
+    )
+    if not wf.exists():
+        pytest.skip("azure-production.yml not present in this checkout")
+    return wf.read_text()
+
+
+def _prod_smoke_block() -> str:
+    src = _prod_workflow()
+    assert "Post-migration PHI crypto smoke" in src, (
+        "production deploys with NO crypto smoke — a mis-rotated key ships silently"
+    )
+    return src.rsplit("- name: Post-migration PHI crypto smoke", 1)[1]
+
+
+def test_production_invokes_the_smoke_with_the_production_flag():
+    """`run()` refuses a production database without the explicit flag, so a
+    production step that omits it exits 2 and gates nothing."""
+    block = _prod_smoke_block()
+    assert "scripts.crypto_smoke" in block
+    assert "--allow-production" in block
+    assert "MCP_ENV=production" in block
+
+
+def test_production_runs_the_smoke_after_migration_and_before_any_revision():
+    """Ordering IS the gate: after the migration (which has already touched
+    encrypted columns) and before a traffic-carrying revision exists, so a
+    failure leaves the currently-serving revision untouched."""
+    src = _prod_workflow()
+    migrate = src.index("- name: Run Alembic migration")
+    smoke = src.index("- name: Post-migration PHI crypto smoke")
+    deploy = src.index("- name: Deploy backend to ACA")
+    assert migrate < smoke < deploy, (
+        "the crypto smoke must sit between the migration and the first revision"
+    )
+
+
+def test_a_failing_or_hanging_production_smoke_blocks_the_rollout():
+    block = _prod_smoke_block()
+    # Both exits: the explicit Failed verdict, and the post-loop no-verdict case.
+    assert block.count("exit 1") >= 2, (
+        "a timed-out smoke must FAIL, not fall through as healthy"
+    )
+    assert 'if [ "$ST" != "Succeeded" ]' in block
+    assert "Remediation" in block, "no rollback instructions for the on-call"
+
+
+def test_the_production_smoke_job_cannot_be_a_stale_reused_job():
+    """A reused Container Apps job runs the PREVIOUS image and secrets, so it
+    would verify the OLD key and report pass."""
+    block = _prod_smoke_block()
+    assert "az containerapp job delete" in block
+    assert block.index("az containerapp job delete") < block.index(
+        "az containerapp job create"
+    )
+
+
+def test_the_production_smoke_defines_its_own_variables():
+    """A `run:` step is a fresh shell. Referencing a variable assigned in an
+    earlier step yields an empty string, and the step then fails on every deploy
+    indistinguishably from a real wrong-key failure."""
+    block = _prod_smoke_block().split("- name:")[0]
+    # Comments are stripped: the step's prose EXPLAINS the earlier bug by naming
+    # the variables it wrongly referenced, and a substring check that counted
+    # those would fail on its own documentation.
+    code = "\n".join(
+        line for line in block.splitlines() if not line.strip().startswith("#")
+    )
+    for var in ("JOB=", "IMG="):
+        assert var in code, f"{var} is not defined in the step's own shell"
+    for undefined in ("$MIGRATE_JOB", "$ACA_ENV"):
+        assert undefined not in code
+
+
+def test_the_production_smoke_uses_secret_references_not_literals():
+    block = _prod_smoke_block()
+    assert "secretref:enc-keys" in block and "secretref:db-url" in block
+    assert 'echo "$ENC_KEYS"' not in block
+    assert "MCP_ENCRYPTION_KEYS=$" not in block
+
+
+def test_production_deploys_only_from_main_with_explicit_confirmation():
+    src = _prod_workflow()
+    assert 'if [ "${{ inputs.confirm }}" != "PRODUCTION" ]' in src
+    assert '"${{ github.ref }}" != "refs/heads/main"' in src

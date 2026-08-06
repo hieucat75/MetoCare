@@ -267,6 +267,38 @@ export const vi = {
     adherenceMissed: 'Bỏ lỡ',
     adherenceTotal: 'Tổng số liều',
     adherenceNoData: 'Chưa đủ dữ liệu để tính tỷ lệ.',
+    // `reconciled=false` means the DENOMINATOR could not be established — not
+    // "no doses yet". Rendering both as "chưa đủ dữ liệu" hides a repairable
+    // state behind an inert one, and rendering a percentage from it would
+    // publish app-engagement dressed as adherence.
+    adherenceUnavailable:
+      'Chưa thể tính tỷ lệ tuân thủ cho khoảng thời gian này. ' +
+      'Số liệu sẽ xuất hiện khi lịch uống thuốc được cập nhật đầy đủ.',
+    adherenceUnavailablePaused:
+      'Chưa thể tính tỷ lệ tuân thủ: lịch đang tạm dừng hoặc đã ngừng trong toàn bộ ' +
+      'khoảng thời gian này. Không có liều nào được coi là bỏ lỡ.',
+    adherenceUnavailableEmpty: 'Lịch này không có liều nào trong khoảng thời gian đang xem.',
+    adherencePeriod: 'Khoảng thời gian',
+    // A hold the patient was told to observe is not non-adherence. Subtracting
+    // it silently leaves a smaller denominator with no explanation, and the
+    // obvious inference from a shrinking total is that something went wrong.
+    adherenceExcludedPaused: (n: number) =>
+      `Đã loại trừ ${n} liều trong thời gian tạm dừng theo chỉ định. ` +
+      'Những liều này không tính là bỏ lỡ.',
+    adherenceExcludedCancelled: (n: number) =>
+      `Đã loại trừ ${n} liều thuộc lịch đã ngừng hoặc đã thay đổi.`,
+    // Missed-dose correction. Records what happened; never advises whether to
+    // take a late dose — that is a clinical decision this app does not make.
+    missedDosesTitle: 'Các liều đã lỡ',
+    missedDosesIntro:
+      'Nếu bạn đã uống hoặc chủ động bỏ một liều nhưng chưa kịp ghi nhận, ' +
+      'hãy ghi lại đúng điều đã xảy ra. Việc này chỉ cập nhật số liệu theo dõi.',
+    missedDosesEmpty: 'Không có liều nào đang ở trạng thái bỏ lỡ.',
+    missedDosesOpen: 'Xem và ghi nhận lại các liều đã lỡ',
+    missedDosesQuestion: 'Điều gì đã thực sự xảy ra?',
+    correctTaken: 'Tôi đã uống liều này',
+    correctSkipped: 'Tôi đã bỏ liều này',
+    correctError: 'Không thể ghi nhận lại liều này. Vui lòng thử lại.',
     // Reminders screen
     remindersTitle: 'Nhắc dùng thuốc',
     remindersSubtitle: 'Các liều tới hạn hôm nay. Ghi nhận từng liều bạn đã uống hoặc bỏ qua.',

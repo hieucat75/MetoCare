@@ -41,9 +41,21 @@ def _med(db, patient, name):
     )
 
 
+# Every window below is historical (July 2026), so every schedule here is one
+# MetoCare has been observing since then. P1-4 added a backfill FLOOR: adherence
+# may not be computed from before the app was watching, because "no observation"
+# must never be encoded as "missed dose" — an imported old prescription used to
+# produce 30 days of MISSED and 0.0% on the first screen a patient ever saw.
+# Declaring the floor here IS the retrospective-tracking opt-in; without it these
+# windows are legitimately empty.
+_TRACKING_START = dt.datetime(2026, 7, 1, 0, 0, tzinfo=dt.UTC)
+
+
 def _make(db, patient, name, **kw):
     med = _med(db, patient, name)
     kw.setdefault("patient_timezone", TZ)
+    kw.setdefault("tracking_start_at", _TRACKING_START)
+    kw.setdefault("now", _TRACKING_START)
     s = sched.create_schedule(
         db, patient_id=patient["patient_id"], medication_id=med.id, **kw
     )
@@ -293,44 +305,165 @@ def test_a_paused_schedule_does_not_accrue_new_missed_doses(db, patient):
         db, patient, "PausedNoAccrual", schedule_type="fixed_daily",
         local_dose_times=["08:00"], start_date=dt.date(2026, 7, 1),
     )
-    sched.pause_schedule(db, patient_id=patient["patient_id"], schedule_id=s.id)
+    sched.pause_schedule(
+        db, patient_id=patient["patient_id"], schedule_id=s.id,
+        effective_at=dt.datetime(2026, 7, 11, 1, 0, tzinfo=dt.UTC),
+    )
     db.commit()
 
     summary = _summary(
         db, patient, s, period_start=dt.date(2026, 7, 1), period_end=dt.date(2026, 8, 4)
     )
-    assert summary["reconciled"] is False, "a paused period was backfilled"
-    assert summary["expected_count"] == 0
+    # NARROWED (P0-1). This used to assert `reconciled is False` and
+    # `expected_count == 0` for the WHOLE window, because "paused" was a property
+    # of the schedule rather than of an interval — so pausing today retroactively
+    # erased last month's adherence, and resuming reinstated it as MISSED. Both
+    # halves were wrong. The days before the hold were prescribed and are still
+    # counted; only the hold itself accrues nothing.
+    assert summary["reconciled"] is True
+    assert summary["expected_count"] == 10          # 07-01..07-10
+    assert summary["excluded_paused_count"] == 25   # 07-11..08-04
+    assert summary["missed_count"] == 10, "held days leaked into MISSED"
 
 
-def test_resuming_restores_reconciliation(db, patient):
+def test_resuming_restores_reconciliation_without_backfilling_the_hold(db, patient):
+    """REWRITTEN (P0-1). The previous version of this test asserted the defect.
+
+    It paused and resumed a 35-day daily schedule and then asserted
+    `expected_count == 35` — i.e. that a resumed schedule prescribes exactly as
+    many doses as one that was never held. That is only true if the hold never
+    happened, and encoding it as the expected result is what let the defect ship:
+    the period between pause and resume was backfilled as MISSED, and the test
+    agreed.
+
+    What resuming must actually restore is RECONCILABILITY — the period can be
+    answered again — not the held doses.
+    """
     _m, s = _make(
         db, patient, "ResumeReconciles", schedule_type="fixed_daily",
         local_dose_times=["08:00"], start_date=dt.date(2026, 7, 1),
     )
-    sched.pause_schedule(db, patient_id=patient["patient_id"], schedule_id=s.id)
+    # A five-day hold: 07-10 08:00 local through 07-15 08:00 local (exclusive),
+    # i.e. the doses of 07-10..07-14.
+    sched.pause_schedule(
+        db, patient_id=patient["patient_id"], schedule_id=s.id,
+        effective_at=dt.datetime(2026, 7, 10, 1, 0, tzinfo=dt.UTC),
+        reason_code="doctor_instructed",
+    )
     db.commit()
-    sched.resume_schedule(db, patient_id=patient["patient_id"], schedule_id=s.id)
+    sched.resume_schedule(
+        db, patient_id=patient["patient_id"], schedule_id=s.id,
+        effective_at=dt.datetime(2026, 7, 15, 1, 0, tzinfo=dt.UTC),
+    )
     db.commit()
 
     summary = _summary(
         db, patient, s, period_start=dt.date(2026, 7, 1), period_end=dt.date(2026, 8, 4)
     )
+    assert summary["reconciled"] is True, "resuming did not restore reconcilability"
+    assert summary["expected_count"] == 30, (
+        "the hold is back in the denominator: 35 prescribed days minus 5 held"
+    )
+    assert summary["excluded_paused_count"] == 5
+    assert summary["missed_count"] == 30, "held doses leaked into MISSED"
+
+
+def test_a_pause_is_visible_in_the_response_not_merely_subtracted(db, patient):
+    """A denominator that silently shrinks is indistinguishable from a bug.
+
+    The client has to be able to say "20 doses were excluded because your doctor
+    paused this", and it can only do that if the number is in the payload.
+    """
+    _m, s = _make(
+        db, patient, "PauseVisible", schedule_type="fixed_daily",
+        local_dose_times=["08:00"], start_date=dt.date(2026, 7, 1),
+    )
+    sched.pause_schedule(
+        db, patient_id=patient["patient_id"], schedule_id=s.id,
+        effective_at=dt.datetime(2026, 7, 10, 1, 0, tzinfo=dt.UTC),
+    )
+    db.commit()
+    summary = _summary(
+        db, patient, s, period_start=dt.date(2026, 7, 1), period_end=dt.date(2026, 8, 4)
+    )
+    assert summary["excluded_paused_count"] == 26   # 07-10..08-04 inclusive
+    assert summary["expected_count"] == 9
+    # Nothing may vanish unexplained: every prescribed dose is in exactly one
+    # bucket.
+    assert (
+        summary["expected_count"]
+        + summary["excluded_paused_count"]
+        + summary["excluded_cancelled_count"]
+    ) == 35
+
+
+def test_the_backfill_floor_refuses_to_invent_history(db, patient):
+    """P1-4. A patient imports an old prescription TODAY.
+
+    `start_date` says the prescription began 30 days ago. MetoCare observed
+    nothing in those 30 days, so it must report nothing — not 30 missed doses and
+    0.0%, which is what "no observation" used to be silently converted into on
+    the first screen the patient ever saw.
+    """
+    med = _med(db, patient, "ImportedOldRx")
+    s = sched.create_schedule(
+        db, patient_id=patient["patient_id"], medication_id=med.id,
+        schedule_type="fixed_daily", local_dose_times=["08:00"],
+        patient_timezone=TZ, start_date=dt.date(2026, 7, 6),
+        now=NOW,   # imported today; tracking_start_at defaults to the same instant
+    )
+    db.commit()
+    summary = _summary(
+        db, patient, s, period_start=dt.date(2026, 7, 6), period_end=dt.date(2026, 8, 4)
+    )
+    assert summary["missed_count"] == 0, "backfilled misses from before observation"
+    assert summary["adherence_rate"] is None, "0% invented from an empty period"
+    assert summary["reconciled"] is False
+    assert summary["tracking_start_at"] is not None, "the floor must be visible"
+
+
+def test_retrospective_tracking_is_opt_in_and_changes_the_answer(db, patient):
+    """The floor is not a cap on what CAN be counted — it is a statement about
+    what was observed. A caller with real historical evidence may declare it,
+    and the same schedule then answers for the same window."""
+    med = _med(db, patient, "RetrospectiveOptIn")
+    s = sched.create_schedule(
+        db, patient_id=patient["patient_id"], medication_id=med.id,
+        schedule_type="fixed_daily", local_dose_times=["08:00"],
+        patient_timezone=TZ, start_date=dt.date(2026, 7, 6),
+        tracking_start_at=dt.datetime(2026, 7, 6, tzinfo=dt.UTC),
+        now=dt.datetime(2026, 7, 6, tzinfo=dt.UTC),
+    )
+    db.commit()
+    summary = _summary(
+        db, patient, s, period_start=dt.date(2026, 7, 6), period_end=dt.date(2026, 8, 4)
+    )
     assert summary["reconciled"] is True
-    assert summary["expected_count"] == 35
+    assert summary["expected_count"] == 30
 
 
-def test_a_stopped_schedule_does_not_accrue(db, patient):
+def test_a_stopped_schedule_accrues_nothing_after_the_stop(db, patient):
+    """P1-5. Stopping ends the prescription; it does not erase the therapy that
+    preceded it, and the doses it cancels must be VISIBLE rather than silently
+    absent from a denominator nobody can reconstruct."""
     _m, s = _make(
         db, patient, "StoppedNoAccrual", schedule_type="fixed_daily",
         local_dose_times=["08:00"], start_date=dt.date(2026, 7, 1),
     )
-    sched.stop_schedule(db, patient_id=patient["patient_id"], schedule_id=s.id)
+    sched.stop_schedule(
+        db, patient_id=patient["patient_id"], schedule_id=s.id,
+        effective_at=dt.datetime(2026, 7, 21, 1, 0, tzinfo=dt.UTC),
+    )
     db.commit()
     summary = _summary(
         db, patient, s, period_start=dt.date(2026, 7, 1), period_end=dt.date(2026, 8, 4)
     )
-    assert summary["expected_count"] == 0
+    assert summary["expected_count"] == 20          # 07-01..07-20
+    assert summary["excluded_cancelled_count"] == 15   # 07-21..08-04, withdrawn
+    assert summary["excluded_paused_count"] == 0    # a stop is not a hold
+    assert (
+        summary["expected_count"] + summary["excluded_cancelled_count"]
+    ) == 35, "the denominator gap after a stop is unexplained"
 
 
 def test_history_recorded_before_dormancy_survives_reconciliation(db, patient):

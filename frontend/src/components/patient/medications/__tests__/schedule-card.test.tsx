@@ -12,6 +12,7 @@
 import * as React from 'react'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import '@testing-library/jest-dom'
+import { adherenceFixture } from './adherence-fixture'
 import {
   ADHERENCE_NO_DATA,
   ADHERENCE_PARTIAL,
@@ -282,13 +283,13 @@ test('an action error is announced as an alert', () => {
 
 // ── adherence ────────────────────────────────────────────────────────────────
 
-const ADHERENCE: ScheduleAdherence = {
+const ADHERENCE: ScheduleAdherence = adherenceFixture({
   total: 10,
   taken: 6,
   skipped: 2,
   missed: 2,
   adherence_rate: 0.6,
-}
+})
 
 test('shows the dose-occurrence rate with taken / skipped / missed counts', () => {
   renderCard({ adherence: ADHERENCE })
@@ -328,7 +329,9 @@ test('no missed-dose guidance when nothing was missed', () => {
 })
 
 test('never states 0% when no dose has resolved yet', () => {
-  renderCard({ adherence: { total: 3, taken: 0, skipped: 0, missed: 0, adherence_rate: null } })
+  renderCard({
+    adherence: adherenceFixture({ total: 3, taken: 0, skipped: 0, missed: 0, adherence_rate: null }),
+  })
   expect(screen.getByText(ADHERENCE_NO_DATA)).toBeInTheDocument()
   expect(screen.queryByText('0%')).not.toBeInTheDocument()
 })
@@ -336,4 +339,102 @@ test('never states 0% when no dose has resolved yet', () => {
 test('shows the no-data wording when adherence is unavailable entirely', () => {
   renderCard({ adherence: null })
   expect(screen.getByText(ADHERENCE_NO_DATA)).toBeInTheDocument()
+})
+
+// ── P0-1 / P1-3 / P1-5: the reconciled contract ──────────────────────────────
+//
+// The clients used to read four numbers and a rate. They could not tell a
+// reconciled period from an unreconciled one, could not say what window the
+// figure covered (the card rendered "kể từ {earliest start_date}" over a bounded
+// 30-day number), and had no way to distinguish a dose the patient missed from
+// one their doctor told them not to take.
+
+test('an unreconciled period shows no percentage at all', () => {
+  renderCard({
+    adherence: adherenceFixture({
+      taken: 3,
+      missed: 1,
+      adherence_rate: null,
+      reconciled: false,
+      reconciliation_reason: 'no_expected_occurrences_in_window',
+    }),
+  })
+  // Not "chưa có dữ liệu": the period could not be RECONCILED, which is a
+  // different, repairable state and must not be rendered as an inert one.
+  expect(screen.getByRole('status')).toHaveTextContent(/Chưa thể tính tỷ lệ tuân thủ/)
+  expect(screen.queryByText(/%$/)).not.toBeInTheDocument()
+})
+
+test('an unreconciled period never renders a rate even if one arrives', () => {
+  // Defence in depth: the backend withholds the rate when reconciled=false, but
+  // a client that trusts the number and ignores the flag would republish an
+  // engagement-derived figure the moment that contract slipped.
+  renderCard({
+    adherence: adherenceFixture({
+      taken: 9,
+      missed: 1,
+      adherence_rate: 0.9,
+      reconciled: false,
+      reconciliation_reason: 'schedule_prescribes_nothing_in_window',
+    }),
+  })
+  expect(screen.queryByText('90%')).not.toBeInTheDocument()
+})
+
+test('paused doses are explained, and never as non-adherence', () => {
+  renderCard({
+    adherence: adherenceFixture({
+      total: 50,
+      taken: 45,
+      missed: 5,
+      adherence_rate: 0.9,
+      excluded_paused_count: 20,
+    }),
+  })
+  const note = screen.getByText(/Đã loại trừ 20 liều trong thời gian tạm dừng/)
+  expect(note).toBeInTheDocument()
+  expect(note).toHaveTextContent(/không tính là bỏ lỡ/)
+})
+
+test('cancelled doses are reported separately from paused ones', () => {
+  renderCard({
+    adherence: adherenceFixture({
+      total: 20,
+      taken: 20,
+      adherence_rate: 1,
+      excluded_cancelled_count: 15,
+    }),
+  })
+  expect(screen.getByText(/Đã loại trừ 15 liều thuộc lịch đã ngừng/)).toBeInTheDocument()
+  expect(screen.queryByText(/tạm dừng theo chỉ định/)).not.toBeInTheDocument()
+})
+
+test('the stated period is the one the figure covers, not the prescription start', () => {
+  renderCard({
+    adherence: adherenceFixture({ taken: 20, missed: 10, adherence_rate: 0.667 }),
+    adherenceSince: '2026-07-06',
+    adherenceUntil: '2026-08-04',
+  })
+  expect(screen.getByText(/từ 06\/07\/2026 đến 04\/08\/2026/)).toBeInTheDocument()
+})
+
+test('missed doses offer a way to record what actually happened', () => {
+  const onOpenMissedDoses = jest.fn()
+  renderCard({
+    adherence: adherenceFixture({ taken: 8, missed: 2, adherence_rate: 0.8 }),
+    onOpenMissedDoses,
+  })
+  const link = screen.getByRole('button', { name: /ghi nhận lại các liều đã lỡ/i })
+  fireEvent.click(link)
+  expect(onOpenMissedDoses).toHaveBeenCalled()
+})
+
+test('no correction entry point when nothing was missed', () => {
+  renderCard({
+    adherence: adherenceFixture({ taken: 10, adherence_rate: 1 }),
+    onOpenMissedDoses: jest.fn(),
+  })
+  expect(
+    screen.queryByRole('button', { name: /ghi nhận lại các liều đã lỡ/i })
+  ).not.toBeInTheDocument()
 })

@@ -83,6 +83,30 @@ class DoseOut(BaseModel):
     scheduled_utc: dt.datetime
     local_render: str | None
     state: str
+    # Present only on a corrected dose. The machine's original classification is
+    # kept beside the human's, so a 100% figure that contains late self-reports
+    # is distinguishable from one that never needed correcting.
+    corrected_from_state: str | None = None
+    corrected_at: dt.datetime | None = None
+    correction_reason: str | None = None
+
+
+class CorrectDoseIn(BaseModel):
+    """Record what actually happened to a dose the system classified as missed.
+
+    Wording is deliberate throughout this flow: it records, it does not advise.
+    Whether to take a late dose is a clinical decision this app does not make.
+    """
+
+    state: str = Field(description="taken | skipped")
+    reason_code: str = Field(default="other", max_length=48)
+
+    @field_validator("state")
+    @classmethod
+    def _valid_state(cls, v: str) -> str:
+        if v not in sched.CORRECTION_STATES:
+            raise ValueError("state phải là 'taken' hoặc 'skipped'.")
+        return v
 
 
 class DueOut(BaseModel):
@@ -121,6 +145,11 @@ class AdherenceOut(BaseModel):
     skipped_count: int
     missed_count: int
     future_count: int
+    # Doses the patient was INSTRUCTED not to take. Separate from cancelled
+    # because they are a different clinical event: a hold the patient obeyed is
+    # not a withdrawn prescription, and a client that renders them as one tells a
+    # compliant patient they were non-adherent.
+    excluded_paused_count: int
     excluded_cancelled_count: int
     adherence_rate: float | None
     period_start: dt.date
@@ -128,6 +157,15 @@ class AdherenceOut(BaseModel):
     timezone: str
     calculation_version: str
     reconciled: bool
+    # WHY the period could not be reconciled, when it could not. `reconciled`
+    # alone tells a client to hide the number but not what to say instead.
+    reconciliation_reason: str
+    # The backfill floor actually applied (P1-4), so a figure can always be
+    # traced to the period it was computed over rather than the one requested.
+    tracking_start_at: dt.datetime | None
+    # {"version": …, "missed_after_hours": …}. An adherence-event classification
+    # window, NOT dosing advice.
+    grace_policy: dict
 
     # Legacy field names, same numbers. Kept so an un-updated client keeps working
     # instead of silently reading nulls; remove once the frontend has migrated.
@@ -169,6 +207,9 @@ def _dose_out(d: DoseOccurrence) -> DoseOut:
         scheduled_utc=d.scheduled_utc,
         local_render=d.local_render,
         state=d.state,
+        corrected_from_state=d.corrected_from_state,
+        corrected_at=d.corrected_at,
+        correction_reason=d.correction_reason,
     )
 
 
@@ -269,16 +310,38 @@ def edit_schedule(
     return _sched_out(new)
 
 
+class LifecycleIn(BaseModel):
+    """When a hold takes effect, and why — not free text.
+
+    `effective_at` may be backdated (a doctor stopped the drug on Friday and the
+    patient records it on Monday) or future-dated (a hold before a procedure).
+    `reason_code` is a closed vocabulary: a lifecycle trail that carries the
+    clinical reason for a hold in free text is its own disclosure.
+    """
+
+    effective_at: dt.datetime | None = None
+    reason_code: str = Field(default="unspecified", max_length=48, pattern=r"^[a-z0-9_]+$")
+
+
 @router.post("/patients/{patient_id}/schedules/{schedule_id}/pause", response_model=ScheduleOut)
 def pause_schedule(
     patient_id: str,
     schedule_id: str,
+    body: LifecycleIn | None = None,
     user: CurrentUser = Depends(_PatientOnly),
     db: Session = Depends(get_session),
 ) -> ScheduleOut:
     _require_self(db, user, patient_id)
+    body = body or LifecycleIn()
     try:
-        s = sched.pause_schedule(db, patient_id=patient_id, schedule_id=schedule_id)
+        s = sched.pause_schedule(
+            db,
+            patient_id=patient_id,
+            schedule_id=schedule_id,
+            effective_at=body.effective_at,
+            reason_code=body.reason_code,
+            actor_user_id=user.id,
+        )
     except sched.ScheduleError as exc:
         db.rollback()
         raise _map_err(exc) from exc
@@ -292,14 +355,22 @@ def pause_schedule(
 def resume_schedule(
     patient_id: str,
     schedule_id: str,
+    body: LifecycleIn | None = None,
     user: CurrentUser = Depends(_PatientOnly),
     db: Session = Depends(get_session),
 ) -> ScheduleOut:
     """The missing half of pause. Without it a paused medication never reminded
     again — it read `active` in the list and was silently dead."""
     _require_self(db, user, patient_id)
+    body = body or LifecycleIn()
     try:
-        s = sched.resume_schedule(db, patient_id=patient_id, schedule_id=schedule_id)
+        s = sched.resume_schedule(
+            db,
+            patient_id=patient_id,
+            schedule_id=schedule_id,
+            effective_at=body.effective_at,
+            actor_user_id=user.id,
+        )
     except sched.ScheduleError as exc:
         db.rollback()
         raise _map_err(exc) from exc
@@ -380,6 +451,70 @@ def mark_skipped(
             state="skipped",
             skip_reason=body.skip_reason,
             actor_user_id=user.id,
+        )
+    except sched.ScheduleError as exc:
+        db.rollback()
+        raise _map_err(exc) from exc
+    db.commit()
+    return _dose_out(dose)
+
+
+@router.get("/patients/{patient_id}/doses/missed", response_model=list[DoseOut])
+def list_missed_doses(
+    patient_id: str,
+    schedule_id: str | None = None,
+    limit: int = 100,
+    user: CurrentUser = Depends(_PatientOnly),
+    db: Session = Depends(get_session),
+) -> list[DoseOut]:
+    """Doses the system classified as MISSED, so the patient can correct them.
+
+    Before this route existed, `due_doses_query` was only ever called with
+    (pending, notified): a MISSED dose appeared in no list at all, so the client
+    could not obtain its id and the patient had no way to say "I took that". An
+    adherence figure a patient cannot correct is not a measurement of the
+    patient.
+
+    Deliberately NOT filtered to currently-active schedules: a dose missed under
+    a schedule that has since been stopped is exactly the one a patient most
+    wants to fix, and it still counts toward the period it belongs to.
+    """
+    _require_self(db, user, patient_id)
+    rows = sched.list_missed_doses(
+        db, patient_id=patient_id, schedule_id=schedule_id, limit=limit
+    )
+    return [_dose_out(d) for d in rows]
+
+
+@router.post("/patients/{patient_id}/doses/{dose_id}/correct", response_model=DoseOut)
+def correct_dose(
+    patient_id: str,
+    dose_id: str,
+    body: CorrectDoseIn,
+    request: Request,
+    user: CurrentUser = Depends(_PatientOnly),
+    db: Session = Depends(get_session),
+) -> DoseOut:
+    """Record what actually happened to a dose the system marked missed.
+
+    MISSED is assigned by a clock; nobody asserted it. This is the patient
+    asserting. It never advises whether to take a late dose — that is a clinical
+    decision this app does not make — and it never silently overwrites: only a
+    MISSED dose may be corrected, the original classification is preserved on the
+    row, and the change is written to the immutable audit trail with actor, role
+    and reason.
+    """
+    enforce_rate_limit(request, "medication_dose")
+    _require_self(db, user, patient_id)
+    try:
+        dose = sched.correct_dose(
+            db,
+            patient_id=patient_id,
+            dose_id=dose_id,
+            state=body.state,
+            reason_code=body.reason_code,
+            actor_user_id=user.id,
+            actor_role="patient",
         )
     except sched.ScheduleError as exc:
         db.rollback()

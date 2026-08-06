@@ -255,6 +255,27 @@ jobs:
       - name: Install dependencies
         run: cd frontend && npm ci
 
+      # ── TypeScript gate ───────────────────────────────────────────────────
+      #
+      # The frontend had 1761 `tsc` errors on `main` and no gate at all, so type
+      # regressions were invisible: an API contract could change under a client
+      # that never compiled, and the failure surfaced at runtime in a patient's
+      # browser. Almost the entire backlog was ONE missing package — `@types/jest`
+      # was absent, so every `describe`/`test`/`expect` in every test file was an
+      # unresolved name (TS2582/TS2304) and the real errors sat buried under
+      # 1600+ of them. Installing the types and fixing the genuine remainder
+      # brings the full project to zero, which is what makes a gate possible.
+      #
+      # BOTH configs are checked, deliberately. `tsconfig.build.json` is what
+      # ships; `tsconfig.json` includes the tests, and a test that no longer
+      # typechecks against the client it exercises is exactly how a stale fixture
+      # keeps asserting a contract the server has stopped sending.
+      - name: TypeScript (production source)
+        run: cd frontend && npx tsc --noEmit -p tsconfig.build.json
+
+      - name: TypeScript (including tests)
+        run: cd frontend && npx tsc --noEmit -p tsconfig.json
+
       - name: Run frontend tests
         run: cd frontend && npm test -- --watchAll=false --passWithNoTests
 

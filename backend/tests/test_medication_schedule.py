@@ -107,6 +107,13 @@ def test_mark_taken_and_adherence(db, patient):
         patient_timezone="UTC",
         start_date=dt.date(2026, 6, 1),
         end_date=dt.date(2026, 6, 1),  # single day → exactly one dose
+        # P1-4: adherence is floored at the instant MetoCare began observing this
+        # therapy, so a test that asks about June has to say it was watching in
+        # June. Without this the window is legitimately empty — which is the
+        # point of the floor: an imported old prescription must not backfill
+        # months of MISSED doses onto a patient nobody was tracking.
+        tracking_start_at=dt.datetime(2026, 6, 1, tzinfo=dt.UTC),
+        now=dt.datetime(2026, 6, 1, tzinfo=dt.UTC),
     )
     db.commit()
     now = dt.datetime(2026, 6, 1, 9, 1, tzinfo=dt.UTC)
@@ -192,12 +199,17 @@ def test_missed_doses_counted_in_adherence(db, patient):
         patient_timezone="UTC",
         start_date=dt.date(2026, 6, 1),
         end_date=dt.date(2026, 6, 1),  # single day → exactly one dose
+        tracking_start_at=dt.datetime(2026, 6, 1, tzinfo=dt.UTC),  # see P1-4 above
+        now=dt.datetime(2026, 6, 1, tzinfo=dt.UTC),
     )
     db.commit()
     dose_time = dt.datetime(2026, 6, 1, 8, 1, tzinfo=dt.UTC)
     sched.materialize_due(db, s, now=dose_time)
     db.commit()
-    later = dose_time + dt.timedelta(hours=6)  # well past the 4h grace
+    # Past the grace window for a ONCE-DAILY schedule, which is now 12h rather
+    # than the flat 4h that used to be applied to every cadence alike (a weekly
+    # injection was marked missed on the afternoon it was due).
+    later = dose_time + dt.timedelta(hours=13)
     swept = sched.sweep_missed(db, patient_id=patient["patient_id"], now=later)
     db.commit()
     assert swept == 1
@@ -439,6 +451,8 @@ def test_editing_a_schedule_preserves_missed_history(db, patient):
         db, patient_id=pid, medication_id=med.id, schedule_type="fixed_daily",
         local_dose_times=["08:00"], patient_timezone="UTC",
         start_date=dt.date(2026, 6, 1), end_date=dt.date(2026, 6, 3),
+        tracking_start_at=dt.datetime(2026, 6, 1, tzinfo=dt.UTC),  # see P1-4
+        now=dt.datetime(2026, 6, 1, tzinfo=dt.UTC),
     )
     db.commit()
 
@@ -460,14 +474,20 @@ def test_editing_a_schedule_preserves_missed_history(db, patient):
     # The property this test protects: the overdue doses were swept to MISSED and
     # KEPT, not deleted. That still holds.
     assert adherence["missed"] >= 3, adherence
-    # The RATE is now withheld, and that is deliberate. This schedule has been
-    # superseded, so `reconcile_period` declines it and the counts are whatever
-    # happened to be materialized before the edit — i.e. a function of when the
-    # patient last opened the app, not of their therapy. Publishing 0.0 from that
-    # set would be the engagement-derived number this work removes; a superseded
-    # version cannot answer "how adherent were you" and must say so.
-    assert adherence["reconciled"] is False
-    assert adherence["adherence_rate"] is None, adherence
+    # P1-5: a superseded version can now answer, because reconciliation walks the
+    # whole LINEAGE. It used to decline — the old version was stopped+superseded,
+    # so `reconcile_period` refused it forever and whatever dormancy gap existed
+    # at the moment of the edit was sealed permanently, while the new version
+    # backfilled the same days a second time under its own id. An edit
+    # re-describes a therapy; it does not end one.
+    assert adherence["reconciled"] is True, adherence
+    assert adherence["adherence_rate"] == 0.0, adherence
+    # And the denominator explains itself: nothing vanished unaccounted for.
+    assert (
+        adherence["expected_count"]
+        + adherence["excluded_paused_count"]
+        + adherence["excluded_cancelled_count"]
+    ) >= 3, adherence
     assert new.id != s.id and new.version == s.version + 1
 
 

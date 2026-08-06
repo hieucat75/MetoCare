@@ -282,13 +282,48 @@ export interface MedicationScheduleCardProps {
   nextDue: DoseOccurrence | null
   adherence: ScheduleAdherence | null
   isAdherencePartial?: boolean
+  /** First day the figure covers (`period_start`), not the prescription's start. */
   adherenceSince?: string | null
+  /** Last day the figure covers (`period_end`). */
+  adherenceUntil?: string | null
   isSubmitting: boolean
   actionError: string | null
   onMarkTaken: (doseId: string) => void
   /** Returns a promise so the prompt can stay mounted (and busy) until it settles. */
   onMarkSkipped: (doseId: string, reason?: string) => void | Promise<void>
   onRequestDiscontinue?: () => void
+  /** Opens the missed-dose history so the patient can record what happened. */
+  onOpenMissedDoses?: () => void
+}
+
+/**
+ * Why a period could not be reconciled, in the patient's language.
+ *
+ * `reconciled=false` means the denominator could not be established, which is
+ * NOT the same as "no doses yet" — and a UI that renders both as "chưa có dữ
+ * liệu" hides a repairable state behind an inert one. Every string here says
+ * what is true and what, if anything, the patient can do; none of them shows a
+ * percentage, because a rate from an unreconciled period is a different quantity
+ * (how often the app was opened), not a rougher version of the same one.
+ */
+function reconciliationMessage(reason: string): string {
+  switch (reason) {
+    case 'no_expected_occurrences_in_window':
+      return (
+        'Chưa thể tính tỷ lệ tuân thủ cho khoảng thời gian này: lịch đang tạm dừng ' +
+        'hoặc đã ngừng trong toàn bộ khoảng đó. Không có liều nào được coi là bỏ lỡ.'
+      )
+    case 'schedule_prescribes_nothing_in_window':
+      return (
+        'Lịch này không có liều nào trong khoảng thời gian đang xem. ' +
+        'Hãy chọn khoảng thời gian khác.'
+      )
+    default:
+      return (
+        'Chưa thể tính tỷ lệ tuân thủ cho khoảng thời gian này. ' +
+        'Số liệu sẽ xuất hiện khi lịch uống thuốc được cập nhật đầy đủ.'
+      )
+  }
 }
 
 /**
@@ -303,11 +338,13 @@ export function MedicationScheduleCard({
   adherence,
   isAdherencePartial = false,
   adherenceSince = null,
+  adherenceUntil = null,
   isSubmitting,
   actionError,
   onMarkTaken,
   onMarkSkipped,
   onRequestDiscontinue,
+  onOpenMissedDoses,
 }: MedicationScheduleCardProps) {
   const [skipTargetId, setSkipTargetId] = React.useState<string | null>(null)
   const skipTriggerRef = React.useRef<HTMLButtonElement>(null)
@@ -340,8 +377,9 @@ export function MedicationScheduleCard({
   const activeSchedules = schedules.filter((s) => s.status === 'active')
   const timezone = (activeSchedules[0] ?? schedules[0])?.patient_timezone
   const since = formatDate(adherenceSince)
+  const until = formatDate(adherenceUntil)
   const resolvedDoses = adherence
-    ? adherence.taken + adherence.skipped + adherence.missed
+    ? adherence.taken_count + adherence.skipped_count + adherence.missed_count
     : 0
 
   return (
@@ -461,7 +499,18 @@ export function MedicationScheduleCard({
           Đây là số liệu theo dõi, không phải đánh giá y khoa.
         </p>
 
-        {adherence === null || adherence.adherence_rate === null ? (
+        {adherence !== null && !adherence.reconciled ? (
+          // NOT "no data". The period could not be RECONCILED, and those are
+          // different things the patient deserves to tell apart. A percentage
+          // here would be app-engagement wearing the clothes of adherence — the
+          // number this whole change set exists to remove.
+          <p
+            className="mt-2 rounded-[12px] bg-[#FEF9EC] px-3 py-2.5 text-[12.5px] text-[#8B6400]"
+            role="status"
+          >
+            {reconciliationMessage(adherence.reconciliation_reason)}
+          </p>
+        ) : adherence === null || adherence.adherence_rate === null ? (
           <p className="mt-2 text-[13px] text-neu-secondary">{ADHERENCE_NO_DATA}</p>
         ) : (
           <>
@@ -493,10 +542,40 @@ export function MedicationScheduleCard({
             </dl>
             <p className="mt-2 text-[11.5px] text-neu-subtle">
               Tính trên {resolvedDoses} liều đã đến hạn
-              {since ? ` kể từ ${since}` : ''}.
+              {since && until ? ` từ ${since} đến ${until}` : since ? ` kể từ ${since}` : ''}.
             </p>
+            {adherence.excluded_paused_count > 0 && (
+              // A hold the patient was told to observe is not non-adherence.
+              // Subtracting those doses silently would leave the patient reading
+              // a smaller denominator with no explanation, and the obvious
+              // inference from a shrinking total is that something went wrong.
+              <p className="mt-1.5 text-[11.5px] text-neu-secondary">
+                Đã loại trừ {adherence.excluded_paused_count} liều trong thời gian tạm
+                dừng theo chỉ định. Những liều này không tính là bỏ lỡ.
+              </p>
+            )}
+            {adherence.excluded_cancelled_count > 0 && (
+              <p className="mt-1.5 text-[11.5px] text-neu-subtle">
+                Đã loại trừ {adherence.excluded_cancelled_count} liều thuộc lịch đã
+                ngừng hoặc đã thay đổi.
+              </p>
+            )}
             {adherence.missed > 0 && (
-              <p className="mt-2 text-[12.5px] text-neu-secondary">{MISSED_DOSE_GUIDANCE}</p>
+              <>
+                <p className="mt-2 text-[12.5px] text-neu-secondary">{MISSED_DOSE_GUIDANCE}</p>
+                {onOpenMissedDoses && (
+                  // MISSED is assigned by a clock; nobody asserted it. Without a
+                  // way in, the patient who took their dose and opened the app
+                  // late has already been counted against and cannot say so.
+                  <button
+                    type="button"
+                    onClick={onOpenMissedDoses}
+                    className="mt-2 text-[12.5px] font-semibold text-neu-green underline underline-offset-2"
+                  >
+                    Xem và ghi nhận lại các liều đã lỡ
+                  </button>
+                )}
+              </>
             )}
           </>
         )}
