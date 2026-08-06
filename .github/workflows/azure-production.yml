@@ -220,6 +220,35 @@ jobs:
             sleep 10
           done
 
+      # ── Remove the Alembic migration job (it holds the PHI master key) ────
+      #
+      # `if: always()` — the reason to delete it is not tidiness. Since the
+      # migration job started receiving `enc-keys=$ENC_KEYS` (without which it
+      # would encrypt production PHI with the repository default, as it did to
+      # staging on 2026-08-06), it retains the production database URL AND
+      # MCP_ENCRYPTION_KEYS as job secrets between deploys, in a resource nobody
+      # watches, readable by any principal with Microsoft.App/jobs/listSecrets
+      # on the resource group. Deleting it only at the START of the next deploy
+      # parks the master PHI key there for however long that is. The
+      # crypto-smoke job already had this cleanup for exactly this reason;
+      # handing the migration job the same secret without the same cleanup
+      # widens the key's blast radius as a side effect of fixing the key bug.
+      #
+      # Failure here does not fail the deploy — the migration has already given
+      # its verdict — but it is loud so the residue gets removed by hand.
+      - name: Remove Alembic migration job
+        if: always()
+        run: |
+          JOB="caj-metocare-migrate"
+          if az containerapp job show -g "$RG" -n "$JOB" -o none 2>/dev/null; then
+            if ! az containerapp job delete -g "$RG" -n "$JOB" --yes -o none; then
+              echo "::warning::Could not delete $JOB. It holds the production"
+              echo "::warning::database URL and MCP_ENCRYPTION_KEYS as job secrets."
+              echo "::warning::Delete it manually:"
+              echo "::warning::  az containerapp job delete -g $RG -n $JOB --yes"
+            fi
+          fi
+
       # ── Post-migration PHI crypto smoke (BLOCKS the rollout) ──────────────
       #
       # Runs AFTER `alembic upgrade head` and BEFORE any traffic-carrying

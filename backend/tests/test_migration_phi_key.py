@@ -136,6 +136,65 @@ def test_a_real_key_is_accepted_in_staging(monkeypatch):
     assert crypto.decrypt(crypto.encrypt("some phi")) == "some phi"
 
 
+def test_a_missing_key_fails_loud_rather_than_falling_back(monkeypatch):
+    """Empty must raise, not silently reach for a default. The whole incident is
+    what "reaching for a default" costs."""
+    monkeypatch.setattr(
+        crypto, "get_settings", lambda: Settings(env="staging", encryption_keys="")
+    )
+    with pytest.raises(crypto.EncryptionConfigError) as excinfo:
+        crypto.encrypt("some phi")
+    assert "not set" in str(excinfo.value)
+
+
+@pytest.mark.parametrize(
+    "bad", ["not-a-fernet-key", "AAAA", "x" * 44, "gAAAAABm-looks-right-but-is-not"]
+)
+def test_a_malformed_key_fails_loud_without_echoing_the_key(monkeypatch, bad):
+    """A wrong-but-well-FORMED key is the crypto smoke's job. A malformed one
+    must never reach a decrypt path at all — and the error must not put the
+    rejected material into a build log."""
+    monkeypatch.setattr(
+        crypto, "get_settings", lambda: Settings(env="staging", encryption_keys=bad)
+    )
+    with pytest.raises(crypto.EncryptionConfigError) as excinfo:
+        crypto.encrypt("some phi")
+    message = str(excinfo.value)
+    assert "Invalid MCP_ENCRYPTION_KEYS" in message
+    assert bad not in message
+
+
+def test_the_first_key_encrypts_and_every_key_decrypts(monkeypatch):
+    """MultiFernet's rotation contract, pinned. If the ORDER ever inverted, a
+    rotation would encrypt new writes with the key being retired — and the
+    breakage would surface only once that key was dropped."""
+    from cryptography.fernet import Fernet, InvalidToken
+
+    primary, secondary = Fernet.generate_key().decode(), Fernet.generate_key().decode()
+    monkeypatch.setattr(
+        crypto,
+        "get_settings",
+        lambda: Settings(env="staging", encryption_keys=f"{primary},{secondary}"),
+    )
+    token = crypto.encrypt("some phi")
+    # Written with the PRIMARY…
+    assert Fernet(primary.encode()).decrypt(token.encode()).decode() == "some phi"
+    with pytest.raises(InvalidToken):
+        Fernet(secondary.encode()).decrypt(token.encode())
+    # …and a value written under the SECONDARY still reads, which is what makes
+    # a zero-downtime rotation possible.
+    old = Fernet(secondary.encode()).encrypt(b"older phi").decode()
+    assert crypto.decrypt(old) == "older phi"
+
+
+def test_the_guard_tracks_the_default_rather_than_a_copy_of_it():
+    """A hardcoded literal stops matching the day someone edits the default in
+    config.py — the one edit that must never quietly disable the guard."""
+    assert crypto.repo_default_key() == Settings.model_fields["encryption_keys"].default
+    assert crypto._DEV_DEFAULT_KEY_PREFIX
+    assert crypto._DEV_DEFAULT_KEY_PREFIX in crypto.repo_default_key()
+
+
 def test_the_default_is_refused_even_as_a_secondary_rotation_key(monkeypatch):
     """MultiFernet accepts a list; a decrypt-only secondary is still a key whose
     ciphertext anyone holding this repository can read."""

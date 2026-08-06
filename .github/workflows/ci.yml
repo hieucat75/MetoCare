@@ -573,6 +573,178 @@ jobs:
             sleep 10
           done
 
+      # ── Remove the Alembic migration job (it holds the PHI master key) ────
+      #
+      # `if: always()` — the reason to delete it is not tidiness. Since the
+      # migration job started receiving `enc-keys=$ENC_KEYS` (without which it
+      # encrypted staging's PHI with the repository default), it retains the
+      # database URL AND MCP_ENCRYPTION_KEYS as job secrets between deploys, in
+      # a resource nobody watches, readable by any principal with
+      # Microsoft.App/jobs/listSecrets on the resource group. Deleting it only
+      # at the START of the next deploy leaves the master key parked there for
+      # however long that is. The crypto-smoke job already had this cleanup for
+      # exactly this reason; giving the migration job the same secret without
+      # the same cleanup would have widened the key's blast radius as a side
+      # effect of fixing the key bug.
+      #
+      # Failure here does not fail the deploy — the migration has already given
+      # its verdict — but it is loud so the residue gets removed by hand.
+      - name: Remove Alembic migration job
+        if: always()
+        run: |
+          JOB="caj-metocare-migrate"
+          if az containerapp job show -g "$RG" -n "$JOB" -o none 2>/dev/null; then
+            if ! az containerapp job delete -g "$RG" -n "$JOB" --yes -o none; then
+              echo "::warning::Could not delete $JOB. It holds the staging"
+              echo "::warning::database URL and MCP_ENCRYPTION_KEYS as job secrets."
+              echo "::warning::Delete it manually:"
+              echo "::warning::  az containerapp job delete -g $RG -n $JOB --yes"
+            fi
+          fi
+
+      # ── Post-migration PHI crypto smoke (BLOCKS the rollout) ──────────────
+      #
+      # Runs AFTER `alembic upgrade head` and BEFORE any traffic-carrying
+      # revision exists. It used to run at the very END, after the backend and
+      # frontend were already live — so on 2026-08-06 it correctly detected that
+      # the migration had encrypted every PHI column with the repository's
+      # default key, and by then staging had been serving that build for
+      # fourteen minutes. Production had the ordering right and staging did not;
+      # a gate placed after the thing it guards is a report, not a gate.
+      #
+      # The unauthenticated smoke tests above assert 401s and /health is a bare
+      # SELECT 1, so nothing else in this pipeline reads an encrypted column.
+      # Boot validation proves each key is well-FORMED, not that it is the RIGHT
+      # one: on a real database with a wrong-but-valid key, boot PASSES,
+      # /health PASSES, the smoke suite PASSES, and every authenticated
+      # encrypted read raises. Notification.title/body and
+      # MedicationStatement.raw_drug_name are NOT NULL with
+      # on_decrypt_failure="raise", so reminders and the medication timeline are
+      # down for every patient while the deploy is reported green.
+      #
+      # Runs as a one-shot job, not an endpoint: an HTTP route that decrypts on
+      # demand is a crypto oracle. Writes synthetic CRYPTO-SMOKE sentinels only,
+      # rolls them back, and prints no PHI and no key material.
+      - name: Post-migration PHI crypto smoke
+        run: |
+          # Rebuild every value HERE. A `run:` step is a FRESH shell, so a
+          # variable assigned in an earlier step does not survive — an earlier
+          # draft of this step referenced $MIGRATE_JOB/$ACA_ENV/$IMG, all of
+          # which were empty here, so it would have failed on EVERY deploy
+          # without ever invoking the smoke. Worse, that failure is
+          # indistinguishable in the log from a genuine wrong-key failure, which
+          # is how a real gate gets muted as "the usual broken step".
+          JOB="caj-metocare-crypto-smoke"
+          IMG="${REGISTRY}/${{ github.repository_owner }}/metocare-backend:${{ steps.tag.outputs.tag }}"
+          # Delete-then-create. A REUSED job runs the PREVIOUS execution's image
+          # and secrets, so it would validate the OLD key — precisely the
+          # rotation failure this exists to catch — and report pass.
+          #
+          # The delete is NOT allowed to fail silently. `|| true` on a step whose
+          # own comment calls delete-before-create load-bearing means a failed
+          # delete leaves the old job in place and the create below upserts onto
+          # it. "Absent" is success; anything else is a hard stop.
+          if az containerapp job show -g "$RG" -n "$JOB" -o none 2>/dev/null; then
+            if ! az containerapp job delete -g "$RG" -n "$JOB" --yes -o none; then
+              echo "::error::Could not delete the previous crypto-smoke job."
+              echo "::error::Refusing to reuse it: a reused job runs the PREVIOUS"
+              echo "::error::image and secrets, so it would verify the OLD key and"
+              echo "::error::report pass. Remove it manually and re-run:"
+              echo "::error::  az containerapp job delete -g $RG -n $JOB --yes"
+              exit 1
+            fi
+          fi
+          az containerapp job create -g "$RG" -n "$JOB" \
+            --environment "$ENV_NAME" --trigger-type Manual --replica-timeout 600 \
+            --replica-retry-limit 0 --parallelism 1 --replica-completion-count 1 \
+            --image "$IMG" --cpu 0.5 --memory 1Gi \
+            --secrets db-url="$DB_URL" enc-keys="$ENC_KEYS" \
+            --env-vars MCP_DATABASE_URL=secretref:db-url \
+              MCP_ENCRYPTION_KEYS=secretref:enc-keys MCP_ENV=staging \
+              MCP_BUILD_SHA=${{ steps.tag.outputs.sha8 }} \
+            --command "python" --args "run_crypto_smoke.py" -o none
+          az containerapp job start -g "$RG" -n "$JOB" -o none
+
+          # Poll THIS execution by name. `[0]` has no ordering guarantee, so a
+          # stale `Succeeded` from an earlier deploy could be read as this run's
+          # verdict — the loop would break immediately and the deploy proceed
+          # having verified nothing. Staging polled `[0]`; production did not.
+          EXEC=$(az containerapp job execution list -g "$RG" -n "$JOB" \
+            --query "[0].name" -o tsv 2>/dev/null || echo "")
+          if [ -z "$EXEC" ]; then
+            echo "::error::The crypto-smoke job reported no execution to poll."
+            echo "::error::Treating as FAILED — a deploy must not proceed on a"
+            echo "::error::check that never started."
+            exit 1
+          fi
+          echo "  crypto-smoke execution: $EXEC"
+
+          # 40x10s = 400s against a 600s --replica-timeout: Azure needs slack
+          # after the container's own limit fires to mark the execution Failed.
+          # A loop that expires WITHOUT a verdict must FAIL — falling out of it
+          # and exiting 0 reports a deploy healthy on a check that never
+          # returned, the same false green this step exists to remove.
+          ST=""
+          for i in $(seq 1 40); do
+            ST=$(az containerapp job execution show -g "$RG" -n "$JOB" \
+              --job-execution-name "$EXEC" \
+              --query "properties.status" -o tsv 2>/dev/null || echo Running)
+            echo "  crypto-smoke $i: $ST"
+            [ "$ST" = "Succeeded" ] && break
+            if [ "$ST" = "Failed" ]; then
+              echo "::error::PHI crypto smoke FAILED — encrypted columns are not"
+              echo "::error::readable with the deployed MCP_ENCRYPTION_KEYS. NO new"
+              echo "::error::revision has been created, so the currently-serving"
+              echo "::error::staging revision is unaffected."
+              echo "::error::Read the job log before doing anything: the verdict"
+              echo "::error::now names WHICH key each row needs —"
+              echo "::error::  ciphertext_source_key_rows  → rows encrypted with the"
+              echo "::error::    repository default; run the staging re-encryption"
+              echo "::error::    job (docs/runbooks/staging-phi-reencryption.md)."
+              echo "::error::  ciphertext_unreadable_rows  → readable with NO known"
+              echo "::error::    key; restore from the pre-migration backup."
+              echo "::error::  plaintext_legacy_rows       → never encrypted at all."
+              echo "::error::Remediation for a mis-rotation: restore the previous"
+              echo "::error::key in Key Vault (secret mcp-encryption-keys), redeploy,"
+              echo "::error::and re-run. Do NOT run an Alembic downgrade — the"
+              echo "::error::SEC-F11/P1-5 migrations refuse to decrypt with a wrong"
+              echo "::error::key and abort rather than destroy data."
+              echo "::error::Inspect: az containerapp job execution list -g $RG -n $JOB"
+              exit 1
+            fi
+            sleep 10
+          done
+          if [ "$ST" != "Succeeded" ]; then
+            echo "::error::PHI crypto smoke did not report a verdict within 400s"
+            echo "::error::(last status: ${ST:-unknown}). Treating as FAILED: a"
+            echo "::error::deploy must not be called healthy on a check that never"
+            echo "::error::returned. No new revision has been created."
+            echo "::error::Inspect: az containerapp job execution list -g $RG -n $JOB"
+            exit 1
+          fi
+
+      # ── Remove the smoke job (it holds the staging PHI key) ───────────────
+      #
+      # `if: always()` — it must run whether the smoke passed, failed or timed
+      # out. The job is created with `--secrets enc-keys=...`, so between
+      # deploys it retains the staging database URL and MCP_ENCRYPTION_KEYS in a
+      # resource nobody watches. Production had this cleanup; staging did not,
+      # so staging's PHI key has been sitting in an unwatched job the whole
+      # time. Failure here does not fail the deploy — the gate has already given
+      # its verdict — but it is loud so the residue gets removed by hand.
+      - name: Remove crypto-smoke job
+        if: always()
+        run: |
+          JOB="caj-metocare-crypto-smoke"
+          if az containerapp job show -g "$RG" -n "$JOB" -o none 2>/dev/null; then
+            if ! az containerapp job delete -g "$RG" -n "$JOB" --yes -o none; then
+              echo "::warning::Could not delete $JOB. It holds the staging"
+              echo "::warning::database URL and MCP_ENCRYPTION_KEYS as job secrets."
+              echo "::warning::Delete it manually:"
+              echo "::warning::  az containerapp job delete -g $RG -n $JOB --yes"
+            fi
+          fi
+
       # ── Deploy backend Container App ──────────────────────────────────────
       - name: Deploy backend to ACA
         run: |
@@ -712,79 +884,5 @@ jobs:
             echo "✅ All smoke checks passed"
           else
             echo "::error::One or more smoke tests failed — see above"
-            exit 1
-          fi
-
-      # ── Post-deploy PHI crypto smoke ──────────────────────────────────────
-      #
-      # The checks above are UNAUTHENTICATED and assert 401s, and /health is a
-      # bare SELECT 1 — none of them touches an encrypted column. Boot-time
-      # validation proves the key is well-FORMED, not that it is the RIGHT key.
-      #
-      # Reproduced on a real database: with a wrong-but-well-formed key, boot
-      # passes, /health passes, the smoke suite passes, and every authenticated
-      # encrypted read raises. Reminders (Notification.title/body) and the
-      # medication timeline (MedicationStatement.raw_drug_name) are NOT NULL with
-      # on_decrypt_failure="raise", so a mis-rotated key takes both down for every
-      # patient while the deploy is reported healthy.
-      #
-      # Runs as a one-shot job, not an endpoint: an HTTP route that decrypts on
-      # demand is a crypto oracle. Writes synthetic CRYPTO-SMOKE sentinels only,
-      # rolls them back, and prints no PHI and no key material.
-      - name: Post-deploy PHI crypto smoke
-        run: |
-          # Rebuild every value locally. A `run:` step is a FRESH shell, so a
-          # variable assigned in an earlier step does not survive — an earlier
-          # draft of this step referenced $MIGRATE_JOB/$ACA_ENV/$IMG, all of
-          # which were empty here, so it would have failed on EVERY deploy
-          # without ever invoking the smoke. Worse, that failure is
-          # indistinguishable in the log from a genuine wrong-key failure, which
-          # is how a real gate gets muted as "the usual broken step".
-          JOB="caj-metocare-crypto-smoke"
-          IMG="${REGISTRY}/${{ github.repository_owner }}/metocare-backend:${{ steps.tag.outputs.tag }}"
-          # Delete-then-create, matching the Alembic job above. Without it a
-          # pre-existing job is reused with the PREVIOUS run's image and secrets,
-          # so the smoke would validate the OLD key — exactly the rotation
-          # failure it exists to catch.
-          az containerapp job delete -g "$RG" -n "$JOB" --yes -o none 2>/dev/null || true
-          az containerapp job create -g "$RG" -n "$JOB" \
-            --environment "$ENV_NAME" --trigger-type Manual --replica-timeout 600 \
-            --image "$IMG" --cpu 0.5 --memory 1Gi \
-            --secrets db-url="$DB_URL" enc-keys="$ENC_KEYS" \
-            --env-vars MCP_DATABASE_URL=secretref:db-url \
-              MCP_ENCRYPTION_KEYS=secretref:enc-keys MCP_ENV=staging \
-              MCP_BUILD_SHA=${{ steps.tag.outputs.sha8 }} \
-            --command "python" --args "run_crypto_smoke.py" -o none
-          az containerapp job start -g "$RG" -n "$JOB" -o none
-
-          # Poll budget (40x10s=400s) deliberately EXCEEDS --replica-timeout
-          # (600s is the container's own limit; Azure needs slack after it fires
-          # to mark the execution Failed). A loop that expires without a verdict
-          # must FAIL: falling out of the loop and exiting 0 would report a deploy
-          # healthy on the strength of a check that never returned — which is the
-          # same false green this whole step exists to remove.
-          ST=""
-          for i in $(seq 1 40); do
-            ST=$(az containerapp job execution list -g "$RG" -n "$JOB" \
-              --query "[0].properties.status" -o tsv 2>/dev/null || echo Running)
-            echo "  crypto-smoke $i: $ST"
-            [ "$ST" = "Succeeded" ] && break
-            if [ "$ST" = "Failed" ]; then
-              echo "::error::PHI crypto smoke FAILED — encrypted columns are not"
-              echo "::error::readable with the deployed MCP_ENCRYPTION_KEYS."
-              echo "::error::Remediation: restore the previous key in Key Vault"
-              echo "::error::(secret mcp-encryption-keys), redeploy, and re-run this"
-              echo "::error::job. Do NOT run a downgrade — the SEC-F11/P1-5"
-              echo "::error::migrations refuse to decrypt with a wrong key and will"
-              echo "::error::abort rather than destroy data."
-              exit 1
-            fi
-            sleep 10
-          done
-          if [ "$ST" != "Succeeded" ]; then
-            echo "::error::PHI crypto smoke did not report a verdict within 400s"
-            echo "::error::(last status: ${ST:-unknown}). Treating as FAILED: a"
-            echo "::error::deploy must not be called healthy on a check that never"
-            echo "::error::returned. Inspect: az containerapp job execution list -g $RG -n $JOB"
             exit 1
           fi

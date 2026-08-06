@@ -55,10 +55,26 @@ class UndecryptablePHIError(RuntimeError):
     """
 
 
+def repo_default_key() -> str:
+    """The committed development default of `Settings.encryption_keys`.
+
+    Read off the FIELD, not off an instance: an instance in staging carries the
+    real Key Vault key, and a hardcoded copy here would silently stop matching
+    the day someone edits the default in `config.py` — the one edit that must
+    never quietly disable the guard below.
+
+    Not a secret. It is in this repository, which is exactly the problem.
+    """
+    from .config import Settings
+
+    return str(Settings.model_fields["encryption_keys"].default)
+
+
 # The development default in `Settings.encryption_keys`. It is committed to this
 # repository, so anything encrypted with it is, for confidentiality purposes,
-# plaintext.
-_DEV_DEFAULT_KEY_PREFIX = "CSuRdJSn8APsbQJ3u91m71ZoHvdpn0IzMj6i7H9kMFg"
+# plaintext. Trailing "=" padding is stripped so the guard matches whether or
+# not a caller carried it through.
+_DEV_DEFAULT_KEY_PREFIX = repo_default_key().rstrip("=")
 # Environments where the committed default is an acceptable convenience.
 _DEV_ENVS = frozenset({"dev", "development", "local", "test", "ci"})
 
@@ -102,6 +118,17 @@ def _cipher() -> MultiFernet:
         return MultiFernet([Fernet(k.encode()) for k in keys])
     except (ValueError, TypeError) as exc:  # malformed key
         raise EncryptionConfigError(f"Invalid MCP_ENCRYPTION_KEYS: {exc}") from exc
+
+
+def active_cipher() -> MultiFernet:
+    """The cipher the application itself uses, guard and all.
+
+    Operational tooling (the crypto smoke, the staging re-encryption job) must
+    verify against exactly what the app has — reconstructing a cipher from the
+    same environment variable would also reconstruct the chance of getting it
+    wrong, and would route around the committed-default refusal in `_cipher()`.
+    """
+    return _cipher()
 
 
 def encrypt(plaintext: str) -> str:
