@@ -206,6 +206,45 @@ def test_a_failing_or_hanging_staging_smoke_blocks_the_rollout():
     assert 'if [ "$ST" != "Succeeded" ]' in block
 
 
+def test_no_workflow_leaves_a_job_holding_the_phi_key():
+    """Generalised over EVERY workflow, not a list someone has to remember.
+
+    Three workflows create one-off Container Apps Jobs with
+    `--secrets enc-keys=...`, and a fourth added next quarter would be found by
+    nobody. A job left in place holds the environment's database URL and
+    MCP_ENCRYPTION_KEYS between deploys, in a resource with no monitoring,
+    readable by any principal with Microsoft.App/jobs/listSecrets on the
+    resource group.
+
+    The check is deliberately coarse — "this workflow hands a job the key, so it
+    must also delete a job unconditionally" — because a precise one would have
+    to parse shell variables out of `-n "$JOB"` and would break on the first
+    reasonable refactor. Coarse and always-true beats precise and disabled.
+    """
+    import pathlib
+
+    root = pathlib.Path(__file__).resolve().parents[2] / ".github" / "workflows"
+    if not root.exists():
+        pytest.skip("workflows not present in this checkout")
+
+    offenders = []
+    for path in sorted(root.glob("*.yml")):
+        src = path.read_text()
+        if "enc-keys=" not in src:
+            continue
+        has_cleanup = any(
+            "if: always()" in block.split("\n      - name:", 1)[0]
+            and "az containerapp job delete" in block.split("\n      - name:", 1)[0]
+            for block in src.split("- name: Remove ")[1:]
+        )
+        if not has_cleanup:
+            offenders.append(path.name)
+    assert not offenders, (
+        f"{offenders} create a job with the PHI encryption key and never delete "
+        "it; the key sits in an unwatched Container Apps Job between deploys"
+    )
+
+
 @pytest.mark.parametrize("name", ["ci.yml", "azure-production.yml"])
 def test_every_job_holding_the_phi_key_is_deleted_after_it_runs(name):
     """Both one-off jobs are created with `--secrets enc-keys=...`. Left in

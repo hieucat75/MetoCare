@@ -186,6 +186,31 @@ jobs:
             sleep 15
           done
 
+      # ── Remove the Alembic migration job (it holds the PHI master key) ────
+      #
+      # This workflow always passed `enc-keys` to the migration job — it was
+      # ci.yml's auto-deploy path that did not, which is what encrypted
+      # staging's PHI with the repository default on 2026-08-06. But holding the
+      # key correctly and then leaving the job in place still parks the staging
+      # database URL and MCP_ENCRYPTION_KEYS in a resource nobody watches,
+      # readable by anything with Microsoft.App/jobs/listSecrets on the resource
+      # group. `if: always()`, because the reason to remove it is not tidiness.
+      #
+      # Failure here does not fail the deploy — the migration has already given
+      # its verdict — but it is loud so the residue gets removed by hand.
+      - name: Remove Alembic migration job
+        if: always()
+        run: |
+          JOB="caj-metocare-migrate"
+          if az containerapp job show -g "$RG" -n "$JOB" -o none 2>/dev/null; then
+            if ! az containerapp job delete -g "$RG" -n "$JOB" --yes -o none; then
+              echo "::warning::Could not delete $JOB. It holds the staging"
+              echo "::warning::database URL and MCP_ENCRYPTION_KEYS as job secrets."
+              echo "::warning::Delete it manually:"
+              echo "::warning::  az containerapp job delete -g $RG -n $JOB --yes"
+            fi
+          fi
+
       - name: Deploy backend Container App
         run: |
           IMG="${REGISTRY}/${{ github.repository_owner }}/metocare-backend:${{ steps.tag.outputs.tag }}"
