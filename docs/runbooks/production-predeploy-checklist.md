@@ -141,3 +141,112 @@ Both A1 and A2 must hold: `--ref main`, and `PRODUCTION` in exact upper case.
 - [ ] One authenticated read of a `raise`-policy column — a medication timeline
       or a reminder. Under a wrong key those 500 rather than degrading, so a 200
       is the proof. `/health` is `SELECT 1` and proves nothing about encryption.
+
+---
+
+## E. Production pre-deploy package — PREPARED, NOT EXECUTED
+
+Everything a deploy needs, assembled. **Nothing here has been run.**
+
+### People — all three unassigned, and that is the blocker
+
+| Role | Name | Responsibility |
+|---|---|---|
+| Incident Commander | `<unassigned>` | Owns the deploy while it runs; the only person who calls an abort |
+| Rollback owner | `<unassigned>` | Executes the rollback command below if called |
+| Legal/privacy incident owner | `<unassigned>` | Owns the notification decision — independent of, and prior to, this deploy |
+
+A deploy with no named commander has nobody who can decide to stop it.
+
+### Maintenance window
+
+| | |
+|---|---|
+| Proposed window | `<unassigned>` |
+| Expected duration | **20–40 min.** 18 migrations; the two PHI-encryption migrations rewrite columns in `extraction_candidates` and `notifications` |
+| Constraint | `lock_timeout = 5s` aborts if a conflicting transaction is open. Choose a low-write period, or expect to retry |
+
+### Current production state
+
+| | |
+|---|---|
+| Active revision | `ca-metocare-backend--be-30a65ebc-1783997179` |
+| Image | `ghcr.io/hieucat75/metocare-backend:30a65ebc-1783996432` |
+| Deployed since | `2026-07-14T02:46:31Z` |
+| Replicas | 1 |
+| Postgres | `psql-metocare-prod`, PG16, **GeneralPurpose `Standard_D2s_v3`** |
+| PITR earliest restorable | `2026-07-31T02:13:21Z`, 7-day retention |
+| On-demand backup | **Supported** (GeneralPurpose, unlike Burstable staging) |
+| Container Apps Jobs | **none** — the stale migration job was removed |
+
+### Migration plan
+
+**18 migrations** from production's 2026-07-14 head to `j3_m7_sched_lifecycle`,
+including, for the first time in production:
+
+- `j4_m9_secf11_phi_encryption` — encrypts Meto message bodies and OCR candidate
+  fields; converts `extraction_candidates.fields_json` JSONB → TEXT
+- `j4_m10_p15_residual_phi` — encrypts residual PHI surfaces; widens
+  `notifications.title`
+
+```bash
+cd backend && alembic history -r 30a65ebc:head    # review before dispatch
+```
+
+### Row-count and lock preflight
+
+Production row counts were **not** measured — doing so means pointing a job at
+the production database, and the deploy is on hold. Staging's equivalent (359
+encrypted values across 31 columns) is the closest available proxy; production is
+a three-week-older dataset of similar shape.
+
+Both migrations carry their own preflight: `_preflight_locks()` names the blocking
+PIDs and their transaction age before attempting the lock, then `lock_timeout = 5s`
+bounds the wait and `statement_timeout = 0` protects the rewrite once acquired.
+Advisory only — it reports, it does not terminate anything.
+
+### Crypto smoke
+
+Runs after the migration and before any revision. Must report `result: pass` with
+a **non-zero** `ciphertext_target_key_rows`.
+
+### Abort criteria
+
+Any one of these — stop, do not retry blind:
+
+1. Crypto smoke reports non-zero `ciphertext_source_key_rows`,
+   `ciphertext_unreadable_rows` or `plaintext_legacy_rows`.
+2. Crypto smoke returns no verdict within 400 s.
+3. A pass with **every counter at zero** — it verified nothing.
+4. Migration aborts on `lock_timeout` — retry in a quieter window, never force.
+5. Pre-migration backup step fails — there is no restore point.
+6. Anything in `_preflight_locks` output the commander cannot explain.
+
+### Rollback
+
+```bash
+az containerapp ingress traffic set -g rg-metocare-prod -n ca-metocare-backend \
+  --revision-weight ca-metocare-backend--be-30a65ebc-1783997179=100
+```
+
+The run's step summary carries the same command with the revision confirmed at
+dispatch time. **A data rollback is not an Alembic downgrade** — the
+SEC-F11/j4_m10 migrations refuse to decrypt with a wrong key and abort rather
+than destroy data. Data rollback is PITR, which discards writes since the restore
+point, and is the incident owner's decision.
+
+### Post-deploy authenticated flows
+
+Only after the smoke is green. `/health` is `SELECT 1` and proves nothing about
+encryption; these read `on_decrypt_failure="raise"` columns, which 500 under a
+wrong key rather than degrading:
+
+1. authentication — login, `/auth/me` returns the decrypted name
+2. medication timeline — `medication_statements.raw_drug_name`
+3. reminders — `notifications.title` / `body`
+4. Meto conversation list — `meto_messages.content`
+5. document candidate list — `extraction_candidates.fields_json`
+
+**Use an existing production account. Do not create synthetic data in
+production**, and note that `MCP_SYNTHETIC_ONLY_MODE` is deliberately **not** set
+there.
