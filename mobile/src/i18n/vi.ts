@@ -138,9 +138,17 @@ export const vi = {
     chiefComplaintPlaceholder: 'Ví dụ: đường huyết tăng cao gần đây',
     patientNoteLabel: 'Ghi chú thêm (không bắt buộc)',
     patientNotePlaceholder: 'Triệu chứng, câu hỏi hoặc thông tin khác',
-    consentLabel:
-      'Tôi đồng ý chia sẻ dữ liệu sức khoẻ của mình với bác sĩ cho lượt tư vấn này.',
-    consentRequired: 'Vui lòng đồng ý chia sẻ dữ liệu để tiếp tục.',
+    // The consent modal's real copy is authored server-side and rendered
+    // verbatim (GET /consultations/data-sharing-policy), so that the words the
+    // patient reads are the words versioned against their stored grant. These
+    // are only the chrome around it, plus fallback labels for the brief moment
+    // before the policy arrives — while accept stays disabled.
+    consentTitleFallback: 'Chia sẻ thông tin sức khỏe với bác sĩ?',
+    consentAcceptFallback: 'Đồng ý và tiếp tục',
+    consentDeclineFallback: 'Không chia sẻ',
+    consentLoading: 'Đang tải nội dung…',
+    consentLoadFailed: 'Không tải được nội dung chia sẻ dữ liệu. Vui lòng thử lại.',
+    consentDeclined: 'Bạn chưa đồng ý chia sẻ dữ liệu nên lượt tư vấn chưa được tạo.',
     submitBook: 'Xác nhận & thanh toán',
     detailTitle: 'Chi tiết tư vấn',
     chiefComplaint: 'Lý do tư vấn',

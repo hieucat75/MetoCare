@@ -50,6 +50,13 @@ describe('consultations API contract', () => {
       doctor_id: 'doc-1',
       consultation_type: 'CHAT',
       data_consent_accepted: true,
+      data_sharing_consent: {
+        accepted: true,
+        categories: ['health_records'],
+        consent_version: '1.0',
+        policy_version: '1.0',
+        source: 'mobile',
+      },
       chief_complaint: 'Đường huyết cao',
       patient_note: null,
     })

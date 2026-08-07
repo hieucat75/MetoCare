@@ -7,6 +7,7 @@ import {
   createConsultation,
   payConsultation,
 } from '../../api/consultations'
+import type { ConsentGrant } from '../../components/DataSharingConsentModal'
 
 type Phase = 'idle' | 'submitting' | 'error'
 
@@ -18,41 +19,48 @@ export interface BookConsultationInput {
 export interface BookConsultationState {
   phase: Phase
   errorMsg?: string
-  consentAccepted: boolean
-  /** True only when consent is ticked and no submit is in flight. */
+  /** True while no submit is in flight. Consent is not tracked here — it arrives with submit. */
   canSubmit: boolean
-  setConsentAccepted: (value: boolean) => void
   /** Creates the consultation then pays it. Returns the consultation id or null. */
-  submit: (input: BookConsultationInput) => Promise<string | null>
+  submit: (grant: ConsentGrant, input: BookConsultationInput) => Promise<string | null>
+  /** Clears a previous failure so a dismissed dialog does not reopen showing it. */
+  reset: () => void
 }
 
 /**
- * Drives the book flow: create consultation → pay. The data-sharing consent is
- * a hard gate — `canSubmit` is false and `submit` is a no-op (returns null)
- * until the patient has accepted it, matching the backend's required
- * `data_consent_accepted` field. Trims free-text and omits empty values.
+ * Drives the book flow: create consultation → pay.
+ *
+ * Consent is not a boolean this hook holds and later trusts. `submit` requires
+ * a `ConsentGrant` — the categories and versions the patient actually saw — so
+ * there is no state that could drift out of sync with the dialog, and no way to
+ * book without having gone through it.
  */
 export function useBookConsultation(
   client: ApiClient,
   doctorId: string,
-  consultationType: ConsultationTypeValue = 'CHAT'
+  consultationType: ConsultationTypeValue = 'CHAT',
+  appVersion?: string
 ): BookConsultationState {
   const [phase, setPhase] = useState<Phase>('idle')
   const [errorMsg, setErrorMsg] = useState<string | undefined>(undefined)
-  const [consentAccepted, setConsentAccepted] = useState(false)
   // Synchronous re-entrancy lock: setPhase('submitting') only takes effect after
   // the current call stack unwinds, so a fast double-tap could otherwise pass the
   // `disabled`/phase check twice and create+pay two consultations (duplicate
   // charge). A ref flips synchronously, closing that window.
   const inFlightRef = useRef(false)
 
-  const canSubmit = consentAccepted && phase !== 'submitting'
+  const canSubmit = phase !== 'submitting'
+
+  const reset = useCallback(() => {
+    setErrorMsg(undefined)
+    setPhase('idle')
+  }, [])
 
   const submit = useCallback(
-    async (input: BookConsultationInput): Promise<string | null> => {
-      // Hard guard: never call the API without accepted consent.
-      if (!consentAccepted) return null
+    async (grant: ConsentGrant, input: BookConsultationInput): Promise<string | null> => {
       if (inFlightRef.current) return null
+      // A grant with no categories is not consent — refuse rather than send it.
+      if (!grant || grant.categories.length === 0) return null
       inFlightRef.current = true
       setPhase('submitting')
       setErrorMsg(undefined)
@@ -62,10 +70,15 @@ export function useBookConsultation(
         const consultation = await createConsultation(client, {
           doctor_id: doctorId,
           consultation_type: consultationType,
-          // Transmit the actual checkbox state (guaranteed true past the guard
-          // above) — never a decoupled literal, so this stays correct if the
-          // guard is ever refactored.
-          data_consent_accepted: consentAccepted,
+          data_consent_accepted: true,
+          data_sharing_consent: {
+            accepted: true,
+            categories: grant.categories,
+            consent_version: grant.consentVersion,
+            policy_version: grant.policyVersion,
+            source: 'mobile',
+            client_app_version: appVersion,
+          },
           chief_complaint: chief ? chief : null,
           patient_note: note ? note : null,
         })
@@ -80,8 +93,8 @@ export function useBookConsultation(
         inFlightRef.current = false
       }
     },
-    [client, doctorId, consultationType, consentAccepted]
+    [client, doctorId, consultationType, appVersion]
   )
 
-  return { phase, errorMsg, consentAccepted, canSubmit, setConsentAccepted, submit }
+  return { phase, errorMsg, canSubmit, submit, reset }
 }

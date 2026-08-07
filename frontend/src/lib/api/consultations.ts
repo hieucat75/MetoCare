@@ -58,13 +58,61 @@ export interface ReviewOut {
 
 // ── Request payloads ──────────────────────────────────────────────────────────
 
+/**
+ * The patient's explicit, consultation-specific data-sharing consent.
+ *
+ * `accepted` is `true` and nothing else — the type has no room for a declined
+ * value, because a declined modal must never produce a booking request at all.
+ */
+export interface DataSharingConsentIn {
+  accepted: true
+  categories: string[]
+  consent_version?: string
+  policy_version?: string
+  source?: string
+  client_app_version?: string
+  locale?: string
+}
+
 export interface ConsultationCreate {
   doctor_id: string
   consultation_type?: ConsultationType
   data_consent_accepted: boolean
+  data_sharing_consent: DataSharingConsentIn
   chief_complaint?: string
   patient_note?: string
   booking_appointment_id?: string
+}
+
+export interface ConsentCategory {
+  key: string
+  label: string
+}
+
+/** Server-authored copy for the consent modal — rendered verbatim, never re-worded client-side. */
+export interface DataSharingConsentPolicy {
+  consent_version: string
+  policy_version: string
+  purpose: string
+  title: string
+  body: string
+  accept_label: string
+  decline_label: string
+  categories: ConsentCategory[]
+}
+
+export interface DataSharingConsent {
+  id: string
+  consultation_id: string
+  doctor_id: string
+  purpose: string
+  consent_version: string
+  policy_version: string
+  categories: string[]
+  granted_at: string
+  revoked_at?: string | null
+  is_active: boolean
+  source?: string | null
 }
 
 export interface ReviewCreate {
@@ -170,6 +218,30 @@ export interface PatientSummaryOut {
 /** PATIENT: create a consultation request (status REQUESTED). 422 if consent false. */
 export async function createConsultation(payload: ConsultationCreate): Promise<ConsultationOut> {
   return api.post<ConsultationOut>('/consultations', payload)
+}
+
+/**
+ * PATIENT: the consent copy + grantable categories the modal must render.
+ *
+ * Fetched rather than hardcoded so the words shown to the patient are exactly
+ * the words versioned against the grant the server records.
+ */
+export async function getDataSharingPolicy(): Promise<DataSharingConsentPolicy> {
+  return api.get<DataSharingConsentPolicy>('/consultations/data-sharing-policy')
+}
+
+/** PATIENT: read their own recorded sharing consent for a consultation. */
+export async function getDataSharingConsent(id: string): Promise<DataSharingConsent> {
+  return api.get<DataSharingConsent>(`/consultations/${id}/data-sharing-consent`)
+}
+
+/**
+ * PATIENT: withdraw sharing. Takes effect immediately — the doctor's next read
+ * is refused. Does not cancel the consultation or delete anything already
+ * recorded. Idempotent.
+ */
+export async function revokeDataSharingConsent(id: string): Promise<{ message: string }> {
+  return api.del<{ message: string }>(`/consultations/${id}/data-sharing-consent`)
 }
 
 /** List consultations scoped to the caller (PATIENT own / DOCTOR own / admin). */

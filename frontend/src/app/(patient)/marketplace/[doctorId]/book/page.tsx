@@ -8,7 +8,7 @@ import { PatientErrorState, PatientSkeleton } from '@/components/patient/states'
 import {
   formatVnd,
   MarketplaceDisclaimer,
-  DataConsentCheckbox,
+  DataSharingConsentModal,
 } from '@/components/marketplace'
 import { ApiError } from '@/lib/api/client'
 import { getDoctorDetail, type DoctorDetailOut, type ConsultationType } from '@/lib/api/marketplace'
@@ -39,12 +39,16 @@ export default function BookConsultationPage() {
 
   const [step, setStep] = React.useState<Step>('form')
   const [consultationType, setConsultationType] = React.useState<ConsultationType>('CHAT')
-  const [consent, setConsent] = React.useState(false)
   const [chiefComplaint, setChiefComplaint] = React.useState('')
+  const [consentOpen, setConsentOpen] = React.useState(false)
 
   const [consultation, setConsultation] = React.useState<ConsultationOut | null>(null)
   const [submitting, setSubmitting] = React.useState(false)
   const [actionError, setActionError] = React.useState<string | null>(null)
+  // Synchronous re-entrancy lock. `setSubmitting(true)` only lands after the
+  // current call stack unwinds, so a fast double-click could otherwise clear
+  // the `disabled` check twice and book two consultations. A ref flips now.
+  const inFlightRef = React.useRef(false)
 
   const loadDoctor = React.useCallback(() => {
     setLoadingDoctor(true)
@@ -59,11 +63,24 @@ export default function BookConsultationPage() {
     loadDoctor()
   }, [loadDoctor])
 
-  const handleCreate = async () => {
-    if (!consent) {
-      setActionError('Bạn cần đồng ý chia sẻ dữ liệu để đặt tư vấn.')
-      return
-    }
+  /** Open the consent dialog. Nothing is created until the patient accepts. */
+  const handleRequestBooking = () => {
+    setActionError(null)
+    setConsentOpen(true)
+  }
+
+  /**
+   * The ONLY path that creates a consultation, reachable only from the modal's
+   * accept action — so declining, pressing Escape or clicking the backdrop
+   * cannot book, because none of them call this.
+   */
+  const handleConsentAccepted = async (grant: {
+    categories: string[]
+    consentVersion: string
+    policyVersion: string
+  }) => {
+    if (inFlightRef.current) return
+    inFlightRef.current = true
     setSubmitting(true)
     setActionError(null)
     try {
@@ -71,15 +88,34 @@ export default function BookConsultationPage() {
         doctor_id: doctorId,
         consultation_type: consultationType,
         data_consent_accepted: true,
+        data_sharing_consent: {
+          accepted: true,
+          categories: grant.categories,
+          consent_version: grant.consentVersion,
+          policy_version: grant.policyVersion,
+          source: 'web',
+          locale: typeof navigator !== 'undefined' ? navigator.language : undefined,
+        },
         chief_complaint: chiefComplaint.trim() || undefined,
       })
       setConsultation(created)
+      setConsentOpen(false)
       setStep('pay')
     } catch (err) {
+      // Stay on the modal so the patient can retry without re-consenting from
+      // scratch — the error is shown inside the dialog they are already in.
       setActionError(friendlyError(err))
     } finally {
+      inFlightRef.current = false
       setSubmitting(false)
     }
+  }
+
+  const handleConsentOpenChange = (open: boolean) => {
+    setConsentOpen(open)
+    // Dismissal is a decision, not an error. Clear the message rather than
+    // leaving a red warning behind a dialog the patient deliberately closed.
+    if (!open) setActionError(null)
   }
 
   const handlePay = async () => {
@@ -131,18 +167,26 @@ export default function BookConsultationPage() {
           </NeuCard>
 
           {step === 'form' && (
-            <BookingForm
-              consultationType={consultationType}
-              onType={setConsultationType}
-              consent={consent}
-              onConsent={setConsent}
-              chiefComplaint={chiefComplaint}
-              onChiefComplaint={setChiefComplaint}
-              price={price}
-              submitting={submitting}
-              error={actionError}
-              onSubmit={handleCreate}
-            />
+            <>
+              <BookingForm
+                consultationType={consultationType}
+                onType={setConsultationType}
+                chiefComplaint={chiefComplaint}
+                onChiefComplaint={setChiefComplaint}
+                price={price}
+                submitting={submitting}
+                error={consentOpen ? null : actionError}
+                onSubmit={handleRequestBooking}
+              />
+              <DataSharingConsentModal
+                open={consentOpen}
+                onOpenChange={handleConsentOpenChange}
+                onAccept={handleConsentAccepted}
+                submitting={submitting}
+                error={actionError}
+                doctorName={doctor.full_name}
+              />
+            </>
           )}
 
           {step === 'pay' && consultation && (
@@ -172,8 +216,6 @@ export default function BookConsultationPage() {
 function BookingForm({
   consultationType,
   onType,
-  consent,
-  onConsent,
   chiefComplaint,
   onChiefComplaint,
   price,
@@ -183,8 +225,6 @@ function BookingForm({
 }: {
   consultationType: ConsultationType
   onType: (t: ConsultationType) => void
-  consent: boolean
-  onConsent: (b: boolean) => void
   chiefComplaint: string
   onChiefComplaint: (s: string) => void
   price: number | null
@@ -245,9 +285,6 @@ function BookingForm({
         </p>
       </section>
 
-      {/* Data consent (required) */}
-      <DataConsentCheckbox checked={consent} onChange={onConsent} />
-
       <MarketplaceDisclaimer />
 
       {/* Price confirm */}
@@ -264,10 +301,11 @@ function BookingForm({
         </p>
       )}
 
+      {/* Opens the consent dialog — this button does not book anything. */}
       <button
         type="button"
         onClick={onSubmit}
-        disabled={!consent || submitting}
+        disabled={submitting}
         className="neu-btn-primary w-full disabled:opacity-50"
       >
         {submitting ? 'Đang xử lý…' : 'Xác nhận đặt tư vấn'}
@@ -364,10 +402,19 @@ function SuccessStep({
 
 function friendlyError(err: unknown): string {
   if (err instanceof ApiError) {
-    if (err.status === 422) {
+    if (err.status === 422 || err.status === 400) {
       return 'Bạn cần đồng ý chia sẻ dữ liệu để đặt tư vấn.'
     }
-    if (err.status === 402 || err.status === 409) {
+    // The server rejects a booking whose consent version is out of date — the
+    // patient read terms this build no longer matches, so a reload is the fix,
+    // not a retry of the same request.
+    if (err.status === 409) {
+      return (
+        err.detail ||
+        'Nội dung chia sẻ dữ liệu đã được cập nhật. Vui lòng tải lại trang và xem lại trước khi tiếp tục.'
+      )
+    }
+    if (err.status === 402) {
       return err.detail || 'Không thể hoàn tất thanh toán. Vui lòng thử lại.'
     }
     return err.detail || 'Đã có lỗi xảy ra. Vui lòng thử lại.'
