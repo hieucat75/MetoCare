@@ -58,13 +58,61 @@ export interface ReviewOut {
 
 // ── Request payloads ──────────────────────────────────────────────────────────
 
+/**
+ * The patient's explicit, consultation-specific data-sharing consent.
+ *
+ * `accepted` is `true` and nothing else — the type has no room for a declined
+ * value, because a declined modal must never produce a booking request at all.
+ */
+export interface DataSharingConsentIn {
+  accepted: true
+  categories: string[]
+  consent_version?: string
+  policy_version?: string
+  source?: string
+  client_app_version?: string
+  locale?: string
+}
+
 export interface ConsultationCreate {
   doctor_id: string
   consultation_type?: ConsultationType
   data_consent_accepted: boolean
+  data_sharing_consent: DataSharingConsentIn
   chief_complaint?: string
   patient_note?: string
   booking_appointment_id?: string
+}
+
+export interface ConsentCategory {
+  key: string
+  label: string
+}
+
+/** Server-authored copy for the consent modal — rendered verbatim, never re-worded client-side. */
+export interface DataSharingConsentPolicy {
+  consent_version: string
+  policy_version: string
+  purpose: string
+  title: string
+  body: string
+  accept_label: string
+  decline_label: string
+  categories: ConsentCategory[]
+}
+
+export interface DataSharingConsent {
+  id: string
+  consultation_id: string
+  doctor_id: string
+  purpose: string
+  consent_version: string
+  policy_version: string
+  categories: string[]
+  granted_at: string
+  revoked_at?: string | null
+  is_active: boolean
+  source?: string | null
 }
 
 export interface ReviewCreate {
@@ -152,24 +200,87 @@ export interface SummaryCarePlan {
   version?: number | null
 }
 
+export interface SummaryMedicalDocument {
+  id?: string
+  doc_type?: string | null
+  status?: string | null
+  page_count?: number | null
+  created_at?: string | null
+}
+
 export interface PatientSummaryOut {
   patient_id: string
   generated_at: string
   vitals: SummaryVitals
   lab_documents: SummaryLabDocument[]
+  medical_documents?: SummaryMedicalDocument[]
   metabolic_score: SummaryMetabolicScore
   medications: SummaryMedication[]
   symptoms: SummarySymptom[]
   nutrition: SummaryNutrition[]
   upcoming_appointments: SummaryAppointment[]
   active_care_plans: SummaryCarePlan[]
+  /**
+   * Consultation-consent provenance. An empty section whose category is listed
+   * in `withheld_categories` means the patient did NOT SHARE it — the data may
+   * well exist. Rendering that as "no data" would be a clinical false negative.
+   * Both lists are empty for surfaces not governed by consultation consent.
+   */
+  shared_categories?: string[]
+  withheld_categories?: string[]
 }
+
+/** Consent category keys, mirroring backend app/domain/consultation_consent_policy.py. */
+export const CONSENT_CATEGORY = {
+  healthRecords: 'health_records',
+  medications: 'medications_and_adherence',
+  labResults: 'lab_results',
+  medicalDocuments: 'medical_documents',
+  patientProfile: 'patient_profile',
+} as const
 
 // ── Typed functions ───────────────────────────────────────────────────────────
 
 /** PATIENT: create a consultation request (status REQUESTED). 422 if consent false. */
 export async function createConsultation(payload: ConsultationCreate): Promise<ConsultationOut> {
   return api.post<ConsultationOut>('/consultations', payload)
+}
+
+/**
+ * PATIENT: the consent copy + grantable categories the modal must render.
+ *
+ * Fetched rather than hardcoded so the words shown to the patient are exactly
+ * the words versioned against the grant the server records.
+ */
+export async function getDataSharingPolicy(): Promise<DataSharingConsentPolicy> {
+  return api.get<DataSharingConsentPolicy>('/consultations/data-sharing-policy')
+}
+
+/** PATIENT: read their own recorded sharing consent for a consultation. */
+export async function getDataSharingConsent(id: string): Promise<DataSharingConsent> {
+  return api.get<DataSharingConsent>(`/consultations/${id}/data-sharing-consent`)
+}
+
+/**
+ * PATIENT: withdraw sharing. Takes effect immediately — the doctor's next read
+ * is refused. Does not cancel the consultation or delete anything already
+ * recorded. Idempotent.
+ */
+export async function revokeDataSharingConsent(id: string): Promise<{ message: string }> {
+  return api.del<{ message: string }>(`/consultations/${id}/data-sharing-consent`)
+}
+
+/**
+ * PATIENT: re-grant sharing they previously withdrew, so revoking is never a
+ * trap on a paid session. Omitting `categories` re-grants exactly what was
+ * granted before. Always driven by an explicit patient action — never called
+ * automatically.
+ */
+export async function restoreDataSharingConsent(
+  id: string,
+  payload: DataSharingConsentIn,
+): Promise<DataSharingConsent> {
+  return api.post<DataSharingConsent>(`/consultations/${id}/data-sharing-consent`, payload)
 }
 
 /** List consultations scoped to the caller (PATIENT own / DOCTOR own / admin). */

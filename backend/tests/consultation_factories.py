@@ -9,10 +9,54 @@ from __future__ import annotations
 import os
 
 from app.core.security import create_access_token
+from app.domain.consultation_consent_policy import CATEGORIES as _POLICY_CATEGORIES
 from app.models.care import Doctor
 from app.models.consultation import DoctorVerificationStatus
 from app.models.patient import PatientProfile
 from app.models.user import User, UserRole
+
+# Full data-sharing grant — what a patient who accepted the whole booking modal
+# consents to. Tests needing a narrower grant pass their own subset.
+CONSENT_ALL_CATEGORIES: list[str] = list(_POLICY_CATEGORIES)
+
+
+def consent_payload(categories: list[str] | None = None, **overrides) -> dict:
+    """A valid ``data_sharing_consent`` request body for POST /consultations.
+
+    Both version stamps are required by the schema and must match the server's
+    current values, so they default to the real ones here; a test exercising the
+    stale-client path overrides them explicitly.
+    """
+    from app.domain.consultation_consent_policy import CONSENT_VERSION, POLICY_VERSION
+
+    body = {
+        "accepted": True,
+        "categories": categories if categories is not None else CONSENT_ALL_CATEGORIES,
+        "consent_version": CONSENT_VERSION,
+        "policy_version": POLICY_VERSION,
+        "source": "web",
+    }
+    body.update(overrides)
+    return body
+
+
+def restore_payload(categories: list[str] | None = None, **overrides) -> dict:
+    """A valid body for POST /consultations/{id}/data-sharing-consent.
+
+    Re-sharing is its own consent decision, so the client must echo the version
+    stamps it rendered — the same rule booking follows.
+    """
+    from app.domain.consultation_consent_policy import CONSENT_VERSION, POLICY_VERSION
+
+    body: dict = {
+        "accepted": True,
+        "consent_version": CONSENT_VERSION,
+        "policy_version": POLICY_VERSION,
+    }
+    if categories is not None:
+        body["categories"] = categories
+    body.update(overrides)
+    return body
 
 
 def _uid() -> str:

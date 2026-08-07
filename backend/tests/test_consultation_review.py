@@ -7,14 +7,15 @@ from app.services import consultation as svc
 from app.services import consultation_payment, consultation_review
 from fastapi import HTTPException
 
-from tests.consultation_factories import create_doctor, create_patient
+from tests.consultation_factories import CONSENT_ALL_CATEGORIES, create_doctor, create_patient
 
 
 def _completed(db):
     doctor = create_doctor(db)
     user, profile = create_patient(db)
     c = svc.create_consultation(
-        db, patient_id=profile.id, doctor_id=doctor.id, data_consent_accepted=True
+        db, patient_id=profile.id, doctor_id=doctor.id, data_consent_accepted=True,
+        consent_categories=CONSENT_ALL_CATEGORIES
     )
     consultation_payment.pay_mock(db, c, patient_profile_id=profile.id)
     svc.complete(db, c.id, doctor_user_id=doctor.user_id)
@@ -25,7 +26,8 @@ def test_review_requires_completed(db):
     doctor = create_doctor(db)
     _u, profile = create_patient(db)
     c = svc.create_consultation(
-        db, patient_id=profile.id, doctor_id=doctor.id, data_consent_accepted=True
+        db, patient_id=profile.id, doctor_id=doctor.id, data_consent_accepted=True,
+        consent_categories=CONSENT_ALL_CATEGORIES
     )
     with pytest.raises(HTTPException) as exc:
         consultation_review.create_review(
@@ -71,7 +73,8 @@ def test_rating_aggregation_updates_doctor(db):
     for r in ratings:
         _u, profile = create_patient(db)
         c = svc.create_consultation(
-            db, patient_id=profile.id, doctor_id=doctor.id, data_consent_accepted=True
+            db, patient_id=profile.id, doctor_id=doctor.id, data_consent_accepted=True,
+        consent_categories=CONSENT_ALL_CATEGORIES
         )
         consultation_payment.pay_mock(db, c, patient_profile_id=profile.id)
         svc.complete(db, c.id, doctor_user_id=doctor.user_id)

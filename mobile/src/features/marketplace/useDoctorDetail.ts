@@ -20,6 +20,13 @@ export function useDoctorDetail(client: ApiClient, doctorId: string): DoctorDeta
   const [doctor, setDoctor] = useState<DoctorDetailOut | null>(null)
 
   const reload = useCallback(async () => {
+    // Callers that resolve the id from data still loading (e.g. a consultation
+    // detail screen reading `consultation.doctor_id`) pass '' on first render.
+    // Fetching that would hit `/marketplace/doctors/` and 404 for nothing.
+    if (!doctorId) {
+      setPhase('loading')
+      return
+    }
     setPhase('loading')
     setErrorMsg(undefined)
     try {

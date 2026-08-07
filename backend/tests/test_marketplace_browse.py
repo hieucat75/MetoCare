@@ -8,7 +8,12 @@ from app.services import consultation as svc
 from app.services import doctor_marketplace
 from fastapi import HTTPException
 
-from tests.consultation_factories import create_doctor, create_patient, headers
+from tests.consultation_factories import (
+    CONSENT_ALL_CATEGORIES,
+    create_doctor,
+    create_patient,
+    headers,
+)
 
 
 def test_browse_returns_only_verified(db):
@@ -33,7 +38,8 @@ def test_suspended_excluded_and_cannot_receive_booking(db):
     _u, profile = create_patient(db)
     with pytest.raises(HTTPException) as exc:
         svc.create_consultation(
-            db, patient_id=profile.id, doctor_id=suspended.id, data_consent_accepted=True
+            db, patient_id=profile.id, doctor_id=suspended.id, data_consent_accepted=True,
+        consent_categories=CONSENT_ALL_CATEGORIES
         )
     assert exc.value.status_code == 403
 

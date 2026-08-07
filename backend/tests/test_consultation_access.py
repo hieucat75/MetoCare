@@ -13,14 +13,20 @@ from app.services import consultation_access, consultation_payment
 from fastapi import HTTPException
 from sqlalchemy import select
 
-from tests.consultation_factories import create_doctor, create_patient, headers
+from tests.consultation_factories import (
+    CONSENT_ALL_CATEGORIES,
+    create_doctor,
+    create_patient,
+    headers,
+)
 
 
 def _paid_consult(db):
     doctor = create_doctor(db)
     _u, profile = create_patient(db)
     c = svc.create_consultation(
-        db, patient_id=profile.id, doctor_id=doctor.id, data_consent_accepted=True
+        db, patient_id=profile.id, doctor_id=doctor.id, data_consent_accepted=True,
+        consent_categories=CONSENT_ALL_CATEGORIES
     )
     return doctor, profile, c
 

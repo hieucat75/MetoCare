@@ -12,7 +12,7 @@ from app.services import consultation as svc
 from app.services import consultation_payment
 from fastapi import HTTPException
 
-from tests.consultation_factories import create_doctor, create_patient
+from tests.consultation_factories import CONSENT_ALL_CATEGORIES, create_doctor, create_patient
 
 
 def _make(db, **doc_kwargs):
@@ -37,7 +37,8 @@ def test_create_rejects_unverified_doctor(db):
     doctor, profile = _make(db, verification_status=DoctorVerificationStatus.PENDING_VERIFICATION)
     with pytest.raises(HTTPException) as exc:
         svc.create_consultation(
-            db, patient_id=profile.id, doctor_id=doctor.id, data_consent_accepted=True
+            db, patient_id=profile.id, doctor_id=doctor.id, data_consent_accepted=True,
+        consent_categories=CONSENT_ALL_CATEGORIES
         )
     assert exc.value.status_code == 403
 
@@ -46,7 +47,8 @@ def test_create_rejects_suspended_doctor(db):
     doctor, profile = _make(db, verification_status=DoctorVerificationStatus.SUSPENDED)
     with pytest.raises(HTTPException) as exc:
         svc.create_consultation(
-            db, patient_id=profile.id, doctor_id=doctor.id, data_consent_accepted=True
+            db, patient_id=profile.id, doctor_id=doctor.id, data_consent_accepted=True,
+        consent_categories=CONSENT_ALL_CATEGORIES
         )
     assert exc.value.status_code == 403
 
@@ -54,7 +56,8 @@ def test_create_rejects_suspended_doctor(db):
 def test_create_snapshots_price_and_creates_unpaid_payment(db):
     doctor, profile = _make(db, fee=250000.0)
     c = svc.create_consultation(
-        db, patient_id=profile.id, doctor_id=doctor.id, data_consent_accepted=True
+        db, patient_id=profile.id, doctor_id=doctor.id, data_consent_accepted=True,
+        consent_categories=CONSENT_ALL_CATEGORIES
     )
     assert c.status == ConsultationStatus.REQUESTED
     assert c.consultation_price == 250000.0
@@ -72,7 +75,8 @@ def test_create_snapshots_price_and_creates_unpaid_payment(db):
 def test_confirm_then_start_requires_paid(db):
     doctor, profile = _make(db)
     c = svc.create_consultation(
-        db, patient_id=profile.id, doctor_id=doctor.id, data_consent_accepted=True
+        db, patient_id=profile.id, doctor_id=doctor.id, data_consent_accepted=True,
+        consent_categories=CONSENT_ALL_CATEGORIES
     )
     svc.confirm(db, c.id, doctor_user_id=doctor.user_id)
     db.refresh(c)
@@ -86,7 +90,8 @@ def test_confirm_then_start_requires_paid(db):
 def test_full_happy_path_to_completed(db):
     doctor, profile = _make(db)
     c = svc.create_consultation(
-        db, patient_id=profile.id, doctor_id=doctor.id, data_consent_accepted=True
+        db, patient_id=profile.id, doctor_id=doctor.id, data_consent_accepted=True,
+        consent_categories=CONSENT_ALL_CATEGORIES
     )
     consultation_payment.pay_mock(db, c, patient_profile_id=profile.id)
     db.refresh(c)
@@ -101,7 +106,8 @@ def test_full_happy_path_to_completed(db):
 def test_terminal_status_rejects_further_transitions(db):
     doctor, profile = _make(db)
     c = svc.create_consultation(
-        db, patient_id=profile.id, doctor_id=doctor.id, data_consent_accepted=True
+        db, patient_id=profile.id, doctor_id=doctor.id, data_consent_accepted=True,
+        consent_categories=CONSENT_ALL_CATEGORIES
     )
     svc.cancel(db, c.id, actor_user_id=doctor.user_id, actor_role="doctor")
     db.refresh(c)
@@ -115,7 +121,8 @@ def test_confirm_rejects_non_owning_doctor(db):
     doctor, profile = _make(db)
     other = create_doctor(db)
     c = svc.create_consultation(
-        db, patient_id=profile.id, doctor_id=doctor.id, data_consent_accepted=True
+        db, patient_id=profile.id, doctor_id=doctor.id, data_consent_accepted=True,
+        consent_categories=CONSENT_ALL_CATEGORIES
     )
     with pytest.raises(HTTPException) as exc:
         svc.confirm(db, c.id, doctor_user_id=other.user_id)
@@ -126,7 +133,8 @@ def test_patient_cannot_cancel_others_consultation(db):
     doctor, profile = _make(db)
     _u2, other_profile = create_patient(db)
     c = svc.create_consultation(
-        db, patient_id=profile.id, doctor_id=doctor.id, data_consent_accepted=True
+        db, patient_id=profile.id, doctor_id=doctor.id, data_consent_accepted=True,
+        consent_categories=CONSENT_ALL_CATEGORIES
     )
     with pytest.raises(HTTPException) as exc:
         svc.cancel(

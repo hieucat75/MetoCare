@@ -1,12 +1,22 @@
 """Consultation-scoped read-access control (Doctor Marketplace MVP, T10).
 
-A doctor may read a patient's summary ONLY through an active
-``ConsultationAccessGrant`` scoped to a specific consultation + patient. Every
-view is audited (``doctor_view_patient_data``). Grants are created on payment and
-revoked when the consultation is COMPLETED or CANCELLED.
+A doctor may read a patient's data only when BOTH of the following hold:
+
+1. **Care relationship** — an active ``ConsultationAccessGrant`` scoped to this
+   consultation + patient. Created on payment, revoked when the consultation is
+   COMPLETED or CANCELLED, or when the doctor is suspended/rejected.
+2. **Patient consent** — an active ``ConsultationDataConsent`` for the same
+   consultation (``app.services.consultation_consent``), which also decides
+   *which categories* of data may be returned.
+
+Having paid for a consultation is not consent, and consent does not by itself
+create a care relationship. Every view is audited
+(``doctor_view_patient_data``); denials are audited too, without PHI.
 """
 
 from __future__ import annotations
+
+from dataclasses import dataclass
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
@@ -19,7 +29,23 @@ from app.models.consultation import (
     ConsultationAccessGrant,
     DoctorVerificationStatus,
 )
-from app.services import audit
+from app.services import audit, consultation_consent
+
+
+@dataclass(frozen=True)
+class DoctorConsultationAccess:
+    """An authorised read: the consultation plus the categories consented to.
+
+    Callers must treat ``allowed_categories`` as the complete authorisation and
+    return nothing outside it.
+    """
+
+    consultation: Consultation
+    allowed_categories: frozenset[str]
+
+    @property
+    def patient_id(self) -> str:
+        return self.consultation.patient_id
 
 
 def create_grant(db: Session, consultation: Consultation) -> ConsultationAccessGrant:
@@ -55,12 +81,14 @@ def get_active_grant(
 
 def assert_doctor_can_view(
     db: Session, *, doctor: Doctor, consultation_id: str
-) -> Consultation:
+) -> DoctorConsultationAccess:
     """Authorize a doctor to view the consultation's patient data.
 
-    Raises 404 if the consultation is missing, 403 if the doctor does not own it
-    or has no active scoped grant. On success, records a
-    ``doctor_view_patient_data`` audit event and returns the consultation.
+    Raises 404 if the consultation is missing, 403 if the doctor does not own
+    it, is not a verified active doctor, has no active scoped grant, or the
+    patient has not given (or has revoked) consultation-specific sharing
+    consent. On success, records a ``doctor_view_patient_data`` audit event and
+    returns the consultation together with the consented categories.
     """
     consultation = db.get(Consultation, consultation_id)
     if consultation is None or consultation.deleted_at is not None:
@@ -98,6 +126,18 @@ def assert_doctor_can_view(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="No active access grant for this consultation.",
         )
+    # Second, independent condition: the patient's explicit, consultation-specific
+    # sharing consent. A care relationship alone authorises nothing.
+    try:
+        allowed_categories = consultation_consent.require_active(
+            db,
+            consultation_id=consultation_id,
+            doctor_id=doctor.id,
+            patient_id=consultation.patient_id,
+        )
+    except consultation_consent.ConsentRequired:
+        _audit_denied(db, doctor.id, consultation_id, consultation.patient_id)
+        raise
     # Every successful view is audited.
     audit.record(
         db,
@@ -109,7 +149,9 @@ def assert_doctor_can_view(
         severity="info",
     )
     db.commit()
-    return consultation
+    return DoctorConsultationAccess(
+        consultation=consultation, allowed_categories=allowed_categories
+    )
 
 
 def revoke_on_end(db: Session, consultation: Consultation) -> None:

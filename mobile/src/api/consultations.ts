@@ -14,13 +14,64 @@ import type { ApiClient } from './client'
 
 export type ConsultationTypeValue = 'CHAT' | 'VIDEO' | 'IN_PERSON'
 
+/**
+ * The patient's explicit, consultation-specific data-sharing consent.
+ *
+ * `accepted` is typed as `true` and nothing else — there is no representation
+ * for a declined consent, because declining must not produce a request at all.
+ */
+export interface DataSharingConsentIn {
+  accepted: true
+  categories: string[]
+  consent_version?: string
+  policy_version?: string
+  source?: string
+  client_app_version?: string
+  locale?: string
+}
+
 export interface ConsultationCreate {
   doctor_id: string
   consultation_type?: ConsultationTypeValue
   data_consent_accepted: boolean
+  data_sharing_consent: DataSharingConsentIn
   chief_complaint?: string | null
   patient_note?: string | null
   booking_appointment_id?: string | null
+}
+
+export interface ConsentCategory {
+  key: string
+  label: string
+}
+
+/**
+ * Server-authored consent copy. Rendered verbatim and NOT duplicated in i18n —
+ * the words the patient reads must be the words versioned against their grant.
+ */
+export interface DataSharingConsentPolicy {
+  consent_version: string
+  policy_version: string
+  purpose: string
+  title: string
+  body: string
+  accept_label: string
+  decline_label: string
+  categories: ConsentCategory[]
+}
+
+export interface DataSharingConsent {
+  id: string
+  consultation_id: string
+  doctor_id: string
+  purpose: string
+  consent_version: string
+  policy_version: string
+  categories: string[]
+  granted_at: string
+  revoked_at: string | null
+  is_active: boolean
+  source: string | null
 }
 
 export interface ConsultationOut {
@@ -89,6 +140,43 @@ export function createConsultation(
   body: ConsultationCreate
 ): Promise<ConsultationOut> {
   return client.post<ConsultationOut>('/consultations', body)
+}
+
+/** The consent copy + grantable categories the booking modal must render. */
+export function getDataSharingPolicy(client: ApiClient): Promise<DataSharingConsentPolicy> {
+  return client.get<DataSharingConsentPolicy>('/consultations/data-sharing-policy')
+}
+
+/** The patient's own recorded sharing consent for a consultation. */
+export function getDataSharingConsent(
+  client: ApiClient,
+  id: string
+): Promise<DataSharingConsent> {
+  return client.get<DataSharingConsent>(`/consultations/${id}/data-sharing-consent`)
+}
+
+/**
+ * Withdraw sharing. Immediate — the doctor's next read is refused. Does not
+ * cancel the consultation or delete anything already recorded. Idempotent.
+ */
+export function revokeDataSharingConsent(
+  client: ApiClient,
+  id: string
+): Promise<{ message: string }> {
+  return client.del<{ message: string }>(`/consultations/${id}/data-sharing-consent`)
+}
+
+/**
+ * Re-grant sharing the patient previously withdrew, so revoking is never a trap
+ * on a paid session. Omitting `categories` re-grants exactly what was granted
+ * before. Only ever called from an explicit patient action.
+ */
+export function restoreDataSharingConsent(
+  client: ApiClient,
+  id: string,
+  body: DataSharingConsentIn
+): Promise<DataSharingConsent> {
+  return client.post<DataSharingConsent>(`/consultations/${id}/data-sharing-consent`, body)
 }
 
 export function listConsultations(client: ApiClient): Promise<ConsultationOut[]> {

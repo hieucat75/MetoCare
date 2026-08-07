@@ -10,7 +10,9 @@ import {
   formatVnd,
   formatDateTime,
   MarketplaceDisclaimer,
+  ConsultationSharingCard,
 } from '@/components/marketplace'
+import { getDoctorDetail } from '@/lib/api/marketplace'
 import { ApiError } from '@/lib/api/client'
 import type { ConsultationStatus } from '@/lib/api/marketplace'
 import {
@@ -54,6 +56,11 @@ export default function ConsultationDetailPage() {
 
   const [notes, setNotes] = React.useState<NoteOut[]>([])
   const [notesError, setNotesError] = React.useState<string | null>(null)
+  // The sharing section has to name the recipient — "you are sharing with
+  // doctor 41de…" is not something a patient can make a decision about. Best
+  // effort: a failed lookup degrades to omitting the name, never to blocking
+  // the revoke control.
+  const [doctorName, setDoctorName] = React.useState<string | null>(null)
 
   const load = React.useCallback(() => {
     setLoading(true)
@@ -63,6 +70,24 @@ export default function ConsultationDetailPage() {
       .catch((err: Error) => setError(err.message))
       .finally(() => setLoading(false))
   }, [id])
+
+  // Cosmetic, so it runs on its own: chaining it into `load` would let a slow
+  // marketplace lookup hold the whole consultation screen on its spinner.
+  React.useEffect(() => {
+    const doctorId = consultation?.doctor_id
+    if (!doctorId) return
+    let cancelled = false
+    getDoctorDetail(doctorId)
+      .then((d) => {
+        if (!cancelled) setDoctorName(d.full_name)
+      })
+      .catch(() => {
+        if (!cancelled) setDoctorName(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [consultation?.doctor_id])
 
   React.useEffect(() => {
     load()
@@ -225,6 +250,14 @@ export default function ConsultationDetailPage() {
               </span>
             </button>
           )}
+
+          {/* ── Data sharing (the control the consent copy promises) ── */}
+          <ConsultationSharingCard
+            consultationId={id}
+            consultationStatus={consultation.status}
+            doctorName={doctorName}
+            consultationDate={consultation.created_at}
+          />
 
           {/* ── Doctor notes (after COMPLETED) ── */}
           {consultation.status === 'COMPLETED' && (

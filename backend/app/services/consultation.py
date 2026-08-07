@@ -27,7 +27,12 @@ from app.models.consultation import (
     PaymentProvider,
     PaymentStatus,
 )
-from app.services import audit, consultation_access, consultation_payment
+from app.services import (
+    audit,
+    consultation_access,
+    consultation_consent,
+    consultation_payment,
+)
 from app.services.doctor import get_doctor_by_user_id
 
 # Allowed status transitions (source of truth for the state machine).
@@ -98,11 +103,21 @@ def create_consultation(
     doctor_id: str,
     consultation_type: str = ConsultationType.CHAT,
     data_consent_accepted: bool,
+    consent_categories: list[str] | tuple[str, ...] | None = None,
+    consent_source: str | None = None,
+    consent_client_app_version: str | None = None,
+    consent_locale: str | None = None,
     chief_complaint: str | None = None,
     patient_note: str | None = None,
     booking_appointment_id: str | None = None,
 ) -> Consultation:
-    """Create a REQUESTED consultation + UNPAID payment. Patient-initiated."""
+    """Create a REQUESTED consultation + UNPAID payment. Patient-initiated.
+
+    The consultation and its ``ConsultationDataConsent`` are written in ONE
+    transaction. A consultation therefore never exists without the explicit,
+    categorised, versioned grant that authorised it — the booking either
+    completes with consent or does not happen at all.
+    """
     from app.models.care import Doctor
 
     if not data_consent_accepted:
@@ -140,6 +155,19 @@ def create_consultation(
     )
     db.add(consultation)
     db.flush()
+
+    # Same transaction as the consultation — see the docstring. A rejected
+    # category set raises here, before anything is committed, so the booking
+    # does not happen.
+    consultation_consent.grant(
+        db,
+        consultation=consultation,
+        categories=consent_categories,
+        source=consent_source,
+        client_app_version=consent_client_app_version,
+        locale=consent_locale,
+        at=now,
+    )
 
     payment = ConsultationPayment(
         consultation_id=consultation.id,

@@ -13,14 +13,15 @@ from app.services import consultation as svc
 from app.services import consultation_payment
 from fastapi import HTTPException
 
-from tests.consultation_factories import create_doctor, create_patient
+from tests.consultation_factories import CONSENT_ALL_CATEGORIES, create_doctor, create_patient
 
 
 def _consult(db, fee=200000.0):
     doctor = create_doctor(db, fee=fee)
     _u, profile = create_patient(db)
     c = svc.create_consultation(
-        db, patient_id=profile.id, doctor_id=doctor.id, data_consent_accepted=True
+        db, patient_id=profile.id, doctor_id=doctor.id, data_consent_accepted=True,
+        consent_categories=CONSENT_ALL_CATEGORIES
     )
     return doctor, profile, c
 

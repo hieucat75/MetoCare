@@ -1,42 +1,66 @@
 import React, { useState } from 'react'
-import {
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native'
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { router, useLocalSearchParams } from 'expo-router'
 
 import { useAuth } from '../../../../src/auth/AuthContext'
+import {
+  DataSharingConsentModal,
+  type ConsentGrant,
+} from '../../../../src/components/DataSharingConsentModal'
 import { GlassCard } from '../../../../src/components/GlassCard'
 import { PrimaryButton } from '../../../../src/components/PrimaryButton'
-import { LoadingView } from '../../../../src/components/StateViews'
 import { TextField } from '../../../../src/components/TextField'
 import { useBookConsultation } from '../../../../src/features/consultations/useBookConsultation'
+import { useDoctorDetail } from '../../../../src/features/marketplace/useDoctorDetail'
+import { formatVnd } from '../../../../src/lib/format'
 import { firstParam } from '../../../../src/lib/params'
 import { vi } from '../../../../src/i18n/vi'
-import { colors, radius, spacing, typography } from '../../../../src/theme/tokens'
+import { colors, spacing, typography } from '../../../../src/theme/tokens'
 
 export default function BookConsultationScreen() {
   const { client } = useAuth()
   const params = useLocalSearchParams<{ doctorId: string | string[] }>()
   const doctorId = firstParam(params.doctorId)
-  const { phase, errorMsg, consentAccepted, canSubmit, setConsentAccepted, submit } =
-    useBookConsultation(client, doctorId)
+  const { phase, errorMsg, canSubmit, submit, reset } = useBookConsultation(client, doctorId)
+  // The patient is about to share health data with, and pay, a specific doctor.
+  // Consenting to a recipient identified only by a URL parameter is not
+  // informed consent, so the dialog names them and states the amount.
+  const { doctor } = useDoctorDetail(client, doctorId)
 
   const [chiefComplaint, setChiefComplaint] = useState('')
   const [patientNote, setPatientNote] = useState('')
+  const [consentVisible, setConsentVisible] = useState(false)
 
-  async function onSubmit() {
-    const consultationId = await submit({ chiefComplaint, patientNote })
-    if (consultationId) router.replace(`/consultations/${consultationId}`)
+  /** Opens the consent dialog. Nothing is created until the patient accepts. */
+  function onRequestBooking() {
+    reset()
+    setConsentVisible(true)
   }
 
-  if (phase === 'submitting') return <LoadingView label={vi.consultations.submitBook} />
+  /**
+   * The ONLY path that books, reachable only from the modal's accept action —
+   * so declining or backing out cannot create a consultation, because neither
+   * calls this.
+   */
+  async function onConsentAccepted(grant: ConsentGrant) {
+    const consultationId = await submit(grant, { chiefComplaint, patientNote })
+    if (consultationId) {
+      setConsentVisible(false)
+      router.replace(`/consultations/${consultationId}`)
+    }
+    // On failure the dialog stays open showing the error, so the patient can
+    // retry without starting the consent decision over.
+  }
+
+  function onConsentDeclined() {
+    setConsentVisible(false)
+    reset()
+  }
+
+  // No full-screen loading takeover: the submit state lives on the modal's own
+  // button, so the consent dialog stays on screen and the patient never loses
+  // sight of what they just agreed to.
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -66,34 +90,10 @@ export default function BookConsultationScreen() {
               testID="book-patient-note"
             />
 
-            <Pressable
-              onPress={() => setConsentAccepted(!consentAccepted)}
-              accessibilityRole="checkbox"
-              accessibilityState={{ checked: consentAccepted }}
-              style={styles.consentRow}
-              testID="book-consent"
-            >
-              <View style={[styles.checkbox, consentAccepted ? styles.checkboxOn : null]}>
-                {consentAccepted && <Text style={styles.checkmark}>✓</Text>}
-              </View>
-              <Text style={styles.consentText}>{vi.consultations.consentLabel}</Text>
-            </Pressable>
-
-            {!consentAccepted && (
-              <Text style={styles.hint} testID="book-consent-hint">
-                {vi.consultations.consentRequired}
-              </Text>
-            )}
-
-            {phase === 'error' && errorMsg && (
-              <Text style={styles.error} testID="book-error">
-                {errorMsg}
-              </Text>
-            )}
-
+            {/* Opens the consent dialog — this button books nothing. */}
             <PrimaryButton
               label={vi.consultations.submitBook}
-              onPress={() => void onSubmit()}
+              onPress={onRequestBooking}
               disabled={!canSubmit}
               style={styles.submit}
               testID="book-submit"
@@ -109,6 +109,24 @@ export default function BookConsultationScreen() {
           />
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <DataSharingConsentModal
+        visible={consentVisible}
+        client={client}
+        doctorName={doctor?.full_name}
+        noticeText={
+          doctor
+            ? vi.consultations.consentPayNotice.replace(
+                '{amount}',
+                formatVnd(doctor.consultation_fee),
+              )
+            : null
+        }
+        submitting={phase === 'submitting'}
+        errorMsg={phase === 'error' ? errorMsg : null}
+        onAccept={(grant) => void onConsentAccepted(grant)}
+        onDecline={onConsentDeclined}
+      />
     </SafeAreaView>
   )
 }
@@ -125,22 +143,6 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xl,
   },
   card: { marginBottom: spacing.lg },
-  consentRow: { flexDirection: 'row', alignItems: 'flex-start', marginTop: spacing.sm },
-  checkbox: {
-    width: 24,
-    height: 24,
-    borderRadius: radius.sm,
-    borderWidth: 1.5,
-    borderColor: colors.mint,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: spacing.md,
-  },
-  checkboxOn: { backgroundColor: colors.mint },
-  checkmark: { color: colors.white, fontWeight: '700' },
-  consentText: { ...typography.body, color: colors.ink, flex: 1 },
-  hint: { ...typography.caption, color: colors.inkMuted, marginTop: spacing.sm },
-  error: { ...typography.body, color: colors.danger, marginTop: spacing.md },
   submit: { marginTop: spacing.lg },
   back: { marginTop: spacing.xs },
 })

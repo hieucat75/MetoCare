@@ -1,0 +1,266 @@
+import React, { useCallback, useEffect, useState } from 'react'
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+
+import type { ApiClient } from '../api/client'
+import { getDataSharingPolicy, type DataSharingConsentPolicy } from '../api/consultations'
+import { vi } from '../i18n/vi'
+import { colors, radius, spacing, typography } from '../theme/tokens'
+import { PrimaryButton } from './PrimaryButton'
+
+export interface ConsentGrant {
+  categories: string[]
+  consentVersion: string
+  policyVersion: string
+}
+
+interface Props {
+  visible: boolean
+  client: ApiClient
+  doctorName?: string | null
+  /**
+   * What pressing accept will actually do beyond consenting — on mobile the
+   * same tap creates AND pays for the consultation, so the amount is stated
+   * here. A charging button must say it charges.
+   */
+  noticeText?: string | null
+  submitting: boolean
+  /** Booking error, shown inside the dialog so the patient can retry in place. */
+  errorMsg?: string | null
+  /**
+   * Show (and grant) only these categories. Used when re-consenting to a
+   * consultation whose original grant was narrower — offering the full five
+   * would present a wider grant than the patient ever made.
+   */
+  restrictToCategories?: string[] | null
+  onAccept: (grant: ConsentGrant) => void
+  onDecline: () => void
+}
+
+/**
+ * Blocking data-sharing consent for a doctor consultation.
+ *
+ * The consent act IS the primary button — there is no pre-ticked checkbox and
+ * no default-on state. Declining and the Android hardware back button both
+ * resolve to no consent, and neither can book: the only path that calls
+ * `onAccept` is the accept button.
+ *
+ * Both actions carry equal weight. A quiet or buried "Không chia sẻ" would be
+ * the dark pattern this screen exists to prevent.
+ *
+ * Copy comes from the server (not `vi.ts`) so the words the patient reads are
+ * the words versioned against the grant that gets stored. Accept stays disabled
+ * until they load — consent cannot be given against text that never rendered.
+ */
+export function DataSharingConsentModal({
+  visible,
+  client,
+  doctorName,
+  noticeText,
+  submitting,
+  errorMsg,
+  restrictToCategories,
+  onAccept,
+  onDecline,
+}: Props) {
+  const [policy, setPolicy] = useState<DataSharingConsentPolicy | null>(null)
+  const [policyError, setPolicyError] = useState(false)
+  const [loading, setLoading] = useState(false)
+
+  const loadPolicy = useCallback(() => {
+    setLoading(true)
+    setPolicyError(false)
+    getDataSharingPolicy(client)
+      .then(setPolicy)
+      .catch(() => setPolicyError(true))
+      .finally(() => setLoading(false))
+  }, [client])
+
+  useEffect(() => {
+    // Same fetch-on-mount shape as the feature hooks (see useConsultationList):
+    // the request starts here, every setState lives inside loadPolicy.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (visible && policy === null && !loading && !policyError) loadPolicy()
+    // Closing clears a previous failure, so reopening retries instead of
+    // showing a stale error with the accept button stuck disabled.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (!visible && policyError) setPolicyError(false)
+  }, [visible, policy, loading, policyError, loadPolicy])
+
+  // What this dialog actually offers — the full policy set when booking, or the
+  // narrower original grant when re-consenting.
+  const offered = policy
+    ? restrictToCategories
+      ? policy.categories.filter((c) => restrictToCategories.includes(c.key))
+      : policy.categories
+    : []
+
+  function handleAccept() {
+    if (!policy || submitting || offered.length === 0) return
+    onAccept({
+      categories: offered.map((c) => c.key),
+      consentVersion: policy.consent_version,
+      policyVersion: policy.policy_version,
+    })
+  }
+
+  // Hardware back / swipe-dismiss is a decline, never a silent accept. While a
+  // submit is in flight it is ignored entirely: the booking may already exist
+  // server-side, and closing here would leave the patient unsure either way.
+  function handleRequestClose() {
+    if (submitting) return
+    onDecline()
+  }
+
+  const paragraphs = policy ? policy.body.split('\n\n') : []
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={handleRequestClose}
+      testID="consent-modal"
+    >
+      <View style={styles.backdrop}>
+        <View
+          style={styles.sheet}
+          accessibilityViewIsModal
+          accessibilityLabel={policy?.title ?? vi.consultations.consentTitleFallback}
+        >
+          <Text style={styles.title} accessibilityRole="header" testID="consent-title">
+            {policy?.title ?? vi.consultations.consentTitleFallback}
+          </Text>
+          {doctorName ? <Text style={styles.doctor}>{doctorName}</Text> : null}
+
+          <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
+            {loading && !policy ? (
+              <Text style={styles.body} testID="consent-loading">
+                {vi.consultations.consentLoading}
+              </Text>
+            ) : null}
+
+            {policyError && !policy ? (
+              <View testID="consent-policy-error">
+                <Text style={styles.error} accessibilityLiveRegion="assertive">
+                  {vi.consultations.consentLoadFailed}
+                </Text>
+                <PrimaryButton
+                  label={vi.common.retry}
+                  variant="ghost"
+                  onPress={loadPolicy}
+                  style={styles.retry}
+                  testID="consent-retry"
+                />
+              </View>
+            ) : null}
+
+            {policy
+              ? paragraphs.map((paragraph, index) => (
+                  <Text key={index} style={styles.body}>
+                    {paragraph}
+                  </Text>
+                ))
+              : null}
+
+            {policy ? (
+              <View style={styles.categories}>
+                {offered.map((category) => (
+                  <View key={category.key} style={styles.categoryRow}>
+                    <View style={styles.bullet} />
+                    <Text style={styles.categoryText}>{category.label}</Text>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+          </ScrollView>
+
+          {noticeText ? (
+            <Text style={styles.notice} testID="consent-notice">
+              {noticeText}
+            </Text>
+          ) : null}
+
+          {errorMsg ? (
+            <Text
+              style={styles.error}
+              accessibilityLiveRegion="assertive"
+              testID="consent-error"
+            >
+              {errorMsg}
+            </Text>
+          ) : null}
+
+          <PrimaryButton
+            label={policy?.accept_label ?? vi.consultations.consentAcceptFallback}
+            onPress={handleAccept}
+            loading={submitting}
+            disabled={submitting || !policy || offered.length === 0}
+            style={styles.accept}
+            testID="consent-accept"
+          />
+          {/* Ghost variant, not a bare Pressable: same geometry and hit area as
+              accept, so declining is exactly as easy as agreeing. A quieter
+              decline would be a nudge toward consent. */}
+          <PrimaryButton
+            label={policy?.decline_label ?? vi.consultations.consentDeclineFallback}
+            variant="ghost"
+            onPress={onDecline}
+            disabled={submitting}
+            style={styles.decline}
+            testID="consent-decline"
+          />
+        </View>
+      </View>
+    </Modal>
+  )
+}
+
+const styles = StyleSheet.create({
+  backdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(14,42,51,0.5)',
+    justifyContent: 'center',
+    padding: spacing.lg,
+  },
+  sheet: {
+    backgroundColor: colors.bg,
+    borderRadius: radius.lg,
+    padding: spacing.xl,
+    maxHeight: '85%',
+    // Without this the sheet's children can paint outside its rounded bounds
+    // once the content is tall.
+    overflow: 'hidden',
+  },
+  title: { ...typography.title, color: colors.ink },
+  doctor: { ...typography.body, color: colors.mint, marginTop: spacing.xs, fontWeight: '600' },
+  // flexShrink defaults to 0 in React Native, so without this the ScrollView
+  // measures to its full content height, refuses to shrink inside the sheet's
+  // maxHeight, and pushes the accept/decline buttons off the bottom of the
+  // screen — with no backdrop tap and no hardware back on iOS, that leaves the
+  // patient unable to consent, decline, or escape. It also never scrolls, so
+  // there is no way to recover.
+  scroll: { marginTop: spacing.lg, flexShrink: 1 },
+  scrollContent: { paddingBottom: spacing.sm },
+  body: { ...typography.body, color: colors.inkMuted, marginBottom: spacing.md },
+  categories: {
+    backgroundColor: colors.glassLight,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginTop: spacing.xs,
+  },
+  categoryRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: spacing.xs },
+  bullet: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: colors.mint,
+    marginTop: 8,
+    marginRight: spacing.sm,
+  },
+  categoryText: { ...typography.body, color: colors.ink, flex: 1 },
+  notice: { ...typography.body, color: colors.ink, marginTop: spacing.lg, fontWeight: '600' },
+  error: { ...typography.body, color: colors.danger, marginTop: spacing.md },
+  retry: { marginTop: spacing.md },
+  accept: { marginTop: spacing.lg },
+  decline: { marginTop: spacing.md },
+})

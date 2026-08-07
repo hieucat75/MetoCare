@@ -138,9 +138,55 @@ export const vi = {
     chiefComplaintPlaceholder: 'Ví dụ: đường huyết tăng cao gần đây',
     patientNoteLabel: 'Ghi chú thêm (không bắt buộc)',
     patientNotePlaceholder: 'Triệu chứng, câu hỏi hoặc thông tin khác',
-    consentLabel:
-      'Tôi đồng ý chia sẻ dữ liệu sức khoẻ của mình với bác sĩ cho lượt tư vấn này.',
-    consentRequired: 'Vui lòng đồng ý chia sẻ dữ liệu để tiếp tục.',
+    // The consent modal's real copy is authored server-side and rendered
+    // verbatim (GET /consultations/data-sharing-policy), so that the words the
+    // patient reads are the words versioned against their stored grant. These
+    // are only the chrome around it, plus fallback labels for the brief moment
+    // before the policy arrives — while accept stays disabled.
+    consentTitleFallback: 'Chia sẻ thông tin sức khỏe với bác sĩ?',
+    consentAcceptFallback: 'Đồng ý và tiếp tục',
+    consentDeclineFallback: 'Không chia sẻ',
+    // The accept button both consents AND pays, so it must say so.
+    consentPayNotice: 'Nhấn "Đồng ý và tiếp tục" sẽ đặt lịch và thanh toán {amount}.',
+    consentLoading: 'Đang tải nội dung…',
+    consentLoadFailed: 'Không tải được nội dung chia sẻ dữ liệu. Vui lòng thử lại.',
+    // Sharing management on the consultation detail screen — the control the
+    // booking consent copy points the patient to.
+    sharingTitle: 'Chia sẻ dữ liệu với bác sĩ',
+    sharingActive: 'Đang chia sẻ',
+    sharingRevoked: 'Đã thu hồi',
+    sharingDoctor: 'Bác sĩ',
+    sharingReference: 'Mã tư vấn',
+    sharingDate: 'Ngày tư vấn',
+    sharingCategories: 'Thông tin đang chia sẻ',
+    sharingCategoriesPast: 'Thông tin đã từng chia sẻ',
+    sharingRevokeCta: 'Thu hồi quyền chia sẻ',
+    sharingReshareCta: 'Chia sẻ lại',
+    sharingLoading: 'Đang tải trạng thái chia sẻ…',
+    sharingLoadFailed: 'Không tải được trạng thái chia sẻ dữ liệu.',
+    sharingReloadFailed: 'Không tải lại được trạng thái chia sẻ. Vui lòng thử lại.',
+    sharingActionFailed: 'Không thực hiện được. Vui lòng thử lại.',
+    sharingSessionEnded: 'Đã kết thúc chia sẻ (buổi tư vấn đã xong)',
+    sharingSessionEndedNote:
+      'Buổi tư vấn đã kết thúc nên bác sĩ không còn xem được dữ liệu của bạn.',
+    sharingRevokedAnnounce: 'Đã thu hồi quyền chia sẻ.',
+    sharingReshared: 'Đã chia sẻ lại dữ liệu với bác sĩ.',
+    revokeConfirmTitle: 'Thu hồi quyền chia sẻ?',
+    // Names the doctor when we know who it is: "bác sĩ" in the abstract is
+    // easier to revoke from than the person currently advising you.
+    revokeConfirmBodyNamed:
+      'Sau khi thu hồi, bác sĩ {doctor} sẽ không thể tiếp tục xem các thông tin sức khỏe ' +
+      'được chia sẻ cho phiên tư vấn này — bao gồm danh sách thuốc và kết quả xét nghiệm — ' +
+      'ngay lập tức.',
+    revokeConfirmBody:
+      'Sau khi thu hồi, bác sĩ sẽ không thể tiếp tục xem các thông tin sức khỏe được chia sẻ ' +
+      'cho phiên tư vấn này — bao gồm danh sách thuốc và kết quả xét nghiệm — ngay lập tức.',
+    revokeConfirmRetention:
+      'Buổi tư vấn vẫn tiếp tục và không được hoàn tiền. Thông tin về phiên tư vấn và các hồ ' +
+      'sơ cần lưu theo quy định vẫn được giữ lại.',
+    revokeConfirmReversible: 'Bạn có thể chia sẻ lại bất cứ lúc nào.',
+    revokeConfirmCta: 'Thu hồi',
+    revokeCancelCta: 'Giữ quyền chia sẻ',
     submitBook: 'Xác nhận & thanh toán',
     detailTitle: 'Chi tiết tư vấn',
     chiefComplaint: 'Lý do tư vấn',

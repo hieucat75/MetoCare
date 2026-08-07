@@ -54,6 +54,7 @@ from .consultation import (
     PaymentProvider,
     PaymentStatus,
 )
+from .consultation_consent import ConsultationDataConsent
 from .drug_catalog import DrugEntry
 from .drug_knowledge_ai_generation import KnowledgeAIGeneration
 from .drug_knowledge_content import (
@@ -122,6 +123,7 @@ __all__ = [
     "TermsConsent",
     "Consultation",
     "ConsultationAccessGrant",
+    "ConsultationDataConsent",
     "ConsultationNote",
     "ConsultationPayment",
     "ConsultationReview",

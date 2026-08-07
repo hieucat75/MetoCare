@@ -15,14 +15,20 @@ from app.services import consultation as svc
 from app.services import consultation_payment, doctor_verification
 from sqlalchemy import select
 
-from tests.consultation_factories import create_doctor, create_patient, headers
+from tests.consultation_factories import (
+    CONSENT_ALL_CATEGORIES,
+    create_doctor,
+    create_patient,
+    headers,
+)
 
 
 def _paid_consult(db):
     doctor = create_doctor(db)
     _u, profile = create_patient(db)
     c = svc.create_consultation(
-        db, patient_id=profile.id, doctor_id=doctor.id, data_consent_accepted=True
+        db, patient_id=profile.id, doctor_id=doctor.id, data_consent_accepted=True,
+        consent_categories=CONSENT_ALL_CATEGORIES
     )
     consultation_payment.pay_mock(db, c, patient_profile_id=profile.id)
     return doctor, profile, c
@@ -100,7 +106,8 @@ def test_pay_response_hides_payout_internals(db, client):
     doctor = create_doctor(db)
     user, profile = create_patient(db)
     c = svc.create_consultation(
-        db, patient_id=profile.id, doctor_id=doctor.id, data_consent_accepted=True
+        db, patient_id=profile.id, doctor_id=doctor.id, data_consent_accepted=True,
+        consent_categories=CONSENT_ALL_CATEGORIES
     )
     resp = client.post(
         f"/api/v1/consultations/{c.id}/pay",
