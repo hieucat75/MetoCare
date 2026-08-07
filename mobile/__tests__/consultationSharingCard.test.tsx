@@ -2,25 +2,25 @@ import React from 'react'
 import { fireEvent, render, waitFor } from '@testing-library/react-native'
 
 jest.mock('../src/api/consultations', () => ({
-  getDataSharingConsent: jest.fn(),
+  getDataSharingState: jest.fn(),
   getDataSharingPolicy: jest.fn(),
   revokeDataSharingConsent: jest.fn(),
-  restoreDataSharingConsent: jest.fn(),
+  grantDataSharingConsent: jest.fn(),
 }))
 
 import { ApiError } from '../src/api/client'
 import type { ApiClient } from '../src/api/client'
 import {
-  getDataSharingConsent,
   getDataSharingPolicy,
-  restoreDataSharingConsent,
+  getDataSharingState,
+  grantDataSharingConsent,
   revokeDataSharingConsent,
 } from '../src/api/consultations'
 import { ConsultationSharingCard } from '../src/components/ConsultationSharingCard'
 
-const mockedGet = getDataSharingConsent as jest.Mock
+const mockedGet = getDataSharingState as jest.Mock
 const mockedRevoke = revokeDataSharingConsent as jest.Mock
-const mockedRestore = restoreDataSharingConsent as jest.Mock
+const mockedRestore = grantDataSharingConsent as jest.Mock
 const mockedPolicy = getDataSharingPolicy as jest.Mock
 
 const POLICY = {
@@ -68,6 +68,31 @@ function consent(overrides: Record<string, unknown> = {}) {
   }
 }
 
+/** The explicit state envelope the endpoint now answers with. */
+function sharing(overrides: Record<string, unknown> = {}) {
+  return {
+    consultation_id: 'c-1',
+    state: 'ACTIVE',
+    consultation_status: 'IN_PROGRESS',
+    can_share: true,
+    consent: consent(),
+    ...overrides,
+  }
+}
+
+/** REVOKED: a grant existed and the patient withdrew it. */
+function revoked(consentOverrides: Record<string, unknown> = {}) {
+  return sharing({
+    state: 'REVOKED',
+    consent: consent({ is_active: false, revoked_at: '2026-08-02T00:00:00Z', ...consentOverrides }),
+  })
+}
+
+/** NEVER_GRANTED: booked before consent was recorded — no row has ever existed. */
+function neverGranted(overrides: Record<string, unknown> = {}) {
+  return sharing({ state: 'NEVER_GRANTED', consent: null, ...overrides })
+}
+
 let q: Awaited<ReturnType<typeof render>>
 
 async function renderCard() {
@@ -75,7 +100,6 @@ async function renderCard() {
     <ConsultationSharingCard
       client={client}
       consultationId="c-1abc2def"
-      consultationStatus="IN_PROGRESS"
       doctorName="BS Nguyễn Văn A"
       consultationDate="2026-08-01T02:00:00Z"
     />
@@ -89,10 +113,10 @@ beforeEach(() => {
   // any unconsumed mock*ValueOnce queue in place, so one test's leftovers
   // become the next test's first response.
   jest.resetAllMocks()
-  mockedGet.mockResolvedValue(consent())
+  mockedGet.mockResolvedValue(sharing())
   mockedPolicy.mockResolvedValue(POLICY)
   mockedRevoke.mockResolvedValue({ message: 'revoked' })
-  mockedRestore.mockResolvedValue(consent())
+  mockedRestore.mockResolvedValue(sharing())
 })
 
 afterEach(() => {
@@ -124,17 +148,22 @@ it('shows the active state with doctor, reference and every shared category', as
   }
 })
 
-it('renders nothing for a consultation booked before the feature', async () => {
-  mockedGet.mockRejectedValue(new ApiError(404, 'not found', 'not found'))
+it('a consultation booked before the feature says "Chưa chia sẻ" and explains why', async () => {
+  // It used to render nothing here, leaving the patient with no statement of
+  // whether their doctor could see anything, on the screen that exists to say so.
+  mockedGet.mockResolvedValue(neverGranted())
 
   await renderCard()
 
-  expect(q.queryByTestId('sharing-card')).toBeNull()
-  expect(q.queryByTestId('sharing-status')).toBeNull()
+  expect(await q.findByTestId('sharing-status')).toHaveTextContent('Chưa chia sẻ')
+  expect(q.getByTestId('never-granted-explainer')).toBeTruthy()
+  expect(q.getByTestId('sharing-share')).toBeTruthy()
+  // Never the withdrawal wording — nothing was ever granted.
+  expect(q.queryByText(/Đã thu hồi/)).toBeNull()
 })
 
 it('shows the revoked state with a re-share action', async () => {
-  mockedGet.mockResolvedValue(consent({ is_active: false, revoked_at: '2026-08-02T00:00:00Z' }))
+  mockedGet.mockResolvedValue(revoked())
 
   await renderCard()
 
@@ -180,7 +209,7 @@ it('confirming revokes and flips the card to revoked', async () => {
   await q.findByTestId('sharing-status')
   fireEvent.press(q.getByTestId('sharing-revoke'))
 
-  mockedGet.mockResolvedValueOnce(consent({ is_active: false }))
+  mockedGet.mockResolvedValueOnce(revoked())
   fireEvent.press(await q.findByTestId('revoke-confirm'))
 
   expect(await q.findByTestId('sharing-reshare')).toBeTruthy()

@@ -51,6 +51,7 @@ import {
   type ConsultationOut,
   type NoteOut,
   type PatientSummaryOut,
+  type SharingState,
 } from '@/lib/api/consultations'
 import { ClinicalCopilotPanel } from '@/components/doctor/clinical-copilot/ClinicalCopilotPanel'
 
@@ -324,7 +325,11 @@ export default function DoctorConsultationDetailPage() {
       </Card>
 
       {/* ── Patient summary ── */}
-      <PatientSummaryPanel consultationId={id} status={status} />
+      <PatientSummaryPanel
+        consultationId={id}
+        status={status}
+        sharingState={consultation.sharing_state}
+      />
 
       {/* ── Clinical notes (append-only) ── */}
       <NotesPanel consultationId={id} status={status} />
@@ -353,18 +358,44 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 
 // ── Patient summary panel ─────────────────────────────────────────────────────
 
+/**
+ * What to tell the doctor when the summary is unavailable, per explicit state.
+ *
+ * These are statements about a patient's decision, so they have to be exactly
+ * right. The panel used to derive them from a 403, which cannot distinguish a
+ * withdrawal from a consultation that never had a grant — and so told doctors
+ * "bệnh nhân đã thu hồi" about patients who had never been asked. "Đã thu hồi"
+ * now appears only under REVOKED, where someone actually withdrew.
+ */
+const SHARING_STATE_NOTICE: Record<SharingState, string> = {
+  ACTIVE: 'Bệnh nhân đang chia sẻ dữ liệu cho phiên tư vấn này.',
+  REVOKED:
+    'Bệnh nhân đã thu hồi quyền chia sẻ dữ liệu. Bạn có thể trao đổi trực tiếp với bệnh nhân nếu cần thêm thông tin.',
+  NEVER_GRANTED:
+    'Bệnh nhân chưa cấp quyền chia sẻ dữ liệu cho phiên tư vấn này. Bạn có thể đề nghị bệnh nhân chia sẻ trong phần chi tiết phiên tư vấn của họ.',
+  NEEDS_RECONSENT:
+    'Điều khoản chia sẻ dữ liệu đã thay đổi nên bệnh nhân cần xác nhận lại. Đây không phải là bệnh nhân thu hồi quyền chia sẻ.',
+}
+
 function PatientSummaryPanel({
   consultationId,
   status,
+  sharingState,
 }: {
   consultationId: string
   status: ConsultationStatus
+  sharingState?: SharingState | null
 }) {
   const hasAccess = SUMMARY_ACCESS.includes(status)
   const [summary, setSummary] = React.useState<PatientSummaryOut | null>(null)
   const [loading, setLoading] = React.useState(hasAccess)
   const [forbidden, setForbidden] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
+  // The state the page loaded on mount goes stale the moment a patient revokes.
+  // The summary is re-read on focus; the reason has to be re-read with it, or
+  // the panel explains a fresh 403 with a state from minutes ago.
+  const [liveState, setLiveState] = React.useState<SharingState | null | undefined>(sharingState)
+  React.useEffect(() => setLiveState(sharingState), [sharingState])
 
   React.useEffect(() => {
     if (!hasAccess) {
@@ -389,6 +420,17 @@ function PatientSummaryPanel({
             // Drop anything already on screen. A patient who has just withdrawn
             // sharing must not keep being displayed from a previous fetch.
             setSummary(null)
+            // Re-read WHY. A 403 carries no reason, and the state we were handed
+            // on mount may predate the patient's decision by an entire session.
+            getConsultation(consultationId)
+              .then((fresh) => {
+                if (!cancelled) setLiveState(fresh.sharing_state)
+              })
+              .catch(() => {
+                // Unknown beats wrong: fall back to the lifecycle sentence
+                // rather than asserting a decision we cannot confirm.
+                if (!cancelled) setLiveState(null)
+              })
           } else setError(err instanceof Error ? err.message : 'Không thể tải hồ sơ bệnh nhân')
         })
         .finally(() => {
@@ -420,14 +462,18 @@ function PatientSummaryPanel({
             <Lock className="mt-0.5 h-5 w-5 shrink-0 text-text-subtle" aria-hidden="true" />
             <div>
               <p className="text-body-sm font-medium text-text">Chưa có quyền xem hồ sơ</p>
-              {/* Inside the access window (PAID / IN_PROGRESS) a 403 can no
-                  longer mean "unpaid or ended" — it means sharing was withdrawn.
-                  Saying otherwise sends the doctor to troubleshoot payment while
-                  the real answer is to talk to the patient. */}
-              {hasAccess ? (
-                <p className="mt-0.5 text-body-sm text-text-muted" data-testid="revoked-notice">
-                  Bệnh nhân đã thu hồi quyền chia sẻ dữ liệu cho buổi tư vấn này. Bạn
-                  có thể trao đổi trực tiếp với bệnh nhân nếu cần thêm thông tin.
+              {/* Inside the access window (PAID / IN_PROGRESS) a 403 no longer
+                  means "unpaid or ended" — but it does NOT by itself say which
+                  consent state caused it. The server names the state; this only
+                  renders it. Falling back to the lifecycle sentence when the
+                  state is absent keeps an older/stale payload from inventing a
+                  patient action. */}
+              {hasAccess && liveState && liveState !== 'ACTIVE' ? (
+                <p
+                  className="mt-0.5 text-body-sm text-text-muted"
+                  data-testid={liveState === 'REVOKED' ? 'revoked-notice' : 'never-granted-notice'}
+                >
+                  {SHARING_STATE_NOTICE[liveState]}
                 </p>
               ) : (
                 <p className="mt-0.5 text-body-sm text-text-muted">
@@ -469,8 +515,8 @@ function SummaryBody({ summary }: { summary: PatientSummaryOut }) {
           className="rounded-md bg-[rgba(217,119,6,0.1)] px-3 py-2 text-body-sm font-medium text-[#B45309]"
           data-testid="withheld-banner"
         >
-          Bệnh nhân chỉ chia sẻ một phần hồ sơ cho buổi tư vấn này. Những mục chưa
-          được chia sẻ KHÔNG đồng nghĩa với không có dữ liệu.
+          Bệnh nhân chỉ chia sẻ một phần hồ sơ cho buổi tư vấn này. Những mục chưa được chia sẻ
+          KHÔNG đồng nghĩa với không có dữ liệu.
         </div>
       )}
       {/* Metabolic score */}

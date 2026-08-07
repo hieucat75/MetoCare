@@ -74,6 +74,27 @@ export interface DataSharingConsent {
   source: string | null
 }
 
+/**
+ * Why a consultation's health data is, or is not, readable by its doctor.
+ *
+ * Mirrors backend `app/domain/consultation_sharing_state.py`. A 403 alone cannot
+ * carry this: "the patient withdrew" and "there was never a grant" are different
+ * facts about a person's decision. Unavailable/error is deliberately NOT a
+ * member — that is a transport outcome the client owns.
+ */
+export type SharingState = 'ACTIVE' | 'REVOKED' | 'NEVER_GRANTED' | 'NEEDS_RECONSENT'
+
+/** The patient's sharing state for one consultation, stated explicitly. */
+export interface DataSharingState {
+  consultation_id: string
+  state: SharingState
+  consultation_status: string
+  /** Whether the lifecycle still permits granting. False once ended. */
+  can_share: boolean
+  /** The recorded grant, or `null` for a consultation that never had one. */
+  consent: DataSharingConsent | null
+}
+
 export interface ConsultationOut {
   id: string
   patient_id: string
@@ -147,12 +168,16 @@ export function getDataSharingPolicy(client: ApiClient): Promise<DataSharingCons
   return client.get<DataSharingConsentPolicy>('/consultations/data-sharing-policy')
 }
 
-/** The patient's own recorded sharing consent for a consultation. */
-export function getDataSharingConsent(
-  client: ApiClient,
-  id: string
-): Promise<DataSharingConsent> {
-  return client.get<DataSharingConsent>(`/consultations/${id}/data-sharing-consent`)
+/**
+ * The patient's own sharing STATE for a consultation.
+ *
+ * Answers with a state rather than 404-on-absence: a consultation booked before
+ * this feature existed is a legitimate `NEVER_GRANTED` state the patient is
+ * entitled to see and act on, not a missing resource. A 404 here now means one
+ * thing only — the consultation is not theirs.
+ */
+export function getDataSharingState(client: ApiClient, id: string): Promise<DataSharingState> {
+  return client.get<DataSharingState>(`/consultations/${id}/data-sharing-consent`)
 }
 
 /**
@@ -167,16 +192,21 @@ export function revokeDataSharingConsent(
 }
 
 /**
- * Re-grant sharing the patient previously withdrew, so revoking is never a trap
- * on a paid session. Omitting `categories` re-grants exactly what was granted
- * before. Only ever called from an explicit patient action.
+ * Grant sharing on an existing consultation — the first time, or again after a
+ * revoke, so revoking is never a trap on a paid session.
+ *
+ * On a re-share, omitting `categories` re-grants exactly what was granted
+ * before. On a FIRST grant (a consultation booked before consent was recorded)
+ * `categories` is required: there is no previous set to intersect with, so a
+ * default would have to mean "everything". Only ever called from an explicit
+ * patient action, and never used to backfill historical consent.
  */
-export function restoreDataSharingConsent(
+export function grantDataSharingConsent(
   client: ApiClient,
   id: string,
   body: DataSharingConsentIn
-): Promise<DataSharingConsent> {
-  return client.post<DataSharingConsent>(`/consultations/${id}/data-sharing-consent`, body)
+): Promise<DataSharingState> {
+  return client.post<DataSharingState>(`/consultations/${id}/data-sharing-consent`, body)
 }
 
 export function listConsultations(client: ApiClient): Promise<ConsultationOut[]> {

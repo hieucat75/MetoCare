@@ -193,7 +193,8 @@ def test_the_whole_consent_journey(client, db):
         headers=patient,
     )
     assert restored.status_code == 200
-    assert restored.json()["is_active"] is True
+    assert restored.json()["state"] == "ACTIVE"
+    assert restored.json()["consent"]["is_active"] is True
     assert (
         client.get(
             f"{API}/consultations/{consultation_id}/patient-summary", headers=doctor_headers

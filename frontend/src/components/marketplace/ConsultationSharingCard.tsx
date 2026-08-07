@@ -6,18 +6,15 @@ import { ShieldCheck, ShieldOff } from 'lucide-react'
 import { NeuCard } from '@/components/patient/neu'
 import { ApiError } from '@/lib/api/client'
 import {
-  getDataSharingConsent,
+  getDataSharingState,
   getDataSharingPolicy,
   revokeDataSharingConsent,
-  restoreDataSharingConsent,
-  type DataSharingConsent,
+  grantDataSharingConsent,
+  type DataSharingState,
   type DataSharingConsentPolicy,
 } from '@/lib/api/consultations'
 import { formatDateTime } from './format'
 import { DataSharingConsentModal } from './DataSharingConsentModal'
-
-/** Statuses where the doctor still holds an access grant, so sharing is live. */
-const LIVE_STATUSES = new Set(['PAID', 'IN_PROGRESS'])
 
 /**
  * "Chia sẻ dữ liệu với bác sĩ" — the control the booking consent copy promises.
@@ -35,25 +32,27 @@ const LIVE_STATUSES = new Set(['PAID', 'IN_PROGRESS'])
  * 3. It never renders a status it is not sure of. If the state cannot be
  *    re-read after an action, the card drops to its error/retry state instead of
  *    leaving a stale "Đang chia sẻ" on screen.
+ * 4. It renders SOMETHING for every state, including a consultation booked
+ *    before consent was recorded. It used to return null there, which left the
+ *    patient with no statement of whether their doctor could see anything and no
+ *    way to decide — silence that reads as "nothing to see here" on the one
+ *    screen that exists to answer the question.
  *
  * Category labels come from the policy endpoint, not a second hardcoded copy —
  * the patient revokes against the same words they consented to.
  */
 export function ConsultationSharingCard({
   consultationId,
-  consultationStatus,
   doctorName,
   consultationDate,
 }: {
   consultationId: string
-  consultationStatus?: string | null
   doctorName?: string | null
   consultationDate?: string | null
 }) {
-  const [consent, setConsent] = React.useState<DataSharingConsent | null>(null)
+  const [sharing, setSharing] = React.useState<DataSharingState | null>(null)
   const [policy, setPolicy] = React.useState<DataSharingConsentPolicy | null>(null)
   const [loading, setLoading] = React.useState(true)
-  const [absent, setAbsent] = React.useState(false)
   const [loadError, setLoadError] = React.useState<string | null>(null)
 
   const [confirmOpen, setConfirmOpen] = React.useState(false)
@@ -73,19 +72,16 @@ export function ConsultationSharingCard({
   const load = React.useCallback(() => {
     setLoading(true)
     setLoadError(null)
-    Promise.all([
-      getDataSharingConsent(consultationId),
-      getDataSharingPolicy().catch(() => null),
-    ])
+    Promise.all([getDataSharingState(consultationId), getDataSharingPolicy().catch(() => null)])
       .then(([data, loadedPolicy]) => {
-        setConsent(data)
+        setSharing(data)
         setPolicy(loadedPolicy)
-        setAbsent(false)
       })
-      .catch((err: unknown) => {
-        // 404 = booked before this feature existed. Not an error to show.
-        if (err instanceof ApiError && err.status === 404) setAbsent(true)
-        else setLoadError('Không tải được trạng thái chia sẻ dữ liệu.')
+      .catch(() => {
+        // Every consent state now arrives as a 200 with a `state`, so a failure
+        // here is genuinely a failure — unavailable, which is not a statement
+        // about what the patient decided and must never be rendered as one.
+        setLoadError('Không tải được trạng thái chia sẻ dữ liệu.')
       })
       .finally(() => setLoading(false))
   }, [consultationId])
@@ -104,11 +100,11 @@ export function ConsultationSharingCard({
       el?.focus()
     })
     return () => cancelAnimationFrame(id)
-  }, [busy, consent])
+  }, [busy, sharing])
 
   const run = async (
     action: () => Promise<unknown>,
-    { onDone, announce }: { onDone: 'revoke' | 'reshare'; announce: string },
+    { onDone, announce }: { onDone: 'revoke' | 'reshare'; announce: string }
   ) => {
     if (inFlightRef.current) return
     inFlightRef.current = true
@@ -120,7 +116,7 @@ export function ConsultationSharingCard({
       setActionError(
         err instanceof ApiError && err.detail
           ? err.detail
-          : 'Không thực hiện được. Vui lòng thử lại.',
+          : 'Không thực hiện được. Vui lòng thử lại.'
       )
       inFlightRef.current = false
       setBusy(false)
@@ -131,13 +127,13 @@ export function ConsultationSharingCard({
     // screen — a card claiming "Đã thu hồi" while the doctor can read is worse
     // than a card that admits it does not know.
     try {
-      setConsent(await getDataSharingConsent(consultationId))
+      setSharing(await getDataSharingState(consultationId))
       setConfirmOpen(false)
       setReshareOpen(false)
       setAnnouncement(announce)
       focusAfterRef.current = onDone
     } catch {
-      setConsent(null)
+      setSharing(null)
       setConfirmOpen(false)
       setReshareOpen(false)
       setLoadError('Không tải lại được trạng thái chia sẻ. Vui lòng thử lại.')
@@ -146,8 +142,6 @@ export function ConsultationSharingCard({
       setBusy(false)
     }
   }
-
-  if (absent) return null
 
   if (loading) {
     return (
@@ -159,7 +153,7 @@ export function ConsultationSharingCard({
     )
   }
 
-  if (loadError || !consent) {
+  if (loadError || !sharing) {
     return (
       <NeuCard className="!p-4">
         <p className="text-[15px] text-[#D92D20]" role="alert">
@@ -172,19 +166,24 @@ export function ConsultationSharingCard({
     )
   }
 
-  // The consultation must still be live for sharing to mean anything: the
-  // doctor's access grant is closed when it completes or is cancelled.
-  const sessionLive = consultationStatus == null || LIVE_STATUSES.has(consultationStatus)
-  const granted = consent.is_active
-  const active = granted && sessionLive
-  const labelFor = (key: string) =>
-    policy?.categories.find((c) => c.key === key)?.label ?? key
+  const { state, can_share: canShare, consent } = sharing
+  const active = state === 'ACTIVE'
+  // NEVER_GRANTED is the pre-feature case: no row was ever written, so there is
+  // nothing to re-share — the patient is granting for the first time.
+  const neverGranted = state === 'NEVER_GRANTED'
+  const labelFor = (key: string) => policy?.categories.find((c) => c.key === key)?.label ?? key
 
-  const statusText = !sessionLive
-    ? 'Đã kết thúc chia sẻ (buổi tư vấn đã xong)'
-    : granted
-      ? 'Đang chia sẻ'
-      : 'Đã thu hồi'
+  // One line per state, and never a line that attributes an action the patient
+  // did not take. "Đã thu hồi" is reserved for an actual withdrawal.
+  const statusText = neverGranted
+    ? 'Chưa chia sẻ'
+    : !canShare
+      ? 'Đã kết thúc chia sẻ (buổi tư vấn đã xong)'
+      : state === 'ACTIVE'
+        ? 'Đang chia sẻ'
+        : state === 'REVOKED'
+          ? 'Đã thu hồi'
+          : 'Cần xác nhận lại quyền chia sẻ'
 
   return (
     <NeuCard className="!p-4" data-testid="sharing-card">
@@ -243,31 +242,47 @@ export function ConsultationSharingCard({
         )}
       </dl>
 
-      <p className="mt-3 text-[13px] font-semibold text-neu-muted">
-        {active ? 'Thông tin đang chia sẻ' : 'Thông tin đã từng chia sẻ'}
-      </p>
-      <ul className="mt-1 space-y-1" data-testid="sharing-categories">
-        {consent.categories.map((key) => (
-          <li
-            key={key}
-            className={
-              active
-                ? 'flex items-start gap-2 text-[14px] text-neu-text'
-                : 'flex items-start gap-2 text-[14px] text-neu-muted'
-            }
-          >
-            <span
-              className={
-                active
-                  ? 'mt-[7px] size-1.5 shrink-0 rounded-full bg-neu-green'
-                  : 'mt-[7px] size-1.5 shrink-0 rounded-full bg-[rgba(16,48,44,0.25)]'
-              }
-              aria-hidden="true"
-            />
-            {labelFor(key)}
-          </li>
-        ))}
-      </ul>
+      {consent ? (
+        <>
+          <p className="mt-3 text-[13px] font-semibold text-neu-muted">
+            {active ? 'Thông tin đang chia sẻ' : 'Thông tin đã từng chia sẻ'}
+          </p>
+          <ul className="mt-1 space-y-1" data-testid="sharing-categories">
+            {consent.categories.map((key) => (
+              <li
+                key={key}
+                className={
+                  active
+                    ? 'flex items-start gap-2 text-[14px] text-neu-text'
+                    : 'flex items-start gap-2 text-[14px] text-neu-muted'
+                }
+              >
+                <span
+                  className={
+                    active
+                      ? 'mt-[7px] size-1.5 shrink-0 rounded-full bg-neu-green'
+                      : 'mt-[7px] size-1.5 shrink-0 rounded-full bg-[rgba(16,48,44,0.25)]'
+                  }
+                  aria-hidden="true"
+                />
+                {labelFor(key)}
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : (
+        /* No row was ever written for this consultation. Say exactly that, and
+           say what it means for the doctor — a patient reading "Chưa chia sẻ"
+           with no explanation cannot tell whether it is their doing, a fault,
+           or something they need to act on. */
+        <p
+          className="mt-3 text-[14px] leading-relaxed text-neu-muted"
+          data-testid="never-granted-explainer"
+        >
+          Phiên tư vấn này được tạo trước khi MetoCare ghi nhận quyền chia sẻ dữ liệu. Bác sĩ hiện
+          không thể xem thông tin sức khỏe của bạn cho phiên tư vấn này.
+        </p>
+      )}
 
       {actionError && !confirmOpen && !reshareOpen && (
         <p
@@ -278,11 +293,11 @@ export function ConsultationSharingCard({
         </p>
       )}
 
-      {!sessionLive ? (
+      {!canShare ? (
         <p className="mt-4 text-[13px] leading-relaxed text-neu-muted" data-testid="session-ended">
           Buổi tư vấn đã kết thúc nên bác sĩ không còn xem được dữ liệu của bạn.
         </p>
-      ) : granted ? (
+      ) : active ? (
         <>
           <button
             ref={revokeButtonRef}
@@ -326,12 +341,15 @@ export function ConsultationSharingCard({
             }}
             disabled={busy}
             className="neu-btn-primary mt-4 w-full disabled:opacity-50"
-            data-testid="reshare-button"
+            data-testid={neverGranted ? 'share-button' : 'reshare-button'}
           >
-            Chia sẻ lại
+            {neverGranted ? 'Chia sẻ dữ liệu' : 'Chia sẻ lại'}
           </button>
-          {/* Re-granting shows the same terms as booking. A one-tap re-share
-              would record a consent decision against copy never displayed. */}
+          {/* Granting shows the same terms as booking, served by the policy
+              endpoint. A one-tap share would record a consent decision against
+              copy never displayed — which is the whole reason the version stamps
+              exist. A first grant offers every category, because there is no
+              earlier grant to narrow against. */}
           <DataSharingConsentModal
             open={reshareOpen}
             onOpenChange={(next) => {
@@ -342,20 +360,28 @@ export function ConsultationSharingCard({
             onAccept={(grant) =>
               void run(
                 () =>
-                  restoreDataSharingConsent(consultationId, {
+                  grantDataSharingConsent(consultationId, {
                     accepted: true,
                     categories: grant.categories,
                     consent_version: grant.consentVersion,
                     policy_version: grant.policyVersion,
+                    source: 'web',
                   }),
-                { onDone: 'revoke', announce: 'Đã chia sẻ lại dữ liệu với bác sĩ.' },
+                {
+                  onDone: 'revoke',
+                  announce: neverGranted
+                    ? 'Đã chia sẻ dữ liệu với bác sĩ.'
+                    : 'Đã chia sẻ lại dữ liệu với bác sĩ.',
+                }
               )
             }
             submitting={busy}
             error={actionError}
             doctorName={doctorName}
-            restrictToCategories={consent.categories}
-            titleOverride="Chia sẻ lại dữ liệu với bác sĩ?"
+            restrictToCategories={consent?.categories}
+            titleOverride={
+              neverGranted ? 'Chia sẻ dữ liệu với bác sĩ?' : 'Chia sẻ lại dữ liệu với bác sĩ?'
+            }
           />
         </>
       )}
@@ -403,13 +429,13 @@ function RevokeConfirmDialog({
           </Dialog.Title>
           <Dialog.Description className="mt-3 min-h-0 flex-1 space-y-3 overflow-y-auto text-[15px] leading-relaxed text-[#365651]">
             <span className="block">
-              Sau khi thu hồi, {doctorName ? `bác sĩ ${doctorName}` : 'bác sĩ'} sẽ không thể
-              tiếp tục xem các thông tin sức khỏe được chia sẻ cho phiên tư vấn này — bao gồm
-              danh sách thuốc và kết quả xét nghiệm — ngay lập tức.
+              Sau khi thu hồi, {doctorName ? `bác sĩ ${doctorName}` : 'bác sĩ'} sẽ không thể tiếp
+              tục xem các thông tin sức khỏe được chia sẻ cho phiên tư vấn này — bao gồm danh sách
+              thuốc và kết quả xét nghiệm — ngay lập tức.
             </span>
             <span className="block">
-              Buổi tư vấn vẫn tiếp tục và không được hoàn tiền. Thông tin về phiên tư vấn và
-              các hồ sơ cần lưu theo quy định vẫn được giữ lại.
+              Buổi tư vấn vẫn tiếp tục và không được hoàn tiền. Thông tin về phiên tư vấn và các hồ
+              sơ cần lưu theo quy định vẫn được giữ lại.
             </span>
             <span className="block">Bạn có thể chia sẻ lại bất cứ lúc nào.</span>
           </Dialog.Description>

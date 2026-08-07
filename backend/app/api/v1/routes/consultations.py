@@ -20,6 +20,8 @@ from app.api.deps import (
 from app.core.clock import utcnow
 from app.core.config import MARKETPLACE_DISCLAIMER
 from app.domain import consultation_consent_policy as consent_policy
+from app.domain import consultation_sharing_state as sharing_state
+from app.domain.consultation_sharing_state import SharingState
 from app.models.consultation import Consultation, ConsultationStatus
 from app.models.patient import PatientProfile
 from app.models.user import UserRole
@@ -32,6 +34,7 @@ from app.schemas.consultation import (
     DataSharingConsentOut,
     DataSharingConsentPolicyOut,
     DataSharingConsentRestore,
+    DataSharingStateOut,
     NoteCreate,
     NoteOut,
     PatientPaymentOut,
@@ -104,12 +107,15 @@ def _for_doctor(db: Session, consultation) -> ConsultationOut:
     hand the text back.
     """
     out = _with_disclaimer(consultation)
-    record = consultation_consent.get_for_consultation(db, consultation.id)
+    state, record = consultation_consent.resolve_state(db, consultation.id)
+    # The state rides along on every doctor view. Without it the client can only
+    # observe a 403 from the PHI endpoints, and a 403 cannot distinguish "the
+    # patient withdrew" from "there was never a grant to withdraw" — the UI then
+    # tells the doctor the patient did something they never did.
+    out = out.model_copy(update={"sharing_state": state})
     if record is None:
         return out
-    consented = record.is_active_at(
-        utcnow(), current_consent_version=consent_policy.CONSENT_VERSION
-    )
+    consented = state is SharingState.ACTIVE
     related = consultation_access.get_active_grant(
         db,
         doctor_id=consultation.doctor_id,
@@ -377,35 +383,68 @@ def _consent_out(record) -> DataSharingConsentOut:
     )
 
 
-def _own_consent_or_404(db: Session, consultation_id: str, patient_profile_id: str):
-    """Load the consent for a consultation the CALLER owns.
+def _own_consultation_or_404(
+    db: Session, consultation_id: str, patient_profile_id: str
+) -> Consultation:
+    """Load a consultation the CALLER owns, else 404.
 
-    Cross-patient reads are answered 404, not 403: a patient must not be able to
-    probe which consultation ids exist, or which doctor another patient booked.
+    Ownership of the CONSULTATION is the gate, not the existence of a consent
+    row. That distinction is the whole point: a consultation booked before
+    consent was recorded has no row, and the patient must still be able to read
+    its state and act on it. Keying the 404 on the row instead — as this did
+    before — made every pre-feature consultation indistinguishable from someone
+    else's.
+
+    Cross-patient access stays 404 rather than 403, so a patient still cannot
+    probe which consultation ids exist or which doctor another patient booked.
     """
-    record = consultation_consent.get_for_consultation(db, consultation_id)
-    if record is None or record.patient_id != patient_profile_id:
+    consultation = db.get(Consultation, consultation_id)
+    if (
+        consultation is None
+        or consultation.deleted_at is not None
+        or consultation.patient_id != patient_profile_id
+    ):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Data-sharing consent not found for this consultation.",
+            detail="Consultation not found.",
         )
-    return record
+    return consultation
 
 
-@router.get("/{consultation_id}/data-sharing-consent", response_model=DataSharingConsentOut)
+def _state_out(db: Session, consultation: Consultation) -> DataSharingStateOut:
+    """Build the explicit sharing-state envelope for *consultation*."""
+    state, record = consultation_consent.resolve_state(db, consultation.id)
+    return DataSharingStateOut(
+        consultation_id=consultation.id,
+        state=state,
+        consultation_status=str(consultation.status),
+        can_share=sharing_state.may_share(consultation.status),
+        consent=_consent_out(record) if record is not None else None,
+    )
+
+
+@router.get("/{consultation_id}/data-sharing-consent", response_model=DataSharingStateOut)
 def get_data_sharing_consent(
     consultation_id: str,
     user: CurrentUser = Depends(_patient_only),
     db: Session = Depends(get_session),
-) -> DataSharingConsentOut:
-    """Return the patient's own recorded consent for this consultation.
+) -> DataSharingStateOut:
+    """Return the patient's own sharing state for this consultation.
+
+    Answers with a state rather than 404-on-absence. A consultation booked
+    before this feature existed is a legitimate, readable state
+    (``NEVER_GRANTED``) that the patient is entitled to see and act on — not a
+    missing resource. The client previously had to treat that 404 as "render
+    nothing", which left the patient with no statement of whether their doctor
+    could see anything.
 
     Patient-only by design: a doctor must not be able to enumerate what a
     patient did or did not share — they simply receive the permitted data, or a
-    403.
+    403, plus the non-PHI state on their own consultation view.
     """
     profile = _resolve_patient_profile(db, user.id)
-    return _consent_out(_own_consent_or_404(db, consultation_id, profile.id))
+    consultation = _own_consultation_or_404(db, consultation_id, profile.id)
+    return _state_out(db, consultation)
 
 
 @router.delete("/{consultation_id}/data-sharing-consent", response_model=Message)
@@ -429,44 +468,61 @@ def revoke_data_sharing_consent(
       remain. Withdrawing data sharing is not a deletion request.
     """
     profile = _resolve_patient_profile(db, user.id)
-    record = _own_consent_or_404(db, consultation_id, profile.id)
-    # Load the consultation BEFORE mutating anything. A soft-deleted one raises
-    # 404 here, where nothing has been staged; doing it afterwards would roll
-    # back the revocation and answer 404 while leaving the consent active — a
-    # withdrawal that silently did not happen.
-    consultation = db.get(Consultation, consultation_id)
+    # Resolve ownership BEFORE mutating anything. A consultation that is not the
+    # caller's — or is soft-deleted — raises 404 here, where nothing has been
+    # staged; doing it afterwards would roll back the revocation and answer 404
+    # while leaving the consent active: a withdrawal that silently did not happen.
+    consultation = _own_consultation_or_404(db, consultation_id, profile.id)
+    record = consultation_consent.get_for_consultation(db, consultation_id)
+
+    if record is None:
+        # Nothing was ever granted, so there is nothing to withdraw. Reporting
+        # "revoked" would state that the patient withdrew something they never
+        # gave. The end state they wanted — the doctor cannot read — already
+        # holds, so this is a truthful no-op rather than an error.
+        return Message(message="not_granted")
 
     # Idempotent: a second revoke is a no-op success, so a retried request or a
     # double-tap cannot 409 at a patient trying to withdraw consent.
     newly_revoked = consultation_consent.revoke(db, record=record, actor_id=profile.id)
-    if newly_revoked and consultation is not None:
+    if newly_revoked:
         consultation_access.revoke_on_end(db, consultation)
     db.commit()
     return Message(message="revoked")
 
 
-@router.post("/{consultation_id}/data-sharing-consent", response_model=DataSharingConsentOut)
-def restore_data_sharing_consent(
+@router.post("/{consultation_id}/data-sharing-consent", response_model=DataSharingStateOut)
+def grant_data_sharing_consent(
     consultation_id: str,
     payload: DataSharingConsentRestore,
     user: CurrentUser = Depends(_patient_only),
     db: Session = Depends(get_session),
-) -> DataSharingConsentOut:
-    """Re-grant sharing the patient previously withdrew on this consultation.
+) -> DataSharingStateOut:
+    """Grant sharing on this consultation — the first time, or again after a revoke.
 
-    Withdrawing must be safe to do, which means it must be reversible. Without
-    this, a mis-tapped revoke on a paid, in-progress consultation leaves the
-    patient having bought a session the doctor can never be informed for — the
-    consultation is deliberately not cancelled, so re-booking is not a remedy.
+    Two entry points, one decision. Both require the patient to have read and
+    accepted the CURRENT terms, and both are audited as a grant:
 
-    The doctor's access grant is re-opened only while the consultation is still
-    live (PAID / IN_PROGRESS). Re-consenting to a finished or cancelled
-    consultation records the decision but reopens nothing, because the care
-    relationship itself has ended.
+    - **Re-share.** Withdrawing must be safe to do, which means it must be
+      reversible. Without this, a mis-tapped revoke on a paid, in-progress
+      consultation leaves the patient having bought a session the doctor can
+      never be informed for — the consultation is deliberately not cancelled, so
+      re-booking is not a remedy. Re-sharing intersects with the previous grant,
+      so it can only ever restore or narrow.
+    - **First grant.** A consultation booked before this feature existed has no
+      consent row and is fail-closed to the doctor. The patient may consent now,
+      explicitly, against today's terms. This is NOT a backfill: nothing is
+      written unless this request carries the patient's acceptance of the
+      current ``CONSENT_VERSION``/``POLICY_VERSION``, and the grant is stamped
+      with the time they actually gave it — never backdated to the booking.
+
+    Fail-closed on lifecycle: a COMPLETED or CANCELLED consultation is refused
+    outright. Its care relationship has ended and every access grant behind it
+    is already closed, so recording consent there would store a decision that
+    grants nothing while telling the patient they had shared.
     """
     profile = _resolve_patient_profile(db, user.id)
-    record = _own_consent_or_404(db, consultation_id, profile.id)
-    consultation = consult_svc.get_consultation_or_404(db, consultation_id)
+    consultation = _own_consultation_or_404(db, consultation_id, profile.id)
 
     # Same rule as booking: the client must have shown the current terms.
     if (
@@ -481,12 +537,38 @@ def restore_data_sharing_consent(
             ),
         )
 
-    consultation_consent.restore(
-        db,
-        record=record,
-        actor_id=profile.id,
-        categories=payload.categories,
-    )
+    if not sharing_state.may_share(consultation.status):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Buổi tư vấn đã kết thúc nên không thể chia sẻ dữ liệu.",
+        )
+
+    record = consultation_consent.get_for_consultation(db, consultation_id)
+    if record is None:
+        # First grant. There is no previous set to intersect with, so the client
+        # must name the categories: defaulting to "everything" would hand over
+        # more than any screen the patient saw disclosed.
+        if not payload.categories:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="At least one data category must be selected to share.",
+            )
+        record = consultation_consent.grant(
+            db,
+            consultation=consultation,
+            categories=payload.categories,
+            source=payload.source,
+            client_app_version=payload.client_app_version,
+            locale=payload.locale,
+        )
+    else:
+        consultation_consent.restore(
+            db,
+            record=record,
+            actor_id=profile.id,
+            categories=payload.categories,
+        )
+
     if consultation.status in _LIVE_STATUSES:
         existing = consultation_access.get_active_grant(
             db,
@@ -498,7 +580,7 @@ def restore_data_sharing_consent(
             consultation_access.create_grant(db, consultation)
     db.commit()
     db.refresh(record)
-    return _consent_out(record)
+    return _state_out(db, consultation)
 
 
 # ---------------------------------------------------------------------------

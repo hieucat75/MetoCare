@@ -28,6 +28,8 @@ from sqlalchemy.orm import Session
 
 from app.core.clock import utcnow
 from app.domain import consultation_consent_policy as policy
+from app.domain import consultation_sharing_state as sharing_state
+from app.domain.consultation_sharing_state import SharingState
 from app.models.consultation import Consultation
 from app.models.consultation_consent import ConsultationDataConsent
 from app.services import audit
@@ -59,10 +61,18 @@ def grant(
 ) -> ConsultationDataConsent:
     """Record the patient's explicit grant for *consultation*.
 
-    Called inside the consultation-creation transaction, so the two commit or
-    roll back together — there is no window in which a consultation exists
-    without its consent, and none in which a consent points at a consultation
-    that was never created.
+    Two callers, one path:
+
+    - **Booking**, inside the consultation-creation transaction, so the two
+      commit or roll back together — there is no window in which a consultation
+      exists without its consent, and none in which a consent points at a
+      consultation that was never created.
+    - **The first grant on a pre-feature consultation**, where the patient is
+      consenting after the fact on a consultation that never had a row. That is
+      a real, patient-initiated consent decision made against the current terms
+      — not a backfill — so it runs through exactly this function and is audited
+      identically. Nothing here ever manufactures a grant on a patient's behalf;
+      the caller must have proof the patient accepted the current terms.
 
     Raises 400 when the requested categories reduce to nothing: a grant that
     authorises no category is not consent, and silently storing one would let a
@@ -131,6 +141,29 @@ def get_for_consultation(db: Session, consultation_id: str) -> ConsultationDataC
             ConsultationDataConsent.consultation_id == consultation_id
         )
     ).scalar_one_or_none()
+
+
+def resolve_state(
+    db: Session,
+    consultation_id: str,
+    *,
+    at: dt.datetime | None = None,
+) -> tuple[SharingState, ConsultationDataConsent | None]:
+    """Return the explicit sharing state for *consultation_id* plus its row.
+
+    The single place any surface should ask "why can this doctor not read?".
+    Callers must not re-derive the answer from a 403 — an authorisation outcome
+    cannot tell REVOKED (the patient acted) from NEVER_GRANTED (they never had
+    the chance), and reporting the wrong one attributes to a patient an action
+    they never took.
+    """
+    record = get_for_consultation(db, consultation_id)
+    state = sharing_state.resolve(
+        record,
+        now=at or utcnow(),
+        current_consent_version=policy.CONSENT_VERSION,
+    )
+    return state, record
 
 
 def get_active(

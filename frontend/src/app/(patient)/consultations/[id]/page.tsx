@@ -154,7 +154,9 @@ export default function ConsultationDetailPage() {
         >
           <ArrowLeft className="size-5" />
         </button>
-        <h1 className="text-[20px] font-extrabold tracking-[-0.02em] text-neu-text">Chi tiết tư vấn</h1>
+        <h1 className="text-[20px] font-extrabold tracking-[-0.02em] text-neu-text">
+          Chi tiết tư vấn
+        </h1>
       </header>
 
       {loading ? (
@@ -187,13 +189,19 @@ export default function ConsultationDetailPage() {
               <InfoRow label="Mã tư vấn" value={consultation.id.slice(0, 8).toUpperCase()} />
               <InfoRow label="Tạo lúc" value={formatDateTime(consultation.created_at) ?? '—'} />
               {consultation.confirmed_at && (
-                <InfoRow label="Xác nhận" value={formatDateTime(consultation.confirmed_at) ?? '—'} />
+                <InfoRow
+                  label="Xác nhận"
+                  value={formatDateTime(consultation.confirmed_at) ?? '—'}
+                />
               )}
               {consultation.paid_at && (
                 <InfoRow label="Thanh toán" value={formatDateTime(consultation.paid_at) ?? '—'} />
               )}
               {consultation.completed_at && (
-                <InfoRow label="Hoàn thành" value={formatDateTime(consultation.completed_at) ?? '—'} />
+                <InfoRow
+                  label="Hoàn thành"
+                  value={formatDateTime(consultation.completed_at) ?? '—'}
+                />
               )}
               {consultation.cancelled_at && (
                 <InfoRow label="Huỷ lúc" value={formatDateTime(consultation.cancelled_at) ?? '—'} />
@@ -254,7 +262,6 @@ export default function ConsultationDetailPage() {
           {/* ── Data sharing (the control the consent copy promises) ── */}
           <ConsultationSharingCard
             consultationId={id}
-            consultationStatus={consultation.status}
             doctorName={doctorName}
             consultationDate={consultation.created_at}
           />
@@ -379,7 +386,9 @@ function ReviewSection({ consultationId }: { consultationId: string }) {
             >
               <Star
                 className={
-                  filled ? 'size-8 fill-[#F5B547] text-[#F5B547]' : 'size-8 text-[rgba(16,48,44,0.2)]'
+                  filled
+                    ? 'size-8 fill-[#F5B547] text-[#F5B547]'
+                    : 'size-8 text-[rgba(16,48,44,0.2)]'
                 }
               />
             </button>
@@ -395,9 +404,7 @@ function ReviewSection({ consultationId }: { consultationId: string }) {
         className="mt-3 w-full rounded-[16px] bg-white px-4 py-3 text-[16px] text-neu-text outline-none neu-card !shadow-none border border-[rgba(16,48,44,0.08)] placeholder:text-neu-muted resize-none"
       />
 
-      {error && (
-        <p className="mt-2 text-[14px] font-semibold text-[#D92D20]">{error}</p>
-      )}
+      {error && <p className="mt-2 text-[14px] font-semibold text-[#D92D20]">{error}</p>}
 
       <button
         type="button"

@@ -155,6 +155,13 @@ export const vi = {
     sharingTitle: 'Chia sẻ dữ liệu với bác sĩ',
     sharingActive: 'Đang chia sẻ',
     sharingRevoked: 'Đã thu hồi',
+    // Never "đã thu hồi": nothing was ever granted on a pre-feature consultation,
+    // so saying it was withdrawn states an action the patient never took.
+    sharingNeverGranted: 'Chưa chia sẻ',
+    sharingNeverGrantedExplainer:
+      'Phiên tư vấn này được tạo trước khi MetoCare ghi nhận quyền chia sẻ dữ liệu. Bác sĩ hiện không thể xem thông tin sức khỏe của bạn cho phiên tư vấn này.',
+    // The terms moved under an existing grant; the patient did nothing.
+    sharingNeedsReconsent: 'Cần xác nhận lại quyền chia sẻ',
     sharingDoctor: 'Bác sĩ',
     sharingReference: 'Mã tư vấn',
     sharingDate: 'Ngày tư vấn',
@@ -162,6 +169,7 @@ export const vi = {
     sharingCategoriesPast: 'Thông tin đã từng chia sẻ',
     sharingRevokeCta: 'Thu hồi quyền chia sẻ',
     sharingReshareCta: 'Chia sẻ lại',
+    sharingShareCta: 'Chia sẻ dữ liệu',
     sharingLoading: 'Đang tải trạng thái chia sẻ…',
     sharingLoadFailed: 'Không tải được trạng thái chia sẻ dữ liệu.',
     sharingReloadFailed: 'Không tải lại được trạng thái chia sẻ. Vui lòng thử lại.',
@@ -171,6 +179,7 @@ export const vi = {
       'Buổi tư vấn đã kết thúc nên bác sĩ không còn xem được dữ liệu của bạn.',
     sharingRevokedAnnounce: 'Đã thu hồi quyền chia sẻ.',
     sharingReshared: 'Đã chia sẻ lại dữ liệu với bác sĩ.',
+    sharingShared: 'Đã chia sẻ dữ liệu với bác sĩ.',
     revokeConfirmTitle: 'Thu hồi quyền chia sẻ?',
     // Names the doctor when we know who it is: "bác sĩ" in the abstract is
     // easier to revoke from than the person currently advising you.
