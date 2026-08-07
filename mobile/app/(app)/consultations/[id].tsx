@@ -78,7 +78,6 @@ export default function ConsultationDetailScreen() {
         <ConsultationSharingCard
           client={client}
           consultationId={id}
-          consultationStatus={consultation.status}
           doctorName={doctorName}
           consultationDate={consultation.created_at}
         />

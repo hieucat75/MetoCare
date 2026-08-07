@@ -1,14 +1,13 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { Modal, ScrollView, StyleSheet, Text, View } from 'react-native'
 
-import { ApiError } from '../api/client'
 import type { ApiClient } from '../api/client'
 import {
-  type DataSharingConsent,
   type DataSharingConsentPolicy,
-  getDataSharingConsent,
+  type DataSharingState,
   getDataSharingPolicy,
-  restoreDataSharingConsent,
+  getDataSharingState,
+  grantDataSharingConsent,
   revokeDataSharingConsent,
 } from '../api/consultations'
 import { vi } from '../i18n/vi'
@@ -17,13 +16,9 @@ import { type ConsentGrant, DataSharingConsentModal } from './DataSharingConsent
 import { GlassCard } from './GlassCard'
 import { PrimaryButton } from './PrimaryButton'
 
-/** Statuses where the doctor still holds an access grant, so sharing is live. */
-const LIVE_STATUSES = new Set(['PAID', 'IN_PROGRESS'])
-
 interface Props {
   client: ApiClient
   consultationId: string
-  consultationStatus?: string | null
   doctorName?: string | null
   consultationDate?: string | null
 }
@@ -42,14 +37,12 @@ interface Props {
 export function ConsultationSharingCard({
   client,
   consultationId,
-  consultationStatus,
   doctorName,
   consultationDate,
 }: Props) {
-  const [consent, setConsent] = useState<DataSharingConsent | null>(null)
+  const [sharing, setSharing] = useState<DataSharingState | null>(null)
   const [policy, setPolicy] = useState<DataSharingConsentPolicy | null>(null)
   const [loading, setLoading] = useState(true)
-  const [absent, setAbsent] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
 
   const [confirmVisible, setConfirmVisible] = useState(false)
@@ -65,18 +58,18 @@ export function ConsultationSharingCard({
     setLoading(true)
     setLoadError(null)
     Promise.all([
-      getDataSharingConsent(client, consultationId),
+      getDataSharingState(client, consultationId),
       getDataSharingPolicy(client).catch(() => null),
     ])
       .then(([data, loadedPolicy]) => {
-        setConsent(data)
+        setSharing(data)
         setPolicy(loadedPolicy)
-        setAbsent(false)
       })
-      .catch((err: unknown) => {
-        // 404 = booked before this feature existed. Not an error to show.
-        if (err instanceof ApiError && err.status === 404) setAbsent(true)
-        else setLoadError(vi.consultations.sharingLoadFailed)
+      .catch(() => {
+        // Every consent state now arrives as a 200 with a `state`, so a failure
+        // here is genuinely unavailable — which is not a statement about what
+        // the patient decided and must never be rendered as one.
+        setLoadError(vi.consultations.sharingLoadFailed)
       })
       .finally(() => setLoading(false))
   }, [client, consultationId])
@@ -105,12 +98,12 @@ export function ConsultationSharingCard({
     // "Đã thu hồi" while the doctor can still read is worse than one that admits
     // it does not know.
     try {
-      setConsent(await getDataSharingConsent(client, consultationId))
+      setSharing(await getDataSharingState(client, consultationId))
       setConfirmVisible(false)
       setReshareVisible(false)
       setAnnouncement(announce)
     } catch {
-      setConsent(null)
+      setSharing(null)
       setConfirmVisible(false)
       setReshareVisible(false)
       setLoadError(vi.consultations.sharingReloadFailed)
@@ -119,8 +112,6 @@ export function ConsultationSharingCard({
       setBusy(false)
     }
   }
-
-  if (absent) return null
 
   if (loading) {
     return (
@@ -132,7 +123,7 @@ export function ConsultationSharingCard({
     )
   }
 
-  if (loadError || !consent) {
+  if (loadError || !sharing) {
     return (
       <GlassCard style={styles.card}>
         <Text style={styles.error} accessibilityLiveRegion="assertive">
@@ -149,16 +140,23 @@ export function ConsultationSharingCard({
     )
   }
 
-  const sessionLive = consultationStatus == null || LIVE_STATUSES.has(consultationStatus)
-  const granted = consent.is_active
-  const active = granted && sessionLive
-  const labelFor = (key: string) =>
-    policy?.categories.find((c) => c.key === key)?.label ?? key
-  const statusText = !sessionLive
-    ? vi.consultations.sharingSessionEnded
-    : granted
-      ? vi.consultations.sharingActive
-      : vi.consultations.sharingRevoked
+  const { state, can_share: canShare, consent } = sharing
+  const active = state === 'ACTIVE'
+  // NEVER_GRANTED is the pre-feature case: no row was ever written, so there is
+  // nothing to re-share — the patient is granting for the first time.
+  const neverGranted = state === 'NEVER_GRANTED'
+  const labelFor = (key: string) => policy?.categories.find((c) => c.key === key)?.label ?? key
+  // One line per state, and never one that attributes an action the patient did
+  // not take. "Đã thu hồi" is reserved for an actual withdrawal.
+  const statusText = neverGranted
+    ? vi.consultations.sharingNeverGranted
+    : !canShare
+      ? vi.consultations.sharingSessionEnded
+      : state === 'ACTIVE'
+        ? vi.consultations.sharingActive
+        : state === 'REVOKED'
+          ? vi.consultations.sharingRevoked
+          : vi.consultations.sharingNeedsReconsent
 
   return (
     <GlassCard style={styles.card} testID="sharing-card">
@@ -187,19 +185,30 @@ export function ConsultationSharingCard({
         </Text>
       ) : null}
 
-      <Text style={styles.categoriesLabel}>
-        {active ? vi.consultations.sharingCategories : vi.consultations.sharingCategoriesPast}
-      </Text>
-      <View testID="sharing-categories">
-        {consent.categories.map((key) => (
-          <View key={key} style={styles.categoryRow}>
-            <View style={[styles.bullet, active ? null : styles.bulletMuted]} />
-            <Text style={[styles.categoryText, active ? null : styles.categoryTextMuted]}>
-              {labelFor(key)}
-            </Text>
+      {consent ? (
+        <>
+          <Text style={styles.categoriesLabel}>
+            {active ? vi.consultations.sharingCategories : vi.consultations.sharingCategoriesPast}
+          </Text>
+          <View testID="sharing-categories">
+            {consent.categories.map((key) => (
+              <View key={key} style={styles.categoryRow}>
+                <View style={[styles.bullet, active ? null : styles.bulletMuted]} />
+                <Text style={[styles.categoryText, active ? null : styles.categoryTextMuted]}>
+                  {labelFor(key)}
+                </Text>
+              </View>
+            ))}
           </View>
-        ))}
-      </View>
+        </>
+      ) : (
+        /* No row was ever written. Say exactly that, and say what it means for
+           the doctor — "Chưa chia sẻ" alone leaves the patient unable to tell
+           whether it is their doing, a fault, or something to act on. */
+        <Text style={styles.body} testID="never-granted-explainer">
+          {vi.consultations.sharingNeverGrantedExplainer}
+        </Text>
+      )}
 
       {actionError && !confirmVisible && !reshareVisible ? (
         <Text style={styles.error} accessibilityLiveRegion="assertive" testID="sharing-error">
@@ -207,11 +216,11 @@ export function ConsultationSharingCard({
         </Text>
       ) : null}
 
-      {!sessionLive ? (
+      {!canShare ? (
         <Text style={styles.body} testID="session-ended">
           {vi.consultations.sharingSessionEndedNote}
         </Text>
-      ) : granted ? (
+      ) : active ? (
         <PrimaryButton
           label={vi.consultations.sharingRevokeCta}
           variant="ghost"
@@ -225,14 +234,16 @@ export function ConsultationSharingCard({
         />
       ) : (
         <PrimaryButton
-          label={vi.consultations.sharingReshareCta}
+          label={
+            neverGranted ? vi.consultations.sharingShareCta : vi.consultations.sharingReshareCta
+          }
           onPress={() => {
             setActionError(null)
             setReshareVisible(true)
           }}
           disabled={busy}
           style={styles.action}
-          testID="sharing-reshare"
+          testID={neverGranted ? 'sharing-share' : 'sharing-reshare'}
         />
       )}
 
@@ -244,17 +255,18 @@ export function ConsultationSharingCard({
         doctorName={doctorName}
         submitting={busy}
         errorMsg={reshareVisible ? actionError : null}
-        restrictToCategories={consent.categories}
+        restrictToCategories={consent?.categories}
         onAccept={(grant: ConsentGrant) =>
           void run(
             () =>
-              restoreDataSharingConsent(client, consultationId, {
+              grantDataSharingConsent(client, consultationId, {
                 accepted: true,
                 categories: grant.categories,
                 consent_version: grant.consentVersion,
                 policy_version: grant.policyVersion,
+                source: 'mobile',
               }),
-            vi.consultations.sharingReshared
+            neverGranted ? vi.consultations.sharingShared : vi.consultations.sharingReshared
           )
         }
         onDecline={() => {

@@ -11,6 +11,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from app.domain.consultation_sharing_state import SharingState
 from app.models.consultation import ConsultationType
 
 # ---------------------------------------------------------------------------
@@ -83,15 +84,22 @@ class ConsultationCreate(BaseModel):
 
 
 class DataSharingConsentRestore(BaseModel):
-    """Re-grant a previously revoked consent, optionally narrowing categories.
+    """Grant sharing on an existing consultation — first time, or after a revoke.
 
-    Re-sharing is a consent decision in its own right, so the client must have
+    Granting is a consent decision in its own right, so the client must have
     rendered the terms and echo which version it showed — the same rule booking
     follows. Without it, a one-tap "Chia sẻ lại" could record agreement to terms
     the patient never saw.
 
-    Omitting ``categories`` re-grants exactly what was granted before; the server
-    intersects with the previous grant either way, so this can only ever narrow.
+    ``categories`` behaves differently in the two cases, and deliberately so:
+
+    - **Re-share** — omitting it re-grants exactly what was granted before. The
+      server intersects with the previous grant either way, so this can only
+      ever narrow.
+    - **First grant** (a consultation booked before consent was recorded) — it
+      is REQUIRED. There is no previous grant to intersect with, so a default
+      would have to mean "everything", handing over more than any screen the
+      patient saw disclosed.
     """
 
     accepted: Literal[True] = Field(
@@ -100,6 +108,9 @@ class DataSharingConsentRestore(BaseModel):
     consent_version: str = Field(..., min_length=1, max_length=16)
     policy_version: str = Field(..., min_length=1, max_length=16)
     categories: list[str] | None = Field(default=None, max_length=16)
+    source: str | None = Field(default=None, max_length=32, description="'web' | 'mobile'")
+    client_app_version: str | None = Field(default=None, max_length=32)
+    locale: str | None = Field(default=None, max_length=32)
 
 
 class ConsentCategoryOut(BaseModel):
@@ -142,6 +153,31 @@ class DataSharingConsentOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class DataSharingStateOut(BaseModel):
+    """The patient's sharing state for one consultation, stated explicitly.
+
+    Replaces the previous "404 means there is no consent" contract, which forced
+    every client to guess why access was unavailable and led the doctor UI to
+    report a withdrawal that never happened. ``state`` is the answer; ``consent``
+    carries the recorded grant when one exists and is ``None`` for a consultation
+    that never had one.
+
+    A 404 on this endpoint now means only one thing: the consultation is not the
+    caller's (or does not exist). Keeping that case a 404 — rather than a state —
+    is what stops the endpoint becoming an oracle for which consultations exist
+    and who booked them.
+    """
+
+    consultation_id: str
+    state: SharingState
+    consultation_status: str
+    #: Whether the lifecycle still permits granting or re-granting. False on a
+    #: COMPLETED/CANCELLED consultation, where consenting would reopen nothing —
+    #: clients must not offer a share action they cannot honour.
+    can_share: bool
+    consent: DataSharingConsentOut | None = None
+
+
 class ConsultationOut(BaseModel):
     id: str
     patient_id: str
@@ -166,6 +202,13 @@ class ConsultationOut(BaseModel):
     cancel_reason: str | None
     created_at: dt.datetime | None = None
     disclaimer: str | None = None
+    #: Doctor-facing views only. The doctor has no consent endpoint of their own
+    #: — by design, so they cannot enumerate what a patient did or did not share
+    #: — so the state travels on the consultation they are already reading. It
+    #: is populated from the consent row that view already loads, costing no
+    #: extra query. ``None`` on patient/admin views, which have the dedicated
+    #: ``/data-sharing-consent`` endpoint and richer detail.
+    sharing_state: SharingState | None = None
 
     model_config = {"from_attributes": True}
 

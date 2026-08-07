@@ -2,23 +2,23 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ConsultationSharingCard } from '@/components/marketplace/ConsultationSharingCard'
 import {
-  getDataSharingConsent,
+  getDataSharingState,
   getDataSharingPolicy,
   revokeDataSharingConsent,
-  restoreDataSharingConsent,
+  grantDataSharingConsent,
 } from '@/lib/api/consultations'
 import { ApiError } from '@/lib/api/client'
 
 jest.mock('@/lib/api/consultations', () => ({
-  getDataSharingConsent: jest.fn(),
+  getDataSharingState: jest.fn(),
   getDataSharingPolicy: jest.fn(),
   revokeDataSharingConsent: jest.fn(),
-  restoreDataSharingConsent: jest.fn(),
+  grantDataSharingConsent: jest.fn(),
 }))
 
-const mockedGet = getDataSharingConsent as jest.Mock
+const mockedGet = getDataSharingState as jest.Mock
 const mockedRevoke = revokeDataSharingConsent as jest.Mock
-const mockedRestore = restoreDataSharingConsent as jest.Mock
+const mockedRestore = grantDataSharingConsent as jest.Mock
 const mockedPolicy = getDataSharingPolicy as jest.Mock
 
 const POLICY = {
@@ -63,14 +63,38 @@ function consent(overrides = {}) {
   }
 }
 
-function renderCard(status = 'IN_PROGRESS') {
+/** The explicit state envelope the endpoint now answers with. */
+function sharing(overrides: Record<string, unknown> = {}) {
+  return {
+    consultation_id: 'c-1',
+    state: 'ACTIVE',
+    consultation_status: 'IN_PROGRESS',
+    can_share: true,
+    consent: consent(),
+    ...overrides,
+  }
+}
+
+/** REVOKED: a grant existed and the patient withdrew it. */
+function revoked(consentOverrides = {}) {
+  return sharing({
+    state: 'REVOKED',
+    consent: consent({ is_active: false, revoked_at: '2026-08-02T00:00:00Z', ...consentOverrides }),
+  })
+}
+
+/** NEVER_GRANTED: booked before consent was recorded — no row has ever existed. */
+function neverGranted(overrides: Record<string, unknown> = {}) {
+  return sharing({ state: 'NEVER_GRANTED', consent: null, ...overrides })
+}
+
+function renderCard() {
   return render(
     <ConsultationSharingCard
       consultationId="c-1abc2def"
-      consultationStatus={status}
       doctorName="BS Nguyễn Văn A"
       consultationDate="2026-08-01T02:00:00Z"
-    />,
+    />
   )
 }
 
@@ -82,10 +106,10 @@ async function acceptReshare() {
 
 beforeEach(() => {
   jest.clearAllMocks()
-  mockedGet.mockResolvedValue(consent())
+  mockedGet.mockResolvedValue(sharing())
   mockedPolicy.mockResolvedValue(POLICY)
   mockedRevoke.mockResolvedValue({ message: 'revoked' })
-  mockedRestore.mockResolvedValue(consent({ is_active: true }))
+  mockedRestore.mockResolvedValue(sharing())
 })
 
 // ---------------------------------------------------------------------------
@@ -111,16 +135,24 @@ test('shows the active sharing state with doctor, reference, date and categories
   }
 })
 
-test('a consultation booked before the feature renders nothing at all', async () => {
-  mockedGet.mockRejectedValue(new ApiError(404, 'not found'))
+test('a consultation booked before the feature says "Chưa chia sẻ" and explains why', async () => {
+  // It used to render nothing here, which left the patient with no statement of
+  // whether their doctor could see anything, on the screen that exists to say so.
+  mockedGet.mockResolvedValue(neverGranted())
 
-  const { container } = renderCard()
+  renderCard()
 
-  await waitFor(() => expect(container).toBeEmptyDOMElement())
+  expect(await screen.findByTestId('sharing-status')).toHaveTextContent('Chưa chia sẻ')
+  expect(screen.getByText('Chia sẻ dữ liệu với bác sĩ')).toBeInTheDocument()
+  expect(screen.getByTestId('never-granted-explainer')).toHaveTextContent(
+    /được tạo trước khi MetoCare ghi nhận quyền chia sẻ dữ liệu/
+  )
+  // Never the withdrawal wording — nothing was ever granted.
+  expect(screen.queryByText(/đã thu hồi/i)).not.toBeInTheDocument()
 })
 
 test('shows the revoked state with a re-share action', async () => {
-  mockedGet.mockResolvedValue(consent({ is_active: false, revoked_at: '2026-08-02T00:00:00Z' }))
+  mockedGet.mockResolvedValue(revoked())
 
   renderCard()
 
@@ -171,7 +203,7 @@ test('confirming revokes and the card flips to the revoked state', async () => {
   renderCard()
   await userEvent.click(await screen.findByTestId('revoke-button'))
 
-  mockedGet.mockResolvedValueOnce(consent({ is_active: false, revoked_at: '2026-08-02T00:00:00Z' }))
+  mockedGet.mockResolvedValueOnce(revoked())
   await userEvent.click(await screen.findByTestId('revoke-confirm'))
 
   await waitFor(() => expect(mockedRevoke).toHaveBeenCalledWith('c-1abc2def'))
@@ -185,7 +217,7 @@ test('double-confirming revokes exactly once', async () => {
     () =>
       new Promise((resolve) => {
         resolveRevoke = resolve
-      }),
+      })
   )
 
   renderCard()
@@ -236,7 +268,7 @@ test('a failed revoke is reported inside the dialog and can be retried', async (
 // ---------------------------------------------------------------------------
 
 test('re-sharing shows the consent terms — it is never a silent one-tap re-grant', async () => {
-  mockedGet.mockResolvedValue(consent({ is_active: false }))
+  mockedGet.mockResolvedValue(revoked())
 
   renderCard()
   await userEvent.click(await screen.findByTestId('reshare-button'))
@@ -248,10 +280,10 @@ test('re-sharing shows the consent terms — it is never a silent one-tap re-gra
 })
 
 test('re-sharing sends the rendered versions, so the record matches what was shown', async () => {
-  mockedGet.mockResolvedValue(consent({ is_active: false }))
+  mockedGet.mockResolvedValue(revoked())
 
   renderCard()
-  mockedGet.mockResolvedValueOnce(consent({ is_active: true }))
+  mockedGet.mockResolvedValueOnce(sharing())
   await acceptReshare()
 
   await waitFor(() => expect(mockedRestore).toHaveBeenCalledTimes(1))
@@ -260,14 +292,15 @@ test('re-sharing sends the rendered versions, so the record matches what was sho
     categories: CATEGORIES,
     consent_version: '1.0',
     policy_version: '1.1',
+    source: 'web',
   })
-  expect(await screen.findByTestId('sharing-status')).toHaveTextContent(/Đã chia sẻ lại|Đang chia sẻ/)
+  expect(await screen.findByTestId('sharing-status')).toHaveTextContent(
+    /Đã chia sẻ lại|Đang chia sẻ/
+  )
 })
 
 test('re-sharing a narrower grant offers only what was originally granted', async () => {
-  mockedGet.mockResolvedValue(
-    consent({ is_active: false, categories: ['medications_and_adherence'] }),
-  )
+  mockedGet.mockResolvedValue(revoked({ categories: ['medications_and_adherence'] }))
 
   renderCard()
   await userEvent.click(await screen.findByTestId('reshare-button'))
@@ -278,19 +311,19 @@ test('re-sharing a narrower grant offers only what was originally granted', asyn
   // Offering the full five would be a wider grant than the patient ever made.
   expect(dialog).not.toHaveTextContent('Kết quả xét nghiệm')
 
-  mockedGet.mockResolvedValueOnce(consent({ is_active: true }))
+  mockedGet.mockResolvedValueOnce(sharing())
   await userEvent.click(screen.getByRole('button', { name: POLICY.accept_label }))
 
   await waitFor(() =>
     expect(mockedRestore).toHaveBeenCalledWith(
       'c-1abc2def',
-      expect.objectContaining({ categories: ['medications_and_adherence'] }),
-    ),
+      expect.objectContaining({ categories: ['medications_and_adherence'] })
+    )
   )
 })
 
 test('declining the re-share dialog re-grants nothing', async () => {
-  mockedGet.mockResolvedValue(consent({ is_active: false }))
+  mockedGet.mockResolvedValue(revoked())
 
   renderCard()
   await userEvent.click(await screen.findByTestId('reshare-button'))
@@ -301,7 +334,7 @@ test('declining the re-share dialog re-grants nothing', async () => {
 })
 
 test('a failed re-share leaves the state revoked and says so', async () => {
-  mockedGet.mockResolvedValue(consent({ is_active: false }))
+  mockedGet.mockResolvedValue(revoked())
   mockedRestore.mockRejectedValueOnce(new ApiError(500, 'Máy chủ bận'))
 
   renderCard()
@@ -316,7 +349,11 @@ test('a failed re-share leaves the state revoked and says so', async () => {
 // ---------------------------------------------------------------------------
 
 test('an ended consultation never claims to be sharing, and offers no re-share', async () => {
-  renderCard('COMPLETED')
+  mockedGet.mockResolvedValue(
+    sharing({ state: 'REVOKED', consultation_status: 'COMPLETED', can_share: false })
+  )
+
+  renderCard()
 
   expect(await screen.findByTestId('sharing-status')).toHaveTextContent(/đã xong/i)
   expect(screen.getByTestId('session-ended')).toBeInTheDocument()
@@ -354,7 +391,7 @@ test('a failed load offers a retry rather than a dead card', async () => {
 
   expect(await screen.findByRole('alert')).toHaveTextContent(/Không tải được/)
 
-  mockedGet.mockResolvedValueOnce(consent())
+  mockedGet.mockResolvedValueOnce(sharing())
   await userEvent.click(screen.getByRole('button', { name: 'Thử lại' }))
 
   expect(await screen.findByTestId('sharing-status')).toHaveTextContent('Đang chia sẻ')
@@ -386,4 +423,117 @@ test('focus moves into the confirmation when it opens', async () => {
 
   const dialog = await screen.findByRole('dialog')
   await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true))
+})
+
+// ---------------------------------------------------------------------------
+// Legacy / never-granted: the first grant
+// ---------------------------------------------------------------------------
+
+test('an eligible legacy consultation offers "Chia sẻ dữ liệu", not "Chia sẻ lại"', async () => {
+  mockedGet.mockResolvedValue(neverGranted())
+
+  renderCard()
+
+  const button = await screen.findByTestId('share-button')
+  expect(button).toHaveTextContent('Chia sẻ dữ liệu')
+  // "Chia sẻ lại" would imply a previous grant that never existed.
+  expect(screen.queryByTestId('reshare-button')).not.toBeInTheDocument()
+  expect(screen.queryByTestId('revoke-button')).not.toBeInTheDocument()
+})
+
+test('an ineligible legacy consultation states the status but offers no action', async () => {
+  mockedGet.mockResolvedValue(neverGranted({ consultation_status: 'COMPLETED', can_share: false }))
+
+  renderCard()
+
+  expect(await screen.findByTestId('session-ended')).toBeInTheDocument()
+  expect(screen.queryByTestId('share-button')).not.toBeInTheDocument()
+  expect(screen.queryByTestId('reshare-button')).not.toBeInTheDocument()
+})
+
+test('the first grant goes through the full consent dialog, never one tap', async () => {
+  mockedGet.mockResolvedValue(neverGranted())
+
+  renderCard()
+  await userEvent.click(await screen.findByTestId('share-button'))
+
+  // The server's current copy, verbatim — the same terms as booking.
+  expect(await screen.findByText('Đoạn một.')).toBeInTheDocument()
+  expect(screen.getByText('Đoạn hai.')).toBeInTheDocument()
+  expect(mockedRestore).not.toHaveBeenCalled()
+})
+
+test('the first grant sends the rendered versions and every disclosed category', async () => {
+  mockedGet.mockResolvedValue(neverGranted())
+
+  renderCard()
+  await userEvent.click(await screen.findByTestId('share-button'))
+  mockedGet.mockResolvedValueOnce(sharing())
+  await userEvent.click(await screen.findByRole('button', { name: POLICY.accept_label }))
+
+  await waitFor(() => expect(mockedRestore).toHaveBeenCalledTimes(1))
+  expect(mockedRestore).toHaveBeenCalledWith('c-1abc2def', {
+    accepted: true,
+    categories: CATEGORIES,
+    consent_version: '1.0',
+    policy_version: '1.1',
+    source: 'web',
+  })
+  expect(await screen.findByTestId('sharing-status')).toHaveTextContent(/Đã chia sẻ|Đang chia sẻ/)
+})
+
+test('declining the first-grant dialog grants nothing', async () => {
+  mockedGet.mockResolvedValue(neverGranted())
+
+  renderCard()
+  await userEvent.click(await screen.findByTestId('share-button'))
+  await userEvent.click(await screen.findByRole('button', { name: POLICY.decline_label }))
+
+  expect(mockedRestore).not.toHaveBeenCalled()
+  expect(await screen.findByTestId('sharing-status')).toHaveTextContent('Chưa chia sẻ')
+})
+
+test('a failed first grant leaves the state never-granted and says so', async () => {
+  mockedGet.mockResolvedValue(neverGranted())
+  mockedRestore.mockRejectedValue(new ApiError(409, 'Consent version is out of date.'))
+
+  renderCard()
+  await userEvent.click(await screen.findByTestId('share-button'))
+  await userEvent.click(await screen.findByRole('button', { name: POLICY.accept_label }))
+
+  expect(await screen.findByText('Consent version is out of date.')).toBeInTheDocument()
+  expect(screen.getByTestId('sharing-status')).toHaveTextContent('Chưa chia sẻ')
+})
+
+test('a needs-reconsent state is not reported as a withdrawal', async () => {
+  // We moved the terms; the patient did nothing. Saying "đã thu hồi" here would
+  // blame them for our version bump.
+  mockedGet.mockResolvedValue(sharing({ state: 'NEEDS_RECONSENT' }))
+
+  renderCard()
+
+  expect(await screen.findByTestId('sharing-status')).toHaveTextContent(/Cần xác nhận lại/)
+  expect(screen.queryByText(/Đã thu hồi/)).not.toBeInTheDocument()
+})
+
+test('an unavailable state is an error, never a statement about the patient', async () => {
+  mockedGet.mockRejectedValue(new ApiError(502, 'gateway'))
+
+  renderCard()
+
+  expect(await screen.findByRole('alert')).toHaveTextContent(/Không tải được/)
+  expect(screen.queryByTestId('sharing-status')).not.toBeInTheDocument()
+  expect(screen.queryByText(/Chưa chia sẻ|Đã thu hồi|Đang chia sẻ/)).not.toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Thử lại' })).toBeInTheDocument()
+})
+
+test('the first-grant action is reachable and labelled for assistive tech', async () => {
+  mockedGet.mockResolvedValue(neverGranted())
+
+  renderCard()
+
+  const button = await screen.findByRole('button', { name: 'Chia sẻ dữ liệu' })
+  expect(button).toBeEnabled()
+  // The status line is a live region, so the state change is announced.
+  expect(screen.getByTestId('sharing-status')).toHaveAttribute('aria-live', 'polite')
 })

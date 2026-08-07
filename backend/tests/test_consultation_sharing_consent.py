@@ -461,9 +461,11 @@ def test_patient_can_read_their_own_consent(client, db):
     )
     assert resp.status_code == 200
     body = resp.json()
-    assert body["is_active"] is True
-    assert body["purpose"] == policy.PURPOSE_DOCTOR_CONSULTATION
-    assert sorted(body["categories"]) == sorted(CONSENT_ALL_CATEGORIES)
+    assert body["state"] == "ACTIVE"
+    assert body["can_share"] is True
+    assert body["consent"]["is_active"] is True
+    assert body["consent"]["purpose"] == policy.PURPOSE_DOCTOR_CONSULTATION
+    assert sorted(body["consent"]["categories"]) == sorted(CONSENT_ALL_CATEGORIES)
 
 
 # ---------------------------------------------------------------------------
@@ -851,7 +853,8 @@ url,
 json=restore_payload(),
 headers=patient_headers)
     assert resp.status_code == 200
-    assert resp.json()["is_active"] is True
+    assert resp.json()["state"] == "ACTIVE"
+    assert resp.json()["consent"]["is_active"] is True
     # Access is genuinely restored: the care-relationship grant reopened too.
     assert _summary(client, doctor, consultation.id).status_code == 200
 
@@ -868,14 +871,20 @@ def test_re_sharing_can_narrow_the_categories(client, db):
         headers=patient_headers,
     )
     assert resp.status_code == 200
-    assert resp.json()["categories"] == [policy.CATEGORY_MEDICATIONS]
+    assert resp.json()["consent"]["categories"] == [policy.CATEGORY_MEDICATIONS]
 
     body = _summary(client, doctor, consultation.id).json()
     assert body["shared_categories"] == [policy.CATEGORY_MEDICATIONS]
 
 
 def test_re_sharing_a_finished_consultation_reopens_no_access(client, db):
-    """The care relationship has ended; recording the decision must not revive it."""
+    """The care relationship has ended, so consenting is refused outright.
+
+    Previously this recorded the decision and reopened nothing — a consent row
+    that granted no access, while the patient's screen said they had shared.
+    Refusing is the honest answer: the UI reads ``can_share=False`` and offers
+    no action, and a client that posts anyway is told why.
+    """
     doctor, user, _profile, consultation = _booked(db)
     url = f"{API}/consultations/{consultation.id}/data-sharing-consent"
     patient_headers = headers(user.id, "patient")
@@ -883,10 +892,13 @@ def test_re_sharing_a_finished_consultation_reopens_no_access(client, db):
     client.delete(url, headers=patient_headers)
     consult_svc.complete(db, consultation.id, doctor_user_id=doctor.user_id)
 
-    assert client.post(
-url,
-json=restore_payload(),
-headers=patient_headers).status_code == 200
+    state = client.get(url, headers=patient_headers).json()
+    assert state["state"] == "REVOKED"
+    assert state["can_share"] is False
+
+    assert (
+        client.post(url, json=restore_payload(), headers=patient_headers).status_code == 409
+    )
     assert _summary(client, doctor, consultation.id).status_code == 403
 
 
@@ -922,7 +934,7 @@ def test_re_sharing_cannot_widen_beyond_the_known_categories(client, db):
         headers=patient_headers,
     )
     assert resp.status_code == 200
-    assert resp.json()["categories"] == [policy.CATEGORY_MEDICATIONS]
+    assert resp.json()["consent"]["categories"] == [policy.CATEGORY_MEDICATIONS]
 
 
 def test_re_sharing_nothing_recognised_is_rejected(client, db):

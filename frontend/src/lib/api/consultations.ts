@@ -23,6 +23,12 @@ export interface ConsultationOut {
   cancel_reason?: string | null
   created_at?: string | null
   disclaimer?: string | null
+  /**
+   * Doctor-facing views only. The doctor has no consent endpoint of their own —
+   * by design — so the state travels on the consultation they already read.
+   * Absent on patient/admin views, which use `getDataSharingState`.
+   */
+  sharing_state?: SharingState | null
 }
 
 export interface PatientPaymentOut {
@@ -113,6 +119,31 @@ export interface DataSharingConsent {
   revoked_at?: string | null
   is_active: boolean
   source?: string | null
+}
+
+/**
+ * Why a consultation's health data is, or is not, readable by its doctor.
+ *
+ * Mirrors backend `app/domain/consultation_sharing_state.py`. A 403 alone
+ * cannot carry this: "the patient withdrew" and "there was never a grant" are
+ * different facts about a person's decision, and reporting the wrong one tells
+ * a doctor the patient did something they never did.
+ *
+ * Note what is NOT a member: unavailable/error. That is a transport outcome the
+ * client owns, and folding it in here would let a network blip render as a
+ * statement about what the patient decided.
+ */
+export type SharingState = 'ACTIVE' | 'REVOKED' | 'NEVER_GRANTED' | 'NEEDS_RECONSENT'
+
+/** The patient's sharing state for one consultation, stated explicitly. */
+export interface DataSharingState {
+  consultation_id: string
+  state: SharingState
+  consultation_status: ConsultationStatus
+  /** Whether the lifecycle still permits granting. False once ended — never offer a share action. */
+  can_share: boolean
+  /** The recorded grant, or `null` for a consultation that never had one. */
+  consent: DataSharingConsent | null
 }
 
 export interface ReviewCreate {
@@ -256,9 +287,16 @@ export async function getDataSharingPolicy(): Promise<DataSharingConsentPolicy> 
   return api.get<DataSharingConsentPolicy>('/consultations/data-sharing-policy')
 }
 
-/** PATIENT: read their own recorded sharing consent for a consultation. */
-export async function getDataSharingConsent(id: string): Promise<DataSharingConsent> {
-  return api.get<DataSharingConsent>(`/consultations/${id}/data-sharing-consent`)
+/**
+ * PATIENT: read their own sharing STATE for a consultation.
+ *
+ * Answers with a state rather than 404-on-absence. A consultation booked before
+ * this feature existed is a legitimate `NEVER_GRANTED` state the patient is
+ * entitled to see and act on — not a missing resource. A 404 here now means one
+ * thing only: the consultation is not theirs.
+ */
+export async function getDataSharingState(id: string): Promise<DataSharingState> {
+  return api.get<DataSharingState>(`/consultations/${id}/data-sharing-consent`)
 }
 
 /**
@@ -271,16 +309,22 @@ export async function revokeDataSharingConsent(id: string): Promise<{ message: s
 }
 
 /**
- * PATIENT: re-grant sharing they previously withdrew, so revoking is never a
- * trap on a paid session. Omitting `categories` re-grants exactly what was
- * granted before. Always driven by an explicit patient action — never called
- * automatically.
+ * PATIENT: grant sharing on an existing consultation — the first time, or again
+ * after a revoke, so revoking is never a trap on a paid session.
+ *
+ * On a re-share, omitting `categories` re-grants exactly what was granted
+ * before. On a FIRST grant (a consultation booked before consent was recorded)
+ * `categories` is required — there is no previous set to intersect with, so a
+ * default would have to mean "everything".
+ *
+ * Always driven by an explicit patient action — never called automatically, and
+ * never used to backfill historical consent.
  */
-export async function restoreDataSharingConsent(
+export async function grantDataSharingConsent(
   id: string,
-  payload: DataSharingConsentIn,
-): Promise<DataSharingConsent> {
-  return api.post<DataSharingConsent>(`/consultations/${id}/data-sharing-consent`, payload)
+  payload: DataSharingConsentIn
+): Promise<DataSharingState> {
+  return api.post<DataSharingState>(`/consultations/${id}/data-sharing-consent`, payload)
 }
 
 /** List consultations scoped to the caller (PATIENT own / DOCTOR own / admin). */
