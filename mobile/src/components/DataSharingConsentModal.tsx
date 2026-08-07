@@ -17,6 +17,12 @@ interface Props {
   visible: boolean
   client: ApiClient
   doctorName?: string | null
+  /**
+   * What pressing accept will actually do beyond consenting — on mobile the
+   * same tap creates AND pays for the consultation, so the amount is stated
+   * here. A charging button must say it charges.
+   */
+  noticeText?: string | null
   submitting: boolean
   /** Booking error, shown inside the dialog so the patient can retry in place. */
   errorMsg?: string | null
@@ -43,6 +49,7 @@ export function DataSharingConsentModal({
   visible,
   client,
   doctorName,
+  noticeText,
   submitting,
   errorMsg,
   onAccept,
@@ -66,6 +73,10 @@ export function DataSharingConsentModal({
     // the request starts here, every setState lives inside loadPolicy.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (visible && policy === null && !loading && !policyError) loadPolicy()
+    // Closing clears a previous failure, so reopening retries instead of
+    // showing a stale error with the accept button stuck disabled.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (!visible && policyError) setPolicyError(false)
   }, [visible, policy, loading, policyError, loadPolicy])
 
   function handleAccept() {
@@ -115,7 +126,9 @@ export function DataSharingConsentModal({
 
             {policyError && !policy ? (
               <View testID="consent-policy-error">
-                <Text style={styles.error}>{vi.consultations.consentLoadFailed}</Text>
+                <Text style={styles.error} accessibilityLiveRegion="assertive">
+                  {vi.consultations.consentLoadFailed}
+                </Text>
                 <PrimaryButton
                   label={vi.common.retry}
                   variant="ghost"
@@ -146,8 +159,18 @@ export function DataSharingConsentModal({
             ) : null}
           </ScrollView>
 
+          {noticeText ? (
+            <Text style={styles.notice} testID="consent-notice">
+              {noticeText}
+            </Text>
+          ) : null}
+
           {errorMsg ? (
-            <Text style={styles.error} testID="consent-error">
+            <Text
+              style={styles.error}
+              accessibilityLiveRegion="assertive"
+              testID="consent-error"
+            >
               {errorMsg}
             </Text>
           ) : null}
@@ -160,18 +183,17 @@ export function DataSharingConsentModal({
             style={styles.accept}
             testID="consent-accept"
           />
-          <Pressable
+          {/* Ghost variant, not a bare Pressable: same geometry and hit area as
+              accept, so declining is exactly as easy as agreeing. A quieter
+              decline would be a nudge toward consent. */}
+          <PrimaryButton
+            label={policy?.decline_label ?? vi.consultations.consentDeclineFallback}
+            variant="ghost"
             onPress={onDecline}
             disabled={submitting}
-            accessibilityRole="button"
-            accessibilityState={{ disabled: submitting }}
             style={styles.decline}
             testID="consent-decline"
-          >
-            <Text style={styles.declineText}>
-              {policy?.decline_label ?? vi.consultations.consentDeclineFallback}
-            </Text>
-          </Pressable>
+          />
         </View>
       </View>
     </Modal>
@@ -190,10 +212,19 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
     padding: spacing.xl,
     maxHeight: '85%',
+    // Without this the sheet's children can paint outside its rounded bounds
+    // once the content is tall.
+    overflow: 'hidden',
   },
   title: { ...typography.title, color: colors.ink },
   doctor: { ...typography.body, color: colors.mint, marginTop: spacing.xs, fontWeight: '600' },
-  scroll: { marginTop: spacing.lg },
+  // flexShrink defaults to 0 in React Native, so without this the ScrollView
+  // measures to its full content height, refuses to shrink inside the sheet's
+  // maxHeight, and pushes the accept/decline buttons off the bottom of the
+  // screen — with no backdrop tap and no hardware back on iOS, that leaves the
+  // patient unable to consent, decline, or escape. It also never scrolls, so
+  // there is no way to recover.
+  scroll: { marginTop: spacing.lg, flexShrink: 1 },
   scrollContent: { paddingBottom: spacing.sm },
   body: { ...typography.body, color: colors.inkMuted, marginBottom: spacing.md },
   categories: {
@@ -212,9 +243,9 @@ const styles = StyleSheet.create({
     marginRight: spacing.sm,
   },
   categoryText: { ...typography.body, color: colors.ink, flex: 1 },
+  notice: { ...typography.body, color: colors.ink, marginTop: spacing.lg, fontWeight: '600' },
   error: { ...typography.body, color: colors.danger, marginTop: spacing.md },
   retry: { marginTop: spacing.md },
   accept: { marginTop: spacing.lg },
-  decline: { marginTop: spacing.md, paddingVertical: spacing.md, alignItems: 'center' },
-  declineText: { ...typography.body, color: colors.ink, fontWeight: '600' },
+  decline: { marginTop: spacing.md },
 })

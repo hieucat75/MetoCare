@@ -21,10 +21,19 @@ CONSENT_ALL_CATEGORIES: list[str] = list(_POLICY_CATEGORIES)
 
 
 def consent_payload(categories: list[str] | None = None, **overrides) -> dict:
-    """A valid ``data_sharing_consent`` request body for POST /consultations."""
+    """A valid ``data_sharing_consent`` request body for POST /consultations.
+
+    Both version stamps are required by the schema and must match the server's
+    current values, so they default to the real ones here; a test exercising the
+    stale-client path overrides them explicitly.
+    """
+    from app.domain.consultation_consent_policy import CONSENT_VERSION, POLICY_VERSION
+
     body = {
         "accepted": True,
         "categories": categories if categories is not None else CONSENT_ALL_CATEGORIES,
+        "consent_version": CONSENT_VERSION,
+        "policy_version": POLICY_VERSION,
         "source": "web",
     }
     body.update(overrides)

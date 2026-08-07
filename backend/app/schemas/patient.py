@@ -121,11 +121,24 @@ class PatientSummaryOut(BaseModel):
 
     vitals: VitalsSummary = Field(default_factory=VitalsSummary)
     lab_documents: list[Any] = Field(default_factory=list)
+    # Confirmed medical-document metadata (type/status/dates only, never any
+    # extracted candidate values). Governed by the medical_documents category.
+    medical_documents: list[Any] = Field(default_factory=list)
     metabolic_score: MetabolicScoreSummary = Field(default_factory=MetabolicScoreSummary)
     medications: list[Any] = Field(default_factory=list)
     symptoms: list[Any] = Field(default_factory=list)
     nutrition: list[Any] = Field(default_factory=list)
     upcoming_appointments: list[Any] = Field(default_factory=list)
     active_care_plans: list[Any] = Field(default_factory=list)
+
+    # Consultation-consent provenance. Without these, an empty `medications` is
+    # indistinguishable from "this patient takes no medications" — a confident
+    # false negative a doctor could prescribe against. An empty section whose
+    # category appears in `withheld_categories` means the data was NOT SHARED
+    # and may well exist; one in `shared_categories` really is empty. Both lists
+    # are empty for callers not governed by consultation consent (doctor portal,
+    # admin), which see the unfiltered record.
+    shared_categories: list[str] = Field(default_factory=list)
+    withheld_categories: list[str] = Field(default_factory=list)
 
     model_config = ConfigDict(from_attributes=False)

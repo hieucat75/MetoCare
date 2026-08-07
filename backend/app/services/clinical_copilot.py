@@ -44,6 +44,7 @@ import datetime as dt
 import json
 import logging
 from collections.abc import Iterable
+from dataclasses import dataclass
 from typing import Literal
 
 from sqlalchemy import select, text
@@ -53,6 +54,7 @@ from starlette.concurrency import run_in_threadpool
 from app.ai.exceptions import ProviderUnavailableError
 from app.ai.providers.base import ChatMessage
 from app.ai.registry import get_registry
+from app.domain import consultation_consent_policy as consent_policy
 from app.domain import insight_content as ic
 from app.domain.guardrails import check_output
 from app.domain.lab_interpreter import _ALIAS_INDEX
@@ -79,6 +81,7 @@ from app.schemas.clinical_copilot import (
 )
 from app.services import audit
 from app.services.clinical_insight import (
+    HealthSummary,
     MetricInsight,
     build_health_summary,
     canonical_metric_key,
@@ -134,6 +137,54 @@ _MISSING_DATA_LABELS_VI: dict[MissingDataCategory, str] = {
     "labs": "Chưa có kết quả xét nghiệm nào được ghi nhận.",
     "consultation_context": "Chưa có bối cảnh buổi tư vấn (lý do khám).",
 }
+
+# Said instead of the labels above when the category was WITHHELD by the patient
+# rather than simply unrecorded. "Chưa có thông tin thuốc" about a patient who
+# declined to share their medication list is a false negative a doctor could
+# prescribe against; this wording says the data may exist and was not shared.
+_WITHHELD_DATA_LABELS_VI: dict[MissingDataCategory, str] = {
+    "demographics": (
+        "Bệnh nhân chưa chia sẻ thông tin hồ sơ cá nhân cho buổi tư vấn này."
+    ),
+    "allergies": (
+        "Bệnh nhân chưa chia sẻ hồ sơ sức khỏe — KHÔNG đồng nghĩa với không có dị ứng."
+    ),
+    "medications": (
+        "Bệnh nhân chưa chia sẻ danh sách thuốc — KHÔNG đồng nghĩa với không dùng thuốc."
+    ),
+    "medical_history": (
+        "Bệnh nhân chưa chia sẻ hồ sơ sức khỏe — KHÔNG đồng nghĩa với không có bệnh nền."
+    ),
+    "vitals_metrics": (
+        "Bệnh nhân chưa chia sẻ chỉ số sức khỏe — KHÔNG đồng nghĩa với không có dữ liệu."
+    ),
+    "labs": (
+        "Bệnh nhân chưa chia sẻ kết quả xét nghiệm — KHÔNG đồng nghĩa với chưa xét nghiệm."
+    ),
+}
+
+# Which missing-data categories each consent category is responsible for.
+_CONSENT_CATEGORY_TO_MISSING: dict[str, tuple[MissingDataCategory, ...]] = {
+    consent_policy.CATEGORY_PATIENT_PROFILE: ("demographics",),
+    consent_policy.CATEGORY_HEALTH_RECORDS: (
+        "allergies",
+        "medical_history",
+        "vitals_metrics",
+    ),
+    consent_policy.CATEGORY_MEDICATIONS: ("medications",),
+    consent_policy.CATEGORY_LAB_RESULTS: ("labs",),
+}
+
+
+def _withheld_labels(withheld: frozenset[str]) -> dict[MissingDataCategory, str]:
+    """Map withheld consent categories to their "not shared" wording."""
+    labels: dict[MissingDataCategory, str] = {}
+    for consent_category in withheld:
+        for missing_category in _CONSENT_CATEGORY_TO_MISSING.get(consent_category, ()):
+            label = _WITHHELD_DATA_LABELS_VI.get(missing_category)
+            if label is not None:
+                labels[missing_category] = label
+    return labels
 
 
 class CopilotUnavailable(Exception):
@@ -209,6 +260,67 @@ def _conditions_and_allergies(profile: PatientProfile | None) -> tuple[list[str]
     return _parse_list(profile.known_conditions), _parse_list(profile.allergies)
 
 
+@dataclass(frozen=True)
+class CopilotDataGate:
+    """Which consent categories this request may read.
+
+    ``allowed=None`` means "not governed by consultation consent" — the
+    patient-page / clinic-scoped copilot path, which has its own authorisation
+    and is unchanged by this feature. A consultation-scoped call always carries
+    a real set, so the copilot can never see more than the patient granted for
+    that consultation.
+    """
+
+    allowed: frozenset[str] | None = None
+
+    def permits(self, category: str) -> bool:
+        return self.allowed is None or category in self.allowed
+
+    def withheld(self) -> frozenset[str]:
+        """Categories this request is NOT allowed to read."""
+        if self.allowed is None:
+            return frozenset()
+        return frozenset(consent_policy.CATEGORIES) - self.allowed
+
+
+UNGATED = CopilotDataGate()
+
+
+def _empty_health_summary() -> HealthSummary:
+    """The summary for a request that may not read health records at all.
+
+    Every field defaults to empty/low, so a withheld category yields "nothing to
+    report" rather than a partially-populated summary a doctor might read as a
+    complete one. The accompanying ``missing_data`` entry says the category was
+    withheld, not that the patient has no records.
+    """
+    return HealthSummary(abnormal_count=0)
+
+
+def _gated_profile(db: Session, patient_id: str, gate: CopilotDataGate) -> PatientProfile | None:
+    """Demographics ride patient_profile; without it the copilot has no subject
+    details and ``_assess_completeness`` correctly drops confidence."""
+    if not gate.permits(consent_policy.CATEGORY_PATIENT_PROFILE):
+        return None
+    return _load_profile(db, patient_id)
+
+
+def _gated_conditions_and_allergies(
+    db: Session, patient_id: str, profile: PatientProfile | None, gate: CopilotDataGate
+) -> tuple[list[str], list[str]]:
+    """Conditions and allergies are clinical record content, not demographics —
+    they ride health_records, independently of whether demographics were shared.
+
+    The profile is re-loaded here when demographics were withheld but health
+    records were granted, so one ungranted category never silently suppresses
+    another.
+    """
+    if not gate.permits(consent_policy.CATEGORY_HEALTH_RECORDS):
+        return [], []
+    source = profile if profile is not None else _load_profile(db, patient_id)
+    return _conditions_and_allergies(source)
+
+
 def _medication_records(db: Session, patient_id: str) -> list[dict]:
     """(id, name, dose, frequency, created_at) — the single query backing both
     the display-facing ``MedicationBrief`` list and the source-map citations."""
@@ -252,14 +364,28 @@ def _medication_briefs(records: list[dict]) -> list[MedicationBrief]:
 
 
 def _lab_rows(db: Session, patient_id: str) -> list[LabResult]:
-    """All non-deleted lab results for the patient, newest first. Backs the
-    ``labs`` completeness signal, the staleness check, the (existing)
-    data_quality_flag contradiction signal, and the lab SourceRef citations."""
+    """Confirmed, non-deleted lab results for the patient, newest first. Backs
+    the ``labs`` completeness signal, the staleness check, the (existing)
+    data_quality_flag contradiction signal, and the lab SourceRef citations.
+
+    Only rows a human confirmed (``verified_by_user`` or ``verified_by_doctor``)
+    are included — an unverified OCR row is the machine's reading of a
+    photograph, and citing one as the "as of" provenance behind a clinical
+    finding tells a doctor the record says something no one has checked. This
+    matches every other clinical read path (health_timeline, narrative,
+    patient_insight, lab_intelligence), which this query had silently diverged
+    from.
+    """
     return list(
         db.execute(
             select(LabResult)
             .join(LabUploadBatch, LabUploadBatch.id == LabResult.batch_id, isouter=True)
-            .where(LabResult.patient_id == patient_id, LabResult.deleted_at.is_(None))
+            .where(
+                LabResult.patient_id == patient_id,
+                LabResult.deleted_at.is_(None),
+                (LabResult.verified_by_user.is_(True))
+                | (LabResult.verified_by_doctor.is_(True)),
+            )
             .order_by(LabResult.test_date.desc().nullslast())
         )
         .scalars()
@@ -397,6 +523,7 @@ def _assess_completeness(
     has_metric_data: bool,
     has_stale: bool,
     has_contradiction: bool,
+    withheld_categories: frozenset[str] | None = None,
 ) -> tuple[list[MissingDataItem], ConfidenceLevel, str | None]:
     """Pure, deterministic completeness/confidence assessment. NEVER touched by
     the LLM — every input is a plain fact already fetched/computed by the
@@ -446,8 +573,16 @@ def _assess_completeness(
         "consultation_context": has_chief_complaint,
     }
 
+    # A category the patient withheld is NOT a category with no data. Saying
+    # "chưa có thông tin thuốc" about a patient who simply did not share their
+    # medication list invites a doctor to prescribe as if the list were empty,
+    # which is the exact failure this consent feature must not introduce.
+    withheld_labels = _withheld_labels(withheld_categories or frozenset())
     missing_data = [
-        MissingDataItem(category=cat, label_vi=_MISSING_DATA_LABELS_VI[cat])
+        MissingDataItem(
+            category=cat,
+            label_vi=withheld_labels.get(cat) or _MISSING_DATA_LABELS_VI[cat],
+        )
         for cat in applicable
         if not presence[cat]
     ]
@@ -841,15 +976,31 @@ def get_summary(
     patient_id: str,
     consultation_id: str | None = None,
     chief_complaint: str | None = None,
+    gate: CopilotDataGate = UNGATED,
 ) -> ClinicalSummaryOut:
-    profile = _load_profile(db, patient_id)
-    conditions, allergies = _conditions_and_allergies(profile)
-    medication_records = _medication_records(db, patient_id)
+    may_health = gate.permits(consent_policy.CATEGORY_HEALTH_RECORDS)
+    profile = _gated_profile(db, patient_id, gate)
+    conditions, allergies = _gated_conditions_and_allergies(db, patient_id, profile, gate)
+    medication_records = (
+        _medication_records(db, patient_id)
+        if gate.permits(consent_policy.CATEGORY_MEDICATIONS)
+        else []
+    )
     medications = _medication_briefs(medication_records)
-    findings = list_insights(db, patient_id=patient_id, abnormal_only=True)
-    summary = build_health_summary(db, patient_id=patient_id)
-    lab_rows = _lab_rows(db, patient_id)
-    metric_rows = _metric_rows(db, patient_id)
+    findings = (
+        list_insights(db, patient_id=patient_id, abnormal_only=True) if may_health else []
+    )
+    summary = (
+        build_health_summary(db, patient_id=patient_id)
+        if may_health
+        else _empty_health_summary()
+    )
+    lab_rows = (
+        _lab_rows(db, patient_id)
+        if gate.permits(consent_policy.CATEGORY_LAB_RESULTS)
+        else []
+    )
+    metric_rows = _metric_rows(db, patient_id) if may_health else []
 
     abnormal_findings = [
         AbnormalFindingBrief(
@@ -897,6 +1048,7 @@ def get_summary(
         has_metric_data=has_metric,
         has_stale=has_stale,
         has_contradiction=has_contradiction,
+        withheld_categories=gate.withheld(),
     )
 
     _record(
@@ -935,6 +1087,7 @@ async def get_analysis(
     patient_id: str,
     consultation_id: str | None = None,
     chief_complaint: str | None = None,
+    gate: CopilotDataGate = UNGATED,
 ) -> ClinicalAnalysisOut:
     def _fetch_context() -> tuple[
         RiskFlag, dict[str, SourceRef], list[MissingDataItem], ConfidenceLevel, str | None, str
@@ -944,15 +1097,33 @@ async def get_analysis(
         findings, consultation lookup, lab/metric rows, completeness signals,
         source-map + prompt-context assembly) — none of this may run on the
         event loop."""
-        findings = list_insights(db, patient_id=patient_id, abnormal_only=True)
+        findings = (
+            list_insights(db, patient_id=patient_id, abnormal_only=True)
+            if gate.permits(consent_policy.CATEGORY_HEALTH_RECORDS)
+            else []
+        )
         priority = _compute_priority(findings)  # level/findings ALWAYS as-is.
 
-        profile = _load_profile(db, patient_id)
-        conditions, allergies = _conditions_and_allergies(profile)
-        medication_records = _medication_records(db, patient_id)
+        profile = _gated_profile(db, patient_id, gate)
+        conditions, allergies = _gated_conditions_and_allergies(
+            db, patient_id, profile, gate
+        )
+        medication_records = (
+            _medication_records(db, patient_id)
+            if gate.permits(consent_policy.CATEGORY_MEDICATIONS)
+            else []
+        )
         medications = _medication_briefs(medication_records)
-        lab_rows = _lab_rows(db, patient_id)
-        metric_rows = _metric_rows(db, patient_id)
+        lab_rows = (
+            _lab_rows(db, patient_id)
+            if gate.permits(consent_policy.CATEGORY_LAB_RESULTS)
+            else []
+        )
+        metric_rows = (
+            _metric_rows(db, patient_id)
+            if gate.permits(consent_policy.CATEGORY_HEALTH_RECORDS)
+            else []
+        )
         consultation = db.get(Consultation, consultation_id) if consultation_id else None
         if consultation is not None and consultation.patient_id != patient_id:
             # Defense-in-depth only: the route's `_authorize` gate is the sole
@@ -1006,6 +1177,7 @@ async def get_analysis(
             has_metric_data=has_metric,
             has_stale=has_stale,
             has_contradiction=has_contradiction,
+            withheld_categories=gate.withheld(),
         )
         resolved_priority = priority.model_copy(
             update={"missing_data": missing_data, "sources": priority_sources}
@@ -1121,17 +1293,36 @@ async def get_questions(
     patient_id: str,
     consultation_id: str | None = None,
     chief_complaint: str | None = None,
+    gate: CopilotDataGate = UNGATED,
 ) -> ClinicalQuestionsOut:
     def _fetch_context() -> tuple[list[MissingDataItem], ConfidenceLevel, str | None, str]:
         """ALL blocking DB reads for this request, gathered synchronously in one
         threadpool hop."""
-        findings = list_insights(db, patient_id=patient_id, abnormal_only=True)
-        profile = _load_profile(db, patient_id)
-        conditions, allergies = _conditions_and_allergies(profile)
-        medication_records = _medication_records(db, patient_id)
+        findings = (
+            list_insights(db, patient_id=patient_id, abnormal_only=True)
+            if gate.permits(consent_policy.CATEGORY_HEALTH_RECORDS)
+            else []
+        )
+        profile = _gated_profile(db, patient_id, gate)
+        conditions, allergies = _gated_conditions_and_allergies(
+            db, patient_id, profile, gate
+        )
+        medication_records = (
+            _medication_records(db, patient_id)
+            if gate.permits(consent_policy.CATEGORY_MEDICATIONS)
+            else []
+        )
         medications = _medication_briefs(medication_records)
-        lab_rows = _lab_rows(db, patient_id)
-        metric_rows = _metric_rows(db, patient_id)
+        lab_rows = (
+            _lab_rows(db, patient_id)
+            if gate.permits(consent_policy.CATEGORY_LAB_RESULTS)
+            else []
+        )
+        metric_rows = (
+            _metric_rows(db, patient_id)
+            if gate.permits(consent_policy.CATEGORY_HEALTH_RECORDS)
+            else []
+        )
 
         has_lab, has_metric, has_stale, has_contradiction = _completeness_signals(
             db, patient_id=patient_id, lab_rows=lab_rows, metric_rows=metric_rows
@@ -1147,6 +1338,7 @@ async def get_questions(
             has_metric_data=has_metric,
             has_stale=has_stale,
             has_contradiction=has_contradiction,
+            withheld_categories=gate.withheld(),
         )
 
         context_text = _findings_context_text(
@@ -1261,17 +1453,36 @@ async def get_advice(
     patient_id: str,
     consultation_id: str | None = None,
     chief_complaint: str | None = None,
+    gate: CopilotDataGate = UNGATED,
 ) -> ClinicalAdviceOut:
     def _fetch_context() -> tuple[list[MissingDataItem], ConfidenceLevel, str | None, str]:
         """ALL blocking DB reads for this request, gathered synchronously in one
         threadpool hop."""
-        findings = list_insights(db, patient_id=patient_id, abnormal_only=True)
-        profile = _load_profile(db, patient_id)
-        conditions, allergies = _conditions_and_allergies(profile)
-        medication_records = _medication_records(db, patient_id)
+        findings = (
+            list_insights(db, patient_id=patient_id, abnormal_only=True)
+            if gate.permits(consent_policy.CATEGORY_HEALTH_RECORDS)
+            else []
+        )
+        profile = _gated_profile(db, patient_id, gate)
+        conditions, allergies = _gated_conditions_and_allergies(
+            db, patient_id, profile, gate
+        )
+        medication_records = (
+            _medication_records(db, patient_id)
+            if gate.permits(consent_policy.CATEGORY_MEDICATIONS)
+            else []
+        )
         medications = _medication_briefs(medication_records)
-        lab_rows = _lab_rows(db, patient_id)
-        metric_rows = _metric_rows(db, patient_id)
+        lab_rows = (
+            _lab_rows(db, patient_id)
+            if gate.permits(consent_policy.CATEGORY_LAB_RESULTS)
+            else []
+        )
+        metric_rows = (
+            _metric_rows(db, patient_id)
+            if gate.permits(consent_policy.CATEGORY_HEALTH_RECORDS)
+            else []
+        )
 
         has_lab, has_metric, has_stale, has_contradiction = _completeness_signals(
             db, patient_id=patient_id, lab_rows=lab_rows, metric_rows=metric_rows
@@ -1287,6 +1498,7 @@ async def get_advice(
             has_metric_data=has_metric,
             has_stale=has_stale,
             has_contradiction=has_contradiction,
+            withheld_categories=gate.withheld(),
         )
 
         context_text = _findings_context_text(

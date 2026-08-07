@@ -76,6 +76,9 @@ def grant(
             detail="At least one recognised data category must be granted.",
         )
 
+    # The route requires the client to report both version stamps and rejects
+    # any mismatch, so what is stored below is provably the version the patient
+    # actually saw — not an assumption the server made on their behalf.
     now = at or utcnow()
     record = ConsultationDataConsent(
         consultation_id=consultation.id,
@@ -184,6 +187,64 @@ def require_active(
 # ---------------------------------------------------------------------------
 # Revoke
 # ---------------------------------------------------------------------------
+
+
+def restore(
+    db: Session,
+    *,
+    record: ConsultationDataConsent,
+    actor_id: str,
+    categories: list[str] | tuple[str, ...] | None = None,
+    at: dt.datetime | None = None,
+) -> ConsultationDataConsent:
+    """Re-grant sharing the patient previously withdrew, on the same consultation.
+
+    Revocation must not be a trap. A patient who mis-taps it on a paid,
+    in-progress consultation would otherwise have bought a session the doctor
+    can no longer be informed for, with no way back — the consultation is
+    deliberately not cancelled, so "book again" is not a remedy.
+
+    This is a NEW consent decision, not an undo: the version stamps are refreshed
+    to what the patient is agreeing to now, and it is audited as its own grant
+    event. The prior revocation stays in the audit trail.
+    """
+    granted = policy.normalize_categories(
+        categories if categories is not None else list(record.granted_categories())
+    )
+    if not granted:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="At least one recognised data category must be granted.",
+        )
+
+    now = at or utcnow()
+    record.revoked_at = None
+    record.granted_at = now
+    record.categories = list(granted)
+    record.consent_version = policy.CONSENT_VERSION
+    record.policy_version = policy.POLICY_VERSION
+    db.add(record)
+
+    audit.record(
+        db,
+        actor_type="patient",
+        actor_id=record.patient_id,
+        action="consultation_consent_granted",
+        resource_type="consultation_data_consent",
+        resource_id=record.id,
+        severity="info",
+        details={
+            "consultation_id": record.consultation_id,
+            "doctor_id": record.doctor_id,
+            "purpose": record.purpose,
+            "consent_version": policy.CONSENT_VERSION,
+            "policy_version": policy.POLICY_VERSION,
+            "categories": list(granted),
+            "restored": True,
+        },
+    )
+    db.flush()
+    return record
 
 
 def revoke(

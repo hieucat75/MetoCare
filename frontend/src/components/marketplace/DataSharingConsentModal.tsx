@@ -56,6 +56,9 @@ export function DataSharingConsentModal({
 
   React.useEffect(() => {
     if (open && policy === null && !loadingPolicy && policyError === null) loadPolicy()
+    // Closing clears a previous failure, so reopening retries instead of showing
+    // a stale error with the accept button stuck disabled.
+    if (!open && policyError !== null) setPolicyError(null)
   }, [open, policy, loadingPolicy, policyError, loadPolicy])
 
   const handleAccept = () => {
@@ -85,7 +88,11 @@ export function DataSharingConsentModal({
           // This Radix version does not emit aria-modal itself; without it a
           // screen reader is never told the rest of the page is inert.
           aria-modal="true"
-          className="patient-app fixed left-1/2 top-1/2 z-50 w-[calc(100vw-32px)] max-w-[430px] -translate-x-1/2 -translate-y-1/2 rounded-[24px] border border-white/85 bg-[rgba(248,251,249,0.96)] p-5 shadow-[0_20px_60px_-20px_rgba(16,48,44,0.55)]"
+          // The dialog itself is capped and column-flexed, not just its body:
+          // title + doctor + error banner + two 56px buttons live outside the
+          // body cap, so on a landscape phone or at 200% text zoom they would
+          // otherwise sit below the viewport with nothing to scroll.
+          className="patient-app fixed left-1/2 top-1/2 z-50 flex max-h-[calc(100dvh-32px)] w-[calc(100vw-32px)] max-w-[430px] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-[24px] border border-white/85 bg-[rgba(248,251,249,0.96)] p-5 shadow-[0_20px_60px_-20px_rgba(16,48,44,0.55)]"
           onEscapeKeyDown={(e) => {
             if (submitting) e.preventDefault()
           }}
@@ -110,7 +117,7 @@ export function DataSharingConsentModal({
             </div>
           </div>
 
-          <div className="mt-4 max-h-[45vh] overflow-y-auto">
+          <div className="mt-4 min-h-0 flex-1 overflow-y-auto">
             {loadingPolicy && !policy && (
               <p className="text-[15px] text-[#365651]" role="status">
                 Đang tải nội dung…
@@ -169,7 +176,11 @@ export function DataSharingConsentModal({
             </p>
           )}
 
-          <div className="mt-5 flex flex-col-reverse gap-2.5 sm:flex-row">
+          {/* DOM order is decline → accept and the visual order matches, so tab
+              order and reading order agree (WCAG 1.3.2 / 2.4.3). Both buttons
+              share the same size and prominence — a quieter decline would be a
+              nudge toward consenting. */}
+          <div className="mt-5 flex shrink-0 flex-col gap-2.5 sm:flex-row">
             <Dialog.Close asChild>
               <button
                 type="button"

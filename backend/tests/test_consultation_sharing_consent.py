@@ -719,6 +719,288 @@ def test_a_denied_read_is_audited(client, db):
 
 
 # ---------------------------------------------------------------------------
+# Withheld is not the same as absent (clinical-safety review)
+# ---------------------------------------------------------------------------
+
+
+def test_the_summary_says_which_categories_were_withheld(client, db):
+    """An empty section must be attributable, or it reads as a clinical fact.
+
+    "No medications" and "medications not shared" lead a doctor to opposite
+    prescribing decisions, so the response has to distinguish them.
+    """
+    doctor, _user, profile, consultation = _booked(db, categories=[policy.CATEGORY_MEDICATIONS])
+    _seed_all_categories(db, profile.id)
+
+    body = _summary(client, doctor, consultation.id).json()
+    assert body["shared_categories"] == [policy.CATEGORY_MEDICATIONS]
+    assert policy.CATEGORY_HEALTH_RECORDS in body["withheld_categories"]
+    assert policy.CATEGORY_LAB_RESULTS in body["withheld_categories"]
+    # The medications the patient DID share are present, so an empty list here
+    # would be a genuine "none recorded".
+    assert [m["name"] for m in body["medications"]] == ["Metformin"]
+
+
+def test_a_full_grant_withholds_nothing(client, db):
+    doctor, _user, _profile, consultation = _booked(db)
+    body = _summary(client, doctor, consultation.id).json()
+    assert body["withheld_categories"] == []
+    assert sorted(body["shared_categories"]) == sorted(CONSENT_ALL_CATEGORIES)
+
+
+def test_a_partial_grant_never_reports_a_trend(client, db):
+    """A direction computed over a censored subset is a claim the data does not
+    support — the excluded readings could point the other way."""
+    doctor, _user, profile, consultation = _booked(
+        db, categories=[policy.CATEGORY_HEALTH_RECORDS]
+    )
+    for day, value in ((1, 9.0), (2, 8.0), (3, 7.0)):
+        db.add(
+            HealthMetric(
+                patient_id=profile.id,
+                metric_type="glucose_fasting",
+                value=value,
+                unit="mmol/L",
+                measured_at=dt.datetime(2026, 4, day, 8, 0),
+                source="self_report",
+            )
+        )
+    db.commit()
+
+    body = _summary(client, doctor, consultation.id).json()
+    assert len(body["vitals"]["latest"]) == 3
+    assert body["vitals"]["trend"] == "insufficient_data"
+
+
+def test_vitals_carry_their_provenance(client, db):
+    """A lab draw and a home-device reading of the same analyte are not
+    interchangeable, and after filtering the doctor cannot otherwise tell."""
+    doctor, _user, profile, consultation = _booked(db)
+    db.add(
+        HealthMetric(
+            patient_id=profile.id,
+            metric_type="hba1c",
+            value=7.2,
+            unit="%",
+            measured_at=dt.datetime(2026, 4, 5, 8, 0),
+            source="lab_result",
+            source_ref="synthetic-lab-row",
+        )
+    )
+    db.commit()
+    body = _summary(client, doctor, consultation.id).json()
+    assert body["vitals"]["latest"][0]["source"] == "lab_result"
+
+
+# ---------------------------------------------------------------------------
+# Reason-for-visit text after revocation
+# ---------------------------------------------------------------------------
+
+
+def test_revocation_withdraws_the_reason_for_visit_text_from_the_doctor(client, db):
+    """Revocation must close every doctor read, not only the summary.
+
+    Otherwise the doctor simply polls the consultation detail endpoint for the
+    patient's own description of their condition.
+    """
+    doctor = create_doctor(db)
+    user, profile = create_patient(db)
+    consultation = consult_svc.create_consultation(
+        db,
+        patient_id=profile.id,
+        doctor_id=doctor.id,
+        data_consent_accepted=True,
+        consent_categories=CONSENT_ALL_CATEGORIES,
+        chief_complaint="Đau đầu kéo dài hai tuần",
+        patient_note="Đang lo lắng về huyết áp",
+    )
+    consultation_payment.pay_mock(db, consultation, patient_profile_id=profile.id)
+    url = f"{API}/consultations/{consultation.id}"
+    doctor_headers = headers(doctor.user_id, "doctor")
+
+    before = client.get(url, headers=doctor_headers).json()
+    assert before["chief_complaint"] == "Đau đầu kéo dài hai tuần"
+
+    client.delete(f"{url}/data-sharing-consent", headers=headers(user.id, "patient"))
+
+    after = client.get(url, headers=doctor_headers).json()
+    assert after["chief_complaint"] is None
+    assert after["patient_note"] is None
+    # The patient still sees their own text — revocation is not deletion.
+    own = client.get(url, headers=headers(user.id, "patient")).json()
+    assert own["chief_complaint"] == "Đau đầu kéo dài hai tuần"
+
+
+# ---------------------------------------------------------------------------
+# Restoring a withdrawn consent
+# ---------------------------------------------------------------------------
+
+
+def test_a_patient_can_re_share_after_revoking(client, db):
+    """Revocation must not be a trap on a paid session the patient cannot undo."""
+    doctor, user, _profile, consultation = _booked(db)
+    url = f"{API}/consultations/{consultation.id}/data-sharing-consent"
+    patient_headers = headers(user.id, "patient")
+
+    client.delete(url, headers=patient_headers)
+    assert _summary(client, doctor, consultation.id).status_code == 403
+
+    resp = client.post(url, headers=patient_headers)
+    assert resp.status_code == 200
+    assert resp.json()["is_active"] is True
+    # Access is genuinely restored: the care-relationship grant reopened too.
+    assert _summary(client, doctor, consultation.id).status_code == 200
+
+
+def test_re_sharing_can_narrow_the_categories(client, db):
+    doctor, user, _profile, consultation = _booked(db)
+    url = f"{API}/consultations/{consultation.id}/data-sharing-consent"
+    patient_headers = headers(user.id, "patient")
+
+    client.delete(url, headers=patient_headers)
+    resp = client.post(
+        url,
+        json={"categories": [policy.CATEGORY_MEDICATIONS]},
+        headers=patient_headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["categories"] == [policy.CATEGORY_MEDICATIONS]
+
+    body = _summary(client, doctor, consultation.id).json()
+    assert body["shared_categories"] == [policy.CATEGORY_MEDICATIONS]
+
+
+def test_re_sharing_a_finished_consultation_reopens_no_access(client, db):
+    """The care relationship has ended; recording the decision must not revive it."""
+    doctor, user, _profile, consultation = _booked(db)
+    url = f"{API}/consultations/{consultation.id}/data-sharing-consent"
+    patient_headers = headers(user.id, "patient")
+
+    client.delete(url, headers=patient_headers)
+    consult_svc.complete(db, consultation.id, doctor_user_id=doctor.user_id)
+
+    assert client.post(url, headers=patient_headers).status_code == 200
+    assert _summary(client, doctor, consultation.id).status_code == 403
+
+
+def test_another_patient_cannot_restore_a_consent(client, db):
+    _doctor, user, _profile, consultation = _booked(db)
+    client.delete(
+        f"{API}/consultations/{consultation.id}/data-sharing-consent",
+        headers=headers(user.id, "patient"),
+    )
+    intruder, _p = create_patient(db)
+    resp = client.post(
+        f"{API}/consultations/{consultation.id}/data-sharing-consent",
+        headers=headers(intruder.id, "patient"),
+    )
+    assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Version stamps
+# ---------------------------------------------------------------------------
+
+
+def test_a_client_omitting_the_version_stamps_cannot_book(client, db):
+    """The stale client this check exists for is exactly the one that predates
+    the field — optional would have defeated the check entirely."""
+    doctor = create_doctor(db)
+    user, _profile = create_patient(db)
+    resp = client.post(
+        f"{API}/consultations",
+        json={
+            "doctor_id": doctor.id,
+            "data_consent_accepted": True,
+            "data_sharing_consent": {
+                "accepted": True,
+                "categories": CONSENT_ALL_CATEGORIES,
+                "source": "web",
+            },
+        },
+        headers=headers(user.id, "patient"),
+    )
+    assert resp.status_code == 422
+
+
+def test_a_stale_policy_copy_version_is_rejected(client, db):
+    doctor = create_doctor(db)
+    user, _profile = create_patient(db)
+    resp = client.post(
+        f"{API}/consultations",
+        json={
+            "doctor_id": doctor.id,
+            "data_consent_accepted": True,
+            "data_sharing_consent": consent_payload(policy_version="0.9"),
+        },
+        headers=headers(user.id, "patient"),
+    )
+    assert resp.status_code == 409
+
+
+# ---------------------------------------------------------------------------
+# Medical documents
+# ---------------------------------------------------------------------------
+
+
+def test_only_confirmed_medical_documents_are_shared(client, db):
+    """The category's label promises "đã xác nhận"; a document still in review
+    is the machine's unverified reading."""
+    from app.models.medical_document import (
+        DOC_STATUS_CONFIRMED,
+        DOC_STATUS_NEEDS_REVIEW,
+        MedicalDocument,
+    )
+
+    doctor, _user, profile, consultation = _booked(db)
+    db.add(
+        MedicalDocument(
+            patient_id=profile.id,
+            quarantine_key="synthetic/confirmed",
+            doc_type="prescription",
+            status=DOC_STATUS_CONFIRMED,
+        )
+    )
+    db.add(
+        MedicalDocument(
+            patient_id=profile.id,
+            quarantine_key="synthetic/in-review",
+            doc_type="lab_report",
+            status=DOC_STATUS_NEEDS_REVIEW,
+        )
+    )
+    db.commit()
+
+    body = _summary(client, doctor, consultation.id).json()
+    kinds = {d["doc_type"] for d in body["medical_documents"]}
+    assert kinds == {"prescription"}
+
+
+def test_lab_documents_ride_the_lab_results_grant(client, db):
+    """They ARE labs, and the doctor card they fill is titled "Kết quả xét nghiệm"."""
+    doctor, _user, profile, consultation = _booked(db, categories=[policy.CATEGORY_LAB_RESULTS])
+    _seed_all_categories(db, profile.id)
+    body = _summary(client, doctor, consultation.id).json()
+    assert len(body["lab_documents"]) == 1
+
+
+def test_a_pending_lab_document_is_still_shown(client, db):
+    """Hiding a lab the doctor is waiting on is the more dangerous default."""
+    doctor, _user, profile, consultation = _booked(db)
+    db.add(
+        LabDocument(
+            patient_id=profile.id,
+            storage_key="synthetic/pending.pdf",
+            lab_name="Phòng xét nghiệm Test",
+            ocr_status="pending",
+        )
+    )
+    db.commit()
+    body = _summary(client, doctor, consultation.id).json()
+    assert any(d["ocr_status"] == "pending" for d in body["lab_documents"])
+
+
+# ---------------------------------------------------------------------------
 # Policy endpoint
 # ---------------------------------------------------------------------------
 

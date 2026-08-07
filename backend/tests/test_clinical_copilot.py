@@ -572,6 +572,9 @@ def test_stale_lab_finding_downgrades_confidence_and_has_real_date(client, db, m
         value=8.0,
         unit="%",
         test_date=stale_dt.date(),
+        # The copilot reads confirmed labs only — an unverified OCR row is a
+        # machine's guess, not something to cite to a doctor.
+        verified_by_user=True,
     )
     db.add(lab_row)
     db.commit()
@@ -649,6 +652,7 @@ def test_source_map_dates_match_underlying_fixtures(db):
         value=7.0,
         unit="%",
         test_date=lab_date,
+        verified_by_user=True,
     )
     db.add(lab_row)
     db.add(
@@ -1327,6 +1331,7 @@ def test_contradiction_flag_downgrades_confidence_never_high(client, db, monkeyp
             unit="%",
             test_date=dt.date.today(),
             data_quality_flag="flag",
+            verified_by_user=True,
         )
     )
     db.commit()

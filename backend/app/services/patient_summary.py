@@ -49,6 +49,11 @@ __all__ = ["build_summary"]
 # (``app.services.lab._promote_row``). Only rows carrying it are lab-derived.
 _LAB_SOURCE = "lab_result"
 
+# Explicit "this caller is not governed by consultation consent" marker. Spelled
+# out at the call site so an unfiltered full-record read is always a visible,
+# deliberate choice rather than an omitted argument.
+UNRESTRICTED: frozenset[str] | None = None
+
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -92,7 +97,14 @@ def _fetch_vitals(
         db.execute(stmt.order_by(HealthMetric.measured_at.desc()).limit(5)).scalars()
     )
 
-    trend = _compute_vitals_trend(rows)
+    # A trend computed over a censored subset is not a trend, it is a claim the
+    # data does not support. If the patient shared only one provenance, the
+    # excluded readings could point the other way — a confident "improving" over
+    # five home glucose readings, while the withheld lab HbA1c is worsening, is
+    # exactly the false reassurance this must not manufacture. Report the rows,
+    # refuse the direction.
+    is_partial = not (allow_self_reported and allow_lab)
+    trend = "insufficient_data" if is_partial else _compute_vitals_trend(rows)
     latest = [_vital_row(r) for r in rows]
     return VitalsSummary(latest=latest, trend=trend)
 
@@ -114,6 +126,11 @@ def _vital_row(r: HealthMetric) -> dict:
         "display": format_lab_display(orig_value, orig_unit),
         "measured_at": r.measured_at.isoformat() if r.measured_at else None,
         "status": r.status,
+        # Provenance is clinically load-bearing: a lab-drawn value and a
+        # home-device reading of the same analyte carry different weight, and
+        # after category filtering the doctor cannot otherwise tell which they
+        # are looking at.
+        "source": r.source,
     }
 
 
@@ -161,6 +178,47 @@ def _fetch_lab_documents(db: Session, patient_id: str) -> list[dict]:
             "status": r.status,
             "lab_name": r.lab_name,
             "file_type": r.file_type,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        }
+        for r in rows
+    ]
+
+
+def _fetch_confirmed_medical_documents(db: Session, patient_id: str) -> list[dict]:
+    """Return the 5 most-recent CONFIRMED medical documents (metadata only).
+
+    Only ``confirmed``/``partially_confirmed`` documents appear, because the
+    patient-facing label for this category promises "tài liệu y tế đã được bạn
+    xác nhận". A document still in review is a machine's unverified reading, and
+    the candidate values behind it are never touched here — this returns type,
+    status and dates, nothing extracted.
+    """
+    from app.models.medical_document import (
+        DOC_STATUS_CONFIRMED,
+        DOC_STATUS_PARTIALLY_CONFIRMED,
+        MedicalDocument,
+    )
+
+    rows = list(
+        db.execute(
+            select(MedicalDocument)
+            .where(
+                MedicalDocument.patient_id == patient_id,
+                MedicalDocument.deleted_at.is_(None),
+                MedicalDocument.status.in_(
+                    (DOC_STATUS_CONFIRMED, DOC_STATUS_PARTIALLY_CONFIRMED)
+                ),
+            )
+            .order_by(MedicalDocument.created_at.desc())
+            .limit(5)
+        ).scalars()
+    )
+    return [
+        {
+            "id": r.id,
+            "doc_type": r.doc_type,
+            "status": r.status,
+            "page_count": r.page_count,
             "created_at": r.created_at.isoformat() if r.created_at else None,
         }
         for r in rows
@@ -356,13 +414,16 @@ def build_summary(
         doctor_id:   Optional — when provided, scopes upcoming appointments to
                      this doctor only (used for the doctor-facing portal view).
         allowed_categories:
-                     Consultation-consent categories the patient granted. When
-                     given, an ungranted section is never queried — the data is
-                     not read from the database at all, rather than read and
-                     then dropped. ``None`` means "this caller is not governed
-                     by consultation consent" and preserves the full summary for
-                     the doctor-portal and admin surfaces, which have their own
-                     authorisation rules.
+                     Consultation-consent categories the patient granted. An
+                     ungranted section is never queried — the data is not read
+                     from the database at all, rather than read and then
+                     dropped. Pass ``UNRESTRICTED`` (never ``None`` by accident)
+                     for callers not governed by consultation consent — the
+                     doctor-portal and admin surfaces, which have their own
+                     authorisation rules. The sentinel is explicit precisely
+                     because the permissive value is the dangerous one: a future
+                     caller that forgets this argument should be visible in
+                     review, not silently handed the whole record.
 
     Returns:
         A fully-populated ``PatientSummaryOut`` pydantic model.
@@ -379,8 +440,14 @@ def build_summary(
     # lab data and rides the lab_results grant, while a self-reported or device
     # reading rides health_records. Granting one must not leak the other.
     vitals = _fetch_vitals(db, patient_id, allow_self_reported=may_health, allow_lab=may_labs)
-    lab_documents = (
-        _fetch_lab_documents(db, patient_id)
+    # Lab reports ride lab_results — they ARE labs, and the doctor-facing card
+    # they populate is titled "Kết quả xét nghiệm". Gating them on
+    # medical_documents inverted both the patient's label and the doctor's.
+    # Documents are deliberately NOT filtered by ocr_status: a doctor needs to
+    # know a lab is pending, and hiding it would be the more dangerous default.
+    lab_documents = _fetch_lab_documents(db, patient_id) if may_labs else []
+    medical_documents = (
+        _fetch_confirmed_medical_documents(db, patient_id)
         if granted(policy.CATEGORY_MEDICAL_DOCUMENTS)
         else []
     )
@@ -399,15 +466,29 @@ def build_summary(
     )
     active_care_plans = _fetch_active_care_plans(db, patient_id) if may_health else []
 
+    shared = (
+        sorted(allowed_categories & policy.CATEGORY_SET)
+        if allowed_categories is not None
+        else []
+    )
+    withheld = (
+        sorted(policy.CATEGORY_SET - allowed_categories)
+        if allowed_categories is not None
+        else []
+    )
+
     return PatientSummaryOut(
         patient_id=patient_id,
         generated_at=now,
         vitals=vitals,
         lab_documents=lab_documents,
+        medical_documents=medical_documents,
         metabolic_score=metabolic_score,
         medications=medications,
         symptoms=symptoms,
         nutrition=nutrition,
         upcoming_appointments=upcoming_appointments,
         active_care_plans=active_care_plans,
+        shared_categories=shared,
+        withheld_categories=withheld,
     )

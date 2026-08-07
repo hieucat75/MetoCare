@@ -37,17 +37,27 @@ class DataSharingConsentIn(BaseModel):
             "server-side; at least one recognised key is required."
         ),
     )
-    consent_version: str | None = Field(
-        default=None,
+    consent_version: str = Field(
+        ...,
+        min_length=1,
         max_length=16,
         description=(
-            "Consent version the client rendered. Rejected when it does not "
-            "match the server's current version, so a stale client cannot "
-            "record consent to terms the patient never saw."
+            "Consent version the client rendered. REQUIRED, and rejected when it "
+            "does not match the server's current version. Optional would defeat "
+            "the check entirely: the stale client this exists to catch is "
+            "precisely the one that predates the field and would omit it."
         ),
     )
-    policy_version: str | None = Field(
-        default=None, max_length=16, description="Copy version the client rendered."
+    policy_version: str = Field(
+        ...,
+        min_length=1,
+        max_length=16,
+        description=(
+            "Copy version the client rendered. REQUIRED and stored as reported, "
+            "not overwritten with the server's — the record has to say which "
+            "words were actually on screen, which is the whole point of keeping "
+            "it."
+        ),
     )
     source: str | None = Field(default=None, max_length=32, description="'web' | 'mobile'")
     client_app_version: str | None = Field(default=None, max_length=32)
@@ -70,6 +80,16 @@ class ConsultationCreate(BaseModel):
     chief_complaint: str | None = Field(default=None, max_length=2000)
     patient_note: str | None = Field(default=None, max_length=4000)
     booking_appointment_id: str | None = None
+
+
+class DataSharingConsentRestore(BaseModel):
+    """Re-grant a previously revoked consent, optionally narrowing categories.
+
+    Omitting ``categories`` re-grants exactly what was granted before, so the
+    common case (undoing a mis-tap) needs no body at all.
+    """
+
+    categories: list[str] | None = Field(default=None, max_length=16)
 
 
 class ConsentCategoryOut(BaseModel):

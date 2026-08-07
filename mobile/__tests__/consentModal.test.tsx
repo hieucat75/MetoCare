@@ -193,6 +193,39 @@ it('a booking failure is shown inside the dialog', async () => {
   )
 })
 
+it('states that accepting also charges, since the same tap pays', async () => {
+  await renderModal({ noticeText: 'Nhấn "Đồng ý và tiếp tục" sẽ đặt lịch và thanh toán 200.000 ₫.' })
+  await q.findByText(POLICY.title)
+
+  expect(q.getByTestId('consent-notice')).toHaveTextContent(/thanh toán 200\.000 ₫/)
+})
+
+it('names the doctor the data will be shared with', async () => {
+  await renderModal({ doctorName: 'BS Nguyễn Văn A' })
+
+  expect(await q.findByText('BS Nguyễn Văn A')).toBeTruthy()
+})
+
+it('the error is announced, not just displayed', async () => {
+  await renderModal({ errorMsg: 'Không thể đặt lịch.' })
+  await q.findByText(POLICY.title)
+
+  // Without a live region a TalkBack user gets no feedback at all and re-taps.
+  expect(q.getByTestId('consent-error').props.accessibilityLiveRegion).toBe('assertive')
+})
+
+it('decline carries the same weight as accept, not a bare text link', async () => {
+  await renderModal()
+  await q.findByText(POLICY.title)
+
+  const accept = q.getByTestId('consent-accept')
+  const decline = q.getByTestId('consent-decline')
+  // Both are the same button component, so hit area and prominence match and
+  // declining is exactly as easy as agreeing.
+  expect(decline.props.accessibilityRole).toBe(accept.props.accessibilityRole)
+  expect(decline.props.accessibilityState).toBeDefined()
+})
+
 it('both decisions are exposed as pressable buttons to assistive tech', async () => {
   await renderModal()
   await q.findByText(POLICY.title)

@@ -200,18 +200,44 @@ export interface SummaryCarePlan {
   version?: number | null
 }
 
+export interface SummaryMedicalDocument {
+  id?: string
+  doc_type?: string | null
+  status?: string | null
+  page_count?: number | null
+  created_at?: string | null
+}
+
 export interface PatientSummaryOut {
   patient_id: string
   generated_at: string
   vitals: SummaryVitals
   lab_documents: SummaryLabDocument[]
+  medical_documents?: SummaryMedicalDocument[]
   metabolic_score: SummaryMetabolicScore
   medications: SummaryMedication[]
   symptoms: SummarySymptom[]
   nutrition: SummaryNutrition[]
   upcoming_appointments: SummaryAppointment[]
   active_care_plans: SummaryCarePlan[]
+  /**
+   * Consultation-consent provenance. An empty section whose category is listed
+   * in `withheld_categories` means the patient did NOT SHARE it — the data may
+   * well exist. Rendering that as "no data" would be a clinical false negative.
+   * Both lists are empty for surfaces not governed by consultation consent.
+   */
+  shared_categories?: string[]
+  withheld_categories?: string[]
 }
+
+/** Consent category keys, mirroring backend app/domain/consultation_consent_policy.py. */
+export const CONSENT_CATEGORY = {
+  healthRecords: 'health_records',
+  medications: 'medications_and_adherence',
+  labResults: 'lab_results',
+  medicalDocuments: 'medical_documents',
+  patientProfile: 'patient_profile',
+} as const
 
 // ── Typed functions ───────────────────────────────────────────────────────────
 

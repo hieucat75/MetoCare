@@ -146,9 +146,10 @@ export const vi = {
     consentTitleFallback: 'Chia sẻ thông tin sức khỏe với bác sĩ?',
     consentAcceptFallback: 'Đồng ý và tiếp tục',
     consentDeclineFallback: 'Không chia sẻ',
+    // The accept button both consents AND pays, so it must say so.
+    consentPayNotice: 'Nhấn "Đồng ý và tiếp tục" sẽ đặt lịch và thanh toán {amount}.',
     consentLoading: 'Đang tải nội dung…',
     consentLoadFailed: 'Không tải được nội dung chia sẻ dữ liệu. Vui lòng thử lại.',
-    consentDeclined: 'Bạn chưa đồng ý chia sẻ dữ liệu nên lượt tư vấn chưa được tạo.',
     submitBook: 'Xác nhận & thanh toán',
     detailTitle: 'Chi tiết tư vấn',
     chiefComplaint: 'Lý do tư vấn',

@@ -20,6 +20,7 @@ from app.api.deps import (
 from app.core.clock import utcnow
 from app.core.config import MARKETPLACE_DISCLAIMER
 from app.domain import consultation_consent_policy as consent_policy
+from app.models.consultation import Consultation, ConsultationStatus
 from app.models.patient import PatientProfile
 from app.models.user import UserRole
 from app.schemas.common import Message
@@ -30,6 +31,7 @@ from app.schemas.consultation import (
     ConsultationOut,
     DataSharingConsentOut,
     DataSharingConsentPolicyOut,
+    DataSharingConsentRestore,
     NoteCreate,
     NoteOut,
     PatientPaymentOut,
@@ -57,6 +59,10 @@ _doctor_only = require_roles(UserRole.DOCTOR)
 
 _ADMIN_ROLES = frozenset({UserRole.INTERNAL_ADMIN.value, UserRole.SUPER_ADMIN.value})
 
+# Statuses where a doctor is still expected to be working the consultation, and
+# so where re-granting consent should reopen their access.
+_LIVE_STATUSES = frozenset({ConsultationStatus.PAID, ConsultationStatus.IN_PROGRESS})
+
 
 # ---------------------------------------------------------------------------
 # Identity helpers
@@ -77,6 +83,29 @@ def _resolve_patient_profile(db: Session, user_id: str) -> PatientProfile:
 def _with_disclaimer(consultation) -> ConsultationOut:
     out = ConsultationOut.model_validate(consultation)
     return out.model_copy(update={"disclaimer": MARKETPLACE_DISCLAIMER})
+
+
+def _for_doctor(db: Session, consultation) -> ConsultationOut:
+    """Doctor-facing view, with reason-for-visit text withdrawn once revoked.
+
+    ``chief_complaint`` and ``patient_note`` are patient-authored health text.
+    While sharing is active the patient wrote them into this consultation for
+    this doctor to read, so they are shown. Once the patient REVOKES sharing,
+    they are protected data like any other and must stop being readable —
+    otherwise revocation would close the summary and the copilot while leaving
+    the doctor polling this endpoint for the patient's own description of their
+    condition.
+
+    Consultations with no consent row at all (booked before this feature) keep
+    their previous behaviour here; they are already denied every PHI surface.
+    """
+    out = _with_disclaimer(consultation)
+    record = consultation_consent.get_for_consultation(db, consultation.id)
+    if record is not None and not record.is_active_at(
+        utcnow(), current_consent_version=consent_policy.CONSENT_VERSION
+    ):
+        return out.model_copy(update={"chief_complaint": None, "patient_note": None})
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -128,10 +157,11 @@ def create_consultation(
     consent_in = payload.data_sharing_consent
     # A client that rendered an older version of the consent screen showed the
     # patient different terms from the ones we would record. Reject rather than
-    # silently upgrade the grant to the current version.
+    # silently upgrade the grant to the current version. Both stamps are
+    # required by the schema, so this check cannot be skipped by omission.
     if (
-        consent_in.consent_version is not None
-        and consent_in.consent_version != consent_policy.CONSENT_VERSION
+        consent_in.consent_version != consent_policy.CONSENT_VERSION
+        or consent_in.policy_version != consent_policy.POLICY_VERSION
     ):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -172,6 +202,7 @@ def list_consultations(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Doctor profile not found."
             )
         rows = consult_svc.list_doctor_consultations(db, doctor.id)
+        return [_for_doctor(db, r) for r in rows]
     else:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -196,7 +227,7 @@ def get_consultation(
     if user.role == UserRole.DOCTOR.value:
         doctor = get_doctor_by_user_id(db, user.id)
         if doctor is not None and consultation.doctor_id == doctor.id:
-            return _with_disclaimer(consultation)
+            return _for_doctor(db, consultation)
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN, detail="You do not have access to this consultation."
     )
@@ -386,15 +417,62 @@ def revoke_data_sharing_consent(
     """
     profile = _resolve_patient_profile(db, user.id)
     record = _own_consent_or_404(db, consultation_id, profile.id)
+    # Load the consultation BEFORE mutating anything. A soft-deleted one raises
+    # 404 here, where nothing has been staged; doing it afterwards would roll
+    # back the revocation and answer 404 while leaving the consent active — a
+    # withdrawal that silently did not happen.
+    consultation = db.get(Consultation, consultation_id)
 
     # Idempotent: a second revoke is a no-op success, so a retried request or a
     # double-tap cannot 409 at a patient trying to withdraw consent.
     newly_revoked = consultation_consent.revoke(db, record=record, actor_id=profile.id)
-    if newly_revoked:
-        consultation = consult_svc.get_consultation_or_404(db, consultation_id)
+    if newly_revoked and consultation is not None:
         consultation_access.revoke_on_end(db, consultation)
     db.commit()
     return Message(message="revoked")
+
+
+@router.post("/{consultation_id}/data-sharing-consent", response_model=DataSharingConsentOut)
+def restore_data_sharing_consent(
+    consultation_id: str,
+    payload: DataSharingConsentRestore | None = None,
+    user: CurrentUser = Depends(_patient_only),
+    db: Session = Depends(get_session),
+) -> DataSharingConsentOut:
+    """Re-grant sharing the patient previously withdrew on this consultation.
+
+    Withdrawing must be safe to do, which means it must be reversible. Without
+    this, a mis-tapped revoke on a paid, in-progress consultation leaves the
+    patient having bought a session the doctor can never be informed for — the
+    consultation is deliberately not cancelled, so re-booking is not a remedy.
+
+    The doctor's access grant is re-opened only while the consultation is still
+    live (PAID / IN_PROGRESS). Re-consenting to a finished or cancelled
+    consultation records the decision but reopens nothing, because the care
+    relationship itself has ended.
+    """
+    profile = _resolve_patient_profile(db, user.id)
+    record = _own_consent_or_404(db, consultation_id, profile.id)
+    consultation = consult_svc.get_consultation_or_404(db, consultation_id)
+
+    consultation_consent.restore(
+        db,
+        record=record,
+        actor_id=profile.id,
+        categories=payload.categories if payload else None,
+    )
+    if consultation.status in _LIVE_STATUSES:
+        existing = consultation_access.get_active_grant(
+            db,
+            doctor_id=consultation.doctor_id,
+            consultation_id=consultation.id,
+            patient_id=consultation.patient_id,
+        )
+        if existing is None:
+            consultation_access.create_grant(db, consultation)
+    db.commit()
+    db.refresh(record)
+    return _consent_out(record)
 
 
 # ---------------------------------------------------------------------------

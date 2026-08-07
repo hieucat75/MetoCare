@@ -42,6 +42,7 @@ from app.schemas.clinical_copilot import (
     ClinicalSummaryOut,
 )
 from app.services import clinical_copilot as clinical_copilot_svc
+from app.services.clinical_copilot import UNGATED, CopilotDataGate
 from app.services.consent_guard import ConsentDenied, ConsentGuard
 from app.services.consultation_access import assert_doctor_can_view
 from app.services.doctor import get_doctor_by_user_id
@@ -59,9 +60,16 @@ _MALFORMED_OUTPUT_DETAIL = "Meto không thể xử lý phản hồi AI cho yêu 
 
 def _authorize(
     db: Session, *, patient_id: str, consultation_id: str | None, user: CurrentUser
-) -> str | None:
-    """Run the full gate chain; returns the consultation's chief_complaint (or
-    None) so callers can thread it into the LLM prompt without re-querying."""
+) -> tuple[str | None, CopilotDataGate]:
+    """Run the full gate chain.
+
+    Returns the consultation's chief_complaint (or None) so callers can thread it
+    into the LLM prompt without re-querying, PLUS the consent gate describing
+    which data categories this request may read. The copilot is the richest PHI
+    path in the feature, so it must honour the same consultation-specific
+    consent as the patient summary — an unfiltered copilot would hand a doctor,
+    and a third-party LLM, exactly the categories the patient withheld.
+    """
     if not is_enabled(FeatureFlag.CLINICAL_COPILOT):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -69,6 +77,9 @@ def _authorize(
         )
 
     chief_complaint: str | None = None
+    # Ungated by default: the patient-page / clinic-scoped path below has its own
+    # authorization and is not governed by consultation consent.
+    gate = UNGATED
     if consultation_id:
         doctor = get_doctor_by_user_id(db, user.id)
         if doctor is None:
@@ -77,9 +88,9 @@ def _authorize(
             )
         # Gates on BOTH the care relationship and the patient's
         # consultation-specific sharing consent; raises 403 without either.
-        consultation = assert_doctor_can_view(
-            db, doctor=doctor, consultation_id=consultation_id
-        ).consultation
+        access = assert_doctor_can_view(db, doctor=doctor, consultation_id=consultation_id)
+        consultation = access.consultation
+        gate = CopilotDataGate(allowed=access.allowed_categories)
         if consultation.patient_id != patient_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -106,7 +117,7 @@ def _authorize(
             status_code=status.HTTP_403_FORBIDDEN, detail=_CONSENT_DENIED_DETAIL
         ) from exc
     db.commit()
-    return chief_complaint
+    return chief_complaint, gate
 
 
 @router.post("/patients/{patient_id}/ai-summary", response_model=ClinicalSummaryOut)
@@ -116,7 +127,7 @@ def post_ai_summary(
     user: CurrentUser = Depends(_portal_roles),
     db: Session = Depends(get_session),
 ) -> ClinicalSummaryOut:
-    chief_complaint = _authorize(
+    chief_complaint, gate = _authorize(
         db, patient_id=patient_id, consultation_id=payload.consultation_id, user=user
     )
     return clinical_copilot_svc.get_summary(
@@ -125,6 +136,7 @@ def post_ai_summary(
         patient_id=patient_id,
         consultation_id=payload.consultation_id,
         chief_complaint=chief_complaint,
+        gate=gate,
     )
 
 
@@ -135,7 +147,7 @@ async def post_ai_analysis(
     user: CurrentUser = Depends(_portal_roles),
     db: Session = Depends(get_session),
 ) -> ClinicalAnalysisOut:
-    chief_complaint = await run_in_threadpool(
+    chief_complaint, gate = await run_in_threadpool(
         _authorize, db, patient_id=patient_id, consultation_id=payload.consultation_id, user=user
     )
     try:
@@ -145,6 +157,7 @@ async def post_ai_analysis(
             patient_id=patient_id,
             consultation_id=payload.consultation_id,
             chief_complaint=chief_complaint,
+            gate=gate,
         )
     except clinical_copilot_svc.CopilotUnavailable as exc:
         raise HTTPException(
@@ -165,7 +178,7 @@ async def post_ai_questions(
     user: CurrentUser = Depends(_portal_roles),
     db: Session = Depends(get_session),
 ) -> ClinicalQuestionsOut:
-    chief_complaint = await run_in_threadpool(
+    chief_complaint, gate = await run_in_threadpool(
         _authorize, db, patient_id=patient_id, consultation_id=payload.consultation_id, user=user
     )
     try:
@@ -175,6 +188,7 @@ async def post_ai_questions(
             patient_id=patient_id,
             consultation_id=payload.consultation_id,
             chief_complaint=chief_complaint,
+            gate=gate,
         )
     except clinical_copilot_svc.CopilotUnavailable as exc:
         raise HTTPException(
@@ -195,7 +209,7 @@ async def post_ai_advice(
     user: CurrentUser = Depends(_portal_roles),
     db: Session = Depends(get_session),
 ) -> ClinicalAdviceOut:
-    chief_complaint = await run_in_threadpool(
+    chief_complaint, gate = await run_in_threadpool(
         _authorize, db, patient_id=patient_id, consultation_id=payload.consultation_id, user=user
     )
     try:
@@ -205,6 +219,7 @@ async def post_ai_advice(
             patient_id=patient_id,
             consultation_id=payload.consultation_id,
             chief_complaint=chief_complaint,
+            gate=gate,
         )
     except clinical_copilot_svc.CopilotUnavailable as exc:
         raise HTTPException(

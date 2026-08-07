@@ -329,13 +329,29 @@ function PaymentStep({
   error: string | null
   onPay: () => void
 }) {
+  // The consent dialog unmounts in the same commit that mounts this step, so
+  // Radix's focus-restore target is already gone and focus would land on
+  // <body>. Move it here instead, and announce the step, so a keyboard or
+  // screen-reader user is told a payment step appeared (WCAG 2.4.3 / 4.1.3).
+  const headingRef = React.useRef<HTMLHeadingElement>(null)
+  React.useEffect(() => {
+    headingRef.current?.focus()
+  }, [])
+
   return (
     <>
       <NeuCard className="!p-5 text-center">
         <span className="mx-auto grid size-14 place-items-center rounded-full bg-[rgba(13,155,110,0.12)]">
           <CreditCard className="size-7 text-neu-green" aria-hidden="true" />
         </span>
-        <h2 className="mt-3 text-[18px] font-bold text-neu-text">Thanh toán tư vấn</h2>
+        <h2
+          ref={headingRef}
+          tabIndex={-1}
+          role="status"
+          className="mt-3 text-[18px] font-bold text-neu-text outline-none"
+        >
+          Thanh toán tư vấn
+        </h2>
         <p className="mt-1 text-[14px] text-neu-muted">
           Yêu cầu tư vấn đã được tạo. Hoàn tất thanh toán để bác sĩ bắt đầu.
         </p>

@@ -47,6 +47,7 @@ import {
   getPatientSummary,
   listNotes,
   createNote,
+  CONSENT_CATEGORY,
   type ConsultationOut,
   type NoteOut,
   type PatientSummaryOut,
@@ -371,23 +372,41 @@ function PatientSummaryPanel({
       return
     }
     let cancelled = false
-    setLoading(true)
-    setForbidden(false)
-    setError(null)
-    getPatientSummary(consultationId)
-      .then((data) => {
-        if (!cancelled) setSummary(data)
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return
-        if (err instanceof ApiError && err.status === 403) setForbidden(true)
-        else setError(err instanceof Error ? err.message : 'Không thể tải hồ sơ bệnh nhân')
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
+
+    const fetchSummary = (showSpinner: boolean) => {
+      if (showSpinner) setLoading(true)
+      setError(null)
+      getPatientSummary(consultationId)
+        .then((data) => {
+          if (cancelled) return
+          setSummary(data)
+          setForbidden(false)
+        })
+        .catch((err: unknown) => {
+          if (cancelled) return
+          if (err instanceof ApiError && err.status === 403) {
+            setForbidden(true)
+            // Drop anything already on screen. A patient who has just withdrawn
+            // sharing must not keep being displayed from a previous fetch.
+            setSummary(null)
+          } else setError(err instanceof Error ? err.message : 'Không thể tải hồ sơ bệnh nhân')
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false)
+        })
+    }
+
+    fetchSummary(true)
+
+    // Revocation takes effect immediately server-side, but this panel fetched
+    // once on mount — without this the doctor keeps reading withdrawn PHI for
+    // as long as the tab stays open. Re-checking on focus bounds that window to
+    // "until they next look away and back".
+    const onFocus = () => fetchSummary(false)
+    window.addEventListener('focus', onFocus)
     return () => {
       cancelled = true
+      window.removeEventListener('focus', onFocus)
     }
   }, [consultationId, hasAccess])
 
@@ -401,10 +420,21 @@ function PatientSummaryPanel({
             <Lock className="mt-0.5 h-5 w-5 shrink-0 text-text-subtle" aria-hidden="true" />
             <div>
               <p className="text-body-sm font-medium text-text">Chưa có quyền xem hồ sơ</p>
-              <p className="mt-0.5 text-body-sm text-text-muted">
-                Hồ sơ bệnh nhân chỉ hiển thị sau khi bệnh nhân thanh toán và trước khi buổi tư vấn
-                kết thúc (chưa thanh toán / phiên đã kết thúc).
-              </p>
+              {/* Inside the access window (PAID / IN_PROGRESS) a 403 can no
+                  longer mean "unpaid or ended" — it means sharing was withdrawn.
+                  Saying otherwise sends the doctor to troubleshoot payment while
+                  the real answer is to talk to the patient. */}
+              {hasAccess ? (
+                <p className="mt-0.5 text-body-sm text-text-muted" data-testid="revoked-notice">
+                  Bệnh nhân đã thu hồi quyền chia sẻ dữ liệu cho buổi tư vấn này. Bạn
+                  có thể trao đổi trực tiếp với bệnh nhân nếu cần thêm thông tin.
+                </p>
+              ) : (
+                <p className="mt-0.5 text-body-sm text-text-muted">
+                  Hồ sơ bệnh nhân chỉ hiển thị sau khi bệnh nhân thanh toán và trước khi buổi tư vấn
+                  kết thúc (chưa thanh toán / phiên đã kết thúc).
+                </p>
+              )}
             </div>
           </div>
         </Card>
@@ -423,8 +453,26 @@ function PatientSummaryPanel({
 
 function SummaryBody({ summary }: { summary: PatientSummaryOut }) {
   const score = summary.metabolic_score
+  const withheldSet = new Set(summary.withheld_categories ?? [])
+  const withheld = (...categories: string[]) => categories.some((c) => withheldSet.has(c))
+
+  const noHealth = withheld(CONSENT_CATEGORY.healthRecords)
+  const noLabs = withheld(CONSENT_CATEGORY.labResults)
+
   return (
     <div className="space-y-3">
+      {/* Stated once, up front: the record below is partial by the patient's
+          choice. A doctor who only sees per-section notices when a section
+          happens to be empty could still believe they are reading everything. */}
+      {withheldSet.size > 0 && (
+        <div
+          className="rounded-md bg-[rgba(217,119,6,0.1)] px-3 py-2 text-body-sm font-medium text-[#B45309]"
+          data-testid="withheld-banner"
+        >
+          Bệnh nhân chỉ chia sẻ một phần hồ sơ cho buổi tư vấn này. Những mục chưa
+          được chia sẻ KHÔNG đồng nghĩa với không có dữ liệu.
+        </div>
+      )}
       {/* Metabolic score */}
       <Card padding="md">
         <SummaryHeading icon={<Gauge className="h-4 w-4" />} title="Điểm chuyển hoá" />
@@ -441,7 +489,7 @@ function SummaryBody({ summary }: { summary: PatientSummaryOut }) {
             )}
           </div>
         ) : (
-          <EmptyLine />
+          <EmptyLine withheld={noHealth} />
         )}
       </Card>
 
@@ -462,7 +510,7 @@ function SummaryBody({ summary }: { summary: PatientSummaryOut }) {
             ))}
           </ul>
         ) : (
-          <EmptyLine />
+          <EmptyLine withheld={noHealth || noLabs} />
         )}
         {summary.vitals?.trend && (
           <p className="mt-1 text-body-xs text-text-subtle">Xu hướng: {summary.vitals.trend}</p>
@@ -484,7 +532,7 @@ function SummaryBody({ summary }: { summary: PatientSummaryOut }) {
             ))}
           </ul>
         ) : (
-          <EmptyLine />
+          <EmptyLine withheld={noLabs} />
         )}
       </Card>
 
@@ -503,7 +551,7 @@ function SummaryBody({ summary }: { summary: PatientSummaryOut }) {
             ))}
           </ul>
         ) : (
-          <EmptyLine />
+          <EmptyLine withheld={withheld(CONSENT_CATEGORY.medications)} />
         )}
       </Card>
 
@@ -524,7 +572,7 @@ function SummaryBody({ summary }: { summary: PatientSummaryOut }) {
             ))}
           </ul>
         ) : (
-          <EmptyLine />
+          <EmptyLine withheld={noHealth} />
         )}
       </Card>
 
@@ -543,7 +591,7 @@ function SummaryBody({ summary }: { summary: PatientSummaryOut }) {
             ))}
           </ul>
         ) : (
-          <EmptyLine />
+          <EmptyLine withheld={noHealth} />
         )}
       </Card>
 
@@ -562,7 +610,7 @@ function SummaryBody({ summary }: { summary: PatientSummaryOut }) {
             ))}
           </ul>
         ) : (
-          <EmptyLine />
+          <EmptyLine withheld={withheld(CONSENT_CATEGORY.patientProfile)} />
         )}
       </Card>
 
@@ -579,7 +627,7 @@ function SummaryBody({ summary }: { summary: PatientSummaryOut }) {
             ))}
           </ul>
         ) : (
-          <EmptyLine />
+          <EmptyLine withheld={noHealth} />
         )}
       </Card>
 
@@ -603,7 +651,25 @@ function SummaryHeading({ icon, title }: { icon: React.ReactNode; title: string 
   )
 }
 
-function EmptyLine() {
+/**
+ * An empty section, attributed.
+ *
+ * "Không có dữ liệu" and "the patient did not share this" lead a doctor to
+ * opposite decisions — an unshared medication list rendered as "no medications"
+ * invites prescribing against an interaction nobody can see. When the category
+ * was withheld, say so, and say explicitly that it does not mean there is none.
+ */
+function EmptyLine({ withheld = false }: { withheld?: boolean }) {
+  if (withheld) {
+    return (
+      <p
+        className="mt-1 rounded-md bg-[rgba(217,119,6,0.1)] px-2.5 py-1.5 text-body-sm font-medium text-[#B45309]"
+        data-testid="withheld-notice"
+      >
+        Bệnh nhân chưa chia sẻ mục này — KHÔNG đồng nghĩa với không có dữ liệu.
+      </p>
+    )
+  }
   return <p className="mt-1 text-body-sm text-text-subtle">Không có dữ liệu.</p>
 }
 

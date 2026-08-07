@@ -12,6 +12,8 @@ import { GlassCard } from '../../../../src/components/GlassCard'
 import { PrimaryButton } from '../../../../src/components/PrimaryButton'
 import { TextField } from '../../../../src/components/TextField'
 import { useBookConsultation } from '../../../../src/features/consultations/useBookConsultation'
+import { useDoctorDetail } from '../../../../src/features/marketplace/useDoctorDetail'
+import { formatVnd } from '../../../../src/lib/format'
 import { firstParam } from '../../../../src/lib/params'
 import { vi } from '../../../../src/i18n/vi'
 import { colors, spacing, typography } from '../../../../src/theme/tokens'
@@ -21,6 +23,10 @@ export default function BookConsultationScreen() {
   const params = useLocalSearchParams<{ doctorId: string | string[] }>()
   const doctorId = firstParam(params.doctorId)
   const { phase, errorMsg, canSubmit, submit, reset } = useBookConsultation(client, doctorId)
+  // The patient is about to share health data with, and pay, a specific doctor.
+  // Consenting to a recipient identified only by a URL parameter is not
+  // informed consent, so the dialog names them and states the amount.
+  const { doctor } = useDoctorDetail(client, doctorId)
 
   const [chiefComplaint, setChiefComplaint] = useState('')
   const [patientNote, setPatientNote] = useState('')
@@ -107,6 +113,15 @@ export default function BookConsultationScreen() {
       <DataSharingConsentModal
         visible={consentVisible}
         client={client}
+        doctorName={doctor?.full_name}
+        noticeText={
+          doctor
+            ? vi.consultations.consentPayNotice.replace(
+                '{amount}',
+                formatVnd(doctor.consultation_fee),
+              )
+            : null
+        }
         submitting={phase === 'submitting'}
         errorMsg={phase === 'error' ? errorMsg : null}
         onAccept={(grant) => void onConsentAccepted(grant)}
