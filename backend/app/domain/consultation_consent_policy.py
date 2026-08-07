@@ -35,7 +35,11 @@ from __future__ import annotations
 # ---------------------------------------------------------------------------
 
 CONSENT_VERSION = "1.0"
-POLICY_VERSION = "1.0"
+# 1.1 — the closing sentence used to point patients at a "Quyền riêng tư"
+# screen that does not exist. It now names the screen that actually carries the
+# revoke/re-share controls. Copy-only: the scope of the sharing is unchanged, so
+# CONSENT_VERSION stays at 1.0 and grants recorded under 1.0 remain valid.
+POLICY_VERSION = "1.1"
 
 # The purpose this consent authorises. A grant is usable for nothing else.
 PURPOSE_DOCTOR_CONSULTATION = "doctor_consultation"
@@ -104,7 +108,7 @@ CONSENT_COPY: dict[str, str] = {
         "đang sử dụng, kết quả xét nghiệm và tài liệu y tế đã được bạn xác nhận.\n\n"
         "Thông tin chỉ được cung cấp cho bác sĩ thực hiện buổi tư vấn này và được "
         "sử dụng cho mục đích tư vấn, chăm sóc sức khỏe.\n\n"
-        "Bạn có thể quản lý hoặc thu hồi quyền chia sẻ trong phần Quyền riêng tư."
+        "Bạn có thể thu hồi hoặc chia sẻ lại quyền này trong chi tiết phiên tư vấn."
     ),
     "accept_label": "Đồng ý và tiếp tục",
     "decline_label": "Không chia sẻ",

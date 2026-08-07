@@ -28,18 +28,24 @@ export function DataSharingConsentModal({
   submitting,
   error,
   doctorName,
+  restrictToCategories,
+  titleOverride,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   /** Called with the granted category keys + the versions actually rendered. */
-  onAccept: (grant: {
-    categories: string[]
-    consentVersion: string
-    policyVersion: string
-  }) => void
+  onAccept: (grant: { categories: string[]; consentVersion: string; policyVersion: string }) => void
   submitting: boolean
   error: string | null
   doctorName?: string | null
+  /**
+   * Show (and grant) only these categories. Used when re-consenting to a
+   * consultation whose original grant was narrower — offering the full five
+   * would present a wider grant than the patient ever made.
+   */
+  restrictToCategories?: string[] | null
+  /** Optional heading override, e.g. when re-consenting rather than booking. */
+  titleOverride?: string | null
 }) {
   const [policy, setPolicy] = React.useState<DataSharingConsentPolicy | null>(null)
   const [policyError, setPolicyError] = React.useState<string | null>(null)
@@ -61,10 +67,19 @@ export function DataSharingConsentModal({
     if (!open && policyError !== null) setPolicyError(null)
   }, [open, policy, loadingPolicy, policyError, loadPolicy])
 
+  // What this dialog actually offers — the full policy set when booking, or the
+  // narrower original grant when re-consenting.
+  const offered = React.useMemo(() => {
+    if (!policy) return []
+    if (!restrictToCategories) return policy.categories
+    const allowed = new Set(restrictToCategories)
+    return policy.categories.filter((c) => allowed.has(c.key))
+  }, [policy, restrictToCategories])
+
   const handleAccept = () => {
-    if (!policy || submitting) return
+    if (!policy || submitting || offered.length === 0) return
     onAccept({
-      categories: policy.categories.map((c) => c.key),
+      categories: offered.map((c) => c.key),
       consentVersion: policy.consent_version,
       policyVersion: policy.policy_version,
     })
@@ -109,7 +124,7 @@ export function DataSharingConsentModal({
             </span>
             <div className="min-w-0 flex-1">
               <Dialog.Title className="text-[19px] font-extrabold leading-snug text-[#0e2a33]">
-                {policy?.title ?? 'Chia sẻ thông tin sức khỏe với bác sĩ?'}
+                {titleOverride ?? policy?.title ?? 'Chia sẻ thông tin sức khỏe với bác sĩ?'}
               </Dialog.Title>
               {doctorName && (
                 <p className="mt-0.5 text-[14px] font-semibold text-neu-green">{doctorName}</p>
@@ -129,7 +144,11 @@ export function DataSharingConsentModal({
                 <p className="text-[15px] text-[#D92D20]" role="alert">
                   {policyError}
                 </p>
-                <button type="button" onClick={loadPolicy} className="neu-btn-secondary mt-3 w-full">
+                <button
+                  type="button"
+                  onClick={loadPolicy}
+                  className="neu-btn-secondary mt-3 w-full"
+                >
                   Thử lại
                 </button>
               </div>
@@ -150,7 +169,7 @@ export function DataSharingConsentModal({
                 </Dialog.Description>
 
                 <ul className="mt-4 space-y-1.5 rounded-[16px] bg-white/70 p-3.5">
-                  {policy.categories.map((category) => (
+                  {offered.map((category) => (
                     <li
                       key={category.key}
                       className="flex items-start gap-2 text-[14px] text-[#0e2a33]"
@@ -193,7 +212,7 @@ export function DataSharingConsentModal({
             <button
               type="button"
               onClick={handleAccept}
-              disabled={submitting || !policy}
+              disabled={submitting || !policy || offered.length === 0}
               className="neu-btn-primary w-full disabled:opacity-50 sm:flex-1"
             >
               {submitting ? 'Đang xử lý…' : (policy?.accept_label ?? 'Đồng ý và tiếp tục')}

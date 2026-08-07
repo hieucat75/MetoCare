@@ -27,6 +27,7 @@ from tests.consultation_factories import (
     create_doctor,
     create_patient,
     headers,
+    restore_payload,
 )
 
 API = "/api/v1"
@@ -187,7 +188,9 @@ def test_the_whole_consent_journey(client, db):
 
     # ── 9. And the patient can re-share, so revoking was never a trap ───────
     restored = client.post(
-        f"{API}/consultations/{consultation_id}/data-sharing-consent", headers=patient
+        f"{API}/consultations/{consultation_id}/data-sharing-consent",
+        json=restore_payload(),
+        headers=patient,
     )
     assert restored.status_code == 200
     assert restored.json()["is_active"] is True

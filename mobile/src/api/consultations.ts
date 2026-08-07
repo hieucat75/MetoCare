@@ -166,6 +166,19 @@ export function revokeDataSharingConsent(
   return client.del<{ message: string }>(`/consultations/${id}/data-sharing-consent`)
 }
 
+/**
+ * Re-grant sharing the patient previously withdrew, so revoking is never a trap
+ * on a paid session. Omitting `categories` re-grants exactly what was granted
+ * before. Only ever called from an explicit patient action.
+ */
+export function restoreDataSharingConsent(
+  client: ApiClient,
+  id: string,
+  body: DataSharingConsentIn
+): Promise<DataSharingConsent> {
+  return client.post<DataSharingConsent>(`/consultations/${id}/data-sharing-consent`, body)
+}
+
 export function listConsultations(client: ApiClient): Promise<ConsultationOut[]> {
   return client.get<ConsultationOut[]>('/consultations')
 }

@@ -98,12 +98,25 @@ def _for_doctor(db: Session, consultation) -> ConsultationOut:
 
     Consultations with no consent row at all (booked before this feature) keep
     their previous behaviour here; they are already denied every PHI surface.
+
+    Consent is necessary but not sufficient, exactly as everywhere else: a
+    finished consultation has no active grant, so re-consenting to it must not
+    hand the text back.
     """
     out = _with_disclaimer(consultation)
     record = consultation_consent.get_for_consultation(db, consultation.id)
-    if record is not None and not record.is_active_at(
+    if record is None:
+        return out
+    consented = record.is_active_at(
         utcnow(), current_consent_version=consent_policy.CONSENT_VERSION
-    ):
+    )
+    related = consultation_access.get_active_grant(
+        db,
+        doctor_id=consultation.doctor_id,
+        consultation_id=consultation.id,
+        patient_id=consultation.patient_id,
+    )
+    if not consented or related is None:
         return out.model_copy(update={"chief_complaint": None, "patient_note": None})
     return out
 
@@ -435,7 +448,7 @@ def revoke_data_sharing_consent(
 @router.post("/{consultation_id}/data-sharing-consent", response_model=DataSharingConsentOut)
 def restore_data_sharing_consent(
     consultation_id: str,
-    payload: DataSharingConsentRestore | None = None,
+    payload: DataSharingConsentRestore,
     user: CurrentUser = Depends(_patient_only),
     db: Session = Depends(get_session),
 ) -> DataSharingConsentOut:
@@ -455,11 +468,24 @@ def restore_data_sharing_consent(
     record = _own_consent_or_404(db, consultation_id, profile.id)
     consultation = consult_svc.get_consultation_or_404(db, consultation_id)
 
+    # Same rule as booking: the client must have shown the current terms.
+    if (
+        payload.consent_version != consent_policy.CONSENT_VERSION
+        or payload.policy_version != consent_policy.POLICY_VERSION
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Consent version is out of date. Please reload and review the "
+                "sharing terms again."
+            ),
+        )
+
     consultation_consent.restore(
         db,
         record=record,
         actor_id=profile.id,
-        categories=payload.categories if payload else None,
+        categories=payload.categories,
     )
     if consultation.status in _LIVE_STATUSES:
         existing = consultation_access.get_active_grant(

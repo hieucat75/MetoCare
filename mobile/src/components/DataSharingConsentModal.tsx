@@ -26,6 +26,12 @@ interface Props {
   submitting: boolean
   /** Booking error, shown inside the dialog so the patient can retry in place. */
   errorMsg?: string | null
+  /**
+   * Show (and grant) only these categories. Used when re-consenting to a
+   * consultation whose original grant was narrower — offering the full five
+   * would present a wider grant than the patient ever made.
+   */
+  restrictToCategories?: string[] | null
   onAccept: (grant: ConsentGrant) => void
   onDecline: () => void
 }
@@ -52,6 +58,7 @@ export function DataSharingConsentModal({
   noticeText,
   submitting,
   errorMsg,
+  restrictToCategories,
   onAccept,
   onDecline,
 }: Props) {
@@ -79,10 +86,18 @@ export function DataSharingConsentModal({
     if (!visible && policyError) setPolicyError(false)
   }, [visible, policy, loading, policyError, loadPolicy])
 
+  // What this dialog actually offers — the full policy set when booking, or the
+  // narrower original grant when re-consenting.
+  const offered = policy
+    ? restrictToCategories
+      ? policy.categories.filter((c) => restrictToCategories.includes(c.key))
+      : policy.categories
+    : []
+
   function handleAccept() {
-    if (!policy || submitting) return
+    if (!policy || submitting || offered.length === 0) return
     onAccept({
-      categories: policy.categories.map((c) => c.key),
+      categories: offered.map((c) => c.key),
       consentVersion: policy.consent_version,
       policyVersion: policy.policy_version,
     })
@@ -149,7 +164,7 @@ export function DataSharingConsentModal({
 
             {policy ? (
               <View style={styles.categories}>
-                {policy.categories.map((category) => (
+                {offered.map((category) => (
                   <View key={category.key} style={styles.categoryRow}>
                     <View style={styles.bullet} />
                     <Text style={styles.categoryText}>{category.label}</Text>
@@ -179,7 +194,7 @@ export function DataSharingConsentModal({
             label={policy?.accept_label ?? vi.consultations.consentAcceptFallback}
             onPress={handleAccept}
             loading={submitting}
-            disabled={submitting || !policy}
+            disabled={submitting || !policy || offered.length === 0}
             style={styles.accept}
             testID="consent-accept"
           />

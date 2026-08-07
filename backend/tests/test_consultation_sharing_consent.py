@@ -27,6 +27,7 @@ from tests.consultation_factories import (
     create_doctor,
     create_patient,
     headers,
+    restore_payload,
 )
 
 API = "/api/v1"
@@ -845,7 +846,10 @@ def test_a_patient_can_re_share_after_revoking(client, db):
     client.delete(url, headers=patient_headers)
     assert _summary(client, doctor, consultation.id).status_code == 403
 
-    resp = client.post(url, headers=patient_headers)
+    resp = client.post(
+url,
+json=restore_payload(),
+headers=patient_headers)
     assert resp.status_code == 200
     assert resp.json()["is_active"] is True
     # Access is genuinely restored: the care-relationship grant reopened too.
@@ -860,7 +864,7 @@ def test_re_sharing_can_narrow_the_categories(client, db):
     client.delete(url, headers=patient_headers)
     resp = client.post(
         url,
-        json={"categories": [policy.CATEGORY_MEDICATIONS]},
+        json=restore_payload([policy.CATEGORY_MEDICATIONS]),
         headers=patient_headers,
     )
     assert resp.status_code == 200
@@ -879,8 +883,123 @@ def test_re_sharing_a_finished_consultation_reopens_no_access(client, db):
     client.delete(url, headers=patient_headers)
     consult_svc.complete(db, consultation.id, doctor_user_id=doctor.user_id)
 
-    assert client.post(url, headers=patient_headers).status_code == 200
+    assert client.post(
+url,
+json=restore_payload(),
+headers=patient_headers).status_code == 200
     assert _summary(client, doctor, consultation.id).status_code == 403
+
+
+def test_restoring_an_already_active_consent_is_harmless(client, db):
+    """A duplicate re-share must not 409 at a patient pressing twice."""
+    doctor, user, _profile, consultation = _booked(db)
+    url = f"{API}/consultations/{consultation.id}/data-sharing-consent"
+    patient_headers = headers(user.id, "patient")
+
+    assert client.post(
+url,
+json=restore_payload(),
+headers=patient_headers).status_code == 200
+    assert client.post(
+url,
+json=restore_payload(),
+headers=patient_headers).status_code == 200
+    assert _summary(client, doctor, consultation.id).status_code == 200
+
+
+def test_re_sharing_cannot_widen_beyond_the_known_categories(client, db):
+    """A client cannot use re-share to grant something never on the consent screen."""
+    _doctor, user, _profile, consultation = _booked(
+        db, categories=[policy.CATEGORY_MEDICATIONS]
+    )
+    url = f"{API}/consultations/{consultation.id}/data-sharing-consent"
+    patient_headers = headers(user.id, "patient")
+    client.delete(url, headers=patient_headers)
+
+    resp = client.post(
+        url,
+        json=restore_payload([policy.CATEGORY_MEDICATIONS, "ai_chat_history", "everything"]),
+        headers=patient_headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["categories"] == [policy.CATEGORY_MEDICATIONS]
+
+
+def test_re_sharing_nothing_recognised_is_rejected(client, db):
+    _doctor, user, _profile, consultation = _booked(db)
+    url = f"{API}/consultations/{consultation.id}/data-sharing-consent"
+    patient_headers = headers(user.id, "patient")
+    client.delete(url, headers=patient_headers)
+
+    resp = client.post(url, json=restore_payload(["nonsense"]), headers=patient_headers)
+    assert resp.status_code == 400
+
+
+def test_re_sharing_a_grant_made_under_older_terms_is_refused(client, db):
+    """Re-share must not become the back door through a scope change.
+
+    If CONSENT_VERSION is bumped to widen what sharing means, every existing
+    grant correctly fails closed — and the patient's card then offers "Chia sẻ
+    lại". Letting that one tap re-grant would hand over the WIDER scope under a
+    decision the patient made against narrower terms, and the audit row would
+    attest they agreed to it. This has to be a fresh consent, not a restore.
+    """
+    doctor, user, _profile, consultation = _booked(db)
+    url = f"{API}/consultations/{consultation.id}/data-sharing-consent"
+    patient_headers = headers(user.id, "patient")
+
+    client.delete(url, headers=patient_headers)
+    record = _consent_row(db, consultation.id)
+    record.consent_version = "0.9"
+    db.commit()
+
+    resp = client.post(url, json=restore_payload(), headers=patient_headers)
+    assert resp.status_code == 409
+    assert _summary(client, doctor, consultation.id).status_code == 403
+
+
+def test_re_sharing_requires_the_client_to_echo_the_terms_it_showed(client, db):
+    """Same rule as booking: a version the client did not render cannot be
+    recorded as the version the patient read."""
+    _doctor, user, _profile, consultation = _booked(db)
+    url = f"{API}/consultations/{consultation.id}/data-sharing-consent"
+    patient_headers = headers(user.id, "patient")
+    client.delete(url, headers=patient_headers)
+
+    # No version stamps at all.
+    assert client.post(url, json={"accepted": True}, headers=patient_headers).status_code == 422
+    # Stale ones.
+    stale = client.post(
+        url, json=restore_payload(policy_version="0.9"), headers=patient_headers
+    )
+    assert stale.status_code == 409
+
+
+def test_a_doctor_cannot_restore_a_consent(client, db):
+    """Only the patient may re-grant. A doctor restoring their own access would
+    make the whole control meaningless."""
+    doctor, user, _profile, consultation = _booked(db)
+    url = f"{API}/consultations/{consultation.id}/data-sharing-consent"
+    client.delete(url, headers=headers(user.id, "patient"))
+
+    assert client.post(
+url,
+json=restore_payload(),
+headers=headers(doctor.user_id, "doctor")).status_code == 403
+    assert _summary(client, doctor, consultation.id).status_code == 403
+
+
+def test_restoring_a_consent_for_a_wrong_consultation_is_not_found(client, db):
+    """The id in the path must be one the caller owns."""
+    _doctor, user, _profile, _consultation = _booked(db)
+    _other_doctor, _other_user, _other_profile, other = _booked(db)
+
+    resp = client.post(
+f"{API}/consultations/{other.id}/data-sharing-consent",
+json=restore_payload(),
+headers=headers(user.id, "patient"),
+    )
+    assert resp.status_code == 404
 
 
 def test_another_patient_cannot_restore_a_consent(client, db):
@@ -891,8 +1010,9 @@ def test_another_patient_cannot_restore_a_consent(client, db):
     )
     intruder, _p = create_patient(db)
     resp = client.post(
-        f"{API}/consultations/{consultation.id}/data-sharing-consent",
-        headers=headers(intruder.id, "patient"),
+f"{API}/consultations/{consultation.id}/data-sharing-consent",
+json=restore_payload(),
+headers=headers(intruder.id, "patient"),
     )
     assert resp.status_code == 404
 
@@ -1020,6 +1140,25 @@ def test_policy_endpoint_serves_the_copy_clients_must_render(client, db):
     assert [c["key"] for c in body["categories"]] == list(policy.CATEGORIES)
     # Proves the literal route is not swallowed by /{consultation_id}.
     assert body["purpose"] == policy.PURPOSE_DOCTOR_CONSULTATION
+
+
+def test_the_copy_only_promises_a_screen_that_exists(client, db):
+    """The consent text names where sharing can be withdrawn.
+
+    It used to point at a "Quyền riêng tư" screen that was never built — a
+    privacy promise the UI could not fulfil. It now names the consultation
+    detail screen, which carries the revoke/re-share controls.
+    """
+    user, _profile = create_patient(db)
+    body = client.get(
+        f"{API}/consultations/data-sharing-policy", headers=headers(user.id, "patient")
+    ).json()
+
+    assert "Quyền riêng tư" not in body["body"]
+    assert "chi tiết phiên tư vấn" in body["body"]
+    # Copy changed, meaning did not: grants recorded at consent 1.0 stay valid.
+    assert body["policy_version"] == "1.1"
+    assert body["consent_version"] == "1.0"
 
 
 @pytest.mark.parametrize("role", ["doctor", "internal_admin"])

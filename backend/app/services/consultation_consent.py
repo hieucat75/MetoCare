@@ -208,13 +208,31 @@ def restore(
     to what the patient is agreeing to now, and it is audited as its own grant
     event. The prior revocation stays in the audit trail.
     """
-    granted = policy.normalize_categories(
-        categories if categories is not None else list(record.granted_categories())
+    previously = record.granted_categories()
+    requested = policy.normalize_categories(
+        categories if categories is not None else list(previously)
     )
+    # Re-sharing can only ever RESTORE or NARROW. Widening here would let a
+    # single tap hand over categories that were never on any consent screen the
+    # patient saw — and the audit row would attest that they agreed to them.
+    granted = tuple(c for c in requested if c in previously)
     if not granted:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="At least one recognised data category must be granted.",
+            detail="At least one previously granted data category must be selected.",
+        )
+
+    # A grant recorded under older terms must not be silently upgraded to the
+    # current ones. If the scope has changed since the patient consented, this
+    # is not a restore — it is a new consent decision that has to be made
+    # against the new terms, on a screen that shows them.
+    if record.consent_version != policy.CONSENT_VERSION:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Sharing terms have changed since this consent was given. "
+                "Please review and consent again."
+            ),
         )
 
     now = at or utcnow()
@@ -228,7 +246,9 @@ def restore(
     audit.record(
         db,
         actor_type="patient",
-        actor_id=record.patient_id,
+        # Whoever actually performed the action, not "the patient" by assumption
+        # — a support-initiated restore must not be attributed to the patient.
+        actor_id=actor_id,
         action="consultation_consent_granted",
         resource_type="consultation_data_consent",
         resource_id=record.id,

@@ -4,11 +4,13 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { router, useLocalSearchParams } from 'expo-router'
 
 import { useAuth } from '../../../src/auth/AuthContext'
+import { ConsultationSharingCard } from '../../../src/components/ConsultationSharingCard'
 import { GlassCard } from '../../../src/components/GlassCard'
 import { PrimaryButton } from '../../../src/components/PrimaryButton'
 import { ErrorView, LoadingView } from '../../../src/components/StateViews'
 import { TextField } from '../../../src/components/TextField'
 import { useConsultationDetail } from '../../../src/features/consultations/useConsultationDetail'
+import { useDoctorDetail } from '../../../src/features/marketplace/useDoctorDetail'
 import { consultationStatusLabel, formatVnd } from '../../../src/lib/format'
 import { firstParam } from '../../../src/lib/params'
 import { vi } from '../../../src/i18n/vi'
@@ -33,6 +35,11 @@ export default function ConsultationDetailScreen() {
 
   const [rating, setRating] = useState(5)
   const [feedback, setFeedback] = useState('')
+  // The sharing section names the recipient — "sharing with doctor 41de…" is
+  // not something a patient can decide about. Best effort: a failed lookup
+  // omits the name, it never blocks the revoke control.
+  const { doctor } = useDoctorDetail(client, consultation?.doctor_id ?? '')
+  const doctorName = doctor?.full_name ?? null
 
   if (phase === 'loading') return <LoadingView />
   if (phase === 'error' || !consultation) {
@@ -66,6 +73,15 @@ export default function ConsultationDetailScreen() {
             </>
           )}
         </GlassCard>
+
+        {/* Data sharing — the control the booking consent copy promises. */}
+        <ConsultationSharingCard
+          client={client}
+          consultationId={id}
+          consultationStatus={consultation.status}
+          doctorName={doctorName}
+          consultationDate={consultation.created_at}
+        />
 
         <Text style={styles.heading}>{vi.consultations.notesTitle}</Text>
         {notes.length === 0 ? (

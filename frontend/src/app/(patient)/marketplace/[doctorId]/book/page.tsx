@@ -5,22 +5,18 @@ import { useParams, useRouter } from 'next/navigation'
 import { ArrowLeft, CheckCircle2, CreditCard, MessageSquare, Video, MapPin } from 'lucide-react'
 import { NeuCard } from '@/components/patient/neu'
 import { PatientErrorState, PatientSkeleton } from '@/components/patient/states'
-import {
-  formatVnd,
-  MarketplaceDisclaimer,
-  DataSharingConsentModal,
-} from '@/components/marketplace'
+import { formatVnd, MarketplaceDisclaimer, DataSharingConsentModal } from '@/components/marketplace'
 import { ApiError } from '@/lib/api/client'
 import { getDoctorDetail, type DoctorDetailOut, type ConsultationType } from '@/lib/api/marketplace'
-import {
-  createConsultation,
-  payConsultation,
-  type ConsultationOut,
-} from '@/lib/api/consultations'
+import { createConsultation, payConsultation, type ConsultationOut } from '@/lib/api/consultations'
 
 type Step = 'form' | 'pay' | 'done'
 
-const TYPE_OPTIONS: { key: ConsultationType; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+const TYPE_OPTIONS: {
+  key: ConsultationType
+  label: string
+  icon: React.ComponentType<{ className?: string }>
+}[] = [
   { key: 'CHAT', label: 'Nhắn tin', icon: MessageSquare },
   { key: 'VIDEO', label: 'Gọi video', icon: Video },
   { key: 'IN_PERSON', label: 'Khám trực tiếp', icon: MapPin },
@@ -155,7 +151,11 @@ export default function BookConsultationPage() {
       {loadingDoctor ? (
         <PatientSkeleton />
       ) : loadError ? (
-        <PatientErrorState title="Không thể tải hồ sơ bác sĩ" message={loadError} onRetry={loadDoctor} />
+        <PatientErrorState
+          title="Không thể tải hồ sơ bác sĩ"
+          message={loadError}
+          onRetry={loadDoctor}
+        />
       ) : doctor ? (
         <>
           {/* Doctor summary strip (always visible) */}

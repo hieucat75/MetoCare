@@ -85,10 +85,20 @@ class ConsultationCreate(BaseModel):
 class DataSharingConsentRestore(BaseModel):
     """Re-grant a previously revoked consent, optionally narrowing categories.
 
-    Omitting ``categories`` re-grants exactly what was granted before, so the
-    common case (undoing a mis-tap) needs no body at all.
+    Re-sharing is a consent decision in its own right, so the client must have
+    rendered the terms and echo which version it showed — the same rule booking
+    follows. Without it, a one-tap "Chia sẻ lại" could record agreement to terms
+    the patient never saw.
+
+    Omitting ``categories`` re-grants exactly what was granted before; the server
+    intersects with the previous grant either way, so this can only ever narrow.
     """
 
+    accepted: Literal[True] = Field(
+        ..., description="Must be true — the patient pressed the consent action."
+    )
+    consent_version: str = Field(..., min_length=1, max_length=16)
+    policy_version: str = Field(..., min_length=1, max_length=16)
     categories: list[str] | None = Field(default=None, max_length=16)
 
 

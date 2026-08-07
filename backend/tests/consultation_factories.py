@@ -40,6 +40,25 @@ def consent_payload(categories: list[str] | None = None, **overrides) -> dict:
     return body
 
 
+def restore_payload(categories: list[str] | None = None, **overrides) -> dict:
+    """A valid body for POST /consultations/{id}/data-sharing-consent.
+
+    Re-sharing is its own consent decision, so the client must echo the version
+    stamps it rendered — the same rule booking follows.
+    """
+    from app.domain.consultation_consent_policy import CONSENT_VERSION, POLICY_VERSION
+
+    body: dict = {
+        "accepted": True,
+        "consent_version": CONSENT_VERSION,
+        "policy_version": POLICY_VERSION,
+    }
+    if categories is not None:
+        body["categories"] = categories
+    body.update(overrides)
+    return body
+
+
 def _uid() -> str:
     return os.urandom(5).hex()
 
