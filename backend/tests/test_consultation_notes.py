@@ -8,14 +8,15 @@ from app.services import consultation as svc
 from app.services import consultation_note, consultation_payment
 from fastapi import HTTPException
 
-from tests.consultation_factories import create_doctor, create_patient
+from tests.consultation_factories import CONSENT_ALL_CATEGORIES, create_doctor, create_patient
 
 
 def _paid(db):
     doctor = create_doctor(db)
     user, profile = create_patient(db)
     c = svc.create_consultation(
-        db, patient_id=profile.id, doctor_id=doctor.id, data_consent_accepted=True
+        db, patient_id=profile.id, doctor_id=doctor.id, data_consent_accepted=True,
+        consent_categories=CONSENT_ALL_CATEGORIES
     )
     consultation_payment.pay_mock(db, c, patient_profile_id=profile.id)
     return doctor, user, profile, c
@@ -186,7 +187,8 @@ def test_list_doctor_notes_status_filter(db):
     doctor, user, profile, c = _paid(db)
     user2, profile2 = create_patient(db)
     c2 = svc.create_consultation(
-        db, patient_id=profile2.id, doctor_id=doctor.id, data_consent_accepted=True
+        db, patient_id=profile2.id, doctor_id=doctor.id, data_consent_accepted=True,
+        consent_categories=CONSENT_ALL_CATEGORIES
     )
     consultation_payment.pay_mock(db, c2, patient_profile_id=profile2.id)
 

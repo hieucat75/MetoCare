@@ -920,8 +920,14 @@ def _make_consultation(db: Session, *, doctor_id: str, patient_profile_id: str):
     doc.is_active = True
     db.commit()
 
+    from tests.consultation_factories import CONSENT_ALL_CATEGORIES
+
     c = consult_svc.create_consultation(
-        db, patient_id=patient_profile_id, doctor_id=doctor_id, data_consent_accepted=True
+        db,
+        patient_id=patient_profile_id,
+        doctor_id=doctor_id,
+        data_consent_accepted=True,
+        consent_categories=CONSENT_ALL_CATEGORIES,
     )
     consultation_payment.pay_mock(db, c, patient_profile_id=patient_profile_id)
     return c

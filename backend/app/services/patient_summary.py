@@ -23,6 +23,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.clock import utcnow
+from app.domain import consultation_consent_policy as policy
 from app.models.appointment import BookingAppointment  # noqa: F401 — for type clarity
 from app.models.appointment import BookingAppointment as _BookingAppt
 from app.models.care import CarePlan
@@ -44,24 +45,51 @@ from app.utils.number_format import format_lab_display, format_lab_value
 # Re-export output schemas used by the schemas layer
 __all__ = ["build_summary"]
 
+# HealthMetric.source value written by the lab→metric promoter
+# (``app.services.lab._promote_row``). Only rows carrying it are lab-derived.
+_LAB_SOURCE = "lab_result"
+
 
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
 
 
-def _fetch_vitals(db: Session, patient_id: str) -> VitalsSummary:
-    """Return the 5 most-recent HealthMetric rows + a directional trend."""
+def _fetch_vitals(
+    db: Session,
+    patient_id: str,
+    *,
+    allow_self_reported: bool = True,
+    allow_lab: bool = True,
+) -> VitalsSummary:
+    """Return the 5 most-recent permitted HealthMetric rows + a directional trend.
+
+    ``source == 'lab_result'`` marks a metric promoted from a lab report, which
+    belongs to the lab_results consent category; everything else (self-reported,
+    device, manual entry) belongs to health_records. Filtering happens in SQL so
+    an ungranted provenance is never loaded, and the "5 most recent" window is
+    computed over the permitted rows only — otherwise a patient who shared just
+    one category would see the other category's rows silently eat their slots
+    and get an emptier summary than they consented to.
+    """
+    if not allow_self_reported and not allow_lab:
+        return VitalsSummary(latest=[], trend="insufficient_data")
+
+    stmt = select(HealthMetric).where(
+        HealthMetric.patient_id == patient_id,
+        HealthMetric.deleted_at.is_(None),
+    )
+    if allow_lab and not allow_self_reported:
+        stmt = stmt.where(HealthMetric.source == _LAB_SOURCE)
+    elif allow_self_reported and not allow_lab:
+        # NULL source is legacy/self-entered data, so it must survive this
+        # branch — `!=` alone would drop it, since NULL != 'lab_result' is NULL.
+        stmt = stmt.where(
+            (HealthMetric.source.is_(None)) | (HealthMetric.source != _LAB_SOURCE)
+        )
+
     rows = list(
-        db.execute(
-            select(HealthMetric)
-            .where(
-                HealthMetric.patient_id == patient_id,
-                HealthMetric.deleted_at.is_(None),
-            )
-            .order_by(HealthMetric.measured_at.desc())
-            .limit(5)
-        ).scalars()
+        db.execute(stmt.order_by(HealthMetric.measured_at.desc()).limit(5)).scalars()
     )
 
     trend = _compute_vitals_trend(rows)
@@ -315,6 +343,7 @@ def build_summary(
     *,
     patient_id: str,
     doctor_id: str | None = None,
+    allowed_categories: frozenset[str] | None = None,
 ) -> PatientSummaryOut:
     """Build and return a ``PatientSummaryOut`` for *patient_id*.
 
@@ -326,22 +355,49 @@ def build_summary(
         patient_id:  The ``PatientProfile.id`` to summarise.
         doctor_id:   Optional — when provided, scopes upcoming appointments to
                      this doctor only (used for the doctor-facing portal view).
+        allowed_categories:
+                     Consultation-consent categories the patient granted. When
+                     given, an ungranted section is never queried — the data is
+                     not read from the database at all, rather than read and
+                     then dropped. ``None`` means "this caller is not governed
+                     by consultation consent" and preserves the full summary for
+                     the doctor-portal and admin surfaces, which have their own
+                     authorisation rules.
 
     Returns:
         A fully-populated ``PatientSummaryOut`` pydantic model.
     """
     now = utcnow()
 
-    vitals = _fetch_vitals(db, patient_id)
-    lab_documents = _fetch_lab_documents(db, patient_id)
-    metabolic_score = _fetch_metabolic_score(db, patient_id)
-    medications = _fetch_medications(db, patient_id)
-    symptoms = _fetch_symptoms(db, patient_id)
-    nutrition = _fetch_nutrition(db, patient_id)
-    upcoming_appointments = _fetch_upcoming_appointments(
-        db, patient_id=patient_id, doctor_id=doctor_id, now=now
+    def granted(category: str) -> bool:
+        return allowed_categories is None or category in allowed_categories
+
+    may_health = granted(policy.CATEGORY_HEALTH_RECORDS)
+    may_labs = granted(policy.CATEGORY_LAB_RESULTS)
+
+    # Vitals are split by provenance: a metric promoted from a lab report is
+    # lab data and rides the lab_results grant, while a self-reported or device
+    # reading rides health_records. Granting one must not leak the other.
+    vitals = _fetch_vitals(db, patient_id, allow_self_reported=may_health, allow_lab=may_labs)
+    lab_documents = (
+        _fetch_lab_documents(db, patient_id)
+        if granted(policy.CATEGORY_MEDICAL_DOCUMENTS)
+        else []
     )
-    active_care_plans = _fetch_active_care_plans(db, patient_id)
+    metabolic_score = (
+        _fetch_metabolic_score(db, patient_id) if may_health else MetabolicScoreSummary()
+    )
+    medications = (
+        _fetch_medications(db, patient_id) if granted(policy.CATEGORY_MEDICATIONS) else []
+    )
+    symptoms = _fetch_symptoms(db, patient_id) if may_health else []
+    nutrition = _fetch_nutrition(db, patient_id) if may_health else []
+    upcoming_appointments = (
+        _fetch_upcoming_appointments(db, patient_id=patient_id, doctor_id=doctor_id, now=now)
+        if granted(policy.CATEGORY_PATIENT_PROFILE)
+        else []
+    )
+    active_care_plans = _fetch_active_care_plans(db, patient_id) if may_health else []
 
     return PatientSummaryOut(
         patient_id=patient_id,

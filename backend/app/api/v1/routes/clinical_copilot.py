@@ -75,9 +75,11 @@ def _authorize(
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN, detail=_NOT_A_DOCTOR_DETAIL
             )
+        # Gates on BOTH the care relationship and the patient's
+        # consultation-specific sharing consent; raises 403 without either.
         consultation = assert_doctor_can_view(
             db, doctor=doctor, consultation_id=consultation_id
-        )
+        ).consultation
         if consultation.patient_id != patient_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,

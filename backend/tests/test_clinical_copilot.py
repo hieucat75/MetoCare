@@ -418,14 +418,15 @@ def test_consultation_id_patient_mismatch_returns_400(client, db, monkeypatch):
     from app.services import consultation as consult_svc
     from app.services import consultation_payment
 
-    from tests.consultation_factories import create_doctor, create_patient
+    from tests.consultation_factories import CONSENT_ALL_CATEGORIES, create_doctor, create_patient
 
     _enable_flag(monkeypatch)
     doctor = create_doctor(db)
     _u1, profile_a = create_patient(db)
     _u2, profile_b = create_patient(db)
     consultation = consult_svc.create_consultation(
-        db, patient_id=profile_a.id, doctor_id=doctor.id, data_consent_accepted=True
+        db, patient_id=profile_a.id, doctor_id=doctor.id, data_consent_accepted=True,
+        consent_categories=CONSENT_ALL_CATEGORIES
     )
     consultation_payment.pay_mock(db, consultation, patient_profile_id=profile_a.id)
     _grant_ai_use_consent(db, patient_id=profile_b.id, doctor_user_id=doctor.user_id)
@@ -614,7 +615,7 @@ def test_source_map_dates_match_underlying_fixtures(db):
     from app.services import consultation as consult_svc
     from app.services import consultation_payment
 
-    from tests.consultation_factories import create_doctor, create_patient
+    from tests.consultation_factories import CONSENT_ALL_CATEGORIES, create_doctor, create_patient
 
     doctor = create_doctor(db)
     _user, profile = create_patient(db)
@@ -667,7 +668,8 @@ def test_source_map_dates_match_underlying_fixtures(db):
     db.refresh(weight_metric)
 
     consultation = consult_svc.create_consultation(
-        db, patient_id=profile.id, doctor_id=doctor.id, data_consent_accepted=True
+        db, patient_id=profile.id, doctor_id=doctor.id, data_consent_accepted=True,
+        consent_categories=CONSENT_ALL_CATEGORIES
     )
     consultation_payment.pay_mock(db, consultation, patient_profile_id=profile.id)
     db.refresh(consultation)
@@ -843,13 +845,14 @@ def test_consultation_revoked_access_returns_403(client, db, monkeypatch):
     from app.services import consultation as consult_svc
     from app.services import consultation_payment
 
-    from tests.consultation_factories import create_doctor, create_patient
+    from tests.consultation_factories import CONSENT_ALL_CATEGORIES, create_doctor, create_patient
 
     _enable_flag(monkeypatch)
     doctor = create_doctor(db)
     _user, profile = create_patient(db)
     consultation = consult_svc.create_consultation(
-        db, patient_id=profile.id, doctor_id=doctor.id, data_consent_accepted=True
+        db, patient_id=profile.id, doctor_id=doctor.id, data_consent_accepted=True,
+        consent_categories=CONSENT_ALL_CATEGORIES
     )
     consultation_payment.pay_mock(db, consultation, patient_profile_id=profile.id)
     _grant_ai_use_consent(db, patient_id=profile.id, doctor_user_id=doctor.user_id)
@@ -1465,13 +1468,14 @@ async def test_get_analysis_drops_consultation_on_patient_id_mismatch(db, monkey
     from app.services import consultation as consult_svc
     from app.services import consultation_payment
 
-    from tests.consultation_factories import create_doctor, create_patient
+    from tests.consultation_factories import CONSENT_ALL_CATEGORIES, create_doctor, create_patient
 
     doctor = create_doctor(db)
     _user_a, profile_a = create_patient(db)
     _user_b, profile_b = create_patient(db)
     consultation = consult_svc.create_consultation(
-        db, patient_id=profile_a.id, doctor_id=doctor.id, data_consent_accepted=True
+        db, patient_id=profile_a.id, doctor_id=doctor.id, data_consent_accepted=True,
+        consent_categories=CONSENT_ALL_CATEGORIES
     )
     consultation_payment.pay_mock(db, consultation, patient_profile_id=profile_a.id)
 

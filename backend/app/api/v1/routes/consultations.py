@@ -17,13 +17,19 @@ from app.api.deps import (
     get_session,
     require_roles,
 )
+from app.core.clock import utcnow
 from app.core.config import MARKETPLACE_DISCLAIMER
+from app.domain import consultation_consent_policy as consent_policy
 from app.models.patient import PatientProfile
 from app.models.user import UserRole
+from app.schemas.common import Message
 from app.schemas.consultation import (
+    ConsentCategoryOut,
     ConsultationCancel,
     ConsultationCreate,
     ConsultationOut,
+    DataSharingConsentOut,
+    DataSharingConsentPolicyOut,
     NoteCreate,
     NoteOut,
     PatientPaymentOut,
@@ -36,6 +42,7 @@ from app.services import (
 )
 from app.services import (
     consultation_access,
+    consultation_consent,
     consultation_note,
     consultation_payment,
     consultation_review,
@@ -73,6 +80,40 @@ def _with_disclaimer(consultation) -> ConsultationOut:
 
 
 # ---------------------------------------------------------------------------
+# Data-sharing consent policy (copy the booking modal renders)
+# ---------------------------------------------------------------------------
+#
+# Declared BEFORE "/{consultation_id}" so the literal path is not captured by
+# the path parameter.
+#
+
+
+@router.get("/data-sharing-policy", response_model=DataSharingConsentPolicyOut)
+def get_data_sharing_policy(
+    user: CurrentUser = Depends(_patient_only),
+) -> DataSharingConsentPolicyOut:
+    """Return the server-authored consent copy + grantable categories.
+
+    Clients render this verbatim rather than shipping their own translation, so
+    the words shown to the patient are exactly the words versioned against the
+    grant we store.
+    """
+    return DataSharingConsentPolicyOut(
+        consent_version=consent_policy.CONSENT_VERSION,
+        policy_version=consent_policy.POLICY_VERSION,
+        purpose=consent_policy.PURPOSE_DOCTOR_CONSULTATION,
+        title=consent_policy.CONSENT_COPY["title"],
+        body=consent_policy.CONSENT_COPY["body"],
+        accept_label=consent_policy.CONSENT_COPY["accept_label"],
+        decline_label=consent_policy.CONSENT_COPY["decline_label"],
+        categories=[
+            ConsentCategoryOut(key=key, label=consent_policy.CATEGORY_LABEL[key])
+            for key in consent_policy.CATEGORIES
+        ],
+    )
+
+
+# ---------------------------------------------------------------------------
 # Create + list + detail
 # ---------------------------------------------------------------------------
 
@@ -84,12 +125,31 @@ def create_consultation(
     db: Session = Depends(get_session),
 ) -> ConsultationOut:
     profile = _resolve_patient_profile(db, user.id)
+    consent_in = payload.data_sharing_consent
+    # A client that rendered an older version of the consent screen showed the
+    # patient different terms from the ones we would record. Reject rather than
+    # silently upgrade the grant to the current version.
+    if (
+        consent_in.consent_version is not None
+        and consent_in.consent_version != consent_policy.CONSENT_VERSION
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Consent version is out of date. Please reload and review the "
+                "sharing terms again."
+            ),
+        )
     consultation = consult_svc.create_consultation(
         db,
         patient_id=profile.id,
         doctor_id=payload.doctor_id,
         consultation_type=payload.consultation_type,
         data_consent_accepted=payload.data_consent_accepted,
+        consent_categories=consent_in.categories,
+        consent_source=consent_in.source,
+        consent_client_app_version=consent_in.client_app_version,
+        consent_locale=consent_in.locale,
         chief_complaint=payload.chief_complaint,
         patient_note=payload.patient_note,
         booking_appointment_id=payload.booking_appointment_id,
@@ -239,10 +299,102 @@ def get_patient_summary(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Doctor profile not found."
         )
-    consultation = consultation_access.assert_doctor_can_view(
+    access = consultation_access.assert_doctor_can_view(
         db, doctor=doctor, consultation_id=consultation_id
     )
-    return build_summary(db, patient_id=consultation.patient_id, doctor_id=doctor.id)
+    return build_summary(
+        db,
+        patient_id=access.patient_id,
+        doctor_id=doctor.id,
+        allowed_categories=access.allowed_categories,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Data-sharing consent — patient read + revoke
+# ---------------------------------------------------------------------------
+
+
+def _consent_out(record) -> DataSharingConsentOut:
+    return DataSharingConsentOut(
+        id=record.id,
+        consultation_id=record.consultation_id,
+        doctor_id=record.doctor_id,
+        purpose=record.purpose,
+        consent_version=record.consent_version,
+        policy_version=record.policy_version,
+        categories=sorted(record.granted_categories()),
+        granted_at=record.granted_at,
+        revoked_at=record.revoked_at,
+        is_active=record.is_active_at(
+            utcnow(), current_consent_version=consent_policy.CONSENT_VERSION
+        ),
+        source=record.source,
+    )
+
+
+def _own_consent_or_404(db: Session, consultation_id: str, patient_profile_id: str):
+    """Load the consent for a consultation the CALLER owns.
+
+    Cross-patient reads are answered 404, not 403: a patient must not be able to
+    probe which consultation ids exist, or which doctor another patient booked.
+    """
+    record = consultation_consent.get_for_consultation(db, consultation_id)
+    if record is None or record.patient_id != patient_profile_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Data-sharing consent not found for this consultation.",
+        )
+    return record
+
+
+@router.get("/{consultation_id}/data-sharing-consent", response_model=DataSharingConsentOut)
+def get_data_sharing_consent(
+    consultation_id: str,
+    user: CurrentUser = Depends(_patient_only),
+    db: Session = Depends(get_session),
+) -> DataSharingConsentOut:
+    """Return the patient's own recorded consent for this consultation.
+
+    Patient-only by design: a doctor must not be able to enumerate what a
+    patient did or did not share — they simply receive the permitted data, or a
+    403.
+    """
+    profile = _resolve_patient_profile(db, user.id)
+    return _consent_out(_own_consent_or_404(db, consultation_id, profile.id))
+
+
+@router.delete("/{consultation_id}/data-sharing-consent", response_model=Message)
+def revoke_data_sharing_consent(
+    consultation_id: str,
+    user: CurrentUser = Depends(_patient_only),
+    db: Session = Depends(get_session),
+) -> Message:
+    """Withdraw sharing for this consultation. Takes effect immediately.
+
+    Behaviour for an ACTIVE (IN_PROGRESS / PAID) consultation is deliberate and
+    explicit:
+
+    - The consultation is **not** cancelled. Cancelling is a separate decision
+      with refund consequences, and it is the patient's to make.
+    - The doctor's ``ConsultationAccessGrant`` is revoked in the same
+      transaction, so an already-issued token or an open session cannot keep
+      reading PHI — access is not merely denied at the next consent check, the
+      care-relationship grant behind it is closed too.
+    - Notes the doctor already wrote, the payment, and the audit trail all
+      remain. Withdrawing data sharing is not a deletion request.
+    """
+    profile = _resolve_patient_profile(db, user.id)
+    record = _own_consent_or_404(db, consultation_id, profile.id)
+
+    # Idempotent: a second revoke is a no-op success, so a retried request or a
+    # double-tap cannot 409 at a patient trying to withdraw consent.
+    newly_revoked = consultation_consent.revoke(db, record=record, actor_id=profile.id)
+    if newly_revoked:
+        consultation = consult_svc.get_consultation_or_404(db, consultation_id)
+        consultation_access.revoke_on_end(db, consultation)
+    db.commit()
+    return Message(message="revoked")
 
 
 # ---------------------------------------------------------------------------

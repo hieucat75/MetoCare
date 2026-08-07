@@ -29,7 +29,7 @@ from app.services import consultation_note, consultation_payment
 from cryptography.fernet import Fernet
 from sqlalchemy import text
 
-from tests.consultation_factories import create_doctor, create_patient
+from tests.consultation_factories import CONSENT_ALL_CATEGORIES, create_doctor, create_patient
 
 
 def _seed_user(db, *, full_name: str | None, role: UserRole = UserRole.SUPER_ADMIN) -> User:
@@ -212,7 +212,8 @@ def _seed_corrupted_note(db) -> tuple:
     doctor = create_doctor(db)
     _user, profile = create_patient(db)
     c = consultation_svc.create_consultation(
-        db, patient_id=profile.id, doctor_id=doctor.id, data_consent_accepted=True
+        db, patient_id=profile.id, doctor_id=doctor.id, data_consent_accepted=True,
+        consent_categories=CONSENT_ALL_CATEGORIES
     )
     consultation_payment.pay_mock(db, c, patient_profile_id=profile.id)
     note = consultation_note.add_note(

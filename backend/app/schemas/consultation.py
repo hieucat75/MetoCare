@@ -7,6 +7,7 @@ are exposed only where appropriate (doctor/admin flows use the model directly).
 from __future__ import annotations
 
 import datetime as dt
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -17,15 +18,98 @@ from app.models.consultation import ConsultationType
 # ---------------------------------------------------------------------------
 
 
+class DataSharingConsentIn(BaseModel):
+    """The patient's explicit consent, as captured by the booking modal.
+
+    ``accepted`` must be literally ``True``; there is no other accepted value,
+    so a client cannot book by omitting the field or sending a falsy one.
+    """
+
+    accepted: Literal[True] = Field(
+        ..., description="Must be true — the patient pressed 'Đồng ý và tiếp tục'."
+    )
+    categories: list[str] = Field(
+        ...,
+        min_length=1,
+        max_length=16,
+        description=(
+            "Category keys the patient granted. Unrecognised keys are dropped "
+            "server-side; at least one recognised key is required."
+        ),
+    )
+    consent_version: str | None = Field(
+        default=None,
+        max_length=16,
+        description=(
+            "Consent version the client rendered. Rejected when it does not "
+            "match the server's current version, so a stale client cannot "
+            "record consent to terms the patient never saw."
+        ),
+    )
+    policy_version: str | None = Field(
+        default=None, max_length=16, description="Copy version the client rendered."
+    )
+    source: str | None = Field(default=None, max_length=32, description="'web' | 'mobile'")
+    client_app_version: str | None = Field(default=None, max_length=32)
+    locale: str | None = Field(default=None, max_length=32)
+
+
 class ConsultationCreate(BaseModel):
     doctor_id: str
     consultation_type: ConsultationType = ConsultationType.CHAT
     data_consent_accepted: bool = Field(
         ..., description="Patient must accept data-sharing consent to book."
     )
+    data_sharing_consent: DataSharingConsentIn = Field(
+        ...,
+        description=(
+            "Required. The consultation-specific sharing consent recorded at "
+            "booking; a consultation is never created without it."
+        ),
+    )
     chief_complaint: str | None = Field(default=None, max_length=2000)
     patient_note: str | None = Field(default=None, max_length=4000)
     booking_appointment_id: str | None = None
+
+
+class ConsentCategoryOut(BaseModel):
+    key: str
+    label: str
+
+
+class DataSharingConsentPolicyOut(BaseModel):
+    """Server-authored copy + category list for the booking consent modal.
+
+    Clients render this verbatim so the words the patient reads are the words
+    recorded against their grant.
+    """
+
+    consent_version: str
+    policy_version: str
+    purpose: str
+    title: str
+    body: str
+    accept_label: str
+    decline_label: str
+    categories: list[ConsentCategoryOut]
+
+
+class DataSharingConsentOut(BaseModel):
+    """A recorded consent, as shown to the patient in Privacy settings."""
+
+    id: str
+    consultation_id: str
+    doctor_id: str
+    purpose: str
+    consent_version: str
+    policy_version: str
+    categories: list[str]
+    granted_at: dt.datetime
+    revoked_at: dt.datetime | None
+    is_active: bool
+    source: str | None = None
+
+    model_config = {"from_attributes": True}
 
 
 class ConsultationOut(BaseModel):

@@ -9,10 +9,26 @@ from __future__ import annotations
 import os
 
 from app.core.security import create_access_token
+from app.domain.consultation_consent_policy import CATEGORIES as _POLICY_CATEGORIES
 from app.models.care import Doctor
 from app.models.consultation import DoctorVerificationStatus
 from app.models.patient import PatientProfile
 from app.models.user import User, UserRole
+
+# Full data-sharing grant — what a patient who accepted the whole booking modal
+# consents to. Tests needing a narrower grant pass their own subset.
+CONSENT_ALL_CATEGORIES: list[str] = list(_POLICY_CATEGORIES)
+
+
+def consent_payload(categories: list[str] | None = None, **overrides) -> dict:
+    """A valid ``data_sharing_consent`` request body for POST /consultations."""
+    body = {
+        "accepted": True,
+        "categories": categories if categories is not None else CONSENT_ALL_CATEGORIES,
+        "source": "web",
+    }
+    body.update(overrides)
+    return body
 
 
 def _uid() -> str:
