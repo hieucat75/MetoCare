@@ -252,11 +252,22 @@ def test_every_deploy_path_gates_in_the_right_order(name, src):
     """
     migrate = src.index('--command "alembic"')
     smoke = src.index("run_crypto_smoke.py")
-    rollout = min(
-        (src.index(m) for m in ("az containerapp update", "az containerapp create")
-         if m in src),
-        default=len(src),
-    )
+    # Only lines that EXECUTE a rollout count. The rollback-target step echoes
+    # `az containerapp update` into the run summary as the recovery command an
+    # on-call is meant to copy, and that text sits before the migration — so
+    # matching raw occurrences would read documentation as a rollout and fail a
+    # workflow whose ordering is correct.
+    rollout = len(src)
+    offset = 0
+    for line in src.splitlines(keepends=True):
+        bare = line.strip()
+        executes = not bare.startswith(("echo", "#")) and any(
+            m in line for m in ("az containerapp update", "az containerapp create")
+        )
+        if executes:
+            rollout = offset
+            break
+        offset += len(line)
     assert migrate < smoke, f"{name}: the smoke runs BEFORE the migration it must verify"
     assert smoke < rollout, (
         f"{name}: the smoke runs AFTER the rollout — a wrong key ships, and the "
