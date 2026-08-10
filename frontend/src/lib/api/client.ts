@@ -3,7 +3,19 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000/api/v
 export class ApiError extends Error {
   constructor(
     public readonly status: number,
-    public readonly detail: string
+    public readonly detail: string,
+    /**
+     * The backend's machine-readable error code when it sends one
+     * (`PASSWORD_POLICY`, `VALIDATION_ERROR`, ...).
+     *
+     * Without it a caller can only branch on the HTTP status, and 422 means
+     * "something in this request was rejected" — not "the phone was wrong".
+     * On 2026-08-10 a real user registered with a valid number and a password
+     * shorter than the production policy; both auth pages read that 422 as an
+     * invalid phone and told them so, which is a false statement about input
+     * they had entered correctly.
+     */
+    public readonly code?: string
   ) {
     super(detail)
     this.name = 'ApiError'
@@ -125,6 +137,7 @@ export async function apiFetch<T>(path: string, options: FetchOptions = {}): Pro
 
   if (!res.ok) {
     let detail = `Lỗi ${res.status}`
+    let code: string | undefined
     try {
       const body = await res.json()
       if (body?.code === 'VALIDATION_ERROR' || body?.code === 'DUPLICATE_CANDIDATE') {
@@ -136,9 +149,17 @@ export async function apiFetch<T>(path: string, options: FetchOptions = {}): Pro
         detail = body.detail
       } else if (Array.isArray(body.detail)) {
         detail = body.detail.map((e: { msg?: string }) => e.msg).join('; ')
+      } else if (typeof body.message === 'string') {
+        // Several handlers answer with `message` rather than `detail` — the
+        // password-policy one among them (main.py). Dropping it left the caller
+        // with a bare "Lỗi 422" and no way to tell WHICH field the backend
+        // rejected, which is how a short password came to be reported as an
+        // invalid phone number.
+        detail = body.message
       }
+      code = typeof body.code === 'string' ? body.code : undefined
     } catch {}
-    throw new ApiError(res.status, detail)
+    throw new ApiError(res.status, detail, code)
   }
 
   if (res.status === 204) return undefined as T
@@ -174,13 +195,16 @@ export async function apiUpload<T>(path: string, form: FormData): Promise<T> {
 
   if (!res.ok) {
     let detail = `Lỗi ${res.status}`
+    let code: string | undefined
     try {
       const body = await res.json()
       if (typeof body.detail === 'string') detail = body.detail
       else if (Array.isArray(body.detail))
         detail = body.detail.map((e: { msg?: string }) => e.msg).join('; ')
+      else if (typeof body.message === 'string') detail = body.message
+      code = typeof body.code === 'string' ? body.code : undefined
     } catch {}
-    throw new ApiError(res.status, detail)
+    throw new ApiError(res.status, detail, code)
   }
   return res.json() as Promise<T>
 }
