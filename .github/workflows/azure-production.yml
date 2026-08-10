@@ -631,13 +631,17 @@ jobs:
           if az containerapp show -g "$RG" -n "$FRONTEND_APP" -o none 2>/dev/null; then
             az containerapp update -g "$RG" -n "$FRONTEND_APP" --image "$IMG" \
               --revision-suffix "$SUFFIX" \
-              --min-replicas 1 --set-env-vars "NEXT_PUBLIC_API_URL=$API_URL" -o none
+              --min-replicas 1 --set-env-vars "NEXT_PUBLIC_API_URL=$API_URL" \
+                "NEXT_PUBLIC_APP_ENV=production" \
+                "NEXT_PUBLIC_BUILD_SHA=${{ steps.tag.outputs.sha8 }}" -o none
           else
             az containerapp create -g "$RG" -n "$FRONTEND_APP" --environment "$ENV_NAME" \
               --image "$IMG" --target-port 3000 --ingress external \
               --min-replicas 1 --max-replicas 1 --cpu 0.25 --memory 0.5Gi \
               --revision-suffix "$SUFFIX" \
-              --env-vars "NEXT_PUBLIC_API_URL=$API_URL" -o none
+              --env-vars "NEXT_PUBLIC_API_URL=$API_URL" \
+                "NEXT_PUBLIC_APP_ENV=production" \
+                "NEXT_PUBLIC_BUILD_SHA=${{ steps.tag.outputs.sha8 }}" -o none
           fi
 
       # ── CORS guard — ensure app.metocare.me survives every deploy ─────────

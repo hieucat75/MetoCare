@@ -195,3 +195,65 @@ def test_the_rollback_strategy_reflects_the_actual_revision_mode():
     assert "az containerapp ingress traffic set" not in single, (
         "Single mode cannot roll back by shifting traffic"
     )
+
+
+# ── Frontend build args must actually reach the build ───────────────────────
+
+
+def _frontend_dockerfile() -> str:
+    df = pathlib.Path(__file__).resolve().parents[2] / "frontend" / "Dockerfile"
+    if not df.exists():
+        pytest.skip("frontend/Dockerfile not present")
+    return df.read_text()
+
+
+def test_every_next_public_build_arg_is_declared_in_the_dockerfile():
+    """An undeclared ARG is silently DISCARDED by Docker.
+
+    All three workflows passed `--build-arg NEXT_PUBLIC_APP_ENV` for months and
+    every one was dropped, because the Dockerfile never declared it. Nothing
+    failed: the build succeeded, the value was empty, and `EnvironmentBanner`
+    fell back to non-production — so production told real users on
+    app.metocare.me that their data was not real.
+
+    Generic on purpose: the next NEXT_PUBLIC_* variable someone adds to a
+    workflow is covered without anyone remembering this test exists.
+    """
+    dockerfile = _frontend_dockerfile()
+    declared = set(re.findall(r"^ARG\s+(NEXT_PUBLIC_[A-Z0-9_]+)", dockerfile, re.M))
+
+    for path in sorted(_WORKFLOWS.glob("*.yml")):
+        src = path.read_text()
+        if "build-args:" not in src:
+            continue
+        for block in src.split("build-args:")[1:]:
+            # The build-args block ends at the next key at lower indentation.
+            head = block.split("\n          tags:", 1)[0]
+            for name in re.findall(r"^\s*(NEXT_PUBLIC_[A-Z0-9_]+)=", head, re.M):
+                assert name in declared, (
+                    f"{path.name} passes --build-arg {name}, but frontend/Dockerfile "
+                    f"never declares it — Docker discards it silently. Declared: {sorted(declared)}"
+                )
+
+
+def test_the_environment_banner_variable_is_declared():
+    """The specific one that reached users, pinned by name as well as by rule."""
+    assert re.search(r"^ARG\s+NEXT_PUBLIC_APP_ENV", _frontend_dockerfile(), re.M)
+
+
+def _frontend_rollout_block() -> str:
+    src = _production_workflow()
+    marker = "- name: Deploy frontend to ACA"
+    assert marker in src, "the frontend rollout step was renamed"
+    return src.split(marker, 1)[1].split("\n      - name:", 1)[0]
+
+
+def test_production_frontend_sets_the_environment_at_runtime():
+    """`EnvironmentBanner` is a Server Component, so it reads process.env at
+    RUNTIME for dynamically rendered pages. Staging set this on its container;
+    production did not, which is why the banner said "không xác định" rather
+    than nothing at all. Build-time declaration alone is not sufficient."""
+    block = _frontend_rollout_block()
+    assert "NEXT_PUBLIC_APP_ENV=production" in block, (
+        "the production frontend container does not receive NEXT_PUBLIC_APP_ENV"
+    )
