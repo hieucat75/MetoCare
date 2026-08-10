@@ -244,3 +244,55 @@ def test_wrong_phone_password_401(client):
     _register_phone(client, "0987654321")
     bad = client.post("/api/v1/auth/login", json={"phone": "0987654321", "password": "wrong"})
     assert bad.status_code == 401, bad.text
+
+
+# ── Regression: a password rejection must not read as a phone rejection ──────
+#
+# 2026-08-10, production. A real user registered with a valid 090 mobile and a
+# password shorter than the production policy. The backend correctly returned
+# 422 PASSWORD_POLICY; the register page reported EVERY 422 as
+# "Số điện thoại di động Việt Nam không hợp lệ." and sent the user back to
+# re-type a number that had been right all along.
+#
+# The frontend mapping is fixed in the register page. These pin the backend half
+# of the contract it now depends on: the two rejections must be TELLABLE APART
+# by a client, not merely both be 422.
+
+
+def test_a_valid_090_mobile_registers(client):
+    """The shape from the production report. Synthetic number, same prefix."""
+    r = client.post(
+        "/api/v1/auth/register",
+        json={"phone": "0904641810", "password": "Str0ngPass1", "full_name": "T"},
+    )
+    assert r.status_code == 201, r.text
+
+
+def test_a_weak_password_is_reported_as_a_password_problem(client, monkeypatch):
+    """NOT as a phone problem. The client must be able to tell which field lost."""
+    from app.core.config import get_settings
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "password_min_length", 8, raising=False)
+    monkeypatch.setattr(settings, "password_require_complexity", True, raising=False)
+
+    r = client.post(
+        "/api/v1/auth/register",
+        json={"phone": "0904641811", "password": "abcdefgh", "full_name": "T"},
+    )
+
+    assert r.status_code == 422
+    body = r.json()
+    assert body.get("code") == "PASSWORD_POLICY", body
+    # The message must name the password, and must NOT accuse the phone.
+    assert "Mật khẩu" in body.get("message", "")
+    assert "Số điện thoại" not in str(body)
+
+
+def test_an_invalid_phone_is_still_reported_as_a_phone_problem(client):
+    r = client.post(
+        "/api/v1/auth/register",
+        json={"phone": "12345", "password": "Str0ngPass1", "full_name": "T"},
+    )
+    assert r.status_code == 422
+    assert "Số điện thoại" in str(r.json().get("detail", ""))

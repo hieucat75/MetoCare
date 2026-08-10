@@ -116,8 +116,15 @@ export default function RegisterPage() {
     if (!phone.trim()) errs.phone = 'Số điện thoại là bắt buộc'
     else if (!isValidVnPhone(phone))
       errs.phone = 'Số điện thoại di động không hợp lệ (VD: 0901234567)'
+    // Mirrors the PRODUCTION policy in backend/app/core/password.py (min 8 +
+    // letters and digits). It used to allow 6 characters with no complexity,
+    // which is the staging build-phase policy — so the form accepted a password
+    // production would go on to reject, and the user only found out from a
+    // server error that named the wrong field entirely.
     if (!password) errs.password = 'Mật khẩu là bắt buộc'
-    else if (password.length < 6) errs.password = 'Mật khẩu tối thiểu 6 ký tự.'
+    else if (password.length < 8) errs.password = 'Mật khẩu phải có ít nhất 8 ký tự.'
+    else if (!(/[A-Za-z]/.test(password) && /\d/.test(password)))
+      errs.password = 'Mật khẩu phải gồm cả chữ và số.'
     return errs
   }
 
@@ -155,7 +162,18 @@ export default function RegisterPage() {
           setFieldErrors({ phone: 'Số điện thoại này đã được đăng ký. Hãy thử đăng nhập.' })
           setStep('form')
         } else if (err.status === 422) {
-          setFieldErrors({ phone: 'Số điện thoại di động Việt Nam không hợp lệ.' })
+          // A 422 means "the backend rejected something", NOT "the phone is
+          // wrong". Blaming the phone unconditionally told a real user on
+          // 2026-08-10 that a valid number was invalid, when what the backend
+          // had actually rejected was a password shorter than the production
+          // policy. Attribute the error to the field the backend names.
+          if (err.code === 'PASSWORD_POLICY') {
+            setFieldErrors({ password: err.detail })
+          } else if (err.detail?.includes('Số điện thoại')) {
+            setFieldErrors({ phone: err.detail })
+          } else {
+            setError(err.detail || 'Dữ liệu không hợp lệ. Vui lòng kiểm tra lại.')
+          }
           setStep('form')
         } else if (err.status === 429) {
           setError('Quá nhiều yêu cầu. Vui lòng thử lại sau ít phút.')

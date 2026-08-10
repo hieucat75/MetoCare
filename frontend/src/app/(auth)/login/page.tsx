@@ -127,7 +127,10 @@ export default function LoginPage() {
         } else if (err.status === 429) {
           setError('Quá nhiều yêu cầu. Vui lòng thử lại sau ít phút.')
         } else if (err.status === 422) {
-          setError('Số điện thoại không hợp lệ. Vui lòng kiểm tra lại.')
+          // Same defect as the register page: a 422 is not proof that the phone
+          // was wrong. Report what the backend actually said, and only fall
+          // back to generic copy when it says nothing useful.
+          setError(err.detail || 'Dữ liệu không hợp lệ. Vui lòng kiểm tra lại.')
         } else {
           setError(err.detail || 'Có lỗi xảy ra. Vui lòng thử lại.')
         }

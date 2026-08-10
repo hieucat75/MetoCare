@@ -45,3 +45,56 @@ def test_idempotent_on_canonical():
     once = normalize_vn_phone("0987654321")
     assert once is not None
     assert normalize_vn_phone(once) == once
+
+
+# ── Regression: the 090 shape reported from production on 2026-08-10 ─────────
+#
+# A real user's registration was rejected as "Số điện thoại di động Việt Nam
+# không hợp lệ." The number was valid and the normalizer was never at fault —
+# the register page reported EVERY 422 as an invalid phone, and the 422 was a
+# password-policy rejection. These pin the contract the report was measured
+# against, so a future regex change cannot quietly make that report true.
+#
+# Synthetic 090 number of the same shape. The reporter's real number is
+# deliberately not committed.
+
+_SYNTHETIC_090 = "0904641810"
+_SYNTHETIC_090_E164 = "+84904641810"
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "0904641810",
+        "+84904641810",
+        "84904641810",
+        "+84 904 641 810",
+        "090 464 1810",
+        "090-464-1810",
+    ],
+)
+def test_every_accepted_form_of_a_090_mobile_normalizes_to_one_e164(raw):
+    assert normalize_vn_phone(raw) == _SYNTHETIC_090_E164
+
+
+def test_the_090_prefix_is_inside_the_accepted_contract():
+    """Mobifone 090. Named explicitly because the production report claimed
+    otherwise, and a regex that dropped it would be a silent lockout."""
+    assert is_valid_vn_phone(_SYNTHETIC_090)
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "12345",
+        "090464181",       # 8 national digits — one short
+        "09046418100",     # 10 national digits — one long
+        "+840904641810",   # double-prefixed: +84 followed by the trunk 0
+        "+84+84904641810",
+        "0104641810",      # 10 is not a mobile prefix
+        "",
+        None,
+    ],
+)
+def test_invalid_numbers_still_fail(raw):
+    assert normalize_vn_phone(raw) is None
