@@ -186,11 +186,31 @@ jobs:
       # that was serving traffic when the deploy began. Never fatal: a first
       # deploy legitimately has no predecessor, and refusing to deploy over that
       # would be a gate on nothing.
+      # ── Record rollback target — BOTH tiers, and the mode that decides how ──
+      #
+      # 2026-08-10: the backend failed its health gate and the recorded rollback
+      # command did not work, because it assumed the previous revision still
+      # existed. `activeRevisionsMode` is **Single**, so creating the new
+      # revision DESTROYED the old one: there was nothing left to shift traffic
+      # to, and `ingress traffic set` could not have helped. The frontend was
+      # never recorded at all, so after the failure its previous image was
+      # simply unknown.
+      #
+      # So capture the image for BOTH apps — an image tag survives a revision
+      # being destroyed, which is the whole point — and emit the rollback
+      # command that matches the mode this app is actually in.
       - name: Record rollback target
         run: |
+          MODE=$(az containerapp show -g "$RG" -n "$BACKEND_APP" \
+            --query "properties.configuration.activeRevisionsMode" -o tsv 2>/dev/null || echo "")
           PREV=$(az containerapp revision list -g "$RG" -n "$BACKEND_APP" \
             --query "[?properties.active]|[0].name" -o tsv 2>/dev/null || echo "")
           PREV_IMG=$(az containerapp revision list -g "$RG" -n "$BACKEND_APP" \
+            --query "[?properties.active]|[0].properties.template.containers[0].image" \
+            -o tsv 2>/dev/null || echo "")
+          FE_PREV=$(az containerapp revision list -g "$RG" -n "$FRONTEND_APP" \
+            --query "[?properties.active]|[0].name" -o tsv 2>/dev/null || echo "")
+          FE_PREV_IMG=$(az containerapp revision list -g "$RG" -n "$FRONTEND_APP" \
             --query "[?properties.active]|[0].properties.template.containers[0].image" \
             -o tsv 2>/dev/null || echo "")
           if [ -z "$PREV" ]; then
@@ -198,23 +218,58 @@ jobs:
             echo "::warning::first deploy. There is no rollback target."
             exit 0
           fi
-          echo "ROLLBACK TARGET revision : $PREV"
-          echo "ROLLBACK TARGET image    : $PREV_IMG"
+          echo "ROLLBACK revision mode      : ${MODE:-unknown}"
+          echo "ROLLBACK backend revision   : $PREV"
+          echo "ROLLBACK backend image      : $PREV_IMG"
+          echo "ROLLBACK frontend revision  : ${FE_PREV:-none}"
+          echo "ROLLBACK frontend image     : ${FE_PREV_IMG:-none}"
           if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
             {
               echo "## Rollback target (captured before migration)"
               echo ""
               echo "| | |"
               echo "|---|---|"
-              echo "| Revision | \`$PREV\` |"
-              echo "| Image | \`$PREV_IMG\` |"
+              echo "| Revision mode | \`${MODE:-unknown}\` |"
+              echo "| Backend revision | \`$PREV\` |"
+              echo "| Backend image | \`$PREV_IMG\` |"
+              echo "| Frontend revision | \`${FE_PREV:-none}\` |"
+              echo "| Frontend image | \`${FE_PREV_IMG:-none}\` |"
               echo ""
-              echo "To roll the backend back to it:"
-              echo ""
-              echo '```bash'
-              echo "az containerapp ingress traffic set -g $RG -n $BACKEND_APP \\"
-              echo "  --revision-weight $PREV=100"
-              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            if [ "$MODE" = "Single" ]; then
+              {
+                echo "**Revision mode is \`Single\`: rolling out DESTROYS the revision"
+                echo "above.** There is no previous revision to send traffic back to,"
+                echo "and \`ingress traffic set\` will not work. Roll back by"
+                echo "redeploying the recorded IMAGE, which outlives the revision:"
+                echo ""
+                echo '```bash'
+                echo "az containerapp update -g $RG -n $BACKEND_APP \\"
+                echo "  --image $PREV_IMG"
+                if [ -n "$FE_PREV_IMG" ]; then
+                  echo "az containerapp update -g $RG -n $FRONTEND_APP \\"
+                  echo "  --image $FE_PREV_IMG"
+                fi
+                echo '```'
+              } >> "$GITHUB_STEP_SUMMARY"
+            else
+              {
+                echo "Revision mode is \`${MODE:-unknown}\` (multiple revisions kept),"
+                echo "so the previous revision survives and traffic can be shifted:"
+                echo ""
+                echo '```bash'
+                echo "az containerapp ingress traffic set -g $RG -n $BACKEND_APP \\"
+                echo "  --revision-weight $PREV=100"
+                echo '```'
+                echo ""
+                echo "If it does not survive, redeploy the image instead:"
+                echo ""
+                echo '```bash'
+                echo "az containerapp update -g $RG -n $BACKEND_APP --image $PREV_IMG"
+                echo '```'
+              } >> "$GITHUB_STEP_SUMMARY"
+            fi
+            {
               echo ""
               echo "> A **data** rollback is a separate decision. Do NOT run an"
               echo "> Alembic downgrade to undo a PHI-encryption migration: the"
@@ -539,6 +594,8 @@ jobs:
             MCP_BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
             MCP_EXPECTED_HOST=app.metocare.me \
             MCP_CORS_ALLOWED_ORIGINS=https://${FRONTEND_FQDN},https://app.metocare.me \
+            MCP_MFA_ENFORCEMENT_ENABLED=true \
+            MCP_DOCUMENT_SCAN_MODE=hold \
             MCP_AI_MODE=production MCP_LLM_PROVIDER=deepseek MCP_OCR_MODE=mock \
             MCP_OCR_WORKER_ENABLED=false MCP_RAG_ENABLED=false \
             MCP_STORAGE_MODE=local MCP_RATELIMIT_BACKEND=memory \
@@ -607,7 +664,12 @@ jobs:
             H=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "https://${BACKEND_FQDN}/api/v1/health" || echo 000)
             echo "  $i: /api/v1/health -> $H"
             [ "$H" = "200" ] && { echo "✅ Backend healthy"; break; }
-            [ "$i" = "18" ] && { echo "::error::Backend unhealthy after 3 min — ACA keeps previous healthy revision (auto-rollback)"; exit 1; }
+            # NOT "ACA keeps the previous healthy revision". On 2026-08-10 that
+            # sentence was printed while the broken revision held 100% of
+            # traffic and the previous one had already been destroyed by Single
+            # revision mode. An on-call reading it would have believed
+            # production had healed itself.
+            [ "$i" = "18" ] && { echo "::error::Backend unhealthy after 3 min. In Single revision mode the NEW revision holds traffic and the previous one no longer exists — there is NO automatic rollback. Roll back by redeploying the previous image recorded in this run's 'Rollback target' step summary."; exit 1; }
             sleep 10
           done
 

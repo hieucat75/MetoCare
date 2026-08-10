@@ -417,7 +417,7 @@ jobs:
             [ "$H" = "200" ] && { echo "✅ healthy"; exit 0; }
             sleep 10
           done
-          echo "::error::backend unhealthy — ACA keeps previous healthy revision (auto-rollback)"
+          echo "::error::backend unhealthy. There is NO automatic revision rollback in Single revision mode — the new revision holds traffic and the previous one is gone. Roll back by redeploying the previous image."
           exit 1
 
       - name: CORS guard — ensure app.metocare.me is always allowed

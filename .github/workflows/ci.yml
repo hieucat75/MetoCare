@@ -837,7 +837,12 @@ jobs:
             H=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "https://${BACKEND_FQDN}/api/v1/health" || echo 000)
             echo "  $i: /api/v1/health -> $H"
             [ "$H" = "200" ] && { echo "✅ Backend healthy"; break; }
-            [ "$i" = "18" ] && { echo "::error::Backend unhealthy after 3 min — ACA keeps previous healthy revision (auto-rollback)"; exit 1; }
+            # Not "ACA keeps the previous healthy revision": in Single revision
+            # mode the new revision holds traffic and the old one is destroyed,
+            # so nothing rolls back on its own. Staging served a broken build
+            # for fourteen minutes on 2026-08-06 while a message like this one
+            # said otherwise.
+            [ "$i" = "18" ] && { echo "::error::Backend unhealthy after 3 min. There is NO automatic revision rollback in Single revision mode — the new revision holds traffic. Roll back by redeploying the previous image."; exit 1; }
             sleep 10
           done
 
