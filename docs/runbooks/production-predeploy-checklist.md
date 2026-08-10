@@ -119,6 +119,23 @@ which is exactly what happened.
       counter at zero means it verified nothing, which is itself a failure
       (`no_legacy_rows_to_verify`).
 
+      **The one exception — read `result` together with `mode`.** A database
+      measured as provably empty (no accounts, no PHI, every counted table
+      answering zero) returns `result: pass_empty_database` / `mode:
+      empty_database` instead. A different verdict on purpose: the synthetic
+      round-trips still ran and the deployed key still had to encrypt and
+      decrypt, but no row written by an earlier deploy was verified, because
+      there were none. Never accept a plain `result: pass` alongside
+      `legacy_rows_total: 0` — that pairing is not emitted, and seeing it would
+      mean something upstream rewrote the verdict.
+
+      The permission comes from the `Read-only PHI population preflight` step
+      immediately above the smoke, which counts rows in a job holding only
+      `db-url` and no encryption key. It is derived per run, not configured: on
+      the first deploy after production has users the preflight reports
+      non-empty, and ordinary legacy verification is required again with nothing
+      to remember to change back.
+
 ## C. Dispatch
 
 ```bash
