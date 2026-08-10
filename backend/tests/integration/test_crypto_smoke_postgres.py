@@ -348,14 +348,35 @@ def test_the_empty_verdict_still_covers_every_required_entity(empty_db):
     }
 
 
-def test_empty_plus_flag_still_fails_on_a_wrong_key(empty_db):
+def test_empty_plus_flag_still_fails_on_a_malformed_key(empty_db):
     """The flag waives the legacy-row requirement, nothing else. A key that
     cannot complete a round-trip fails whatever the population is."""
     url, _key = empty_db
-    r = _smoke(url, _fernet_key() + "not-a-key", MCP_CRYPTO_SMOKE_ALLOW_EMPTY="1")
+    r = _smoke(url, "not-a-valid-fernet-key", MCP_CRYPTO_SMOKE_ALLOW_EMPTY="1")
 
-    assert r.returncode != 0, "a broken key passed under the empty-database flag"
+    assert r.returncode != 0, "a malformed key passed under the empty-database flag"
     assert '"result": "pass_empty_database"' not in r.stdout
+
+
+def test_an_empty_database_cannot_detect_a_wrong_but_well_formed_key(empty_db):
+    """The limitation the verdict exists to NAME, pinned so nobody later reads
+    `pass_empty_database` as the same assurance as `pass`.
+
+    A wrong-but-well-formed key round-trips perfectly: it encrypts and decrypts
+    its own sentinels. The only thing that can catch it is reading a row an
+    EARLIER deploy wrote, and an empty database has none. So this passes — and
+    it must pass under a verdict that says so in its own name, never under a
+    bare `pass`.
+    """
+    url, _key = empty_db
+    r = _smoke(url, _fernet_key(), MCP_CRYPTO_SMOKE_ALLOW_EMPTY="1")
+
+    summary = _summary(r)
+    assert summary["result"] == "pass_empty_database"
+    assert summary["mode"] == "empty_database"
+    # The distinction that makes the verdict honest.
+    assert summary["legacy_rows_total"] == 0
+    assert '"result": "pass"' not in r.stdout
 
 
 def test_empty_plus_flag_still_fails_on_a_missing_key(empty_db):
