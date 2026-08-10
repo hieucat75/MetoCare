@@ -299,6 +299,81 @@ jobs:
             fi
           fi
 
+      # ── Read-only PHI population preflight ───────────────────────────────
+      #
+      # Decides ONE thing: may the crypto smoke accept an empty database as a
+      # verdict rather than a failure. It is derived here, from a live count
+      # taken immediately before the smoke, rather than hard-coded as a
+      # production environment variable — a permanent variable would still be
+      # set on the deploy after this one, when production DOES hold rows, and
+      # would then permit an unverified pass on a populated database.
+      #
+      # Receives db-url ONLY. It counts rows, so it needs no MCP_ENCRYPTION_KEYS,
+      # and after 2026-08-06 a job that never holds the PHI key is worth having.
+      #
+      # Fails closed by construction: `allow_empty` is set to 1 only when the job
+      # reports Succeeded, which `run_phi_population.py` returns only when every
+      # counted table answered and every one of them was empty. "Rows exist", "a
+      # count failed" and "the job never ran" all leave it 0.
+      - name: Read-only PHI population preflight
+        id: population
+        run: |
+          IMG="${REGISTRY}/${{ github.repository_owner }}/metocare-backend:${{ steps.tag.outputs.tag }}"
+          JOB="caj-metocare-phi-population"
+          echo "allow_empty=0" >> "$GITHUB_OUTPUT"
+          if ! az containerapp job delete -g "$RG" -n "$JOB" --yes -o none 2>/dev/null; then
+            echo "  (no pre-existing $JOB to remove)"
+          fi
+          az containerapp job create \
+            --name "$JOB" --resource-group "$RG" --environment "$ENV_NAME" \
+            --image "$IMG" \
+            --trigger-type Manual \
+            --replica-timeout 300 --replica-retry-limit 0 \
+            --parallelism 1 --replica-completion-count 1 \
+            --cpu 0.5 --memory 1.0Gi \
+            --secrets "db-url=$DB_URL" \
+            --env-vars "MCP_DATABASE_URL=secretref:db-url" "MCP_ENV=production" \
+            --command "python" --args "run_phi_population.py" \
+            -o none
+          az containerapp job start -g "$RG" -n "$JOB" -o none
+          EXEC=$(az containerapp job execution list -g "$RG" -n "$JOB" \
+            --query "[0].name" -o tsv 2>/dev/null || echo "")
+          if [ -z "$EXEC" ]; then
+            echo "::warning::population preflight reported no execution; the"
+            echo "::warning::empty-database verdict stays DENIED."
+            exit 0
+          fi
+          ST=""
+          for i in $(seq 1 30); do
+            ST=$(az containerapp job execution show -g "$RG" -n "$JOB" \
+              --job-execution-name "$EXEC" \
+              --query "properties.status" -o tsv 2>/dev/null || echo Running)
+            echo "  population $i: $ST"
+            [ "$ST" = "Succeeded" ] && break
+            [ "$ST" = "Failed" ] && break
+            sleep 10
+          done
+          if [ "$ST" = "Succeeded" ]; then
+            echo "  database is provably EMPTY — empty-database verdict permitted"
+            echo "allow_empty=1" >> "$GITHUB_OUTPUT"
+          else
+            echo "  population not proven empty (status: ${ST:-unknown}) —"
+            echo "  the smoke must verify real rows, as normal."
+          fi
+
+      - name: Remove PHI population job
+        if: always()
+        run: |
+          JOB="caj-metocare-phi-population"
+          if az containerapp job show -g "$RG" -n "$JOB" -o none 2>/dev/null; then
+            if ! az containerapp job delete -g "$RG" -n "$JOB" --yes -o none; then
+              echo "::warning::Could not delete $JOB. It holds the production"
+              echo "::warning::database URL as a job secret (no encryption key)."
+              echo "::warning::Delete it manually:"
+              echo "::warning::  az containerapp job delete -g $RG -n $JOB --yes"
+            fi
+          fi
+
       # ── Post-migration PHI crypto smoke (BLOCKS the rollout) ──────────────
       #
       # Runs AFTER `alembic upgrade head` and BEFORE any traffic-carrying
@@ -364,6 +439,7 @@ jobs:
             --env-vars MCP_DATABASE_URL=secretref:db-url \
               MCP_ENCRYPTION_KEYS=secretref:enc-keys MCP_ENV=production \
               MCP_CRYPTO_SMOKE_ALLOW_PRODUCTION=1 \
+              MCP_CRYPTO_SMOKE_ALLOW_EMPTY=${{ steps.population.outputs.allow_empty }} \
               MCP_BUILD_SHA=${{ steps.tag.outputs.sha8 }} \
             --command "python" --args "run_crypto_smoke.py" -o none
           az containerapp job start -g "$RG" -n "$JOB" -o none

@@ -684,3 +684,207 @@ def test_both_workflows_invoke_the_smoke_the_same_way():
     )
     for _wf, command in invocations:
         assert 'run_crypto_smoke.py' in command
+
+
+# ── 8. Empty-database verdict (MCP_CRYPTO_SMOKE_ALLOW_EMPTY) ────────────────
+#
+# The behavioural decision table needs a real database and lives in
+# tests/integration/test_crypto_smoke_postgres.py. What is pinned here is the
+# part that must hold without one: the flag defaults OFF, "unknown" never
+# becomes "empty", and no deploy path but production can even ask.
+
+
+@pytest.mark.parametrize("value", ["", "0", "false", "no", "off", "None", " "])
+def test_the_empty_override_is_off_for_anything_but_an_explicit_yes(monkeypatch, value):
+    """A templating accident that yields "" or "0" must not enable the branch
+    that waives legacy verification. Only an affirmative value counts."""
+    monkeypatch.setenv(crypto_smoke.ALLOW_EMPTY_ENV, value)
+    assert crypto_smoke.allow_empty_enabled() is False
+
+
+@pytest.mark.parametrize("value", ["1", "true", "TRUE", "yes", " 1 "])
+def test_the_empty_override_is_on_only_when_explicitly_set(monkeypatch, value):
+    monkeypatch.setenv(crypto_smoke.ALLOW_EMPTY_ENV, value)
+    assert crypto_smoke.allow_empty_enabled() is True
+
+
+def test_the_empty_override_defaults_off_when_unset(monkeypatch):
+    monkeypatch.delenv(crypto_smoke.ALLOW_EMPTY_ENV, raising=False)
+    assert crypto_smoke.allow_empty_enabled() is False
+
+
+def test_a_failed_count_is_not_emptiness():
+    """THE property. A census that could not read a table knows nothing about
+    that table, and 'unknown' resolving to 'empty' is how an override like this
+    would come to skip verification on a database it never actually read."""
+    assert not crypto_smoke.Census(
+        present_empty=("users",), errors=(("notifications", "OperationalError"),)
+    ).proves_empty
+
+
+def test_rows_found_are_not_emptiness():
+    assert not crypto_smoke.Census(non_empty=(("users", 3),)).proves_empty
+
+
+def test_absent_tables_alone_do_not_deny_emptiness():
+    """A table whose migration has not run cannot hold rows. That is a known
+    state, unlike a failed query, and must stay distinguishable from it."""
+    census = crypto_smoke.Census(
+        present_empty=("users", "notifications"), absent=("extraction_candidates",)
+    )
+    assert census.proves_empty
+
+
+def test_an_all_empty_census_proves_emptiness():
+    assert crypto_smoke.Census(present_empty=("users", "notifications")).proves_empty
+
+
+def test_a_missing_table_is_told_apart_from_a_broken_query():
+    """`_is_undefined_table` decides which bucket a failure lands in, and the two
+    buckets have opposite consequences for the verdict."""
+    import sqlalchemy as sa
+
+    class _Orig(Exception):
+        sqlstate = "42P01"
+
+    undefined = sa.exc.ProgrammingError("SELECT 1", {}, _Orig())
+    assert crypto_smoke._is_undefined_table(undefined)
+
+    class _Other(Exception):
+        sqlstate = "57014"  # query_canceled
+
+    assert not crypto_smoke._is_undefined_table(
+        sa.exc.OperationalError("SELECT 1", {}, _Other())
+    )
+
+
+def test_the_census_counts_identity_tables_not_only_phi_columns():
+    """A database with accounts but NULL PHI columns is not an empty database.
+    Counting only encrypted columns would call it one."""
+    assert "users" in crypto_smoke.CENSUS_IDENTITY_TABLES
+    assert "patient_profiles" in crypto_smoke.CENSUS_IDENTITY_TABLES
+
+
+def test_the_extended_roundtrips_cover_every_required_entity():
+    """The entities the owner required be exercised even on an empty database."""
+    src = inspect.getsource(crypto_smoke)
+    for entity in (
+        "notification.title",
+        "notification.body",
+        "meto_message.content",
+        "medication_statement.raw_drug_name",
+        "extraction_candidate.fields_json",
+    ):
+        assert f'"{entity}"' in src, f"{entity} is not round-tripped"
+
+
+def test_an_unbuildable_scaffold_fails_rather_than_skipping():
+    """An entity whose parent rows could not be created is UNVERIFIED, and an
+    unverified entity must not be silently dropped from the run."""
+    src = inspect.getsource(crypto_smoke)
+    assert "unavailable:scaffold:" in src
+    assert "if model is None:" in src
+
+
+# ── 9. Only production may ask for the empty-database verdict ───────────────
+
+
+def test_only_the_production_workflow_mentions_the_empty_override():
+    """Not enabled globally, and never for staging: staging is reseeded often,
+    so an always-on override there would permanently mute the one check that
+    catches a mis-rotation."""
+    import pathlib
+
+    root = pathlib.Path(__file__).resolve().parents[2] / ".github" / "workflows"
+    for path in sorted(root.glob("*.yml")):
+        src = path.read_text()
+        if path.name == "azure-production.yml":
+            assert crypto_smoke.ALLOW_EMPTY_ENV in src
+        else:
+            assert crypto_smoke.ALLOW_EMPTY_ENV not in src, (
+                f"{path.name} may not enable the empty-database verdict"
+            )
+
+
+def test_production_derives_the_override_from_the_preflight_not_a_literal():
+    """A hard-coded `=1` would still be set on the NEXT deploy, when production
+    holds rows — and would then permit an unverified pass on a populated
+    database. The permission must be recomputed from a live count each time."""
+    src = _prod_workflow()
+    assert f"{crypto_smoke.ALLOW_EMPTY_ENV}=${{{{ steps.population.outputs.allow_empty }}}}" in src
+    assert f"{crypto_smoke.ALLOW_EMPTY_ENV}=1" not in src
+
+
+def test_the_population_preflight_runs_before_the_smoke():
+    """Derived from a count taken BEFORE the verdict it authorises, or it
+    authorises nothing."""
+    src = _prod_workflow()
+    assert src.index("Read-only PHI population preflight") < src.index(
+        "Post-migration PHI crypto smoke"
+    )
+
+
+def test_the_population_preflight_defaults_to_denied():
+    """Written before anything can fail, so an early exit leaves it denied."""
+    src = _prod_workflow()
+    block = src.split("Read-only PHI population preflight", 1)[1].split(
+        "- name: Remove PHI population job", 1
+    )[0]
+    assert 'echo "allow_empty=0" >> "$GITHUB_OUTPUT"' in block
+    # And it is granted only on an affirmative Succeeded.
+    assert 'if [ "$ST" = "Succeeded" ]; then' in block
+
+
+def test_the_population_preflight_never_receives_the_phi_key():
+    """It counts rows; it does not decrypt them. Handing it the key would put the
+    production master key in one more job for no verification benefit."""
+    src = _prod_workflow()
+    block = src.split("Read-only PHI population preflight", 1)[1].split(
+        "- name: Remove PHI population job", 1
+    )[0]
+    # Comments explain WHY the key is absent, so assert over executable lines
+    # only — otherwise the explanation would fail the test it explains.
+    code = "\n".join(
+        line for line in block.splitlines() if not line.strip().startswith("#")
+    )
+    assert "db-url=$DB_URL" in code
+    assert "enc-keys" not in code
+    assert "MCP_ENCRYPTION_KEYS" not in code
+
+
+def test_the_population_job_is_removed_afterwards():
+    """It holds the production database URL. Same rule as every other job."""
+    src = _prod_workflow()
+    block = src.split("- name: Remove PHI population job", 1)[1]
+    assert "if: always()" in block.split("run:", 1)[0]
+    assert "az containerapp job delete" in block
+
+
+def test_the_population_preflight_passes_no_dash_prefixed_arg():
+    """The az `--args` nargs='*' bug, pinned for the new job too: a dash-prefixed
+    token means the job is never created and the step fails on every deploy."""
+    src = _prod_workflow()
+    block = src.split("Read-only PHI population preflight", 1)[1].split(
+        "- name: Remove PHI population job", 1
+    )[0]
+    args_part = block.split("--args", 1)[1].split("\n", 1)[0]
+    tokens = [t.strip('"\\ ') for t in args_part.split() if t.strip('"\\ ')]
+    assert tokens and not any(t.startswith("-") for t in tokens), tokens
+    assert "run_phi_population.py" in args_part
+
+
+def test_a_missing_column_is_a_failure_not_an_absent_table():
+    """A bare "does not exist" match would also catch `column "x" does not
+    exist`, and a table read as absent is a table counted as harmlessly empty —
+    while it may hold every row that mattered."""
+    import sqlalchemy as sa
+
+    class _MissingColumn(Exception):
+        sqlstate = "42703"  # undefined_column
+
+        def __str__(self) -> str:
+            return 'column "id" does not exist'
+
+    assert not crypto_smoke._is_undefined_table(
+        sa.exc.ProgrammingError("SELECT 1", {}, _MissingColumn())
+    )
