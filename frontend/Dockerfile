@@ -22,6 +22,23 @@ COPY . .
 ARG NEXT_PUBLIC_API_URL=
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 
+# All three deploy workflows have passed --build-arg NEXT_PUBLIC_APP_ENV since
+# the environment banner was written, and every one of them was DISCARDED: an
+# undeclared ARG is silently ignored by Docker. `EnvironmentBanner` is a Server
+# Component, so it read the value at runtime instead — which staging happens to
+# set on its container and production does not.
+#
+# The result reached real users on 2026-08-10: production served
+# "MÔI TRƯỜNG THỬ NGHIỆM (không xác định) — dữ liệu ở đây không phải dữ liệu
+# thật" on app.metocare.me. Failing to non-production when the value is unset is
+# the right default; what was wrong is that the value never arrived. Statically
+# prerendered pages bake it at BUILD time, so a runtime variable cannot repair
+# them — it has to be declared here.
+ARG NEXT_PUBLIC_APP_ENV=
+ENV NEXT_PUBLIC_APP_ENV=$NEXT_PUBLIC_APP_ENV
+ARG NEXT_PUBLIC_BUILD_SHA=
+ENV NEXT_PUBLIC_BUILD_SHA=$NEXT_PUBLIC_BUILD_SHA
+
 # Enable standalone output for minimal runtime image
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
