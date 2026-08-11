@@ -542,3 +542,54 @@ def test_a_cleared_status_does_not_become_an_improvement_claim():
     summary = HealthTimelineEngine().summarize(events, results)
     assert "rbc" not in summary.improved_areas, summary.improved_areas
     assert "cải thiện" not in (summary.biggest_change_vi or "")
+
+
+# --------------------------------------------------------------------------- #
+# The Azure DI table path — the one production actually runs
+# --------------------------------------------------------------------------- #
+
+
+def _table_row(name: str, value: str, unit: str | None):
+    from app.domain.lab_table_extractor import OcrTableRow
+
+    return OcrTableRow(
+        original_test_name=name,
+        display_test_name=name,
+        original_value_str=value,
+        original_unit=unit,
+        original_reference_range=None,
+    )
+
+
+def test_table_path_disambiguates_the_erythrocyte_label_by_unit():
+    """Staging showed the table path DROPPING "Hồng cầu 0.50 L/L" where the text
+    parser converts it. Safe, but the patient loses the value — and production
+    runs table-first, so the drop was the live behaviour."""
+    from app.domain.lab_table_extractor import map_table_rows_to_raw_values
+
+    rows = map_table_rows_to_raw_values(
+        [_table_row("Hồng cầu", "0.50", "L/L")], hospital_id="vinmec"
+    )
+    assert rows, "row was dropped instead of disambiguated"
+    assert rows[0].test_name == "hematocrit", rows[0].test_name
+    assert rows[0].value == 50.0
+    assert rows[0].unit == "%"
+
+
+def test_table_path_keeps_a_real_rbc_count():
+    from app.domain.lab_table_extractor import map_table_rows_to_raw_values
+
+    rows = map_table_rows_to_raw_values(
+        [_table_row("Hồng cầu", "5.0", "T/L")], hospital_id="vinmec"
+    )
+    assert rows and rows[0].test_name == "rbc"
+    assert rows[0].value == 5.0
+
+
+def test_table_path_refuses_an_explicit_analyte_with_a_foreign_unit():
+    """An explicit label is never relabelled — that guesses which half is wrong."""
+    from app.domain.lab_table_extractor import map_table_rows_to_raw_values
+
+    assert map_table_rows_to_raw_values(
+        [_table_row("RBC", "0.50", "L/L")], hospital_id="vinmec"
+    ) == []
