@@ -89,44 +89,21 @@ class MetricOut(BaseModel):
         # screen rendered "Nguy hiểm" for that one row. Checked before the
         # caller-set short-circuit below, because a severity supplied upstream
         # is exactly as unsupportable as one computed here.
-        from app.domain.analyte_units import (
-            ALLOWED_UNITS,
-            NEEDS_REVIEW_MESSAGE,
-            UnitCompatibility,
-            to_canonical_unit,
-            unit_compatibility,
-        )
+        from app.domain.analyte_units import NEEDS_REVIEW_MESSAGE, guarded_status
 
-        # Alias-resolve first — a metric POSTed as metric_type="hct" must not
-        # skip the guard and then be classified by the alias-keyed classifier.
-        from app.domain.lab_interpreter import normalize_biomarker as _nb
-
-        _canon = _nb(self.metric_type or "") or (self.metric_type or "").strip().lower()
-        if _canon in ALLOWED_UNITS:
-            _compat = unit_compatibility(_canon, self.unit)
-            if _compat in (UnitCompatibility.INCOMPATIBLE, UnitCompatibility.UNKNOWN):
+        _g = guarded_status(self.metric_type, self.value, self.unit)
+        if _g is not None:
+            _status, _ = _g
+            if _status == "unknown":
                 self.status = "unknown"
                 self.is_critical = False
                 self.clinical_message = NEEDS_REVIEW_MESSAGE
-                return self
-            # CONVERTIBLE must be converted before classifying — see the matching
-            # comment in schemas/lab.py. An unconverted hematocrit fraction would
-            # classify against critical_low=20 and report a normal result as
-            # critical, on the screen that already disagreed with the other one.
-            _conv = to_canonical_unit(_canon, self.value, self.unit)
-            if _conv is None:
-                self.status = "unknown"
-                self.is_critical = False
-                self.clinical_message = NEEDS_REVIEW_MESSAGE
-                return self
-            from app.domain.lab_interpreter import classify_value as _cv
-            from app.services.lab import get_clinical_message as _gcm
+            else:
+                from app.services.lab import get_clinical_message as _gcm
 
-            _status = _cv(_canon, _conv[0])
-            if _status is not None and _status.value != "unknown":
-                self.status = _status.value
-                self.is_critical = _status.value == "critical"
-                self.clinical_message = _gcm(_canon, _status.value)
+                self.status = _status
+                self.is_critical = _status == "critical"
+                self.clinical_message = _gcm(self.metric_type, _status)
             return self
 
         if self.clinical_message is not None:

@@ -418,3 +418,71 @@ def test_alias_typed_metric_cannot_bypass_the_guard():
     )
     assert out.is_critical is False
     assert out.status == "normal"
+
+
+# --------------------------------------------------------------------------- #
+# Clinical-review round 3: LEGACY rows already in the database
+# --------------------------------------------------------------------------- #
+
+
+def test_legacy_row_with_a_fabricated_canonical_unit_is_not_critical():
+    """Round-3 P0. Before this fix the write path stamped the canonical unit onto
+    unit-free rows, so `rbc 0.50 10^12/L` is ALREADY stored. It now reads as
+    perfectly CANONICAL — compatible, convertible 1:1 — and classified critical
+    against critical_low=2.5. The domain layer calls 0.50 impossible for a red
+    cell count (physiological_min=1.0); every read path must agree."""
+    out = _lab_row(value=0.50, unit="10^12/L", status="critical")
+    assert out.status == "unknown", out.status
+    assert out.clinical_message == NEEDS_REVIEW_MESSAGE
+
+    metric = MetricOut(
+        id="m1",
+        patient_id="p1",
+        metric_type="rbc",
+        value=0.50,
+        unit="10^12/L",
+        status="critical",
+        measured_at=_NOW,
+    )
+    assert metric.status == "unknown"
+    assert metric.is_critical is False
+
+
+def test_severe_anaemia_is_still_classified_not_suppressed():
+    """The physiological floor must not swallow real disease: 1.5 and 2.0 are
+    implausible-looking but clinically real, and must stay critical."""
+    for value in (1.5, 2.0):
+        out = _lab_row(value=value, unit="10^12/L", status=None)
+        assert out.status == "critical", f"{value} -> {out.status}"
+
+
+def test_reclassify_clears_a_stale_severity_instead_of_leaving_it_stored():
+    """Round-3 P0: skipping left `status='critical'` in the DB, and four surfaces
+    read the stored status raw — the Meto AI context, the doctor consult summary,
+    the health timeline and the lab explanation route. Masking it on two screens
+    while the LLM still calls the count critically low is not a fix."""
+    from app.domain.analyte_units import guarded_status
+
+    assert guarded_status("rbc", 0.50, "L/L")[0] == "unknown"
+    assert guarded_status("rbc", 0.50, "10^12/L")[0] == "unknown"
+    # and the converted, legitimate values still classify
+    assert guarded_status("hematocrit", 0.45, "L/L") == ("normal", 45.0)
+    assert guarded_status("rbc", 5.0, "10^12/L") == ("normal", 5.0)
+
+
+def test_non_cbc_analytes_are_not_touched_by_the_guard():
+    """Scope check: the helper must return None so legacy paths run unchanged."""
+    from app.domain.analyte_units import guarded_status
+
+    for canonical in ("fasting_glucose", "creatinine", "alt", "weight", "systolic"):
+        assert guarded_status(canonical, 5.0, "mmol/L") is None, canonical
+
+
+def test_interpret_value_quotes_the_value_in_the_range_unit():
+    """Round-3: "hematocrit = 0.45 %" beside "36.0–50.0 %" let a patient derive
+    catastrophic anaemia from a row classified normal."""
+    from app.domain.lab_interpreter import RawLabValue, interpret_value
+
+    out = interpret_value(RawLabValue(test_name="hematocrit", value=0.45, unit="L/L"))
+    assert "0.45 %" not in out.patient_note, out.patient_note
+    assert "45" in out.patient_note

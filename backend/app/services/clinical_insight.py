@@ -198,16 +198,11 @@ def _status(row: HealthMetric) -> str:
     # already refuse to classify must not re-enter as "critical" here. The
     # `not unit` branch below would otherwise classify a unitless `rbc 0.50`
     # directly, which is the incident value.
-    from app.domain.analyte_units import ALLOWED_UNITS, is_unsafe_pair, to_canonical_unit
+    from app.domain.analyte_units import guarded_status
 
-    if canon and canon in ALLOWED_UNITS:
-        if is_unsafe_pair(canon, row.unit):
-            return "unknown"
-        _conv = to_canonical_unit(canon, row.value, row.unit)
-        if _conv is None:
-            return "unknown"
-        _st = classify_value(canon, _conv[0])
-        return "unknown" if _st == LabStatus.UNKNOWN else _st.value
+    _g = guarded_status(canon, row.value, row.unit)
+    if _g is not None:
+        return _g[0]
 
     if canon and canon in _ALIAS_INDEX:
         spec = _ALIAS_INDEX[canon]

@@ -762,7 +762,12 @@ def interpret_value(raw: RawLabValue) -> InterpretedBiomarker:
     needs_verification = raw.ocr_confidence < OCR_CONFIDENCE_THRESHOLD
     ref = f"{spec.ref_low}–{spec.ref_high} {spec.unit}"
     display_ref = _compute_display_ref(raw.ocr_reference_range, raw.original_unit, spec)
-    note = f"{spec.canonical} = {raw.value} {spec.unit}: {_PATIENT_NOTE[status]}"
+    # Quote the value in the SAME unit as the range. A converted hematocrit
+    # otherwise read "hematocrit = 0.45 %" against "36.0–50.0 %", from which a
+    # patient self-derives catastrophic anaemia off a row we just called normal —
+    # the exact hazard the serializer avoids by clearing an unsafe range.
+    note_value = value_for_status if guarded else raw.value
+    note = f"{spec.canonical} = {note_value} {spec.unit}: {_PATIENT_NOTE[status]}"
     if needs_verification:
         note += " (Độ tin cậy OCR thấp — cần xác nhận lại số liệu.)"
     return InterpretedBiomarker(

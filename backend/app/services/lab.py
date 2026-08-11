@@ -946,34 +946,45 @@ def reclassify_lab_results(
             # serializers would mask it on screen, but the STORED status is what
             # clinical_insight, the priority engine and the AI context read.
             # Never write a severity we have refused to display.
-            from app.domain.analyte_units import (
-                ALLOWED_UNITS,
-                is_unsafe_pair,
-                to_canonical_unit,
-            )
+            from app.domain.analyte_units import guarded_status
 
-            if row.canonical_name in ALLOWED_UNITS:
-                # Judge the STORED pair. `raw_unit`/`raw_val` only exist on the
-                # branch above, and `norm_unit` may already be a substituted
-                # canonical unit — neither is what was actually persisted.
-                _stored_unit = row.original_unit if row.original_unit is not None else row.unit
-                _stored_val = row.original_value if row.original_value is not None else row.value
-                if _stored_val is None or is_unsafe_pair(row.canonical_name, _stored_unit):
-                    skipped += 1
-                    continue
-                _conv = to_canonical_unit(row.canonical_name, _stored_val, _stored_unit)
-                if _conv is None:
-                    skipped += 1
-                    continue
-                norm_value = _conv[0]
+            # Judge the STORED pair. `raw_unit`/`raw_val` only exist on the branch
+            # above, and `norm_unit` may already be a substituted canonical unit —
+            # neither is what was actually persisted.
+            _stored_unit = row.original_unit if row.original_unit is not None else row.unit
+            _stored_val = row.original_value if row.original_value is not None else row.value
+            _guarded = guarded_status(row.canonical_name, _stored_val, _stored_unit)
 
-            # Compute new status.
-            new_status_enum = classify_value(row.canonical_name, norm_value)
-            if new_status_enum is None:
-                skipped += 1
+            if _guarded is not None and _guarded[0] == "unknown":
+                # CLEAR the stale severity rather than skipping. Skipping left
+                # `status='critical'` standing in the database, and four surfaces
+                # read the stored status raw — the Meto AI context, the doctor
+                # consult summary, the health timeline and the lab explanation
+                # route. Masking it on two screens while the LLM still tells the
+                # patient their red cell count is critically low is not a fix.
+                if row.status is not None and not dry_run:
+                    _log.info(
+                        "reclassify %s (%s): %s → None (analyte/unit not interpretable)",
+                        row.id, row.canonical_name, row.status,
+                    )
+                    row.status = None
+                    row.normalized_value_si = None
+                    row.normalized_unit_si = None
+                    updated += 1
+                else:
+                    skipped += 1
                 continue
 
-            new_status = new_status_enum.value
+            if _guarded is not None:
+                new_status = _guarded[0]
+                norm_value = _guarded[1] if _guarded[1] is not None else norm_value
+            else:
+                # Compute new status.
+                new_status_enum = classify_value(row.canonical_name, norm_value)
+                if new_status_enum is None:
+                    skipped += 1
+                    continue
+                new_status = new_status_enum.value
             old_status = row.status
 
             # Check if already correctly classified (idempotent).

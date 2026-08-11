@@ -212,3 +212,51 @@ def resolve_erythrocyte_analyte(unit: str | None) -> str | None:
     if u in ALLOWED_UNITS["hematocrit"]:
         return "hematocrit"
     return None
+
+
+def guarded_status(canonical: str | None, value: float | None, unit: str | None):
+    """Single decision for a guarded analyte: (status, converted_value) or None.
+
+    Returns None when the analyte is not guarded, so the caller keeps its legacy
+    path. Otherwise the status is authoritative and already accounts for:
+      * alias resolution — ALLOWED_UNITS is canonical-keyed while `classify_value`
+        is alias-keyed, so a row typed "hct" would otherwise skip the guard here
+        and be classified there;
+      * dimensional compatibility — fail closed on incompatible/unknown;
+      * conversion to the canonical unit BEFORE classification;
+      * the physiological floor. This is the one that matters for rows already in
+        the database: before this fix the write path stamped the canonical unit
+        onto unit-free rows, so `rbc 0.50 10^12/L` is stored and now reads as
+        perfectly CANONICAL — compatible, convertible 1:1, and then `critical`
+        against critical_low=2.5. The domain layer calls 0.50 physiologically
+        impossible for a red cell count; every read path must agree.
+
+    Existed as four divergent copies before this helper; they had already drifted
+    on value-None handling, alias resolution and plausibility — which is the same
+    class of drift that produced the two-screens-disagree bug in the first place.
+    """
+    from app.domain.lab_interpreter import _ALIAS_INDEX, classify_value, normalize_biomarker
+
+    if not canonical:
+        return None
+    key = normalize_biomarker(canonical) or canonical.strip().lower()
+    if key not in ALLOWED_UNITS:
+        return None
+    if value is None or is_unsafe_pair(key, unit):
+        return ("unknown", None)
+    converted = to_canonical_unit(key, value, unit)
+    if converted is None:
+        return ("unknown", None)
+    canonical_value = converted[0]
+
+    spec = _ALIAS_INDEX.get(key)
+    if spec is not None:
+        if spec.physiological_min is not None and canonical_value < spec.physiological_min:
+            return ("unknown", canonical_value)
+        if spec.physiological_max is not None and canonical_value > spec.physiological_max:
+            return ("unknown", canonical_value)
+
+    status = classify_value(key, canonical_value)
+    if status is None:
+        return ("unknown", canonical_value)
+    return (status.value, canonical_value)
