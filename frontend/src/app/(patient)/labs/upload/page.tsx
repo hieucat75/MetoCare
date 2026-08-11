@@ -117,6 +117,36 @@ function OcrErrorCard({
   )
 }
 
+// ── Documents-permission card ──────────────────────────────────────────────────
+
+/**
+ * Shown when the backend refuses the upload with 403 CONSENT_DENIED.
+ *
+ * Deliberately NOT the OCR error card: nothing is wrong with the image, and
+ * retrying cannot help. The only action that clears this is granting the
+ * "Tài liệu y tế" permission, so that is the primary button.
+ */
+function ConsentRequiredCard({ message, onGrant }: { message: string; onGrant: () => void }) {
+  return (
+    <div
+      role="alert"
+      className="rounded-[14px] bg-[#EEF4FF] border border-[#3538CD]/25 p-4 space-y-3"
+    >
+      <p className="text-[14px] font-bold text-[#2D31A6]">
+        Cần bật quyền &quot;Tài liệu y tế&quot;
+      </p>
+      <p className="text-[13px] text-[#2D31A6]/80">{message}</p>
+      <button
+        type="button"
+        onClick={onGrant}
+        className="w-full rounded-[14px] bg-[#3538CD] py-2.5 text-[14px] font-semibold text-white"
+      >
+        Mở cài đặt quyền riêng tư
+      </button>
+    </div>
+  )
+}
+
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 export default function LabUploadPage() {
@@ -132,6 +162,8 @@ export default function LabUploadPage() {
   const [submitting, setSubmitting] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
   const [ocrFailed, setOcrFailed] = React.useState(false)
+  /** Backend's CONSENT_DENIED message when `documents` consent is not granted. */
+  const [consentBlocked, setConsentBlocked] = React.useState<string | null>(null)
 
   const [draft, setDraft] = React.useState<LabUploadDraft | null>(null)
   const [rows, setRows] = React.useState<OcrRow[]>([])
@@ -160,6 +192,7 @@ export default function LabUploadPage() {
   function pickFile(f: File | null) {
     setError(null)
     setOcrFailed(false)
+    setConsentBlocked(null)
     if (!f) return
     if (!ACCEPT.includes(f.type)) {
       setError('Chỉ chấp nhận ảnh JPG/PNG hoặc tệp PDF.')
@@ -183,6 +216,7 @@ export default function LabUploadPage() {
   async function submitForDraft() {
     setError(null)
     setOcrFailed(false)
+    setConsentBlocked(null)
     setSubmitting(true)
     setProgressStep('Đang tải ảnh...')
     const t1 = setTimeout(() => setProgressStep('AI đang đọc xét nghiệm...'), 600)
@@ -216,10 +250,21 @@ export default function LabUploadPage() {
       setTestDateAuto(Boolean(d.extracted_test_date))
       const mapped: OcrRow[] = d.parsed_values.map((v) => buildOcrRow(catalog, v))
       setRows(mapped.length ? mapped : [makeEmptyOcrRow()])
-    } catch {
+    } catch (err) {
       clearTimeout(t1)
       clearTimeout(t2)
-      setOcrFailed(true)
+      // A refused PERMISSION is not an unreadable image. /lab-uploads is
+      // fail-closed on the patient's `documents` consent
+      // (lab_upload.py::_require_documents_consent) and answers 403
+      // CONSENT_DENIED with a patient-facing, actionable Vietnamese message.
+      // Collapsing that into the OCR card told production users their lab photo
+      // could not be read, and offered "Thử lại" — which can never succeed,
+      // because granting the permission is the only thing that clears it.
+      if (err instanceof ApiError && err.code === 'CONSENT_DENIED') {
+        setConsentBlocked(err.detail)
+      } else {
+        setOcrFailed(true)
+      }
     } finally {
       setProgressStep(null)
       setSubmitting(false)
@@ -432,7 +477,9 @@ export default function LabUploadPage() {
           }
         />
 
-        {ocrFailed ? (
+        {consentBlocked ? (
+          <ConsentRequiredCard message={consentBlocked} onGrant={() => router.push('/consents')} />
+        ) : ocrFailed ? (
           <OcrErrorCard onRetry={() => setOcrFailed(false)} onManualEntry={handleManualEntry} />
         ) : (
           error && <PatientErrorState title="Lỗi" message={error} onRetry={() => setError(null)} />
@@ -446,6 +493,7 @@ export default function LabUploadPage() {
                 setMode(m)
                 setError(null)
                 setOcrFailed(false)
+                setConsentBlocked(null)
               }}
             />
 
@@ -566,7 +614,8 @@ export default function LabUploadPage() {
                     Ngày xét nghiệm cần xác nhận
                   </p>
                   <p className="text-[13px] text-amber-700 mt-0.5">
-                    Hệ thống không xác định được ngày xét nghiệm rõ ràng. Vui lòng kiểm tra và nhập ngày đúng bên dưới.
+                    Hệ thống không xác định được ngày xét nghiệm rõ ràng. Vui lòng kiểm tra và nhập
+                    ngày đúng bên dưới.
                   </p>
                 </div>
               </div>
@@ -586,23 +635,27 @@ export default function LabUploadPage() {
                 Date-specific warnings are surfaced via the date_needs_confirmation
                 banner above; filter them here to avoid duplicate messages. */}
             {draft.warnings.filter(
-              (w) => !(
-                // Suppress warnings already shown in date_needs_confirmation banner.
-                draft.date_needs_confirmation &&
-                (w.includes('ngày xét nghiệm cần xác nhận') ||
-                  w.includes('ngày sinh') ||
-                  w.includes('độ tin cậy thấp') && w.includes('ngày'))
-              )
+              (w) =>
+                !(
+                  // Suppress warnings already shown in date_needs_confirmation banner.
+                  (
+                    draft.date_needs_confirmation &&
+                    (w.includes('ngày xét nghiệm cần xác nhận') ||
+                      w.includes('ngày sinh') ||
+                      (w.includes('độ tin cậy thấp') && w.includes('ngày')))
+                  )
+                )
             ).length > 0 && (
               <div className="space-y-1.5">
                 {draft.warnings
                   .filter(
-                    (w) => !(
-                      draft.date_needs_confirmation &&
-                      (w.includes('ngày xét nghiệm cần xác nhận') ||
-                        w.includes('ngày sinh') ||
-                        (w.includes('độ tin cậy thấp') && w.includes('ngày')))
-                    )
+                    (w) =>
+                      !(
+                        draft.date_needs_confirmation &&
+                        (w.includes('ngày xét nghiệm cần xác nhận') ||
+                          w.includes('ngày sinh') ||
+                          (w.includes('độ tin cậy thấp') && w.includes('ngày')))
+                      )
                   )
                   .map((w, i) => (
                     <div
