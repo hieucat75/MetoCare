@@ -351,6 +351,7 @@ jobs:
             MCP_OCR_CLOUD_PROVIDER=azure \
             AZURE_DOC_INTEL_ENDPOINT=${DOC_INTEL_ENDPOINT} \
             AZURE_DOC_INTEL_KEY=secretref:doc-intel-key \
+            MCP_AZURE_DOC_INTEL_EXPECTED_RESOURCE=docintel-metocare-staging \
             MCP_DEEPSEEK_API_KEY=secretref:deepseek-api-key \
             MCP_OPENROUTER_API_KEY=secretref:openrouter-api-key \
             MCP_OPENROUTER_PRIMARY_MODEL=anthropic/claude-sonnet-4.5 \

@@ -581,6 +581,37 @@ jobs:
             fi
           fi
 
+      # ── OCR data-boundary preflight ───────────────────────────────────────
+      #
+      # Production ran pointing at `docintel-metocare-staging`, a Document
+      # Intelligence resource in rg-metocare-staging. Nothing failed, because
+      # nothing checked — it stayed harmless only because the `documents`
+      # consent gate refused every web upload, so no image ever reached a
+      # provider. The backend now refuses to boot on this (core/ocr_environment.py);
+      # this step refuses to *deploy*, so the failure lands before a revision is
+      # created rather than as a crash-looping container.
+      #
+      # The endpoint is not a secret; the key is never read here.
+      - name: Preflight — production OCR resource must be production-owned
+        run: |
+          EXPECTED_DOC_INTEL="docintel-metocare-prod"
+          echo "EXPECTED_DOC_INTEL=$EXPECTED_DOC_INTEL" >> "$GITHUB_ENV"
+          HOST=$(printf '%s' "$DOC_INTEL_ENDPOINT" | sed -E 's#^https://([^/]+)/?.*$#\1#')
+          RESOURCE="${HOST%%.*}"
+          echo "Resolved Document Intelligence resource: $RESOURCE"
+          if [ "$RESOURCE" != "$EXPECTED_DOC_INTEL" ]; then
+            echo "::error::Production would OCR through '$RESOURCE', not '$EXPECTED_DOC_INTEL'."
+            echo "::error::Patient documents must not leave production-owned infrastructure."
+            echo "::error::Fix the production Key Vault secret 'azure-doc-intel-endpoint'."
+            exit 1
+          fi
+          if ! az cognitiveservices account show -g "$RG" -n "$EXPECTED_DOC_INTEL" -o none 2>/dev/null; then
+            echo "::error::$EXPECTED_DOC_INTEL does not exist in $RG."
+            echo "::error::Production OCR must use a resource in the production resource group."
+            exit 1
+          fi
+          echo "OCR data boundary OK: $RESOURCE lives in $RG."
+
       # ── Deploy backend Container App ──────────────────────────────────────
       - name: Deploy backend to ACA
         run: |
@@ -604,6 +635,7 @@ jobs:
             MCP_OCR_CLOUD_PROVIDER=azure \
             AZURE_DOC_INTEL_ENDPOINT=${DOC_INTEL_ENDPOINT} \
             AZURE_DOC_INTEL_KEY=secretref:doc-intel-key \
+            MCP_AZURE_DOC_INTEL_EXPECTED_RESOURCE=${EXPECTED_DOC_INTEL} \
             MCP_DEEPSEEK_API_KEY=secretref:deepseek-api-key \
             MCP_OPENROUTER_API_KEY=secretref:openrouter-api-key \
             MCP_OPENROUTER_PRIMARY_MODEL=anthropic/claude-sonnet-4.5 \

@@ -32,6 +32,11 @@ def _settings(**overrides) -> Settings:
         password_min_length=8,
         password_require_complexity=True,
         qa_fixture_enabled=False,
+        # No cloud OCR provider: the OCR data-boundary guard reads the ambient
+        # AZURE_DOC_INTEL_ENDPOINT (see core/ocr_environment.py), and a developer
+        # .env pointing at staging would otherwise fire it here and mask what
+        # this suite asserts.
+        ocr_cloud_provider="",
     )
     base.update(overrides)
     return Settings(**base)
