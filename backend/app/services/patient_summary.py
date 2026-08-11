@@ -109,6 +109,16 @@ def _fetch_vitals(
     return VitalsSummary(latest=latest, trend=trend)
 
 
+def _guarded_metric_status(r) -> str | None:
+    """Stored status, unless the analyte/unit pair is not interpretable."""
+    from app.domain.analyte_units import guarded_status
+
+    g = guarded_status(r.metric_type, r.value, r.unit)
+    if g is not None and g[0] == "unknown":
+        return "unknown"
+    return r.status
+
+
 def _vital_row(r: HealthMetric) -> dict:
     """Serialize a vital for the doctor summary showing the ORIGINAL value+unit.
 
@@ -125,7 +135,10 @@ def _vital_row(r: HealthMetric) -> dict:
         "unit": orig_unit,
         "display": format_lab_display(orig_value, orig_unit),
         "measured_at": r.measured_at.isoformat() if r.measured_at else None,
-        "status": r.status,
+        # `reclassify` only walks lab_results, so a promoted HealthMetric keeps
+        # its stale severity. This is the DOCTOR-facing consult summary — it must
+        # not assert a severity the patient screens already refuse to make.
+        "status": _guarded_metric_status(r),
         # Provenance is clinically load-bearing: a lab-drawn value and a
         # home-device reading of the same analyte carry different weight, and
         # after category filtering the doctor cannot otherwise tell which they

@@ -437,7 +437,7 @@ class HealthTimelineEngine:
             if len(results) < 2:
                 continue
             sorted_r = sorted(results, key=lambda x: x.test_date)
-            first_status = getattr(sorted_r[0], "status", "normal") or "normal"
+            first_status = getattr(sorted_r[0], "status", None) or "unknown"
             last_status = getattr(sorted_r[-1], "status", "normal") or "normal"
             _bad = {"high", "low", "critical"}
             if first_status in _bad and last_status == "normal":

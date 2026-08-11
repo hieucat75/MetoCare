@@ -706,7 +706,14 @@ def _build_clinical_input(row: LabResult) -> dict:
         "critical": "critical",
         # defensive: treat unknown/None as unknown
     }
-    canonical_status = STATUS_MAP.get(row.status or "", "unknown")
+    # Read guard: reclassify is a manual job, so between deploy and its next run
+    # a legacy row still carries a stale severity. This feeds canonical_severity
+    # and doctor_review_required into the Claude explanation layer.
+    from app.domain.analyte_units import guarded_status as _gs
+
+    _g = _gs(getattr(row, "canonical_name", None), row.value, row.unit)
+    _row_status = "unknown" if (_g is not None and _g[0] == "unknown") else (row.status or "")
+    canonical_status = STATUS_MAP.get(_row_status, "unknown")
 
     # Severity heuristic from status (existing engine doesn't store separate severity)
     SEVERITY_MAP: dict[str, str] = {

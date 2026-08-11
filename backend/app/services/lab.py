@@ -18,6 +18,7 @@ from app.core.clock import as_naive_utc, utcnow
 from app.core.config import get_settings
 from app.domain import lab_interpreter
 from app.domain.analyte_units import ALLOWED_UNITS as _ALLOWED_CBC_UNITS
+from app.domain.analyte_units import CANONICAL_UNIT as _CANONICAL_CBC_UNIT
 from app.domain.lab_interpreter import classify_value
 from app.domain.lab_normalization import normalize_value_to_si
 from app.domain.unit_registry import convert_to_canonical
@@ -957,27 +958,45 @@ def reclassify_lab_results(
 
             if _guarded is not None and _guarded[0] == "unknown":
                 # CLEAR the stale severity rather than skipping. Skipping left
-                # `status='critical'` standing in the database, and four surfaces
-                # read the stored status raw — the Meto AI context, the doctor
-                # consult summary, the health timeline and the lab explanation
-                # route. Masking it on two screens while the LLM still tells the
-                # patient their red cell count is critically low is not a fix.
-                if row.status is not None and not dry_run:
-                    _log.info(
-                        "reclassify %s (%s): %s → None (analyte/unit not interpretable)",
-                        row.id, row.canonical_name, row.status,
-                    )
+                # `status='critical'` standing in the database, and several
+                # surfaces read the stored status raw — the Meto AI context, the
+                # doctor consult summary, the health timeline and the lab
+                # explanation route. Masking it on two screens while the LLM still
+                # tells the patient their red cell count is critically low is not
+                # a fix.
+                #
+                # Count FIRST, write second: dry_run is the operational gate the
+                # operator runs before the real pass, and counting these as
+                # `skipped` reported `updated: 0` for exactly the rows the
+                # remediation exists to find.
+                already_clear = (
+                    row.status is None
+                    and row.normalized_value_si is None
+                    and row.normalized_unit_si is None
+                )
+                if already_clear:
+                    skipped += 1
+                    continue
+                _log.info(
+                    "reclassify %s (%s): %s → None (analyte/unit not interpretable)",
+                    row.id, row.canonical_name, row.status,
+                )
+                if not dry_run:
                     row.status = None
                     row.normalized_value_si = None
                     row.normalized_unit_si = None
-                    updated += 1
-                else:
-                    skipped += 1
+                updated += 1
                 continue
 
+            guarded_norm_unit = None
             if _guarded is not None:
                 new_status = _guarded[0]
-                norm_value = _guarded[1] if _guarded[1] is not None else norm_value
+                if _guarded[1] is not None:
+                    norm_value = _guarded[1]
+                    guarded_norm_unit = _CANONICAL_CBC_UNIT.get(
+                        (row.canonical_name or "").strip().lower()
+                    )
+                    norm_unit = guarded_norm_unit or norm_unit
             else:
                 # Compute new status.
                 new_status_enum = classify_value(row.canonical_name, norm_value)
@@ -1003,11 +1022,21 @@ def reclassify_lab_results(
 
             if not dry_run:
                 row.status = new_status
-                # Only update normalized fields if they were missing.
-                if row.normalized_value_si is None:
+                if guarded_norm_unit is not None:
+                    # A guarded row's normalized pair is authoritative. Writing it
+                    # only when currently NULL left `normalized_value_si=0.45`
+                    # beside `status='normal'`, so the idempotency check below
+                    # never matched and every run re-counted the row forever — and
+                    # `_promote_row` prefers that stale field, staging a normal
+                    # hematocrit as "0.45 %".
                     row.normalized_value_si = norm_value
-                if row.normalized_unit_si is None and norm_unit is not None:
-                    row.normalized_unit_si = norm_unit
+                    row.normalized_unit_si = guarded_norm_unit
+                else:
+                    # Only update normalized fields if they were missing.
+                    if row.normalized_value_si is None:
+                        row.normalized_value_si = norm_value
+                    if row.normalized_unit_si is None and norm_unit is not None:
+                        row.normalized_unit_si = norm_unit
 
             updated += 1
 
