@@ -151,6 +151,17 @@ class HealthTimelineEngine:
             b_results = batch_results.get(bid, [])
             date = getattr(batch, "test_date", None) or (batch.created_at.date() if hasattr(batch, "created_at") and batch.created_at else dt.date.today())
             abnormals = [r for r in b_results if getattr(r, "status", "") in ("high", "low", "critical")]
+            # A row whose analyte/unit pair is not interpretable carries NO status
+            # (the CBC guard clears it). It is neither abnormal nor normal, so it
+            # must not be counted into "tất cả N chỉ số trong giới hạn bình
+            # thường" — that sentence would assert a clean result for a value the
+            # platform has just refused to interpret, which is the false
+            # reassurance this guard exists to prevent.
+            needs_review = [
+                r for r in b_results
+                if not getattr(r, "status", None) or getattr(r, "status", "") == "unknown"
+            ]
+            interpretable = [r for r in b_results if r not in needs_review]
             lab_name = getattr(batch, "lab_name", "") or "Xét nghiệm"
 
             if abnormals:
@@ -169,16 +180,46 @@ class HealthTimelineEngine:
                     metadata={"batch_id": bid, "lab_name": lab_name, "total_results": len(b_results), "abnormal_count": len(abnormals)},
                     evidence_level="established",
                 ))
-            elif b_results:
+            elif interpretable:
+                n = len(interpretable)
+                extra_review = (
+                    f" {len(needs_review)} chỉ số cần được kiểm tra lại."
+                    if needs_review else ""
+                )
                 events.append(TimelineEvent(
                     event_id=f"lab_{bid}",
                     event_type="lab_result",
                     date=date,
                     title_vi=f"Xét nghiệm — {len(b_results)} chỉ số",
-                    summary_vi=f"Tất cả {len(b_results)} chỉ số trong giới hạn bình thường.",
+                    summary_vi=f"Tất cả {n} chỉ số trong giới hạn bình thường.{extra_review}",
                     source="lab_result",
                     importance="info",
-                    metadata={"batch_id": bid, "lab_name": lab_name, "total_results": len(b_results)},
+                    metadata={
+                        "batch_id": bid,
+                        "lab_name": lab_name,
+                        "total_results": len(b_results),
+                        "needs_review_count": len(needs_review),
+                    },
+                    evidence_level="established",
+                ))
+            elif needs_review:
+                events.append(TimelineEvent(
+                    event_id=f"lab_review_{bid}",
+                    event_type="lab_result",
+                    date=date,
+                    title_vi=f"Xét nghiệm — {len(needs_review)} chỉ số cần kiểm tra lại",
+                    summary_vi=(
+                        "Chỉ số cần được kiểm tra lại do đơn vị hoặc loại xét "
+                        "nghiệm chưa khớp."
+                    ),
+                    source="lab_result",
+                    importance="info",
+                    metadata={
+                        "batch_id": bid,
+                        "lab_name": lab_name,
+                        "total_results": len(b_results),
+                        "needs_review_count": len(needs_review),
+                    },
                     evidence_level="established",
                 ))
         return events
@@ -438,8 +479,14 @@ class HealthTimelineEngine:
                 continue
             sorted_r = sorted(results, key=lambda x: x.test_date)
             first_status = getattr(sorted_r[0], "status", None) or "unknown"
-            last_status = getattr(sorted_r[-1], "status", "normal") or "normal"
+            last_status = getattr(sorted_r[-1], "status", None) or "unknown"
             _bad = {"high", "low", "critical"}
+            # A cleared status means "we cannot interpret this", not "normal".
+            # Reading it as normal turned a neutralised false-critical into
+            # "Rbc đang cải thiện — tiếp tục duy trì.": an improvement claim
+            # manufactured out of a refusal to interpret.
+            if "unknown" in (first_status, last_status):
+                continue
             if first_status in _bad and last_status == "normal":
                 summary.improved_areas.append(canonical)
             elif first_status == "normal" and last_status in _bad:

@@ -166,17 +166,28 @@ def update_metric(
     # thresholds for all biomarkers. Fall back to classify_status for types not in
     # the lab catalog (manual vitals, blood pressure, BMI, etc.).
     if metric.value is not None:
-        _lab_status = _classify_value_lab(metric.metric_type, metric.value)
-        metric.status = (
-            _lab_status.value
-            if _lab_status is not None and _lab_status.value != "unknown"
-            else classify_status(
-                metric.metric_type,
-                metric.value,
-                metric.normal_range_min,
-                metric.normal_range_max,
+        # `classify_value` ignores the unit entirely, so PATCH re-seeded
+        # `status='critical'` for rbc 0.50 L/L through a live endpoint — the exact
+        # stored severity this guard exists to eliminate. Every reader guards it
+        # today, but the GDPR export dumps stored status raw and any future reader
+        # inherits it, so never write what we have refused to display.
+        from app.domain.analyte_units import guarded_status as _guarded_status
+
+        _g = _guarded_status(metric.metric_type, metric.value, metric.unit)
+        if _g is not None:
+            metric.status = _g[0]
+        else:
+            _lab_status = _classify_value_lab(metric.metric_type, metric.value)
+            metric.status = (
+                _lab_status.value
+                if _lab_status is not None and _lab_status.value != "unknown"
+                else classify_status(
+                    metric.metric_type,
+                    metric.value,
+                    metric.normal_range_min,
+                    metric.normal_range_max,
+                )
             )
-        )
 
     db.flush()
     audit.record(

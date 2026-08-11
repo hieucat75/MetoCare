@@ -486,3 +486,59 @@ def test_interpret_value_quotes_the_value_in_the_range_unit():
     out = interpret_value(RawLabValue(test_name="hematocrit", value=0.45, unit="L/L"))
     assert "0.45 %" not in out.patient_note, out.patient_note
     assert "45" in out.patient_note
+
+
+# --------------------------------------------------------------------------- #
+# Clinical-review round 5: the fix's OWN output must not read as reassurance
+# --------------------------------------------------------------------------- #
+
+
+def test_a_cleared_status_is_not_counted_as_within_normal_limits():
+    """Round-5 P0. The guard clears `status` for an uninterpretable row; the
+    timeline then counted it among "tất cả N chỉ số trong giới hạn bình thường"
+    — a clean-result claim manufactured out of a refusal to interpret, and a
+    false reassurance that did NOT exist before this hotfix."""
+    from types import SimpleNamespace
+
+    from app.domain.health_timeline import HealthTimelineEngine
+
+    batch = SimpleNamespace(
+        id="b1", test_date=_NOW.date(), lab_name="QA", created_at=_NOW
+    )
+    rows = [
+        SimpleNamespace(
+            batch_id="b1", status="normal",
+            test_name="Glucose", canonical_name="fasting_glucose",
+        ),
+        SimpleNamespace(
+            batch_id="b1", status=None,
+            test_name="Hồng cầu (RBC)", canonical_name="rbc",
+        ),
+    ]
+    events = HealthTimelineEngine()._lab_events([batch], rows)
+    text = " ".join(e.summary_vi for e in events)
+    assert "Tất cả 2 chỉ số trong giới hạn bình thường" not in text, text
+    assert "kiểm tra lại" in text, text
+
+
+def test_a_cleared_status_does_not_become_an_improvement_claim():
+    """Round-5 P0, second half: `last_status` defaulted to "normal", so a
+    neutralised false-critical produced "Rbc đang cải thiện — tiếp tục duy trì."."""
+    import datetime as _d
+    from types import SimpleNamespace
+
+    from app.domain.health_timeline import HealthTimelineEngine, TimelineEvent
+
+    results = [
+        SimpleNamespace(canonical_name="rbc", status="critical", test_date=_d.date(2026, 1, 1)),
+        SimpleNamespace(canonical_name="rbc", status=None, test_date=_d.date(2026, 6, 1)),
+    ]
+    events = [
+        TimelineEvent(
+            event_id="e1", event_type="lab_result", date=_d.date(2026, 6, 1),
+            title_vi="t", summary_vi="s", source="lab_result", importance="info",
+        )
+    ]
+    summary = HealthTimelineEngine().summarize(events, results)
+    assert "rbc" not in summary.improved_areas, summary.improved_areas
+    assert "cải thiện" not in (summary.biggest_change_vi or "")
