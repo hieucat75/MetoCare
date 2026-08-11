@@ -161,6 +161,26 @@ def _sanitize_list(values: Any) -> list[str]:
     return [s for s in (_sanitize_text(v) for v in values) if s]
 
 
+
+def _ctx_guarded_status(row, status_index: int, canonical_index: int = 0):
+    """Stored status, unless the analyte/unit pair is not interpretable.
+
+    `reclassify` only walks lab_results and is operator-run, so between deploy
+    and its next pass a legacy CBC row still carries `critical`. Everything in
+    this module is fed verbatim to the model.
+    """
+    from app.domain.analyte_units import guarded_status
+
+    try:
+        canonical, value, unit = row[canonical_index], row[1], row[2]
+        g = guarded_status(canonical, value, unit)
+        if g is not None and g[0] == "unknown":
+            return "unknown"
+    except Exception:  # noqa: BLE001 — context building must never raise
+        pass
+    return row[status_index]
+
+
 class ContextBuilder:
     """Assemble context blocks for a Meto chat request.
 
@@ -612,7 +632,8 @@ class ContextBuilder:
                     SELECT lr.test_name, lr.value, lr.unit,
                            lr.reference_range, lr.status, lub.test_date,
                            lr.original_test_name, lr.original_value,
-                           lr.original_unit, lr.original_reference_range
+                           lr.original_unit, lr.original_reference_range,
+                           lr.canonical_name
                     FROM lab_results lr
                     JOIN lab_upload_batches lub ON lub.id = lr.batch_id
                     WHERE lub.patient_id = (
@@ -663,7 +684,7 @@ class ContextBuilder:
                     # Verbatim token the LLM must quote as-is (never convert/round).
                     "display": format_lab_display(orig_value, orig_unit),
                     "reference_range": _sanitize_text(orig_ref),
-                    "status": r[4] or "unknown",
+                    "status": _ctx_guarded_status(r, 4, canonical_index=10) or "unknown",
                     "collected_date": str(r[5])[:10] if r[5] else None,
                 }
 
@@ -733,7 +754,7 @@ class ContextBuilder:
                     # Verbatim token the LLM must quote as-is (never convert/round).
                     "display": format_lab_display(orig_value, orig_unit),
                     "measured_at": str(r[3]) if r[3] else None,
-                    "status": r[4] or "unknown",
+                    "status": _ctx_guarded_status(r, 4) or "unknown",
                 })
                 if len(result) >= _MAX_METRICS_TYPES:
                     break

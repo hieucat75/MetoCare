@@ -54,7 +54,18 @@ def create_metric(
     consent.require_access(
         db, patient_id=patient_id, requester_id=requester_id, scope="health_metric"
     )
-    status = classify_status(metric_type, value, normal_range_min, normal_range_max)
+    # A guarded CBC analyte must not take a severity from the generic range
+    # logic: with no ranges supplied it falls through to "normal", so a
+    # physiologically impossible rbc 0.50 was PERSISTED as normal. The serializer
+    # masks it on screen, but the doctor consult summary and the AI context read
+    # the STORED value — a false reassurance is worse than no claim at all.
+    from app.domain.analyte_units import guarded_status as _guarded_status
+
+    _g = _guarded_status(metric_type, value, unit)
+    status = (
+        _g[0] if _g is not None
+        else classify_status(metric_type, value, normal_range_min, normal_range_max)
+    )
     metric = HealthMetric(
         patient_id=patient_id,
         metric_type=metric_type,
@@ -155,17 +166,28 @@ def update_metric(
     # thresholds for all biomarkers. Fall back to classify_status for types not in
     # the lab catalog (manual vitals, blood pressure, BMI, etc.).
     if metric.value is not None:
-        _lab_status = _classify_value_lab(metric.metric_type, metric.value)
-        metric.status = (
-            _lab_status.value
-            if _lab_status is not None and _lab_status.value != "unknown"
-            else classify_status(
-                metric.metric_type,
-                metric.value,
-                metric.normal_range_min,
-                metric.normal_range_max,
+        # `classify_value` ignores the unit entirely, so PATCH re-seeded
+        # `status='critical'` for rbc 0.50 L/L through a live endpoint — the exact
+        # stored severity this guard exists to eliminate. Every reader guards it
+        # today, but the GDPR export dumps stored status raw and any future reader
+        # inherits it, so never write what we have refused to display.
+        from app.domain.analyte_units import guarded_status as _guarded_status
+
+        _g = _guarded_status(metric.metric_type, metric.value, metric.unit)
+        if _g is not None:
+            metric.status = _g[0]
+        else:
+            _lab_status = _classify_value_lab(metric.metric_type, metric.value)
+            metric.status = (
+                _lab_status.value
+                if _lab_status is not None and _lab_status.value != "unknown"
+                else classify_status(
+                    metric.metric_type,
+                    metric.value,
+                    metric.normal_range_min,
+                    metric.normal_range_max,
+                )
             )
-        )
 
     db.flush()
     audit.record(

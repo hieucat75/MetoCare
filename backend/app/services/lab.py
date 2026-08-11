@@ -17,6 +17,8 @@ from sqlalchemy.orm import Session
 from app.core.clock import as_naive_utc, utcnow
 from app.core.config import get_settings
 from app.domain import lab_interpreter
+from app.domain.analyte_units import ALLOWED_UNITS as _ALLOWED_CBC_UNITS
+from app.domain.analyte_units import CANONICAL_UNIT as _CANONICAL_CBC_UNIT
 from app.domain.lab_interpreter import classify_value
 from app.domain.lab_normalization import normalize_value_to_si
 from app.domain.unit_registry import convert_to_canonical
@@ -646,7 +648,10 @@ def create_manual_entry(
             raw_value,
             raw_unit,
             label=item.get("test_name"),
-            assume_canonical_when_missing=True,
+            # A guarded CBC analyte may never have its unit assumed: the web form
+            # states the unit, but this is also the API contract for every other
+            # client, and an assumed "10^12/L" on a 0.50 value is a false critical.
+            assume_canonical_when_missing=canonical not in _ALLOWED_CBC_UNITS,
         )
         if classification.get("conversion_ok") is False:
             # Refuse the ROW rather than store an uninterpretable value in a
@@ -937,13 +942,68 @@ def reclassify_lab_results(
                     norm_unit = lab_interpreter._ALIAS_INDEX.get(row.canonical_name, None)
                     norm_unit = norm_unit.unit if norm_unit else None
 
-            # Compute new status.
-            new_status_enum = classify_value(row.canonical_name, norm_value)
-            if new_status_enum is None:
-                skipped += 1
+            # CBC dimensional guard. Without this, a backfill re-persists
+            # `critical` for `rbc + L/L` and `hematocrit + L/L` rows: the two
+            # serializers would mask it on screen, but the STORED status is what
+            # clinical_insight, the priority engine and the AI context read.
+            # Never write a severity we have refused to display.
+            from app.domain.analyte_units import guarded_status
+
+            # Judge the STORED pair. `raw_unit`/`raw_val` only exist on the branch
+            # above, and `norm_unit` may already be a substituted canonical unit —
+            # neither is what was actually persisted.
+            _stored_unit = row.original_unit if row.original_unit is not None else row.unit
+            _stored_val = row.original_value if row.original_value is not None else row.value
+            _guarded = guarded_status(row.canonical_name, _stored_val, _stored_unit)
+
+            if _guarded is not None and _guarded[0] == "unknown":
+                # CLEAR the stale severity rather than skipping. Skipping left
+                # `status='critical'` standing in the database, and several
+                # surfaces read the stored status raw — the Meto AI context, the
+                # doctor consult summary, the health timeline and the lab
+                # explanation route. Masking it on two screens while the LLM still
+                # tells the patient their red cell count is critically low is not
+                # a fix.
+                #
+                # Count FIRST, write second: dry_run is the operational gate the
+                # operator runs before the real pass, and counting these as
+                # `skipped` reported `updated: 0` for exactly the rows the
+                # remediation exists to find.
+                already_clear = (
+                    row.status is None
+                    and row.normalized_value_si is None
+                    and row.normalized_unit_si is None
+                )
+                if already_clear:
+                    skipped += 1
+                    continue
+                _log.info(
+                    "reclassify %s (%s): %s → None (analyte/unit not interpretable)",
+                    row.id, row.canonical_name, row.status,
+                )
+                if not dry_run:
+                    row.status = None
+                    row.normalized_value_si = None
+                    row.normalized_unit_si = None
+                updated += 1
                 continue
 
-            new_status = new_status_enum.value
+            guarded_norm_unit = None
+            if _guarded is not None:
+                new_status = _guarded[0]
+                if _guarded[1] is not None:
+                    norm_value = _guarded[1]
+                    guarded_norm_unit = _CANONICAL_CBC_UNIT.get(
+                        (row.canonical_name or "").strip().lower()
+                    )
+                    norm_unit = guarded_norm_unit or norm_unit
+            else:
+                # Compute new status.
+                new_status_enum = classify_value(row.canonical_name, norm_value)
+                if new_status_enum is None:
+                    skipped += 1
+                    continue
+                new_status = new_status_enum.value
             old_status = row.status
 
             # Check if already correctly classified (idempotent).
@@ -962,11 +1022,21 @@ def reclassify_lab_results(
 
             if not dry_run:
                 row.status = new_status
-                # Only update normalized fields if they were missing.
-                if row.normalized_value_si is None:
+                if guarded_norm_unit is not None:
+                    # A guarded row's normalized pair is authoritative. Writing it
+                    # only when currently NULL left `normalized_value_si=0.45`
+                    # beside `status='normal'`, so the idempotency check below
+                    # never matched and every run re-counted the row forever — and
+                    # `_promote_row` prefers that stale field, staging a normal
+                    # hematocrit as "0.45 %".
                     row.normalized_value_si = norm_value
-                if row.normalized_unit_si is None and norm_unit is not None:
-                    row.normalized_unit_si = norm_unit
+                    row.normalized_unit_si = guarded_norm_unit
+                else:
+                    # Only update normalized fields if they were missing.
+                    if row.normalized_value_si is None:
+                        row.normalized_value_si = norm_value
+                    if row.normalized_unit_si is None and norm_unit is not None:
+                        row.normalized_unit_si = norm_unit
 
             updated += 1
 

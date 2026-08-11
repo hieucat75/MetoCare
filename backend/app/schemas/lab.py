@@ -148,6 +148,34 @@ class LabResultOut(BaseModel):
         """
         if not self.canonical_name:
             return self
+
+        # P0 read-path guard. Rows ALREADY in production can carry an analyte and
+        # a unit from different dimensions — `rbc` with `L/L` is a hematocrit
+        # fraction filed as a red cell count. Classifying such a row produced
+        # "Nguy hiểm" on this screen and "Rất thấp" on the metrics screen for the
+        # same record. Neither claim is supportable, so make none: no severity,
+        # no reference comparison, and a message that says only what is true.
+        # Runs BEFORE any classification, so it also covers rows written before
+        # the write-path fix and ahead of data remediation.
+        from app.domain.analyte_units import NEEDS_REVIEW_MESSAGE, guarded_status
+
+        _g = guarded_status(self.canonical_name, self.value, self.unit)
+        if _g is not None:
+            _status, _ = _g
+            if _status == "unknown":
+                self.status = "unknown"
+                self.clinical_message = NEEDS_REVIEW_MESSAGE
+                # Clear the range too: leaving "0.42-0.47 L/L" beside 0.50 lets a
+                # patient self-derive "above range" from a row we just called
+                # uninterpretable.
+                self.reference_range = None
+            else:
+                from app.services.lab import get_clinical_message as _gcm
+
+                self.status = _status
+                self.clinical_message = _gcm(self.canonical_name, _status)
+            return self
+
         try:
             from app.domain.lab_interpreter import _ALIAS_INDEX, classify_value
             from app.domain.lab_normalization import normalize_value_to_si

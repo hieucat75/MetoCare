@@ -555,3 +555,105 @@ class TestNormalizationFromOriginal:
         # normalized_value_si should now be populated.
         assert row.normalized_value_si is not None
         assert abs(row.normalized_value_si - 102.7026) < 0.5
+
+
+# ---------------------------------------------------------------------------
+# CBC analyte/unit safety — reclassify must neutralise, count, and converge
+# ---------------------------------------------------------------------------
+
+
+class TestCbcGuardedReclassify:
+    """The round-3 fix changed `reclassify_lab_results` and had no test on it,
+    which is how two regressions (a dry-run counter that reported zero, and a
+    row that never converged) reached round-4 review."""
+
+    def test_stale_severity_is_cleared_not_left_standing(self, db):
+        patient_id = _make_patient(db)
+        row = _make_lab_result(
+            db,
+            patient_id=patient_id,
+            canonical_name="rbc",
+            test_name="Hồng cầu (RBC)",
+            value=0.50,
+            unit="L/L",
+            status="critical",
+        )
+        db.commit()
+
+        result = reclassify_lab_results(db, dry_run=False)
+        db.refresh(row)
+
+        # Several surfaces read the STORED status raw — masking it on two screens
+        # while leaving `critical` in the database is not a fix.
+        assert row.status is None, row.status
+        assert row.normalized_value_si is None
+        assert result["updated"] >= 1
+
+    def test_dry_run_reports_the_rows_it_would_clear(self, db):
+        patient_id = _make_patient(db)
+        row = _make_lab_result(
+            db,
+            patient_id=patient_id,
+            canonical_name="rbc",
+            test_name="Hồng cầu (RBC)",
+            value=0.50,
+            unit="L/L",
+            status="critical",
+        )
+        db.commit()
+
+        result = reclassify_lab_results(db, dry_run=True)
+        db.refresh(row)
+
+        # dry_run is the operational gate before the real pass. Counting these as
+        # `skipped` reported "updated: 0" for exactly the rows that need fixing.
+        assert result["updated"] >= 1, result
+        assert row.status == "critical", "dry_run must not write"
+
+    def test_legacy_fabricated_canonical_unit_is_also_cleared(self, db):
+        patient_id = _make_patient(db)
+        """The old write path stamped `10^12/L` onto unit-free rows, so this shape
+        is already stored and reads as perfectly canonical."""
+        row = _make_lab_result(
+            db,
+            patient_id=patient_id,
+            canonical_name="rbc",
+            test_name="Hồng cầu (RBC)",
+            value=0.50,
+            unit="10^12/L",
+            status="critical",
+        )
+        db.commit()
+
+        reclassify_lab_results(db, dry_run=False)
+        db.refresh(row)
+        assert row.status is None
+
+    def test_convertible_row_converges_and_is_idempotent(self, db):
+        patient_id = _make_patient(db)
+        row = _make_lab_result(
+            db,
+            patient_id=patient_id,
+            canonical_name="hematocrit",
+            test_name="Dung tích hồng cầu",
+            value=0.45,
+            unit="L/L",
+            normalized_value_si=0.45,
+            normalized_unit_si="L/L",
+            status=None,
+        )
+        db.commit()
+
+        first = reclassify_lab_results(db, dry_run=False)
+        db.refresh(row)
+        assert row.status == "normal", row.status
+        # The normalized pair must be rewritten, or the idempotency check below
+        # never matches and every run re-counts the row forever.
+        assert row.normalized_value_si == 45.0, row.normalized_value_si
+        assert row.normalized_unit_si == "%"
+        assert first["updated"] >= 1
+
+        second = reclassify_lab_results(db, dry_run=False)
+        db.refresh(row)
+        assert row.status == "normal"
+        assert second["updated"] == 0, "reclassify must converge"

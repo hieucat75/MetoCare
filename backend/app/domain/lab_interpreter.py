@@ -356,12 +356,33 @@ BIOMARKERS: tuple[BiomarkerSpec, ...] = (
         4.2,
         5.9,
         critical_low=2.5,
-        physiological_min=0.5,
+        # 0.5 admitted a hematocrit FRACTION as a red cell count. No adult RBC
+        # count is below ~1.0 x10^12/L; severe anaemia still classifies critical.
+        physiological_min=1.0,
         physiological_max=10,
     ),
     BiomarkerSpec(
         "hematocrit",
-        ("hematocrit", "hct", "dung tích hồng cầu"),
+        # Every VN name for hematocrit CONTAINS "hồng cầu", which is also the RBC
+        # alias. Only "dung tích hồng cầu" was registered, so the other standard
+        # forms matched the shorter RBC alias instead and a hematocrit fraction
+        # was stored as a red cell count. Longest-alias-wins shadows the generic
+        # token once the full phrase is present — so these must be exhaustive.
+        (
+            "hematocrit",
+            "hct",
+            "pcv",
+            "dung tích hồng cầu",
+            "dung tich hong cau",
+            "thể tích khối hồng cầu",
+            "the tich khoi hong cau",
+            "tỷ lệ thể tích hồng cầu",
+            "ty le the tich hong cau",
+            "thể tích hồng cầu",
+            "the tich hong cau",
+            "khối hồng cầu",
+            "khoi hong cau",
+        ),
         "%",
         36.0,
         50.0,
@@ -676,14 +697,55 @@ def interpret_value(raw: RawLabValue) -> InterpretedBiomarker:
         )
 
     spec = _ALIAS_INDEX[canonical]
-    check_lo = spec.physiological_min is not None and raw.value < spec.physiological_min
-    check_hi = spec.physiological_max is not None and raw.value > spec.physiological_max
+
+    # ── CBC dimensional guard ────────────────────────────────────────────────
+    # This is the layer the parser fix does NOT reach. Below, `unit or spec.unit`
+    # stamps the canonical unit onto a unit-free row: an unlabelled
+    # "Hồng cầu 0.50" becomes `rbc 0.50 10^12/L`, which then looks CANONICAL to
+    # the read-path guard and classifies CRITICAL — the original incident, with
+    # the allowlist fooled rather than bypassed.
+    #
+    # Runs before the plausibility check so a legitimate hematocrit fraction
+    # (0.45 L/L) is converted to 45 % first, instead of being judged against the
+    # percent bounds and flagged "ngoài giới hạn sinh lý".
+    from .analyte_units import ALLOWED_UNITS, is_unsafe_pair, to_canonical_unit
+
+    value_for_status = raw.value
+    guarded = canonical in ALLOWED_UNITS
+    if guarded:
+        if is_unsafe_pair(canonical, raw.unit):
+            return InterpretedBiomarker(
+                canonical=canonical,
+                raw_name=raw.test_name,
+                value=raw.value,
+                # NEVER invent the unit for a guarded analyte.
+                unit=raw.unit or "",
+                status=LabStatus.UNKNOWN,
+                reference_range="N/A",
+                ocr_confidence=raw.ocr_confidence,
+                needs_verification=True,
+                patient_note=(
+                    "Chỉ số cần được kiểm tra lại do đơn vị hoặc loại xét nghiệm chưa khớp."
+                ),
+                confidence_detail=raw.confidence_detail,
+                original_value=raw.original_value,
+                original_unit=raw.original_unit,
+                raw_test_name=raw.raw_test_name,
+                display_name_vi=raw.display_name_vi,
+                display_reference_range=None,
+            )
+        converted = to_canonical_unit(canonical, raw.value, raw.unit)
+        if converted is not None:
+            value_for_status = converted[0]
+
+    check_lo = spec.physiological_min is not None and value_for_status < spec.physiological_min
+    check_hi = spec.physiological_max is not None and value_for_status > spec.physiological_max
     if check_lo or check_hi:
         return InterpretedBiomarker(
             canonical=canonical,
             raw_name=raw.test_name,
             value=raw.value,
-            unit=raw.unit or spec.unit,
+            unit=raw.unit if guarded else (raw.unit or spec.unit),
             status=LabStatus.UNKNOWN,
             reference_range=str(spec.ref_low) + "-" + str(spec.ref_high) + " " + spec.unit,
             ocr_confidence=0.0,
@@ -696,11 +758,16 @@ def interpret_value(raw: RawLabValue) -> InterpretedBiomarker:
             display_name_vi=raw.display_name_vi,
             display_reference_range=None,
         )
-    status = classify_value(canonical, raw.value)
+    status = classify_value(canonical, value_for_status)
     needs_verification = raw.ocr_confidence < OCR_CONFIDENCE_THRESHOLD
     ref = f"{spec.ref_low}–{spec.ref_high} {spec.unit}"
     display_ref = _compute_display_ref(raw.ocr_reference_range, raw.original_unit, spec)
-    note = f"{spec.canonical} = {raw.value} {spec.unit}: {_PATIENT_NOTE[status]}"
+    # Quote the value in the SAME unit as the range. A converted hematocrit
+    # otherwise read "hematocrit = 0.45 %" against "36.0–50.0 %", from which a
+    # patient self-derives catastrophic anaemia off a row we just called normal —
+    # the exact hazard the serializer avoids by clearing an unsafe range.
+    note_value = value_for_status if guarded else raw.value
+    note = f"{spec.canonical} = {note_value} {spec.unit}: {_PATIENT_NOTE[status]}"
     if needs_verification:
         note += " (Độ tin cậy OCR thấp — cần xác nhận lại số liệu.)"
     return InterpretedBiomarker(

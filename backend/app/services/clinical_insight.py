@@ -192,6 +192,18 @@ def _status(row: HealthMetric) -> str:
     reading's own unit at write time. This avoids SI-vs-mg/dL false positives."""
     canon = _lab_canonical(row.metric_type)
     unit = (row.unit or "").lower()
+
+    # CBC dimensional guard — this surface feeds abnormal_findings, the overall
+    # risk escalation and the Meto AI context, so a row the two patient screens
+    # already refuse to classify must not re-enter as "critical" here. The
+    # `not unit` branch below would otherwise classify a unitless `rbc 0.50`
+    # directly, which is the incident value.
+    from app.domain.analyte_units import guarded_status
+
+    _g = guarded_status(canon, row.value, row.unit)
+    if _g is not None:
+        return _g[0]
+
     if canon and canon in _ALIAS_INDEX:
         spec = _ALIAS_INDEX[canon]
         value_in_ref: float | None = None
