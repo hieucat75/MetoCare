@@ -82,6 +82,21 @@ class MetricOut(BaseModel):
           3. Map (biomarker, status) → Vietnamese clinical message.
           4. Return None only when biomarker is unknown/unsupported.
         """
+        # P0 read-path guard — the same check LabResultOut applies, so the two
+        # screens cannot disagree about the same underlying record. An analyte
+        # and a unit from different dimensions (`rbc` + `L/L`) cannot yield a
+        # severity: this screen previously rendered "Rất thấp" while the labs
+        # screen rendered "Nguy hiểm" for that one row. Checked before the
+        # caller-set short-circuit below, because a severity supplied upstream
+        # is exactly as unsupportable as one computed here.
+        from app.domain.analyte_units import NEEDS_REVIEW_MESSAGE, is_unsafe_pair
+
+        if is_unsafe_pair(self.metric_type, self.unit):
+            self.status = "unknown"
+            self.is_critical = False
+            self.clinical_message = NEEDS_REVIEW_MESSAGE
+            return self
+
         if self.clinical_message is not None:
             return self  # caller already set it — honour that
 

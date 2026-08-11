@@ -361,7 +361,25 @@ BIOMARKERS: tuple[BiomarkerSpec, ...] = (
     ),
     BiomarkerSpec(
         "hematocrit",
-        ("hematocrit", "hct", "dung tích hồng cầu"),
+        # Every VN name for hematocrit CONTAINS "hồng cầu", which is also the RBC
+        # alias. Only "dung tích hồng cầu" was registered, so the other standard
+        # forms matched the shorter RBC alias instead and a hematocrit fraction
+        # was stored as a red cell count. Longest-alias-wins shadows the generic
+        # token once the full phrase is present — so these must be exhaustive.
+        (
+            "hematocrit",
+            "hct",
+            "dung tích hồng cầu",
+            "dung tich hong cau",
+            "thể tích khối hồng cầu",
+            "the tich khoi hong cau",
+            "tỷ lệ thể tích hồng cầu",
+            "ty le the tich hong cau",
+            "thể tích hồng cầu",
+            "the tich hong cau",
+            "khối hồng cầu",
+            "khoi hong cau",
+        ),
         "%",
         36.0,
         50.0,

@@ -427,6 +427,14 @@ _GLOBAL_OCR_CORRECTIONS_RE: list[tuple[re.Pattern[str], str]] = [
 ]
 
 
+# Count-per-volume units the main `_UNIT` pattern cannot reach because they
+# begin with a digit ("10^12/L", "10 12/L" when OCR drops the caret). Used only
+# by the CBC dimensional guard, never to change the emitted unit string.
+_COUNT_UNIT_RE = re.compile(
+    r"10\s*[\^*]?\s*\d{1,2}\s*/\s*[lL1]|10\s*[¹²³⁶⁹]+\s*/\s*[lL1]",
+)
+
+
 def _is_incompatible(unit: str, spec: BiomarkerSpec) -> bool:
     n = _norm_unit(unit)
     return any(_norm_unit(bad) == n for bad in spec.incompatible_units)
@@ -536,6 +544,55 @@ def parse_lab_text(
         # review UI can show "as printed" values alongside the canonical ones.
         orig_value: float = value
         orig_unit: str = unit or spec.unit
+
+        # ── P0: erythrocyte analyte/unit safety ──────────────────────────────
+        # "Hồng cầu" heads the RBC count line AND is contained in every VN
+        # hematocrit phrase, so the label alone cannot decide which analyte this
+        # is. The UNIT decides — dimension only, never magnitude: choosing the
+        # analyte by plausibility is exactly what let a hematocrit fraction
+        # (0.50 L/L) be stored as a critically low red cell count.
+        #
+        # An explicit label ("RBC") carrying a foreign unit is NOT relabelled —
+        # that would be guessing which half of the pair is wrong. It is dropped,
+        # so the row reaches review rather than a confident wrong classification.
+        from app.domain import analyte_units as _au
+
+        # `_UNIT` cannot match a digit-initial token, so a printed "10^12/L"
+        # reaches here as NO unit and `spec.unit` is substituted downstream —
+        # which is precisely the "assume compatible" behaviour this guard exists
+        # to remove (an HCT line reading 5.0 10^12/L would emit "hematocrit
+        # 5.0 %", a fabricated unit and a false critical low). Recover the count
+        # unit from the text after the value for the dimensional check only.
+        _eff_unit = unit
+        if not _eff_unit and vm is not None:
+            _cm = _COUNT_UNIT_RE.search(after[vm.end() :])
+            if _cm:
+                _eff_unit = _cm.group(0)
+
+        if _eff_unit and spec.canonical in _au.ALLOWED_UNITS:
+            unit = _eff_unit
+            _label = _strip_accents(raw_test_name).lower()
+            _implied = _au.resolve_erythrocyte_analyte(unit)
+            _label_is_ambiguous = (
+                any(_strip_accents(a) in _label for a in _au.AMBIGUOUS_ERYTHROCYTE_ALIASES)
+                and "rbc" not in _label
+            )
+            if _implied is None:
+                continue  # unit printed, but foreign to both analytes → no row
+            if _implied != spec.canonical:
+                if not _label_is_ambiguous:
+                    continue  # explicit analyte + foreign unit → never emit
+                _reassigned = _combined.get(_implied)
+                if _reassigned is None or _reassigned.canonical in seen:
+                    continue
+                spec = _reassigned
+            # Relabel and convert together — never one without the other. This
+            # also normalises an already-correct hematocrit fraction (0.50 L/L)
+            # to the canonical percent, so both screens compare like with like.
+            _converted = _au.to_canonical_unit(spec.canonical, value, unit)
+            if _converted is None:
+                continue
+            value, unit = _converted
 
         # ocr_confidence (proxy): did OCR produce a recognizable unit token?
         # 0.5 (not 0.7) when unit absent: ensures overall stays below the 0.75
