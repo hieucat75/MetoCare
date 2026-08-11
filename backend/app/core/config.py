@@ -7,9 +7,12 @@ here; production must inject them via a secret manager.
 
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from .ocr_environment import assert_doc_intel_environment
 
 
 class Settings(BaseSettings):
@@ -166,6 +169,14 @@ class Settings(BaseSettings):
     ocr_dataset_export_enabled: bool = False
     ocr_url_fetch_timeout_seconds: int = 10  # SSRF-guarded URL paste fetch
     ocr_pdf_max_pages: int = 3  # rasterize/scan at most N pages
+    # Environment separation for the cloud OCR provider (see core/ocr_environment.py).
+    # The Azure resource name this environment is allowed to OCR through — an exact
+    # identity match against the endpoint's custom subdomain. Both deploy workflows
+    # set it. Empty falls back to foreign-environment marker rejection.
+    azure_doc_intel_expected_resource: str = ""
+    # Explicit, audited opt-out letting one environment use another's OCR resource.
+    # Never set in production.
+    allow_cross_env_ocr: bool = False
 
     # ---- CORS ----
     # Comma-separated list of allowed origins for CORS preflight.
@@ -410,6 +421,38 @@ class Settings(BaseSettings):
                 "scan. Set 'clamav' once real scanning is wired, or 'hold' to "
                 "quarantine uploads pending review."
             )
+
+        # Fail loud when this environment would OCR through another environment's
+        # Document Intelligence resource. Production shipped pointing at
+        # `docintel-metocare-staging` (a resource in rg-metocare-staging) and
+        # nothing said so — see core/ocr_environment.py. Applies to every env, not
+        # just prod: staging sending its documents to a production resource is the
+        # same boundary violation in the other direction.
+        assert_doc_intel_environment(
+            env=self.env,
+            endpoint=os.getenv("AZURE_DOC_INTEL_ENDPOINT"),
+            expected_resource=self.azure_doc_intel_expected_resource,
+            cloud_ocr_active=self._cloud_ocr_active(),
+            allow_cross_env=self.allow_cross_env_ocr,
+        )
+
+    def _cloud_ocr_active(self) -> bool:
+        """True when Azure cloud OCR could actually be invoked on this deployment.
+
+        Mirrors `ocr_engine.azure_ocr_permitted()`: the provider must be azure AND
+        the opt-in fallback flag on. Read from the environment directly rather than
+        importing feature_flags, which would make core.config depend on a module
+        that reads config. An inert credential is not a data-boundary risk, so the
+        guard stays silent unless the path is live.
+        """
+        if (self.ocr_cloud_provider or "").strip().lower() != "azure":
+            return False
+        truthy = ("true", "1", "yes", "on", "t")
+        for name in ("FEATURE_OCR_CLOUD_FALLBACK", "MCP_FEATURE_OCR_CLOUD_FALLBACK"):
+            val = os.getenv(name)
+            if val is not None:
+                return val.strip().lower() in truthy
+        return False
 
     def warn_if_insecure(self) -> list[str]:
         """Return a list of insecure-config warnings (used at startup)."""

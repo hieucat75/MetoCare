@@ -93,6 +93,19 @@ def _settings_from_workflow(**overrides) -> Settings:
         return Settings(_env_file=None, **kwargs)
 
 
+def _validate_from_workflow(**overrides) -> None:
+    """Build AND validate the declared production config under one isolation.
+
+    Validation has to happen inside the cleared environment for the same reason
+    construction does. A guard that reads the process environment — the OCR
+    data-boundary check reads ``AZURE_DOC_INTEL_ENDPOINT`` — would otherwise see
+    the developer's ``.env``, which is never deployed, so this test would report
+    on a local machine's state instead of on what production declares.
+    """
+    with mock.patch.dict(os.environ, {}, clear=True):
+        _settings_from_workflow(**overrides).validate_required_env_vars()
+
+
 # ── The test the 2026-08-10 failure would have failed ───────────────────────
 
 
@@ -103,7 +116,7 @@ def test_the_production_workflow_config_actually_boots():
     this asserts the whole declared configuration passes startup validation
     rather than spot-checking the variables someone remembered.
     """
-    _settings_from_workflow().validate_required_env_vars()
+    _validate_from_workflow()
 
 
 def test_production_sets_mfa_enforcement():
@@ -130,12 +143,12 @@ def test_production_declares_no_relaxed_auth_override():
 def test_mfa_off_still_refuses_to_start_in_production():
     """The remediation adds a variable. It must not have softened the guard."""
     with pytest.raises(RuntimeError, match="relaxed authentication"):
-        _settings_from_workflow(mfa_enforcement_enabled=False).validate_required_env_vars()
+        _validate_from_workflow(mfa_enforcement_enabled=False)
 
 
 def test_a_skipped_document_scan_still_refuses_to_start_in_production():
     with pytest.raises(RuntimeError, match="MCP_DOCUMENT_SCAN_MODE"):
-        _settings_from_workflow(document_scan_mode="skip").validate_required_env_vars()
+        _validate_from_workflow(document_scan_mode="skip")
 
 
 def test_staging_is_configured_independently_of_production():

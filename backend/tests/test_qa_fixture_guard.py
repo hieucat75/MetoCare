@@ -28,6 +28,10 @@ def _settings(**overrides) -> Settings:
         # document_scan_mode="skip" (see test_document_scan_guard.py), and that
         # guard would otherwise fire here and mask what this suite is asserting.
         document_scan_mode="hold",
+        # Likewise no cloud OCR provider: the OCR data-boundary guard reads the
+        # ambient AZURE_DOC_INTEL_ENDPOINT (see core/ocr_environment.py), which a
+        # developer .env points at staging.
+        ocr_cloud_provider="",
     )
     base.update(overrides)
     return Settings(**base)
