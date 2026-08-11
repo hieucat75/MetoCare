@@ -1109,6 +1109,36 @@ export async function revokeConsent(patientId: string, consentId: string): Promi
   return api.del(`/patients/${patientId}/consents/${consentId}`)
 }
 
+// ── Meto data-category consent (GET/POST /meto/consent) ───────────────────────
+
+/**
+ * A patient's grant for one data category, as returned by `GET /meto/consent`.
+ *
+ * Distinct from {@link Consent}, which is a doctor's access to this patient.
+ * These are the five categories in `backend/app/ai/consent_policy.py`, and they
+ * gate more than Meto chat: `documents` is a fail-closed gate on
+ * `POST /lab-uploads` and `POST /documents` (`_require_documents_consent`).
+ *
+ * `granted` is EFFECTIVE — the backend reports false for a grant recorded
+ * against a stale `policy_version`, so a policy bump forces re-consent.
+ */
+export interface MetoConsentStatus {
+  context_type: string
+  granted: boolean
+  granted_at: string | null
+  policy_version: string | null
+  /** Patient-facing Vietnamese explanation, authored server-side. */
+  purpose: string
+}
+
+export async function getMetoConsents(): Promise<MetoConsentStatus[]> {
+  return api.get<MetoConsentStatus[]>('/meto/consent')
+}
+
+export async function updateMetoConsent(contextType: string, granted: boolean): Promise<void> {
+  await api.post('/meto/consent', { context_type: contextType, granted })
+}
+
 // ── Health Metric Edit / Delete (P0) ────────────────────────────────────────────────
 
 /** Partial update payload for PATCH /patients/{id}/metrics/{metricId}. */

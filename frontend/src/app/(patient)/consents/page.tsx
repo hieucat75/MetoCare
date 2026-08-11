@@ -6,8 +6,60 @@ import { ShieldOff, ShieldAlert } from 'lucide-react'
 import { NeuCard, NeuButton, NeuBadge } from '@/components/patient/neu'
 import { PatientEmptyState } from '@/components/patient'
 import { PatientErrorState, PatientSkeleton } from '@/components/patient/states'
-import { getConsents, revokeConsent } from '@/lib/api/patient'
-import type { Consent } from '@/lib/api/patient'
+import { getConsents, getMetoConsents, revokeConsent, updateMetoConsent } from '@/lib/api/patient'
+import type { Consent, MetoConsentStatus } from '@/lib/api/patient'
+
+// ── Data-category permissions ─────────────────────────────────────────────────
+
+/** Vietnamese labels for the five categories in backend/app/ai/consent_policy.py. */
+const CATEGORY_LABEL: Record<string, string> = {
+  ai_processing: 'Xử lý bằng AI',
+  health_records: 'Hồ sơ sức khỏe & chỉ số',
+  medications: 'Thuốc & tuân thủ',
+  documents: 'Tài liệu y tế',
+  doctor_consultation: 'Buổi tư vấn với bác sĩ',
+}
+
+function categoryLabel(key: string): string {
+  return CATEGORY_LABEL[key] ?? key
+}
+
+interface DataPermissionRowProps {
+  status: MetoConsentStatus
+  isSaving: boolean
+  onToggle: (status: MetoConsentStatus) => void
+}
+
+function DataPermissionRow({ status, isSaving, onToggle }: DataPermissionRowProps) {
+  const label = categoryLabel(status.context_type)
+  return (
+    <div className="py-4 border-b border-[#C8D8D4] last:border-0">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="text-[16px] font-bold text-neu-text">{label}</p>
+          {status.purpose && (
+            <p className="text-[13px] text-neu-muted mt-0.5 leading-relaxed">{status.purpose}</p>
+          )}
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={status.granted}
+          aria-label={label}
+          disabled={isSaving}
+          onClick={() => onToggle(status)}
+          className={
+            status.granted
+              ? 'shrink-0 rounded-[13px] px-4 py-2 text-[13px] font-semibold text-white bg-[#17AE7B] disabled:opacity-60'
+              : 'neu-raised shrink-0 rounded-[13px] px-4 py-2 text-[13px] font-semibold text-neu-muted disabled:opacity-60'
+          }
+        >
+          {status.granted ? 'Đang bật' : 'Bật'}
+        </button>
+      </div>
+    </div>
+  )
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -65,6 +117,13 @@ export default function ConsentsPage() {
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
 
+  // Meto data-category permissions (GET/POST /meto/consent). Until this existed
+  // on web, a browser-registered patient had no way to grant `documents`, so
+  // /lab-uploads answered 403 CONSENT_DENIED forever and lab OCR was unusable.
+  const [dataPermissions, setDataPermissions] = React.useState<MetoConsentStatus[]>([])
+  const [permissionsError, setPermissionsError] = React.useState<string | null>(null)
+  const [savingCategory, setSavingCategory] = React.useState<string | null>(null)
+
   // Inline revoke confirmation state
   const [revokeTarget, setRevokeTarget] = React.useState<Consent | null>(null)
   const [revoking, setRevoking] = React.useState(false)
@@ -88,6 +147,42 @@ export default function ConsentsPage() {
   React.useEffect(() => {
     loadConsents()
   }, [loadConsents])
+
+  // ── Load data-category permissions ─────────────────────────────────────────
+  const loadDataPermissions = React.useCallback(async () => {
+    setPermissionsError(null)
+    try {
+      setDataPermissions(await getMetoConsents())
+    } catch (err) {
+      setPermissionsError(
+        err instanceof Error ? err.message : 'Không tải được quyền sử dụng dữ liệu'
+      )
+    }
+  }, [])
+
+  React.useEffect(() => {
+    loadDataPermissions()
+  }, [loadDataPermissions])
+
+  // ── Toggle one data-category permission ────────────────────────────────────
+  async function handleTogglePermission(status: MetoConsentStatus) {
+    setSavingCategory(status.context_type)
+    setPermissionsError(null)
+    const next = !status.granted
+    try {
+      await updateMetoConsent(status.context_type, next)
+      // Re-read rather than patching locally: `granted` is EFFECTIVE server-side
+      // (a stale policy_version reads as not-granted), so the server is the only
+      // honest source for what the gate will actually do on the next request.
+      await loadDataPermissions()
+    } catch (err) {
+      setPermissionsError(
+        err instanceof Error ? err.message : 'Không thể cập nhật quyền. Vui lòng thử lại.'
+      )
+    } finally {
+      setSavingCategory(null)
+    }
+  }
 
   // ── Confirm revoke ─────────────────────────────────────────────────────────
   async function handleConfirmRevoke() {
@@ -128,6 +223,40 @@ export default function ConsentsPage() {
         <p className="mt-1 text-[14px] text-neu-muted">
           Các bác sĩ dưới đây có quyền xem hồ sơ sức khỏe của bạn. Bạn có thể thu hồi quyền bất kỳ
           lúc nào.
+        </p>
+      </header>
+
+      {/* Data-category permissions */}
+      <NeuCard className="!p-0">
+        <div className="px-5 pt-4 pb-1">
+          <p className="text-[13px] font-semibold uppercase tracking-[0.05em] text-neu-muted">
+            Quyền sử dụng dữ liệu
+          </p>
+          <p className="text-[13px] text-neu-muted mt-1 leading-relaxed">
+            Bạn quyết định MetoCare được dùng loại dữ liệu nào. Tải lên và đọc tài liệu y tế (bao
+            gồm ảnh xét nghiệm) cần quyền &quot;Tài liệu y tế&quot;.
+          </p>
+        </div>
+        <div className="px-5 pb-4">
+          {permissionsError && (
+            <div className="my-3 rounded-[12px] bg-[rgba(251,231,229,0.93)] border border-[rgba(217,45,32,0.2)] px-4 py-3">
+              <p className="text-[13px] text-[#D92D20]">{permissionsError}</p>
+            </div>
+          )}
+          {dataPermissions.map((status) => (
+            <DataPermissionRow
+              key={status.context_type}
+              status={status}
+              isSaving={savingCategory === status.context_type}
+              onToggle={handleTogglePermission}
+            />
+          ))}
+        </div>
+      </NeuCard>
+
+      <header className="pt-2">
+        <p className="text-[13px] font-semibold uppercase tracking-[0.05em] text-neu-muted">
+          Bác sĩ có quyền xem hồ sơ
         </p>
       </header>
 

@@ -212,6 +212,72 @@ describe('test_labs_upload_ocr_error_ux', () => {
   })
 })
 
+// ── /labs/upload — a refused PERMISSION must not be blamed on the image ───────
+
+/**
+ * Production regression (app.metocare.me): a patient selected a valid lab photo,
+ * pressed "Phân tích bằng AI", and was told "Chưa đọc được ảnh xét nghiệm".
+ *
+ * The image was fine. `POST /lab-uploads` is fail-closed on the patient's
+ * `documents` consent (backend lab_upload.py::_require_documents_consent) and
+ * answered 403 CONSENT_DENIED, but submitForDraft caught every error
+ * identically and rendered the OCR-failure card — which blames the photo and
+ * offers a "Thử lại" that can never succeed.
+ */
+describe('test_labs_upload_consent_denied_is_not_an_ocr_failure', () => {
+  const mockCatalog = { biomarkers: {}, categories: {} }
+  const CONSENT_MESSAGE =
+    "Bạn cần bật quyền 'Tài liệu y tế' trong phần Quyền riêng tư để tải lên, xử lý hoặc xem tài liệu y tế."
+
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { useLabReference } = require('@/lib/api/labReference') as {
+    useLabReference: jest.Mock
+  }
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { uploadLabDraft } = require('@/lib/api/patient') as { uploadLabDraft: jest.Mock }
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { ApiError } = require('@/lib/api/client') as {
+    ApiError: new (status: number, detail: string, code?: string) => Error
+  }
+
+  beforeEach(() => {
+    useLabReference.mockReturnValue(mockCatalog)
+    uploadLabDraft.mockRejectedValue(new ApiError(403, CONSENT_MESSAGE, 'CONSENT_DENIED'))
+  })
+
+  afterEach(() => {
+    useLabReference.mockReturnValue(null)
+    uploadLabDraft.mockReset()
+  })
+
+  async function triggerUpload() {
+    const user = userEvent.setup()
+    render(<LabUploadPage />)
+    await user.click(screen.getByRole('tab', { name: 'Dán link' }))
+    await user.type(screen.getByPlaceholderText('https://...'), 'https://example.com/lab.jpg')
+    await user.click(screen.getByRole('button', { name: 'Phân tích bằng AI' }))
+    return screen.findByRole('alert')
+  }
+
+  it('does not tell the patient the lab image could not be read', async () => {
+    await triggerUpload()
+    expect(screen.queryByText('Chưa đọc được ảnh xét nghiệm')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Hiện chưa thể đọc ảnh xét nghiệm/)).not.toBeInTheDocument()
+  })
+
+  it("names the missing 'Tài liệu y tế' permission as the reason", async () => {
+    await triggerUpload()
+    expect(screen.getByText(/Cần bật quyền/)).toBeInTheDocument()
+    expect(screen.getByText(CONSENT_MESSAGE)).toBeInTheDocument()
+  })
+
+  it('offers the permission screen instead of a retry that cannot succeed', async () => {
+    await triggerUpload()
+    expect(screen.getByRole('button', { name: 'Mở cài đặt quyền riêng tư' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Thử lại' })).not.toBeInTheDocument()
+  })
+})
+
 // ── /labs/upload page — always renders upload form ────────────────────────────
 
 describe('test_labs_upload_renders_without_coming_soon', () => {

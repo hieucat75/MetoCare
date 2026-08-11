@@ -1575,3 +1575,58 @@ def test_lab_upload_fail_closed_without_documents_consent(
     # (4) Stale policy version → treated as NOT granted (fail-closed on a bump).
     _set_documents_consent(db, uid, granted=True, version="0.0-stale")
     assert _post().status_code == 403
+
+
+@pytest.mark.real_consent
+def test_granting_documents_consent_via_api_unblocks_lab_upload(
+    client, patient, monkeypatch, ocr_on
+):
+    """The grant a patient can actually perform must clear the /lab-uploads gate.
+
+    The test above seeds MetoConsent directly in the DB, which proves the gate
+    reads the row but NOT that any client-reachable action can write an
+    acceptable one. That gap was invisible in production: `POST /meto/consent`
+    is the only grant endpoint, the web app had no caller for it, and every
+    web-registered patient was permanently stuck at 403 CONSENT_DENIED while
+    being told their lab image could not be read.
+
+    This pins the contract the consent UI depends on: grant via the public API
+    → the very next upload succeeds; revoke via the public API → blocked again.
+    """
+    _patch_ocr(monkeypatch)
+    h = patient["headers"]
+
+    def _post():
+        return client.post(
+            "/api/v1/lab-uploads",
+            files={"file": ("lab.png", _png(), "image/png")},
+            headers=h,
+        )
+
+    # The category is reported, and not granted, before the patient acts.
+    listed = client.get("/api/v1/meto/consent", headers=h)
+    assert listed.status_code == 200, listed.text
+    documents = [c for c in listed.json() if c["context_type"] == "documents"]
+    assert len(documents) == 1, listed.json()
+    assert documents[0]["granted"] is False
+    assert _post().status_code == 403
+
+    # Grant through the same endpoint the UI calls → upload works immediately.
+    granted = client.post(
+        "/api/v1/meto/consent",
+        json={"context_type": "documents", "granted": True},
+        headers=h,
+    )
+    assert granted.status_code == 200, granted.text
+    r = _post()
+    assert r.status_code == 200, r.text
+    assert any(v["canonical"] == "fasting_glucose" for v in r.json()["parsed_values"])
+
+    # And the patient can take it back just as directly.
+    revoked = client.post(
+        "/api/v1/meto/consent",
+        json={"context_type": "documents", "granted": False},
+        headers=h,
+    )
+    assert revoked.status_code == 200, revoked.text
+    assert _post().status_code == 403
