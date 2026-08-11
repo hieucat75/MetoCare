@@ -937,6 +937,32 @@ def reclassify_lab_results(
                     norm_unit = lab_interpreter._ALIAS_INDEX.get(row.canonical_name, None)
                     norm_unit = norm_unit.unit if norm_unit else None
 
+            # CBC dimensional guard. Without this, a backfill re-persists
+            # `critical` for `rbc + L/L` and `hematocrit + L/L` rows: the two
+            # serializers would mask it on screen, but the STORED status is what
+            # clinical_insight, the priority engine and the AI context read.
+            # Never write a severity we have refused to display.
+            from app.domain.analyte_units import (
+                ALLOWED_UNITS,
+                is_unsafe_pair,
+                to_canonical_unit,
+            )
+
+            if row.canonical_name in ALLOWED_UNITS:
+                # Judge the STORED pair. `raw_unit`/`raw_val` only exist on the
+                # branch above, and `norm_unit` may already be a substituted
+                # canonical unit — neither is what was actually persisted.
+                _stored_unit = row.original_unit if row.original_unit is not None else row.unit
+                _stored_val = row.original_value if row.original_value is not None else row.value
+                if _stored_val is None or is_unsafe_pair(row.canonical_name, _stored_unit):
+                    skipped += 1
+                    continue
+                _conv = to_canonical_unit(row.canonical_name, _stored_val, _stored_unit)
+                if _conv is None:
+                    skipped += 1
+                    continue
+                norm_value = _conv[0]
+
             # Compute new status.
             new_status_enum = classify_value(row.canonical_name, norm_value)
             if new_status_enum is None:

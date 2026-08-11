@@ -1092,15 +1092,37 @@ def map_table_rows_to_raw_values(
         elif detection_confidence < 0.7:
             requires_review = True
 
+        # CBC dimensional guard — the SECOND write path. `build_alias_index`'s
+        # docstring already records what happens when two extraction paths answer
+        # differently; without this, production (which runs Azure table-first)
+        # bypasses the lab_parser fix entirely.
+        #
+        # No analyte reassignment here: the shared alias index already routes the
+        # full VN hematocrit phrases, so what remains is refusing a cross-dimension
+        # pair and converting an in-dimension one.
+        from app.domain import analyte_units as _au
+
+        _guarded = spec.canonical in _au.ALLOWED_UNITS
+        if _guarded and unit:
+            _compat = _au.unit_compatibility(spec.canonical, unit)
+            if _compat in (_au.UnitCompatibility.INCOMPATIBLE, _au.UnitCompatibility.UNKNOWN):
+                continue  # wrong dimension for this analyte → never emit
+            _conv = _au.to_canonical_unit(spec.canonical, value, unit)
+            if _conv is None:
+                continue
+            value, unit = _conv
+
+        # Never fabricate the canonical unit for a guarded analyte — that is the
+        # fact the read-path guard depends on. See lab_parser for the full note.
         seen[spec.canonical] = RawLabValue(
             test_name=spec.canonical,
             value=value,
-            unit=unit or spec.unit,
+            unit=unit if (unit or _guarded) else spec.unit,
             ocr_confidence=overall,
             confidence_detail=detail,
             # Preserve original as-printed value and unit — never overwrite after conversion.
             original_value=orig_value,
-            original_unit=orig_unit or spec.unit,
+            original_unit=orig_unit if (orig_unit or _guarded) else spec.unit,
             raw_test_name=row.original_test_name,
             display_name_vi=display_name_vi,
             ocr_reference_range=row.original_reference_range,

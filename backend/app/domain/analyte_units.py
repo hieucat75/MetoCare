@@ -103,18 +103,29 @@ def normalize_unit(unit: str | None) -> str:
 #: canonical analyte -> {normalized unit: factor to reach the canonical unit}.
 ALLOWED_UNITS: dict[str, dict[str, float]] = {
     # Red cell COUNT. One dimension: cells per volume.
+    # An omission here does not fail safe: an unrecognised unit is refused, so a
+    # legitimate RBC result printed in an unlisted spelling would be lost rather
+    # than mis-filed. Older VN printouts use "triệu/mm³" (million per mm³), which
+    # is numerically identical to 10^12/L.
     "rbc": {
         "10^12/l": 1.0,
         "10^12/1": 1.0,  # OCR reads L as 1
         "t/l": 1.0,  # tera/L — numerically identical
+        "t/1": 1.0,  # same OCR L->1 misread
         "tera/l": 1.0,
         "10^6/ul": 1.0,  # 10^6/uL == 10^12/L
+        "10^6/mm3": 1.0,
         "m/ul": 1.0,
+        "m/mm3": 1.0,
+        "trieu/mm3": 1.0,  # accent-stripped "triệu/mm³"
+        "triệu/mm3": 1.0,
     },
     # Red cell VOLUME FRACTION. Canonical percent; L/L is the same quantity x100.
     "hematocrit": {
         "%": 1.0,
+        "vol%": 1.0,
         "l/l": 100.0,
+        "v/v": 100.0,
         "ratio": 100.0,
     },
 }

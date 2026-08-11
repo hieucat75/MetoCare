@@ -138,6 +138,28 @@ def main() -> int:
             )
         )
 
+        rows.append(
+            (
+                "lab_results: canonical=hematocrit with a FRACTION unit (needs conversion)",
+                _count(
+                    conn,
+                    f"SELECT count(*) FROM lab_results WHERE {live} "
+                    f"AND lower(canonical_name)='hematocrit' AND {lab_unit} = ANY(:u)",
+                    u=["l/l", "ratio", "v/v"],
+                ),
+            )
+        )
+        rows.append(
+            (
+                "lab_results: hematocrit value < 1.0 (an unconverted fraction)",
+                _count(
+                    conn,
+                    f"SELECT count(*) FROM lab_results WHERE {live} "
+                    "AND lower(canonical_name)='hematocrit' AND value IS NOT NULL AND value < 1.0",
+                ),
+            )
+        )
+
         # Deterministically remediable subset: rbc + L/L + a plausible HCT
         # fraction. These are the ONLY rows a conversion may touch without
         # guessing which half of the analyte/unit pair was wrong.

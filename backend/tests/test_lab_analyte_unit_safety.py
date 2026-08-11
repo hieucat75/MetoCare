@@ -271,3 +271,89 @@ def test_a_correct_hematocrit_row_is_unaffected():
         status="normal",
     )
     assert out.status != "unknown"
+
+
+# --------------------------------------------------------------------------- #
+# Clinical-review findings (PR #153 round 1)
+# --------------------------------------------------------------------------- #
+
+
+def test_stored_hematocrit_fraction_is_converted_not_called_critical():
+    """P0-1: `hematocrit + L/L` is CONVERTIBLE, so the old guard called it safe —
+    but nothing converted, so 0.45 classified against critical_low=20 and a
+    NORMAL hematocrit rendered "Nguy hiểm". This is the population that never hit
+    the RBC mis-mapping at all, because its label was already correct."""
+    out = _lab_row(
+        canonical_name="hematocrit",
+        test_name="Dung tích hồng cầu",
+        value=0.45,
+        unit="L/L",
+        reference_range="0.36-0.50 L/L",
+        status=None,
+    )
+    assert out.status == "normal", out.status
+    assert out.status != "critical"
+
+
+def test_metrics_screen_also_converts_the_stored_fraction():
+    out = MetricOut(
+        id="m1",
+        patient_id="p1",
+        metric_type="hematocrit",
+        value=0.45,
+        unit="L/L",
+        status="critical",
+        measured_at=_NOW,
+    )
+    assert out.status == "normal"
+    assert out.is_critical is False
+
+
+def test_a_genuinely_low_hematocrit_still_classifies_low():
+    """The conversion must not blunt a real abnormality: 0.25 L/L = 25 %."""
+    out = _lab_row(
+        canonical_name="hematocrit", value=0.25, unit="L/L", status=None
+    )
+    assert out.status in ("low", "critical")
+
+
+def test_parser_never_fabricates_a_unit_for_a_guarded_analyte():
+    """P0-2: `unit or spec.unit` turned an unlabelled "Hồng cầu 0.50" into
+    `rbc 0.50 10^12/L` — canonical-looking, boundary-plausible, then CRITICAL.
+    The row must not carry an invented count unit."""
+    row = _parse_one("Hồng cầu: 0.50")
+    if row is not None:
+        assert row.unit != "10^12/L", "fabricated the canonical unit"
+        assert row.unit in (None, ""), row.unit
+
+
+def test_clinical_insight_does_not_resurrect_the_false_critical():
+    """P1-5: this surface feeds abnormal_findings, risk escalation and AI context,
+    so it must not classify what the two screens refuse to classify."""
+    from types import SimpleNamespace
+
+    from app.services.clinical_insight import _status
+
+    incompatible = SimpleNamespace(
+        metric_type="rbc", unit="L/L", value=0.50, status="critical"
+    )
+    assert _status(incompatible) == "unknown"
+
+    unitless = SimpleNamespace(metric_type="rbc", unit=None, value=0.50, status=None)
+    assert _status(unitless) == "unknown"
+
+
+def test_clinical_insight_still_classifies_a_valid_cbc_row():
+    from types import SimpleNamespace
+
+    from app.services.clinical_insight import _status
+
+    ok = SimpleNamespace(metric_type="rbc", unit="10^12/L", value=5.0, status=None)
+    assert _status(ok) == "normal"
+
+
+def test_older_vietnamese_count_units_are_not_deleted():
+    """P1-3: an unlisted spelling is REFUSED, so an omission loses a real result.
+    "triệu/mm³" is numerically identical to 10^12/L."""
+    for unit in ("trieu/mm3", "10^6/mm3", "T/1"):
+        assert not is_unsafe_pair("rbc", unit), unit

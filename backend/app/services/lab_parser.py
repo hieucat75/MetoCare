@@ -690,10 +690,18 @@ def parse_lab_text(
         # flagged so it cannot be persisted without explicit user confirmation.
         requires_review = overall < OCR_CONFIDENCE_THRESHOLD
 
+        # NEVER substitute the canonical unit for a guarded analyte. Doing so
+        # fabricates the one fact the read-path guard depends on: an unlabelled
+        # "Hồng cầu 0.50" would be stored as `rbc 0.50 10^12/L`, which looks
+        # canonical, passes `physiological_min=0.5` on the boundary, and then
+        # classifies CRITICAL — the original incident, with the allowlist
+        # bypassed because the unit now appears correct. Persisting None lets the
+        # serializer's UNKNOWN branch fire and surface the row for review.
+        _emit_unit = unit if (unit or spec.canonical in _au.ALLOWED_UNITS) else spec.unit
         seen[spec.canonical] = RawLabValue(
             test_name=spec.canonical,
             value=value,
-            unit=unit or spec.unit,
+            unit=_emit_unit,
             ocr_confidence=overall,
             confidence_detail=detail,
             requires_review=requires_review,

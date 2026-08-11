@@ -89,12 +89,39 @@ class MetricOut(BaseModel):
         # screen rendered "Nguy hiểm" for that one row. Checked before the
         # caller-set short-circuit below, because a severity supplied upstream
         # is exactly as unsupportable as one computed here.
-        from app.domain.analyte_units import NEEDS_REVIEW_MESSAGE, is_unsafe_pair
+        from app.domain.analyte_units import (
+            ALLOWED_UNITS,
+            NEEDS_REVIEW_MESSAGE,
+            UnitCompatibility,
+            to_canonical_unit,
+            unit_compatibility,
+        )
 
-        if is_unsafe_pair(self.metric_type, self.unit):
-            self.status = "unknown"
-            self.is_critical = False
-            self.clinical_message = NEEDS_REVIEW_MESSAGE
+        if (self.metric_type or "").strip().lower() in ALLOWED_UNITS:
+            _compat = unit_compatibility(self.metric_type, self.unit)
+            if _compat in (UnitCompatibility.INCOMPATIBLE, UnitCompatibility.UNKNOWN):
+                self.status = "unknown"
+                self.is_critical = False
+                self.clinical_message = NEEDS_REVIEW_MESSAGE
+                return self
+            # CONVERTIBLE must be converted before classifying — see the matching
+            # comment in schemas/lab.py. An unconverted hematocrit fraction would
+            # classify against critical_low=20 and report a normal result as
+            # critical, on the screen that already disagreed with the other one.
+            _conv = to_canonical_unit(self.metric_type, self.value, self.unit)
+            if _conv is None:
+                self.status = "unknown"
+                self.is_critical = False
+                self.clinical_message = NEEDS_REVIEW_MESSAGE
+                return self
+            from app.domain.lab_interpreter import classify_value as _cv
+            from app.services.lab import get_clinical_message as _gcm
+
+            _status = _cv(self.metric_type, _conv[0])
+            if _status is not None and _status.value != "unknown":
+                self.status = _status.value
+                self.is_critical = _status.value == "critical"
+                self.clinical_message = _gcm(self.metric_type, _status.value)
             return self
 
         if self.clinical_message is not None:

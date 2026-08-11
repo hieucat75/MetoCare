@@ -369,6 +369,7 @@ BIOMARKERS: tuple[BiomarkerSpec, ...] = (
         (
             "hematocrit",
             "hct",
+            "pcv",
             "dung tích hồng cầu",
             "dung tich hong cau",
             "thể tích khối hồng cầu",
