@@ -1106,6 +1106,10 @@ def map_table_rows_to_raw_values(
         if _guarded and unit:
             _compat = _au.unit_compatibility(spec.canonical, unit)
             if _compat in (_au.UnitCompatibility.INCOMPATIBLE, _au.UnitCompatibility.UNKNOWN):
+                _logger.info(
+                    "cbc_row_refused reason=%s canonical=%s unit=%s",
+                    _compat.value, spec.canonical, unit,
+                )
                 continue  # wrong dimension for this analyte → never emit
             _conv = _au.to_canonical_unit(spec.canonical, value, unit)
             if _conv is None:

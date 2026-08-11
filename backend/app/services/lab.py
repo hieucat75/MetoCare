@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from app.core.clock import as_naive_utc, utcnow
 from app.core.config import get_settings
 from app.domain import lab_interpreter
+from app.domain.analyte_units import ALLOWED_UNITS as _ALLOWED_CBC_UNITS
 from app.domain.lab_interpreter import classify_value
 from app.domain.lab_normalization import normalize_value_to_si
 from app.domain.unit_registry import convert_to_canonical
@@ -646,7 +647,10 @@ def create_manual_entry(
             raw_value,
             raw_unit,
             label=item.get("test_name"),
-            assume_canonical_when_missing=True,
+            # A guarded CBC analyte may never have its unit assumed: the web form
+            # states the unit, but this is also the API contract for every other
+            # client, and an assumed "10^12/L" on a 0.50 value is a false critical.
+            assume_canonical_when_missing=canonical not in _ALLOWED_CBC_UNITS,
         )
         if classification.get("conversion_ok") is False:
             # Refuse the ROW rather than store an uninterpretable value in a

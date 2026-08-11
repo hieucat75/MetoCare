@@ -578,9 +578,17 @@ def parse_lab_text(
                 and "rbc" not in _label
             )
             if _implied is None:
+                _logger.info(
+                    "cbc_row_refused reason=unrecognised_unit canonical=%s unit=%s",
+                    spec.canonical, unit,
+                )
                 continue  # unit printed, but foreign to both analytes → no row
             if _implied != spec.canonical:
                 if not _label_is_ambiguous:
+                    _logger.info(
+                        "cbc_row_refused reason=explicit_analyte_foreign_unit "
+                        "canonical=%s unit=%s", spec.canonical, unit,
+                    )
                     continue  # explicit analyte + foreign unit → never emit
                 _reassigned = _combined.get(_implied)
                 if _reassigned is None or _reassigned.canonical in seen:
@@ -591,6 +599,10 @@ def parse_lab_text(
             # to the canonical percent, so both screens compare like with like.
             _converted = _au.to_canonical_unit(spec.canonical, value, unit)
             if _converted is None:
+                _logger.info(
+                    "cbc_row_refused reason=unconvertible canonical=%s unit=%s",
+                    spec.canonical, unit,
+                )
                 continue
             value, unit = _converted
 

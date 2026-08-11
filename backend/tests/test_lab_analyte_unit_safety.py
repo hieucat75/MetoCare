@@ -357,3 +357,64 @@ def test_older_vietnamese_count_units_are_not_deleted():
     "triệu/mm³" is numerically identical to 10^12/L."""
     for unit in ("trieu/mm3", "10^6/mm3", "T/1"):
         assert not is_unsafe_pair("rbc", unit), unit
+
+
+# --------------------------------------------------------------------------- #
+# Clinical-review round 2: the layer BELOW the parser
+# --------------------------------------------------------------------------- #
+
+
+def test_interpret_panel_never_fabricates_a_unit_or_a_critical():
+    """Round-2 P0: the parser stopped fabricating the unit, but `interpret_value`
+    did it again one layer down (`raw.unit or spec.unit`), producing a persisted
+    `rbc 0.50 10^12/L critical` — which then looked CANONICAL to the read guard.
+    This drives the real chain rather than a hand-built schema object, which is
+    why the round-1 fix looked complete and was not."""
+    from app.domain.lab_interpreter import interpret_panel
+
+    rows = parse_lab_text("Hồng cầu: 0.50")
+    interpreted = interpret_panel(rows)
+    assert "rbc" not in interpreted.critical, "false critical on a unit-free row"
+    for item in interpreted.biomarkers:
+        if item.canonical == "rbc":
+            assert item.unit != "10^12/L", "fabricated the canonical unit"
+            assert item.status.value != "critical"
+
+
+def test_interpret_value_refuses_an_incompatible_pair():
+    from app.domain.lab_interpreter import RawLabValue, interpret_value
+
+    out = interpret_value(RawLabValue(test_name="rbc", value=0.50, unit="L/L"))
+    assert out.status.value == "unknown"
+    assert out.unit != "10^12/L"
+
+
+def test_interpret_value_converts_a_hematocrit_fraction():
+    """Must convert BEFORE the physiological check, or a valid 0.45 L/L is
+    rejected as 'ngoài giới hạn sinh lý' against the percent bounds."""
+    from app.domain.lab_interpreter import RawLabValue, interpret_value
+
+    out = interpret_value(RawLabValue(test_name="hematocrit", value=0.45, unit="L/L"))
+    assert out.status.value == "normal", out.status
+
+
+def test_rbc_physiological_floor_no_longer_admits_a_fraction():
+    from app.domain.lab_interpreter import _ALIAS_INDEX
+
+    assert _ALIAS_INDEX["rbc"].physiological_min > 0.5
+
+
+def test_alias_typed_metric_cannot_bypass_the_guard():
+    """Round-2 P1: ALLOWED_UNITS is canonical-keyed, classify_value is alias-keyed,
+    so metric_type="hct" skipped the guard and was then classified anyway."""
+    out = MetricOut(
+        id="m1",
+        patient_id="p1",
+        metric_type="hct",
+        value=0.45,
+        unit="L/L",
+        status="critical",
+        measured_at=_NOW,
+    )
+    assert out.is_critical is False
+    assert out.status == "normal"

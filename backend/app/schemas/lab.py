@@ -165,8 +165,15 @@ class LabResultOut(BaseModel):
             unit_compatibility,
         )
 
-        if self.canonical_name.strip().lower() in ALLOWED_UNITS:
-            _compat = unit_compatibility(self.canonical_name, self.unit)
+        # Resolve through the alias index first: ALLOWED_UNITS is canonical-keyed
+        # while classify_value is alias-keyed, so a row typed "hct" would skip the
+        # guard here and still be classified there — the two-screens-disagree
+        # symptom, re-created through a different door.
+        from app.domain.lab_interpreter import normalize_biomarker as _nb
+
+        _canon = _nb(self.canonical_name) or self.canonical_name.strip().lower()
+        if _canon in ALLOWED_UNITS:
+            _compat = unit_compatibility(_canon, self.unit)
             if _compat in (UnitCompatibility.INCOMPATIBLE, UnitCompatibility.UNKNOWN):
                 self.status = "unknown"
                 self.clinical_message = NEEDS_REVIEW_MESSAGE
@@ -181,7 +188,7 @@ class LabResultOut(BaseModel):
             # L/L) would classify against critical_low=20 and render "Nguy hiểm"
             # for a perfectly normal result.
             if self.value is not None:
-                _conv = to_canonical_unit(self.canonical_name, self.value, self.unit)
+                _conv = to_canonical_unit(_canon, self.value, self.unit)
                 if _conv is None:
                     self.status = "unknown"
                     self.clinical_message = NEEDS_REVIEW_MESSAGE
@@ -190,10 +197,10 @@ class LabResultOut(BaseModel):
                 from app.domain.lab_interpreter import classify_value as _cv
                 from app.services.lab import get_clinical_message as _gcm
 
-                _status = _cv(self.canonical_name, _conv[0])
+                _status = _cv(_canon, _conv[0])
                 if _status is not None:
                     self.status = _status.value
-                    self.clinical_message = _gcm(self.canonical_name, _status.value)
+                    self.clinical_message = _gcm(_canon, _status.value)
                 return self
 
         try:
