@@ -1097,13 +1097,35 @@ def map_table_rows_to_raw_values(
         # differently; without this, production (which runs Azure table-first)
         # bypasses the lab_parser fix entirely.
         #
-        # No analyte reassignment here: the shared alias index already routes the
-        # full VN hematocrit phrases, so what remains is refusing a cross-dimension
-        # pair and converting an in-dimension one.
         from app.domain import analyte_units as _au
 
         _guarded = spec.canonical in _au.ALLOWED_UNITS
         if _guarded and unit:
+            # Disambiguate the generic erythrocyte label by unit dimension, the
+            # same way lab_parser does. Refusing without reassigning made this
+            # path DROP a hematocrit printed as "Hồng cầu 0.50 L/L" — safe, but
+            # the patient simply loses the value, and production runs
+            # table-first, so the drop was the live behaviour rather than the
+            # conversion the text path performs.
+            _label = _strip_accents_lower(row.original_test_name or "")
+            _implied = _au.resolve_erythrocyte_analyte(unit)
+            _ambiguous = (
+                any(
+                    _strip_accents_lower(a) in _label
+                    for a in _au.AMBIGUOUS_ERYTHROCYTE_ALIASES
+                )
+                and "rbc" not in _label
+            )
+            if _implied and _implied != spec.canonical and _ambiguous:
+                _reassigned = _ALIAS_INDEX.get(_implied)
+                if _reassigned is not None and _reassigned.canonical not in seen:
+                    spec = _reassigned
+                    display_name_vi = (
+                        _get_catalog()["biomarkers"]
+                        .get(spec.canonical, {})
+                        .get("name_vn")
+                        or display_name_vi
+                    )
             _compat = _au.unit_compatibility(spec.canonical, unit)
             if _compat in (_au.UnitCompatibility.INCOMPATIBLE, _au.UnitCompatibility.UNKNOWN):
                 _logger.info(
