@@ -679,6 +679,59 @@ def test_a_range_bound_never_becomes_the_measured_value():
         assert forbidden not in [r.value for r in rows]
 
 
+# --------------------------------------------------------------------------- #
+# #155 remaining acceptance items — RED. These encode the three defects
+# confirmed diagnostically on the realistic Azure fixture. `strict=True` means
+# each one FAILS the moment the defect is fixed: delete the marker then, do not
+# weaken the assertion. Layer attribution is in each docstring.
+# --------------------------------------------------------------------------- #
+
+
+def _cbc_row(name: str) -> object:
+    from app.domain.lab_table_extractor import extract_and_map
+
+    rows = extract_and_map(_analyze_result(VN_HEADER, CBC_ROWS))
+    return next(r for r in rows if r.test_name == name)
+
+
+@pytest.mark.xfail(strict=True, reason="#155 item 1 — confidence precedes normalization")
+def test_hematocrit_confidence_is_computed_after_reassignment():
+    """A: `clin_conf` is computed from the PRE-reassignment (value, spec) pair —
+    0.50 judged against rbc's physiological floor of 1.0 — and the row is only
+    then reassigned to hematocrit and converted to 50 %. Hematocrit's own bounds
+    are [5, 75], so 50 is perfectly plausible; the 0.0 is purely the old analyte's
+    verdict surviving. Layer: map_table_rows_to_raw_values."""
+    hct = _cbc_row("hematocrit")
+    assert (hct.value, hct.unit) == (50.0, "%")
+    assert hct.confidence_detail.clinical == 1.0, hct.confidence_detail.clinical
+    assert hct.ocr_confidence > 0.0
+    assert not any("ngoài khoảng sinh lý" in r for r in hct.confidence_detail.reasons)
+
+
+@pytest.mark.xfail(strict=True, reason="#155 item 2 — hemoglobin absent from the unit registry")
+def test_hemoglobin_is_normalised_to_the_canonical_unit():
+    """B: hemoglobin is NOT in analyte_units.ALLOWED_UNITS, so
+    to_canonical_unit('hemoglobin', 140, 'g/L') returns None and 140 g/L survives
+    unconverted. Its canonical unit is g/dL with bounds [1, 25], so 140 then reads
+    as physiologically impossible. Same underlying fault as A: plausibility is
+    judged before normalization. Layer: analyte_units registry."""
+    hb = _cbc_row("hemoglobin")
+    assert (hb.value, hb.unit) == (14.0, "g/dL"), (hb.value, hb.unit)
+    assert hb.confidence_detail.clinical == 1.0
+
+
+@pytest.mark.xfail(strict=True, reason="#155 item 3 — range is never handed to the converter")
+def test_the_reference_range_is_converted_with_its_value():
+    """C: the measured value is converted (0.50 L/L -> 50 %) while the range is
+    carried through as the raw printed string. The converter already handles it —
+    to_canonical_unit('hematocrit', 0.42, 'L/L') == (42.0, '%') — nothing calls it.
+    Converting the value alone leaves 50 % sitting against a 0.42-0.47 range.
+    Layer: ocr_reference_range is a raw passthrough string."""
+    hct = _cbc_row("hematocrit")
+    assert hct.value == 50.0
+    assert hct.ocr_reference_range == "42–47", hct.ocr_reference_range
+
+
 def test_the_text_parser_reads_the_same_lines_correctly():
     """Why deferring to the text path is safe rather than merely conservative."""
     from app.services import lab_parser
