@@ -593,3 +593,106 @@ def test_table_path_refuses_an_explicit_analyte_with_a_foreign_unit():
     assert map_table_rows_to_raw_values(
         [_table_row("RBC", "0.50", "L/L")], hospital_id="vinmec"
     ) == []
+
+
+# --------------------------------------------------------------------------- #
+# #155 — a reference-range cell must never become the measured value
+# --------------------------------------------------------------------------- #
+
+
+def _cell(ri: int, ci: int, text: str, header: bool = False) -> dict:
+    c = {"rowIndex": ri, "columnIndex": ci, "content": text}
+    if header:
+        c["kind"] = "columnHeader"
+    return c
+
+
+def _analyze_result(header: list[str] | None, rows: list[list[str]]) -> dict:
+    cells: list[dict] = []
+    offset = 0
+    if header is not None:
+        cells += [_cell(0, ci, h, header=True) for ci, h in enumerate(header)]
+        offset = 1
+    for ri, row in enumerate(rows, start=offset):
+        cells += [_cell(ri, ci, v) for ci, v in enumerate(row)]
+    ncols = len(header or rows[0])
+    return {"tables": [{"rowCount": len(rows) + offset, "columnCount": ncols, "cells": cells}]}
+
+
+VN_HEADER = ["STT", "Tên xét nghiệm", "Kết quả", "Đơn vị", "Khoảng tham chiếu"]
+CBC_ROWS = [
+    ["1", "Hemoglobin", "140", "g/L", "130 - 170"],
+    ["2", "Bạch cầu", "7.2", "G/L", "4.0 - 10.0"],
+    ["3", "Tiểu cầu", "230", "G/L", "150 - 400"],
+    ["4", "Hồng cầu (HCT)", "0.50", "L/L", "0.42 - 0.47"],
+]
+
+
+def test_range_like_cells_are_distinguished_from_measurements():
+    """The discriminator already existed in _parse_reference_cell; #155 was that
+    the value path never consulted it."""
+    from app.domain.lab_table_extractor import _is_range_like
+
+    for interval in ("130 - 170", "4.0-10.0", "0.42–0.47", "3.5 — 5.0", "< 5", "> 10"):
+        assert _is_range_like(interval), interval
+    for measurement in ("140", "7.2", "230", "140 g/L", "0.50 L/L"):
+        assert not _is_range_like(measurement), measurement
+
+
+def test_a_real_table_keeps_the_measured_values_and_ranges_apart():
+    """The realistic Vinmec-shaped fixture: headers present, roles unambiguous."""
+    from app.domain.lab_table_extractor import extract_and_map
+
+    diag: dict = {}
+    got = {
+        v.test_name: (v.value, v.unit, v.ocr_reference_range)
+        for v in extract_and_map(_analyze_result(VN_HEADER, CBC_ROWS), diagnostics=diag)
+    }
+    assert diag["ambiguous_structure"] is False
+    assert got["hemoglobin"][0] == 140.0, got["hemoglobin"]
+    assert got["wbc"][0] == 7.2, got["wbc"]
+    assert got["platelet"][0] == 230.0, got["platelet"]
+    # HCT/Hồng cầu + L/L stays disambiguated and converted (#154 must not regress).
+    assert got["hematocrit"][0] == 50.0 and got["hematocrit"][1] == "%"
+    assert got["hemoglobin"][2] == "130–170"
+    assert got["wbc"][2] == "4.0–10.0"
+    assert got["platelet"][2] == "150–400"
+
+
+def test_a_range_bound_never_becomes_the_measured_value():
+    """No header row, so column roles are guessed — and the guess lands on the
+    reference-range column. 130 must not become the haemoglobin result."""
+    from app.domain.lab_table_extractor import extract_and_map
+
+    diag: dict = {}
+    rows = extract_and_map(
+        _analyze_result(
+            None,
+            [["Hemoglobin", "130 - 170"], ["Bạch cầu", "4.0 - 10.0"], ["Tiểu cầu", "150 - 400"]],
+        ),
+        diagnostics=diag,
+    )
+    assert diag["ambiguous_structure"] is True
+    # Fails closed to the text parser rather than emitting a partial panel.
+    assert rows == [], [(r.test_name, r.value) for r in rows]
+    for forbidden in (130.0, 4.0, 150.0):
+        assert forbidden not in [r.value for r in rows]
+
+
+def test_the_text_parser_reads_the_same_lines_correctly():
+    """Why deferring to the text path is safe rather than merely conservative."""
+    from app.services import lab_parser
+
+    got = {
+        v.test_name: (v.value, v.unit)
+        for v in lab_parser.parse_lab_text(
+            "Hemoglobin: 140 g/L  (130 - 170)\n"
+            "Bach cau: 7.2 G/L  (4.0 - 10.0)\n"
+            "Tieu cau: 230 G/L  (150 - 400)\n"
+            "Hong cau: 0.50 L/L  (0.42 - 0.47)\n"
+        )
+    }
+    assert got["hemoglobin"][0] == 140.0
+    assert got["wbc"][0] == 7.2
+    assert got["platelet"][0] == 230.0
+    assert got["hematocrit"] == (50.0, "%")

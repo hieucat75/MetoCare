@@ -423,6 +423,24 @@ def _parse_reference_cell(text: str) -> str | None:
     return None
 
 
+def _is_range_like(text: str) -> bool:
+    """True when a cell states an INTERVAL rather than a measurement.
+
+    `_parse_value_cell` takes the first number it can find, so a reference cell
+    like "130 - 170" yields 130 — the range's lower bound presented to the patient
+    as a measured haemoglobin. The discriminator already existed in
+    `_parse_reference_cell`; it was simply never consulted before accepting a
+    value. Anything this returns True for must never become a measured value.
+
+    A bare measurement with a unit ("140 g/L", "0.50 L/L") is NOT range-like: the
+    dash pattern requires digits on both sides, and "<"/">" must lead the cell.
+    """
+    t = text.strip()
+    if not t:
+        return False
+    return _parse_reference_cell(t) is not None
+
+
 def _infer_column_roles_positional(max_col: int) -> dict[str, int | None]:
     """Heuristic column mapping when no readable header row is found."""
     col_count = max_col + 1
@@ -583,6 +601,7 @@ def extract_table_rows(
     analyze_result: dict,
     hospital_id: str | None = None,
     profile: HospitalProfile | None = None,
+    diagnostics: dict | None = None,
 ) -> list[OcrTableRow]:
     """Layer 1: Extract OcrTableRow list from Azure DI analyzeResult.tables.
 
@@ -591,8 +610,15 @@ def extract_table_rows(
 
     When ``hospital_id`` is provided the test name cleaner applies provider-aware
     stripping of machine suffixes (e.g. "(Cobas C502)") before alias matching.
+
+    ``diagnostics`` is an optional out-parameter. When supplied it receives
+    ``ambiguous_structure=True`` if any row's chosen value cell turned out to
+    state a reference range — meaning the column roles cannot be trusted for this
+    document. Callers should prefer the text parser in that case (#155). Passing
+    nothing preserves the previous behaviour exactly.
     """
     rows: list[OcrTableRow] = []
+    ambiguous_structure = False
     for table in analyze_result.get("tables") or []:
         cells_raw = table.get("cells") or []
         if not cells_raw:
@@ -758,6 +784,23 @@ def extract_table_rows(
             if not value_raw:
                 continue
 
+            # ── #155: a range cell must NEVER become the measured value ───────
+            # When header detection fails we fall back to positional guessing,
+            # and the guessed value column can land on the reference-range
+            # column. `_parse_value_cell` would then hand back the range's lower
+            # bound — "130 - 170" became a haemoglobin of 130, shown as normal.
+            # Fail closed instead of guessing: drop the row and record that this
+            # document's column structure is not trustworthy, so the caller can
+            # fall back to the text parser, which reads these lines correctly.
+            if _is_range_like(value_raw):
+                _logger.warning(
+                    "table_extractor_value_cell_is_range col=%s — refusing to use "
+                    "a reference-range bound as a measured value",
+                    value_col,
+                )
+                ambiguous_structure = True
+                continue
+
             value_str, unit_from_value = _parse_value_cell(value_raw)
             if not value_str:
                 continue
@@ -851,6 +894,9 @@ def extract_table_rows(
                     suspect_machine_id=suspect_machine_id,
                 )
             )
+
+    if diagnostics is not None:
+        diagnostics["ambiguous_structure"] = ambiguous_structure
 
     return rows
 
@@ -1188,6 +1234,7 @@ def _get_full_text(analyze_result: dict) -> str:
 def extract_and_map(
     analyze_result: dict,
     ocr_conf: float = 0.95,
+    diagnostics: dict | None = None,
 ) -> list[RawLabValue]:
     """Full Layer 1→4 pipeline: analyzeResult dict → RawLabValue list.
 
@@ -1215,8 +1262,23 @@ def extract_and_map(
             "all rows will require_review=True, confidence capped at 0.5"
         )
 
-    table_rows = extract_table_rows(analyze_result, hospital_id=hospital_id, profile=profile)
+    _diag: dict = {}
+    table_rows = extract_table_rows(
+        analyze_result, hospital_id=hospital_id, profile=profile, diagnostics=_diag
+    )
+    if diagnostics is not None:
+        diagnostics.update(_diag)
     if not table_rows:
+        return []
+    # #155: a value cell that stated a reference range means the column roles are
+    # not trustworthy for this document. Returning the surviving rows would keep
+    # a partial, silently-truncated panel; the text parser reads these same lines
+    # deterministically, so hand the whole document to it instead of guessing.
+    if _diag.get("ambiguous_structure"):
+        _logger.warning(
+            "table_extractor_ambiguous_structure hospital=%s — deferring to text parser",
+            hospital_id or "unknown",
+        )
         return []
     raw_values = map_table_rows_to_raw_values(
         table_rows,
