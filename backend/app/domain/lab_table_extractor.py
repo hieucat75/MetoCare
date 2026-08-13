@@ -27,6 +27,7 @@ import logging
 import re
 import unicodedata
 from dataclasses import dataclass, field
+from enum import StrEnum
 
 from app.domain.hospital_profiles import (
     HospitalProfile,
@@ -44,6 +45,55 @@ from app.domain.lab_interpreter import (
 )
 
 _logger = logging.getLogger("mcp.lab_table_extractor")
+
+
+class ExtractionTrust(StrEnum):
+    """#155 promotion-integrity gate: how much a caller may trust a document's
+    extracted values before they reach a patient-facing draft.
+
+    - STRUCTURE_VERIFIED: a table with recognised header cells drove column
+      assignment. Nothing was guessed.
+    - DETERMINISTIC_FALLBACK: the table path was empty/untrustworthy (including
+      #155's ``ambiguous_structure`` — a positional guess landed on the
+      reference-range column) and the independent, deterministic text parser
+      produced the values instead.
+    - NEEDS_REVIEW: neither path produced anything usable. The caller must NOT
+        fabricate a draft item from a partial/guessed extraction — an empty draft
+        (full manual entry) is the fail-closed behaviour, not a low-confidence
+      item that merely warns.
+
+    This is a classification of a whole document's extraction run, not a
+    per-row confidence score — a caller must never promote a NEEDS_REVIEW
+    document's values merely because a downstream low-confidence warning was
+    dismissed or a UI control was clicked past.
+    """
+
+    STRUCTURE_VERIFIED = "structure_verified"
+    DETERMINISTIC_FALLBACK = "deterministic_fallback"
+    NEEDS_REVIEW = "needs_review"
+
+
+def classify_extraction_trust(
+    *,
+    table_diagnostics: dict | None,
+    table_rows_used: bool,
+    fallback_rows_used: bool,
+) -> ExtractionTrust:
+    """Classify a document's extraction run from the signals its two extraction
+    paths already produce. Reused by every caller instead of each re-deriving
+    the same three-way judgement ad hoc.
+
+    ``table_diagnostics`` is the out-parameter `extract_and_map` fills in;
+    ``ambiguous_structure=True`` means a guessed column landed on a range cell
+    and the whole document was refused (#155) — that document can only ever
+    reach STRUCTURE_VERIFIED through the fallback, never directly.
+    """
+    ambiguous = bool(table_diagnostics and table_diagnostics.get("ambiguous_structure"))
+    if table_rows_used and not ambiguous:
+        return ExtractionTrust.STRUCTURE_VERIFIED
+    if fallback_rows_used:
+        return ExtractionTrust.DETERMINISTIC_FALLBACK
+    return ExtractionTrust.NEEDS_REVIEW
 
 # ─────────────────────────────────────────────────────── Layer 1 ──────────────
 

@@ -512,6 +512,16 @@ def parse_lab_text(
             continue
         unit = (vm.group("unit") or "").strip(" :.-") or None
 
+        # #155: a bare number immediately followed by "- number" is a printed
+        # RANGE's lower bound, not a measurement — the table path already
+        # refuses this shape (_is_range_like in lab_table_extractor); the text
+        # path must too, or a reflowed table line with no natural-reading-order
+        # rescue ("Hemoglobin 130 - 170", no unit) reads the range's low end as
+        # the result. Only gates when no unit was captured — "140 g/L (130-170)"
+        # has already captured a real measurement by the time the range appears.
+        if not unit and _RANGE_RE.match(after[vm.start("value") :]):
+            continue
+
         # Extract reference range from the remainder of the line (after value+unit).
         # Supports: "3.9–6.1", "44 - 80", "< 55", "> 60".
         after_unit = after[vm.end() :].strip()

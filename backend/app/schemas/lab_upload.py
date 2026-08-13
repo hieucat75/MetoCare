@@ -45,3 +45,8 @@ class LabUploadDraftOut(BaseModel):
     # True when the resolver cannot confidently identify a non-DOB exam date.
     # Frontend shows an amber warning banner and prompts user confirmation.
     date_needs_confirmation: bool = False
+    # #155: "structure_verified" | "deterministic_fallback" | "needs_review" — how
+    # much this document's extraction may be trusted. NEEDS_REVIEW means
+    # parsed_values is empty (manual_fallback=True); it is never a populated,
+    # merely-low-confidence panel.
+    extraction_trust: str = "needs_review"

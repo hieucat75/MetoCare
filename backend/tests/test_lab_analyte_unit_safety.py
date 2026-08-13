@@ -751,3 +751,166 @@ def test_the_text_parser_reads_the_same_lines_correctly():
     assert got["wbc"][0] == 7.2
     assert got["platelet"][0] == 230.0
     assert got["hematocrit"] == (50.0, "%")
+
+
+# --------------------------------------------------------------------------- #
+# #155 promotion-integrity gate — build_draft() end-to-end, real Azure HTTP
+# mocked. STRUCTURE_VERIFIED / DETERMINISTIC_FALLBACK populate a draft;
+# NEEDS_REVIEW must not, regardless of what a patient later clicks — the draft
+# is the only thing standing between OCR and the manual-entry save endpoint, so
+# an empty `parsed_values` here is what "rejection creates no partial
+# LabResult" means in this codebase's architecture: nothing exists to confirm.
+# --------------------------------------------------------------------------- #
+
+
+class _FakeAzureResp:
+    def __init__(self, *, headers=None, json_body=None):
+        self.headers = headers or {}
+        self._json = json_body or {}
+
+    def raise_for_status(self):
+        return None
+
+    def json(self):
+        return self._json
+
+
+def _patch_azure(monkeypatch, analyze_result: dict):
+    import httpx
+
+    monkeypatch.setenv("MCP_FEATURE_OCR_CLOUD_FALLBACK", "true")
+    monkeypatch.setenv("AZURE_DOC_INTEL_KEY", "k")
+    monkeypatch.setenv("AZURE_DOC_INTEL_ENDPOINT", "https://docintel.example.com")
+    monkeypatch.setattr(
+        httpx,
+        "post",
+        lambda *a, **k: _FakeAzureResp(
+            headers={"operation-location": "https://docintel.example.com/op/1"}
+        ),
+    )
+    monkeypatch.setattr(
+        httpx,
+        "get",
+        lambda *a, **k: _FakeAzureResp(
+            json_body={"status": "succeeded", "analyzeResult": analyze_result}
+        ),
+    )
+
+
+_WORDS_PAGE = {"pages": [{"words": [{"confidence": 0.96}, {"confidence": 0.94}]}]}
+
+
+def test_structure_verified_table_populates_and_promotes(monkeypatch):
+    """A headered table (columnHeader cells present, roles unambiguous) is the
+    STRUCTURE_VERIFIED case: the draft is populated with converted values, ready
+    for the patient to confirm as-is."""
+    from app.services import lab_upload
+
+    analyze_result = {**_analyze_result(VN_HEADER, CBC_ROWS), **_WORDS_PAGE}
+    _patch_azure(monkeypatch, analyze_result)
+    draft = lab_upload.build_draft(b"\xff\xd8\xff" + b"x" * 32, "image/jpeg")
+    assert draft.extraction_trust == "structure_verified"
+    assert not draft.manual_fallback
+    by_name = {i.canonical: i for i in draft.parsed_values}
+    assert by_name["hemoglobin"].canonical_value == 14.0
+    assert by_name["hemoglobin"].canonical_unit == "g/dL"
+    assert by_name["hematocrit"].canonical_value == 50.0
+
+
+def test_deterministic_fallback_recovers_and_promotes(monkeypatch):
+    """No header row -> positional fallback guesses the value column onto the
+    range cell -> #155's ambiguous_structure -> table path refused entirely.
+    Azure's own `content` (true reading order, independent of the table's column
+    guess) still carries the correct lines, so the deterministic text parser
+    recovers the real values. This is DETERMINISTIC_FALLBACK: still promotable,
+    because a second, independent extraction path produced trustworthy values —
+    not because the table's guess was accepted anyway."""
+    from app.services import lab_upload
+
+    analyze_result = {
+        "content": (
+            "PHIEU KET QUA XET NGHIEM\n"
+            "Hemoglobin: 140 g/L (130 - 170)\n"
+            "Bach cau: 7.2 G/L (4.0 - 10.0)\n"
+        ),
+        "tables": [
+            {
+                "cells": [
+                    {"rowIndex": 0, "columnIndex": 0, "content": "Hemoglobin"},
+                    # No header row: 2-column positional fallback assigns column 1
+                    # to "value" — but this cell states a range, not a measurement.
+                    {"rowIndex": 0, "columnIndex": 1, "content": "130 - 170"},
+                    {"rowIndex": 1, "columnIndex": 0, "content": "Bach cau"},
+                    {"rowIndex": 1, "columnIndex": 1, "content": "4.0 - 10.0"},
+                ]
+            }
+        ],
+        **_WORDS_PAGE,
+    }
+    _patch_azure(monkeypatch, analyze_result)
+    draft = lab_upload.build_draft(b"\xff\xd8\xff" + b"x" * 32, "image/jpeg")
+    assert draft.extraction_trust == "deterministic_fallback"
+    assert not draft.manual_fallback
+    by_name = {i.canonical: i for i in draft.parsed_values}
+    # The range's lower bound (130, 4.0) must never appear as the result —
+    # exactly the #155 defect the table path's own refusal prevents.
+    assert by_name["hemoglobin"].canonical_value == 14.0, by_name["hemoglobin"]
+    assert by_name["wbc"].canonical_value == 7.2, by_name["wbc"]
+
+
+def test_needs_review_document_yields_no_promotable_draft(monkeypatch):
+    """Ambiguous table structure AND nothing recognisable in the natural-reading-
+    order content either: neither extraction path produced a trustworthy value.
+    NEEDS_REVIEW must mean an EMPTY draft — not a populated, merely
+    low-confidence one a patient could click through — because nothing here
+    stands between this draft and the manual-entry save endpoint except the
+    patient's own read of the paper report."""
+    from app.services import lab_upload
+
+    analyze_result = {
+        "content": "###  ???  @@@",
+        "tables": [
+            {
+                "cells": [
+                    {"rowIndex": 0, "columnIndex": 0, "content": "Hemoglobin"},
+                    {"rowIndex": 0, "columnIndex": 1, "content": "130 - 170"},
+                ]
+            }
+        ],
+        **_WORDS_PAGE,
+    }
+    _patch_azure(monkeypatch, analyze_result)
+    draft = lab_upload.build_draft(b"\xff\xd8\xff" + b"x" * 32, "image/jpeg")
+    assert draft.extraction_trust == "needs_review"
+    assert draft.manual_fallback is True
+    assert draft.parsed_values == []  # no partial write: nothing to confirm
+
+
+def test_ambiguous_candidate_never_classified_structure_verified():
+    """classify_extraction_trust itself: an ambiguous-structure document can
+    reach DETERMINISTIC_FALLBACK through a second extraction path, but must
+    never be reported STRUCTURE_VERIFIED — that label asserts the table's own
+    column roles were trustworthy, which #155 disproved for this document."""
+    from app.domain.lab_table_extractor import ExtractionTrust, classify_extraction_trust
+
+    ambiguous_diag = {"ambiguous_structure": True}
+    assert (
+        classify_extraction_trust(
+            table_diagnostics=ambiguous_diag, table_rows_used=False, fallback_rows_used=True
+        )
+        == ExtractionTrust.DETERMINISTIC_FALLBACK
+    )
+    assert (
+        classify_extraction_trust(
+            table_diagnostics=ambiguous_diag, table_rows_used=False, fallback_rows_used=False
+        )
+        == ExtractionTrust.NEEDS_REVIEW
+    )
+    assert (
+        classify_extraction_trust(
+            table_diagnostics={"ambiguous_structure": False},
+            table_rows_used=True,
+            fallback_rows_used=False,
+        )
+        == ExtractionTrust.STRUCTURE_VERIFIED
+    )
