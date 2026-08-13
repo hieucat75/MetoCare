@@ -572,18 +572,18 @@ def parse_lab_text(
         if _eff_unit and spec.canonical in _au.ALLOWED_UNITS:
             unit = _eff_unit
             _label = _strip_accents(raw_test_name).lower()
+            # `resolve_erythrocyte_analyte` only ever names rbc/hematocrit — a
+            # guarded analyte outside that pair (haemoglobin, #155 item 2) has no
+            # erythrocyte identity to imply, so `_implied is None` for it is
+            # NORMAL, not a foreign unit. Only gate reassignment/refusal on this
+            # signal when it actually resolved to an erythrocyte analyte; the
+            # general dimensional check below covers the rest.
             _implied = _au.resolve_erythrocyte_analyte(unit)
             _label_is_ambiguous = (
                 any(_strip_accents(a) in _label for a in _au.AMBIGUOUS_ERYTHROCYTE_ALIASES)
                 and "rbc" not in _label
             )
-            if _implied is None:
-                _logger.info(
-                    "cbc_row_refused reason=unrecognised_unit canonical=%s unit=%s",
-                    spec.canonical, unit,
-                )
-                continue  # unit printed, but foreign to both analytes → no row
-            if _implied != spec.canonical:
+            if _implied is not None and _implied != spec.canonical:
                 if not _label_is_ambiguous:
                     _logger.info(
                         "cbc_row_refused reason=explicit_analyte_foreign_unit "
@@ -594,6 +594,13 @@ def parse_lab_text(
                 if _reassigned is None or _reassigned.canonical in seen:
                     continue
                 spec = _reassigned
+            _compat = _au.unit_compatibility(spec.canonical, unit)
+            if _compat in (_au.UnitCompatibility.INCOMPATIBLE, _au.UnitCompatibility.UNKNOWN):
+                _logger.info(
+                    "cbc_row_refused reason=%s canonical=%s unit=%s",
+                    _compat.value, spec.canonical, unit,
+                )
+                continue
             # Relabel and convert together — never one without the other. This
             # also normalises an already-correct hematocrit fraction (0.50 L/L)
             # to the canonical percent, so both screens compare like with like.
@@ -605,6 +612,10 @@ def parse_lab_text(
                 )
                 continue
             value, unit = _converted
+            # #155 item 3: the printed range shares the pre-conversion unit and
+            # must go through the identical conversion, or a converted value ends
+            # up sitting against a raw, unconverted range.
+            ocr_ref = _au.to_canonical_range(spec.canonical, ocr_ref, orig_unit)
 
         # ocr_confidence (proxy): did OCR produce a recognizable unit token?
         # 0.5 (not 0.7) when unit absent: ensures overall stays below the 0.75

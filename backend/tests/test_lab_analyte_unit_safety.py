@@ -649,12 +649,15 @@ def test_a_real_table_keeps_the_measured_values_and_ranges_apart():
         for v in extract_and_map(_analyze_result(VN_HEADER, CBC_ROWS), diagnostics=diag)
     }
     assert diag["ambiguous_structure"] is False
-    assert got["hemoglobin"][0] == 140.0, got["hemoglobin"]
+    # Hemoglobin is guarded (#155 item 2): 140 g/L converts to 14.0 g/dL.
+    assert got["hemoglobin"][:2] == (14.0, "g/dL"), got["hemoglobin"]
     assert got["wbc"][0] == 7.2, got["wbc"]
     assert got["platelet"][0] == 230.0, got["platelet"]
     # HCT/Hồng cầu + L/L stays disambiguated and converted (#154 must not regress).
     assert got["hematocrit"][0] == 50.0 and got["hematocrit"][1] == "%"
-    assert got["hemoglobin"][2] == "130–170"
+    # Hemoglobin is guarded (#155 item 2): its printed range converts alongside
+    # the value, same as HCT's — 130-170 g/L -> 13-17 g/dL.
+    assert got["hemoglobin"][2] == "13–17", got["hemoglobin"]
     assert got["wbc"][2] == "4.0–10.0"
     assert got["platelet"][2] == "150–400"
 
@@ -694,7 +697,6 @@ def _cbc_row(name: str) -> object:
     return next(r for r in rows if r.test_name == name)
 
 
-@pytest.mark.xfail(strict=True, reason="#155 item 1 — confidence precedes normalization")
 def test_hematocrit_confidence_is_computed_after_reassignment():
     """A: `clin_conf` is computed from the PRE-reassignment (value, spec) pair —
     0.50 judged against rbc's physiological floor of 1.0 — and the row is only
@@ -708,7 +710,6 @@ def test_hematocrit_confidence_is_computed_after_reassignment():
     assert not any("ngoài khoảng sinh lý" in r for r in hct.confidence_detail.reasons)
 
 
-@pytest.mark.xfail(strict=True, reason="#155 item 2 — hemoglobin absent from the unit registry")
 def test_hemoglobin_is_normalised_to_the_canonical_unit():
     """B: hemoglobin is NOT in analyte_units.ALLOWED_UNITS, so
     to_canonical_unit('hemoglobin', 140, 'g/L') returns None and 140 g/L survives
@@ -720,7 +721,6 @@ def test_hemoglobin_is_normalised_to_the_canonical_unit():
     assert hb.confidence_detail.clinical == 1.0
 
 
-@pytest.mark.xfail(strict=True, reason="#155 item 3 — range is never handed to the converter")
 def test_the_reference_range_is_converted_with_its_value():
     """C: the measured value is converted (0.50 L/L -> 50 %) while the range is
     carried through as the raw printed string. The converter already handles it —
@@ -745,7 +745,9 @@ def test_the_text_parser_reads_the_same_lines_correctly():
             "Hong cau: 0.50 L/L  (0.42 - 0.47)\n"
         )
     }
-    assert got["hemoglobin"][0] == 140.0
+    # Hemoglobin is guarded (#155 item 2): 140 g/L converts to 14.0 g/dL, same
+    # as the table path.
+    assert got["hemoglobin"] == (14.0, "g/dL"), got["hemoglobin"]
     assert got["wbc"][0] == 7.2
     assert got["platelet"][0] == 230.0
     assert got["hematocrit"] == (50.0, "%")

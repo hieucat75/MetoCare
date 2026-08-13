@@ -1045,8 +1045,60 @@ def map_table_rows_to_raw_values(
         unit = orig_unit
         conv_conf = 1.0
         incompatible = False
+        reference_range = row.original_reference_range
 
-        if not unit:
+        # ── #155: analyte reassignment + unit normalization BEFORE confidence ──
+        # A guarded analyte's identity and unit must reach FINAL canonical
+        # semantics before any physiological-plausibility judgement runs. Judging
+        # plausibility against a pre-reassignment (analyte, unit) pair is exactly
+        # how a hematocrit fraction reassigned from rbc kept rbc's stale verdict,
+        # and how a haemoglobin absent from this registry read as impossible
+        # against g/dL bounds while still holding its raw g/L value. The printed
+        # reference range is converted in the same step, through the same
+        # registry, so it never falls out of step with the converted value.
+        from app.domain import analyte_units as _au
+
+        guarded = spec.canonical in _au.ALLOWED_UNITS
+        if guarded and unit:
+            # Disambiguate the generic erythrocyte label by unit dimension, the
+            # same way lab_parser does. Refusing without reassigning made this
+            # path DROP a hematocrit printed as "Hồng cầu 0.50 L/L" — safe, but
+            # the patient simply loses the value, and production runs
+            # table-first, so the drop was the live behaviour rather than the
+            # conversion the text path performs.
+            _label = _strip_accents_lower(row.original_test_name or "")
+            _implied = _au.resolve_erythrocyte_analyte(unit)
+            _ambiguous = (
+                any(
+                    _strip_accents_lower(a) in _label
+                    for a in _au.AMBIGUOUS_ERYTHROCYTE_ALIASES
+                )
+                and "rbc" not in _label
+            )
+            if _implied and _implied != spec.canonical and _ambiguous:
+                _reassigned = _ALIAS_INDEX.get(_implied)
+                if _reassigned is not None and _reassigned.canonical not in seen:
+                    spec = _reassigned
+                    display_name_vi = (
+                        _get_catalog()["biomarkers"]
+                        .get(spec.canonical, {})
+                        .get("name_vn")
+                        or display_name_vi
+                    )
+            _compat = _au.unit_compatibility(spec.canonical, unit)
+            if _compat in (_au.UnitCompatibility.INCOMPATIBLE, _au.UnitCompatibility.UNKNOWN):
+                _logger.info(
+                    "cbc_row_refused reason=%s canonical=%s unit=%s",
+                    _compat.value, spec.canonical, unit,
+                )
+                continue  # wrong dimension for this analyte → never emit
+            _conv = _au.to_canonical_unit(spec.canonical, value, unit)
+            if _conv is None:
+                continue
+            value, unit = _conv
+            reference_range = _au.to_canonical_range(spec.canonical, reference_range, orig_unit)
+            conv_conf = 1.0
+        elif not unit:
             conv_conf = 0.7
         elif _is_incompatible_unit(unit, spec):
             conv_conf = 0.0
@@ -1066,6 +1118,8 @@ def map_table_rows_to_raw_values(
 
         ocr_conf_dim = 1.0 if orig_unit else 0.5
 
+        # Confidence is computed LAST, against final canonical (spec, value, unit)
+        # — never against the pre-reassignment pair the row started with.
         clin_conf = 1.0
         if spec.physiological_min is not None and value < spec.physiological_min:
             clin_conf = 0.0
@@ -1138,66 +1192,20 @@ def map_table_rows_to_raw_values(
         elif detection_confidence < 0.7:
             requires_review = True
 
-        # CBC dimensional guard — the SECOND write path. `build_alias_index`'s
-        # docstring already records what happens when two extraction paths answer
-        # differently; without this, production (which runs Azure table-first)
-        # bypasses the lab_parser fix entirely.
-        #
-        from app.domain import analyte_units as _au
-
-        _guarded = spec.canonical in _au.ALLOWED_UNITS
-        if _guarded and unit:
-            # Disambiguate the generic erythrocyte label by unit dimension, the
-            # same way lab_parser does. Refusing without reassigning made this
-            # path DROP a hematocrit printed as "Hồng cầu 0.50 L/L" — safe, but
-            # the patient simply loses the value, and production runs
-            # table-first, so the drop was the live behaviour rather than the
-            # conversion the text path performs.
-            _label = _strip_accents_lower(row.original_test_name or "")
-            _implied = _au.resolve_erythrocyte_analyte(unit)
-            _ambiguous = (
-                any(
-                    _strip_accents_lower(a) in _label
-                    for a in _au.AMBIGUOUS_ERYTHROCYTE_ALIASES
-                )
-                and "rbc" not in _label
-            )
-            if _implied and _implied != spec.canonical and _ambiguous:
-                _reassigned = _ALIAS_INDEX.get(_implied)
-                if _reassigned is not None and _reassigned.canonical not in seen:
-                    spec = _reassigned
-                    display_name_vi = (
-                        _get_catalog()["biomarkers"]
-                        .get(spec.canonical, {})
-                        .get("name_vn")
-                        or display_name_vi
-                    )
-            _compat = _au.unit_compatibility(spec.canonical, unit)
-            if _compat in (_au.UnitCompatibility.INCOMPATIBLE, _au.UnitCompatibility.UNKNOWN):
-                _logger.info(
-                    "cbc_row_refused reason=%s canonical=%s unit=%s",
-                    _compat.value, spec.canonical, unit,
-                )
-                continue  # wrong dimension for this analyte → never emit
-            _conv = _au.to_canonical_unit(spec.canonical, value, unit)
-            if _conv is None:
-                continue
-            value, unit = _conv
-
         # Never fabricate the canonical unit for a guarded analyte — that is the
         # fact the read-path guard depends on. See lab_parser for the full note.
         seen[spec.canonical] = RawLabValue(
             test_name=spec.canonical,
             value=value,
-            unit=unit if (unit or _guarded) else spec.unit,
+            unit=unit if (unit or guarded) else spec.unit,
             ocr_confidence=overall,
             confidence_detail=detail,
             # Preserve original as-printed value and unit — never overwrite after conversion.
             original_value=orig_value,
-            original_unit=orig_unit if (orig_unit or _guarded) else spec.unit,
+            original_unit=orig_unit if (orig_unit or guarded) else spec.unit,
             raw_test_name=row.original_test_name,
             display_name_vi=display_name_vi,
-            ocr_reference_range=row.original_reference_range,
+            ocr_reference_range=reference_range,
             requires_review=requires_review,
             suspect_machine_id=row.suspect_machine_id,
         )
