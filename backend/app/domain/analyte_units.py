@@ -211,9 +211,18 @@ def to_canonical_unit(canonical: str, value: float, unit: str | None) -> tuple[f
 #: text parser render into `ocr_reference_range`: "0.42–0.47", "<55", ">60". No
 #: surrounding whitespace, en-dash separator — never a source of truth on its own,
 #: only ever a display string this module re-derives from the parsed bounds.
-_RANGE_RE = re.compile(r"^(-?\d+(?:\.\d+)?)–(-?\d+(?:\.\d+)?)$")
-_LT_RE = re.compile(r"^<(-?\d+(?:\.\d+)?)$")
-_GT_RE = re.compile(r"^>(-?\d+(?:\.\d+)?)$")
+#: `_RANGE_DASH_RE`/`_LESS_THAN_RE`/`_GREATER_THAN_RE` (lab_table_extractor)
+#: preserve a comma decimal verbatim ("0,42–0,47"), so a bound must accept one too
+#: or a VN-formatted range silently fails to convert and is returned unchanged —
+#: leaving a converted value sitting next to its own untouched printed range,
+#: exactly the defect this function exists to close.
+_RANGE_RE = re.compile(r"^(-?\d+(?:[.,]\d+)?)–(-?\d+(?:[.,]\d+)?)$")
+_LT_RE = re.compile(r"^<(-?\d+(?:[.,]\d+)?)$")
+_GT_RE = re.compile(r"^>(-?\d+(?:[.,]\d+)?)$")
+
+
+def _to_float_bound(token: str) -> float:
+    return float(token.replace(",", "."))
 
 
 def _format_bound(value: float) -> str:
@@ -241,15 +250,15 @@ def to_canonical_range(canonical: str, range_str: str | None, unit: str | None) 
     text = range_str.strip()
     m = _RANGE_RE.match(text)
     if m:
-        lo = to_canonical_unit(canonical, float(m.group(1)), unit)
-        hi = to_canonical_unit(canonical, float(m.group(2)), unit)
+        lo = to_canonical_unit(canonical, _to_float_bound(m.group(1)), unit)
+        hi = to_canonical_unit(canonical, _to_float_bound(m.group(2)), unit)
         if lo is None or hi is None:
             return range_str
         return f"{_format_bound(lo[0])}–{_format_bound(hi[0])}"
     for op, pattern in (("<", _LT_RE), (">", _GT_RE)):
         m = pattern.match(text)
         if m:
-            bound = to_canonical_unit(canonical, float(m.group(1)), unit)
+            bound = to_canonical_unit(canonical, _to_float_bound(m.group(1)), unit)
             if bound is None:
                 return range_str
             return f"{op}{_format_bound(bound[0])}"

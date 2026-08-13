@@ -761,7 +761,17 @@ def interpret_value(raw: RawLabValue) -> InterpretedBiomarker:
     status = classify_value(canonical, value_for_status)
     needs_verification = raw.ocr_confidence < OCR_CONFIDENCE_THRESHOLD
     ref = f"{spec.ref_low}–{spec.ref_high} {spec.unit}"
-    display_ref = _compute_display_ref(raw.ocr_reference_range, raw.original_unit, spec)
+    # #155: for a guarded analyte, `raw.ocr_reference_range` was converted to the
+    # SAME canonical unit as `raw.value`/`raw.unit` (analyte_units.to_canonical_range
+    # runs alongside to_canonical_unit) — it is no longer expressed in
+    # `original_unit`. Labelling it with `original_unit` prints numerically
+    # converted bounds under the pre-conversion unit (a converted "13–17" shown as
+    # "13–17 g/L" instead of "13–17 g/dL") — silently understating the range by the
+    # same factor that converted the value, the exact two-contradictory-claims
+    # hazard this branch exists to remove. Non-guarded rows are never touched by
+    # to_canonical_range, so their range stays in original_unit as before.
+    display_ref_unit = raw.unit if guarded else raw.original_unit
+    display_ref = _compute_display_ref(raw.ocr_reference_range, display_ref_unit, spec)
     # Quote the value in the SAME unit as the range. A converted hematocrit
     # otherwise read "hematocrit = 0.45 %" against "36.0–50.0 %", from which a
     # patient self-derives catastrophic anaemia off a row we just called normal —

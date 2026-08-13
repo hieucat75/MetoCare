@@ -519,11 +519,19 @@ def parse_lab_text(
         # rescue ("Hemoglobin 130 - 170", no unit) reads the range's low end as
         # the result. Only gates when no unit was captured — "140 g/L (130-170)"
         # has already captured a real measurement by the time the range appears.
-        if not unit and _RANGE_RE.match(after[vm.start("value") :]):
-            continue
+        # Same 0 < lo < hi < 10000 sanity bound as the real range extraction
+        # below — without it, an unrelated dash-separated annotation after a
+        # genuinely unitless value ("GFR 90 - 5", a footnote/order code, not a
+        # range) would be silently dropped instead of parsed.
+        _leading_range = _RANGE_RE.match(after[vm.start("value") :])
+        if not unit and _leading_range:
+            _lo = _to_float(_leading_range.group("lo"))
+            _hi = _to_float(_leading_range.group("hi"))
+            if _lo is not None and _hi is not None and 0 < _lo < _hi < 10000:
+                continue
 
         # Extract reference range from the remainder of the line (after value+unit).
-        # Supports: "3.9–6.1", "44 - 80", "< 55", "> 60".
+        # Supports: "3.9–6.1", "44 - 80", "< 55", "> 60", "≤ 55", "≥ 60".
         after_unit = after[vm.end() :].strip()
         ocr_ref: str | None = None
         rm = _RANGE_RE.search(after_unit)
@@ -533,13 +541,13 @@ def parse_lab_text(
             if lo is not None and hi is not None and 0 < lo < hi < 10000:
                 ocr_ref = f"{lo}–{hi}"
         elif after_unit:
-            lt_m = re.match(r"<\s*(\d[0-9.,]*)", after_unit)
+            lt_m = re.match(r"[<≤]\s*(\d[0-9.,]*)", after_unit)
             if lt_m:
                 v = _to_float(lt_m.group(1))
                 if v is not None:
                     ocr_ref = f"<{v}"
             else:
-                gt_m = re.match(r">\s*(\d[0-9.,]*)", after_unit)
+                gt_m = re.match(r"[>≥]\s*(\d[0-9.,]*)", after_unit)
                 if gt_m:
                     v = _to_float(gt_m.group(1))
                     if v is not None:

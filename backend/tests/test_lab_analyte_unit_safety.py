@@ -1101,3 +1101,87 @@ def _strip_diacritics(s: str) -> str:
     import unicodedata
 
     return "".join(c for c in unicodedata.normalize("NFD", s.lower()) if unicodedata.category(c) != "Mn")
+
+
+# --------------------------------------------------------------------------- #
+# Independent-review fixes — P0 display-range mislabeling, comma-decimal
+# ranges, "≥"/"≤" range notation, and a magnitude-checked bare-range guard.
+# --------------------------------------------------------------------------- #
+
+
+def test_display_reference_range_uses_the_converted_unit_for_guarded_rows():
+    """P0 (unit/clinical normalization review): `ocr_reference_range` is
+    converted to canonical units for a guarded analyte, but the display range
+    was still labelled with the pre-conversion `original_unit` — a converted
+    "13–17" printed as "13–17 g/L" instead of "13–17 g/dL", silently
+    understating the range by the same factor that converted the value. The
+    displayed range must always be labelled with the unit its numbers are
+    actually expressed in."""
+    from app.domain.lab_interpreter import interpret_value
+    from app.domain.lab_table_extractor import extract_and_map
+
+    header = ["STT", "Tên xét nghiệm", "Kết quả", "Đơn vị", "Khoảng tham chiếu"]
+    rows = [["1", "Hemoglobin", "140", "g/L", "130 - 170"]]
+    raw = next(
+        r for r in extract_and_map(_analyze_result(header, rows)) if r.test_name == "hemoglobin"
+    )
+    interpreted = interpret_value(raw)
+    assert interpreted.value == 14.0 and interpreted.unit == "g/dL"
+    assert interpreted.display_reference_range == "13–17 g/dL", interpreted.display_reference_range
+
+
+def test_reference_range_with_comma_decimals_still_converts():
+    """P1 (unit/clinical normalization review): a VN report printing a comma
+    decimal ("0,42 - 0,47") was captured verbatim into ocr_reference_range but
+    silently failed to match `to_canonical_range`'s period-only regex, so the
+    range passed through unconverted while the value still converted."""
+    from app.domain.analyte_units import to_canonical_range
+
+    assert to_canonical_range("hematocrit", "0,42–0,47", "L/L") == "42–47"
+    assert to_canonical_range("hemoglobin", "<1,7", "g/L") == "<0.17"
+
+
+def test_greater_or_less_than_or_equal_range_notation_is_recognised():
+    """P1 (OCR/table-extraction integrity review): "≥"/"≤" is a common
+    single-bound range notation (e.g. "eGFR ≥60") that `_is_range_like` did not
+    recognise — a positional guess landing on a "≥60"-shaped cell would accept
+    it as a measured value instead of failing closed."""
+    from app.domain.lab_table_extractor import _is_range_like
+
+    assert _is_range_like("≥60")
+    assert _is_range_like("≤ 5")
+    assert not _is_range_like("60")
+
+
+def test_ambiguous_table_with_greater_equal_range_cell_fails_closed():
+    """End-to-end: a positional guess landing on a "≥60"-shaped cell must not
+    surface 60 as a measured value. Row 0 is treated as an implicit header when
+    no explicit header row exists, so a genuine data row needs at least one row
+    above it — matching the pattern already used by
+    test_a_range_bound_never_becomes_the_measured_value."""
+    from app.domain.lab_table_extractor import extract_and_map
+
+    diag: dict = {}
+    rows = extract_and_map(
+        _analyze_result(None, [["Bach cau", "7.2"], ["eGFR", "≥60"]]),
+        diagnostics=diag,
+    )
+    assert diag["ambiguous_structure"] is True
+    assert 60.0 not in [r.value for r in rows]
+
+
+def test_bare_range_guard_does_not_drop_a_genuinely_unitless_value():
+    """MEDIUM (OCR/table-extraction integrity review): the bare-range guard
+    added for the reflowed-table-line case must not fire on an unrelated
+    dash-separated annotation following a real unitless value — only a
+    plausible range (0 < lo < hi < 10000, matching the sibling range-extraction
+    check a few lines below) should suppress it."""
+    from app.services import lab_parser
+
+    # "90 - 5" is not a plausible ascending range (hi < lo) — must still parse.
+    got = {v.test_name: v.value for v in lab_parser.parse_lab_text("Ure 90 - 5\n")}
+    assert got.get("urea") == 90.0, got
+    # A genuine reflowed-table range ("130 - 170", ascending, plausible) must
+    # still be refused as a value.
+    got2 = lab_parser.parse_lab_text("Hemoglobin 130 - 170\n")
+    assert got2 == []

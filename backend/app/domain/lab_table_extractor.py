@@ -417,8 +417,12 @@ def clean_test_name(name: str, hospital_id: str | None = None) -> str:  # noqa: 
 _NUMBER_RE = re.compile(r"\d{1,3}(?:[.,]\d{3})*(?:[.,]\d+)?|\d+(?:[.,]\d+)?")
 _UNIT_RE = re.compile(r"[%a-zA-Zµμ][a-zA-Z0-9µμ/^.²]*(?:/[a-zA-Z0-9.²]+)*")
 _RANGE_DASH_RE = re.compile(r"(\d[0-9.,]*)\s*[-–—]\s*(\d[0-9.,]*)")
-_LESS_THAN_RE = re.compile(r"<\s*(\d[0-9.,]*)")
-_GREATER_THAN_RE = re.compile(r">\s*(\d[0-9.,]*)")
+# "≤"/"≥" are common on VN/international reports for a single-bound range
+# ("eGFR ≥60"), same shape as "<"/">". Without these, `_is_range_like` misses
+# them and a positional guess can hand a range cell through as a measured
+# value via exactly the shape #155 was filed over, just a different notation.
+_LESS_THAN_RE = re.compile(r"[<≤]\s*(\d[0-9.,]*)")
+_GREATER_THAN_RE = re.compile(r"[>≥]\s*(\d[0-9.,]*)")
 
 
 def _strip_accents_lower(s: str) -> str:
