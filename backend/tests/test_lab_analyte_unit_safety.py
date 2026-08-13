@@ -1037,3 +1037,67 @@ def test_table_success_takes_precedence_text_fallback_never_runs(monkeypatch):
     draft = lab_upload.build_draft(b"\xff\xd8\xff" + b"x" * 32, "image/jpeg")
     assert draft.extraction_trust == "structure_verified"
     assert calls == []
+
+
+# --------------------------------------------------------------------------- #
+# Realistic Azure DI acceptance fixture — a REAL captured analyzeResult (not a
+# hand-built mock), from the empirical reproduction referenced in issue #155:
+# a bordered CBC table with recognised columnHeader cells
+# (STT | Tên xét nghiệm | Kết quả | Đơn vị | Khoảng tham chiếu), synthetic
+# clinic/patient data, word-level confidences and polygons intact. Runs fully
+# offline against the cached JSON — no live Azure call.
+# --------------------------------------------------------------------------- #
+
+
+def _load_realistic_cbc_analyze_result() -> dict:
+    import json
+    from pathlib import Path
+
+    path = Path(__file__).parent / "fixtures" / "cbc_realistic_azure_analyze_result.json"
+    return json.loads(path.read_text())
+
+
+def test_realistic_azure_cbc_fixture_matches_exact_acceptance_values():
+    """#155 acceptance: Hb -> 14.0 g/dL (ref 13-17), WBC -> 7.2, PLT -> 230,
+    HCT -> 50 % (ref 42-47) — no range boundary as measured value, no stale
+    confidence, no stale old-analyte warning, no silent HCT drop, no false
+    critical severity."""
+    from app.domain.lab_table_extractor import extract_and_map
+
+    analyze_result = _load_realistic_cbc_analyze_result()
+    diag: dict = {}
+    rows = extract_and_map(analyze_result, diagnostics=diag)
+    assert diag["ambiguous_structure"] is False, "a headered, unambiguous table must not fail closed"
+
+    by_name = {r.test_name: r for r in rows}
+    assert set(by_name) == {"hemoglobin", "wbc", "platelet", "hematocrit"}, by_name
+
+    hb = by_name["hemoglobin"]
+    assert (hb.value, hb.unit) == (14.0, "g/dL"), (hb.value, hb.unit)
+    assert hb.ocr_reference_range == "13–17", hb.ocr_reference_range
+    assert hb.confidence_detail.clinical == 1.0
+    assert not any("ngoai khoang sinh ly" in _strip_diacritics(r) for r in hb.confidence_detail.reasons)
+
+    wbc = by_name["wbc"]
+    assert wbc.value == 7.2, wbc.value
+    assert wbc.ocr_reference_range == "4.0–10.0"
+
+    plt = by_name["platelet"]
+    assert plt.value == 230.0, plt.value
+    assert plt.ocr_reference_range == "150–400"
+
+    hct = by_name["hematocrit"]
+    assert (hct.value, hct.unit) == (50.0, "%"), (hct.value, hct.unit)
+    assert hct.ocr_reference_range == "42–47", hct.ocr_reference_range
+    assert hct.confidence_detail.clinical == 1.0
+    assert not any("ngoai khoang sinh ly" in _strip_diacritics(r) for r in hct.confidence_detail.reasons)
+
+    # No range boundary anywhere in the emitted measured values.
+    forbidden = {130.0, 170.0, 4.0, 10.0, 150.0, 400.0, 0.42, 0.47}
+    assert {r.value for r in rows}.isdisjoint(forbidden), [r.value for r in rows]
+
+
+def _strip_diacritics(s: str) -> str:
+    import unicodedata
+
+    return "".join(c for c in unicodedata.normalize("NFD", s.lower()) if unicodedata.category(c) != "Mn")
