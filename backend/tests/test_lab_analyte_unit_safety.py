@@ -914,3 +914,126 @@ def test_ambiguous_candidate_never_classified_structure_verified():
         )
         == ExtractionTrust.STRUCTURE_VERIFIED
     )
+
+
+# --------------------------------------------------------------------------- #
+# #155 focused matrix — header language/diacritics, column order, missing
+# fields, duplicate cells, and table/text precedence. Each case runs the FULL
+# normalization pipeline (hemoglobin conversion, range normalization) so a
+# regression in header handling would also break the values these assert on.
+# --------------------------------------------------------------------------- #
+
+EN_HEADER = ["No", "Test Name", "Result", "Unit", "Reference Range"]
+VN_HEADER_NO_DIACRITICS = ["STT", "Ten xet nghiem", "Ket qua", "Don vi", "Khoang tham chieu"]
+
+
+@pytest.mark.parametrize("header", [EN_HEADER, VN_HEADER_NO_DIACRITICS], ids=["english", "vn_no_diacritics"])
+def test_header_language_and_diacritics_variants_still_normalize(header):
+    from app.domain.lab_table_extractor import extract_and_map
+
+    diag: dict = {}
+    got = {
+        v.test_name: (v.value, v.unit, v.ocr_reference_range)
+        for v in extract_and_map(_analyze_result(header, CBC_ROWS), diagnostics=diag)
+    }
+    assert diag["ambiguous_structure"] is False
+    assert got["hemoglobin"] == (14.0, "g/dL", "13–17"), got["hemoglobin"]
+    assert got["hematocrit"][:2] == (50.0, "%")
+
+
+def test_ocr_spacing_variations_do_not_break_extraction():
+    """Ragged/doubled whitespace inside cells — a common OCR artefact — must not
+    prevent a column from matching its role keyword or a value from parsing."""
+    from app.domain.lab_table_extractor import extract_and_map
+
+    header = ["STT", "  Tên  xét nghiệm ", "Kết quả", " Đơn vị", "Khoảng  tham chiếu"]
+    rows = [
+        ["1", " Hemoglobin ", "140", " g/L ", " 130  -  170 "],
+        ["4", "Hồng cầu (HCT)", "0.50", "L/L", "0.42 - 0.47"],
+    ]
+    diag: dict = {}
+    got = {
+        v.test_name: (v.value, v.unit)
+        for v in extract_and_map(_analyze_result(header, rows), diagnostics=diag)
+    }
+    assert diag["ambiguous_structure"] is False
+    assert got["hemoglobin"] == (14.0, "g/dL")
+    assert got["hematocrit"] == (50.0, "%")
+
+
+def test_result_and_reference_columns_swapped_still_resolve_by_header():
+    """Header-driven role detection must key off the header TEXT, not physical
+    column order — a hospital printing "Khoảng tham chiếu" before "Kết quả" must
+    not have its range column mistaken for the value column."""
+    from app.domain.lab_table_extractor import extract_and_map
+
+    header = ["STT", "Tên xét nghiệm", "Khoảng tham chiếu", "Kết quả", "Đơn vị"]
+    rows = [["1", "Hemoglobin", "130 - 170", "140", "g/L"]]
+    diag: dict = {}
+    got = extract_and_map(_analyze_result(header, rows), diagnostics=diag)
+    assert diag["ambiguous_structure"] is False
+    hb = next(r for r in got if r.test_name == "hemoglobin")
+    assert (hb.value, hb.unit) == (14.0, "g/dL"), (hb.value, hb.unit)
+    assert hb.ocr_reference_range == "13–17"
+
+
+def test_missing_unit_column_fails_closed_not_silently_converted():
+    """No unit anywhere for a guarded analyte: the guard cannot verify dimension,
+    so it must NOT invent a canonical unit or convert — the row surfaces for
+    review with its original (unconverted) value instead."""
+    from app.domain.lab_table_extractor import extract_and_map
+
+    header = ["STT", "Tên xét nghiệm", "Kết quả"]
+    rows = [["1", "Hemoglobin", "140"]]
+    got = extract_and_map(_analyze_result(header, rows))
+    hb = next(r for r in got if r.test_name == "hemoglobin")
+    assert hb.value == 140.0  # unconverted — no unit to convert from
+    assert hb.unit is None
+    assert hb.requires_review is True
+
+
+def test_missing_reference_range_leaves_value_intact():
+    """A row with no reference-range column at all must still extract and
+    normalize the value; `ocr_reference_range` is simply None, not fabricated."""
+    from app.domain.lab_table_extractor import extract_and_map
+
+    header = ["STT", "Tên xét nghiệm", "Kết quả", "Đơn vị"]
+    rows = [["1", "Hemoglobin", "140", "g/L"]]
+    got = extract_and_map(_analyze_result(header, rows))
+    hb = next(r for r in got if r.test_name == "hemoglobin")
+    assert (hb.value, hb.unit) == (14.0, "g/dL")
+    assert hb.ocr_reference_range is None
+
+
+def test_duplicate_numeric_cell_does_not_hijack_the_value_column():
+    """An extra numeric-looking cell in a non-value role (e.g. a flag/note code)
+    must not be mistaken for the result — value_col stays locked to the header
+    that actually said "Kết quả"."""
+    from app.domain.lab_table_extractor import extract_and_map
+
+    header = ["STT", "Tên xét nghiệm", "Kết quả", "Đơn vị", "Ghi chú", "Khoảng tham chiếu"]
+    rows = [["1", "Hemoglobin", "140", "g/L", "1", "130 - 170"]]
+    diag: dict = {}
+    got = extract_and_map(_analyze_result(header, rows), diagnostics=diag)
+    assert diag["ambiguous_structure"] is False
+    hb = next(r for r in got if r.test_name == "hemoglobin")
+    assert (hb.value, hb.unit) == (14.0, "g/dL"), (hb.value, hb.unit)
+
+
+def test_table_success_takes_precedence_text_fallback_never_runs(monkeypatch):
+    """When the table path is STRUCTURE_VERIFIED, the text parser must not even
+    be invoked — there is no "disagreement" to resolve because only one
+    extraction path ever runs. Verified by spying on parse_lab_text."""
+    from app.services import lab_upload
+
+    calls: list[str] = []
+    monkeypatch.setattr(
+        lab_upload.lab_parser,
+        "parse_lab_text",
+        lambda text, *a, **k: calls.append(text) or [],
+    )
+    analyze_result = {**_analyze_result(VN_HEADER, CBC_ROWS), **_WORDS_PAGE}
+    _patch_azure(monkeypatch, analyze_result)
+    draft = lab_upload.build_draft(b"\xff\xd8\xff" + b"x" * 32, "image/jpeg")
+    assert draft.extraction_trust == "structure_verified"
+    assert calls == []
