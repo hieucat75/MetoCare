@@ -158,11 +158,35 @@ export interface HealthMetric {
   recorded_at: string // aliased from measured_at for backwards compat
   notes?: string | null
   source?: 'manual' | 'device' | 'lab' | 'lab_result' | string
-  status: 'normal' | 'borderline' | 'abnormal' | 'critical' | null
+  // 'low'/'high'/'unknown' only appear once metric_type is a lab-catalog
+  // biomarker resolved via lab_semantics; 'borderline'/'abnormal' remain for
+  // non-lab vitals (BP, weight, ...) that resolve_lab_semantics never covers.
+  status: 'normal' | 'low' | 'high' | 'critical' | 'unknown' | 'borderline' | 'abnormal' | null
   /** Canonical Vietnamese clinical message from backend (single source of truth). */
   clinical_message?: string | null
   /** True when canonical re-classification (unit-aware) is 'critical'. Use to show DangerAlertBanner. */
   is_critical?: boolean
+
+  // ── Unified LabResult contract (Phase A, additive) ──────────────────────
+  // See app.domain.lab_semantics.LabSemantics on the backend. Populated only
+  // when metric_type is a lab-catalog biomarker; null/undefined for non-lab
+  // vitals — treat absence as "use the legacy status field above", never as
+  // "recompute locally".
+  display_name?: string | null
+  reference_low?: number | null
+  reference_high?: number | null
+  reference_unit?: string | null
+  reference_display?: string | null
+  reference_source?:
+    | 'source_report'
+    | 'validated_lab_range'
+    | 'canonical_fallback'
+    | 'unavailable'
+    | null
+  severity?: 'normal' | 'low' | 'high' | 'critical' | 'unknown' | null
+  interpretation_state?: 'confirmed' | 'needs_review' | null
+  needs_review?: boolean
+  rule_version?: string | null
 }
 
 /** A reading that was promoted from a confirmed lab result (vs self-reported). */
@@ -484,6 +508,25 @@ export interface LabResultEntry {
   /** Backend quality flag: 'flag' means suspicious value/unit, needs user verification. */
   data_quality_flag?: string | null
   created_at: string
+
+  // ── Unified LabResult contract (Phase A, additive) ──────────────────────
+  // See app.domain.lab_semantics.LabSemantics on the backend. Always
+  // resolved fresh server-side; never recompute these locally.
+  display_name?: string | null
+  reference_low?: number | null
+  reference_high?: number | null
+  reference_unit?: string | null
+  reference_display?: string | null
+  reference_source?:
+    | 'source_report'
+    | 'validated_lab_range'
+    | 'canonical_fallback'
+    | 'unavailable'
+    | null
+  severity?: 'normal' | 'low' | 'high' | 'critical' | 'unknown' | null
+  interpretation_state?: 'confirmed' | 'needs_review' | null
+  needs_review?: boolean
+  rule_version?: string | null
 }
 
 export interface BatchLabResultListResponse {

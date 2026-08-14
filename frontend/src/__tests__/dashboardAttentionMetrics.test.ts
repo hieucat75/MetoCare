@@ -1,6 +1,26 @@
 /**
  * Tests for P1 fix: dashboard attention metrics show value+unit, status matches
  * detail page, and Thyroglobulin is not flagged as "Rất thấp" for low values.
+ *
+ * REPAIRED for the Phase B Unified LabResult Contract migration
+ * (see src/__tests__/labResultContract.test.ts for the full contract suite):
+ *
+ *   `classifyLabValue`-testing describe blocks below test the PREVIEW-ONLY
+ *   classification engine (OcrReviewCard / LabEntryModal live-edit preview).
+ *   It is NEVER called for confirmed-result rendering anymore — see the
+ *   source-level guard in labResultContract.test.ts ("no local
+ *   reclassification"). Do not reintroduce a dependency on it for confirmed
+ *   surfaces (dashboard, labs list, metrics) based on these tests passing.
+ *
+ *   `buildDashboardSummary` describe blocks below now drive classification
+ *   via the fixture's backend-contract `severity`/`status`/`reference_display`
+ *   fields (what `resolveContractStatus` actually reads), not via
+ *   value+catalog-implied `classifyLabValue` math — `classifySeries` in
+ *   `summary.ts` no longer calls `classifyLabValue` at all. The backend
+ *   contract's severity enum is `'normal'|'low'|'high'|'critical'|'unknown'`
+ *   — there is no `'very_low'`/`'very_high'` on the wire, so fixtures/assertions
+ *   that used to say "Rất thấp"/`'very_low'` now use `'critical'` (danger-level)
+ *   or `'low'` (warning-level) as appropriate.
  */
 
 import { describe, test, expect } from '@jest/globals'
@@ -33,18 +53,36 @@ const glucoseUnit: LabUnit = {
   is_primary: true,
 }
 
+/**
+ * Backend-contract-shaped fixture builder. `severity` defaults to mirror
+ * `status` (matching what a real backend response looks like for lab-catalog
+ * biomarkers) unless a call site needs to exercise a specific backend
+ * severity independent of the legacy `status` string. Pass `reference_display`
+ * explicitly for any fixture whose test asserts on `concern.reason` text —
+ * `classifySeries` (summary.ts) sources that text from the fixture's
+ * `reference_display`, never from a catalog-computed range.
+ */
 function makeMetric(
   metric_type: string,
   value: number,
   unit: string,
-  status: HealthMetric['status'] = 'normal'
+  opts: {
+    status?: HealthMetric['status']
+    severity?: HealthMetric['severity']
+    needs_review?: boolean
+    reference_display?: string | null
+  } = {}
 ): HealthMetric {
+  const status = opts.status ?? 'normal'
   return {
     id: `${metric_type}-1`,
     metric_type: metric_type as HealthMetric['metric_type'],
     value,
     unit,
     status,
+    severity: opts.severity ?? (status as HealthMetric['severity']),
+    needs_review: opts.needs_review ?? false,
+    reference_display: opts.reference_display ?? null,
     measured_at: '2026-06-30T10:00:00Z',
     recorded_at: '2026-06-30T10:00:00Z',
     source: 'manual',
@@ -158,7 +196,12 @@ describe('classifyLabValue — TSH (higher_is_better: false)', () => {
 
 describe('buildDashboardSummary — concern row data', () => {
   test('concern row includes numeric value and unit', () => {
-    const metrics = [makeMetric('fasting_glucose', 7.2, 'mmol/L')]
+    const metrics = [
+      makeMetric('fasting_glucose', 7.2, 'mmol/L', {
+        status: 'high',
+        reference_display: '3.9–5.6 mmol/L',
+      }),
+    ]
     const summary = buildDashboardSummary(metrics, glucoseCatalog)
     expect(summary.concerns.length).toBeGreaterThan(0)
     const concern = summary.concerns[0]
@@ -167,7 +210,12 @@ describe('buildDashboardSummary — concern row data', () => {
   })
 
   test('concern row includes reason text for high glucose', () => {
-    const metrics = [makeMetric('fasting_glucose', 7.2, 'mmol/L')]
+    const metrics = [
+      makeMetric('fasting_glucose', 7.2, 'mmol/L', {
+        status: 'high',
+        reference_display: '3.9–5.6 mmol/L',
+      }),
+    ]
     const summary = buildDashboardSummary(metrics, glucoseCatalog)
     const concern = summary.concerns[0]
     expect(concern.reason).toContain('Cao hơn mục tiêu')
@@ -175,7 +223,9 @@ describe('buildDashboardSummary — concern row data', () => {
   })
 
   test('concern row includes reason text for low TSH', () => {
-    const metrics = [makeMetric('tsh', 0.01, 'mIU/L')]
+    const metrics = [
+      makeMetric('tsh', 0.01, 'mIU/L', { status: 'low', reference_display: '0.4–4.0 mIU/L' }),
+    ]
     const summary = buildDashboardSummary(metrics, minimalCatalog)
     const concern = summary.concerns.find((c) => c.metricType === 'tsh')
     expect(concern).toBeDefined()
@@ -183,15 +233,23 @@ describe('buildDashboardSummary — concern row data', () => {
     expect(concern!.reason).toContain('mIU/L')
   })
 
-  test('Thyroglobulin with very low value is NOT added to concerns', () => {
-    const metrics = [makeMetric('thyroglobulin', 0.01, 'ng/mL')]
+  test('Thyroglobulin with backend severity normal is NOT added to concerns', () => {
+    // Backend lab_semantics never penalises a low reading when
+    // higher_is_better is null (context-dependent biomarker) — this fixture
+    // asserts the backend-severity field, not a client-recomputed classification.
+    const metrics = [makeMetric('thyroglobulin', 0.01, 'ng/mL', { status: 'normal' })]
     const summary = buildDashboardSummary(metrics, minimalCatalog)
     const tgConcern = summary.concerns.find((c) => c.metricType === 'thyroglobulin')
     expect(tgConcern).toBeUndefined()
   })
 
   test('Thyroglobulin high value IS added to concerns with reason', () => {
-    const metrics = [makeMetric('thyroglobulin', 100, 'ng/mL')]
+    const metrics = [
+      makeMetric('thyroglobulin', 100, 'ng/mL', {
+        status: 'high',
+        reference_display: '1.4–78.0 ng/mL',
+      }),
+    ]
     const summary = buildDashboardSummary(metrics, minimalCatalog)
     const tgConcern = summary.concerns.find((c) => c.metricType === 'thyroglobulin')
     expect(tgConcern).toBeDefined()
@@ -272,15 +330,22 @@ describe('P0 — shared biomarker classification: dashboard and detail same sour
     expect(status.label).toBe('Rất thấp')
   })
 
-  test('dashboard buildDashboardSummary(tsh=0.03) produces concern with very_low severity', () => {
-    const metrics: HealthMetric[] = [makeMetric('tsh', TSH_VERY_LOW, 'mIU/L')]
+  test('dashboard buildDashboardSummary(tsh=0.03, backend severity critical) produces a danger concern', () => {
+    // Backend contract has no 'very_low' key. A dangerously-low TSH is
+    // reported as severity 'critical' on the wire, which renders 'Nguy hiểm'
+    // (never the retired client-side 'Rất thấp' vocabulary) and ranks as a
+    // 'danger' concern — same clinical urgency the original P0 fix protected,
+    // expressed through the real backend enum.
+    const metrics: HealthMetric[] = [
+      makeMetric('tsh', TSH_VERY_LOW, 'mIU/L', { status: 'critical' }),
+    ]
     const summary = buildDashboardSummary(metrics, minimalCatalog)
     const tshConcern = summary.concerns.find((c) => c.metricType === 'tsh')
     expect(tshConcern).toBeDefined()
     expect(tshConcern!.value).toBe(TSH_VERY_LOW)
-    expect(tshConcern!.statusLabel).toBe('Rất thấp')
+    expect(tshConcern!.statusLabel).toBe('Nguy hiểm')
+    expect(tshConcern!.statusLabel).not.toBe('Rất thấp')
     expect(tshConcern!.severity).toBe('danger')
-    expect(tshConcern!.reason).toContain('Thấp hơn mục tiêu')
   })
 
   test('TSH conclusionByStatus.very_low exists and does NOT say "bình thường" or "cao"', () => {
@@ -300,11 +365,15 @@ describe('P0 — shared biomarker classification: dashboard and detail same sour
     })
   })
 
-  test('classifyLabValue gives same result whether called from dashboard or detail path', () => {
-    const dashboardResult = classifyLabValue(TSH_VERY_LOW, tshUnit, false)
-    const detailResult = classifyLabValue(TSH_VERY_LOW, tshUnit, false)
-    expect(dashboardResult.key).toBe(detailResult.key)
-    expect(dashboardResult.label).toBe(detailResult.label)
-    expect(dashboardResult.tone).toBe(detailResult.tone)
+  // NOTE: this no longer means "dashboard and detail page agree" — neither
+  // confirmed-result surface calls classifyLabValue anymore (see
+  // labResultContract.test.ts). This only documents that the PREVIEW-ONLY
+  // engine itself is a pure, deterministic function.
+  test('classifyLabValue is a pure, deterministic function (preview-engine only)', () => {
+    const callA = classifyLabValue(TSH_VERY_LOW, tshUnit, false)
+    const callB = classifyLabValue(TSH_VERY_LOW, tshUnit, false)
+    expect(callA.key).toBe(callB.key)
+    expect(callA.label).toBe(callB.label)
+    expect(callA.tone).toBe(callB.tone)
   })
 })

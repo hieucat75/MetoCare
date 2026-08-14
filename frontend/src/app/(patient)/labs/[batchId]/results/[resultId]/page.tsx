@@ -22,6 +22,7 @@ import { NeuCard } from '@/components/patient/neu'
 import { statusColor, statusLabel, resolveDisplayValueUnit } from '@/components/patient/LabResultRow'
 import { formatLabValue } from '@/lib/formatNumber'
 import { MetricLineChart } from '@/components/patient/metrics/MetricLineChart'
+import { NEEDS_REVIEW_MESSAGE_VI } from '@/components/patient/metrics/metricVisuals'
 
 // ── Simple inline gauge (no external deps) ─────────────────────────────────────
 
@@ -75,20 +76,6 @@ function SimpleGauge({
       </div>
     </div>
   )
-}
-
-// ── Parse reference range string ───────────────────────────────────────────────
-
-function parseRefRange(ref: string | null): { min: number | null; max: number | null } {
-  if (!ref) return { min: null, max: null }
-  // Supports "70–100", "70-100", "< 100", "> 40", "≤ 5.7"
-  const dashMatch = ref.match(/(\d+\.?\d*)\s*[–\-]\s*(\d+\.?\d*)/)
-  if (dashMatch) return { min: parseFloat(dashMatch[1]), max: parseFloat(dashMatch[2]) }
-  const ltMatch = ref.match(/[<≤]\s*(\d+\.?\d*)/)
-  if (ltMatch) return { min: null, max: parseFloat(ltMatch[1]) }
-  const gtMatch = ref.match(/[>≥]\s*(\d+\.?\d*)/)
-  if (gtMatch) return { min: parseFloat(gtMatch[1]), max: null }
-  return { min: null, max: null }
 }
 
 // ── Trend section ──────────────────────────────────────────────────────────────
@@ -266,16 +253,16 @@ export default function BiomarkerDetailPage() {
     )
   }
 
-  const refRange = parseRefRange(result.reference_range)
+  // Backend-contract reference band — never regex-parsed from the free-text
+  // `reference_range` string.
+  const refLow = result.reference_low ?? null
+  const refHigh = result.reference_high ?? null
   const valueColor = statusColor(result.status)
   // P0 arch fix: display original as-printed value + unit (Option B).
   // Status badge always uses result.status (pre-computed canonical classification).
   const { displayValue, displayUnit } = resolveDisplayValueUnit(result)
   const trendValues = allSameTests.map((r) => r.value as number)
-  const trendBand =
-    refRange.min != null && refRange.max != null
-      ? { low: refRange.min, high: refRange.max }
-      : null
+  const trendBand = refLow != null && refHigh != null ? { low: refLow, high: refHigh } : null
 
   // Find matching insight card
   const matchingInsight = insight?.insights.find((c) => {
@@ -346,7 +333,7 @@ export default function BiomarkerDetailPage() {
           className="font-bold text-neu-text leading-tight"
           style={{ fontSize: '28px' }}
         >
-          {result.test_name}
+          {result.display_name ?? result.test_name}
         </h1>
 
         {/* Value + unit — shows original as-printed value (preserves what patient saw on report) */}
@@ -385,24 +372,25 @@ export default function BiomarkerDetailPage() {
           </div>
         )}
 
-        {/* Reference range text — backend already strips unit suffix; no double-unit */}
-        {result.reference_range && (
+        {/* Reference range text — prefer the contract's reference_display; the
+            legacy reference_range field is frequently null now that Phase B
+            stopped computing it client-side at save time. */}
+        {(result.reference_display ?? result.reference_range) && (
           <p className="mt-3 text-[16px] text-neu-muted">
             Bình thường:{' '}
             <span className="font-semibold text-[#17AE7B]">
-              {result.reference_range}
+              {result.reference_display ?? result.reference_range}
             </span>
           </p>
         )}
 
         {/* Visual gauge — uses canonical value for accurate position on reference scale */}
-        {result.value != null && (
-          <SimpleGauge
-            value={result.value}
-            refMin={refRange.min}
-            refMax={refRange.max}
-            status={result.status}
-          />
+        {refLow == null && refHigh == null ? (
+          <p className="mt-3 text-[15px] text-neu-muted">{NEEDS_REVIEW_MESSAGE_VI}</p>
+        ) : (
+          result.value != null && (
+            <SimpleGauge value={result.value} refMin={refLow} refMax={refHigh} status={result.status} />
+          )
         )}
       </NeuCard>
 

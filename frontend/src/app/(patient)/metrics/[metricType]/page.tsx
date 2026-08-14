@@ -29,7 +29,13 @@ import {
   type CategoryTheme,
 } from '@/lib/metrics/kpi'
 import { MetricLineChart } from '@/components/patient/metrics/MetricLineChart'
-import { metricIcon, type NeuTone } from '@/components/patient/metrics/metricVisuals'
+import {
+  metricIcon,
+  STATUS_COLOR_HEX,
+  STATUS_LABEL_VI,
+  STATUS_TONE_VI,
+  type NeuTone,
+} from '@/components/patient/metrics/metricVisuals'
 import { RecordActions } from '@/components/records/RecordActions'
 import { EditMetricModal } from '@/components/records/EditMetricModal'
 import { DeleteConfirmDialog } from '@/components/records/DeleteConfirmDialog'
@@ -44,11 +50,8 @@ const PERIODS = [
 ] as const
 type PeriodKey = (typeof PERIODS)[number]['key']
 
-const DOT_COLOR: Record<NeuTone, string> = {
-  ok: '#15915A',
-  watch: '#E0A92E',
-  alert: '#D92D20',
-}
+// STATUS_COLOR_HEX (metricVisuals.ts) is keyed by NeuTone and already covers
+// 'neutral' — no local DOT_COLOR table needed.
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
@@ -400,38 +403,8 @@ function StatChip({
 }
 
 // ─── History row ──────────────────────────────────────────────────────────────
-
-// STATUS_LABEL_VI: canonical status → display label (canonical single source of truth from backend).
-// These labels match the backend _CLINICAL_MESSAGES status keys.
-const STATUS_LABEL_VI: Record<string, string> = {
-  normal: 'Bình thường',
-  low: 'Thấp',
-  high: 'Cao',
-  very_low: 'Rất thấp',
-  very_high: 'Rất cao',
-  borderline: 'Cần theo dõi',
-  borderline_high: 'Hơi cao',
-  borderline_low: 'Hơi thấp',
-  abnormal: 'Bất thường',
-  critical: 'Nguy hiểm',
-  critical_high: 'Nguy hiểm cao',
-  critical_low: 'Nguy hiểm thấp',
-}
-
-const STATUS_TONE_VI: Record<string, NeuTone> = {
-  normal: 'ok',
-  borderline: 'watch',
-  borderline_high: 'watch',
-  borderline_low: 'watch',
-  low: 'watch',
-  high: 'watch',
-  very_low: 'alert',
-  very_high: 'alert',
-  abnormal: 'alert',
-  critical: 'alert',
-  critical_high: 'alert',
-  critical_low: 'alert',
-}
+// STATUS_LABEL_VI / STATUS_TONE_VI now come from metricVisuals.ts (the single
+// source of truth) — do not re-declare a parallel copy here.
 
 function HistoryRow({
   metric,
@@ -462,7 +435,7 @@ function HistoryRow({
     >
       <span
         className="size-2.5 shrink-0 rounded-full"
-        style={{ backgroundColor: DOT_COLOR[tone] }}
+        style={{ backgroundColor: STATUS_COLOR_HEX[tone] }}
         aria-hidden="true"
       />
       <div className="min-w-0 flex-1">

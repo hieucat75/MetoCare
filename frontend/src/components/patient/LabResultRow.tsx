@@ -16,35 +16,20 @@ import * as React from 'react'
 import { ChevronRight, TrendingDown, TrendingUp, Minus } from 'lucide-react'
 import type { LabResultEntry } from '@/lib/api/patient'
 import { formatLabValue } from '@/lib/formatNumber'
+import { STATUS_DOT_HEX, STATUS_LABEL_VI } from './metrics/metricVisuals'
 
 // ── Status helpers ─────────────────────────────────────────────────────────────
+// Delegate to the single source of truth (metricVisuals.ts) — do not
+// re-derive a parallel label/color table here. Signatures unchanged so
+// existing callers (this file's StatusBadge, the biomarker detail page) don't
+// need to change.
 
 export function statusLabel(status: string | null): string {
-  switch (status) {
-    case 'normal':          return 'Bình thường'
-    case 'low':             return 'Thấp'
-    case 'borderline':      return 'Hơi cao'
-    case 'high':            return 'Cao'
-    case 'very_high':       return 'Rất cao'      // defensive
-    case 'critical':        return 'Nguy hiểm'
-    case 'critical_high':   return 'Nguy hiểm'   // defensive
-    case 'critical_low':    return 'Nguy hiểm'   // defensive
-    default:                return 'Chưa rõ'
-  }
+  return status ? (STATUS_LABEL_VI[status] ?? 'Chưa rõ') : 'Chưa rõ'
 }
 
 export function statusColor(status: string | null): string {
-  switch (status) {
-    case 'normal':          return '#17AE7B'
-    case 'low':             return '#3B82F6'
-    case 'borderline':      return '#F59E0B'
-    case 'high':            return '#F59E0B'
-    case 'very_high':       return '#DC6803'
-    case 'critical':        return '#D92D20'
-    case 'critical_high':   return '#D92D20'
-    case 'critical_low':    return '#D92D20'
-    default:                return '#52706A'
-  }
+  return status ? (STATUS_DOT_HEX[status] ?? STATUS_DOT_HEX.unknown) : STATUS_DOT_HEX.unknown
 }
 
 function StatusBadge({ status }: { status: string | null }) {
@@ -149,12 +134,12 @@ export function LabResultRow({ result, batchId, changePct, onNavigate }: LabResu
           className="font-semibold text-neu-text leading-tight truncate"
           style={{ fontSize: '22px' }}
         >
-          {result.test_name}
+          {result.display_name ?? result.test_name}
         </p>
-        {result.reference_range && (
+        {(result.reference_display ?? result.reference_range) && (
           /* a11y: reference range text — 16px (was 13px) */
           <p className="mt-0.5 text-neu-muted" style={{ fontSize: '16px' }}>
-            Bình thường: {result.reference_range}
+            Bình thường: {result.reference_display ?? result.reference_range}
           </p>
         )}
         <div className="mt-1 flex items-center gap-2 flex-wrap">

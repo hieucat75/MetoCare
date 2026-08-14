@@ -65,7 +65,7 @@ interface DashboardData {
   adherenceSummary: AdherenceSummary | null
 }
 
-type BadgeTone = 'ok' | 'watch' | 'alert'
+type BadgeTone = 'ok' | 'watch' | 'alert' | 'neutral'
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
@@ -679,7 +679,10 @@ interface TileModel {
 }
 
 function severityToTone(severity: IndicatorConcern['severity']): BadgeTone {
-  return severity === 'danger' ? 'alert' : severity === 'warning' ? 'watch' : 'ok'
+  if (severity === 'danger') return 'alert'
+  if (severity === 'warning') return 'watch'
+  if (severity === 'unknown') return 'neutral'
+  return 'ok'
 }
 
 function findSeries(series: MetricSeries[], metricType: string): MetricSeries | undefined {
@@ -951,7 +954,14 @@ function HealthAlertsSection({
           <div className="flex items-center gap-2.5">
             <span
               className="size-2 shrink-0 rounded-full"
-              style={{ background: concern.severity === 'danger' ? '#E05C6A' : '#F5A623' }}
+              style={{
+                background:
+                  concern.severity === 'danger'
+                    ? '#E05C6A'
+                    : concern.severity === 'unknown'
+                      ? '#7C9089'
+                      : '#F5A623',
+              }}
               aria-hidden="true"
             />
             <span className="flex-1 min-w-0 text-[18px] font-semibold text-neu-text truncate">
@@ -963,10 +973,7 @@ function HealthAlertsSection({
                 {displayUnitOf(concern, concern.unit)}
               </span>
             </span>
-            <NeuBadge
-              tone={concern.severity === 'danger' ? 'alert' : 'watch'}
-              className="!text-[13px] shrink-0"
-            >
+            <NeuBadge tone={severityToTone(concern.severity)} className="!text-[13px] shrink-0">
               {concern.statusLabel}
             </NeuBadge>
             <ChevronRight className="size-4 shrink-0 text-neu-muted" aria-hidden="true" />
@@ -1049,7 +1056,7 @@ function mergeTone(
   a: { tone: BadgeTone; statusLabel: string | null },
   b: { tone: BadgeTone; statusLabel: string | null }
 ): { tone: BadgeTone; statusLabel: string | null } {
-  const rank: Record<BadgeTone, number> = { ok: 0, watch: 1, alert: 2 }
+  const rank: Record<BadgeTone, number> = { ok: 0, neutral: 1, watch: 2, alert: 3 }
   return rank[a.tone] >= rank[b.tone] ? a : b
 }
 

@@ -12,9 +12,12 @@ import { GaugeBar } from '@/components/patient/ai-copilot/GaugeBar'
 import { MetricLineChart } from '@/components/patient/metrics/MetricLineChart'
 import { useAuth } from '@/lib/auth/context'
 import { getMetrics } from '@/lib/api/patient'
-import { getLabReference, classifyLabValue } from '@/lib/api/labReference'
+import { getLabReference } from '@/lib/api/labReference'
 import { refBarGeometry } from '@/lib/metrics/kpi'
-import { computeAttentionReason } from '@/lib/dashboard/summary'
+import {
+  resolveContractStatus,
+  NEEDS_REVIEW_MESSAGE_VI,
+} from '@/components/patient/metrics/metricVisuals'
 import type { LabStatusKey, LabUnit } from '@/lib/api/labReference'
 
 const TABS = ['Câu chuyện', 'Xu hướng', 'Kế hoạch', 'Kiến thức'] as const
@@ -92,6 +95,12 @@ interface LiveBioData {
   attentionReason: string
   unit: LabUnit
   higherIsBetter: boolean | null
+  /** True when the backend contract says needs_review/unknown. When true, the
+   * narrative MUST NOT use `conclusionByStatus` (mock content keyed by the
+   * legacy LabStatusKey, which has no needs-review bucket and would render a
+   * confident "stable/normal" story for a result the backend could not
+   * classify) — render NEEDS_REVIEW_MESSAGE_VI instead. */
+  needsReview: boolean
 }
 
 const STATUS_KEY_TO_LEVEL: Record<LabStatusKey, StatusLevel> = {
@@ -100,6 +109,23 @@ const STATUS_KEY_TO_LEVEL: Record<LabStatusKey, StatusLevel> = {
   very_low: 'low',
   high: 'high',
   very_high: 'high',
+}
+
+/**
+ * The Unified LabResult Contract's `severity` vocabulary
+ * ('normal'|'low'|'high'|'critical'|'unknown') is coarser than the legacy
+ * client-side `LabStatusKey` this page's narrative content (mockBiomarkers)
+ * is keyed by — it has no very_low/very_high distinction, since the backend
+ * doesn't grade by how far out of range a value is. 'critical' collapses to
+ * the most-severe bucket; needs_review/'unknown' falls back to 'normal' (the
+ * amber "Vì sao chỉ số này được chú ý?" banner is what actually surfaces the
+ * needs-review case, via `attentionReason`, not the status pill).
+ */
+function toLabStatusKey(key: string | undefined): LabStatusKey {
+  if (key === 'low') return 'low'
+  if (key === 'high') return 'high'
+  if (key === 'critical') return 'very_high'
+  return 'normal'
 }
 
 export default function BiomarkerDetailPage() {
@@ -137,28 +163,43 @@ export default function BiomarkerDetailPage() {
           bm.units[0]
         if (!unit) return
         const higherIsBetter = bm.higher_is_better
-        // Classification / gauge use CANONICAL value+unit; display uses ORIGINAL.
-        const status = classifyLabValue(latest.value, unit, higherIsBetter)
-        const geo = refBarGeometry(latest.value, unit, higherIsBetter)
+        // Classification: the Unified LabResult Contract (severity/needs_review) —
+        // never re-derived locally from value+unit.
+        const resolved = resolveContractStatus(latest)
+        const statusKey = toLabStatusKey(resolved?.key)
+        // Gauge uses the backend-contract reference band; falls back to an inert
+        // centered geometry when unavailable (refBarGeometry's own null-safe path).
+        const geo = refBarGeometry(
+          latest.value,
+          latest.reference_low ?? null,
+          latest.reference_high ?? null,
+          higherIsBetter
+        )
         const range =
-          unit.ref_range.low > 0
+          latest.reference_display ??
+          (unit.ref_range.low > 0
             ? `${unit.ref_range.low} – ${unit.ref_range.high}`
-            : `≤ ${unit.ref_range.high}`
-        const attentionReason =
-          status.key !== 'normal' ? computeAttentionReason(status.key, unit, higherIsBetter) : ''
+            : `≤ ${unit.ref_range.high}`)
+        const needsReview = resolved?.key === 'unknown'
+        const attentionReason = needsReview
+          ? NEEDS_REVIEW_MESSAGE_VI
+          : resolved && (resolved.key === 'low' || resolved.key === 'high') && latest.reference_display
+            ? `${resolved.key === 'low' ? 'Thấp hơn' : 'Cao hơn'} mục tiêu ${latest.reference_display}`
+            : ''
         const prevMetric = history.length > 1 ? history[1] : null
         setLiveData({
           value: latest.original_value ?? latest.value,
           unitLabel: latest.original_unit ?? unit.label,
           range,
           prev: prevMetric ? (prevMetric.original_value ?? prevMetric.value) : null,
-          statusKey: status.key,
-          statusLevel: STATUS_KEY_TO_LEVEL[status.key],
-          riskText: status.label,
+          statusKey,
+          statusLevel: STATUS_KEY_TO_LEVEL[statusKey],
+          riskText: resolved?.label ?? 'Chưa rõ',
           gaugePosition: geo.valuePct,
           attentionReason,
           unit,
           higherIsBetter,
+          needsReview,
         })
       })
       .catch(() => {
@@ -180,9 +221,11 @@ export default function BiomarkerDetailPage() {
   const displayGaugePosition = liveData !== null ? liveData.gaugePosition : bio.gaugePosition
   const displayPrev = liveData !== null ? liveData.prev : bio.prev ? parseFloat(bio.prev) : null
   const displayConclusion =
-    liveData !== null && bio.conclusionByStatus
-      ? (bio.conclusionByStatus[liveData.statusKey] ?? bio.conclusion)
-      : bio.conclusion
+    liveData !== null && liveData.needsReview
+      ? NEEDS_REVIEW_MESSAGE_VI
+      : liveData !== null && bio.conclusionByStatus
+        ? (bio.conclusionByStatus[liveData.statusKey] ?? bio.conclusion)
+        : bio.conclusion
   const displayAttentionReason =
     liveData !== null ? liveData.attentionReason : (bio.attentionReason ?? '')
 
