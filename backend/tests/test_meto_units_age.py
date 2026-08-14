@@ -70,6 +70,12 @@ def test_recent_labs_carry_verbatim_display_token():
     row = (
         "Glucose (fasting)", "5.73", "mmol/L", "70 - 100", "high",
         dt.date(2026, 6, 30), None, None, None, None,
+        # canonical_name, normalized_value_si, normalized_unit_si — added when
+        # the builder started resolving status fresh via lab_semantics
+        # instead of trusting this stored 'high'. None here (no canonical
+        # match / no SI pair) keeps this test on the legacy-status fallback
+        # path, same as before.
+        None, None, None,
     )
     labs = ContextBuilder()._build_recent_labs(_FakeDB([row]), "u1")
 

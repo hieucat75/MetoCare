@@ -44,6 +44,7 @@ class _LabRow:
         normalized_value_si: float | None = None,
         normalized_unit_si: str | None = None,
         reference_range: str | None = None,
+        original_reference_range: str | None = None,
         status: str | None = "normal",
     ):
         self.test_name = test_name
@@ -55,6 +56,7 @@ class _LabRow:
         self.normalized_value_si = normalized_value_si
         self.normalized_unit_si = normalized_unit_si
         self.reference_range = reference_range
+        self.original_reference_range = original_reference_range
         self.status = status
 
 

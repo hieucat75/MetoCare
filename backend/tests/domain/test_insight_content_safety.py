@@ -118,16 +118,25 @@ def test_mixed_unit_trend_is_normalized():
 
 def test_si_unit_lab_not_falsely_flagged():
     """Codex P1 (round 2): creatinine 80 µmol/L (~0.9 mg/dL, normal) must NOT be
-    compared to the mg/dL range and become critical — trust the stored status when
-    the unit is unconvertible; classify-from-raw only when the unit matches."""
+    compared to the mg/dL range and become critical.
+
+    `_status()` now resolves fresh via the single shared resolver
+    (`lab_semantics.resolve_lab_semantics`, issues #153/#154) instead of a
+    hand-rolled conversion table that only covered a few mmol/L biomarkers —
+    creatinine's µmol/L SI unit is registered on its BiomarkerSpec
+    (`si_unit="µmol/L"`) and the resolver converts it correctly, so 80 µmol/L
+    (~0.9 mg/dL) now classifies 'normal' from the raw value+unit alone,
+    regardless of the (possibly-stale) stored status — never 'unknown' the
+    way the old, narrower hand-rolled conversion table left it."""
     insight = ci.build_metric_insight(
         "creatinine", [_metric("creatinine", 80.0, "µmol/L", "normal")]
     )
     assert insight.status == "normal"
     assert insight.risks == []
-    # And with no stored status, an unconvertible SI unit stays 'unknown', not high.
-    unknown = ci.build_metric_insight("creatinine", [_metric("creatinine", 80.0, "µmol/L", None)])
-    assert unknown.status == "unknown"
+    # Fresh resolution ignores the stored status entirely — same "normal"
+    # result whether or not a stored status is present.
+    resolved = ci.build_metric_insight("creatinine", [_metric("creatinine", 80.0, "µmol/L", None)])
+    assert resolved.status == "normal"
 
 
 def test_low_blood_pressure_dropping_is_not_improved():
