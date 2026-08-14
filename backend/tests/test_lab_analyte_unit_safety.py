@@ -593,3 +593,595 @@ def test_table_path_refuses_an_explicit_analyte_with_a_foreign_unit():
     assert map_table_rows_to_raw_values(
         [_table_row("RBC", "0.50", "L/L")], hospital_id="vinmec"
     ) == []
+
+
+# --------------------------------------------------------------------------- #
+# #155 — a reference-range cell must never become the measured value
+# --------------------------------------------------------------------------- #
+
+
+def _cell(ri: int, ci: int, text: str, header: bool = False) -> dict:
+    c = {"rowIndex": ri, "columnIndex": ci, "content": text}
+    if header:
+        c["kind"] = "columnHeader"
+    return c
+
+
+def _analyze_result(header: list[str] | None, rows: list[list[str]]) -> dict:
+    cells: list[dict] = []
+    offset = 0
+    if header is not None:
+        cells += [_cell(0, ci, h, header=True) for ci, h in enumerate(header)]
+        offset = 1
+    for ri, row in enumerate(rows, start=offset):
+        cells += [_cell(ri, ci, v) for ci, v in enumerate(row)]
+    ncols = len(header or rows[0])
+    return {"tables": [{"rowCount": len(rows) + offset, "columnCount": ncols, "cells": cells}]}
+
+
+VN_HEADER = ["STT", "Tên xét nghiệm", "Kết quả", "Đơn vị", "Khoảng tham chiếu"]
+CBC_ROWS = [
+    ["1", "Hemoglobin", "140", "g/L", "130 - 170"],
+    ["2", "Bạch cầu", "7.2", "G/L", "4.0 - 10.0"],
+    ["3", "Tiểu cầu", "230", "G/L", "150 - 400"],
+    ["4", "Hồng cầu (HCT)", "0.50", "L/L", "0.42 - 0.47"],
+]
+
+
+def test_range_like_cells_are_distinguished_from_measurements():
+    """The discriminator already existed in _parse_reference_cell; #155 was that
+    the value path never consulted it."""
+    from app.domain.lab_table_extractor import _is_range_like
+
+    for interval in ("130 - 170", "4.0-10.0", "0.42–0.47", "3.5 — 5.0", "< 5", "> 10"):
+        assert _is_range_like(interval), interval
+    for measurement in ("140", "7.2", "230", "140 g/L", "0.50 L/L"):
+        assert not _is_range_like(measurement), measurement
+
+
+def test_a_real_table_keeps_the_measured_values_and_ranges_apart():
+    """The realistic Vinmec-shaped fixture: headers present, roles unambiguous."""
+    from app.domain.lab_table_extractor import extract_and_map
+
+    diag: dict = {}
+    got = {
+        v.test_name: (v.value, v.unit, v.ocr_reference_range)
+        for v in extract_and_map(_analyze_result(VN_HEADER, CBC_ROWS), diagnostics=diag)
+    }
+    assert diag["ambiguous_structure"] is False
+    # Hemoglobin is guarded (#155 item 2): 140 g/L converts to 14.0 g/dL.
+    assert got["hemoglobin"][:2] == (14.0, "g/dL"), got["hemoglobin"]
+    assert got["wbc"][0] == 7.2, got["wbc"]
+    assert got["platelet"][0] == 230.0, got["platelet"]
+    # HCT/Hồng cầu + L/L stays disambiguated and converted (#154 must not regress).
+    assert got["hematocrit"][0] == 50.0 and got["hematocrit"][1] == "%"
+    # Hemoglobin is guarded (#155 item 2): its printed range converts alongside
+    # the value, same as HCT's — 130-170 g/L -> 13-17 g/dL.
+    assert got["hemoglobin"][2] == "13–17", got["hemoglobin"]
+    assert got["wbc"][2] == "4.0–10.0"
+    assert got["platelet"][2] == "150–400"
+
+
+def test_a_range_bound_never_becomes_the_measured_value():
+    """No header row, so column roles are guessed — and the guess lands on the
+    reference-range column. 130 must not become the haemoglobin result."""
+    from app.domain.lab_table_extractor import extract_and_map
+
+    diag: dict = {}
+    rows = extract_and_map(
+        _analyze_result(
+            None,
+            [["Hemoglobin", "130 - 170"], ["Bạch cầu", "4.0 - 10.0"], ["Tiểu cầu", "150 - 400"]],
+        ),
+        diagnostics=diag,
+    )
+    assert diag["ambiguous_structure"] is True
+    # Fails closed to the text parser rather than emitting a partial panel.
+    assert rows == [], [(r.test_name, r.value) for r in rows]
+    for forbidden in (130.0, 4.0, 150.0):
+        assert forbidden not in [r.value for r in rows]
+
+
+# --------------------------------------------------------------------------- #
+# #155 remaining acceptance items — RED. These encode the three defects
+# confirmed diagnostically on the realistic Azure fixture. `strict=True` means
+# each one FAILS the moment the defect is fixed: delete the marker then, do not
+# weaken the assertion. Layer attribution is in each docstring.
+# --------------------------------------------------------------------------- #
+
+
+def _cbc_row(name: str) -> object:
+    from app.domain.lab_table_extractor import extract_and_map
+
+    rows = extract_and_map(_analyze_result(VN_HEADER, CBC_ROWS))
+    return next(r for r in rows if r.test_name == name)
+
+
+def test_hematocrit_confidence_is_computed_after_reassignment():
+    """A: `clin_conf` is computed from the PRE-reassignment (value, spec) pair —
+    0.50 judged against rbc's physiological floor of 1.0 — and the row is only
+    then reassigned to hematocrit and converted to 50 %. Hematocrit's own bounds
+    are [5, 75], so 50 is perfectly plausible; the 0.0 is purely the old analyte's
+    verdict surviving. Layer: map_table_rows_to_raw_values."""
+    hct = _cbc_row("hematocrit")
+    assert (hct.value, hct.unit) == (50.0, "%")
+    assert hct.confidence_detail.clinical == 1.0, hct.confidence_detail.clinical
+    assert hct.ocr_confidence > 0.0
+    assert not any("ngoài khoảng sinh lý" in r for r in hct.confidence_detail.reasons)
+
+
+def test_hemoglobin_is_normalised_to_the_canonical_unit():
+    """B: hemoglobin is NOT in analyte_units.ALLOWED_UNITS, so
+    to_canonical_unit('hemoglobin', 140, 'g/L') returns None and 140 g/L survives
+    unconverted. Its canonical unit is g/dL with bounds [1, 25], so 140 then reads
+    as physiologically impossible. Same underlying fault as A: plausibility is
+    judged before normalization. Layer: analyte_units registry."""
+    hb = _cbc_row("hemoglobin")
+    assert (hb.value, hb.unit) == (14.0, "g/dL"), (hb.value, hb.unit)
+    assert hb.confidence_detail.clinical == 1.0
+
+
+def test_the_reference_range_is_converted_with_its_value():
+    """C: the measured value is converted (0.50 L/L -> 50 %) while the range is
+    carried through as the raw printed string. The converter already handles it —
+    to_canonical_unit('hematocrit', 0.42, 'L/L') == (42.0, '%') — nothing calls it.
+    Converting the value alone leaves 50 % sitting against a 0.42-0.47 range.
+    Layer: ocr_reference_range is a raw passthrough string."""
+    hct = _cbc_row("hematocrit")
+    assert hct.value == 50.0
+    assert hct.ocr_reference_range == "42–47", hct.ocr_reference_range
+
+
+def test_the_text_parser_reads_the_same_lines_correctly():
+    """Why deferring to the text path is safe rather than merely conservative."""
+    from app.services import lab_parser
+
+    got = {
+        v.test_name: (v.value, v.unit)
+        for v in lab_parser.parse_lab_text(
+            "Hemoglobin: 140 g/L  (130 - 170)\n"
+            "Bach cau: 7.2 G/L  (4.0 - 10.0)\n"
+            "Tieu cau: 230 G/L  (150 - 400)\n"
+            "Hong cau: 0.50 L/L  (0.42 - 0.47)\n"
+        )
+    }
+    # Hemoglobin is guarded (#155 item 2): 140 g/L converts to 14.0 g/dL, same
+    # as the table path.
+    assert got["hemoglobin"] == (14.0, "g/dL"), got["hemoglobin"]
+    assert got["wbc"][0] == 7.2
+    assert got["platelet"][0] == 230.0
+    assert got["hematocrit"] == (50.0, "%")
+
+
+# --------------------------------------------------------------------------- #
+# #155 promotion-integrity gate — build_draft() end-to-end, real Azure HTTP
+# mocked. STRUCTURE_VERIFIED / DETERMINISTIC_FALLBACK populate a draft;
+# NEEDS_REVIEW must not, regardless of what a patient later clicks — the draft
+# is the only thing standing between OCR and the manual-entry save endpoint, so
+# an empty `parsed_values` here is what "rejection creates no partial
+# LabResult" means in this codebase's architecture: nothing exists to confirm.
+# --------------------------------------------------------------------------- #
+
+
+class _FakeAzureResp:
+    def __init__(self, *, headers=None, json_body=None):
+        self.headers = headers or {}
+        self._json = json_body or {}
+
+    def raise_for_status(self):
+        return None
+
+    def json(self):
+        return self._json
+
+
+def _patch_azure(monkeypatch, analyze_result: dict):
+    import httpx
+
+    monkeypatch.setenv("MCP_FEATURE_OCR_CLOUD_FALLBACK", "true")
+    monkeypatch.setenv("AZURE_DOC_INTEL_KEY", "k")
+    monkeypatch.setenv("AZURE_DOC_INTEL_ENDPOINT", "https://docintel.example.com")
+    monkeypatch.setattr(
+        httpx,
+        "post",
+        lambda *a, **k: _FakeAzureResp(
+            headers={"operation-location": "https://docintel.example.com/op/1"}
+        ),
+    )
+    monkeypatch.setattr(
+        httpx,
+        "get",
+        lambda *a, **k: _FakeAzureResp(
+            json_body={"status": "succeeded", "analyzeResult": analyze_result}
+        ),
+    )
+
+
+_WORDS_PAGE = {"pages": [{"words": [{"confidence": 0.96}, {"confidence": 0.94}]}]}
+
+
+def test_structure_verified_table_populates_and_promotes(monkeypatch):
+    """A headered table (columnHeader cells present, roles unambiguous) is the
+    STRUCTURE_VERIFIED case: the draft is populated with converted values, ready
+    for the patient to confirm as-is."""
+    from app.services import lab_upload
+
+    analyze_result = {**_analyze_result(VN_HEADER, CBC_ROWS), **_WORDS_PAGE}
+    _patch_azure(monkeypatch, analyze_result)
+    draft = lab_upload.build_draft(b"\xff\xd8\xff" + b"x" * 32, "image/jpeg")
+    assert draft.extraction_trust == "structure_verified"
+    assert not draft.manual_fallback
+    by_name = {i.canonical: i for i in draft.parsed_values}
+    assert by_name["hemoglobin"].canonical_value == 14.0
+    assert by_name["hemoglobin"].canonical_unit == "g/dL"
+    assert by_name["hematocrit"].canonical_value == 50.0
+
+
+def test_deterministic_fallback_recovers_and_promotes(monkeypatch):
+    """No header row -> positional fallback guesses the value column onto the
+    range cell -> #155's ambiguous_structure -> table path refused entirely.
+    Azure's own `content` (true reading order, independent of the table's column
+    guess) still carries the correct lines, so the deterministic text parser
+    recovers the real values. This is DETERMINISTIC_FALLBACK: still promotable,
+    because a second, independent extraction path produced trustworthy values —
+    not because the table's guess was accepted anyway."""
+    from app.services import lab_upload
+
+    analyze_result = {
+        "content": (
+            "PHIEU KET QUA XET NGHIEM\n"
+            "Hemoglobin: 140 g/L (130 - 170)\n"
+            "Bach cau: 7.2 G/L (4.0 - 10.0)\n"
+        ),
+        "tables": [
+            {
+                "cells": [
+                    {"rowIndex": 0, "columnIndex": 0, "content": "Hemoglobin"},
+                    # No header row: 2-column positional fallback assigns column 1
+                    # to "value" — but this cell states a range, not a measurement.
+                    {"rowIndex": 0, "columnIndex": 1, "content": "130 - 170"},
+                    {"rowIndex": 1, "columnIndex": 0, "content": "Bach cau"},
+                    {"rowIndex": 1, "columnIndex": 1, "content": "4.0 - 10.0"},
+                ]
+            }
+        ],
+        **_WORDS_PAGE,
+    }
+    _patch_azure(monkeypatch, analyze_result)
+    draft = lab_upload.build_draft(b"\xff\xd8\xff" + b"x" * 32, "image/jpeg")
+    assert draft.extraction_trust == "deterministic_fallback"
+    assert not draft.manual_fallback
+    by_name = {i.canonical: i for i in draft.parsed_values}
+    # The range's lower bound (130, 4.0) must never appear as the result —
+    # exactly the #155 defect the table path's own refusal prevents.
+    assert by_name["hemoglobin"].canonical_value == 14.0, by_name["hemoglobin"]
+    assert by_name["wbc"].canonical_value == 7.2, by_name["wbc"]
+
+
+def test_needs_review_document_yields_no_promotable_draft(monkeypatch):
+    """Ambiguous table structure AND nothing recognisable in the natural-reading-
+    order content either: neither extraction path produced a trustworthy value.
+    NEEDS_REVIEW must mean an EMPTY draft — not a populated, merely
+    low-confidence one a patient could click through — because nothing here
+    stands between this draft and the manual-entry save endpoint except the
+    patient's own read of the paper report."""
+    from app.services import lab_upload
+
+    analyze_result = {
+        "content": "###  ???  @@@",
+        "tables": [
+            {
+                "cells": [
+                    {"rowIndex": 0, "columnIndex": 0, "content": "Hemoglobin"},
+                    {"rowIndex": 0, "columnIndex": 1, "content": "130 - 170"},
+                ]
+            }
+        ],
+        **_WORDS_PAGE,
+    }
+    _patch_azure(monkeypatch, analyze_result)
+    draft = lab_upload.build_draft(b"\xff\xd8\xff" + b"x" * 32, "image/jpeg")
+    assert draft.extraction_trust == "needs_review"
+    assert draft.manual_fallback is True
+    assert draft.parsed_values == []  # no partial write: nothing to confirm
+
+
+def test_ambiguous_candidate_never_classified_structure_verified():
+    """classify_extraction_trust itself: an ambiguous-structure document can
+    reach DETERMINISTIC_FALLBACK through a second extraction path, but must
+    never be reported STRUCTURE_VERIFIED — that label asserts the table's own
+    column roles were trustworthy, which #155 disproved for this document."""
+    from app.domain.lab_table_extractor import ExtractionTrust, classify_extraction_trust
+
+    ambiguous_diag = {"ambiguous_structure": True}
+    assert (
+        classify_extraction_trust(
+            table_diagnostics=ambiguous_diag, table_rows_used=False, fallback_rows_used=True
+        )
+        == ExtractionTrust.DETERMINISTIC_FALLBACK
+    )
+    assert (
+        classify_extraction_trust(
+            table_diagnostics=ambiguous_diag, table_rows_used=False, fallback_rows_used=False
+        )
+        == ExtractionTrust.NEEDS_REVIEW
+    )
+    assert (
+        classify_extraction_trust(
+            table_diagnostics={"ambiguous_structure": False},
+            table_rows_used=True,
+            fallback_rows_used=False,
+        )
+        == ExtractionTrust.STRUCTURE_VERIFIED
+    )
+
+
+# --------------------------------------------------------------------------- #
+# #155 focused matrix — header language/diacritics, column order, missing
+# fields, duplicate cells, and table/text precedence. Each case runs the FULL
+# normalization pipeline (hemoglobin conversion, range normalization) so a
+# regression in header handling would also break the values these assert on.
+# --------------------------------------------------------------------------- #
+
+EN_HEADER = ["No", "Test Name", "Result", "Unit", "Reference Range"]
+VN_HEADER_NO_DIACRITICS = ["STT", "Ten xet nghiem", "Ket qua", "Don vi", "Khoang tham chieu"]
+
+
+@pytest.mark.parametrize("header", [EN_HEADER, VN_HEADER_NO_DIACRITICS], ids=["english", "vn_no_diacritics"])
+def test_header_language_and_diacritics_variants_still_normalize(header):
+    from app.domain.lab_table_extractor import extract_and_map
+
+    diag: dict = {}
+    got = {
+        v.test_name: (v.value, v.unit, v.ocr_reference_range)
+        for v in extract_and_map(_analyze_result(header, CBC_ROWS), diagnostics=diag)
+    }
+    assert diag["ambiguous_structure"] is False
+    assert got["hemoglobin"] == (14.0, "g/dL", "13–17"), got["hemoglobin"]
+    assert got["hematocrit"][:2] == (50.0, "%")
+
+
+def test_ocr_spacing_variations_do_not_break_extraction():
+    """Ragged/doubled whitespace inside cells — a common OCR artefact — must not
+    prevent a column from matching its role keyword or a value from parsing."""
+    from app.domain.lab_table_extractor import extract_and_map
+
+    header = ["STT", "  Tên  xét nghiệm ", "Kết quả", " Đơn vị", "Khoảng  tham chiếu"]
+    rows = [
+        ["1", " Hemoglobin ", "140", " g/L ", " 130  -  170 "],
+        ["4", "Hồng cầu (HCT)", "0.50", "L/L", "0.42 - 0.47"],
+    ]
+    diag: dict = {}
+    got = {
+        v.test_name: (v.value, v.unit)
+        for v in extract_and_map(_analyze_result(header, rows), diagnostics=diag)
+    }
+    assert diag["ambiguous_structure"] is False
+    assert got["hemoglobin"] == (14.0, "g/dL")
+    assert got["hematocrit"] == (50.0, "%")
+
+
+def test_result_and_reference_columns_swapped_still_resolve_by_header():
+    """Header-driven role detection must key off the header TEXT, not physical
+    column order — a hospital printing "Khoảng tham chiếu" before "Kết quả" must
+    not have its range column mistaken for the value column."""
+    from app.domain.lab_table_extractor import extract_and_map
+
+    header = ["STT", "Tên xét nghiệm", "Khoảng tham chiếu", "Kết quả", "Đơn vị"]
+    rows = [["1", "Hemoglobin", "130 - 170", "140", "g/L"]]
+    diag: dict = {}
+    got = extract_and_map(_analyze_result(header, rows), diagnostics=diag)
+    assert diag["ambiguous_structure"] is False
+    hb = next(r for r in got if r.test_name == "hemoglobin")
+    assert (hb.value, hb.unit) == (14.0, "g/dL"), (hb.value, hb.unit)
+    assert hb.ocr_reference_range == "13–17"
+
+
+def test_missing_unit_column_fails_closed_not_silently_converted():
+    """No unit anywhere for a guarded analyte: the guard cannot verify dimension,
+    so it must NOT invent a canonical unit or convert — the row surfaces for
+    review with its original (unconverted) value instead."""
+    from app.domain.lab_table_extractor import extract_and_map
+
+    header = ["STT", "Tên xét nghiệm", "Kết quả"]
+    rows = [["1", "Hemoglobin", "140"]]
+    got = extract_and_map(_analyze_result(header, rows))
+    hb = next(r for r in got if r.test_name == "hemoglobin")
+    assert hb.value == 140.0  # unconverted — no unit to convert from
+    assert hb.unit is None
+    assert hb.requires_review is True
+
+
+def test_missing_reference_range_leaves_value_intact():
+    """A row with no reference-range column at all must still extract and
+    normalize the value; `ocr_reference_range` is simply None, not fabricated."""
+    from app.domain.lab_table_extractor import extract_and_map
+
+    header = ["STT", "Tên xét nghiệm", "Kết quả", "Đơn vị"]
+    rows = [["1", "Hemoglobin", "140", "g/L"]]
+    got = extract_and_map(_analyze_result(header, rows))
+    hb = next(r for r in got if r.test_name == "hemoglobin")
+    assert (hb.value, hb.unit) == (14.0, "g/dL")
+    assert hb.ocr_reference_range is None
+
+
+def test_duplicate_numeric_cell_does_not_hijack_the_value_column():
+    """An extra numeric-looking cell in a non-value role (e.g. a flag/note code)
+    must not be mistaken for the result — value_col stays locked to the header
+    that actually said "Kết quả"."""
+    from app.domain.lab_table_extractor import extract_and_map
+
+    header = ["STT", "Tên xét nghiệm", "Kết quả", "Đơn vị", "Ghi chú", "Khoảng tham chiếu"]
+    rows = [["1", "Hemoglobin", "140", "g/L", "1", "130 - 170"]]
+    diag: dict = {}
+    got = extract_and_map(_analyze_result(header, rows), diagnostics=diag)
+    assert diag["ambiguous_structure"] is False
+    hb = next(r for r in got if r.test_name == "hemoglobin")
+    assert (hb.value, hb.unit) == (14.0, "g/dL"), (hb.value, hb.unit)
+
+
+def test_table_success_takes_precedence_text_fallback_never_runs(monkeypatch):
+    """When the table path is STRUCTURE_VERIFIED, the text parser must not even
+    be invoked — there is no "disagreement" to resolve because only one
+    extraction path ever runs. Verified by spying on parse_lab_text."""
+    from app.services import lab_upload
+
+    calls: list[str] = []
+    monkeypatch.setattr(
+        lab_upload.lab_parser,
+        "parse_lab_text",
+        lambda text, *a, **k: calls.append(text) or [],
+    )
+    analyze_result = {**_analyze_result(VN_HEADER, CBC_ROWS), **_WORDS_PAGE}
+    _patch_azure(monkeypatch, analyze_result)
+    draft = lab_upload.build_draft(b"\xff\xd8\xff" + b"x" * 32, "image/jpeg")
+    assert draft.extraction_trust == "structure_verified"
+    assert calls == []
+
+
+# --------------------------------------------------------------------------- #
+# Realistic Azure DI acceptance fixture — a REAL captured analyzeResult (not a
+# hand-built mock), from the empirical reproduction referenced in issue #155:
+# a bordered CBC table with recognised columnHeader cells
+# (STT | Tên xét nghiệm | Kết quả | Đơn vị | Khoảng tham chiếu), synthetic
+# clinic/patient data, word-level confidences and polygons intact. Runs fully
+# offline against the cached JSON — no live Azure call.
+# --------------------------------------------------------------------------- #
+
+
+def _load_realistic_cbc_analyze_result() -> dict:
+    import json
+    from pathlib import Path
+
+    path = Path(__file__).parent / "fixtures" / "cbc_realistic_azure_analyze_result.json"
+    return json.loads(path.read_text())
+
+
+def test_realistic_azure_cbc_fixture_matches_exact_acceptance_values():
+    """#155 acceptance: Hb -> 14.0 g/dL (ref 13-17), WBC -> 7.2, PLT -> 230,
+    HCT -> 50 % (ref 42-47) — no range boundary as measured value, no stale
+    confidence, no stale old-analyte warning, no silent HCT drop, no false
+    critical severity."""
+    from app.domain.lab_table_extractor import extract_and_map
+
+    analyze_result = _load_realistic_cbc_analyze_result()
+    diag: dict = {}
+    rows = extract_and_map(analyze_result, diagnostics=diag)
+    assert diag["ambiguous_structure"] is False, "a headered, unambiguous table must not fail closed"
+
+    by_name = {r.test_name: r for r in rows}
+    assert set(by_name) == {"hemoglobin", "wbc", "platelet", "hematocrit"}, by_name
+
+    hb = by_name["hemoglobin"]
+    assert (hb.value, hb.unit) == (14.0, "g/dL"), (hb.value, hb.unit)
+    assert hb.ocr_reference_range == "13–17", hb.ocr_reference_range
+    assert hb.confidence_detail.clinical == 1.0
+    assert not any("ngoai khoang sinh ly" in _strip_diacritics(r) for r in hb.confidence_detail.reasons)
+
+    wbc = by_name["wbc"]
+    assert wbc.value == 7.2, wbc.value
+    assert wbc.ocr_reference_range == "4.0–10.0"
+
+    plt = by_name["platelet"]
+    assert plt.value == 230.0, plt.value
+    assert plt.ocr_reference_range == "150–400"
+
+    hct = by_name["hematocrit"]
+    assert (hct.value, hct.unit) == (50.0, "%"), (hct.value, hct.unit)
+    assert hct.ocr_reference_range == "42–47", hct.ocr_reference_range
+    assert hct.confidence_detail.clinical == 1.0
+    assert not any("ngoai khoang sinh ly" in _strip_diacritics(r) for r in hct.confidence_detail.reasons)
+
+    # No range boundary anywhere in the emitted measured values.
+    forbidden = {130.0, 170.0, 4.0, 10.0, 150.0, 400.0, 0.42, 0.47}
+    assert {r.value for r in rows}.isdisjoint(forbidden), [r.value for r in rows]
+
+
+def _strip_diacritics(s: str) -> str:
+    import unicodedata
+
+    return "".join(c for c in unicodedata.normalize("NFD", s.lower()) if unicodedata.category(c) != "Mn")
+
+
+# --------------------------------------------------------------------------- #
+# Independent-review fixes — P0 display-range mislabeling, comma-decimal
+# ranges, "≥"/"≤" range notation, and a magnitude-checked bare-range guard.
+# --------------------------------------------------------------------------- #
+
+
+def test_display_reference_range_uses_the_converted_unit_for_guarded_rows():
+    """P0 (unit/clinical normalization review): `ocr_reference_range` is
+    converted to canonical units for a guarded analyte, but the display range
+    was still labelled with the pre-conversion `original_unit` — a converted
+    "13–17" printed as "13–17 g/L" instead of "13–17 g/dL", silently
+    understating the range by the same factor that converted the value. The
+    displayed range must always be labelled with the unit its numbers are
+    actually expressed in."""
+    from app.domain.lab_interpreter import interpret_value
+    from app.domain.lab_table_extractor import extract_and_map
+
+    header = ["STT", "Tên xét nghiệm", "Kết quả", "Đơn vị", "Khoảng tham chiếu"]
+    rows = [["1", "Hemoglobin", "140", "g/L", "130 - 170"]]
+    raw = next(
+        r for r in extract_and_map(_analyze_result(header, rows)) if r.test_name == "hemoglobin"
+    )
+    interpreted = interpret_value(raw)
+    assert interpreted.value == 14.0 and interpreted.unit == "g/dL"
+    assert interpreted.display_reference_range == "13–17 g/dL", interpreted.display_reference_range
+
+
+def test_reference_range_with_comma_decimals_still_converts():
+    """P1 (unit/clinical normalization review): a VN report printing a comma
+    decimal ("0,42 - 0,47") was captured verbatim into ocr_reference_range but
+    silently failed to match `to_canonical_range`'s period-only regex, so the
+    range passed through unconverted while the value still converted."""
+    from app.domain.analyte_units import to_canonical_range
+
+    assert to_canonical_range("hematocrit", "0,42–0,47", "L/L") == "42–47"
+    assert to_canonical_range("hemoglobin", "<1,7", "g/L") == "<0.17"
+
+
+def test_greater_or_less_than_or_equal_range_notation_is_recognised():
+    """P1 (OCR/table-extraction integrity review): "≥"/"≤" is a common
+    single-bound range notation (e.g. "eGFR ≥60") that `_is_range_like` did not
+    recognise — a positional guess landing on a "≥60"-shaped cell would accept
+    it as a measured value instead of failing closed."""
+    from app.domain.lab_table_extractor import _is_range_like
+
+    assert _is_range_like("≥60")
+    assert _is_range_like("≤ 5")
+    assert not _is_range_like("60")
+
+
+def test_ambiguous_table_with_greater_equal_range_cell_fails_closed():
+    """End-to-end: a positional guess landing on a "≥60"-shaped cell must not
+    surface 60 as a measured value. Row 0 is treated as an implicit header when
+    no explicit header row exists, so a genuine data row needs at least one row
+    above it — matching the pattern already used by
+    test_a_range_bound_never_becomes_the_measured_value."""
+    from app.domain.lab_table_extractor import extract_and_map
+
+    diag: dict = {}
+    rows = extract_and_map(
+        _analyze_result(None, [["Bach cau", "7.2"], ["eGFR", "≥60"]]),
+        diagnostics=diag,
+    )
+    assert diag["ambiguous_structure"] is True
+    assert 60.0 not in [r.value for r in rows]
+
+
+def test_bare_range_guard_does_not_drop_a_genuinely_unitless_value():
+    """MEDIUM (OCR/table-extraction integrity review): the bare-range guard
+    added for the reflowed-table-line case must not fire on an unrelated
+    dash-separated annotation following a real unitless value — only a
+    plausible range (0 < lo < hi < 10000, matching the sibling range-extraction
+    check a few lines below) should suppress it."""
+    from app.services import lab_parser
+
+    # "90 - 5" is not a plausible ascending range (hi < lo) — must still parse.
+    got = {v.test_name: v.value for v in lab_parser.parse_lab_text("Ure 90 - 5\n")}
+    assert got.get("urea") == 90.0, got
+    # A genuine reflowed-table range ("130 - 170", ascending, plausible) must
+    # still be refused as a value.
+    got2 = lab_parser.parse_lab_text("Hemoglobin 130 - 170\n")
+    assert got2 == []

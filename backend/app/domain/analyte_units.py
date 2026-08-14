@@ -27,6 +27,7 @@ follow-up work.
 
 from __future__ import annotations
 
+import re
 from enum import StrEnum
 
 #: Patient-facing text for a row whose analyte/unit pair cannot be trusted.
@@ -128,12 +129,21 @@ ALLOWED_UNITS: dict[str, dict[str, float]] = {
         "v/v": 100.0,
         "ratio": 100.0,
     },
+    # Haemoglobin MASS CONCENTRATION. Canonical g/dL; g/L is the same quantity /10.
+    # #155: absent here meant `to_canonical_unit("hemoglobin", 140, "g/L")` returned
+    # None, so a normal 140 g/L haemoglobin was never converted and then read as
+    # physiologically impossible against the g/dL bounds [1, 25].
+    "hemoglobin": {
+        "g/dl": 1.0,
+        "g/l": 0.1,
+    },
 }
 
 #: Canonical unit per guarded analyte.
 CANONICAL_UNIT: dict[str, str] = {
     "rbc": "10^12/L",
     "hematocrit": "%",
+    "hemoglobin": "g/dL",
 }
 
 #: Labels naming the erythrocyte without saying whether the COUNT or the VOLUME
@@ -195,6 +205,64 @@ def to_canonical_unit(canonical: str, value: float, unit: str | None) -> tuple[f
     if factor is None:
         return None
     return round(value * factor, 4), CANONICAL_UNIT[key]
+
+
+#: Matches the exact shapes `_parse_reference_cell` (lab_table_extractor) and the
+#: text parser render into `ocr_reference_range`: "0.42–0.47", "<55", ">60". No
+#: surrounding whitespace, en-dash separator — never a source of truth on its own,
+#: only ever a display string this module re-derives from the parsed bounds.
+#: `_RANGE_DASH_RE`/`_LESS_THAN_RE`/`_GREATER_THAN_RE` (lab_table_extractor)
+#: preserve a comma decimal verbatim ("0,42–0,47"), so a bound must accept one too
+#: or a VN-formatted range silently fails to convert and is returned unchanged —
+#: leaving a converted value sitting next to its own untouched printed range,
+#: exactly the defect this function exists to close.
+_RANGE_RE = re.compile(r"^(-?\d+(?:[.,]\d+)?)–(-?\d+(?:[.,]\d+)?)$")
+_LT_RE = re.compile(r"^<(-?\d+(?:[.,]\d+)?)$")
+_GT_RE = re.compile(r"^>(-?\d+(?:[.,]\d+)?)$")
+
+
+def _to_float_bound(token: str) -> float:
+    return float(token.replace(",", "."))
+
+
+def _format_bound(value: float) -> str:
+    """`42.0` -> `"42"`; `13.5` -> `"13.5"` — a whole-number bound must not grow a
+    spurious `.0` that never appeared on the printed report."""
+    if value == int(value):
+        return str(int(value))
+    return f"{value:g}"
+
+
+def to_canonical_range(canonical: str, range_str: str | None, unit: str | None) -> str | None:
+    """Convert a printed reference-range string into the analyte's canonical unit.
+
+    A reference range is printed in the SAME unit as its measured value and is
+    never repeated on its own ("0.42–0.47" beside "0.50 L/L"). Converting the
+    value alone and leaving the range as raw passthrough text is how a converted
+    `hematocrit 50 %` ended up sitting next to an unconverted `0.42-0.47` range —
+    the value and its range must go through the identical conversion, together.
+
+    Returns ``range_str`` unchanged when it is not one of the two printed shapes,
+    or when the unit does not convert for this analyte — never fabricates a bound.
+    """
+    if not range_str or not unit:
+        return range_str
+    text = range_str.strip()
+    m = _RANGE_RE.match(text)
+    if m:
+        lo = to_canonical_unit(canonical, _to_float_bound(m.group(1)), unit)
+        hi = to_canonical_unit(canonical, _to_float_bound(m.group(2)), unit)
+        if lo is None or hi is None:
+            return range_str
+        return f"{_format_bound(lo[0])}–{_format_bound(hi[0])}"
+    for op, pattern in (("<", _LT_RE), (">", _GT_RE)):
+        m = pattern.match(text)
+        if m:
+            bound = to_canonical_unit(canonical, _to_float_bound(m.group(1)), unit)
+            if bound is None:
+                return range_str
+            return f"{op}{_format_bound(bound[0])}"
+    return range_str
 
 
 def resolve_erythrocyte_analyte(unit: str | None) -> str | None:

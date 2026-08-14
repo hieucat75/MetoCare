@@ -27,6 +27,7 @@ import logging
 import re
 import unicodedata
 from dataclasses import dataclass, field
+from enum import StrEnum
 
 from app.domain.hospital_profiles import (
     HospitalProfile,
@@ -44,6 +45,55 @@ from app.domain.lab_interpreter import (
 )
 
 _logger = logging.getLogger("mcp.lab_table_extractor")
+
+
+class ExtractionTrust(StrEnum):
+    """#155 promotion-integrity gate: how much a caller may trust a document's
+    extracted values before they reach a patient-facing draft.
+
+    - STRUCTURE_VERIFIED: a table with recognised header cells drove column
+      assignment. Nothing was guessed.
+    - DETERMINISTIC_FALLBACK: the table path was empty/untrustworthy (including
+      #155's ``ambiguous_structure`` — a positional guess landed on the
+      reference-range column) and the independent, deterministic text parser
+      produced the values instead.
+    - NEEDS_REVIEW: neither path produced anything usable. The caller must NOT
+        fabricate a draft item from a partial/guessed extraction — an empty draft
+        (full manual entry) is the fail-closed behaviour, not a low-confidence
+      item that merely warns.
+
+    This is a classification of a whole document's extraction run, not a
+    per-row confidence score — a caller must never promote a NEEDS_REVIEW
+    document's values merely because a downstream low-confidence warning was
+    dismissed or a UI control was clicked past.
+    """
+
+    STRUCTURE_VERIFIED = "structure_verified"
+    DETERMINISTIC_FALLBACK = "deterministic_fallback"
+    NEEDS_REVIEW = "needs_review"
+
+
+def classify_extraction_trust(
+    *,
+    table_diagnostics: dict | None,
+    table_rows_used: bool,
+    fallback_rows_used: bool,
+) -> ExtractionTrust:
+    """Classify a document's extraction run from the signals its two extraction
+    paths already produce. Reused by every caller instead of each re-deriving
+    the same three-way judgement ad hoc.
+
+    ``table_diagnostics`` is the out-parameter `extract_and_map` fills in;
+    ``ambiguous_structure=True`` means a guessed column landed on a range cell
+    and the whole document was refused (#155) — that document can only ever
+    reach STRUCTURE_VERIFIED through the fallback, never directly.
+    """
+    ambiguous = bool(table_diagnostics and table_diagnostics.get("ambiguous_structure"))
+    if table_rows_used and not ambiguous:
+        return ExtractionTrust.STRUCTURE_VERIFIED
+    if fallback_rows_used:
+        return ExtractionTrust.DETERMINISTIC_FALLBACK
+    return ExtractionTrust.NEEDS_REVIEW
 
 # ─────────────────────────────────────────────────────── Layer 1 ──────────────
 
@@ -367,8 +417,12 @@ def clean_test_name(name: str, hospital_id: str | None = None) -> str:  # noqa: 
 _NUMBER_RE = re.compile(r"\d{1,3}(?:[.,]\d{3})*(?:[.,]\d+)?|\d+(?:[.,]\d+)?")
 _UNIT_RE = re.compile(r"[%a-zA-Zµμ][a-zA-Z0-9µμ/^.²]*(?:/[a-zA-Z0-9.²]+)*")
 _RANGE_DASH_RE = re.compile(r"(\d[0-9.,]*)\s*[-–—]\s*(\d[0-9.,]*)")
-_LESS_THAN_RE = re.compile(r"<\s*(\d[0-9.,]*)")
-_GREATER_THAN_RE = re.compile(r">\s*(\d[0-9.,]*)")
+# "≤"/"≥" are common on VN/international reports for a single-bound range
+# ("eGFR ≥60"), same shape as "<"/">". Without these, `_is_range_like` misses
+# them and a positional guess can hand a range cell through as a measured
+# value via exactly the shape #155 was filed over, just a different notation.
+_LESS_THAN_RE = re.compile(r"[<≤]\s*(\d[0-9.,]*)")
+_GREATER_THAN_RE = re.compile(r"[>≥]\s*(\d[0-9.,]*)")
 
 
 def _strip_accents_lower(s: str) -> str:
@@ -421,6 +475,24 @@ def _parse_reference_cell(text: str) -> str | None:
     if m:
         return f">{m.group(1)}"
     return None
+
+
+def _is_range_like(text: str) -> bool:
+    """True when a cell states an INTERVAL rather than a measurement.
+
+    `_parse_value_cell` takes the first number it can find, so a reference cell
+    like "130 - 170" yields 130 — the range's lower bound presented to the patient
+    as a measured haemoglobin. The discriminator already existed in
+    `_parse_reference_cell`; it was simply never consulted before accepting a
+    value. Anything this returns True for must never become a measured value.
+
+    A bare measurement with a unit ("140 g/L", "0.50 L/L") is NOT range-like: the
+    dash pattern requires digits on both sides, and "<"/">" must lead the cell.
+    """
+    t = text.strip()
+    if not t:
+        return False
+    return _parse_reference_cell(t) is not None
 
 
 def _infer_column_roles_positional(max_col: int) -> dict[str, int | None]:
@@ -583,6 +655,7 @@ def extract_table_rows(
     analyze_result: dict,
     hospital_id: str | None = None,
     profile: HospitalProfile | None = None,
+    diagnostics: dict | None = None,
 ) -> list[OcrTableRow]:
     """Layer 1: Extract OcrTableRow list from Azure DI analyzeResult.tables.
 
@@ -591,8 +664,15 @@ def extract_table_rows(
 
     When ``hospital_id`` is provided the test name cleaner applies provider-aware
     stripping of machine suffixes (e.g. "(Cobas C502)") before alias matching.
+
+    ``diagnostics`` is an optional out-parameter. When supplied it receives
+    ``ambiguous_structure=True`` if any row's chosen value cell turned out to
+    state a reference range — meaning the column roles cannot be trusted for this
+    document. Callers should prefer the text parser in that case (#155). Passing
+    nothing preserves the previous behaviour exactly.
     """
     rows: list[OcrTableRow] = []
+    ambiguous_structure = False
     for table in analyze_result.get("tables") or []:
         cells_raw = table.get("cells") or []
         if not cells_raw:
@@ -758,6 +838,23 @@ def extract_table_rows(
             if not value_raw:
                 continue
 
+            # ── #155: a range cell must NEVER become the measured value ───────
+            # When header detection fails we fall back to positional guessing,
+            # and the guessed value column can land on the reference-range
+            # column. `_parse_value_cell` would then hand back the range's lower
+            # bound — "130 - 170" became a haemoglobin of 130, shown as normal.
+            # Fail closed instead of guessing: drop the row and record that this
+            # document's column structure is not trustworthy, so the caller can
+            # fall back to the text parser, which reads these lines correctly.
+            if _is_range_like(value_raw):
+                _logger.warning(
+                    "table_extractor_value_cell_is_range col=%s — refusing to use "
+                    "a reference-range bound as a measured value",
+                    value_col,
+                )
+                ambiguous_structure = True
+                continue
+
             value_str, unit_from_value = _parse_value_cell(value_raw)
             if not value_str:
                 continue
@@ -851,6 +948,9 @@ def extract_table_rows(
                     suspect_machine_id=suspect_machine_id,
                 )
             )
+
+    if diagnostics is not None:
+        diagnostics["ambiguous_structure"] = ambiguous_structure
 
     return rows
 
@@ -999,8 +1099,60 @@ def map_table_rows_to_raw_values(
         unit = orig_unit
         conv_conf = 1.0
         incompatible = False
+        reference_range = row.original_reference_range
 
-        if not unit:
+        # ── #155: analyte reassignment + unit normalization BEFORE confidence ──
+        # A guarded analyte's identity and unit must reach FINAL canonical
+        # semantics before any physiological-plausibility judgement runs. Judging
+        # plausibility against a pre-reassignment (analyte, unit) pair is exactly
+        # how a hematocrit fraction reassigned from rbc kept rbc's stale verdict,
+        # and how a haemoglobin absent from this registry read as impossible
+        # against g/dL bounds while still holding its raw g/L value. The printed
+        # reference range is converted in the same step, through the same
+        # registry, so it never falls out of step with the converted value.
+        from app.domain import analyte_units as _au
+
+        guarded = spec.canonical in _au.ALLOWED_UNITS
+        if guarded and unit:
+            # Disambiguate the generic erythrocyte label by unit dimension, the
+            # same way lab_parser does. Refusing without reassigning made this
+            # path DROP a hematocrit printed as "Hồng cầu 0.50 L/L" — safe, but
+            # the patient simply loses the value, and production runs
+            # table-first, so the drop was the live behaviour rather than the
+            # conversion the text path performs.
+            _label = _strip_accents_lower(row.original_test_name or "")
+            _implied = _au.resolve_erythrocyte_analyte(unit)
+            _ambiguous = (
+                any(
+                    _strip_accents_lower(a) in _label
+                    for a in _au.AMBIGUOUS_ERYTHROCYTE_ALIASES
+                )
+                and "rbc" not in _label
+            )
+            if _implied and _implied != spec.canonical and _ambiguous:
+                _reassigned = _ALIAS_INDEX.get(_implied)
+                if _reassigned is not None and _reassigned.canonical not in seen:
+                    spec = _reassigned
+                    display_name_vi = (
+                        _get_catalog()["biomarkers"]
+                        .get(spec.canonical, {})
+                        .get("name_vn")
+                        or display_name_vi
+                    )
+            _compat = _au.unit_compatibility(spec.canonical, unit)
+            if _compat in (_au.UnitCompatibility.INCOMPATIBLE, _au.UnitCompatibility.UNKNOWN):
+                _logger.info(
+                    "cbc_row_refused reason=%s canonical=%s unit=%s",
+                    _compat.value, spec.canonical, unit,
+                )
+                continue  # wrong dimension for this analyte → never emit
+            _conv = _au.to_canonical_unit(spec.canonical, value, unit)
+            if _conv is None:
+                continue
+            value, unit = _conv
+            reference_range = _au.to_canonical_range(spec.canonical, reference_range, orig_unit)
+            conv_conf = 1.0
+        elif not unit:
             conv_conf = 0.7
         elif _is_incompatible_unit(unit, spec):
             conv_conf = 0.0
@@ -1020,6 +1172,8 @@ def map_table_rows_to_raw_values(
 
         ocr_conf_dim = 1.0 if orig_unit else 0.5
 
+        # Confidence is computed LAST, against final canonical (spec, value, unit)
+        # — never against the pre-reassignment pair the row started with.
         clin_conf = 1.0
         if spec.physiological_min is not None and value < spec.physiological_min:
             clin_conf = 0.0
@@ -1092,66 +1246,20 @@ def map_table_rows_to_raw_values(
         elif detection_confidence < 0.7:
             requires_review = True
 
-        # CBC dimensional guard — the SECOND write path. `build_alias_index`'s
-        # docstring already records what happens when two extraction paths answer
-        # differently; without this, production (which runs Azure table-first)
-        # bypasses the lab_parser fix entirely.
-        #
-        from app.domain import analyte_units as _au
-
-        _guarded = spec.canonical in _au.ALLOWED_UNITS
-        if _guarded and unit:
-            # Disambiguate the generic erythrocyte label by unit dimension, the
-            # same way lab_parser does. Refusing without reassigning made this
-            # path DROP a hematocrit printed as "Hồng cầu 0.50 L/L" — safe, but
-            # the patient simply loses the value, and production runs
-            # table-first, so the drop was the live behaviour rather than the
-            # conversion the text path performs.
-            _label = _strip_accents_lower(row.original_test_name or "")
-            _implied = _au.resolve_erythrocyte_analyte(unit)
-            _ambiguous = (
-                any(
-                    _strip_accents_lower(a) in _label
-                    for a in _au.AMBIGUOUS_ERYTHROCYTE_ALIASES
-                )
-                and "rbc" not in _label
-            )
-            if _implied and _implied != spec.canonical and _ambiguous:
-                _reassigned = _ALIAS_INDEX.get(_implied)
-                if _reassigned is not None and _reassigned.canonical not in seen:
-                    spec = _reassigned
-                    display_name_vi = (
-                        _get_catalog()["biomarkers"]
-                        .get(spec.canonical, {})
-                        .get("name_vn")
-                        or display_name_vi
-                    )
-            _compat = _au.unit_compatibility(spec.canonical, unit)
-            if _compat in (_au.UnitCompatibility.INCOMPATIBLE, _au.UnitCompatibility.UNKNOWN):
-                _logger.info(
-                    "cbc_row_refused reason=%s canonical=%s unit=%s",
-                    _compat.value, spec.canonical, unit,
-                )
-                continue  # wrong dimension for this analyte → never emit
-            _conv = _au.to_canonical_unit(spec.canonical, value, unit)
-            if _conv is None:
-                continue
-            value, unit = _conv
-
         # Never fabricate the canonical unit for a guarded analyte — that is the
         # fact the read-path guard depends on. See lab_parser for the full note.
         seen[spec.canonical] = RawLabValue(
             test_name=spec.canonical,
             value=value,
-            unit=unit if (unit or _guarded) else spec.unit,
+            unit=unit if (unit or guarded) else spec.unit,
             ocr_confidence=overall,
             confidence_detail=detail,
             # Preserve original as-printed value and unit — never overwrite after conversion.
             original_value=orig_value,
-            original_unit=orig_unit if (orig_unit or _guarded) else spec.unit,
+            original_unit=orig_unit if (orig_unit or guarded) else spec.unit,
             raw_test_name=row.original_test_name,
             display_name_vi=display_name_vi,
-            ocr_reference_range=row.original_reference_range,
+            ocr_reference_range=reference_range,
             requires_review=requires_review,
             suspect_machine_id=row.suspect_machine_id,
         )
@@ -1188,6 +1296,7 @@ def _get_full_text(analyze_result: dict) -> str:
 def extract_and_map(
     analyze_result: dict,
     ocr_conf: float = 0.95,
+    diagnostics: dict | None = None,
 ) -> list[RawLabValue]:
     """Full Layer 1→4 pipeline: analyzeResult dict → RawLabValue list.
 
@@ -1215,8 +1324,23 @@ def extract_and_map(
             "all rows will require_review=True, confidence capped at 0.5"
         )
 
-    table_rows = extract_table_rows(analyze_result, hospital_id=hospital_id, profile=profile)
+    _diag: dict = {}
+    table_rows = extract_table_rows(
+        analyze_result, hospital_id=hospital_id, profile=profile, diagnostics=_diag
+    )
+    if diagnostics is not None:
+        diagnostics.update(_diag)
     if not table_rows:
+        return []
+    # #155: a value cell that stated a reference range means the column roles are
+    # not trustworthy for this document. Returning the surviving rows would keep
+    # a partial, silently-truncated panel; the text parser reads these same lines
+    # deterministically, so hand the whole document to it instead of guessing.
+    if _diag.get("ambiguous_structure"):
+        _logger.warning(
+            "table_extractor_ambiguous_structure hospital=%s — deferring to text parser",
+            hospital_id or "unknown",
+        )
         return []
     raw_values = map_table_rows_to_raw_values(
         table_rows,

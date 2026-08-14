@@ -512,8 +512,26 @@ def parse_lab_text(
             continue
         unit = (vm.group("unit") or "").strip(" :.-") or None
 
+        # #155: a bare number immediately followed by "- number" is a printed
+        # RANGE's lower bound, not a measurement — the table path already
+        # refuses this shape (_is_range_like in lab_table_extractor); the text
+        # path must too, or a reflowed table line with no natural-reading-order
+        # rescue ("Hemoglobin 130 - 170", no unit) reads the range's low end as
+        # the result. Only gates when no unit was captured — "140 g/L (130-170)"
+        # has already captured a real measurement by the time the range appears.
+        # Same 0 < lo < hi < 10000 sanity bound as the real range extraction
+        # below — without it, an unrelated dash-separated annotation after a
+        # genuinely unitless value ("GFR 90 - 5", a footnote/order code, not a
+        # range) would be silently dropped instead of parsed.
+        _leading_range = _RANGE_RE.match(after[vm.start("value") :])
+        if not unit and _leading_range:
+            _lo = _to_float(_leading_range.group("lo"))
+            _hi = _to_float(_leading_range.group("hi"))
+            if _lo is not None and _hi is not None and 0 < _lo < _hi < 10000:
+                continue
+
         # Extract reference range from the remainder of the line (after value+unit).
-        # Supports: "3.9–6.1", "44 - 80", "< 55", "> 60".
+        # Supports: "3.9–6.1", "44 - 80", "< 55", "> 60", "≤ 55", "≥ 60".
         after_unit = after[vm.end() :].strip()
         ocr_ref: str | None = None
         rm = _RANGE_RE.search(after_unit)
@@ -523,13 +541,13 @@ def parse_lab_text(
             if lo is not None and hi is not None and 0 < lo < hi < 10000:
                 ocr_ref = f"{lo}–{hi}"
         elif after_unit:
-            lt_m = re.match(r"<\s*(\d[0-9.,]*)", after_unit)
+            lt_m = re.match(r"[<≤]\s*(\d[0-9.,]*)", after_unit)
             if lt_m:
                 v = _to_float(lt_m.group(1))
                 if v is not None:
                     ocr_ref = f"<{v}"
             else:
-                gt_m = re.match(r">\s*(\d[0-9.,]*)", after_unit)
+                gt_m = re.match(r"[>≥]\s*(\d[0-9.,]*)", after_unit)
                 if gt_m:
                     v = _to_float(gt_m.group(1))
                     if v is not None:
@@ -572,18 +590,18 @@ def parse_lab_text(
         if _eff_unit and spec.canonical in _au.ALLOWED_UNITS:
             unit = _eff_unit
             _label = _strip_accents(raw_test_name).lower()
+            # `resolve_erythrocyte_analyte` only ever names rbc/hematocrit — a
+            # guarded analyte outside that pair (haemoglobin, #155 item 2) has no
+            # erythrocyte identity to imply, so `_implied is None` for it is
+            # NORMAL, not a foreign unit. Only gate reassignment/refusal on this
+            # signal when it actually resolved to an erythrocyte analyte; the
+            # general dimensional check below covers the rest.
             _implied = _au.resolve_erythrocyte_analyte(unit)
             _label_is_ambiguous = (
                 any(_strip_accents(a) in _label for a in _au.AMBIGUOUS_ERYTHROCYTE_ALIASES)
                 and "rbc" not in _label
             )
-            if _implied is None:
-                _logger.info(
-                    "cbc_row_refused reason=unrecognised_unit canonical=%s unit=%s",
-                    spec.canonical, unit,
-                )
-                continue  # unit printed, but foreign to both analytes → no row
-            if _implied != spec.canonical:
+            if _implied is not None and _implied != spec.canonical:
                 if not _label_is_ambiguous:
                     _logger.info(
                         "cbc_row_refused reason=explicit_analyte_foreign_unit "
@@ -594,6 +612,13 @@ def parse_lab_text(
                 if _reassigned is None or _reassigned.canonical in seen:
                     continue
                 spec = _reassigned
+            _compat = _au.unit_compatibility(spec.canonical, unit)
+            if _compat in (_au.UnitCompatibility.INCOMPATIBLE, _au.UnitCompatibility.UNKNOWN):
+                _logger.info(
+                    "cbc_row_refused reason=%s canonical=%s unit=%s",
+                    _compat.value, spec.canonical, unit,
+                )
+                continue
             # Relabel and convert together — never one without the other. This
             # also normalises an already-correct hematocrit fraction (0.50 L/L)
             # to the canonical percent, so both screens compare like with like.
@@ -605,6 +630,10 @@ def parse_lab_text(
                 )
                 continue
             value, unit = _converted
+            # #155 item 3: the printed range shares the pre-conversion unit and
+            # must go through the identical conversion, or a converted value ends
+            # up sitting against a raw, unconverted range.
+            ocr_ref = _au.to_canonical_range(spec.canonical, ocr_ref, orig_unit)
 
         # ocr_confidence (proxy): did OCR produce a recognizable unit token?
         # 0.5 (not 0.7) when unit absent: ensures overall stays below the 0.75

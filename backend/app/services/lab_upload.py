@@ -24,6 +24,7 @@ from app.core.config import get_settings
 from app.domain import lab_interpreter
 from app.domain.hospital_profiles import UNKNOWN_PROFILE, detect_hospital_result
 from app.domain.lab_interpreter import ConfidenceDetail
+from app.domain.lab_table_extractor import ExtractionTrust, classify_extraction_trust
 from app.domain.lab_table_extractor import extract_and_map as _extract_table_and_map
 from app.domain.ocr_date_resolver import OcrDateResolver
 from app.services import lab_parser
@@ -102,6 +103,11 @@ class LabUploadDraft:
     hospital_confidence: float = 0.0
     # Date resolver output — True when user should confirm the exam date.
     date_needs_confirmation: bool = False
+    # #155 promotion-integrity gate: how much this document's extraction may be
+    # trusted. NEEDS_REVIEW means no biomarker was extracted from a verified or
+    # deterministic source — `parsed_values` is empty and the patient enters
+    # every value by hand rather than confirming a guessed one.
+    extraction_trust: str = ExtractionTrust.NEEDS_REVIEW.value
 
 
 def sniff_mime(data: bytes) -> str | None:
@@ -223,6 +229,10 @@ def build_draft(data: bytes, mime: str) -> LabUploadDraft:
     ocr_conf = 0.0
     provider = "unknown"
     azure_succeeded = False
+    # #155 promotion-integrity gate inputs — see classify_extraction_trust().
+    table_rows_used = False
+    fallback_rows_used = False
+    table_diagnostics: dict = {}
 
     # Table-first path: Azure DI → extract_table_rows → map_table_rows_to_raw_values.
     # PDFs route through _extract_text (text layer first, then Azure) so that
@@ -237,11 +247,18 @@ def build_draft(data: bytes, mime: str) -> LabUploadDraft:
             text = AzureDocIntelEngine._build_text(analyze_result)
             provider = engine.name
             azure_succeeded = True
-            raw_values = _extract_table_and_map(analyze_result, ocr_conf=ocr_conf)
-            if not raw_values:
-                # Tables empty or no recognizable biomarkers — fall back to text+regex
-                # on the same already-extracted text (no second network call).
+            raw_values = _extract_table_and_map(
+                analyze_result, ocr_conf=ocr_conf, diagnostics=table_diagnostics
+            )
+            if raw_values:
+                table_rows_used = True
+            else:
+                # Tables empty, no recognisable biomarkers, or #155's
+                # ambiguous_structure (a positional guess landed on the
+                # reference-range column) — fall back to text+regex on the same
+                # already-extracted text (no second network call).
                 raw_values = lab_parser.parse_lab_text(text)
+                fallback_rows_used = bool(raw_values)
         except OcrEngineError as exc:
             warnings.append(str(exc))
 
@@ -249,6 +266,7 @@ def build_draft(data: bytes, mime: str) -> LabUploadDraft:
         text, ocr_conf, provider, text_warnings = _extract_text(data, mime)
         warnings.extend(text_warnings)
         raw_values = lab_parser.parse_lab_text(text)
+        fallback_rows_used = bool(raw_values)
 
     # Zero-biomarker escalation for non-Azure providers only.
     if not raw_values and provider in ("tesseract", "pdf_text"):
@@ -258,10 +276,25 @@ def build_draft(data: bytes, mime: str) -> LabUploadDraft:
             if cloud_values:
                 text, ocr_conf, provider = cloud_res.text, cloud_res.confidence, cloud_res.provider
                 raw_values = cloud_values
+                fallback_rows_used = True
                 warnings.extend(cloud_res.warnings)
                 warnings.append(
                     "Đã dùng OCR đám mây (fallback) do không nhận diện được chỉ số nào."
                 )
+
+    extraction_trust = classify_extraction_trust(
+        table_diagnostics=table_diagnostics,
+        table_rows_used=table_rows_used,
+        fallback_rows_used=fallback_rows_used,
+    )
+    # #155 promotion-integrity gate: a NEEDS_REVIEW document must never reach the
+    # patient as pre-filled values to blindly confirm. This is a defensive
+    # invariant, not the primary enforcement — classify_extraction_trust only
+    # returns NEEDS_REVIEW when raw_values is already empty, but asserting it
+    # here (rather than trusting that byproduct) means a future change to the
+    # extraction paths above cannot silently start leaking a guessed panel.
+    if extraction_trust == ExtractionTrust.NEEDS_REVIEW:
+        raw_values = []
 
     raw_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()[:16] if text else ""
     detected_date = lab_parser.parse_test_date(text)
@@ -379,6 +412,7 @@ def build_draft(data: bytes, mime: str) -> LabUploadDraft:
         hospital_id=hospital_id,
         hospital_confidence=hospital_confidence,
         date_needs_confirmation=date_needs_confirmation,
+        extraction_trust=extraction_trust.value,
     )
 
 
