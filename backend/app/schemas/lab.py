@@ -120,6 +120,20 @@ class LabResultOut(BaseModel):
     data_quality_flag: str | None = None
     created_at: dt.datetime
 
+    # ── Unified LabResult contract (additive; legacy fields above unchanged) ──
+    # See app.domain.lab_semantics.LabSemantics. Every field here is derived
+    # by the SAME resolver MetricOut uses, so the two screens cannot disagree.
+    display_name: str | None = None
+    reference_low: float | None = None
+    reference_high: float | None = None
+    reference_unit: str | None = None
+    reference_display: str | None = None
+    reference_source: str | None = None
+    severity: str | None = None
+    interpretation_state: str | None = None
+    needs_review: bool = False
+    rule_version: str | None = None
+
     @model_validator(mode="after")
     def _populate_display(self) -> LabResultOut:
         """Compute the formatted ORIGINAL-unit display string (P0 integrity)."""
@@ -132,105 +146,67 @@ class LabResultOut(BaseModel):
 
     @model_validator(mode="after")
     def _populate_clinical_message(self) -> LabResultOut:
-        """Derive clinical_message from canonical_name + status (single source of truth).
+        """Resolve status/severity/reference/message via the single shared
+        resolver (`lab_semantics.resolve_lab_semantics`) — never independently.
 
-        Applies the same physiological_max heuristic as MetricOut so that LabResult
-        rows that were stored with the wrong unit (e.g. creatinine 87.66 µmol/L stored
-        as value=87.66, unit='mg/dL') are re-classified correctly at serialization time.
-
-        Algorithm:
-          1. Use normalized_value_si if available; else raw value.
-          2. Apply physiological_max guard: if value > physiological_max for the
-             canonical unit AND unit is NOT the SI unit, treat value as SI unit and
-             re-normalize to canonical unit.
-          3. Re-classify using canonical thresholds.
-          4. Derive clinical_message from (canonical_name, canonical_status).
+        `original_reference_range` (whatever the patient/UI chose to display —
+        source-printed, catalog, or manual) is passed through as the DISPLAY
+        range only; it never changes what status/severity this row gets, which
+        is always computed against the canonical registry's own bounds.
         """
         if not self.canonical_name:
             return self
 
-        # P0 read-path guard. Rows ALREADY in production can carry an analyte and
-        # a unit from different dimensions — `rbc` with `L/L` is a hematocrit
-        # fraction filed as a red cell count. Classifying such a row produced
-        # "Nguy hiểm" on this screen and "Rất thấp" on the metrics screen for the
-        # same record. Neither claim is supportable, so make none: no severity,
-        # no reference comparison, and a message that says only what is true.
-        # Runs BEFORE any classification, so it also covers rows written before
-        # the write-path fix and ahead of data remediation.
-        from app.domain.analyte_units import NEEDS_REVIEW_MESSAGE, guarded_status
-
-        _g = guarded_status(self.canonical_name, self.value, self.unit)
-        if _g is not None:
-            _status, _ = _g
-            if _status == "unknown":
-                self.status = "unknown"
-                self.clinical_message = NEEDS_REVIEW_MESSAGE
-                # Clear the range too: leaving "0.42-0.47 L/L" beside 0.50 lets a
-                # patient self-derive "above range" from a row we just called
-                # uninterpretable.
-                self.reference_range = None
-            else:
-                from app.services.lab import get_clinical_message as _gcm
-
-                self.status = _status
-                self.clinical_message = _gcm(self.canonical_name, _status)
-            return self
+        from app.domain.lab_semantics import resolve_lab_semantics
 
         try:
-            from app.domain.lab_interpreter import _ALIAS_INDEX, classify_value
-            from app.domain.lab_normalization import normalize_value_to_si
-            from app.services.lab import get_clinical_message
-
-            spec = _ALIAS_INDEX.get(self.canonical_name)
-            if spec is None:
-                # Unknown biomarker — fall through to DB status
-                if self.clinical_message is None and self.status:
-                    self.clinical_message = get_clinical_message(self.canonical_name, self.status)
-                return self
-
-            # Prefer normalized_value_si when available (more accurate).
-            raw_value = (
-                self.normalized_value_si if self.normalized_value_si is not None else self.value
+            semantics = resolve_lab_semantics(
+                self.canonical_name,
+                self.value,
+                self.unit,
+                printed_reference_text=self.original_reference_range or self.reference_range,
+                printed_reference_unit=self.original_unit,
+                normalized_value_si=self.normalized_value_si,
+                normalized_unit_si=self.normalized_unit_si,
             )
-            raw_unit = (
-                self.normalized_unit_si
-                if self.normalized_unit_si is not None
-                else (self.unit or "")
-            )
+        except Exception:  # noqa: BLE001 — schema must never crash, but must fail
+            # CLOSED, not open: leaving whatever status was set upstream (which
+            # could be a stale confident severity from before a reassignment)
+            # is exactly the #153/#154 hazard this resolver exists to remove.
+            self.status = "unknown"
+            self.severity = "unknown"
+            self.interpretation_state = "needs_review"
+            self.needs_review = True
+            self.clinical_message = None
+            self.reference_range = None
+            return self
 
-            if raw_value is None:
-                if self.clinical_message is None and self.status:
-                    self.clinical_message = get_clinical_message(self.canonical_name, self.status)
-                return self
-
-            # Physiological_max heuristic: if value exceeds what is physiologically
-            # possible in the canonical unit, it must be expressed in the SI unit.
-            if spec.si_unit and spec.physiological_max is not None:
-                unit_norm = (raw_unit or "").strip().lower().replace("µ", "u").replace("μ", "u")
-                # Guard: check if already in CANONICAL unit (not SI unit).
-                # For creatinine: canonical='mg/dL', si='µmol/L'.
-                # If raw_unit IS mg/dL, already_canonical=True → skip heuristic.
-                # If raw_unit is µmol/L (old mis-stored row), already_canonical=False
-                # and value 88 > physiological_max 30 → re-treat as SI unit → correct.
-                canonical_norm = spec.unit.strip().lower().replace("µ", "u").replace("μ", "u")
-                already_canonical = unit_norm == canonical_norm
-                if not already_canonical and raw_value > spec.physiological_max:
-                    # Value is physiologically impossible in canonical unit → must be SI unit.
-                    raw_unit = spec.si_unit
-
-            canonical_value, _ = normalize_value_to_si(raw_value, raw_unit, self.canonical_name)
-            status_enum = classify_value(self.canonical_name, canonical_value)
-            if status_enum is not None and status_enum.value != "unknown":
-                canonical_status = status_enum.value
-                self.status = canonical_status
-                self.clinical_message = get_clinical_message(self.canonical_name, canonical_status)
-            elif self.clinical_message is None and self.status:
-                self.clinical_message = get_clinical_message(self.canonical_name, self.status)
-        except Exception:  # noqa: BLE001 — schema must never crash
+        if semantics is None:
+            # canonical_name genuinely unrecognised — never covered by
+            # canonical classification either, not a new gap.
             if self.clinical_message is None and self.canonical_name and self.status:
                 from app.services.lab import get_clinical_message
 
                 self.clinical_message = get_clinical_message(self.canonical_name, self.status)
+            return self
+
+        self.status = semantics.status
+        self.severity = semantics.severity
+        self.interpretation_state = semantics.interpretation_state
+        self.needs_review = semantics.needs_review
+        self.clinical_message = semantics.clinical_message
+        self.display_name = semantics.display_name
+        self.reference_low = semantics.reference_low
+        self.reference_high = semantics.reference_high
+        self.reference_unit = semantics.reference_unit
+        self.reference_display = semantics.reference_display
+        self.reference_source = semantics.reference_source
+        self.rule_version = semantics.rule_version
+        # Legacy field: an uninterpretable row clears reference_range so a
+        # patient cannot self-derive "above/below range" from a row we just
+        # called unreadable — reference_display carries the None too.
+        if semantics.needs_review:
+            self.reference_range = None
         return self
 
     model_config = {"from_attributes": True}

@@ -51,6 +51,20 @@ class MetricOut(BaseModel):
     )
     is_critical: bool = False  # True only when canonical re-classification is 'critical'
 
+    # ── Unified LabResult contract (additive; legacy fields above unchanged) ──
+    # See app.domain.lab_semantics.LabSemantics. Every field here is derived
+    # by the SAME resolver LabResultOut uses, so the two screens cannot disagree.
+    display_name: str | None = None
+    reference_low: float | None = None
+    reference_high: float | None = None
+    reference_unit: str | None = None
+    reference_display: str | None = None
+    reference_source: str | None = None
+    severity: str | None = None
+    interpretation_state: str | None = None
+    needs_review: bool = False
+    rule_version: str | None = None
+
     model_config = {"from_attributes": True}
 
     @model_validator(mode="after")
@@ -65,103 +79,59 @@ class MetricOut(BaseModel):
 
     @model_validator(mode="after")
     def _populate_clinical_message(self) -> MetricOut:
-        """Compute canonical clinical_message for patient-facing banner.
+        """Resolve status/severity/reference/message via the single shared
+        resolver (`lab_semantics.resolve_lab_semantics`) — never independently.
 
-        UNIT-SAFE: normalises value to canonical unit (e.g. mmol/L → mg/dL for
-        glucose) before re-classifying, so that old HealthMetric rows that were
-        promoted with the wrong unit (e.g. value=5.7 stored as mmol/L instead of
-        102.7 mg/dL) still get the correct clinical message.
-
-        This is the SINGLE SOURCE OF TRUTH for clinical text.  The frontend must
-        display this field and must NOT recompute clinical meaning from raw
+        This is the SINGLE SOURCE OF TRUTH for clinical text. The frontend must
+        display these fields and must NOT recompute clinical meaning from raw
         value/unit/thresholds.
 
-        Algorithm:
-          1. Normalise value+unit → canonical unit (mg/dL for glucose).
-          2. Re-classify using canonical thresholds.
-          3. Map (biomarker, status) → Vietnamese clinical message.
-          4. Return None only when biomarker is unknown/unsupported.
+        Always resolves fresh — a `clinical_message` set upstream (e.g. by a
+        caller before construction) is exactly as unsupportable as one
+        computed here for a guarded/unsafe analyte-unit pair, so it is never
+        trusted as a way to skip resolution.
         """
-        # P0 read-path guard — the same check LabResultOut applies, so the two
-        # screens cannot disagree about the same underlying record. An analyte
-        # and a unit from different dimensions (`rbc` + `L/L`) cannot yield a
-        # severity: this screen previously rendered "Rất thấp" while the labs
-        # screen rendered "Nguy hiểm" for that one row. Checked before the
-        # caller-set short-circuit below, because a severity supplied upstream
-        # is exactly as unsupportable as one computed here.
-        from app.domain.analyte_units import NEEDS_REVIEW_MESSAGE, guarded_status
-
-        _g = guarded_status(self.metric_type, self.value, self.unit)
-        if _g is not None:
-            _status, _ = _g
-            if _status == "unknown":
-                self.status = "unknown"
-                self.is_critical = False
-                self.clinical_message = NEEDS_REVIEW_MESSAGE
-            else:
-                from app.services.lab import get_clinical_message as _gcm
-
-                self.status = _status
-                self.is_critical = _status == "critical"
-                self.clinical_message = _gcm(self.metric_type, _status)
-            return self
-
-        if self.clinical_message is not None:
-            return self  # caller already set it — honour that
+        from app.domain.lab_semantics import resolve_lab_semantics
 
         try:
-            from app.domain.lab_interpreter import _ALIAS_INDEX, classify_value
-            from app.domain.lab_normalization import normalize_value_to_si
-            from app.services.lab import get_clinical_message
+            semantics = resolve_lab_semantics(
+                self.metric_type,
+                self.value,
+                self.unit,
+                normalized_value_si=None,
+                normalized_unit_si=None,
+            )
+        except Exception:  # noqa: BLE001 — schema must never crash, but must fail
+            # CLOSED, not open: leaving whatever status was set upstream (which
+            # could be a stale confident severity) is exactly the #153/#154
+            # hazard this resolver exists to remove.
+            self.status = "unknown"
+            self.is_critical = False
+            self.severity = "unknown"
+            self.interpretation_state = "needs_review"
+            self.needs_review = True
+            self.clinical_message = None
+            return self
 
-            # Normalise to canonical unit (no-op when already canonical).
-            # HEURISTIC GUARD: for glucose metrics, if the stored unit is missing/
-            # unknown AND the value is implausibly small for mg/dL (< 30), treat it
-            # as mmol/L.  No human survives fasting glucose < 30 mg/dL without
-            # emergency care, so any value this small with an unknown unit MUST be
-            # in mmol/L from an OCR path that dropped the unit string.
-            raw_value = self.value
-            raw_unit = self.unit or ""
-            glucose_metrics = {"fasting_glucose", "postprandial_glucose"}
-            if self.metric_type in glucose_metrics:
-                unit_clean = raw_unit.strip().lower().replace(" ", "")
-                if unit_clean not in ("mg/dl", "mmol/l", "mmol") and raw_value < 30:
-                    # Unit unknown and value implausibly small → must be mmol/L
-                    raw_unit = "mmol/L"
+        if semantics is None:
+            # metric_type is a non-lab vital (BP, weight, ...) never covered by
+            # canonical classification — keep whatever the caller's own
+            # classifier (health_metrics.classify_status) already set.
+            return self
 
-            # HEURISTIC GUARD (general): for any biomarker with a known SI/display
-            # unit, if the stored value exceeds the physiological_max for the
-            # canonical unit, the value must be expressed in the SI unit.
-            # This covers two failure modes from old _promote_row code:
-            #   A) unit=None/'' AND value=87.7 (µmol/L dropped during promotion)
-            #   B) unit='mg/dL' AND value=87.66 (µmol/L value stored with wrong unit)
-            # Both: 87.7 > physiological_max(30 mg/dL) → treat as µmol/L
-            # → normalize → 0.992 mg/dL → NORMAL (not CRITICAL)
-            spec = _ALIAS_INDEX.get(self.metric_type)
-            if spec and spec.si_unit and spec.physiological_max is not None:
-                unit_norm = raw_unit.strip().lower().replace("µ", "u").replace("μ", "u")
-                si_norm = spec.si_unit.strip().lower().replace("µ", "u").replace("μ", "u")
-                already_si = unit_norm == si_norm
-                if not already_si and raw_value > spec.physiological_max:
-                    # Value exceeds what is physiologically possible in the
-                    # canonical unit → must be in the SI unit (stored incorrectly).
-                    raw_unit = spec.si_unit
-
-            canonical_value, _ = normalize_value_to_si(raw_value, raw_unit, self.metric_type)
-            # Re-classify using canonical thresholds.
-            status_enum = classify_value(self.metric_type, canonical_value)
-            if status_enum is not None and status_enum.value != "unknown":
-                canonical_status = status_enum.value
-                self.is_critical = canonical_status == "critical"
-                self.clinical_message = get_clinical_message(self.metric_type, canonical_status)
-                # Also update status to the canonical re-classification so that
-                # callers reading MetricOut.status get the correct value (even
-                # if the DB row has a stale/wrong status from before the unit-
-                # normalization fix in _promote_row).
-                self.status = canonical_status
-        except Exception:  # noqa: BLE001 — schema must never crash
-            pass
-
+        self.status = semantics.status
+        self.is_critical = semantics.status == "critical"
+        self.clinical_message = semantics.clinical_message
+        self.severity = semantics.severity
+        self.interpretation_state = semantics.interpretation_state
+        self.needs_review = semantics.needs_review
+        self.display_name = semantics.display_name
+        self.reference_low = semantics.reference_low
+        self.reference_high = semantics.reference_high
+        self.reference_unit = semantics.reference_unit
+        self.reference_display = semantics.reference_display
+        self.reference_source = semantics.reference_source
+        self.rule_version = semantics.rule_version
         return self
 
 
