@@ -493,6 +493,13 @@
     color: #991b1b;
   }
   .neu-badge-alert::before { background: #c0392b; }
+  /* needs_review/unknown — never styled as normal/watch/alert (STATUS_COLOR_HEX.neutral). */
+  .neu-badge-neutral {
+    background: #e6ebe9;
+    border-color: rgba(90, 107, 101, 0.3);
+    color: #5a6b65;
+  }
+  .neu-badge-neutral::before { background: #7c9089; }
 
   /* Mono caption label (JetBrains Mono, uppercase). */
   .neu-caption {

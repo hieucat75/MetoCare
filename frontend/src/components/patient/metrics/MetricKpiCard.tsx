@@ -1,9 +1,8 @@
 import { metricLabel, metricUnit, type MetricType } from '@/lib/api/patient'
-import { classifyLabValue } from '@/lib/api/labReference'
 import type { CategoryTheme, MetricSeries } from '@/lib/metrics/kpi'
 import { NeuBadge } from '@/components/patient/neu'
 import { Sparkline } from './Sparkline'
-import { metricIcon, labToneToNeu, healthMetricStatus, type NeuTone } from './metricVisuals'
+import { metricIcon, resolveContractStatus, type NeuTone } from './metricVisuals'
 import { displayValueOf, displayUnitOf, plotValueOf } from '@/lib/utils/formatLabValue'
 
 type Props = {
@@ -15,20 +14,14 @@ type Props = {
 
 /** Soft-UI metric tile: accent icon · status badge · value · smooth sparkline. */
 export function MetricKpiCard({ series, theme, onOpen }: Props) {
-  const { latest, unit, higherIsBetter, labelVn, metricType, history } = series
+  const { latest, labelVn, metricType, history } = series
   const Icon = metricIcon(metricType)
-  const label = labelVn ?? metricLabel(metricType as MetricType)
+  const label = latest.display_name ?? labelVn ?? metricLabel(metricType as MetricType)
   // Classification uses canonical unit; display uses the ORIGINAL as-recorded unit.
   const canonicalUnit = latest.unit || metricUnit(metricType as MetricType)
   const unitLabel = displayUnitOf(latest, canonicalUnit)
 
-  let status: { tone: NeuTone; label: string } | null
-  if (unit) {
-    const s = classifyLabValue(latest.value, unit, higherIsBetter)
-    status = { tone: labToneToNeu(s.tone), label: s.label }
-  } else {
-    status = healthMetricStatus(latest)
-  }
+  const status: { tone: NeuTone; label: string } | null = resolveContractStatus(latest)
 
   const spark = history.slice(0, 8).map(plotValueOf)
 

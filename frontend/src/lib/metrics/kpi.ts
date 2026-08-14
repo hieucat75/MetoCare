@@ -142,25 +142,38 @@ export interface RefBarGeometry {
   inRange: boolean
 }
 
+/**
+ * Backend-contract-driven reference-bar geometry. `low`/`high` come straight
+ * from `reference_low`/`reference_high` on the confirmed result — never from
+ * the client lab catalog. When both are null (needs_review/unavailable), the
+ * caller MUST skip rendering the bar entirely; this still returns a inert
+ * geometry (centered marker, zero-width normal band) so callers that forget
+ * the guard fail safe instead of crashing on `null` arithmetic.
+ */
 export function refBarGeometry(
   value: number,
-  unit: LabUnit,
+  low: number | null,
+  high: number | null,
   higherIsBetter: boolean | null,
 ): RefBarGeometry {
-  const { low, high } = unit.ref_range
-  const scaleMin = low > 0 ? Math.max(0, low * 0.4) : 0
-  const scaleMax = Math.max(high * 1.4, value * 1.15, high > 0 ? high : value * 1.4)
+  if (low == null && high == null) {
+    return { valuePct: 50, normalStartPct: 0, normalEndPct: 0, inRange: true }
+  }
+  const lo = low ?? 0
+  const hi = high ?? (Math.max(value, lo) * 1.4 || 1)
+  const scaleMin = lo > 0 ? Math.max(0, lo * 0.4) : 0
+  const scaleMax = Math.max(hi * 1.4, value * 1.15, hi > 0 ? hi : value * 1.4)
   const span = scaleMax - scaleMin || 1
   const clamp = (p: number): number => Math.min(100, Math.max(0, p))
   const pos = (x: number): number => clamp(((x - scaleMin) / span) * 100)
-  const aboveHigh = value > high
-  const belowLow = low > 0 && value < low
+  const aboveHigh = value > hi
+  const belowLow = lo > 0 && value < lo
   // null: two-sided range (in-range if within low–high).
   const inRange = higherIsBetter === true ? !belowLow : !aboveHigh && !belowLow
   return {
     valuePct: pos(value),
-    normalStartPct: pos(low),
-    normalEndPct: pos(high),
+    normalStartPct: pos(lo),
+    normalEndPct: pos(hi),
     inRange,
   }
 }

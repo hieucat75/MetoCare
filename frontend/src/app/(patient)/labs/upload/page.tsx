@@ -25,7 +25,7 @@ import {
   type ManualLabItem,
 } from '@/lib/api/patient'
 import { ApiError } from '@/lib/api/client'
-import { useLabReference, formatRefRange } from '@/lib/api/labReference'
+import { useLabReference } from '@/lib/api/labReference'
 import { OcrReviewCard, buildOcrRow, makeEmptyOcrRow, type OcrRow } from './OcrReviewCard'
 import {
   displayDateToIso,
@@ -301,10 +301,12 @@ export default function LabUploadPage() {
         const unit = bm ? (bm.units.find((u) => u.key === r.unit_key) ?? null) : null
         const unitLabel = unit?.label ?? (r.unit_key || null)
 
+        // 'catalog' source: no longer submit a client-computed reference_range —
+        // the backend attaches this via resolve_lab_semantics at write/read time.
+        // 'ocr'/'manual' stay as-is: they're provenance text (what the report
+        // printed / what the patient typed), not a computed classification.
         let refRange: string | null = null
-        if (r.ref_range_source === 'catalog' && bm && unit) {
-          refRange = formatRefRange(unit, bm.higher_is_better ?? false)
-        } else if (r.ref_range_source === 'ocr') {
+        if (r.ref_range_source === 'ocr') {
           refRange = r.original_reference_range
         } else if (r.ref_range_source === 'manual') {
           refRange = r.ref_range_manual.trim() || null

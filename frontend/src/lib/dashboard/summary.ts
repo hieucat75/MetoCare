@@ -3,17 +3,16 @@
  * SAME data the /metrics page renders, so the two never disagree (acceptance:
  * "Metrics page values appear in the dashboard summary").
  *
- * Status is determined exactly as the metrics page does: catalog-matched unit +
- * `classifyLabValue` for lab biomarkers, falling back to the backend-computed
- * per-metric `status` for self-report metrics (BP, weight) that have no catalog
- * entry. This is unit-safe (mmol/L vs mg/dL) because the matched unit carries
- * its own reference range.
+ * Status is determined exactly as the metrics page does: `resolveContractStatus`
+ * against the backend Unified LabResult Contract (severity/needs_review, falling
+ * back to legacy `status` for self-report metrics) — for BOTH lab-catalog and
+ * self-report metrics. Never re-derives status from a client-matched catalog
+ * unit; the backend is the single source of truth for classification.
  */
 
 import type { HealthMetric, MetricType } from '@/lib/api/patient'
 import { metricLabel } from '@/lib/api/patient'
 import type { LabCatalog } from '@/lib/api/labReference'
-import { classifyLabValue } from '@/lib/api/labReference'
 import {
   computeTrend,
   groupMetricsByCategory,
@@ -21,8 +20,15 @@ import {
   type MetricTrend,
 } from '@/lib/metrics/kpi'
 import type { LabStatusKey, LabUnit } from '@/lib/api/labReference'
+import {
+  resolveContractStatus,
+  NEEDS_REVIEW_LABEL_VI,
+} from '@/components/patient/metrics/metricVisuals'
 
-export type ConcernSeverity = 'normal' | 'warning' | 'danger'
+// 'unknown' = needs_review (backend could not confidently classify this
+// reading) — distinct from 'normal'. It must never be silently dropped from
+// the concerns list or default-rendered as "Bình thường"; see classifySeries.
+export type ConcernSeverity = 'normal' | 'warning' | 'danger' | 'unknown'
 export type OverallStatus = 'no_data' | 'stable' | 'attention' | 'at_risk'
 
 export interface IndicatorConcern {
@@ -63,29 +69,10 @@ export interface DashboardSummary {
 }
 
 const SEVERITY_RANK: Record<ConcernSeverity, number> = {
-  danger: 2,
-  warning: 1,
+  danger: 3,
+  warning: 2,
+  unknown: 1,
   normal: 0,
-}
-
-/**
- * Map a backend per-metric status string → coarse severity.
- *
- * The TS `HealthMetric['status']` union is narrower than what the backend
- * actually emits (`classify_status` returns 'normal'|'low'|'high'|'critical'),
- * so compare on the raw string to stay correct at runtime.
- */
-function statusToSeverity(status: HealthMetric['status']): ConcernSeverity {
-  const s = (status ?? '') as string
-  if (s === 'critical' || s === 'abnormal') return 'danger'
-  if (s === 'high' || s === 'low' || s === 'borderline') return 'warning'
-  return 'normal'
-}
-
-const SEVERITY_LABEL: Record<ConcernSeverity, string> = {
-  normal: 'Bình thường',
-  warning: 'Cần theo dõi',
-  danger: 'Cần chú ý',
 }
 
 export function computeAttentionReason(
@@ -106,26 +93,41 @@ export function computeAttentionReason(
   return ''
 }
 
-/** Classify a single series' latest reading the same way the metrics page does. */
+/**
+ * Classify a single series' latest reading via the backend Unified LabResult
+ * Contract — the SAME resolver the metrics page uses, so the two surfaces can
+ * never disagree. Falls back to a neutral "no data" bucket only when the
+ * backend gave us neither `severity` nor legacy `status` (should not normally
+ * happen) — fail neutral, never confidently "normal".
+ */
 function classifySeries(series: MetricSeries): {
   severity: ConcernSeverity
   statusLabel: string
   reason: string
 } {
-  // Lab biomarker with a catalog-matched unit → use the unit's reference range.
-  if (series.unit) {
-    const status = classifyLabValue(series.latest.value, series.unit, series.higherIsBetter)
-    const severity: ConcernSeverity =
-      status.tone === 'danger' ? 'danger' : status.tone === 'warning' ? 'warning' : 'normal'
-    const reason =
-      severity !== 'normal'
-        ? computeAttentionReason(status.key, series.unit, series.higherIsBetter)
-        : ''
-    return { severity, statusLabel: status.label, reason }
+  const resolved = resolveContractStatus(series.latest)
+  if (!resolved) {
+    return { severity: 'unknown', statusLabel: NEEDS_REVIEW_LABEL_VI, reason: '' }
   }
-  // Self-report metric (no catalog entry) → fall back to backend status.
-  const severity = statusToSeverity(series.latest.status)
-  return { severity, statusLabel: SEVERITY_LABEL[severity], reason: '' }
+  // needs_review/unknown is never a "concern" in the clinical sense (we don't
+  // know, not "abnormal") — but it must stay a DISTINCT bucket from 'normal',
+  // or the concerns-loop below silently drops it and the tile grid falls back
+  // to a hardcoded "Bình thường" badge, which is exactly the "styled as
+  // normal" outcome the contract forbids.
+  if (resolved.tone === 'neutral') {
+    return { severity: 'unknown', statusLabel: resolved.label, reason: '' }
+  }
+  const severity: ConcernSeverity =
+    resolved.tone === 'alert' ? 'danger' : resolved.tone === 'watch' ? 'warning' : 'normal'
+  // Reason text uses the backend-authoritative reference_display — never a
+  // client-recomputed range.
+  const reason =
+    severity !== 'normal' &&
+    series.latest.reference_display &&
+    (resolved.key === 'low' || resolved.key === 'high')
+      ? `${resolved.key === 'low' ? 'Thấp hơn' : 'Cao hơn'} mục tiêu ${series.latest.reference_display}`
+      : ''
+  return { severity, statusLabel: resolved.label, reason }
 }
 
 export function buildDashboardSummary(
@@ -209,7 +211,12 @@ export function buildDashboardSummary(
 
   const hasDanger = concerns.some((c) => c.severity === 'danger')
   const hasWarning = concerns.some((c) => c.severity === 'warning')
-  const overallStatus: OverallStatus = hasDanger ? 'at_risk' : hasWarning ? 'attention' : 'stable'
+  const hasUnknown = concerns.some((c) => c.severity === 'unknown')
+  const overallStatus: OverallStatus = hasDanger
+    ? 'at_risk'
+    : hasWarning || hasUnknown
+      ? 'attention'
+      : 'stable'
 
   return {
     overallStatus,

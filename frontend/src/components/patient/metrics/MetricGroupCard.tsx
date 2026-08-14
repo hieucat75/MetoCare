@@ -3,6 +3,7 @@
 import * as React from 'react'
 import type { CategoryBucket } from '@/lib/metrics/kpi'
 import { MetricRowItem } from './MetricRowItem'
+import { resolveContractStatus } from './metricVisuals'
 
 type Props = {
   bucket: CategoryBucket
@@ -16,12 +17,11 @@ export function MetricGroupCard({ bucket }: Props) {
     setExpandedType((prev) => (prev === metricType ? null : metricType))
   }
 
-  const abnormalCount = series.filter((s) => {
-    if (!s.unit) {
-      return s.latest.status === 'abnormal' || s.latest.status === 'critical'
-    }
-    return false
-  }).length
+  // Shared resolver — same source MetricRowItem's status badge uses, so the
+  // group header count and each row's badge can never disagree (previously
+  // this only counted non-catalog series via legacy `status`, silently
+  // undercounting lab-catalog biomarkers that were actually abnormal).
+  const abnormalCount = series.filter((s) => resolveContractStatus(s.latest)?.tone === 'alert').length
 
   return (
     <div

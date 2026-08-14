@@ -1,11 +1,10 @@
 'use client'
 
 import * as React from 'react'
-import { CheckCircle, ChevronDown, ChevronUp, Clock, TriangleAlert } from 'lucide-react'
-import { classifyLabValue } from '@/lib/api/labReference'
+import { CheckCircle, ChevronDown, ChevronUp, Clock, HelpCircle, TriangleAlert } from 'lucide-react'
 import { computeTrend, refBarGeometry } from '@/lib/metrics/kpi'
 import type { MetricSeries } from '@/lib/metrics/kpi'
-import { healthMetricStatus, metricIcon } from './metricVisuals'
+import { metricIcon, resolveContractStatus } from './metricVisuals'
 import { Sparkline } from './Sparkline'
 import {
   formatLabValue,
@@ -36,18 +35,30 @@ const STATUS = {
     bg: 'rgba(253,230,228,0.95)',
     border: 'rgba(217,45,32,0.38)',
   },
+  // 'unknown'/needs_review rendering target — matches STATUS_COLOR_HEX.neutral.
+  neutral: {
+    hue: '#7C9089',
+    text: '#5A6B65',
+    bg: 'rgba(230,235,233,0.92)',
+    border: 'rgba(124,144,137,0.32)',
+  },
 } as const
 
 type StatusKey = keyof typeof STATUS
 
+/** Backend `NeuTone` → this card's local status-key/color system. */
 function resolveStatus(series: MetricSeries): { tone: StatusKey; label: string } {
-  if (series.unit) {
-    const s = classifyLabValue(series.latest.value, series.unit, series.higherIsBetter)
-    return { tone: s.tone, label: s.label }
-  }
-  const s = healthMetricStatus(series.latest)
-  const tone: StatusKey = s?.tone === 'alert' ? 'danger' : s?.tone === 'watch' ? 'warning' : 'mint'
-  return { tone, label: s?.label ?? 'Chưa rõ' }
+  const resolved = resolveContractStatus(series.latest)
+  if (!resolved) return { tone: 'neutral', label: 'Chưa rõ' }
+  const tone: StatusKey =
+    resolved.tone === 'alert'
+      ? 'danger'
+      : resolved.tone === 'watch'
+        ? 'warning'
+        : resolved.tone === 'neutral'
+          ? 'neutral'
+          : 'mint'
+  return { tone, label: resolved.label }
 }
 
 // ── 3-zone reference bar ──────────────────────────────────────────────────────
@@ -57,8 +68,15 @@ const ZONE_AMBER = 'rgba(224,169,46,0.34)'
 const ZONE_RED = 'rgba(217,45,32,0.32)'
 
 function ThreeZoneBar({ series, hue }: { series: MetricSeries; hue: string }) {
-  if (!series.unit) return null
-  const geo = refBarGeometry(series.latest.value, series.unit, series.higherIsBetter)
+  const { reference_low, reference_high } = series.latest
+  // Nothing to plot when the backend has no reference band (needs_review/self-report).
+  if (reference_low == null && reference_high == null) return null
+  const geo = refBarGeometry(
+    series.latest.value,
+    reference_low ?? null,
+    reference_high ?? null,
+    series.higherIsBetter
+  )
   const { normalStartPct, normalEndPct, valuePct } = geo
   const s1w = normalStartPct
   const s2w = normalEndPct - normalStartPct
@@ -149,7 +167,7 @@ export function MetricRowItem({ series, expanded, onToggle }: Props) {
   const { tone, label: statusLabel } = resolveStatus(series)
   const st = STATUS[tone]
   const Icon = metricIcon(series.metricType)
-  const name = series.labelVn ?? series.metricType
+  const name = series.latest.display_name ?? series.labelVn ?? series.metricType
   // Display the ORIGINAL as-recorded unit/value; classification/ref-bar stay canonical.
   const canonicalUnit = series.latest.unit ?? series.unit?.label ?? ''
   const unitLabel = displayUnitOf(series.latest, canonicalUnit)
@@ -165,7 +183,7 @@ export function MetricRowItem({ series, expanded, onToggle }: Props) {
     val: displayInlineOf(m, m.unit ?? unitLabel),
   }))
 
-  const StatusIcon = tone === 'mint' ? CheckCircle : TriangleAlert
+  const StatusIcon = tone === 'mint' ? CheckCircle : tone === 'neutral' ? HelpCircle : TriangleAlert
 
   return (
     <button

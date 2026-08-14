@@ -227,7 +227,8 @@ export function LabEntryModal({
         test_name: r.biomarker, // canonical key → promotes to health_metrics (dashboard sync)
         value: Number(r.value),
         unit: u.label,
-        reference_range: formatRefRange(u, b.higher_is_better),
+        // No client-computed reference_range — the backend attaches this via
+        // resolve_lab_semantics at write/read time (Unified LabResult Contract).
       }
     })
 

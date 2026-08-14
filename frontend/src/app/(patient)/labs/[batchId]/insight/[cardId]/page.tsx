@@ -40,15 +40,21 @@ import { useAuth } from '@/lib/auth/context'
 import { getPatientInsight, type InsightCard } from '@/lib/api/labInsight'
 import { NeuCard } from '@/components/patient/neu'
 import { formatLabValue } from '@/lib/utils/formatLabValue'
+import { STATUS_COLOR_HEX } from '@/components/patient/metrics/metricVisuals'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
+// NOTE: `indicator.status` here is the PA-11 insight engine's own vocabulary
+// (abnormal/borderline/normal) — a distinct, separate concept from the
+// Unified LabResult Contract's severity/status. This only reuses the shared
+// color tokens for visual consistency; it must NOT be wired to
+// resolveContractStatus, which resolves a different data shape entirely.
 function statusColor(status: string): string {
   switch (status) {
-    case 'abnormal': return '#EF4444'
-    case 'borderline': return '#F59E0B'
-    case 'normal': return '#17AE7B'
-    default: return '#6B7280'
+    case 'abnormal': return STATUS_COLOR_HEX.alert
+    case 'borderline': return STATUS_COLOR_HEX.watch
+    case 'normal': return STATUS_COLOR_HEX.ok
+    default: return STATUS_COLOR_HEX.neutral
   }
 }
 
