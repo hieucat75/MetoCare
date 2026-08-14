@@ -66,8 +66,67 @@ def assess_biomarker(
     if spec is None:
         return None
 
+    # Fresh-resolved status via the single shared resolver — drives the
+    # CRITICAL gate below instead of a hand-typed threshold literal
+    # independent of `lab_interpreter.classify_value` (issues #153/#154: one
+    # canonical registry, two silently-disagreeing severities). `value` here
+    # is always already expressed in `spec.unit` — every call site
+    # (narrative.py/patient_insight.py/lab_intelligence.py) passes
+    # `LabResult.normalized_value_si`, which despite the "_si" name holds the
+    # canonical-unit magnitude (see those files' own P0-fix comments), so
+    # `spec.unit` is the correct unit to tell resolve_lab_semantics it is in.
+    #
+    # NOTE — narrow migration, not a full rewrite: only the CRITICAL bucket is
+    # driven by the resolver below. The WARNING/WATCH bands further down
+    # (prediabetes ranges, mild-hypoglycemia, sex-adjusted HDL cutoff, AHA
+    # LDL/TG cutoffs, TSH watch-band, eGFR CKD staging band, ALT/AST ULN
+    # multiplier) encode clinically-distinct thresholds that do not map 1:1
+    # onto the registry's single ref_low/ref_high boundary and are
+    # deliberately left as their pre-existing hand-typed literals — forcing
+    # them through the registry's coarser 4-bucket classification would shift
+    # patient-facing cutoffs by fractions of a unit exactly where clinical
+    # precision matters. See PR notes for the full per-biomarker breakdown.
+    from app.domain.lab_semantics import resolve_lab_semantics  # noqa: PLC0415
+
+    try:
+        semantics = resolve_lab_semantics(canonical, value, spec.unit)
+    except Exception:  # noqa: BLE001 — must never crash, but must fail CLOSED
+        # CLOSED, not open: silently falling through to the "normal" catch-all
+        # below on a resolver failure is exactly the #153/#154 hazard — a
+        # value this function could not classify must never present to the
+        # patient/doctor as reassuring.
+        return _finding(
+            canonical,
+            "biomarker",
+            "unknown",
+            "warning",
+            2,
+            "Không thể tự động phân loại chỉ số này — vui lòng trao đổi với bác sĩ.",
+            f"{canonical}={value} unresolved (resolver error)",
+            True,
+        )
+    is_critical = semantics is not None and semantics.status == "critical"
+
+    # Fail closed on an unresolvable value (e.g. hemoglobin above the CBC
+    # guard's physiological_max) — without this check, `is_critical` is
+    # False for "unknown" exactly as it is for "normal", so a value the
+    # resolver explicitly could not classify would otherwise fall through
+    # every branch below to a confident "normal" default. That is the same
+    # #153/#154-class hazard the resolver call above exists to close.
+    if semantics is not None and semantics.status == "unknown":
+        return _finding(
+            canonical,
+            "biomarker",
+            "unknown",
+            "warning",
+            2,
+            "Không thể tự động phân loại chỉ số này — vui lòng trao đổi với bác sĩ.",
+            f"{canonical}={value} unresolved (resolver returned unknown)",
+            True,
+        )
+
     # Critical rules
-    if canonical == "fasting_glucose" and (value >= 500 or value <= 54):
+    if canonical == "fasting_glucose" and is_critical:
         return _finding(
             canonical,
             "biomarker",
@@ -78,7 +137,7 @@ def assess_biomarker(
             f"{canonical}={value} mg/dL critical",
             True,
         )
-    if canonical == "hba1c" and value >= 10:
+    if canonical == "hba1c" and is_critical:
         return _finding(
             canonical,
             "biomarker",
@@ -89,7 +148,7 @@ def assess_biomarker(
             f"{canonical}={value}% critical",
             True,
         )
-    if canonical == "creatinine" and value >= (spec.critical_high or 1e9):
+    if canonical == "creatinine" and is_critical:
         return _finding(
             canonical,
             "biomarker",
@@ -100,7 +159,7 @@ def assess_biomarker(
             f"{canonical}={value} mg/dL critical",
             True,
         )
-    if canonical in {"sodium", "potassium", "hemoglobin"}:
+    if canonical in {"sodium", "potassium", "hemoglobin"} and is_critical:
         if spec.critical_low is not None and value <= spec.critical_low:
             return _finding(
                 canonical,

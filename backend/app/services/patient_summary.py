@@ -109,14 +109,49 @@ def _fetch_vitals(
     return VitalsSummary(latest=latest, trend=trend)
 
 
-def _guarded_metric_status(r) -> str | None:
-    """Stored status, unless the analyte/unit pair is not interpretable."""
-    from app.domain.analyte_units import guarded_status
+def _resolve_metric_semantics(r: HealthMetric) -> dict | None:
+    """Fresh clinical semantics for one doctor-summary vital row.
 
-    g = guarded_status(r.metric_type, r.value, r.unit)
-    if g is not None and g[0] == "unknown":
-        return "unknown"
-    return r.status
+    Mirrors `MetricOut._populate_clinical_message`'s calling pattern: ALWAYS
+    resolves fresh from `r.value`/`r.unit` via `lab_semantics.resolve_lab_semantics`
+    rather than trusting `r.status`, which can silently disagree with what the
+    same value would classify as today (issues #153/#154). `reclassify` only
+    walks lab_results, so a promoted HealthMetric could otherwise keep a stale
+    severity forever — this is the DOCTOR-facing consult summary, so it must
+    not assert a severity the patient screens already refuse to make.
+
+    `HealthMetric` has no `normalized_value_si`/`normalized_unit_si` columns —
+    `value`/`unit` ARE the canonical pair (same call shape `MetricOut` uses).
+
+    Returns `None` when `resolve_lab_semantics` itself returns `None`
+    (metric_type outside the canonical registry — e.g. non-lab vitals like
+    blood pressure); the caller keeps the existing raw-status fallback then.
+    """
+    from app.domain.lab_semantics import resolve_lab_semantics
+
+    try:
+        semantics = resolve_lab_semantics(r.metric_type, r.value, r.unit)
+    except Exception:  # noqa: BLE001 — summary building must never raise; fail CLOSED
+        return {
+            "status": "unknown",
+            "severity": "unknown",
+            "needs_review": True,
+            "clinical_message": None,
+            "display_name": None,
+            "reference_display": None,
+        }
+
+    if semantics is None:
+        return None
+
+    return {
+        "status": semantics.status,
+        "severity": semantics.severity,
+        "needs_review": semantics.needs_review,
+        "clinical_message": semantics.clinical_message,
+        "display_name": semantics.display_name,
+        "reference_display": semantics.reference_display,
+    }
 
 
 def _vital_row(r: HealthMetric) -> dict:
@@ -128,23 +163,34 @@ def _vital_row(r: HealthMetric) -> dict:
     """
     orig_value = r.original_value if r.original_value is not None else r.value
     orig_unit = r.original_unit if r.original_unit is not None else r.unit
-    return {
+    semantics = _resolve_metric_semantics(r)
+    row: dict = {
         "id": r.id,
         "metric_type": r.metric_type,
         "value": format_lab_value(orig_value, orig_unit),
         "unit": orig_unit,
         "display": format_lab_display(orig_value, orig_unit),
         "measured_at": r.measured_at.isoformat() if r.measured_at else None,
-        # `reclassify` only walks lab_results, so a promoted HealthMetric keeps
-        # its stale severity. This is the DOCTOR-facing consult summary — it must
-        # not assert a severity the patient screens already refuse to make.
-        "status": _guarded_metric_status(r),
+        # Fresh-resolved status (never the possibly-stale stored column) for
+        # canonical lab-biomarker metric_types; falls back to the stored
+        # column only for non-lab vitals resolve_lab_semantics doesn't cover.
+        "status": (semantics["status"] if semantics else r.status),
         # Provenance is clinically load-bearing: a lab-drawn value and a
         # home-device reading of the same analyte carry different weight, and
         # after category filtering the doctor cannot otherwise tell which they
         # are looking at.
         "source": r.source,
     }
+    if semantics is not None:
+        row["severity"] = semantics["severity"]
+        row["needs_review"] = semantics["needs_review"]
+        if semantics["clinical_message"]:
+            row["clinical_message"] = semantics["clinical_message"]
+        if semantics["display_name"]:
+            row["display_name"] = semantics["display_name"]
+        if semantics["reference_display"]:
+            row["reference_display"] = semantics["reference_display"]
+    return row
 
 
 def _compute_vitals_trend(rows: list[HealthMetric]) -> str:

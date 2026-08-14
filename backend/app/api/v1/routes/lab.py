@@ -686,9 +686,10 @@ def _clean_reference_range(raw: str | None, display_unit: str) -> str:
 def _build_clinical_input(row: LabResult) -> dict:
     """Convert a LabResult ORM row into the clinical_input dict for the explanation layer.
 
-    canonical_status is derived from row.status (the stored classification).
-    We map the existing engine's status vocabulary to the explanation layer's
-    canonical_status vocabulary.
+    canonical_status is derived fresh from `resolve_lab_semantics` (never from
+    `row.status`, which can be a stale stored classification). We map the
+    resolver's status vocabulary to the explanation layer's canonical_status
+    vocabulary.
 
     SINGLE SOURCE OF TRUTH:
     - ``normalized_value`` / ``normalized_unit`` → display values (original OCR value/unit)
@@ -697,7 +698,11 @@ def _build_clinical_input(row: LabResult) -> dict:
       status classification and risk scoring (NOT sent to Claude for narrative).
     - ``reference_range`` → cleaned string with no appended unit suffix.
     """
-    # Map existing status values → canonical_status understood by explanation layer
+    # Map resolve_lab_semantics' status vocabulary → canonical_status understood
+    # by the explanation layer. Output vocabulary preserved exactly (downstream
+    # Claude-prompt code depends on it) even though the INPUT below is now
+    # fresh-resolved via the single shared resolver, never guard-then-trust on
+    # `row.status` — a stale stored column is exactly the #153/#154 hazard.
     STATUS_MAP: dict[str | None, str] = {
         "normal": "normal",
         "borderline": "borderline_high",  # existing engine uses "borderline"
@@ -706,14 +711,29 @@ def _build_clinical_input(row: LabResult) -> dict:
         "critical": "critical",
         # defensive: treat unknown/None as unknown
     }
-    # Read guard: reclassify is a manual job, so between deploy and its next run
-    # a legacy row still carries a stale severity. This feeds canonical_severity
-    # and doctor_review_required into the Claude explanation layer.
-    from app.domain.analyte_units import guarded_status as _gs
+    from app.domain.lab_semantics import resolve_lab_semantics  # noqa: PLC0415
 
-    _g = _gs(getattr(row, "canonical_name", None), row.value, row.unit)
-    _row_status = "unknown" if (_g is not None and _g[0] == "unknown") else (row.status or "")
-    canonical_status = STATUS_MAP.get(_row_status, "unknown")
+    try:
+        semantics = resolve_lab_semantics(
+            row.canonical_name,
+            row.value,
+            row.unit,
+            printed_reference_text=row.original_reference_range or row.reference_range,
+            printed_reference_unit=row.original_unit,
+            normalized_value_si=row.normalized_value_si,
+            normalized_unit_si=row.normalized_unit_si,
+        )
+    except Exception:  # noqa: BLE001 — must never crash, but must fail CLOSED
+        # CLOSED, not open: falling back to whatever `row.status` says (which
+        # could be a stale confident severity) is exactly the hazard this
+        # resolver exists to remove.
+        semantics = None
+        _resolved_status = "unknown"
+    else:
+        _resolved_status = (
+            semantics.status if semantics is not None else (row.status or "")
+        )
+    canonical_status = STATUS_MAP.get(_resolved_status, "unknown")
 
     # Severity heuristic from status (existing engine doesn't store separate severity)
     SEVERITY_MAP: dict[str, str] = {
@@ -725,17 +745,28 @@ def _build_clinical_input(row: LabResult) -> dict:
         "unknown": "unknown",
     }
     canonical_severity = SEVERITY_MAP.get(canonical_status, "moderate")
-    doctor_required = canonical_status in ("critical", "critical_high", "critical_low")
+    # needs_review must force a review flag on its own — canonical_status alone
+    # collapses "resolver explicitly couldn't classify this" and "resolver
+    # confidently said normal" into the same non-critical bucket, which would
+    # silently under-flag an unresolvable value (unconvertible unit, CBC
+    # dimensional guard, or a caught resolver exception above).
+    doctor_required = (
+        canonical_status in ("critical", "critical_high", "critical_low", "unknown")
+        or (semantics is not None and semantics.needs_review)
+    )
 
-    # Vietnamese display name from canonical name
+    # Vietnamese display name: the single shared resolver's name when it covers
+    # this analyte, falling back to the legacy `_display_vi` lookup for a
+    # canonical_name resolve_lab_semantics doesn't recognise (non-lab/unknown).
     from app.domain.patient_insight import _display_vi  # noqa: PLC0415
     from app.utils.number_format import format_lab_value as _fmt  # noqa: PLC0415
 
-    display_name = (
-        _display_vi(row.canonical_name or "")
-        if row.canonical_name
-        else (row.test_name or "xét nghiệm")
-    )
+    if semantics is not None and semantics.display_name:
+        display_name = semantics.display_name
+    elif row.canonical_name:
+        display_name = _display_vi(row.canonical_name)
+    else:
+        display_name = row.test_name or "xét nghiệm"
 
     # --- Display value = what patient sees on screen (original OCR value/unit) ---
     # Falls back to normalized_value_si only when original is absent.

@@ -175,24 +175,20 @@ _SEVERITY_TO_ACTION_TEXT_VI = {
     "info": "Tiếp tục theo dõi theo lịch thông thường.",
 }
 
-# Per-biomarker friendly display names (Vietnamese)
+# Per-biomarker friendly display names (Vietnamese).
+#
+# PTH decision (issue #153/#154 follow-up): keys this dict used to duplicate
+# from the lab catalog (fasting_glucose/hba1c/ldl/hdl/triglyceride/
+# total_cholesterol/creatinine/egfr/alt/ast/tsh/sodium/potassium/hemoglobin/
+# uric_acid) are DROPPED — `_display_vi()` now reads those from the shared
+# catalog (`lab_catalog.get_catalog()["biomarkers"][...]["name_vn"]`) so this
+# file cannot drift from the catalog's name again (confirmed drift existed,
+# e.g. catalog "LDL-Cholesterol" vs this dict's old "LDL Cholesterol", or
+# catalog "Độ lọc cầu thận (eGFR)" vs this dict's old "Mức lọc cầu thận
+# (eGFR)"). Only genuinely non-lab / derived-metric keys remain — the catalog
+# has no entry for them.
 _DISPLAY_VI: dict[str, str] = {
-    "fasting_glucose": "Đường huyết lúc đói",
-    "hba1c": "HbA1c",
-    "ldl": "LDL Cholesterol",
-    "hdl": "HDL Cholesterol",
-    "triglyceride": "Triglyceride",
-    "total_cholesterol": "Cholesterol toàn phần",
-    "creatinine": "Creatinine",
-    "egfr": "Mức lọc cầu thận (eGFR)",
     "egfr_ckd_epi": "Mức lọc cầu thận (eGFR CKD-EPI)",
-    "alt": "Men gan ALT",
-    "ast": "Men gan AST",
-    "tsh": "TSH tuyến giáp",
-    "sodium": "Natri máu",
-    "potassium": "Kali máu",
-    "hemoglobin": "Hemoglobin",
-    "uric_acid": "Axit uric",
     "non_hdl_cholesterol": "Cholesterol không HDL",
     "ldl_friedewald": "LDL (Friedewald)",
     "tyg_index": "Chỉ số TyG",
@@ -202,6 +198,17 @@ _DISPLAY_VI: dict[str, str] = {
 
 
 def _display_vi(canonical: str) -> str:
+    """Vietnamese display name. The lab catalog is authoritative for lab
+    biomarkers (PTH decision — see `_DISPLAY_VI` comment); `_DISPLAY_VI` now
+    covers only the genuinely non-lab/derived keys the catalog doesn't have."""
+    from app.domain.lab_catalog import get_catalog
+
+    try:
+        entry = get_catalog()["biomarkers"].get(canonical)
+    except Exception:  # noqa: BLE001 — display name must never crash resolution
+        entry = None
+    if entry and entry.get("name_vn"):
+        return entry["name_vn"]
     return _DISPLAY_VI.get(canonical, canonical)
 
 

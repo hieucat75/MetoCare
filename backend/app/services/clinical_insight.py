@@ -4,7 +4,9 @@ Composes patient-facing guidance from existing rules engines — **rules-first**
 no LLM in v1. Pipeline per metric:
 
     latest + history (health_metrics)
-      → status   (HealthMetric.status, else lab_interpreter.classify_value)
+      → status   (lab-catalog biomarkers: resolve_lab_semantics, fresh every
+                   time, never the stored HealthMetric.status; non-lab vitals
+                   like blood pressure: _classify_vital, else stored status)
       → trend    (latest vs previous: direction, %, improved?)
       → content  (insight_content.get_content: meaning / risks / lifestyle / retest)
       → guardrail-validated output (+ DISCLAIMER_VI)
@@ -25,11 +27,7 @@ from app.core.clinical_thresholds import get_vital_thresholds_dict
 from app.domain import insight_content as ic
 from app.domain import policies
 from app.domain.guardrails import check_output
-from app.domain.lab_interpreter import (
-    _ALIAS_INDEX,
-    LabStatus,
-    classify_value,
-)
+from app.domain.lab_interpreter import _ALIAS_INDEX
 from app.domain.metabolic_score import ScoreBand
 from app.models.clinical import HealthMetric
 from app.services import metabolic_live
@@ -55,16 +53,16 @@ _VITAL_RANGES: dict[str, tuple[float, float]] = {
 }
 
 # Vietnamese display labels for the authored metrics (fallback = metric_type).
+#
+# PTH decision (issue #153/#154 follow-up): lab-biomarker keys this dict used
+# to duplicate (tsh/fasting_glucose/hba1c/alt/ast/ldl/total_cholesterol/hdl/
+# triglyceride) are DROPPED — they now come from the shared catalog
+# (`lab_catalog.get_catalog()["biomarkers"][...]["name_vn"]`) via `_label()`
+# below, so this file cannot drift from the catalog's name again (confirmed
+# drift existed, e.g. catalog "LDL-Cholesterol" vs this dict's old
+# "LDL (cholesterol xấu)"). Only genuinely non-lab metrics remain — vitals the
+# catalog does not have.
 _LABELS: dict[str, str] = {
-    "tsh": "TSH",
-    "fasting_glucose": "Đường huyết lúc đói",
-    "hba1c": "HbA1c",
-    "alt": "Men gan ALT",
-    "ast": "Men gan AST",
-    "ldl": "LDL (cholesterol xấu)",
-    "total_cholesterol": "Cholesterol toàn phần",
-    "hdl": "HDL (cholesterol tốt)",
-    "triglyceride": "Triglyceride",
     "blood_pressure": "Huyết áp",
     "blood_pressure_systolic": "Huyết áp (tâm thu)",
     "blood_pressure_diastolic": "Huyết áp (tâm trương)",
@@ -179,42 +177,39 @@ def _classify_vital(metric_type: str, value: float, unit: str) -> str | None:
 def _status(row: HealthMetric) -> str:
     """Resolve a metric's status, unit-safely.
 
-    For a known lab biomarker, classify whenever the value can be expressed in
-    the classifier's reference unit — either the unit already matches, or it is a
-    convertible mmol/L. The classifier is then **authoritative**: it applies the
-    CRITICAL thresholds that the generic metric writer / lab promotion does NOT,
-    so e.g. HbA1c 12%, ALT 400 U/L or TSH 0.005 mIU/L are escalated to
+    For a known lab biomarker, status is resolved FRESH via the single shared
+    resolver (`lab_semantics.resolve_lab_semantics`) — never a hand-rolled
+    guard-then-classify pair, which is exactly the class of defect issues
+    #153/#154 were filed over (one stored value, independently-derived
+    severities). The resolver subsumes both what this function used to do by
+    hand: the CBC dimensional guard (an analyte/unit pair from a different
+    dimension, e.g. unitless `rbc 0.50`, must never yield a severity) AND
+    full-registry classification, which is **authoritative** — it applies the
+    CRITICAL thresholds that the generic metric writer / lab promotion does
+    NOT, so e.g. HbA1c 12%, ALT 400 U/L or TSH 0.005 mIU/L are escalated to
     ``critical`` even if stored merely as ``high``/``low`` (and glucose 5.73
     mmol/L is read as HIGH rather than a wrongly-stored ``normal``).
 
-    Otherwise (non-lab metric like BP/weight, or an unconvertible SI unit such as
-    creatinine µmol/L) trust the stored status, which was computed in the
-    reading's own unit at write time. This avoids SI-vs-mg/dL false positives."""
+    Otherwise (non-lab metric like BP/weight — `resolve_lab_semantics` returns
+    None, since it does not cover vitals) trust the stored status / the
+    board-sourced vital classifier below, unchanged."""
     canon = _lab_canonical(row.metric_type)
     unit = (row.unit or "").lower()
 
-    # CBC dimensional guard — this surface feeds abnormal_findings, the overall
-    # risk escalation and the Meto AI context, so a row the two patient screens
-    # already refuse to classify must not re-enter as "critical" here. The
-    # `not unit` branch below would otherwise classify a unitless `rbc 0.50`
-    # directly, which is the incident value.
-    from app.domain.analyte_units import guarded_status
-
-    _g = guarded_status(canon, row.value, row.unit)
-    if _g is not None:
-        return _g[0]
-
     if canon and canon in _ALIAS_INDEX:
-        spec = _ALIAS_INDEX[canon]
-        value_in_ref: float | None = None
-        if canon in _MMOL_TO_MGDL and "mmol" in unit:
-            value_in_ref = _to_mgdl(canon, row.value, row.unit)
-        elif not unit or unit == spec.unit.lower():
-            value_in_ref = row.value
-        if value_in_ref is not None:
-            st = classify_value(canon, value_in_ref)
-            if st != LabStatus.UNKNOWN:
-                return st.value
+        # HealthMetric has no normalized_value_si/normalized_unit_si columns —
+        # value/unit ARE the canonical pair (same call shape MetricOut uses).
+        from app.domain.lab_semantics import resolve_lab_semantics
+
+        try:
+            semantics = resolve_lab_semantics(canon, row.value, row.unit)
+        except Exception:  # noqa: BLE001 — must never crash, but must fail CLOSED
+            # CLOSED, not open: falling through to a stale stored status is
+            # exactly the #153/#154 hazard this resolver exists to remove.
+            return "unknown"
+        if semantics is not None:
+            return semantics.status
+
     stored = (row.status or "").strip().lower()
     # Supported manual vital (BP) — classify rather than trust a default 'normal',
     # but NEVER downgrade an abnormal status that was set from supplied custom
@@ -311,8 +306,22 @@ _group_key = canonical_metric_key
 
 
 def _label(metric_type: str) -> str:
+    """Vietnamese display label. The lab catalog is authoritative for lab
+    biomarkers (PTH decision — see `_LABELS` comment); `_LABELS` now covers
+    only the genuinely non-lab vitals the catalog doesn't have."""
+    content_key = ic.content_key(metric_type)
+    from app.domain.lab_catalog import get_catalog
+
+    try:
+        biomarkers = get_catalog()["biomarkers"]
+    except Exception:  # noqa: BLE001 — display name must never crash resolution
+        biomarkers = {}
+    for key in (metric_type, content_key):
+        entry = biomarkers.get(key)
+        if entry and entry.get("name_vn"):
+            return entry["name_vn"]
     # Raw metric_type first (distinguishes BP components), then the content key.
-    return _LABELS.get(metric_type) or _LABELS.get(ic.content_key(metric_type), metric_type)
+    return _LABELS.get(metric_type) or _LABELS.get(content_key, metric_type)
 
 
 # --------------------------------------------------------------------------- #

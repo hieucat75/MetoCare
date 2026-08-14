@@ -162,23 +162,61 @@ def _sanitize_list(values: Any) -> list[str]:
 
 
 
-def _ctx_guarded_status(row, status_index: int, canonical_index: int = 0):
-    """Stored status, unless the analyte/unit pair is not interpretable.
+def _ctx_resolve_semantics(
+    canonical: str | None,
+    value: float | None,
+    unit: str | None,
+    *,
+    normalized_value_si: float | None = None,
+    normalized_unit_si: str | None = None,
+) -> dict | None:
+    """Fresh clinical semantics for one AI-context lab/metric row.
 
-    `reclassify` only walks lab_results and is operator-run, so between deploy
-    and its next pass a legacy CBC row still carries `critical`. Everything in
-    this module is fed verbatim to the model.
+    Mirrors `LabResultOut._populate_clinical_message`/`MetricOut`'s calling
+    pattern: ALWAYS resolves fresh from raw value/unit via
+    `lab_semantics.resolve_lab_semantics` rather than trusting the row's
+    stored `status` column, which can silently disagree with what the same
+    value would classify as today (issues #153/#154). `reclassify` only walks
+    lab_results and is operator-run, so between deploy and its next pass a
+    legacy CBC row could still carry a stale `critical` in the raw column —
+    everything this module returns is fed verbatim to the model, so it must
+    not trust that column.
+
+    Returns `None` when `resolve_lab_semantics` itself returns `None`
+    (metric_type/analyte outside the canonical registry — e.g. non-lab
+    vitals like blood pressure); callers keep their existing raw-stored-status
+    fallback in that case, same as `LabResultOut`/`MetricOut`.
     """
-    from app.domain.analyte_units import guarded_status
+    from app.domain.lab_semantics import resolve_lab_semantics
 
     try:
-        canonical, value, unit = row[canonical_index], row[1], row[2]
-        g = guarded_status(canonical, value, unit)
-        if g is not None and g[0] == "unknown":
-            return "unknown"
-    except Exception:  # noqa: BLE001 — context building must never raise
-        pass
-    return row[status_index]
+        semantics = resolve_lab_semantics(
+            canonical,
+            value,
+            unit,
+            normalized_value_si=normalized_value_si,
+            normalized_unit_si=normalized_unit_si,
+        )
+    except Exception:  # noqa: BLE001 — context building must never raise; fail CLOSED
+        # CLOSED, not open: leaving whatever status was set upstream (which
+        # could be a stale confident severity) is exactly the #153/#154
+        # hazard this resolver exists to remove.
+        return {
+            "status": "unknown",
+            "severity": "unknown",
+            "needs_review": True,
+            "clinical_message": None,
+        }
+
+    if semantics is None:
+        return None
+
+    return {
+        "status": semantics.status,
+        "severity": semantics.severity,
+        "needs_review": semantics.needs_review,
+        "clinical_message": semantics.clinical_message,
+    }
 
 
 class ContextBuilder:
@@ -633,7 +671,8 @@ class ContextBuilder:
                            lr.reference_range, lr.status, lub.test_date,
                            lr.original_test_name, lr.original_value,
                            lr.original_unit, lr.original_reference_range,
-                           lr.canonical_name
+                           lr.canonical_name, lr.normalized_value_si,
+                           lr.normalized_unit_si
                     FROM lab_results lr
                     JOIN lab_upload_batches lub ON lub.id = lr.batch_id
                     WHERE lub.patient_id = (
@@ -676,7 +715,19 @@ class ContextBuilder:
                 # BEFORE `display` is formatted so the verbatim-quote token stays
                 # consistent with the unit field (real units are never altered).
                 orig_unit = _sanitize_unit(orig_unit)
-                return {
+
+                # Fresh-resolved semantics, never the raw stored status column
+                # (issues #153/#154). canonical/value/unit are the CANONICAL
+                # columns (r[10]/r[1]/r[2]), matching what LabResultOut passes
+                # to resolve_lab_semantics — original_* above is display-only.
+                semantics = _ctx_resolve_semantics(
+                    r[10],
+                    r[1],
+                    r[2],
+                    normalized_value_si=r[11],
+                    normalized_unit_si=r[12],
+                )
+                row: dict[str, Any] = {
                     "test_name": _sanitize_text(orig_test_name),
                     # Formatted original — no raw IEEE float, no unit conversion.
                     "value": format_lab_value(orig_value, orig_unit),
@@ -684,9 +735,15 @@ class ContextBuilder:
                     # Verbatim token the LLM must quote as-is (never convert/round).
                     "display": format_lab_display(orig_value, orig_unit),
                     "reference_range": _sanitize_text(orig_ref),
-                    "status": _ctx_guarded_status(r, 4, canonical_index=10) or "unknown",
+                    "status": (semantics["status"] if semantics else r[4]) or "unknown",
                     "collected_date": str(r[5])[:10] if r[5] else None,
                 }
+                if semantics is not None:
+                    row["severity"] = semantics["severity"]
+                    row["needs_review"] = semantics["needs_review"]
+                    if semantics["clinical_message"]:
+                        row["clinical_message"] = semantics["clinical_message"]
+                return row
 
             return [_lab_row(r) for r in rows]
         except Exception as exc:
@@ -747,15 +804,28 @@ class ContextBuilder:
                 # canonical/SI-converted number. Fall back to value/unit when NULL.
                 orig_value = r[5] if r[5] is not None else r[1]
                 orig_unit = _sanitize_unit(r[6] if r[6] is not None else (r[2] or ""))
-                result.append({
+
+                # Fresh-resolved semantics, never the raw stored status column
+                # (issues #153/#154). HealthMetric has no normalized_value_si/
+                # normalized_unit_si columns — value/unit ARE the canonical
+                # pair (see MetricOut._populate_clinical_message, same call
+                # shape: normalized_value_si=None, normalized_unit_si=None).
+                semantics = _ctx_resolve_semantics(metric_type, r[1], r[2])
+                metric_row: dict[str, Any] = {
                     "metric_type": _sanitize_text(metric_type),
                     "latest_value": format_lab_value(orig_value, orig_unit),
                     "unit": orig_unit,
                     # Verbatim token the LLM must quote as-is (never convert/round).
                     "display": format_lab_display(orig_value, orig_unit),
                     "measured_at": str(r[3]) if r[3] else None,
-                    "status": _ctx_guarded_status(r, 4) or "unknown",
-                })
+                    "status": (semantics["status"] if semantics else r[4]) or "unknown",
+                }
+                if semantics is not None:
+                    metric_row["severity"] = semantics["severity"]
+                    metric_row["needs_review"] = semantics["needs_review"]
+                    if semantics["clinical_message"]:
+                        metric_row["clinical_message"] = semantics["clinical_message"]
+                result.append(metric_row)
                 if len(result) >= _MAX_METRICS_TYPES:
                     break
 
