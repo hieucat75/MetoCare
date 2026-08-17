@@ -16,6 +16,17 @@ on:
         description: "Type PRODUCTION to confirm"
         required: true
 
+# Serialize production deploys — no existing lock meant two workflow_dispatch
+# triggers could run this job concurrently, which would race the #163 backup
+# pruning/creation step (and the migration itself) against production. Never
+# cancels an in-flight deploy (queues instead) — this workflow is manual and
+# already-guarded (explicit PRODUCTION confirmation), so auto-cancelling a
+# live production deploy is not existing policy. Scoped to this workflow only
+# — staging (ci.yml) is unaffected.
+concurrency:
+  group: azure-production-deploy
+  cancel-in-progress: false
+
 permissions:
   id-token: write
   contents: read

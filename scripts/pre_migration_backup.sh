@@ -194,6 +194,23 @@ SUMMARY
 fi
 
 # ---------------------------------------------------------------------------
+# Prune old workflow-owned pre-migration backups first (#163) — keeps this
+# pipeline below Azure's 7-backup Customer On-Demand quota. Only ever touches
+# backups matching this script's own naming convention (pre-migration-{env}-
+# ...); Azure's Automatic backups and any unrelated on-demand backup are
+# never selected. Fails closed: any pruning problem aborts here, before the
+# backup create call below — see backend/scripts/backup_retention.py.
+# ---------------------------------------------------------------------------
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+log "Pruning old pre-migration backups (retention policy) before creating a new one..."
+python3 "${REPO_ROOT}/backend/scripts/backup_retention.py" \
+    --env "$ENV" \
+    --server-name "$POSTGRES_SERVER_NAME" \
+    --resource-group "$RESOURCE_GROUP" \
+    --execute \
+    || die "Backup retention pruning failed or would be unsafe. Aborting migration (fail closed)."
+
+# ---------------------------------------------------------------------------
 # Trigger the backup
 # ---------------------------------------------------------------------------
 log "Triggering pre-migration backup..."
