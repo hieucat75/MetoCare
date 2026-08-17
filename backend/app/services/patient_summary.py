@@ -130,7 +130,18 @@ def _resolve_metric_semantics(r: HealthMetric) -> dict | None:
     from app.domain.lab_semantics import resolve_lab_semantics
 
     try:
-        semantics = resolve_lab_semantics(r.metric_type, r.value, r.unit)
+        semantics = resolve_lab_semantics(
+            r.metric_type,
+            r.value,
+            r.unit,
+            # Same confirmed source-report provenance MetricOut resolves —
+            # see HealthMetric.source_reference_text. Without this, the
+            # doctor summary always fell back to CANONICAL_FALLBACK even
+            # when the patient screens correctly showed SOURCE_REPORT for
+            # the identical row.
+            printed_reference_text=r.source_reference_text,
+            printed_reference_unit=r.original_unit,
+        )
     except Exception:  # noqa: BLE001 — summary building must never raise; fail CLOSED
         return {
             "status": "unknown",
@@ -139,6 +150,7 @@ def _resolve_metric_semantics(r: HealthMetric) -> dict | None:
             "clinical_message": None,
             "display_name": None,
             "reference_display": None,
+            "reference_source": None,
         }
 
     if semantics is None:
@@ -151,6 +163,7 @@ def _resolve_metric_semantics(r: HealthMetric) -> dict | None:
         "clinical_message": semantics.clinical_message,
         "display_name": semantics.display_name,
         "reference_display": semantics.reference_display,
+        "reference_source": semantics.reference_source,
     }
 
 
@@ -190,6 +203,8 @@ def _vital_row(r: HealthMetric) -> dict:
             row["display_name"] = semantics["display_name"]
         if semantics["reference_display"]:
             row["reference_display"] = semantics["reference_display"]
+        if semantics["reference_source"]:
+            row["reference_source"] = semantics["reference_source"]
     return row
 
 

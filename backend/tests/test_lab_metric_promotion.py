@@ -291,3 +291,70 @@ def test_promoted_metric_without_source_range_falls_back_on_both_screens(db, pat
     metric_out = MetricOut.model_validate(metric)
 
     assert lab_out.reference_source == metric_out.reference_source == "canonical_fallback"
+
+
+def test_promoted_metric_agrees_with_doctor_summary_on_source_report_range(db, patient):
+    """Third surface: the doctor pre-visit summary (patient_summary._vital_row)
+    must agree with LabResultOut/MetricOut on reference_display/reference_source
+    for the same promoted, confirmed result — not just the two patient screens."""
+    from app.schemas.health import MetricOut
+    from app.schemas.lab import LabResultOut
+    from app.services import patient_summary
+
+    row = LabResult(
+        patient_id=patient["patient_id"],
+        test_name="Hematocrit",
+        canonical_name="hematocrit",
+        value=50.0,
+        unit="%",
+        original_reference_range="42–47",
+        original_unit="%",
+        test_date=dt.date(2025, 1, 1),
+        verified_by_user=True,
+    )
+    db.add(row)
+    db.flush()
+    pid, td = patient["patient_id"], dt.date(2025, 1, 1)
+    lab.promote_lab_rows_to_metrics(db, patient_id=pid, rows=[row], test_date=td)
+    db.commit()
+
+    metric = _metrics(db, patient, "hematocrit")[0]
+
+    lab_out = LabResultOut.model_validate(row)
+    metric_out = MetricOut.model_validate(metric)
+    doctor_row = patient_summary._vital_row(metric)
+
+    assert lab_out.reference_display == metric_out.reference_display == "42–47"
+    assert lab_out.reference_source == metric_out.reference_source == "source_report"
+    assert doctor_row["reference_display"] == "42–47"
+    assert doctor_row["reference_source"] == "source_report"
+
+
+def test_promoted_metric_agrees_with_doctor_summary_without_a_source_range(db, patient):
+    from app.schemas.health import MetricOut
+    from app.schemas.lab import LabResultOut
+    from app.services import patient_summary
+
+    row = LabResult(
+        patient_id=patient["patient_id"],
+        test_name="RBC",
+        canonical_name="rbc",
+        value=4.5,
+        unit="10^12/L",
+        test_date=dt.date(2025, 1, 1),
+        verified_by_user=True,
+    )
+    db.add(row)
+    db.flush()
+    pid, td = patient["patient_id"], dt.date(2025, 1, 1)
+    lab.promote_lab_rows_to_metrics(db, patient_id=pid, rows=[row], test_date=td)
+    db.commit()
+
+    metric = _metrics(db, patient, "rbc")[0]
+
+    lab_out = LabResultOut.model_validate(row)
+    metric_out = MetricOut.model_validate(metric)
+    doctor_row = patient_summary._vital_row(metric)
+
+    assert lab_out.reference_source == metric_out.reference_source == "canonical_fallback"
+    assert doctor_row["reference_source"] == "canonical_fallback"
