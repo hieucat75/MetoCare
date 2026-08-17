@@ -42,6 +42,12 @@ class MetricOut(BaseModel):
     # the formatted original the UI should show. All three are additive/back-compat.
     original_value: float | None = None
     original_unit: str | None = None
+    # Confirmed source-report reference range text carried over from the
+    # promoting LabResult (see HealthMetric.source_reference_text). Passed
+    # into resolve_lab_semantics below so this schema resolves the same
+    # SOURCE_REPORT provenance LabResultOut does for the same result — never
+    # read/parsed independently.
+    source_reference_text: str | None = None
     display: str | None = None
     measured_at: dt.datetime
     status: str | None
@@ -98,6 +104,8 @@ class MetricOut(BaseModel):
                 self.metric_type,
                 self.value,
                 self.unit,
+                printed_reference_text=self.source_reference_text,
+                printed_reference_unit=self.original_unit,
                 normalized_value_si=None,
                 normalized_unit_si=None,
             )

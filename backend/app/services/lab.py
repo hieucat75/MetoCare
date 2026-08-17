@@ -324,6 +324,11 @@ def _promote_row(db: Session, row: LabResult, measured_at: dt.datetime) -> bool:
                 row.original_value if row.original_value is not None else float(row.value)
             ),
             original_unit=row.original_unit or row.unit,
+            # Carry the confirmed source-report reference range so MetricOut
+            # can resolve the same SOURCE_REPORT provenance LabResultOut does
+            # for this same result — mirrors the precedence LabResultOut
+            # already uses (schemas/lab.py _populate_clinical_message).
+            source_reference_text=row.original_reference_range or row.reference_range,
             measured_at=measured_at,
             source="lab_result",
             source_ref=row.id,

@@ -58,6 +58,13 @@ class HealthMetric(UUIDPrimaryKey, TimestampMixin, SoftDeleteMixin, Base):
     normal_range_min: Mapped[float | None] = mapped_column(Float)
     normal_range_max: Mapped[float | None] = mapped_column(Float)
     status: Mapped[str | None] = mapped_column(String(16))  # normal/low/high/critical
+    # Confirmed source-report reference range text, carried over from the
+    # promoting LabResult (original_reference_range or reference_range) so
+    # MetricOut can resolve the same SOURCE_REPORT provenance LabResultOut
+    # does for the same confirmed result. NULL for rows with no printed range
+    # and for legacy rows promoted before this field existed — those fall
+    # back to CANONICAL_FALLBACK in resolve_lab_semantics, same as today.
+    source_reference_text: Mapped[str | None] = mapped_column(String(128))
 
 
 class LabUploadBatch(UUIDPrimaryKey, TimestampMixin, SoftDeleteMixin, Base):

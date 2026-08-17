@@ -54,6 +54,83 @@ def _metric_out(**overrides) -> MetricOut:
 
 
 # --------------------------------------------------------------------------- #
+# Source-reference-range propagation across schemas (B2 follow-up) — the same
+# confirmed result must resolve identical reference_display/reference_source
+# whether read via LabResultOut (original_reference_range) or MetricOut
+# (source_reference_text, the field HealthMetric carries the printed range in
+# after promotion). See test_lab_metric_promotion.py for the end-to-end
+# promotion-path regression; these test the schemas' resolver wiring directly.
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize(
+    "canonical,value,unit,printed_range",
+    [
+        ("hematocrit", 50.0, "%", "42–47"),
+        ("hemoglobin", 14.0, "g/dL", "13–17"),
+    ],
+)
+def test_lab_result_and_metric_agree_on_source_report_range(
+    canonical, value, unit, printed_range
+):
+    lab = _lab_result_out(
+        canonical_name=canonical,
+        value=value,
+        unit=unit,
+        original_reference_range=printed_range,
+        original_unit=unit,
+    )
+    metric = _metric_out(
+        metric_type=canonical,
+        value=value,
+        unit=unit,
+        source_reference_text=printed_range,
+        original_unit=unit,
+    )
+
+    assert lab.reference_source == metric.reference_source == "source_report"
+    assert lab.reference_display == metric.reference_display == printed_range
+
+
+@pytest.mark.parametrize(
+    "canonical,value,unit",
+    [("rbc", 4.5, "10^12/L"), ("hemoglobin", 14.0, "g/dL")],
+)
+def test_lab_result_and_metric_agree_on_canonical_fallback_without_source_range(
+    canonical, value, unit
+):
+    """No printed range on either side — both must land on CANONICAL_FALLBACK,
+    not just avoid disagreeing (catches a bug where both silently claim
+    SOURCE_REPORT with no actual source text)."""
+    lab = _lab_result_out(canonical_name=canonical, value=value, unit=unit)
+    metric = _metric_out(metric_type=canonical, value=value, unit=unit)
+
+    assert lab.reference_source == metric.reference_source == "canonical_fallback"
+
+
+def test_lab_result_and_metric_agree_on_needs_review_even_with_a_source_range():
+    """A source range being present must never force SOURCE_REPORT/a confident
+    status for an unsafe analyte/unit pair — the resolver's guard runs first
+    on both schemas identically."""
+    lab = _lab_result_out(
+        canonical_name="rbc",
+        value=0.50,
+        unit="L/L",
+        original_reference_range="3.5–5.5",
+    )
+    metric = _metric_out(
+        metric_type="rbc",
+        value=0.50,
+        unit="L/L",
+        source_reference_text="3.5–5.5",
+    )
+
+    assert lab.status == metric.status == "unknown"
+    assert lab.interpretation_state == metric.interpretation_state == "needs_review"
+    assert lab.needs_review is metric.needs_review is True
+
+
+# --------------------------------------------------------------------------- #
 # Both-screen consistency — section 9 of the brief's matrix
 # --------------------------------------------------------------------------- #
 

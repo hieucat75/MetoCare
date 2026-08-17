@@ -210,3 +210,84 @@ def test_interpret_document_promotes_metrics(db, patient):
     lab.interpret_document(db, document_id=doc.id, requester_id=patient["user_id"])
     promoted = _metrics(db, patient)
     assert promoted and all(m.source == "lab_result" for m in promoted)
+
+
+# --------------------------------------------------------------------------- #
+# Reference-range provenance parity (Unified LabResult Contract B2 follow-up)
+#
+# The exact staging blocker: a confirmed HCT result with a printed source
+# range disagreed across the labs screen (LabResultOut, built straight from
+# the LabResult row) and the metrics screen (MetricOut, built from the
+# promoted HealthMetric row) — same value/status, different reference_display
+# and reference_source. Root cause: promotion never carried the printed range
+# onto HealthMetric, so MetricOut had nothing but CANONICAL_FALLBACK to fall
+# back to. This must fail before the fix (no HealthMetric.source_reference_text
+# column / promotion write / MetricOut passthrough) and pass after.
+# --------------------------------------------------------------------------- #
+
+
+def test_promoted_metric_carries_source_reference_text(db, patient):
+    from app.schemas.health import MetricOut
+    from app.schemas.lab import LabResultOut
+
+    row = LabResult(
+        patient_id=patient["patient_id"],
+        test_name="Hematocrit",
+        canonical_name="hematocrit",
+        value=50.0,
+        unit="%",
+        original_reference_range="42–47",
+        original_unit="%",
+        test_date=dt.date(2025, 1, 1),
+        verified_by_user=True,
+    )
+    db.add(row)
+    db.flush()
+    pid, td = patient["patient_id"], dt.date(2025, 1, 1)
+    lab.promote_lab_rows_to_metrics(db, patient_id=pid, rows=[row], test_date=td)
+    db.commit()
+
+    metric = _metrics(db, patient, "hematocrit")[0]
+    assert metric.source_reference_text == "42–47"  # carried, not recomputed
+
+    lab_out = LabResultOut.model_validate(row)
+    metric_out = MetricOut.model_validate(metric)
+
+    assert lab_out.reference_display == "42–47"
+    assert lab_out.reference_source == "source_report"
+    assert metric_out.reference_display == lab_out.reference_display
+    assert metric_out.reference_source == lab_out.reference_source == "source_report"
+    # Status/severity were already resolver-derived and unaffected — asserted
+    # here too so a future change can't silently break agreement on either.
+    assert metric_out.status == lab_out.status == "normal"
+
+
+def test_promoted_metric_without_source_range_falls_back_on_both_screens(db, patient):
+    """No printed range at all — both screens must agree on CANONICAL_FALLBACK,
+    not just avoid disagreeing (a bug that makes both wrong the same way would
+    otherwise pass a naive equality-only check)."""
+    from app.schemas.health import MetricOut
+    from app.schemas.lab import LabResultOut
+
+    row = LabResult(
+        patient_id=patient["patient_id"],
+        test_name="RBC",
+        canonical_name="rbc",
+        value=4.5,
+        unit="10^12/L",
+        test_date=dt.date(2025, 1, 1),
+        verified_by_user=True,
+    )
+    db.add(row)
+    db.flush()
+    pid, td = patient["patient_id"], dt.date(2025, 1, 1)
+    lab.promote_lab_rows_to_metrics(db, patient_id=pid, rows=[row], test_date=td)
+    db.commit()
+
+    metric = _metrics(db, patient, "rbc")[0]
+    assert metric.source_reference_text is None
+
+    lab_out = LabResultOut.model_validate(row)
+    metric_out = MetricOut.model_validate(metric)
+
+    assert lab_out.reference_source == metric_out.reference_source == "canonical_fallback"
