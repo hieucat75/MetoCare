@@ -186,6 +186,75 @@ def test_vital_row_surfaces_fresh_status_over_stale_stored_column():
     assert row["needs_review"] is False
 
 
+# --------------------------------------------------------------------------- #
+# Doctor-summary reference-range provenance (B2 fast-follow) — the same
+# confirmed result's reference_display/reference_source must agree between
+# the patient screens (LabResultOut/MetricOut) and the doctor pre-visit
+# summary (_vital_row). Before this fix, `_resolve_metric_semantics` never
+# passed `HealthMetric.source_reference_text` into `resolve_lab_semantics`,
+# so the doctor summary always showed CANONICAL_FALLBACK even when the
+# patient screens correctly showed SOURCE_REPORT for the identical row.
+# --------------------------------------------------------------------------- #
+
+
+def test_vital_row_surfaces_source_report_range_when_present():
+    hm = HealthMetric(
+        id="m1",
+        patient_id="p1",
+        metric_type="hematocrit",
+        value=50.0,
+        unit="%",
+        original_unit="%",
+        source_reference_text="42–47",
+        measured_at=dt.datetime(2026, 6, 30, 8, 0),
+        source="lab_result",
+    )
+    row = patient_summary._vital_row(hm)
+
+    assert row["reference_display"] == "42–47"
+    assert row["reference_source"] == "source_report"
+    assert row["status"] == "normal"  # provenance choice never touches status
+
+
+def test_vital_row_falls_back_to_canonical_without_a_source_range():
+    """No source_reference_text at all — must land on CANONICAL_FALLBACK, not
+    silently claim SOURCE_REPORT with nothing behind it."""
+    hm = HealthMetric(
+        id="m1",
+        patient_id="p1",
+        metric_type="hematocrit",
+        value=50.0,
+        unit="%",
+        measured_at=dt.datetime(2026, 6, 30, 8, 0),
+        source="lab_result",
+    )
+    row = patient_summary._vital_row(hm)
+
+    assert row["reference_source"] == "canonical_fallback"
+
+
+def test_vital_row_needs_review_stays_fail_closed_even_with_a_source_range():
+    """A source range being present must never manufacture a confident status
+    for an unsafe analyte/unit pair — the resolver's guard runs first,
+    identically to LabResultOut/MetricOut."""
+    hm = HealthMetric(
+        id="m1",
+        patient_id="p1",
+        metric_type="rbc",
+        value=0.50,
+        unit="L/L",
+        original_unit="L/L",
+        source_reference_text="3.5–5.5",
+        measured_at=dt.datetime(2026, 6, 30, 8, 0),
+        source="lab_result",
+    )
+    row = patient_summary._vital_row(hm)
+
+    assert row["status"] == "unknown"
+    assert row["needs_review"] is True
+    assert row.get("severity") == "unknown"
+
+
 # =========================================================================== #
 # Site 3 — app/api/v1/routes/lab.py (lab-result explanation endpoint)
 # =========================================================================== #
